@@ -29,7 +29,6 @@ chorus/
 ├── docs/             — Design docs, communication flows
 │   └── diagrams/     — Mermaid sources + rendered PNGs
 ├── dashboards/       — Grafana dashboard JSON (canonical source)
-├── alerting/         — Alert rules (canonical, synced to shared-observability)
 ├── skill/            — /chorus skill definition (symlinked to ~/.claude/skills/chorus/)
 ├── index/            — Database schema, init scripts
 └── CLAUDE.md         — This file
@@ -41,7 +40,7 @@ The SQLite index database lives at `~/.chorus/index.db` — it's runtime state, 
 
 ## Conventions
 
-- **Canonical source**: Dashboards and alert rules live here. They get synced/copied to shared-observability for deployment.
+- **Canonical source**: Dashboards live here and get synced/copied to shared-observability for deployment. Alert rules live in `shared-observability/config/grafana/provisioning/alerting/` — single source at the deploy-source boundary; chorus-api references that path directly (#2620).
 - **No secrets**: Permission profiles reference env var names, never values. The sensitive-paths hook applies here too.
 - **Test before deploy**: Scripts should be testable locally before being symlinked into place.
 

@@ -56,15 +56,9 @@ app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 // (cross-repo moves from jeff-bridwell-personal-site completed in #2458)
 const chorusRepoRoot = path.resolve(__dirname, '..', '..', '..');
 app.use('/designing/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
-app.use('/designing/decisions', express.static(path.join(chorusRepoRoot, 'designing', 'decisions'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
-app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
-app.use('/roles/wren/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'artifacts'), { extensions: ['html'] }));
-app.use('/roles/wren/docs', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'docs'), { extensions: ['html', 'md'] }));
-app.use('/roles/wren/decisions', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'decisions'), { extensions: ['html', 'md'] }));
-app.use('/diagrams', express.static(path.join(chorusRepoRoot, 'docs', 'diagrams')));
 
 // #2445 wave 2 — chorus-api serves catalog HTML. Static routes try chorus
 // designing/docs first (where 43 misfiled docs were relocated post-#2510),
@@ -461,7 +455,16 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       readdir: (p) => fs.readdirSync(p),
       chorusLogPath: path.resolve(__dirname, '../../logs/chorus.log'),
       memoryDir: path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory'),
-      alertDir: path.resolve(__dirname, '../../../alerting'),
+      alertDir: (() => {
+        // CHORUS_ROOT points to chorus/ in prod (LaunchAgent) and to its parent
+        // in dev fallback; same dual-shape pattern as tailSpineForRole. Pick
+        // whichever resolves to a real dir.
+        const candidates = [
+          path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting'),
+          path.join(CHORUS_ROOT, '..', 'shared-observability/config/grafana/provisioning/alerting'),
+        ];
+        return candidates.find((p) => fs.existsSync(p)) || candidates[0];
+      })(),
     });
     res.status(r.status).json(r.body);
   } finally { if (db) db.close(); }
