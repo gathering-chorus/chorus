@@ -62,9 +62,19 @@ ${yesterday_briefs}"
     if [ -z "$card_id" ] || [ "$card_id" = "$(basename "$brief")" ]; then
       continue
     fi
-    # Look for a card.accepted spine event mentioning this card_id
-    if ! grep -q "\"event\":\"card\.accepted\"" "$CHORUS_LOG" 2>/dev/null \
-        || ! grep -E "\"event\":\"card\.accepted\".*card[_id]*[\":= ]+[\"']?${card_id}[\"' ]" "$CHORUS_LOG" 2>/dev/null | head -1 >/dev/null; then
+    # Look for a card.accepted spine event for THIS card_id with a
+    # timestamp ≥ the brief's date (date-prefix in filename).
+    # Per-subagent finding: unscoped grep matches stale events for the
+    # same card_id from prior sessions — that's the false-pass hole.
+    brief_date=$(basename "$brief" | grep -oE "^[0-9]{4}-[0-9]{2}-[0-9]{2}" | head -1)
+    if [ -z "$brief_date" ]; then continue; fi
+
+    found=$(grep "\"event\":\"card\.accepted\"" "$CHORUS_LOG" 2>/dev/null \
+      | grep -E "card[_id]*[\":= ]+[\"']?${card_id}[\"' ]" \
+      | grep -E "\"timestamp\":\"${brief_date}" \
+      | head -1)
+
+    if [ -z "$found" ]; then
       missing_events+=("#${card_id} ($(basename "$brief"))")
     fi
   done <<< "$recent_briefs"
@@ -141,20 +151,28 @@ ${yesterday_briefs}"
     fi
   done <<< "$pass_lines"
 
-  if [ "$pass_total" -gt 0 ] && [ "$evidence_correlated" = "0" ]; then
-    echo "Found ${pass_total} gate:product-pass card.comment events but ZERO"
-    echo "with correlated probe.evidence within ±60 lines."
-    echo ""
-    echo "Uncorrelated (sample, up to 10):"
-    for line in "${uncorrelated[@]:0:10}"; do
-      echo "  $line"
-    done
-    echo ""
-    echo "  Today's paper-trail pattern (Jeff 2026-04-30): every"
-    echo "  /gate-product PASS must emit probe.evidence with the live-"
-    echo "  probe stdout/artifact, not just a card comment. Without the"
-    echo "  emission, the PASS is ceremony — caught Wren's PASS on #2625"
-    echo "  before production team-block."
-    false
+  # Threshold: drift fails if more than 50% are uncorrelated (per-subagent
+  # finding: original `evidence_correlated == 0` gate was all-or-nothing —
+  # 11/12 drift would pass silently. 50% threshold catches partial drift.)
+  if [ "$pass_total" -gt 0 ]; then
+    uncorrelated_count=$((pass_total - evidence_correlated))
+    threshold=$((pass_total / 2))
+    if [ "$uncorrelated_count" -gt "$threshold" ]; then
+      echo "Found ${pass_total} gate:product-pass card.comment events but only"
+      echo "${evidence_correlated} have correlated probe.evidence within ±60 lines."
+      echo "${uncorrelated_count} uncorrelated (threshold for fail: >${threshold})."
+      echo ""
+      echo "Uncorrelated (sample, up to 10):"
+      for line in "${uncorrelated[@]:0:10}"; do
+        echo "  $line"
+      done
+      echo ""
+      echo "  Today's paper-trail pattern (Jeff 2026-04-30): every"
+      echo "  /gate-product PASS must emit probe.evidence with the live-"
+      echo "  probe stdout/artifact, not just a card comment. Without the"
+      echo "  emission, the PASS is ceremony — caught Wren's PASS on #2625"
+      echo "  before production team-block."
+      false
+    fi
   fi
 }

@@ -193,9 +193,10 @@ VERDICT is PASS if all checks are PASS or WARN. WARNs are logged but don't block
 
 ## On Pass
 
-1. Emit spine event: `gate.product.passed` with card ID
-2. Add card comment: "gate:product-pass — Wren"
-3. Nudge Kade: "gate:product passed on #<card-id> — run /gate-code"
+1. **Emit `probe.evidence` spine event** with the live-probe stdout/artifact that the PASS rests on. **No live-probe = no PASS.** This is the structural enforcement of the rule "every gate-PASS must trace to a probe, not a paper trail" (Jeff 2026-04-30, after the #2625 paper-trail PASS cost a team-blocked window). The `probe.evidence` event makes the probe auditable — the spine-emit-drift bats catches gate-PASS comments without correlated probe.evidence.
+2. Emit spine event: `gate.product.passed` with card ID
+3. Add card comment: "gate:product-pass — Wren" — include a one-line summary of the probe and what it returned
+4. Nudge Kade: "gate:product passed on #<card-id> — run /gate-code"
 
 ## On Fail
 

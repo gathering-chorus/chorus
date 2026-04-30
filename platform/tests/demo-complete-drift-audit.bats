@@ -71,20 +71,25 @@ setup() {
     fi
   done <<< "$started_lines"
 
-  if [ "$total" -gt 0 ] && [ "$closed" = "0" ]; then
-    echo "Found ${total} card.demo.started events but ZERO with a terminal"
-    echo "demo state (demo.complete | card.accepted | card.rejected) in"
-    echo "the next 500 log lines."
-    echo ""
-    echo "Uncorrelated (sample, up to 10):"
-    for line in "${uncorrelated[@]:0:10}"; do
-      echo "  $line"
-    done
-    echo ""
-    echo "  Pattern Jeff named (2026-04-30): /demo skill says step 5"
-    echo "  [feedback] is mandatory and demo:complete must emit, but"
-    echo "  the steps are routinely skipped by the invoker. Without a"
-    echo "  detector, the skill is advisory — this test is the detector."
-    false
+  # Threshold: fail if more than 50% are uncorrelated (per-subagent finding:
+  # all-or-nothing gate misses partial drift).
+  if [ "$total" -gt 0 ]; then
+    uncorrelated_count=$((total - closed))
+    threshold=$((total / 2))
+    if [ "$uncorrelated_count" -gt "$threshold" ]; then
+      echo "Found ${total} card.demo.started events but only ${closed} closed."
+      echo "${uncorrelated_count} uncorrelated (threshold for fail: >${threshold})."
+      echo ""
+      echo "Uncorrelated (sample, up to 10):"
+      for line in "${uncorrelated[@]:0:10}"; do
+        echo "  $line"
+      done
+      echo ""
+      echo "  Pattern Jeff named (2026-04-30): /demo skill says step 5"
+      echo "  [feedback] is mandatory and demo:complete must emit, but"
+      echo "  the steps are routinely skipped by the invoker. Without a"
+      echo "  detector, the skill is advisory — this test is the detector."
+      false
+    fi
   fi
 }

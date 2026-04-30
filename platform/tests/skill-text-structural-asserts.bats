@@ -71,17 +71,21 @@ setup() {
   fi
 }
 
-@test "/gate-product skill markdown references live-probe / evidence emission" {
+@test "/gate-product skill markdown references live-probe / probe.evidence emission" {
   GP_MD="$SKILLS_DIR/gate-product/SKILL.md"
   [ -f "$GP_MD" ] || skip "/gate-product/SKILL.md not present"
 
-  # The skill must reference some form of probe-evidence requirement
-  # (literal probe.evidence event, or live-probe language, or evidence-
-  # of-PASS framing). Loose match against any of those.
-  if ! grep -qE "probe\.evidence|live[- ]probe|probe[- ]evidence|evidence" "$GP_MD"; then
+  # The skill must reference probe-evidence requirement specifically.
+  # Per-subagent finding: bare-word `evidence` was too permissive (a
+  # sentence like "no hard evidence required" would pass). Tighten to
+  # explicit constructs: `probe.evidence`, `live probe`, `live-probe`,
+  # `probe-evidence`, or `probe evidence`.
+  if ! grep -qE "probe\.evidence|live[- ]probe|probe[- ]evidence" "$GP_MD"; then
     echo "/gate-product skill text does not reference probe-evidence."
     echo "  Gate-PASS without probe-evidence is the paper-trail pattern"
-    echo "  (#2625 morning). Skill must encode the requirement."
+    echo "  (#2625 morning). Skill must encode the requirement using"
+    echo "  one of: 'probe.evidence', 'live probe', 'live-probe',"
+    echo "  'probe-evidence', or 'probe evidence' (not bare 'evidence')."
     false
   fi
 }
