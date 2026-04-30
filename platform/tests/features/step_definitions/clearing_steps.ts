@@ -9,7 +9,6 @@ let authToken = '';
 let lastResponse = { status: 0, body: '' };
 let probeMarker = '';
 let nameAccepted = false;
-// #2617: lastNudgeOutput retired with the nudge-delivery step
 
 // Endpoints
 const LOCAL = 'http://localhost:3470';
