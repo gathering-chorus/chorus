@@ -59,6 +59,16 @@ const OVERRIDES: Record<string, string[]> = {
   'deploys-service': ['deploys', 'deploy', 'app-state'],
 };
 
+// #2627: split base+aliases derivation into a helper.
+function aliasesForBase(base: string): string[] {
+  const aliases = [base];
+  if (base.endsWith('s') && !base.endsWith('ss')) {
+    if (base.endsWith('ies')) aliases.push(base.replace(/ies$/, 'y'));
+    else aliases.push(base.replace(/s$/, ''));
+  }
+  return aliases;
+}
+
 export function buildCodeAliasMap(
   domains: Array<{ id?: string; label?: string; sd?: { value?: string } }>,
 ): Record<string, string[]> {
@@ -68,12 +78,7 @@ export function buildCodeAliasMap(
     if (!id) continue;
     const base = id.replace(/-(domain|service)$/, '');
     if (GENERIC_BASES.has(base)) continue;
-    const aliases = [base];
-    if (base.endsWith('s') && !base.endsWith('ss')) {
-      if (base.endsWith('ies')) aliases.push(base.replace(/ies$/, 'y'));
-      else aliases.push(base.replace(/s$/, ''));
-    }
-    out[id] = aliases;
+    out[id] = aliasesForBase(base);
   }
   for (const [k, v] of Object.entries(OVERRIDES)) out[k] = v;
   return out;
@@ -115,6 +120,29 @@ function makeScanDir(deps: DiscoverCodeDeps, aliasMap: Record<string, string[]>,
   };
 }
 
+// #2627: per-entry classification extracted; loop becomes flat skip-or-record.
+function classifyOverrideEntry(
+  deps: DiscoverCodeDeps,
+  fullDir: string,
+  entryStr: string,
+  domainId: string,
+  aliasMap?: Record<string, string[]>,
+): Discovered | null {
+  if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) return null;
+  const fullPath = deps.path.join(fullDir, entryStr);
+  try { if (!deps.fs.statSync(fullPath).isFile()) return null; } catch { return null; }
+  const relPath = deps.path.relative(deps.chorusRoot, fullPath);
+  const qualifiedPath = `chorus/${relPath}`;
+  const ext = deps.path.extname(entryStr).slice(1) || 'unknown';
+  if (aliasMap) {
+    const basename = deps.path.basename(entryStr).toLowerCase();
+    const pathParts = relPath.toLowerCase().split('/');
+    const hit = classifyEntry(entryStr, basename, pathParts, ext, aliasMap, qualifiedPath);
+    if (hit) return hit;
+  }
+  return { domainId, filePath: qualifiedPath, fileType: ext };
+}
+
 function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, discovered: Discovered[], aliasMap?: Record<string, string[]>): void {
   // #2485 — alias-first classifier with override-domain fallback. Without
   // this, loom-* files inside platform/api/src/handlers and src/sparql were
@@ -123,23 +151,8 @@ function scanOverrideDir(deps: DiscoverCodeDeps, dir: string, domainId: string, 
   if (!deps.fs.existsSync(fullDir)) return;
   const entries = deps.fs.readdirSync(fullDir, { recursive: true, encoding: null }) as string[];
   for (const entry of entries) {
-    const entryStr = String(entry);
-    if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
-    const fullPath = deps.path.join(fullDir, entryStr);
-    try { if (!deps.fs.statSync(fullPath).isFile()) continue; } catch { continue; }
-    const relPath = deps.path.relative(deps.chorusRoot, fullPath);
-    const qualifiedPath = `chorus/${relPath}`;
-    const ext = deps.path.extname(entryStr).slice(1) || 'unknown';
-    if (aliasMap) {
-      const basename = deps.path.basename(entryStr).toLowerCase();
-      const pathParts = relPath.toLowerCase().split('/');
-      const hit = classifyEntry(entryStr, basename, pathParts, ext, aliasMap, qualifiedPath);
-      if (hit) {
-        discovered.push(hit);
-        continue;
-      }
-    }
-    discovered.push({ domainId, filePath: qualifiedPath, fileType: ext });
+    const hit = classifyOverrideEntry(deps, fullDir, String(entry), domainId, aliasMap);
+    if (hit) discovered.push(hit);
   }
 }
 

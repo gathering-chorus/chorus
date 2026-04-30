@@ -34,6 +34,41 @@ export interface ServicesResult {
     | { error: string };
 }
 
+// #2627: parse launchctl + ps inside helpers; orchestrator orchestrates.
+
+type BaseService = { label: string; pid: number | null; status: number };
+
+function parseLaunchctlList(stdout: string): BaseService[] {
+  const out: BaseService[] = [];
+  for (const line of stdout.trim().split('\n').slice(1)) {
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const label = parts[2];
+    if (!label.startsWith('com.chorus.') && !label.startsWith('com.gathering.')) continue;
+    out.push({
+      label,
+      pid: parts[0] === '-' ? null : parseInt(parts[0], 10),
+      status: parseInt(parts[1], 10),
+    });
+  }
+  return out;
+}
+
+async function readRssForPids(execFile: NonNullable<ServicesDeps['execFile']>, pids: number[]): Promise<Map<number, number>> {
+  const rssMap = new Map<number, number>();
+  if (pids.length === 0) return rssMap;
+  try {
+    const psRes = await execFile('ps', ['-o', 'pid=,rss=', '-p', pids.join(',')], { timeout: 5000 });
+    for (const line of psRes.stdout.trim().split('\n')) {
+      const [pidStr, rssStr] = line.trim().split(/\s+/);
+      if (pidStr && rssStr) {
+        rssMap.set(parseInt(pidStr, 10), Math.round(parseInt(rssStr, 10) / 1024));
+      }
+    }
+  } catch { /* ps unavailable */ }
+  return rssMap;
+}
+
 export async function fetchServices({
   execFile = defaultExecFile,
 }: ServicesDeps = {}): Promise<ServicesResult> {
@@ -44,20 +79,7 @@ export async function fetchServices({
   } catch {
     return { status: 500, body: { error: 'launchctl list failed' } };
   }
-
-  const base: Array<{ label: string; pid: number | null; status: number }> = [];
-  for (const line of lcOut.trim().split('\n').slice(1)) {
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const label = parts[2];
-    if (!label.startsWith('com.chorus.') && !label.startsWith('com.gathering.')) continue;
-    base.push({
-      label,
-      pid: parts[0] === '-' ? null : parseInt(parts[0], 10),
-      status: parseInt(parts[1], 10),
-    });
-  }
-
+  const base = parseLaunchctlList(lcOut);
   const pids = base.filter((s) => s.pid !== null).map((s) => s.pid as number);
   if (pids.length === 0) {
     return {
@@ -65,19 +87,7 @@ export async function fetchServices({
       body: { services: base.map((s) => ({ ...s, rss_mb: null })), running: 0, total: base.length },
     };
   }
-
-  const rssMap = new Map<number, number>();
-  try {
-    const psRes = await execFile('ps', ['-o', 'pid=,rss=', '-p', pids.join(',')], { timeout: 5000 });
-    for (const line of psRes.stdout.trim().split('\n')) {
-      const [pidStr, rssStr] = line.trim().split(/\s+/);
-      if (pidStr && rssStr) {
-        rssMap.set(parseInt(pidStr, 10), Math.round(parseInt(rssStr, 10) / 1024));
-      }
-    }
-  } catch {
-    // ps unavailable — rss_mb stays null
-  }
+  const rssMap = await readRssForPids(execFile, pids);
 
   const enriched: ServiceEntry[] = base.map((s) => ({
     ...s,

@@ -90,21 +90,30 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
 
     const testEntries: Array<{ testFile: string; testType: string; coversDomain: string }> = [];
 
+    // #2627: per-entry classification extracted; scanner becomes flat.
+    const classifyTestEntry = (
+      entryStr: string,
+      dir: string,
+      repoRoot: string,
+      prefix: string,
+    ): { testFile: string; testType: string; coversDomain: string } | null => {
+      if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) return null;
+      const fullPath = deps.path.join(dir, entryStr);
+      try { if (!deps.fs.statSync(fullPath).isFile()) return null; } catch { return null; }
+      if (!/\.(test|spec)\.(ts|js)$|\.bats$|\.feature$/i.test(entryStr)) return null;
+      const relPath = deps.path.relative(repoRoot, fullPath);
+      const coversDomain = inferDomain(relPath, aliasToId, deps.path);
+      if (!coversDomain) return null;
+      return { testFile: `${prefix}/${relPath}`, testType: classifyTestType(relPath), coversDomain };
+    };
+
     const scanTests = (dir: string, repoRoot: string) => {
       if (!deps.fs.existsSync(dir)) return;
       const prefix = repoRoot === deps.gatheringRoot ? 'gathering' : 'chorus';
       const entries = deps.fs.readdirSync(dir, { recursive: true, encoding: null }) as string[];
       for (const entry of entries) {
-        const entryStr = String(entry);
-        if (entryStr.includes('node_modules') || entryStr.includes('.git') || entryStr.includes('dist/')) continue;
-        const fullPath = deps.path.join(dir, entryStr);
-        try { if (!deps.fs.statSync(fullPath).isFile()) continue; } catch { continue; }
-        if (!/\.(test|spec)\.(ts|js)$|\.bats$|\.feature$/i.test(entryStr)) continue;
-        const relPath = deps.path.relative(repoRoot, fullPath);
-        const qualifiedPath = `${prefix}/${relPath}`;
-        const testType = classifyTestType(relPath);
-        const coversDomain = inferDomain(relPath, aliasToId, deps.path);
-        if (coversDomain) testEntries.push({ testFile: qualifiedPath, testType, coversDomain });
+        const hit = classifyTestEntry(String(entry), dir, repoRoot, prefix);
+        if (hit) testEntries.push(hit);
       }
     };
 

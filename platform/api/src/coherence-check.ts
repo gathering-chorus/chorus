@@ -39,47 +39,52 @@ export interface CoherenceResult {
   alarmedRoles: string[];
 }
 
+// #2627: per-role drift handling extracted into helpers; orchestrator becomes
+// a flat loop calling checkOneRole per role.
+
+type RoleEntry = ReturnType<CoherenceDeps['readPulseRoles']>[string];
+
+function buildDriftFields(kind: string, driftDuration: number, entry: RoleEntry): Record<string, string> {
+  return {
+    kind,
+    drift_duration_secs: String(driftDuration),
+    card_declared: entry.card_declared != null ? String(entry.card_declared) : '',
+    card_inferred: entry.card_inferred != null ? String(entry.card_inferred) : '',
+  };
+}
+
+function buildDriftMessage(kind: string, driftDuration: number, entry: RoleEntry): string {
+  if (kind === 'divergent') {
+    return `[drift] Your declared card (#${entry.card_declared ?? '?'}) and inferred card (#${entry.card_inferred ?? '?'}) disagree for ${driftDuration}s. Re-declare via role-state or commit something so observers catch up.`;
+  }
+  return `[drift] Your inferred state is stale for ${driftDuration}s. Derive-role-state hasn't run recently — or you're not generating observable signal (commits, WIP card moves). Nudge the system by doing a git activity.`;
+}
+
+function checkOneRole(deps: CoherenceDeps, role: string, entry: RoleEntry, now: number): boolean {
+  const drifted = Boolean(entry.divergent) || Boolean(entry.inferred_stale);
+  if (!drifted) {
+    deps.writeDriftSince(role, null);
+    return false;
+  }
+  const since = deps.readDriftSince(role);
+  if (since === null) {
+    deps.writeDriftSince(role, now);
+    return false;
+  }
+  const driftDuration = now - since;
+  if (driftDuration < DRIFT_THRESHOLD_SECS) return false;
+  const kind = entry.divergent ? 'divergent' : 'inferred_stale';
+  deps.emitSpineEvent('role.state.drifted', role, buildDriftFields(kind, driftDuration, entry));
+  deps.sendNudge(role, buildDriftMessage(kind, driftDuration, entry));
+  return true;
+}
+
 export function checkCoherence(deps: CoherenceDeps): CoherenceResult {
   const roles = deps.readPulseRoles();
   const now = deps.now();
   const alarmed: string[] = [];
-
   for (const [role, entry] of Object.entries(roles)) {
-    const drifted = Boolean(entry.divergent) || Boolean(entry.inferred_stale);
-    if (!drifted) {
-      // Clear tracker when state returns to coherent
-      deps.writeDriftSince(role, null);
-      continue;
-    }
-
-    const since = deps.readDriftSince(role);
-    if (since === null) {
-      // First observation of drift — start the tracker but don't alarm yet
-      deps.writeDriftSince(role, now);
-      continue;
-    }
-
-    const driftDuration = now - since;
-    if (driftDuration < DRIFT_THRESHOLD_SECS) {
-      // Tracked, but not past threshold
-      continue;
-    }
-
-    const kind = entry.divergent ? 'divergent' : 'inferred_stale';
-    const fields: Record<string, string> = {
-      kind,
-      drift_duration_secs: String(driftDuration),
-      card_declared: entry.card_declared != null ? String(entry.card_declared) : '',
-      card_inferred: entry.card_inferred != null ? String(entry.card_inferred) : '',
-    };
-    deps.emitSpineEvent('role.state.drifted', role, fields);
-
-    const content = kind === 'divergent'
-      ? `[drift] Your declared card (#${entry.card_declared ?? '?'}) and inferred card (#${entry.card_inferred ?? '?'}) disagree for ${driftDuration}s. Re-declare via role-state or commit something so observers catch up.`
-      : `[drift] Your inferred state is stale for ${driftDuration}s. Derive-role-state hasn't run recently — or you're not generating observable signal (commits, WIP card moves). Nudge the system by doing a git activity.`;
-    deps.sendNudge(role, content);
-    alarmed.push(role);
+    if (checkOneRole(deps, role, entry, now)) alarmed.push(role);
   }
-
   return { alarmedRoles: alarmed };
 }

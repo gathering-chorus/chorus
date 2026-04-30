@@ -204,6 +204,16 @@ WHERE {
 }`;
 }
 
+// #2627: tag-string serialization extracted; orchestrator becomes flat.
+function serializeTagsForSpine(tags: Record<string, string | undefined>): string {
+  const fields = ['product', 'subproduct', 'domain', 'subdomain', 'role'];
+  const parts: string[] = [];
+  for (const f of fields) {
+    if (tags[f]) parts.push(`${f}=${tags[f]}`);
+  }
+  return parts.join(',');
+}
+
 export async function writeCatalogTags(deps: CurationDeps, body: unknown): Promise<HandlerResult> {
   const start = Date.now();
   const v = validateTags(body);
@@ -218,13 +228,7 @@ export async function writeCatalogTags(deps: CurationDeps, body: unknown): Promi
   await deps.sparqlUpdate(update);
 
   if (deps.emitSpine) {
-    const parts: string[] = [];
-    if (tags.product) parts.push(`product=${tags.product}`);
-    if (tags.subproduct) parts.push(`subproduct=${tags.subproduct}`);
-    if (tags.domain) parts.push(`domain=${tags.domain}`);
-    if (tags.subdomain) parts.push(`subdomain=${tags.subdomain}`);
-    if (tags.role) parts.push(`role=${tags.role}`);
-    deps.emitSpine('catalog.tag.curated', { href, after: parts.join(',') });
+    deps.emitSpine('catalog.tag.curated', { href, after: serializeTagsForSpine(tags) });
   }
 
   return {

@@ -228,6 +228,29 @@ function buildSectionItems(
   return { items, itemDetails };
 }
 
+// #2627: completeness lookup + html-section read extracted.
+async function lookupCompleteness(
+  deps: ChorusDomainDeps,
+  name: string,
+): Promise<{ completeness: Completeness | null; subdomainId: string | null }> {
+  try {
+    const svc = await deps.fetchCompleteness(`${name}-service`);
+    if (svc) return { completeness: svc, subdomainId: `${name}-service` };
+    const dom = await deps.fetchCompleteness(`${name}-domain`);
+    if (dom) return { completeness: dom, subdomainId: `${name}-domain` };
+  } catch { /* unavailable */ }
+  return { completeness: null, subdomainId: null };
+}
+
+function readSectionsFromHtml(deps: ChorusDomainDeps, name: string): Record<string, HtmlSection> {
+  try {
+    const html = deps.readDomainHtml(name);
+    return html !== null ? parseDomainHtml(html) : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchChorusDomain(
   deps: ChorusDomainDeps,
   rawName: string,
@@ -247,27 +270,8 @@ export async function fetchChorusDomain(
   const wip = cards.filter((c) => c.status === 'WIP');
   const blocked = cards.filter((c) => c.status === 'Blocked');
 
-  let sections: Record<string, HtmlSection> = {};
-  try {
-    const html = deps.readDomainHtml(name);
-    if (html !== null) sections = parseDomainHtml(html);
-  } catch { /* html parse failed */ }
-
-  let completeness: Completeness | null = null;
-  let subdomainId: string | null = null;
-  try {
-    const svcResult = await deps.fetchCompleteness(`${name}-service`);
-    if (svcResult) {
-      completeness = svcResult;
-      subdomainId = `${name}-service`;
-    } else {
-      const domResult = await deps.fetchCompleteness(`${name}-domain`);
-      if (domResult) {
-        completeness = domResult;
-        subdomainId = `${name}-domain`;
-      }
-    }
-  } catch { /* completeness unavailable */ }
+  const sections = readSectionsFromHtml(deps, name);
+  const { completeness, subdomainId } = await lookupCompleteness(deps, name);
 
   if (subdomainId && Object.keys(sections).length === 0) {
     try {
