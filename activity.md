@@ -1164,3 +1164,15 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Anthe Tuesday consult framer at roles/wren/notes/anthe-tuesday-framer.html
 
 - [silas | 2026-04-29 18:00] Long session (~26h). Shipped 4 cards to main (#2559 chorus-hooks SIGTERM cleanup, #2563 memory_gate compile-time, #2564 verification, #2571 chorus-env-setup). Cost-stop swat #2600 retired per-branch CI (ADR-026 layer 3 → schedule-only) — branch protection + ruleset emptied of required-checks; dependabot weekly→monthly. 16+ dependabot PRs batch-merged free. 7 follow-on cards filed (#2587, #2590, #2591, #2593, #2595, #2596, #2599). 16 candidate child principles persisted to loom-principles graph with tier ratings inline; awaiting Jeff's print+read+comment. Architectural insight: Wren's roles-service-design.html (04-17) had already named the four-substrate priorities (principles + policies + practices + decisions), 12 days unaddressed. Tomorrow's lane: principles/policies/decisions/practices substrate work — pull #2151 / #2152 / #2150. Memory written: architect-as-contract-keeper, MCP-not-bash, infrastructure-decisions-weeks-long, substantive-review-on-principles. Reboot via /reboot after Jeff walked Ravi.
+
+## 2026-04-30 — Wren session: substrate work + 6 cards shipped
+
+**Shipped (Wren):** #2610 about-Wren essay in doc-catalog · #2611 revert express-5 dependabot bump (root-cause fix for tsc-red) · #2616 doc-catalog urlPrefix transposition fix · #2622 DEC-058 fragment (athena-via-mcp + brief→nudge) · #2623 doc-coherence.sh dual-probe · #2624 chorus_subdomains_list/get MCP tools (full gate chain: product/code/quality/arch/ops all PASS).
+
+**Closed:** PR #41 (#2566 codify card-shape) — 20+hr stale, re-apply fresh later if needed.
+
+**Convention landed:** nudge-before-deploy with 30s window for /chorus HEAD-yank operations (chat with Silas wren-silas-1777552172). Validated twice in-session — convention works.
+
+**Substrate moves carried forward:** schemas-first card (Silas pulling) — Subdomain class needs ownedBy + builtBy + conventionsBy as separate predicates. Slot-shortage meta-principle locked as values-tier candidate. #2625 filed for canonical-clone defense hook (Kade's domain).
+
+**Memory saved:** feedback_dont_add_role_infrastructure_layers · feedback_audit_is_not_a_proposal_pile · feedback_team_writes_too_much · project_slot_shortage_pattern.
