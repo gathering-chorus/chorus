@@ -405,7 +405,7 @@ Then('error-level logs appear before info-level logs', function () {
   }
 });
 
-Then('the response includes alert rules from alerting/ directory', function () {
+Then('the response includes alert rules from alerting\\/ directory', function () {
   assert.ok(Array.isArray(crawlResult.alerts), 'No alerts array');
 });
 
@@ -522,11 +522,17 @@ When('a role requests the domain story for {string}', function (domain: string) 
 
 Then('the response contains cards tagged with that domain', function () {
   assert.ok(lastResponse.status === 200, `Expected 200, got ${lastResponse.status}`);
-  assert.ok(domainStory.cards.length > 0, `No cards found for domain. Response: ${lastResponse.body.slice(0, 200)}`);
+  // Step is shared between domain-story (domainStory.cards) and domain-crawler
+  // (crawlResult.cards) flows. Either var being populated counts.
+  const total = (domainStory.cards?.length || 0) + (crawlResult.cards?.length || 0);
+  assert.ok(total > 0, `No cards found for domain. Response: ${lastResponse.body.slice(0, 200)}`);
 });
 
 Then('the response contains conversation mentions from the Chorus index', function () {
-  assert.ok(domainStory.mentions.length > 0, `No conversation mentions found for domain`);
+  // Shared step — domain-story uses domainStory.mentions, domain-crawler uses
+  // crawlResult.mentions; either populated counts.
+  const total = (domainStory.mentions?.length || 0) + (crawlResult.mentions?.length || 0);
+  assert.ok(total > 0, `No conversation mentions found for domain`);
 });
 
 Then('cards and mentions are combined into a single timeline', function () {
