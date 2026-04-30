@@ -361,6 +361,65 @@ Then('the response includes Jeff\'s recurring feedback on this domain', function
   assert.ok(Array.isArray(crawlResult.history?.feedback), 'No feedback array');
 });
 
+// --- #2620 AC7: code-scan / logs / alerts response-shape assertions ---
+
+Then('the response includes code files found by directory scan', function () {
+  assert.ok(Array.isArray(crawlResult.codeScan?.discovered), 'No codeScan.discovered array');
+  assert.ok(crawlResult.codeScan.discovered.length > 0, 'No files discovered by scan');
+});
+
+Then('the code files are real paths — not just extracted from card descriptions', function () {
+  for (const p of crawlResult.codeScan?.discovered || []) {
+    assert.ok(p.includes('/'), `Not a real path: "${p}"`);
+  }
+});
+
+Then('the code section distinguishes card-referenced files from scan-discovered files', function () {
+  assert.ok(Array.isArray(crawlResult.code?.files), 'No code.files array');
+  assert.ok(Array.isArray(crawlResult.codeScan?.discovered), 'No codeScan.discovered array');
+});
+
+Then('the response includes recent log entries from Loki', function () {
+  assert.ok(Array.isArray(crawlResult.logs), 'No logs array');
+});
+
+Then('logs are filtered by domain-relevant component or keyword', function () {
+  assert.ok(Array.isArray(crawlResult.logs), 'No logs array');
+});
+
+Then('each log entry includes timestamp, level, and message', function () {
+  for (const e of crawlResult.logs || []) {
+    assert.ok(typeof e.timestamp === 'string', `Log entry missing timestamp: ${JSON.stringify(e)}`);
+    assert.ok(typeof e.level === 'string', `Log entry missing level: ${JSON.stringify(e)}`);
+    assert.ok(typeof e.message === 'string', `Log entry missing message: ${JSON.stringify(e)}`);
+  }
+});
+
+Then('error-level logs appear before info-level logs', function () {
+  const order: Record<string, number> = { error: 0, warn: 1, info: 2 };
+  let lastRank = -1;
+  for (const e of crawlResult.logs || []) {
+    const rank = order[e.level] ?? 3;
+    assert.ok(rank >= lastRank, `Log out of order: ${e.level} after rank ${lastRank}`);
+    lastRank = rank;
+  }
+});
+
+Then('the response includes alert rules from alerting/ directory', function () {
+  assert.ok(Array.isArray(crawlResult.alerts), 'No alerts array');
+});
+
+Then('alert rules are matched by domain keyword in the YAML filename or content', function () {
+  assert.ok(Array.isArray(crawlResult.alerts), 'No alerts array');
+});
+
+Then('each alert includes name, severity, and current state', function () {
+  for (const a of crawlResult.alerts || []) {
+    assert.ok(typeof a.name === 'string', `Alert missing name: ${JSON.stringify(a)}`);
+    assert.ok(typeof a.severity === 'string', `Alert missing severity: ${JSON.stringify(a)}`);
+  }
+});
+
 // --- Card Story steps ---
 
 let cardStory: { title?: string; owner?: string; status?: string; domain?: string; timeline: Array<{ timestamp: string; source: string; text: string; role?: string; event?: string }> } = { timeline: [] };

@@ -168,6 +168,27 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     expect(b.infra.endpoints.some((e) => e.includes('Socket.IO'))).toBe(true);
   });
 
+  // #2620 AC1: server.ts wires alertDir at the canonical alert-rule home in
+  // shared-observability. Before the fix, alertDir resolved to chorus/alerting/
+  // which doesn't exist, so fetchCrawl returned alerts: [] for every domain
+  // — the cucumber @crawler @alerts scenario could never pass.
+  // This test runs fetchCrawl with the same path server.ts builds and the
+  // real fs deps, then asserts the chorus-alerts.yaml rules surface.
+  test('#2620: fetchCrawl returns alerts when alertDir is wired to canonical path', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
+    const wired = path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting');
+    const r = await fetchCrawl('chorus', deps({
+      exists: (p: string) => fs.existsSync(p),
+      readdir: (p: string) => fs.readdirSync(p),
+      readFile: (p: string, enc: BufferEncoding) => fs.readFileSync(p, enc),
+      alertDir: wired,
+    }));
+    const b = r.body as { alerts: Array<{ name: string }> };
+    expect(b.alerts.length).toBeGreaterThan(0);
+  });
+
   test('alerts: yml files matching domain are collected', async () => {
     const yml = 'alert: Photos pipeline stalled\nseverity: warning\nbody photos domain';
     const r = await fetchCrawl('photos', deps({

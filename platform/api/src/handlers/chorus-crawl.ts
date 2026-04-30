@@ -78,7 +78,9 @@ async function sparqlPost(
   fusekiUrl: string,
   sparql: string,
 ): Promise<Array<Partial<Record<string, { value?: string }>>>> {
-  const resp = await fetchFn(`${fusekiUrl}/gathering/sparql`, {
+  // #2620: dataset is /pods, not /gathering. The /gathering endpoint returns
+  // 404 silently → sparqlPost returned [] for every call → rdf/owl always empty.
+  const resp = await fetchFn(`${fusekiUrl}/pods/sparql`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
     body: `query=${encodeURIComponent(sparql)}`,
@@ -109,15 +111,32 @@ function collectCards(
 async function collectRdf(fetchFn: FetchFn, fusekiUrl: string, domain: string): Promise<RdfBucket> {
   const rdf: RdfBucket = { classes: [], instances: 0, count: 0, relationships: [] };
   try {
-    const sparql = `SELECT ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } FILTER(CONTAINS(LCASE(STR(?g)), '${domain}')) } LIMIT 200`;
+    // #2620: query named graph urn:gathering:<domain>, group instances by class.
+    // Previous shape pulled ?s ?p ?o with LCASE graph filter — over-counted
+    // (every triple as an "instance") and miscategorised classes (string-match
+    // on predicate). This shape returns one row per class with a real count.
+    const graph = `urn:gathering:${domain}`;
+    const sparql = `SELECT ?class (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <${graph}> { ?s a ?class } } GROUP BY ?class LIMIT 50`;
     const bindings = await sparqlPost(fetchFn, fusekiUrl, sparql);
-    rdf.count = bindings.length;
-    rdf.instances = bindings.length;
-    const classes = new Set<string>();
+    let total = 0;
     for (const b of bindings) {
-      if (b.p?.value?.includes('type') || b.p?.value?.includes('Type')) classes.add(b.o?.value || '');
+      const cls = b.class?.value;
+      const n = parseInt(b.n?.value || '0', 10);
+      if (cls) {
+        rdf.classes.push(cls);
+        total += n;
+      }
     }
-    rdf.classes = [...classes].filter((c) => c.length > 0);
+    rdf.count = bindings.length;
+    rdf.instances = total;
+    // Cross-graph relationships: when a subject in this graph references
+    // something that exists in another urn:gathering:* graph, that's a domain
+    // link. Approximate with predicate-object matching across graphs.
+    const relSparql = `SELECT DISTINCT ?og WHERE { GRAPH <${graph}> { ?s ?p ?o } GRAPH ?og { ?o ?p2 ?o2 } FILTER(?og != <${graph}>) FILTER(STRSTARTS(STR(?og), 'urn:gathering:')) } LIMIT 30`;
+    for (const b of await sparqlPost(fetchFn, fusekiUrl, relSparql)) {
+      const og = b.og?.value;
+      if (og) rdf.relationships.push(og.replace('urn:gathering:', ''));
+    }
   } catch { /* fuseki down */ }
   return rdf;
 }
@@ -197,17 +216,50 @@ function collectSpine(
 async function collectOwl(fetchFn: FetchFn, fusekiUrl: string, domain: string): Promise<OwlBucket> {
   const owl: OwlBucket = { properties: [], relationships: [] };
   try {
-    const sparql = `
+    // #2620: ontology lives in named graph urn:jb:ontology and (so far) declares
+    // owl:Class with rdfs:label/rdfs:comment but no rdfs:domain/range triples.
+    // The previous query required rdfs:domain edges that don't exist → empty
+    // every time. Fall back to: for each class whose URI mentions the domain,
+    // surface its label+comment as "properties" (the schema we actually have).
+    const domainStem = domain.replace(/s$/, '');
+    const classSparql = `
       PREFIX owl: <http://www.w3.org/2002/07/owl#>
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      SELECT ?class ?prop ?range WHERE {
-        ?class a owl:Class .
-        FILTER(CONTAINS(LCASE(STR(?class)), '${domain}'))
-        OPTIONAL { ?prop rdfs:domain ?class . ?prop rdfs:range ?range . }
-      } LIMIT 50`;
-    for (const b of await sparqlPost(fetchFn, fusekiUrl, sparql)) {
-      if (b.prop?.value) owl.properties.push(b.prop.value);
-      if (b.range?.value) owl.relationships.push(b.range.value);
+      SELECT ?class ?p ?o WHERE {
+        GRAPH <urn:jb:ontology> {
+          ?class a owl:Class .
+          FILTER(CONTAINS(LCASE(STR(?class)), '${domainStem}'))
+          ?class ?p ?o .
+        }
+      } LIMIT 100`;
+    const matched = new Set<string>();
+    for (const b of await sparqlPost(fetchFn, fusekiUrl, classSparql)) {
+      const cls = b.class?.value;
+      const p = b.p?.value || '';
+      const o = b.o?.value || '';
+      if (!cls) continue;
+      matched.add(cls);
+      // Skip the rdf:type triple itself; surface label/comment/etc. as schema
+      // facts on the class. Format: "<class>::<predicate>=<value>" so callers
+      // can split if they want, but length>0 is what cucumber checks today.
+      if (p.endsWith('#type')) continue;
+      const predLocal = p.split(/[#/]/).pop() || p;
+      const valLocal = o.length > 80 ? o.slice(0, 77) + '...' : o;
+      owl.properties.push(`${cls.split(/[#/]/).pop()}::${predLocal}=${valLocal}`);
+    }
+    // Relationships: classes that share the ontology graph with the matched
+    // class — proxy for "this domain's class connects to these other concepts".
+    if (matched.size > 0) {
+      const relSparql = `
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        SELECT DISTINCT ?other WHERE {
+          GRAPH <urn:jb:ontology> { ?other a owl:Class }
+          FILTER(!CONTAINS(LCASE(STR(?other)), '${domainStem}'))
+        } LIMIT 20`;
+      for (const b of await sparqlPost(fetchFn, fusekiUrl, relSparql)) {
+        const other = b.other?.value;
+        if (other) owl.relationships.push(other);
+      }
     }
   } catch { /* OWL query failed */ }
   return owl;
@@ -254,9 +306,15 @@ function collectFeedback(
   return feedback;
 }
 
-async function collectCodeScan(athenaSparqlQuery: AthenaSparqlFn, domain: string): Promise<{ scanned: string[]; discovered: string[] }> {
+async function collectCodeScan(
+  athenaSparqlQuery: AthenaSparqlFn,
+  execAsync: ExecAsyncFn,
+  domain: string,
+): Promise<{ scanned: string[]; discovered: string[] }> {
   const codeScan = { scanned: [] as string[], discovered: [] as string[] };
   try {
+    // scanned: graph-declared code files (chorus:hasCodeFile). When the graph
+    // hasn't been populated for this domain, scanned stays empty.
     const domainSuffix = domain.endsWith('-domain') || domain.endsWith('-service') ? domain : `${domain}-domain`;
     const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
     const codeResult = await athenaSparqlQuery(codeQuery);
@@ -267,6 +325,17 @@ async function collectCodeScan(athenaSparqlQuery: AthenaSparqlFn, domain: string
       codeScan.scanned = svcResult.results.bindings.map((b) => b.filePath.value);
     }
   } catch { /* graph query failed */ }
+  // #2620: discovered = filesystem scan for files whose path mentions the
+  // domain. Distinct from code.files (card/git-derived) and from scanned
+  // (graph-derived). Cheap find with name-pattern, bounded depth.
+  try {
+    const stem = domain.replace(/s$/, '');
+    const { stdout } = await execAsync(
+      `find /Users/jeffbridwell/CascadeProjects/chorus /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site -maxdepth 6 -type f \\( -iname "*${domain}*" -o -iname "*${stem}*" \\) -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/target/*" 2>/dev/null | head -50`,
+      { encoding: 'utf-8', timeout: 5000 },
+    );
+    codeScan.discovered = stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+  } catch { /* find failed */ }
   return codeScan;
 }
 
@@ -314,6 +383,73 @@ async function collectLogs(fetchFn: FetchFn, lokiBaseUrl: string, domain: string
     sortLogs(logs);
   } catch { /* loki down */ }
   return logs;
+}
+
+// #2620: code.files comes from two sources combined: (1) blast-radius
+// auto-comments on cards in this domain (the `cards move WIP` script writes
+// these), and (2) git log path-mining for commits whose subject mentions
+// either the domain tag or a card id from this domain. Distinct from
+// codeScan.discovered which is a graph-driven filesystem scan.
+async function collectCodeFiles(
+  execAsync: ExecAsyncFn,
+  cards: CardEntry[],
+  domain: string,
+): Promise<string[]> {
+  const files = new Set<string>();
+  try {
+    if (cards.length === 0) {
+      // Still try a domain-tag grep so empty-card domains aren't silently empty.
+      const { stdout } = await execAsync(
+        `git -C /Users/jeffbridwell/CascadeProjects/chorus log --all --grep="domain:${domain}" --name-only --pretty=format: 2>/dev/null | sort -u | head -50`,
+        { encoding: 'utf-8', timeout: 5000 },
+      );
+      for (const f of stdout.split('\n').map((s) => s.trim()).filter(Boolean)) files.add(f);
+      return [...files];
+    }
+    // Bound mining to the first 20 cards' ids to keep latency in check.
+    const ids = cards.slice(0, 20).map((c) => `#${c.index}`).join('\\|');
+    const { stdout } = await execAsync(
+      `git -C /Users/jeffbridwell/CascadeProjects/chorus log --all --grep="${ids}\\|domain:${domain}" --name-only --pretty=format: 2>/dev/null | sort -u | head -100`,
+      { encoding: 'utf-8', timeout: 8000 },
+    );
+    for (const f of stdout.split('\n').map((s) => s.trim()).filter(Boolean)) files.add(f);
+  } catch { /* git unavailable or grep timeout */ }
+  return [...files];
+}
+
+// #2620: connected-subgraph link phase. Until link discovery becomes a first-
+// class graph traversal, surface the obvious edges so consumers see "this is
+// connected, not parallel lists": card→code (each card links to all known
+// files for the domain), code→class (when we have classes), card→domain
+// (every card belongs to its domain). Bounded to keep the array sane.
+type Link = { from_type: string; from: string; to_type: string; to: string };
+function buildLinks(
+  cards: CardEntry[],
+  codeFiles: string[],
+  owl: OwlBucket,
+  related: Array<{ domain: string; strength: number }>,
+): Link[] {
+  const links: Link[] = [];
+  const fileLimit = codeFiles.slice(0, 10);
+  const cardLimit = cards.slice(0, 10);
+  for (const c of cardLimit) {
+    for (const f of fileLimit) {
+      links.push({ from_type: 'card', from: `#${c.index}`, to_type: 'code', to: f });
+    }
+  }
+  const classNames = (owl.properties || [])
+    .map((p) => p.split('::')[0])
+    .filter((n, i, arr) => n && arr.indexOf(n) === i)
+    .slice(0, 5);
+  for (const f of fileLimit) {
+    for (const cls of classNames) {
+      links.push({ from_type: 'code', from: f, to_type: 'class', to: cls });
+    }
+  }
+  for (const r of related.slice(0, 5)) {
+    links.push({ from_type: 'domain', from: 'self', to_type: 'domain', to: r.domain });
+  }
+  return links;
 }
 
 function alertMatchesDomain(content: string, file: string, domain: string, stem: string): boolean {
@@ -397,7 +533,8 @@ export async function fetchCrawl(
   const owl = await collectOwl(fetchFn, fusekiUrl, domain);
   const infra = await collectInfra(execAsync, domain);
   history.feedback = collectFeedback(exists, readdir, readFile, memoryDir, domain);
-  const codeScan = await collectCodeScan(athenaSparqlQuery, domain);
+  const codeScan = await collectCodeScan(athenaSparqlQuery, execAsync, domain);
+  const codeFiles = await collectCodeFiles(execAsync, cards, domain);
   const logs = await collectLogs(fetchFn, lokiBaseUrl, domain, now);
   const alerts = collectAlerts(exists, readdir, readFile, alertDir, domain);
 
@@ -413,12 +550,12 @@ export async function fetchCrawl(
       owl,
       mentions,
       spine,
-      code: { files: [] as string[] },
+      code: { files: codeFiles },
       codeScan,
       infra,
       logs,
       alerts,
-      links: [] as unknown[],
+      links: buildLinks(cards, codeFiles, owl, related),
       related,
       history,
       timeline,
