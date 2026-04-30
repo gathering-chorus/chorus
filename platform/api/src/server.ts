@@ -1723,13 +1723,24 @@ type PageEntry = { route: string; path: string; pageType: string; domainId: stri
 
 const DISCOVER_PAGES_GENERIC_BASES = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
 
+// #2627: domain IDs hoisted to consts (each was duplicated 5-33x; the
+// chorus-domain literal hit 33 occurrences, which is the textbook
+// agent-inlining pattern the no-duplicate-string rule catches).
+const D_BLOG = 'blog-domain';
+const D_SOCIAL = 'social-domain';
+const D_SEEDS = 'seeds-domain';
+const D_CHORUS = 'chorus-domain';
+const D_PROPERTY = 'property-domain';
+const D_IDEAS = 'ideas-domain';
+const D_DOCS = 'documents-domain';
+
 const DISCOVER_PAGES_ALIAS_OVERRIDES: Record<string, string> = {
-  blog: 'blog-domain', wordpress: 'blog-domain',
-  social: 'social-domain', socialpost: 'social-domain',
-  seed: 'seeds-domain', seeds: 'seeds-domain',
+  blog: D_BLOG, wordpress: D_BLOG,
+  social: D_SOCIAL, socialpost: D_SOCIAL,
+  seed: D_SEEDS, seeds: D_SEEDS,
   'self-ai': 'sexuality-domain', ontology: 'convergence-domain',
-  chorus: 'chorus-domain', werk: 'chorus-domain', flow: 'chorus-domain',
-  garden: 'property-domain', gardening: 'property-domain',
+  chorus: D_CHORUS, werk: D_CHORUS, flow: D_CHORUS,
+  garden: D_PROPERTY, gardening: D_PROPERTY,
 };
 
 async function buildPageAliasMap(): Promise<Record<string, string>> {
@@ -1751,21 +1762,19 @@ async function buildPageAliasMap(): Promise<Record<string, string>> {
   return { ...aliasToId, ...DISCOVER_PAGES_ALIAS_OVERRIDES };
 }
 
+// #2627: ejs-view classifier table — first matching prefix-pattern wins.
+type EjsRule = { re: RegExp; build: (m: RegExpMatchArray, name: string, domainId: string) => PageEntry };
+const EJS_RULES: EjsRule[] = [
+  { re: /^collection-(.+?)(-list)?$/, build: (m, _n, d) => ({ route: `/${m[1]}`, path: '', pageType: 'collection', domainId: d }) },
+  { re: /^(.+?)-(detail|album|artist|artists|create)$/, build: (m, _n, d) => ({ route: `/${m[1]}/:slug`, path: '', pageType: 'detail', domainId: d }) },
+  { re: /^admin-(?:harvest-)?(.+?)(?:-add)?$/, build: (_m, n, d) => ({ route: `/admin/${n.replace('admin-', '')}`, path: '', pageType: 'admin', domainId: d }) },
+];
+
 function classifyEjsView(name: string, aliasToId: Record<string, string>): PageEntry | null {
-  const collectionMatch = name.match(/^collection-(.+?)(-list)?$/);
-  if (collectionMatch) {
-    const domainId = aliasToId[collectionMatch[1]];
-    if (domainId) return { route: `/${collectionMatch[1]}`, path: '', pageType: 'collection', domainId };
-  }
-  const detailMatch = name.match(/^(.+?)-(detail|album|artist|artists|create)$/);
-  if (detailMatch) {
-    const domainId = aliasToId[detailMatch[1]];
-    if (domainId) return { route: `/${detailMatch[1]}/:slug`, path: '', pageType: 'detail', domainId };
-  }
-  const adminMatch = name.match(/^admin-(?:harvest-)?(.+?)(?:-add)?$/);
-  if (adminMatch) {
-    const domainId = aliasToId[adminMatch[1]];
-    if (domainId) return { route: `/admin/${name.replace('admin-', '')}`, path: '', pageType: 'admin', domainId };
+  for (const rule of EJS_RULES) {
+    const m = name.match(rule.re);
+    const domainId = m ? aliasToId[m[1]] : undefined;
+    if (m && domainId) return rule.build(m, name, domainId);
   }
   const direct = aliasToId[name];
   if (direct) return { route: `/${name}`, path: '', pageType: 'page', domainId: direct };
@@ -1885,60 +1894,60 @@ type EndpointEntry = { method: string; path: string; handler: string; domainId: 
 
 const DISCOVER_ENDPOINTS_HANDLER_OVERRIDES: Record<string, string> = {
   bookHandler: 'books-domain', bookUploadHandler: 'books-domain',
-  seedHandler: 'seeds-domain', socialpostHandler: 'social-domain',
-  personHandler: 'people-domain', collectionHandler: 'blog-domain',
-  glimmerHandler: 'glimmers-domain', ideaProjectHandler: 'ideas-domain',
-  codebaseGraphHandler: 'chorus-domain', dashboardHandler: 'chorus-domain',
-  flowHandler: 'chorus-domain', werkHandler: 'chorus-domain',
+  seedHandler: D_SEEDS, socialpostHandler: D_SOCIAL,
+  personHandler: 'people-domain', collectionHandler: D_BLOG,
+  glimmerHandler: 'glimmers-domain', ideaProjectHandler: D_IDEAS,
+  codebaseGraphHandler: D_CHORUS, dashboardHandler: D_CHORUS,
+  flowHandler: D_CHORUS, werkHandler: D_CHORUS,
   ontologyViewHandler: 'convergence-domain', galleryHandler: 'gallery-domain',
-  gardenHandler: 'property-domain', icdHandler: 'convergence-domain',
-  docCatalogHandler: 'documents-domain', docsHandler: 'documents-domain',
-  documentHandler: 'documents-domain', accessDashboardHandler: 'chorus-domain',
-  aclHandler: 'chorus-domain', sessionReplayHandler: 'chorus-domain',
-  staticPageHandler: 'chorus-domain', linkInferenceHandler: 'knowledge-domain',
+  gardenHandler: D_PROPERTY, icdHandler: 'convergence-domain',
+  docCatalogHandler: D_DOCS, docsHandler: D_DOCS,
+  documentHandler: D_DOCS, accessDashboardHandler: D_CHORUS,
+  aclHandler: D_CHORUS, sessionReplayHandler: D_CHORUS,
+  staticPageHandler: D_CHORUS, linkInferenceHandler: 'knowledge-domain',
   knowledgeGraphHandler: 'knowledge-domain', selfDomainHandler: 'self-domain',
   selfAiHandler: 'sexuality-domain', sexualityHandler: 'sexuality-domain',
-  cookingHandler: 'cooking-domain', fitnessFunctionsHandler: 'chorus-domain',
-  intentionHandler: 'ideas-domain', notesHandler: 'notes-domain',
+  cookingHandler: 'cooking-domain', fitnessFunctionsHandler: D_CHORUS,
+  intentionHandler: D_IDEAS, notesHandler: 'notes-domain',
   noteHandler: 'notes-domain', readingHandler: 'reading-domain',
   storiesHandler: 'stories-domain', storyHandler: 'stories-domain',
-  watchingHandler: 'watching-domain', todoHandler: 'ideas-domain',
-  groupHandler: 'people-domain', qualityHandler: 'chorus-domain',
+  watchingHandler: 'watching-domain', todoHandler: D_IDEAS,
+  groupHandler: 'people-domain', qualityHandler: D_CHORUS,
   rolesHandler: 'roles-domain', skillsHandler: 'skills-service',
-  teamHandler: 'chorus-domain', briefsHandler: 'chorus-domain',
-  cardsHandler: 'cards-service', costHandler: 'chorus-domain',
-  hooksHandler: 'chorus-domain', decisionsHandler: 'chorus-domain',
-  gardeningHandler: 'property-domain', webhookHandler: 'seeds-domain',
-  userHandler: 'chorus-domain', aboutHandler: 'chorus-domain',
-  aboutProfileHandler: 'chorus-domain', homeHandler: 'chorus-domain',
-  loginHandler: 'chorus-domain', callbackHandler: 'chorus-domain',
-  profileHandler: 'chorus-domain', logoutHandler: 'chorus-domain',
+  teamHandler: D_CHORUS, briefsHandler: D_CHORUS,
+  cardsHandler: 'cards-service', costHandler: D_CHORUS,
+  hooksHandler: D_CHORUS, decisionsHandler: D_CHORUS,
+  gardeningHandler: D_PROPERTY, webhookHandler: D_SEEDS,
+  userHandler: D_CHORUS, aboutHandler: D_CHORUS,
+  aboutProfileHandler: D_CHORUS, homeHandler: D_CHORUS,
+  loginHandler: D_CHORUS, callbackHandler: D_CHORUS,
+  profileHandler: D_CHORUS, logoutHandler: D_CHORUS,
 };
 
 const DISCOVER_ENDPOINTS_ROUTE_PREFIXES: Record<string, string> = {
   '/api/books': 'books-domain', '/books': 'books-domain',
   '/api/music': 'music-domain', '/music': 'music-domain',
   '/api/photos': 'photos-domain', '/photos': 'photos-domain',
-  '/api/property': 'property-domain', '/property': 'property-domain',
-  '/api/seed': 'seeds-domain',
+  '/api/property': D_PROPERTY, '/property': D_PROPERTY,
+  '/api/seed': D_SEEDS,
   '/api/glimmers': 'glimmers-domain',
-  '/api/ideas': 'ideas-domain',
-  '/api/collections': 'blog-domain', '/blog': 'blog-domain',
+  '/api/ideas': D_IDEAS,
+  '/api/collections': D_BLOG, '/blog': D_BLOG,
   '/api/search': 'search-domain', '/search': 'search-domain',
   '/api/gallery': 'gallery-domain', '/gallery': 'gallery-domain',
-  '/api/documents': 'documents-domain', '/documents': 'documents-domain',
-  '/api/codebase': 'chorus-domain',
-  '/api/dashboard': 'chorus-domain', '/dashboard': 'chorus-domain',
-  '/api/admin': 'chorus-domain',
+  '/api/documents': D_DOCS, '/documents': D_DOCS,
+  '/api/codebase': D_CHORUS,
+  '/api/dashboard': D_CHORUS, '/dashboard': D_CHORUS,
+  '/api/admin': D_CHORUS,
   '/api/icd': 'convergence-domain',
-  '/api/chorus': 'chorus-domain',
-  '/api/athena': 'chorus-domain',
+  '/api/chorus': D_CHORUS,
+  '/api/athena': D_CHORUS,
   '/cooking': 'cooking-domain', '/notes': 'notes-domain',
   '/reading': 'reading-domain', '/stories': 'stories-domain',
-  '/watching': 'watching-domain', '/todo': 'ideas-domain',
-  '/gardening': 'property-domain', '/people': 'people-domain',
-  '/socialposts': 'social-domain', '/self': 'self-domain',
-  '/sexuality': 'sexuality-domain', '/api/sessions': 'chorus-domain',
+  '/watching': 'watching-domain', '/todo': D_IDEAS,
+  '/gardening': D_PROPERTY, '/people': 'people-domain',
+  '/socialposts': D_SOCIAL, '/self': 'self-domain',
+  '/sexuality': 'sexuality-domain', '/api/sessions': D_CHORUS,
   '/api/roles': 'roles-domain',
 };
 
@@ -2511,6 +2520,32 @@ app.post('/api/athena/reload', async (_req: Request, res: Response) => {
   }
 });
 
+// #2627: helpers extracted from /api/athena/validate route.
+const ATHENA_PREFIX_MAP: Record<string, string> = {
+  'chorus:': 'https://jeffbridwell.com/chorus#',
+  'rdfs:': 'http://www.w3.org/2000/01/rdf-schema#',
+  'owl:': 'http://www.w3.org/2002/07/owl#',
+  'rdf:': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+};
+
+function expandPredicate(pred: string): string {
+  for (const [prefix, uri] of Object.entries(ATHENA_PREFIX_MAP)) {
+    if (pred.startsWith(prefix)) return pred.replace(prefix, uri);
+  }
+  return pred;
+}
+
+async function predicateExists(pred: string): Promise<boolean> {
+  const fullUri = expandPredicate(pred);
+  const query = `ASK WHERE { GRAPH <${ATHENA_GRAPH}> { ?s <${fullUri}> ?o } }`;
+  try {
+    const result = await athenaSparqlQuery(query);
+    return Boolean(result.boolean);
+  } catch {
+    return false;
+  }
+}
+
 // POST /api/athena/validate — consumer declares predicate dependencies, API checks if they exist (#1356)
 app.post('/api/athena/validate', async (req: Request, res: Response) => {
   const start = Date.now();
@@ -2519,38 +2554,11 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
     if (!Array.isArray(predicates) || predicates.length === 0) {
       return res.status(400).json(athenaEnvelope('validate', { error: 'Body must include predicates: string[]' }, Date.now() - start, { error: true }));
     }
-
-    const prefixMap: Record<string, string> = {
-      'chorus:': 'https://jeffbridwell.com/chorus#',
-      'rdfs:': 'http://www.w3.org/2000/01/rdf-schema#',
-      'owl:': 'http://www.w3.org/2002/07/owl#',
-      'rdf:': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-    };
-
     const valid: string[] = [];
     const missing: string[] = [];
-
     for (const pred of predicates) {
-      let fullUri = pred;
-      for (const [prefix, uri] of Object.entries(prefixMap)) {
-        if (pred.startsWith(prefix)) {
-          fullUri = pred.replace(prefix, uri);
-          break;
-        }
-      }
-      const query = `ASK WHERE { GRAPH <${ATHENA_GRAPH}> { ?s <${fullUri}> ?o } }`;
-      try {
-        const result = await athenaSparqlQuery(query);
-        if (result.boolean) {
-          valid.push(pred);
-        } else {
-          missing.push(pred);
-        }
-      } catch {
-        missing.push(pred);
-      }
+      (await predicateExists(pred) ? valid : missing).push(pred);
     }
-
     res.json(athenaEnvelope('validate', { valid, missing, total: predicates.length, valid_count: valid.length, missing_count: missing.length }, Date.now() - start));
   } catch (err: unknown) {
     res.status(500).json(athenaEnvelope('validate', { error: errMsg(err) }, Date.now() - start, { error: true }));
@@ -2684,67 +2692,83 @@ app.post('/api/doc-catalog/add', docCatalogAdd);
 app.get('/api/doc-catalog/domain/:domain', docCatalogDomain);
 app.post('/api/doc-catalog/link', docCatalogLink);
 
+// #2627: helpers extracted from /api/doc-catalog/tags route.
+type TaggedDocSummary = { href: string; source: string; title: string; tags: ReturnType<typeof inferTags> };
+type DocTagCoverage = { byProduct: Record<string, number>; bySubproduct: Record<string, number>; withProduct: number; withSubdomain: number };
+
+function summarizeCoverage(tagged: TaggedDocSummary[]): DocTagCoverage {
+  const out: DocTagCoverage = { byProduct: {}, bySubproduct: {}, withProduct: 0, withSubdomain: 0 };
+  for (const t of tagged) {
+    if (t.tags.product) {
+      out.byProduct[t.tags.product] = (out.byProduct[t.tags.product] || 0) + 1;
+      out.withProduct++;
+    }
+    if (t.tags.subproduct) {
+      out.bySubproduct[t.tags.subproduct] = (out.bySubproduct[t.tags.subproduct] || 0) + 1;
+    }
+    if (t.tags.subdomain) out.withSubdomain++;
+  }
+  return out;
+}
+
+async function fetchDriftAgainstAthena(tagged: TaggedDocSummary[]): Promise<ReturnType<typeof detectDrift>> {
+  try {
+    const r = await fetch('http://localhost:3340/api/athena/subdomains?limit=100');
+    const d = await r.json() as { data?: Array<{ id?: string }> };
+    const valid = (d.data || []).map(x => x.id || '').filter(Boolean);
+    return detectDrift(tagged, valid);
+  } catch {
+    return [];
+  }
+}
+
+function readTagCoverageHistory(): Array<{ date: string; productPct: number; subdomainPct: number; drift: number }> {
+  try {
+    const historyPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-tag-coverage-history.tsv');
+    if (!fs.existsSync(historyPath)) return [];
+    const raw = fs.readFileSync(historyPath, 'utf-8');
+    return raw.split('\n')
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => {
+        const [date, _total, _pt, productPct, _st, subdomainPct, driftCount] = line.split('\t');
+        return {
+          date,
+          productPct: Number(productPct) || 0,
+          subdomainPct: Number(subdomainPct) || 0,
+          drift: Number(driftCount) || 0,
+        };
+      })
+      .slice(-30);
+  } catch {
+    return [];
+  }
+}
+
+function buildTaggedDocs(): TaggedDocSummary[] {
+  const catalog = buildDocCatalog();
+  const docs = catalog.groups.flatMap(g => g.docs);
+  return docs.map(doc => {
+    const basename = doc.href.split('/').pop() || '';
+    const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
+    return { href: doc.href, source: doc.source, title: doc.title, tags };
+  });
+}
+
 // Doc-tag coverage (#2520 AC4 + AC6) — applies inferTags + drift to live catalog
 app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
   try {
-    const catalog = buildDocCatalog();
-    const docs = catalog.groups.flatMap(g => g.docs);
-    const tagged = docs.map(doc => {
-      const basename = doc.href.split('/').pop() || '';
-      const tags = inferTags({ sourcePath: `${doc.source}/${basename}`, basename });
-      return { href: doc.href, source: doc.source, title: doc.title, tags };
-    });
-    // Coverage breakdown
-    const byProduct: Record<string, number> = {};
-    const bySubproduct: Record<string, number> = {};
-    let withProduct = 0, withSubdomain = 0;
-    for (const t of tagged) {
-      if (t.tags.product) {
-        byProduct[t.tags.product] = (byProduct[t.tags.product] || 0) + 1;
-        withProduct++;
-      }
-      if (t.tags.subproduct) {
-        bySubproduct[t.tags.subproduct] = (bySubproduct[t.tags.subproduct] || 0) + 1;
-      }
-      if (t.tags.subdomain) withSubdomain++;
-    }
-    // Drift check — fetch valid Athena subdomain set
-    let drift: ReturnType<typeof detectDrift> = [];
-    try {
-      const r = await fetch('http://localhost:3340/api/athena/subdomains?limit=100');
-      const d = await r.json() as { data?: Array<{ id?: string }> };
-      const valid = (d.data || []).map(x => x.id || '').filter(Boolean);
-      drift = detectDrift(tagged, valid);
-    } catch { /* athena unreachable — skip drift but don't fail */ }
-
-    // History (#2522 AC6) — read trend snapshot file if present
-    let history: Array<{ date: string; productPct: number; subdomainPct: number; drift: number }> = [];
-    try {
-      const historyPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-tag-coverage-history.tsv');
-      if (fs.existsSync(historyPath)) {
-        const raw = fs.readFileSync(historyPath, 'utf-8');
-        history = raw.split('\n')
-          .filter(line => line && !line.startsWith('#'))
-          .map(line => {
-            const [date, _total, _pt, productPct, _st, subdomainPct, driftCount] = line.split('\t');
-            return {
-              date,
-              productPct: Number(productPct) || 0,
-              subdomainPct: Number(subdomainPct) || 0,
-              drift: Number(driftCount) || 0,
-            };
-          })
-          .slice(-30); // last 30 days
-      }
-    } catch { /* trend optional */ }
-
+    const tagged = buildTaggedDocs();
+    const cov = summarizeCoverage(tagged);
+    const drift = await fetchDriftAgainstAthena(tagged);
+    const history = readTagCoverageHistory();
     res.json({
-      total: docs.length,
+      total: tagged.length,
       coverage: {
-        product: { tagged: withProduct, percent: Math.round(100 * withProduct / docs.length) },
-        subdomain: { tagged: withSubdomain, percent: Math.round(100 * withSubdomain / docs.length) },
+        product: { tagged: cov.withProduct, percent: Math.round(100 * cov.withProduct / tagged.length) },
+        subdomain: { tagged: cov.withSubdomain, percent: Math.round(100 * cov.withSubdomain / tagged.length) },
       },
-      byProduct, bySubproduct,
+      byProduct: cov.byProduct,
+      bySubproduct: cov.bySubproduct,
       drift,
       tagged,
       history,
@@ -2874,46 +2898,51 @@ app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
 // of catalog.* events is unreliable today; file is source-of-truth).
 const CHORUS_LOG_FILE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/logs/chorus.log');
 
+// #2627: extracted from inline arrow function (was cog=21 inside route).
+type CatalogAuditEvent = { timestamp: string; event: string; role: string; fields: Record<string, string> };
+const META_KEYS = new Set(['timestamp', 'event', 'role', 'level', 'appName', 'component']);
+
+function asStrField(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+function isPrimitive(v: unknown): boolean {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+}
+
+function parseCatalogLine(line: string, wantedHref: string): CatalogAuditEvent | null {
+  if (!line || !line.includes('"catalog.')) return null;
+  try {
+    const obj = JSON.parse(line) as Record<string, unknown>;
+    const ev = asStrField(obj.event);
+    if (!ev.startsWith('catalog.')) return null;
+    if (obj.href !== wantedHref) return null;
+    const fields: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (!META_KEYS.has(k) && isPrimitive(v)) fields[k] = String(v);
+    }
+    return { timestamp: asStrField(obj.timestamp), event: ev, role: asStrField(obj.role), fields };
+  } catch {
+    return null;
+  }
+}
+
+async function readCatalogAuditEvents(href: string, n: number): Promise<CatalogAuditEvent[]> {
+  const events: CatalogAuditEvent[] = [];
+  if (!fs.existsSync(CHORUS_LOG_FILE)) return events;
+  const data = await fs.promises.readFile(CHORUS_LOG_FILE, 'utf8');
+  const lines = data.split('\n');
+  for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
+    const ev = parseCatalogLine(lines[i], href);
+    if (ev) events.push(ev);
+  }
+  return events;
+}
+
 app.get('/api/chorus/catalog/audit/:hrefb64', async (req: Request, res: Response) => {
   const limitParam = typeof req.query.limit === 'string' ? req.query.limit : '20';
   const limit = Math.min(Number.parseInt(limitParam, 10) || 20, 200);
-  const readEvents = async (href: string, n: number) => {
-    const events: Array<{ timestamp: string; event: string; role: string; fields: Record<string, string> }> = [];
-    if (!fs.existsSync(CHORUS_LOG_FILE)) return events;
-    const data = await fs.promises.readFile(CHORUS_LOG_FILE, 'utf8');
-    const lines = data.split('\n');
-    function asStr(v: unknown): string {
-      return typeof v === 'string' ? v : '';
-    }
-    for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
-      const line = lines[i];
-      if (!line || line.length === 0) continue;
-      if (!line.includes('"catalog.')) continue;
-      try {
-        const obj = JSON.parse(line) as Record<string, unknown>;
-        const ev = asStr(obj.event);
-        if (!ev.startsWith('catalog.')) continue;
-        if (obj.href !== href) continue;
-        const fields: Record<string, string> = {};
-        for (const [k, v] of Object.entries(obj)) {
-          if (['timestamp', 'event', 'role', 'level', 'appName', 'component'].includes(k)) continue;
-          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-            fields[k] = String(v);
-          }
-        }
-        events.push({
-          timestamp: asStr(obj.timestamp),
-          event: ev,
-          role: asStr(obj.role),
-          fields,
-        });
-      } catch {
-        // skip malformed line
-      }
-    }
-    return events;
-  };
-  const r = await readCatalogAudit({ readEvents, envelope: athenaEnvelope }, req.params.hrefb64, limit);
+  const r = await readCatalogAudit({ readEvents: readCatalogAuditEvents, envelope: athenaEnvelope }, req.params.hrefb64, limit);
   res.status(r.status).json(r.body);
 });
 
