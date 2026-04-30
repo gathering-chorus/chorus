@@ -489,7 +489,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-        };
+            chorus_worktree_override: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
@@ -508,7 +508,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-        };
+            chorus_worktree_override: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
@@ -537,7 +537,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-        };
+            chorus_worktree_override: None,};
 
         let r = check(&input, &state).await;
         // Should allow on retry (block cleared)

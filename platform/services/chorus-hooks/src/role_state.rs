@@ -25,7 +25,7 @@ fn chorus_log_path() -> String {
 
 pub fn run(args: &[String]) -> ExitCode {
     if args.is_empty() {
-        eprintln!("Usage: chorus-hook-shim role-state <role> <state> | query <role|all>");
+        eprintln!("Usage: chorus-hook-shim role-state <role> <state> | query <role|all> | cleanup");
         return ExitCode::from(1);
     }
 
@@ -34,6 +34,19 @@ pub fn run(args: &[String]) -> ExitCode {
         let target = args.get(1).map(|s| s.as_str()).unwrap_or("all");
         return query(target);
     }
+
+    // #2467: cleanup subcommand — sweep all role-state files, demote stale
+    // entries (state in {building,blocked,waiting,observing} but pid dead)
+    // to `idle` with card cleared. The phantom-state class: writers don't
+    // clean up when sessions die, so the Clearing + readers see stale
+    // building-cards forever. This makes the substrate self-healing.
+    if args[0] == "cleanup" {
+        return cleanup_stale();
+    }
+
+    // Auto-cleanup before every write — every transition by any role
+    // triggers a sweep, so the lie can't compound across writers.
+    let _ = cleanup_stale_silent();
 
     if args.len() < 2 {
         eprintln!("Usage: chorus-hook-shim role-state <role> <state> [card=N] [detail=\"text\"] [gemba=<role>]");
@@ -236,6 +249,80 @@ fn query(target: &str) -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// #2467: stale-state cleanup. Sweeps all 3 role-state files and demotes any
+/// in active states (building/blocked/waiting/observing) to idle when the
+/// role's session is dead (no claude process matching its cwd). Card field
+/// cleared on demotion. The phantom-card class that today's worktree-hook
+/// (#2625) tripped on — writers persisted state from sessions that ended.
+///
+/// Public via `chorus-hook-shim role-state cleanup` and called silently
+/// from every write so the lie can't compound across writers.
+fn cleanup_stale() -> ExitCode {
+    let demoted = sweep_and_demote(true);
+    println!("role-state cleanup: demoted {} stale entries", demoted);
+    ExitCode::SUCCESS
+}
+
+fn cleanup_stale_silent() -> usize {
+    sweep_and_demote(false)
+}
+
+fn sweep_and_demote(verbose: bool) -> usize {
+    let active_states = ["building", "blocked", "waiting", "observing"];
+    let mut demoted = 0;
+
+    for role in ROLES {
+        let state_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
+        let Ok(content) = fs::read_to_string(&state_file) else { continue; };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) else { continue; };
+        let Some(state) = parsed["state"].as_str() else { continue; };
+        if !active_states.contains(&state) {
+            continue;
+        }
+        // Only demote if session is genuinely dead. Don't touch state on slow
+        // tick — pid-alive is the only unambiguous "session is over" signal.
+        if process::find_role_pid(role).is_some() {
+            continue;
+        }
+
+        // Demote to idle. Stamp source="cleanup" so debugging is possible —
+        // the next person can see this entry was auto-fixed by sweep, not
+        // declared by a writer. No card field — cards belong to the board,
+        // not role-state (Jeff's directive 2026-04-30).
+        let prev_state = state.to_string();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let wall = process::wall_clock();
+        let json = format!(
+            r#"{{"role":"{}","state":"idle","ts":{},"last_emit":"{}","session_alive":false,"wall_clock":"{}","source":"cleanup","prev_state":"{}"}}"#,
+            role, ts, wall, wall, prev_state
+        );
+        let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
+        if fs::File::create(&tmp).and_then(|mut f| writeln!(f, "{}", json)).is_ok()
+            && fs::rename(&tmp, &state_file).is_ok()
+        {
+            demoted += 1;
+            if let Ok(mut log_file) = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(chorus_log_path())
+            {
+                let _ = writeln!(
+                    log_file,
+                    "role.state.cleanup | role={} prev_state={} reason=session-dead",
+                    role, prev_state
+                );
+            }
+            if verbose {
+                eprintln!("  {} demoted: {} -> idle (session dead)", role, prev_state);
+            }
+        }
+    }
+    demoted
 }
 
 /// Get last spine event timestamp for a role from chorus.log (JSON format, tail search)

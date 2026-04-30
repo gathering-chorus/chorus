@@ -65,7 +65,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".into()),
-        }
+            chorus_worktree_override: None,}
     }
 
     #[tokio::test]

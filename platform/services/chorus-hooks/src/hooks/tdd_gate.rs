@@ -289,7 +289,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".to_string()),
-        }
+            chorus_worktree_override: None,}
     }
 
     fn state() -> AppState { AppState::new() }
@@ -404,7 +404,7 @@ mod tests {
             })),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-        }
+            chorus_worktree_override: None,}
     }
     fn write(file: &str, content: &str) -> HookInput {
         HookInput {
@@ -412,7 +412,7 @@ mod tests {
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-        }
+            chorus_worktree_override: None,}
     }
 
     #[test]

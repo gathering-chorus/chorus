@@ -38,3 +38,4 @@ pub mod ops_awareness;
 pub mod interaction_pattern;
 pub mod chrome_tab_gate;
 pub mod nudge_poll;
+pub mod worktree_contamination_guard;
