@@ -23,6 +23,11 @@ use chorus_hooks::shared::state_paths::chorus_root;
 use std::fs;
 use tempfile::TempDir;
 
+// #2614 audit: this file is HERMETIC via TempDir injection (see comment at
+// TEST_ROLE — the gate's check_with_dir() takes an explicit dir, so the live
+// daemon's /tmp/claude-session-init is never touched). Heuristic flagged it
+// because /tmp paths appear in comments. NO RUN_INTEGRATION gate needed.
+
 /// Build a HookInput for the given role/tool/input. Cwd is set to the
 /// role's directory so HookInput::role() resolves via deploy_role.
 fn make_input(role: &str, tool: &str, tool_input: serde_json::Value) -> HookInput {

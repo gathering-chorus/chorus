@@ -16,6 +16,15 @@ use std::path::PathBuf;
 use std::process::Command;
 use serde_json::json;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 const INIT_DIR: &str = "/tmp/claude-session-init";
 
@@ -55,6 +64,7 @@ impl Drop for MarkerGuard {
 
 #[test]
 fn git_commit_allowed_outside_team_repo() {
+    if skip_unless_integration("exercises real git/nudge with role names") { return; }
     let _guard = MarkerGuard::ensure_done("kade");
     // git commit from /tmp should NOT be blocked — it's outside the team repo
     let hook_input = json!({
@@ -90,6 +100,7 @@ fn git_commit_allowed_outside_team_repo() {
 
 #[test]
 fn git_commit_blocked_inside_team_repo() {
+    if skip_unless_integration("exercises real git/nudge with role names") { return; }
     let _guard = MarkerGuard::ensure_done("kade");
     // git commit inside the team repo SHOULD be blocked. The server's
     // infra_guardrails compares cwd to chorus_root() (env-aware via

@@ -22,6 +22,18 @@ fn full_path() -> String {
     )
 }
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+/// Tests in this file read live Vikunja state via `cards list --status WIP`
+/// and run preflight.sh against the resulting card — fully axis-4 dependent
+/// on which cards are currently in WIP and what their content/comments are.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 /// Pick the first currently-WIP card id dynamically (#2130 fix).
 /// Hardcoded card ids go stale the moment their card accepts — the old
 /// test blocked on "#1995 is in Done". Calling the cards CLI here is
@@ -48,6 +60,7 @@ fn first_wip_card_id() -> Option<String> {
 
 #[test]
 fn preflight_fails_without_path() {
+    if skip_unless_integration("reads live Vikunja WIP state, runs preflight.sh against real card") { return; }
     let wip = match first_wip_card_id() {
         Some(id) => id,
         None => {
@@ -73,6 +86,7 @@ fn preflight_fails_without_path() {
 
 #[test]
 fn preflight_passes_with_path() {
+    if skip_unless_integration("reads live Vikunja WIP state, runs preflight.sh against real card") { return; }
     let wip = match first_wip_card_id() {
         Some(id) => id,
         None => {

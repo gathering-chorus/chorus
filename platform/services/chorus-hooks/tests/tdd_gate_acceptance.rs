@@ -9,6 +9,15 @@ use std::io::Write;
 use std::process::Command;
 use chorus_hooks::shared::state_paths::chorus_root;
 
+/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+fn skip_unless_integration(reason: &str) -> bool {
+    if std::env::var("RUN_INTEGRATION").is_err() {
+        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
+        return true;
+    }
+    false
+}
+
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
 /// Helper: simulate a PreToolUse hook check via the shim
@@ -69,6 +78,7 @@ const TEST_ROLE: &str = "wren";
 
 #[test]
 fn idle_role_demo_allowed_without_tests() {
+    if skip_unless_integration("mutates real test-quality-gate inputs") { return; }
     // Set role to idle (not building)
     set_role_state(TEST_ROLE, "idle", None, None);
 
@@ -93,6 +103,7 @@ fn idle_role_demo_allowed_without_tests() {
 
 #[test]
 fn idle_role_code_edit_allowed_without_tests() {
+    if skip_unless_integration("mutates real test-quality-gate inputs") { return; }
     set_role_state(TEST_ROLE, "idle", None, None);
 
     let result = hook_check_with_role(
@@ -115,6 +126,7 @@ fn idle_role_code_edit_allowed_without_tests() {
 
 #[test]
 fn building_role_code_edit_still_blocked_without_tests() {
+    if skip_unless_integration("mutates real test-quality-gate inputs") { return; }
     // Temporarily clear ALL role states to avoid is_fix_card() cross-contamination
     for role in &["kade", "silas", "wren"] {
         set_role_state(role, "idle", None, None);
