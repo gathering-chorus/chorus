@@ -47,6 +47,51 @@ interface ReleaseEntry extends AcpEntry {
   gates: 'passed' | 'unknown';
 }
 
+// #2627: extracted parsing + indexing + matching into helpers; orchestrator
+// becomes a linear pipeline.
+
+function parseAcpLog(gitLog: string): AcpEntry[] {
+  const out: AcpEntry[] = [];
+  for (const line of gitLog.split('\n')) {
+    const m = line.match(ACP_PATTERN);
+    if (m) {
+      out.push({
+        commit: m[1].slice(0, 8),
+        timestamp: m[2],
+        role: m[3],
+        cardId: m[4],
+        title: m[5].trim(),
+      });
+    }
+  }
+  return out;
+}
+
+function indexCardsByDomain(cards: Array<{ id: string; tags: string }>): Map<string, string[]> {
+  const idx = new Map<string, string[]>();
+  for (const c of cards) {
+    const domains: string[] = [];
+    for (const dm of c.tags.matchAll(/domain:(\w[\w-]*)/g)) domains.push(dm[1]);
+    for (const sm of c.tags.matchAll(/sequence:(\w[\w-]*)/g)) domains.push(sm[1]);
+    if (domains.length > 0) idx.set(c.id, domains);
+  }
+  return idx;
+}
+
+function matchAcpToDomain(
+  acp: AcpEntry,
+  cardDomains: string[] | undefined,
+  searchTerms: string[],
+): ReleaseEntry | null {
+  if (cardDomains?.some((d) => searchTerms.includes(d))) {
+    return { ...acp, gates: 'passed' };
+  }
+  if (!cardDomains && searchTerms.some((t) => acp.title.toLowerCase().includes(t))) {
+    return { ...acp, gates: 'unknown' };
+  }
+  return null;
+}
+
 export function fetchChorusDomainReleases(
   deps: ChorusDomainReleasesDeps,
   name: string,
@@ -61,38 +106,13 @@ export function fetchChorusDomainReleases(
   const searchTerms = [identity.primary, ...identity.aliases];
 
   try {
-    const allAcps: AcpEntry[] = [];
-    for (const line of deps.gitLog().split('\n')) {
-      const m = line.match(ACP_PATTERN);
-      if (m) {
-        allAcps.push({
-          commit: m[1].slice(0, 8),
-          timestamp: m[2],
-          role: m[3],
-          cardId: m[4],
-          title: m[5].trim(),
-        });
-      }
-    }
-
-    const cardsDomainIndex = new Map<string, string[]>();
-    for (const c of deps.getCards()) {
-      const domains: string[] = [];
-      for (const dm of c.tags.matchAll(/domain:(\w[\w-]*)/g)) domains.push(dm[1]);
-      for (const sm of c.tags.matchAll(/sequence:(\w[\w-]*)/g)) domains.push(sm[1]);
-      if (domains.length > 0) cardsDomainIndex.set(c.id, domains);
-    }
-
+    const allAcps = parseAcpLog(deps.gitLog());
+    const cardsDomainIndex = indexCardsByDomain(deps.getCards());
     const releases: ReleaseEntry[] = [];
     for (const acp of allAcps) {
-      const cardDomains = cardsDomainIndex.get(acp.cardId);
-      if (cardDomains && cardDomains.some((d) => searchTerms.includes(d))) {
-        releases.push({ ...acp, gates: 'passed' });
-      } else if (!cardDomains && searchTerms.some((t) => acp.title.toLowerCase().includes(t))) {
-        releases.push({ ...acp, gates: 'unknown' });
-      }
+      const r = matchAcpToDomain(acp, cardsDomainIndex.get(acp.cardId), searchTerms);
+      if (r) releases.push(r);
     }
-
     return {
       status: 200,
       body: deps.envelope(
