@@ -2521,6 +2521,16 @@ app.post('/api/athena/reload', async (_req: Request, res: Response) => {
 });
 
 // #2627: helpers extracted from /api/athena/validate route.
+//
+// Source of truth: these CURIE→URI prefixes are the conventional Athena
+// namespace bindings — `chorus:` maps to the chorus class/property URI base,
+// `rdfs:`/`owl:`/`rdf:` are W3C standards. The first entry tracks our own
+// ontology base; the rest are W3C-stable. Update if either: (a) the chorus
+// URI base changes (rare — coordinated with #1772 namespace work), or (b)
+// Athena consumers introduce a new convention prefix (e.g. `chorus-svc:`).
+// Drift risk: low — these are stable conventions, but the map is a static
+// shadow of Athena's binding, so a future namespace expansion in Athena
+// won't auto-flow here. Per Silas arch-review on #2627.
 const ATHENA_PREFIX_MAP: Record<string, string> = {
   'chorus:': 'https://jeffbridwell.com/chorus#',
   'rdfs:': 'http://www.w3.org/2000/01/rdf-schema#',
