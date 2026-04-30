@@ -78,19 +78,78 @@ fn is_shared_canonical(cwd: &str, canonical: &str) -> bool {
 }
 
 /// Split a Bash command into segments by shell separators (`;`, `&&`, `||`,
-/// `|`, newline). Quotes are NOT honored — segments inside quotes will be
-/// over-split, but that's safe for our purposes (we only act on segments
-/// that start with `git X` after the split, and dangerous-text-in-quotes
-/// won't pass the leading-`git ` anchor).
+/// `|`, newline) — QUOTE-AWARE. Separators inside `"..."` or `'...'` are
+/// treated as part of the quoted body, not as splits. This is the fix for
+/// the #2626 follow-on bug class: dangerous-git keyword inside a quoted
+/// string body (commit message, nudge body, echo body) where the body
+/// also contained a separator.
+///
+/// The state machine tracks four states:
+///   - in_double: inside `"..."` (backslash escapes a `"`)
+///   - in_single: inside `'...'` (no escapes — bash strict)
+///   - bare:      outside any quoting (separators apply)
+///
+/// Operators (&&, ||, ;, |, \n) and the substring `&&` / `||` are only
+/// recognized as separators when bare. Single-character `&` is NOT a
+/// separator — it backgrounds, but doesn't terminate logical chain
+/// boundaries we care about for "is the next token git?".
 fn split_segments(command: &str) -> Vec<String> {
-    // Replace separators with `\n`, then split. Order matters — `&&` before `&`.
-    let normalized = command
-        .replace("&&", "\n")
-        .replace("||", "\n")
-        .replace(';', "\n")
-        .replace('|', "\n")
-        .replace('\r', "\n");
-    normalized.split('\n').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    let mut segments: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_double = false;
+    let mut in_single = false;
+    let mut escape = false;
+    let bytes = command.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if escape {
+            current.push(c);
+            escape = false;
+            i += 1;
+            continue;
+        }
+        if c == '\\' && in_double {
+            // backslash escapes inside double quotes
+            current.push(c);
+            escape = true;
+            i += 1;
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            current.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            current.push(c);
+            i += 1;
+            continue;
+        }
+        if !in_double && !in_single {
+            // Two-byte separators first
+            if i + 1 < bytes.len() {
+                let pair = &command[i..i+2];
+                if pair == "&&" || pair == "||" {
+                    segments.push(std::mem::take(&mut current));
+                    i += 2;
+                    continue;
+                }
+            }
+            // Single-byte separators
+            if c == ';' || c == '|' || c == '\n' || c == '\r' {
+                segments.push(std::mem::take(&mut current));
+                i += 1;
+                continue;
+            }
+        }
+        current.push(c);
+        i += 1;
+    }
+    segments.push(current);
+    segments.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
 /// Walk command segments to find a dangerous git invocation. Track effective
@@ -401,5 +460,93 @@ mod tests {
         let cmd = r#"gh pr merge 71 --squash --delete-branch -m "merge git checkout fix""#;
         let input = make_input("Bash", cmd, CANONICAL, "silas");
         assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0);
+    }
+
+    // --- #2626 follow-on: quoted-body-with-separators bug class ---
+    //
+    // History (git log): #2625 added the hook (665e7e0b), #2626 added the
+    // first round of substring/cwd/override fixes (5dc900d0). Both commits
+    // were mine. Both shipped with unit tests too narrow to catch this
+    // class. The fix in 5dc900d0 splits commands on shell separators
+    // (`&&`, `;`, `|`) to handle chained invocations — but the split is
+    // QUOTE-BLIND. When a dangerous-git keyword appears inside a quoted
+    // string body that ALSO contains a separator, the split treats the
+    // quoted fragment as a real sub-command. False positive.
+    //
+    // Discovered live by silas during #2626 acp; reproduced by wren in
+    // her 11-probe re-gate (2026-04-30 14:35) — quoted echo body with `;`
+    // between dangerous-keywords over-fires.
+    //
+    // These tests assert the desired behavior. They are EXPECTED TO FAIL
+    // against the currently-shipped code; the failure documents the gap
+    // until a bash-aware parser (or different architecture) lands. Do
+    // NOT silence with #[ignore] — a red test is the proof Jeff asked for.
+    #[test]
+    fn allow_nudge_body_with_semicolon_and_dangerous_keyword() {
+        let cmd = r#"nudge wren "first; git checkout main; done" --from silas"#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: ; inside quoted body produces phantom git-checkout segment");
+    }
+
+    #[test]
+    fn allow_nudge_body_with_double_amp_and_dangerous_keyword() {
+        let cmd = r#"nudge wren "build && git pull && deploy" --from silas"#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: && inside quoted body produces phantom git-pull segment");
+    }
+
+    #[test]
+    fn allow_nudge_body_with_pipe_and_dangerous_keyword() {
+        let cmd = r#"nudge wren "see git reset | review later" --from silas"#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: | inside quoted body produces phantom git-reset segment");
+    }
+
+    #[test]
+    fn allow_chat_say_with_dangerous_chain_in_body() {
+        let cmd = r#"chat.sh say chat-123 silas "first git checkout && then git pull""#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: dangerous-git chain inside chat.sh body");
+    }
+
+    #[test]
+    fn allow_echo_dangerous_chain_wren_repro() {
+        // wren's exact reproduction (gate:product re-probe #2625):
+        //   echo "first; git checkout main; done"
+        let cmd = r#"echo "first; git checkout main; done""#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: echo of literal dangerous-git chain (wren reproduction)");
+    }
+
+    #[test]
+    fn allow_commit_message_with_dangerous_chain() {
+        let cmd = r#"DEPLOY_ROLE=silas bash platform/scripts/git-queue.sh commit foo.rs -- -m "fix: avoid git checkout && git reset race""#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: commit message body containing dangerous-git chain");
+    }
+
+    #[test]
+    fn allow_cards_update_desc_with_dangerous_chain() {
+        let cmd = r#"cards update 2626 --desc "before: git checkout main; after: git reset hard""#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "FAIL CLASS: card description with dangerous chain");
+    }
+
+    #[test]
+    fn integration_real_nudge_invocation_shape() {
+        // The exact shape of the nudge that failed silas at 14:34 today —
+        // body contains both literal `cd /chorus-silas && git checkout`
+        // AND dangerous-git keyword text. Quoted, but split blindly.
+        let cmd = r#"bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge wren "[#2626] worktree-guard RCA shipped — 3/3 probes pass: block bare git checkout from /chorus, allow cd /chorus-silas && git checkout, allow git-queue wrapper" --from silas"#;
+        let input = make_input("Bash", cmd, CANONICAL, "silas");
+        assert_eq!(check_with(&input, CANONICAL, false).exit_code, 0,
+            "INTEGRATION FAIL: real-shape nudge body with cd /chorus-X && git checkout literal");
     }
 }
