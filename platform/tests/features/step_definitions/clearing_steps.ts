@@ -9,7 +9,6 @@ let authToken = '';
 let lastResponse = { status: 0, body: '' };
 let probeMarker = '';
 let nameAccepted = false;
-let lastNudgeOutput = '';
 
 // Endpoints
 const LOCAL = 'http://localhost:3470';
@@ -173,48 +172,28 @@ Then('the message {string} appears in the message feed', function (_label: strin
   assert.ok(found, `Message "${probeMarker}" not found in feed after 5s`);
 });
 
-// --- Nudge delivery (--force = osascript inject) ---
-
-const NUDGE = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge';
-
-When('Jeff nudges {word} with {string} via --force', function (role: string, label: string) {
-  const msg = `[e2e-test] ${label}-${Date.now()}`;
-  try {
-    lastNudgeOutput = execSync(
-      `${NUDGE} ${role} "${msg}" --force --from jeff 2>&1`,
-      { encoding: 'utf-8', timeout: 10000 }
-    ).trim();
-  } catch (e: any) {
-    lastNudgeOutput = e.stdout || e.stderr || e.message || 'nudge failed';
-  }
-});
-
-Then('the nudge is delivered', function () {
-  assert.ok(
-    lastNudgeOutput.includes('DELIVERED'),
-    `Nudge not delivered. Output: ${lastNudgeOutput}`
-  );
-});
-
-// --- Real role response verification ---
-
-Then('{word} responds via the Clearing within {int} seconds', function (role: string, timeout: number) {
-  const nudgeMarker = lastNudgeOutput.match(/e2e-[a-z]+-\d+/)?.[0] || '';
-  let found = false;
-  for (let i = 0; i < timeout; i++) {
-    const r = curl(`${LOCAL}/api/messages`);
-    if (nudgeMarker && r.body.includes(nudgeMarker) && r.body.includes('[e2e-ack]')) {
-      found = true;
-      break;
-    }
-    if (!nudgeMarker && r.body.includes('[e2e-ack]') && r.body.includes(role)) {
-      found = true;
-      break;
-    }
-    execSync('sleep 1');
-  }
-  assert.ok(found, `No [e2e-ack] from ${role} for marker "${nudgeMarker}" in Clearing feed after ${timeout}s. The role's session may not have the e2e-responder hook loaded.`);
-});
+// --- Nudge delivery + role-response steps RETIRED (#2617, 2026-04-30) ---
+//
+// Retired:
+//   - When 'Jeff nudges {word} with {string} via --force'
+//   - Then 'the nudge is delivered'
+//   - Then '{word} responds via the Clearing within {int} seconds'
+//
+// Why: these steps invoked real nudges into a live role's session as a side
+// effect of running the test, leaking [e2e-test] noise into Jeff's view all
+// morning today (~30+ probes traced to manual cucumber runs).
+//
+// DEC-107's two-path invariant (osascript inject + spine-tick-poller, both
+// always fire) makes nudge delivery non-hermetic by design: any code that
+// emits a nudge will surface in the target role's view. There is no
+// hermetic way to assert "nudge delivered" from cucumber without injecting.
+//
+// Right shape: this feature scopes to clearing-API behavior (page loads,
+// auth, name accept, message send, message in feed) — that's the real test
+// value. Nudge delivery has its own tests in
+// platform/services/chorus-hooks/tests/nudge_suite.rs (gated behind
+// RUN_INTEGRATION per #2614). Role-response e2e probes are a manual
+// integration smoke, not a cucumber scenario.
 
 // --- Cleanup ---
 
