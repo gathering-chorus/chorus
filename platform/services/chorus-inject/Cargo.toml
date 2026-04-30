@@ -14,6 +14,8 @@ unused_mut = "warn"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 correctness = { level = "warn", priority = -1 }
+# #2602: structural-erosion sensor — see chorus-hooks/Cargo.toml for rationale.
+cognitive_complexity = "warn"
 
 # Binary target delegates to lib for all pure logic (#2167). Lets unit tests
 # register against source-level coverage instead of 4% bin-only.
