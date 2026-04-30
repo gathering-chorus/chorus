@@ -22,12 +22,17 @@ STATE_DIR="/tmp/claude-team-scan"
 STATE_FILE="$STATE_DIR/kade-declared.json"
 mkdir -p "$STATE_DIR"
 PREV_STATE=$(cat "$STATE_FILE" 2>/dev/null || echo "")
-bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building card=2160 type=new 2>/dev/null
+# #2629: card=/type= no longer accepted; card_type now comes from board
+# query (types.rs::card_type_for_role). This fixture's TDD-gate scenario
+# setup is now non-hermetic — it depends on kade's actual board card type
+# at run-time. If the hook's gate logic no longer fires here, the right
+# fix is to mock board state, not to re-introduce card=/type= args.
+bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null
 R=$(echo '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus/platform/api/src/server.ts","content":"// code"},"session_id":"test-skip-gates-tdd","cwd":"/Users/jeffbridwell/CascadeProjects/chorus"}' \
   | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade "$SHIM" pre-tool-use 2>&1)
 # Restore prior state
 if [ -n "$PREV_STATE" ]; then echo "$PREV_STATE" > "$STATE_FILE"
-else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building card=2160 type=fix 2>/dev/null; fi
+else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null; fi
 echo "$R" | grep -qi "TDD\|test" \
   && p "tdd_gate: denies Write to production code before test written" \
   || f "tdd_gate: expected TDD deny for production Write, got: $(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('stdout',''); print(s[:80] if s else 'exit_code='+str(d.get('exit_code',0)))" 2>/dev/null)"

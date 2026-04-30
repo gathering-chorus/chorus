@@ -1,11 +1,16 @@
 //! role-state — L2 Team Awareness layer.
 //!
 //! Subcommands:
-//!   chorus-hook-shim role-state <role> <state> [card=N] [detail="text"] [gemba=<role>]
+//!   chorus-hook-shim role-state <role> <state> [detail="text"] [gemba=<role>]
 //!   chorus-hook-shim role-state query <role|all>
+//!   chorus-hook-shim role-state cleanup
 //!
 //! State file: /tmp/claude-team-scan/{role}-declared.json
-//! Contains: role, state, ts, card, detail, gemba, last_emit, session_alive, pid
+//! Contains: role, state, ts, detail, gemba, last_emit, session_alive, pid
+//!
+//! #2467 / #2629: card and card_type are NOT fields of role-state.
+//! Card lives on the board; role-state owns session/attention only.
+//! Calls passing `card=N` or `type=X` are REFUSED (exit 2).
 
 use std::fs;
 use std::io::Write;
@@ -61,10 +66,15 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // #2467: card and card_type fields are no longer accepted. Card belongs to
-    // the board; role-state owns session/attention only. `card=N` and `type=X`
-    // args from old callers are silently ignored (transition window — once all
-    // skill files are updated, can hard-error).
+    // #2467 / #2629: card and card_type fields are NOT accepted. Card belongs
+    // to the board; role-state owns session/attention only.
+    //   - Wave 1 (#2467, PR #72): JSON output dropped card/card_type fields.
+    //   - Wave 2 (#2467, PR #77): instruction text in skills + CLAUDE.md
+    //     fragments cleaned. Transition window opened.
+    //   - Wave 3 (#2629, this change): transition closed. Args are REFUSED
+    //     at the affordance layer — non-zero exit, no state file written.
+    //     Silent-drop is the same shape as the bug we're trying to prevent;
+    //     a refusal makes the contract honest at every surface.
     let mut detail = String::new();
     let mut gemba = String::new();
 
@@ -73,7 +83,16 @@ pub fn run(args: &[String]) -> ExitCode {
             match key {
                 "detail" => detail = val.replace('"', "\\\""),
                 "gemba" => gemba = val.to_string(),
-                "card" | "type" => {} // #2467: silently ignored — see comment above
+                "card" | "type" => {
+                    eprintln!(
+                        "role-state: REFUSED — `{}=` is no longer accepted (#2467/#2629).\n\
+                         Card lives on the board, not in role-state. Drop the `{}=` arg.\n\
+                         Caller (skill / script / fixture) needs updating to pass only:\n\
+                           role-state <role> <state> [detail=\"text\"] [gemba=<role>]",
+                        key, key
+                    );
+                    return ExitCode::from(2);
+                }
                 _ => {}
             }
         }
@@ -305,12 +324,11 @@ mod tests {
 
     #[test]
     fn declare_creates_state_file() {
-        // #2467: card= argument is silently ignored (transition window).
-        // State file should NOT contain card field.
+        // #2629: card= no longer accepted; pass only state (+ optional
+        // detail/gemba). State file MUST NOT contain card field.
         let result = run(&[
             "kade".into(),
             "building".into(),
-            "card=1718".into(),
         ]);
         assert_eq!(result, ExitCode::SUCCESS);
 
@@ -318,15 +336,15 @@ mod tests {
         let content = fs::read_to_string(&state_file).expect("state file should exist");
         assert!(content.contains("\"state\":\"building\""));
         assert!(content.contains("\"role\":\"kade\""));
-        // #2467: card field is no longer written, even if card= is passed
-        assert!(!content.contains("\"card\":"), "card field must NOT appear (#2467): {}", content);
-        assert!(!content.contains("\"card_type\":"), "card_type field must NOT appear (#2467): {}", content);
+        // #2467/#2629: card field never appears
+        assert!(!content.contains("\"card\":"), "card field must NOT appear: {}", content);
+        assert!(!content.contains("\"card_type\":"), "card_type field must NOT appear: {}", content);
     }
 
     #[test]
     fn query_returns_declared_state() {
-        // First declare
-        run(&["kade".into(), "building".into(), "card=1718".into()]);
+        // First declare (no card= per #2629 affordance)
+        run(&["kade".into(), "building".into()]);
 
         // Then query — should succeed
         let result = query("kade");
@@ -337,6 +355,71 @@ mod tests {
     fn query_all_returns_all_roles() {
         let result = query("all");
         assert_eq!(result, ExitCode::SUCCESS);
+    }
+
+    // --- #2629 wave 3: affordance-layer refusal of card= / type= ---
+    //
+    // History (git log): wave 1 (ce22b9c7, PR #72) made the JSON writer
+    // drop card/card_type fields silently. Wave 2 (75f108b1, PR #77)
+    // cleaned the instruction text in skills + CLAUDE.md fragments.
+    // Prior to #2467, the writer ACCEPTED and PERSISTED card= via the
+    // carry-forward block (#2058 → 6146baf7). Wave 3 closes the
+    // remaining affordance gap: parser must REFUSE card=/type= args, not
+    // silently drop them. Otherwise a script reaching for the old
+    // syntax still works (no error) and the lie can return.
+
+    #[test]
+    fn rejects_card_arg() {
+        // RED against current code (parser arm `"card" | "type" => {}`
+        // silently drops). After wave 3: exit non-zero with a clear
+        // error pointing to #2467.
+        let result = run(&[
+            "kade".into(),
+            "building".into(),
+            "card=1718".into(),
+        ]);
+        assert_eq!(result, ExitCode::from(2),
+            "card= must be REFUSED at the affordance layer (#2629), not silently dropped");
+    }
+
+    #[test]
+    fn rejects_type_arg() {
+        let result = run(&[
+            "kade".into(),
+            "building".into(),
+            "type=fix".into(),
+        ]);
+        assert_eq!(result, ExitCode::from(2),
+            "type= must be REFUSED at the affordance layer (#2629), not silently dropped");
+    }
+
+    #[test]
+    fn rejects_both_card_and_type() {
+        let result = run(&[
+            "kade".into(),
+            "building".into(),
+            "card=1718".into(),
+            "type=fix".into(),
+        ]);
+        assert_eq!(result, ExitCode::from(2),
+            "card=+type= must be REFUSED (#2629)");
+    }
+
+    #[test]
+    fn refusal_does_not_write_state_file() {
+        // When args are refused, no state file should be created/updated —
+        // the call is rejected as a whole, not partially honored.
+        let state_file = format!("{}/wren-declared.json", SCAN_DIR);
+        let _ = fs::remove_file(&state_file);
+        let result = run(&[
+            "wren".into(),
+            "building".into(),
+            "card=99".into(),
+        ]);
+        assert_eq!(result, ExitCode::from(2));
+        assert!(!std::path::Path::new(&state_file).exists() ||
+                !fs::read_to_string(&state_file).unwrap_or_default().contains("\"state\":\"building\""),
+                "refused call must not have updated wren state to building (#2629)");
     }
 
     // --- AC2: state validation ---
