@@ -50,7 +50,8 @@ fn declared_file_always_source_declared() {
 
     for state in ["building", "blocked", "waiting", "idle", "observing"] {
         let _ = fs::remove_file(&path);
-        role_state(&[role, state, "card=2168"]);
+        // #2629: card= no longer accepted; not needed for source="declared" invariant
+        role_state(&[role, state]);
         if let Some(source) = read_source(&path) {
             assert_eq!(
                 source, "declared",

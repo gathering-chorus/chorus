@@ -41,6 +41,50 @@ SKILLS_DIR="$CHORUS_ROOT/skills"
   fi
 }
 
+# --- #2629 wave 3: affordance-layer assertions ---
+
+@test "role-state CLI refuses card= arg with non-zero exit" {
+  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  [ -x "$shim" ] || skip "shim binary not built"
+  run "$shim" role-state silas building card=99
+  [ "$status" -ne 0 ]
+  [[ "$output" == *REFUSED* ]] || [[ "$output" == *"#2467"* ]] || [[ "$output" == *"#2629"* ]]
+}
+
+@test "role-state CLI refuses type= arg with non-zero exit" {
+  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  [ -x "$shim" ] || skip "shim binary not built"
+  run "$shim" role-state silas building type=fix
+  [ "$status" -ne 0 ]
+}
+
+@test "role-state CLI accepts state-only call without error" {
+  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  [ -x "$shim" ] || skip "shim binary not built"
+  # Use a synthetic role to avoid mutating live silas/wren/kade state
+  # (axis-4: no live-role identifiers in tests).
+  run "$shim" role-state synthetic-bats-role building
+  # Expected: succeeds OR fails with role-specific error (not card-related)
+  [[ "$output" != *"card="* ]]
+  [[ "$output" != *"type="* ]]
+}
+
+@test "no test fixture or helper passes card= to role-state CLI" {
+  # Match invocation patterns only: `role-state <role> <state> card=N` style
+  # (state word followed by card=) OR `chorus-hook-shim role-state ...
+  # card=N`. Excludes echo/log output that contains the text "card=" but is
+  # not an invocation.
+  fixtures="$CHORUS_ROOT/platform/scripts $CHORUS_ROOT/platform/services/chorus-hooks/tests"
+  matches=$(grep -rnE "role-state[\" ][a-z]+[\" ]+(building|blocked|waiting|observing|idle).*card=|chorus-hook-shim role-state.*card=|role_state\(&\[.*card=" $fixtures 2>/dev/null \
+    | grep -v -E '^\s*#|//|REFUSED|REJECTED|deprecated|removed|#2467|#2629' \
+    || true)
+  if [ -n "$matches" ]; then
+    echo "Found test fixtures still passing card= to role-state CLI:"
+    echo "$matches"
+    false
+  fi
+}
+
 @test "no CLAUDE.md fragment uses 'building card=<id>' syntax" {
   # Per AC6: instruction text in CLAUDE.md fragments shouldn't tell
   # roles to declare with card=. Historical / quoted mentions allowed

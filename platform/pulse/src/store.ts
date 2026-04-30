@@ -56,10 +56,11 @@ export class MessageStore {
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id) WHERE chat_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at);
 
+      -- #2467 / #2629: card field removed. Card lives on the board, not
+      -- in pulse role_state. Migration for existing DBs handled below.
       CREATE TABLE IF NOT EXISTS role_state (
         role TEXT PRIMARY KEY,
         state TEXT NOT NULL,
-        card TEXT,
         detail TEXT,
         updated_at TEXT DEFAULT (datetime('now'))
       );
@@ -74,6 +75,17 @@ export class MessageStore {
         ended_at TEXT
       );
     `);
+
+    // #2629 migration: drop role_state.card column from any existing DB.
+    // SQLite ≥3.35 supports ALTER TABLE DROP COLUMN. Wrapped because
+    // (a) fresh DBs created with the new schema above don't have the
+    // column, (b) DBs already migrated don't have it either. Both cases
+    // make ALTER fail; we tolerate that.
+    try {
+      this.db.exec(`ALTER TABLE role_state DROP COLUMN card`);
+    } catch {
+      // already migrated or never had the column — both fine
+    }
   }
 
   // --- Nudges ---
@@ -183,22 +195,23 @@ export class MessageStore {
 
   // --- Role State ---
 
-  setRoleState(role: string, state: string, card?: string, detail?: string): void {
+  // #2467 / #2629: card removed. Card lives on the board — pulse stores
+  // session/attention metadata only. Callers must not pass card.
+  setRoleState(role: string, state: string, detail?: string): void {
     this.db.prepare(`
-      INSERT INTO role_state (role, state, card, detail, updated_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
+      INSERT INTO role_state (role, state, detail, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(role) DO UPDATE SET
         state = excluded.state,
-        card = excluded.card,
         detail = excluded.detail,
         updated_at = excluded.updated_at
-    `).run(role, state, card || null, detail || null);
+    `).run(role, state, detail || null);
   }
 
-  getRoleState(role: string): { state: string; card: string | null; detail: string | null; updatedAt: string } | null {
-    const row = this.db.prepare('SELECT * FROM role_state WHERE role = ?').get(role) as { state: string; card: string | null; detail: string | null; updated_at: string } | undefined;
+  getRoleState(role: string): { state: string; detail: string | null; updatedAt: string } | null {
+    const row = this.db.prepare('SELECT role, state, detail, updated_at FROM role_state WHERE role = ?').get(role) as { state: string; detail: string | null; updated_at: string } | undefined;
     if (!row) return null;
-    return { state: row.state, card: row.card, detail: row.detail, updatedAt: row.updated_at };
+    return { state: row.state, detail: row.detail, updatedAt: row.updated_at };
   }
 
   // --- Queries ---

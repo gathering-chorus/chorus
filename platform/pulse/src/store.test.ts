@@ -120,19 +120,22 @@ describe('Chat', () => {
 });
 
 describe('Role state', () => {
-  test('setRoleState records state and card', () => {
-    store.setRoleState('silas', 'building', '1755');
-    const state = store.getRoleState('silas');
+  // #2467 / #2629: card field removed from role_state. Card lives on the
+  // board; pulse role_state stores session/attention metadata only.
+  test('setRoleState records state and detail (no card field)', () => {
+    store.setRoleState('test-role-a', 'building', 'pairing on something');
+    const state = store.getRoleState('test-role-a');
     expect(state?.state).toBe('building');
-    expect(state?.card).toBe('1755');
+    expect(state?.detail).toBe('pairing on something');
+    expect(state).not.toHaveProperty('card');
   });
 
-  test('transitioning to idle clears the card', () => {
-    store.setRoleState('silas', 'building', '1755');
-    store.setRoleState('silas', 'idle');
-    const updated = store.getRoleState('silas');
+  test('transitioning between states updates state field cleanly', () => {
+    store.setRoleState('test-role-b', 'building');
+    store.setRoleState('test-role-b', 'idle');
+    const updated = store.getRoleState('test-role-b');
     expect(updated?.state).toBe('idle');
-    expect(updated?.card).toBeNull();
+    expect(updated).not.toHaveProperty('card');
   });
 });
 
