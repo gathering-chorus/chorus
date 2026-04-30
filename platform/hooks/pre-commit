@@ -204,37 +204,13 @@ else
   echo "" >> "$DETAIL_FILE"
 fi
 
-# --- Check 4: Per-rule ESLint ratchet (#2462/#2464, supersedes #1282) ---
-# Chorus repo owns a .eslint-baseline.json with per-rule counts. The ratchet
-# script runs on every commit that touches .ts/config/baseline files and fails
-# if any rule count climbs above baseline OR a new rule fires that isn't in
-# baseline. Baseline regeneration commits pass (the baseline file itself is
-# staged, ratchet sees no climb).
-
-if [ -f "$REPO_ROOT/eslint.config.js" ] && [ -f "$REPO_ROOT/.eslint-baseline.json" ]; then
-  # Only run when the diff could affect lint output
-  if echo "$STAGED" | grep -qE '\.ts$|^eslint\.config\.js$|^\.eslint-baseline\.json$|^package\.json$'; then
-    CHECKS_RUN=$((CHECKS_RUN + 1))
-    echo "## ESLint ratchet (#2462/#2464)" >> "$DETAIL_FILE"
-    echo '```' >> "$DETAIL_FILE"
-    if ratchet_out=$(cd "$REPO_ROOT" && npm run lint:ratchet --silent 2>&1); then
-      CHECKS_PASSED=$((CHECKS_PASSED + 1))
-      echo "$ratchet_out" >> "$DETAIL_FILE"
-      echo '```' >> "$DETAIL_FILE"
-      echo "Result: PASS" >> "$DETAIL_FILE"
-      echo "" >> "$DETAIL_FILE"
-    else
-      CHECKS_FAILED=$((CHECKS_FAILED + 1))
-      FAILURES="${FAILURES}\n  - lint:ratchet — rule count climbed or new rule fired"
-      echo "$ratchet_out" >> "$DETAIL_FILE"
-      echo '```' >> "$DETAIL_FILE"
-      echo "Result: FAIL" >> "$DETAIL_FILE"
-      echo "Fix: run \`npm run lint:fix\`, or regenerate baseline if the drop is intentional (\`npm run lint:baseline\`)." >> "$DETAIL_FILE"
-      echo "Note: \`git commit --no-verify\` will land locally but the same check runs in CI on PRs/pushes to main (.github/workflows/quality.yml, #2481). CI is authoritative." >> "$DETAIL_FILE"
-      echo "" >> "$DETAIL_FILE"
-    fi
-  fi
-fi
+# --- Check 4: (retired) Per-rule ESLint ratchet — DELETED #2603 ---
+# Was the per-rule ESLint ratchet from #2462/#2464. DEC-2525 retired it
+# (#2526 deleted the .eslint-baseline.json file). The block guarded on
+# baseline existence and was therefore dead code. Removed inline rather
+# than left as a follow-on; the eliminate-vs-manage pattern Wren named
+# during #2603 demo. The narrower Check 4.4 below replaces its scope
+# for the one rule we now block on.
 
 # --- Check 4.4: sonarjs/no-duplicate-string (#2603) ---
 # Yes/no signal — agent inlining of duplicated string literals across handlers
