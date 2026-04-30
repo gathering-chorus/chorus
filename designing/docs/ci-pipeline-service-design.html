@@ -124,26 +124,38 @@ flowchart TB
   BILL["GHA org-billing alert (#2591)\nauto-raise on quota wedge"]
 </pre>
 
-<h2>The Three Layers</h2>
-<p>Each layer answers a different question with a different threat model. Redundancy is intentional.</p>
+<h2>Local layers (0-2) vs CI (3)</h2>
+<p>Post-#2600 cost-stop the fault line shifted: per-PR engineering happens in local layers (substrate refusal + pre-commit + role gates), CI is the once-daily post-merge witness. Each layer answers a different question with a different threat model — redundancy intentional.</p>
 
+<p><strong>Local layers — where per-PR engineering happens:</strong></p>
 <div class="layer-map">
+  <div class="layer-card">
+    <div class="name">Layer 0 — Substrate</div>
+    <div class="role">Refusal at threat surfaces</div>
+    <div class="what">"Can this commit/push even reach origin?" git-queue branch-check (#2580), pre-push hook (#2598), chorus-hook-shim PreToolUse refusal, werk verify_main_sha (#2598). Not skippable.</div>
+  </div>
   <div class="layer-card">
     <div class="name">Layer 1 — Pre-commit</div>
     <div class="role">Local, skippable</div>
-    <div class="what">"Did the dev mean to commit this?" Fast feedback. <code>platform/hooks/pre-commit</code>.</div>
+    <div class="what">"Did the dev mean to commit this?" Fast feedback. <code>platform/hooks/pre-commit</code>. lint-ratchet, principle-edit, oversize, cargo --lib --bins.</div>
   </div>
   <div class="layer-card">
     <div class="name">Layer 2 — Role gates</div>
     <div class="role">Card-acceptance</div>
     <div class="what">"Is this card team-acceptable?" Five skills, recorded on card. Owned per concern.</div>
   </div>
+</div>
+
+<p><strong>CI — the post-merge witness:</strong></p>
+<div class="layer-map">
   <div class="layer-card">
     <div class="name">Layer 3 — CI</div>
-    <div class="role">Authoritative on main</div>
-    <div class="what">"Does main build cleanly from scratch?" Branch-protection-enforced. Not skippable.</div>
+    <div class="role">Schedule-only, post-merge</div>
+    <div class="what">"Does main build cleanly?" Once-daily schedule fire (~09:17 UTC). No longer per-PR (#2600 retired the matrix). Required-checks empty post-cost-stop.</div>
   </div>
 </div>
+
+<p>The cut: Layers 0-2 catch at commit-time on Library; Layer 3 catches what slipped through, ≤24h after merge. Substrate-refusal at Layer 0 is the trade for retiring per-PR validation at Layer 3.</p>
 
 <h2>Sub-Domain Interaction Model</h2>
 <p>CI doesn't act directly — it's invoked by GitHub on commit/PR events and produces status checks consumed by branch protection and the red-main alert. Like Quality, the service is a <strong>verdict producer</strong>, not an enforcer; branch protection is the enforcer.</p>
@@ -169,7 +181,8 @@ flowchart TB
 <tr><td>Principles</td><td>loom-principles</td><td><span class="tag-real">POPULATED</span></td><td><code>quality-at-source</code>, <code>tests-hermetic-by-default-integration-gated-explicitly</code>, <code>infrastructure-is-your-codebase-too</code></td></tr>
 <tr><td>Practices</td><td>loom-practices</td><td><span class="tag-real">POPULATED</span></td><td><code>production-ready</code>, <code>api-first</code> (workflow YAML is the API to enforcement)</td></tr>
 <tr><td>Policies</td><td>loom-policies</td><td><span class="tag-none">MISSING</span></td><td>Sub-domain blocked on #2151. CI will depend on: KNOWN_FAILS (#2497), ratchet drift (#2496), red-main escalation (runbook section), required-checks coupling (#2500)</td></tr>
-<tr><td>Decisions</td><td>loom-decisions</td><td><span class="tag-partial">SHELL</span></td><td>ADR-026 + 2026-04-25 addendum CI-load-bearing but not yet harvested as graph instances; #2485 covers loom-decisions reach</td></tr>
+<tr><td>Decisions</td><td>loom-decisions</td><td><span class="tag-partial">SHELL</span></td><td>ADR-026 + 2026-04-25 addendum + DEC-2525 amendment + #2600 (schedule-only retreat) all CI-load-bearing but not yet harvested as graph instances; #2152 covers harvest</td></tr>
+<tr><td><strong>Nightly drift lane</strong></td><td>—</td><td><span class="tag-none">NOT YET BUILT</span></td><td><strong>Load-bearing dependency.</strong> Ships under #2527. Without it, the To-Be shape (slow-signal cards, structural-erosion sensors from #2601) has no destination. Honest gap > false completeness.</td></tr>
 </table>
 
 <p><strong>Why dependencies matter to CI:</strong> the layer model is a shape derived from principles (CI is the safety net for what slipped through local), practices (CI proves shippability), policies (when a check bites: pre-commit vs gate vs CI), and decisions (why specific checks bite where they do). Observed today 2026-04-25: without a KNOWN_FAILS policy, role A's pre-existing test debt blocks role B's commit; B uses <code>--no-verify</code> with a trace, but the convention isn't machine-checkable, so future drift is invisible.</p>
@@ -299,6 +312,7 @@ flowchart TB
 </ul>
 
 <h2>Gaps</h2>
+<div class="gap"><strong>#2527 — LOAD-BEARING.</strong> Nightly drift lane is the primary backstop post-#2600 cost-stop. Without it, slow signals (mutation, perf, integration, CVE, doc-coherence) have no surface, AND structural-erosion sensors from #2601 (clippy cog-complexity, sonarjs cog-complexity, radon) have no destination. The design's To-Be shape depends on it. Ships under #2527.</div>
 <div class="gap"><strong>#2495</strong> — api-boot ESM/CJS reconciliation. Restores deferred mcp-roundtrip CI job. Architecture call (CJS-fixed-paths vs full ESM) on Silas when card pulls.</div>
 <div class="gap"><strong>#2496</strong> — Ratchet baseline drift signal. Today silent; either auto-PR on shrinkable baseline or gate-code surface "could shrink by N".</div>
 <div class="gap"><strong>#2497</strong> — KNOWN_FAILS allowlist. Pre-commit honors carded test failures with explicit reason; CI does not. Closes <code>--no-verify</code> convention drift.</div>
