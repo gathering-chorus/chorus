@@ -35,12 +35,24 @@ setup() {
 }
 
 @test "every recent done-brief has a card.accepted spine event" {
-  # Find recent done-brief files (mtime within window)
-  recent_briefs=$(find "$BRIEFS_DIR" -type f -name "*-card-*-done.md" \
-    -mtime -1 2>/dev/null | head -50)
+  # Find recent done-brief files. mtime-based filtering was unreliable
+  # across macOS/Linux (find -mtime semantics drift); pivot to filename
+  # date-prefix matching instead. Briefs are named YYYY-MM-DD-card-NNNN-done.md.
+  today=$(date -u +"%Y-%m-%d")
+  yesterday=$(date -u -v-1d +"%Y-%m-%d" 2>/dev/null \
+    || date -u -d "yesterday" +"%Y-%m-%d" 2>/dev/null \
+    || echo "")
+
+  recent_briefs=$(find "$BRIEFS_DIR" -type f -name "${today}-card-*-done.md" 2>/dev/null)
+  if [ -n "$yesterday" ]; then
+    yesterday_briefs=$(find "$BRIEFS_DIR" -type f -name "${yesterday}-card-*-done.md" 2>/dev/null)
+    recent_briefs="${recent_briefs}
+${yesterday_briefs}"
+  fi
+  recent_briefs=$(echo "$recent_briefs" | grep -v "^$" | head -50)
 
   if [ -z "$recent_briefs" ]; then
-    skip "no recent done-briefs in window — nothing to audit"
+    skip "no done-briefs from today/yesterday — nothing to audit"
   fi
 
   missing_events=()
