@@ -15,6 +15,12 @@ unused_mut = "warn"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 correctness = { level = "warn", priority = -1 }
+# #2602: structural-erosion sensor — cognitive_complexity is in clippy::nursery,
+# not enabled by `all`. Warn-level so existing pre-commit `cargo clippy` surfaces
+# the 13 known hits (top scores 65/57/47 on orchestrator `check`/`run` functions).
+# NOT a deny — concurrent-safe with #2588 dead-code refactor. Trend-class signal
+# for #2527 drift lane (delta-on-rise, weekly), not a pre-commit gate.
+cognitive_complexity = "warn"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
