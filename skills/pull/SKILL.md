@@ -240,9 +240,10 @@ All gates passed. Execute the pull:
 # Move to WIP (auto-generates blast radius comment)
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards move ${CARD_ID} WIP
 
-# Declare state
-CARD_TYPE=$(echo "$CARD_VIEW" | grep -oE 'type:\w+' | head -1 | sed 's/type://')
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building card=${CARD_ID} type=${CARD_TYPE:-unknown}
+# Declare state — #2467: card belongs to the board, not role-state.
+# role-state owns session/attention only; card_type is queried from
+# the board by hooks that need it (types.rs::card_type_for_role).
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/role-state <role> building
 
 # Emit spine event
 /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.pulled <role> card=${CARD_ID}
