@@ -1,77 +1,43 @@
-# Wren — Next Session
+# Next Session — Wren
 
-## Boot order — IMPORTANT
+**Last session:** 2026-04-30 (~9hr — heavy substrate day)
 
-**If launched from `/chorus-wren/roles/wren`:**
-- AC3 of #2583 satisfied. Verify: `pwd`, `git worktree list` (4 entries), `cat ~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-wren/memory/MEMORY.md` returns memories (memory-continuity check via symlink)
-- Coordinate AC4 with peer: ask Kade or Silas to do a `git checkout` in their session; verify my chorus-wren branch state stays unchanged
-- Close #2583
+## Shipped (6 cards)
 
-**If launched from `/chorus/roles/wren` (unchanged):**
-- Symlink + launcher-cwd-update + reboot still pending. Steps:
-  1. `ln -s -Users-jeffbridwell-CascadeProjects-chorus-roles-wren ~/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus-wren-roles-wren`
-  2. Jeff updates terminal launcher to point at `/chorus-wren/roles/wren`
-  3. Reboot
-  4. Resume from boot order above
+- **#2610** about-Wren essay in doc-catalog at `/about/wren.html`
+- **#2611** revert express-5 dependabot bump (root-cause fix for tsc-red on main)
+- **#2616** doc-catalog urlPrefix transposition fix (Jeff's click-through)
+- **#2622** DEC-058 fragment: athena-via-mcp + brief→nudge
+- **#2623** doc-coherence.sh dual-probe (3340 then 3000)
+- **#2624** chorus_subdomains_list/get MCP tools — full gate chain PASS
 
-## Today (2026-04-29) — what landed
+PR #41 (#2566) closed as stale; re-apply fresh later if needed.
 
-**Cards Done by Wren:**
-- #2566 — Codify card-shape taxonomy (8 labels + TEAM_PROTOCOL section + gate-set service design with flow chart)
-- #2575 — nudge + chat.sh say accept --body-file / --body-stdin (originator-side quiet)
-- #2561 — Gate ceremony research v4 + 5 children filed (PR #32 merged earlier today)
-- #2585 — Spike: Claude Code project-keying findings; per-role worktree viable via symlink
-- #2498 — Trunk-vs-Rulesets cleanup (closed via Silas's PR #38 side-finding)
-- #2195 — Worktrees-as-feature retired with chorus-2526 evidence
+## Convention landed
 
-**Cards filed by Wren:**
-- #2562 (DEC renumber to sequential, P2)
-- #2578 (Independence Protocol implementation, P1)
-- #2581 (receiver-side nudge rendering, P1, Rust work)
-- #2583 (Wren onboards chorus-wren — paused, then reshape per #2585 spike)
-- #2584 (AI-SLOP-Detector spike on chorus, P2)
-- #2585 (Claude Code project-keying spike, Done)
-- #2586 (Commits-domain service design, Kade-owned, P1)
+**Nudge-before-deploy with 30s window** for `/chorus` HEAD-yank operations. Chat with Silas (`wren-silas-1777552172`) put it in place; validated twice in-session.
 
-**Service designs landed:**
-- `/designing/docs/independence-service-design.{md,html}` — with 16 thinker folds (Galton/Asch/Lorenz/Tetlock/Bohm/Buber/Gadamer/etc.)
-- `/designing/docs/gate-set-service-design.{md,html}` — with mermaid decision-tree flow chart
-- About-wren v2 (process-as-product, peer-reviewed by Silas + Kade twice each)
+## Substrate work carried forward
 
-**Cards in Wren WIP at boundary:**
-- #2583 (Wren onboards chorus-wren) — AC1 + AC5 done; AC2, AC3, AC4 pending launcher-cwd-update + session-restart
+- **Schemas-first card** (Silas pulling) — Subdomain class needs `ownedBy` + `builtBy` + `conventionsBy` as separate predicates per Silas's #2624 feedback
+- **Slot-shortage meta-principle** locked as values-tier candidate
+- **#2625** filed — PreToolUse hook to refuse git checkout/pull/reset on shared `/chorus` when another role is building (Jeff's call this morning: "we probably need a hook if the directory is so critical"). Owner = Kade (commits-domain). Not pulling.
 
-## Substrate-failure roster (parent-arc input for Section 9 of #2561)
+## Hot patterns (memory saved this session)
 
-Three days now of substrate-failure pattern:
-- silent-fallback (CHORUS_ROOT pre-#2505)
-- bridge-layer-lies (#2573, jeff.input.delivered/failed)
-- cross-branch tooling friction (#2580 stop-the-bleed; #2582 + #2583 + #2585/#2586 structural fix in progress)
-- ruleset-vs-branch-protection (#2498 side-finding from #2557 verification)
+- **Don't add role-infrastructure layers** — symlinks/per-role git identity rejected; defense hooks with narrow scope are different family (acceptable)
+- **Audit is not a proposal pile** — produced 3 rejected proposals + 15min Jeff churn this morning before learning
+- **Team writes too much** — cap nudges at 3 sentences, PR bodies at 5 lines, summaries at 2-3 sentences
 
-Section 9 of #2561 — "Integration as first-class team activity at agent velocity" — opens as parent-arc research after #2561 implementation children land + 2-week audit. Paired with Silas + Kade.
+## Open team threads
 
-## Open priorities going forward
+- **Kade #2613/#2619** — cucumber + tdd.feature drift, /gemba pending if Jeff calls it
+- **Silas #2617** — clearing-access cucumber retired, /gate-product PASS, awaiting Jeff /acp
+- **Athena MCP** — `chorus_subdomains_list/get` deployed; next session will have the tool live
 
-- **#2583** — finish onboarding when launcher cwd updated
-- **#2586** (Kade) — commits-service-design; informed by #2585 findings
-- **#2581** — receiver-side rendering (Rust work; chorus-inject + chorus-hook-shim)
-- **#2567 / #2568 / #2569 / #2570** — gate-set implementation children
-- **KM cleanup with Jeff** — Phase 2 walk-through of Wren-owned docs (his morning ask, deferred)
-- **#2562** — DEC renumber when ready
+## Pick-up for next Wren
 
-## Critical memories saved today
-
-- `feedback_demo_feedback_not_card_generation.md` — demo feedback ≠ card-generation engine
-- `feedback_dont_relay_to_jeff.md` — peer answers go to peer, not also to Jeff
-- `feedback_use_body_file_for_long_messages.md` — long bodies via --body-file
-- `feedback_eliminate_runtime_dep_dont_manage_it.md` — defensive substitution pattern
-- `feedback_dont_share_hypothesis_mid_investigation.md` — independent RCA before convergence
-- `feedback_writing_surface_over_review_surface.md` — discipline at writing surface
-- `feedback_dont_trust_fallback_patterns.md` — env.unwrap_or_else is the contract IS the default
-
-## Today's lesson
-
-The thin-review pattern I showed on #2582 (procedural compliance instead of substantive engagement) is the failure mode I most need to watch for. Kade caught it cleanly. Substantive product engagement is what the role exists for; AC-tick-with-precedent-named is the smell to notice.
-
-Cross-branch contamination bit three times today. Per-role worktree IS the structural fix per #2585 spike — pending session-restart to validate.
+1. **Watch for Kade's schemas-first card** — Wren drives bidirectional audit pass when it lands (sort the 48 principles + audit hooks-without-articulated-principles)
+2. **DEC-058 fragment + #2624 closed the loop** — fragment now points at a real tool. No follow-up unless ownership-shift discipline drifts
+3. **#2625 is Kade's** — don't pull or design; let him scope when ready
+4. **Wren WIP = 0** at session end. Clean handoff.

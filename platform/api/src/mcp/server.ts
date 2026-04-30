@@ -62,6 +62,9 @@ const PrinciplesGetInput = z.object({
 const DecisionsGetInput = z.object({
   id: z.string().min(1).describe('Decision id (e.g., dec-2090, adr-026)'),
 });
+const SubdomainsGetInput = z.object({
+  id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
+});
 const PrinciplesCreateInput = z.object({
   label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
   comment: z.string().optional().describe('One-paragraph description of the principle'),
@@ -141,6 +144,34 @@ const DECISIONS_GET_TOOL_DEF = {
     type: 'object',
     properties: {
       id: { type: 'string', minLength: 1, description: 'Decision id, e.g., adr-026 or dec-2090' },
+    },
+    required: ['id'],
+  },
+} as const;
+
+const SUBDOMAINS_LIST_TOOL_DEF = {
+  name: 'chorus_subdomains_list',
+  description:
+    'List all Chorus subdomains from the live Athena graph. Returns id + label + owner + step for each. Use this to look up current ownership when DEC-058 says to query Athena via MCP — the canonical model is the source of truth, not a hardcoded table. Do NOT cache locally; ownership shifts as cards land.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+    required: [],
+  },
+} as const;
+
+const SUBDOMAINS_GET_TOOL_DEF = {
+  name: 'chorus_subdomains_get',
+  description:
+    'Get one Chorus subdomain by id from the live Athena graph. Use when you have a specific subdomain id (e.g., commits-domain, gates-service) and want its full record — id, label, owner, step. Do NOT use to fish by topic; use chorus_subdomains_list and filter.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        minLength: 1,
+        description: 'Subdomain id, e.g., commits-domain or gates-service',
+      },
     },
     required: ['id'],
   },
@@ -323,6 +354,62 @@ async function executeDecisionsGet(
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
 
+interface SubdomainRecord {
+  id: string;
+  label?: string;
+  owner?: string;
+  step?: string;
+  uri?: string;
+}
+
+async function fetchSubdomainsList(fetchImpl: FetchImpl, apiBase: string): Promise<SubdomainRecord[]> {
+  const url = `${apiBase}/api/athena/subdomains`;
+  const resp = await fetchImpl(url);
+  if (!resp.ok) {
+    throw new Error(`subdomains list fetch failed (status ${resp.status ?? 'unknown'})`);
+  }
+  const body = (await resp.json()) as { data?: SubdomainRecord[] };
+  return body.data ?? [];
+}
+
+async function executeSubdomainsList(
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.subdomains.list.invoked', tool: 'chorus_subdomains_list', from, ts: new Date().toISOString() }) + '\n');
+  const subs = await fetchSubdomainsList(fetchImpl, apiBase);
+  const lines: string[] = [`${subs.length} subdomain${subs.length === 1 ? '' : 's'}:`];
+  for (const s of subs) {
+    const label = s.label ? `${s.label} (${s.id})` : s.id;
+    const ownerStep = [s.owner ? `owner=${s.owner}` : '', s.step ? `step=${s.step}` : '']
+      .filter(Boolean)
+      .join(' ');
+    lines.push(ownerStep ? `- ${label} — ${ownerStep}` : `- ${label}`);
+  }
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
+async function executeSubdomainsGet(
+  args: { id: string },
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // Athena has no GET /api/athena/subdomains/:id today — fetch the list and
+  // filter, mirroring the principles/decisions pattern. ~50 entries, fine
+  // at this scale; swap to dedicated GET when one lands.
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.subdomains.get.invoked', tool: 'chorus_subdomains_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
+  const subs = await fetchSubdomainsList(fetchImpl, apiBase);
+  const found = subs.find((s) => s.id === args.id);
+  if (!found) throw new Error(`subdomain not found: ${args.id}`);
+  const lines = [`${found.label ?? found.id} (${found.id})`];
+  if (found.owner) lines.push(`owner: ${found.owner}`);
+  if (found.step) lines.push(`step: ${found.step}`);
+  if (found.uri) lines.push(`uri: ${found.uri}`);
+  return { content: [{ type: 'text', text: lines.join('\n') }] };
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
@@ -379,6 +466,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PRINCIPLES_CREATE_TOOL_DEF,
       DECISIONS_LIST_TOOL_DEF,
       DECISIONS_GET_TOOL_DEF,
+      SUBDOMAINS_LIST_TOOL_DEF,
+      SUBDOMAINS_GET_TOOL_DEF,
     ],
   }));
 
@@ -416,6 +505,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeDecisionsGet(parsed.data, fetchImpl, apiBase, from);
+      }
+      case 'chorus_subdomains_list':
+        return executeSubdomainsList(fetchImpl, apiBase, from);
+      case 'chorus_subdomains_get': {
+        const parsed = SubdomainsGetInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeSubdomainsGet(parsed.data, fetchImpl, apiBase, from);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
