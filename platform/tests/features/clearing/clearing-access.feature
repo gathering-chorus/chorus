@@ -5,6 +5,16 @@ Feature: Clearing access paths
   and show the message in the feed. When a path breaks, the test
   names which path and which step failed.
 
+  # #2617 (2026-04-30): the prior "nudge silas via --force" + "delivered" +
+  # "silas responds" steps were retired. They invoked real nudges into a
+  # live role's session as a side effect of running the test, which leaked
+  # [e2e-test] noise into Jeff's view all morning. DEC-107 makes nudge
+  # delivery non-hermetic by design (osascript + spine-tick-poller, both
+  # always fire). There is no hermetic way to assert "nudge delivered"; the
+  # right shape is to scope this feature to clearing-API behavior and let
+  # nudge delivery be tested elsewhere (chorus-hooks/tests/nudge_suite.rs,
+  # gated behind RUN_INTEGRATION per #2614).
+
   Background:
     Given the Clearing is running on port 3470
     And the auth token is read from ~/.chorus/bridge-auth-token
@@ -18,9 +28,6 @@ Feature: Clearing access paths
     Then the name is accepted
     When Jeff sends a message "public-probe" via the API with token auth
     Then the message "public-probe" appears in the message feed
-    When Jeff nudges silas with "e2e-public" via --force
-    Then the nudge is delivered
-    Then silas responds via the Clearing within 30 seconds
 
   @lan @iphone
   Scenario: Jeff via LAN IP on iPhone wifi
@@ -31,9 +38,6 @@ Feature: Clearing access paths
     Then the name is accepted
     When Jeff sends a message "lan-probe" via the API from LAN
     Then the message "lan-probe" appears in the message feed
-    When Jeff nudges silas with "e2e-lan" via --force
-    Then the nudge is delivered
-    Then silas responds via the Clearing within 30 seconds
 
   @local @mac
   Scenario: Jeff via localhost on Library Mac Chrome
@@ -44,6 +48,3 @@ Feature: Clearing access paths
     Then the name is accepted
     When Jeff sends a message "local-probe" via the API from localhost
     Then the message "local-probe" appears in the message feed
-    When Jeff nudges silas with "e2e-local" via --force
-    Then the nudge is delivered
-    Then silas responds via the Clearing within 30 seconds

@@ -9,7 +9,7 @@ let authToken = '';
 let lastResponse = { status: 0, body: '' };
 let probeMarker = '';
 let nameAccepted = false;
-let lastNudgeOutput = '';
+// #2617: lastNudgeOutput retired with the nudge-delivery step
 
 // Endpoints
 const LOCAL = 'http://localhost:3470';
@@ -173,75 +173,28 @@ Then('the message {string} appears in the message feed', function (_label: strin
   assert.ok(found, `Message "${probeMarker}" not found in feed after 5s`);
 });
 
-// --- Nudge delivery (#2617: dry-run only — no live-role injection) ---
+// --- Nudge delivery + role-response steps RETIRED (#2617, 2026-04-30) ---
 //
-// This step exercises the nudge plumbing path (persist + resolve target +
-// emit spine event) without actually injecting into a live role's terminal.
+// Retired:
+//   - When 'Jeff nudges {word} with {string} via --force'
+//   - Then 'the nudge is delivered'
+//   - Then '{word} responds via the Clearing within {int} seconds'
 //
-// Prior shape called platform/scripts/nudge with --force, which dumped real
-// [e2e-test] nudges into silas's session every time the test fired. Today
-// (2026-04-30) those leaked into Jeff's view all morning until the source
-// was traced to this exact step.
+// Why: these steps invoked real nudges into a live role's session as a side
+// effect of running the test, leaking [e2e-test] noise into Jeff's view all
+// morning today (~30+ probes traced to manual cucumber runs).
 //
-// First-pass fix tried to add --dry-run via the bash wrapper, but that
-// wrapper hardcodes `--force` on line 51 (DEC-107 invariant: --force is
-// always on for production callers). The wrapper is not the right surface
-// for tests. Going around it: invoke chorus-hook-shim nudge directly with
-// --dry-run. Shim short-circuits before osascript, prints "DRY-RUN" marker.
+// DEC-107's two-path invariant (osascript inject + spine-tick-poller, both
+// always fire) makes nudge delivery non-hermetic by design: any code that
+// emits a nudge will surface in the target role's view. There is no
+// hermetic way to assert "nudge delivered" from cucumber without injecting.
 //
-// Side-effect rule: this test runs against the dry-run path only. Live-role
-// injection from cucumber is forbidden; if you find yourself wanting it,
-// you have an integration test that should run as a manual probe, not as a
-// cucumber scenario.
-
-const SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
-
-When('Jeff nudges {word} with {string} via --force', function (role: string, label: string) {
-  const msg = `[e2e-test] ${label}-${Date.now()}`;
-  try {
-    // Direct shim invocation to bypass the bash wrapper's hardcoded --force.
-    // --dry-run skips osascript; everything up to injection still runs.
-    lastNudgeOutput = execSync(
-      `${SHIM} nudge ${role} "${msg}" --from jeff --dry-run 2>&1`,
-      {
-        encoding: 'utf-8',
-        timeout: 10000,
-        env: { ...process.env, DEPLOY_ROLE: 'jeff' },
-      }
-    ).trim();
-  } catch (e: any) {
-    lastNudgeOutput = e.stdout || e.stderr || e.message || 'nudge failed';
-  }
-});
-
-Then('the nudge is delivered', function () {
-  // Dry-run path: assert on DRY-RUN marker. The plumbing fired (persist
-  // + role resolve + spine emit); only osascript injection was skipped.
-  assert.ok(
-    lastNudgeOutput.includes('DRY-RUN') || lastNudgeOutput.includes('DELIVERED'),
-    `Nudge not delivered (expected DRY-RUN marker per #2617). Output: ${lastNudgeOutput}`
-  );
-});
-
-// --- Real role response verification ---
-
-Then('{word} responds via the Clearing within {int} seconds', function (role: string, timeout: number) {
-  const nudgeMarker = lastNudgeOutput.match(/e2e-[a-z]+-\d+/)?.[0] || '';
-  let found = false;
-  for (let i = 0; i < timeout; i++) {
-    const r = curl(`${LOCAL}/api/messages`);
-    if (nudgeMarker && r.body.includes(nudgeMarker) && r.body.includes('[e2e-ack]')) {
-      found = true;
-      break;
-    }
-    if (!nudgeMarker && r.body.includes('[e2e-ack]') && r.body.includes(role)) {
-      found = true;
-      break;
-    }
-    execSync('sleep 1');
-  }
-  assert.ok(found, `No [e2e-ack] from ${role} for marker "${nudgeMarker}" in Clearing feed after ${timeout}s. The role's session may not have the e2e-responder hook loaded.`);
-});
+// Right shape: this feature scopes to clearing-API behavior (page loads,
+// auth, name accept, message send, message in feed) — that's the real test
+// value. Nudge delivery has its own tests in
+// platform/services/chorus-hooks/tests/nudge_suite.rs (gated behind
+// RUN_INTEGRATION per #2614). Role-response e2e probes are a manual
+// integration smoke, not a cucumber scenario.
 
 // --- Cleanup ---
 
