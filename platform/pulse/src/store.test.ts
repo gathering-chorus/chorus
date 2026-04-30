@@ -119,25 +119,10 @@ describe('Chat', () => {
   });
 });
 
-describe('Role state', () => {
-  // #2467 / #2629: card field removed from role_state. Card lives on the
-  // board; pulse role_state stores session/attention metadata only.
-  test('setRoleState records state and detail (no card field)', () => {
-    store.setRoleState('test-role-a', 'building', 'pairing on something');
-    const state = store.getRoleState('test-role-a');
-    expect(state?.state).toBe('building');
-    expect(state?.detail).toBe('pairing on something');
-    expect(state).not.toHaveProperty('card');
-  });
-
-  test('transitioning between states updates state field cleanly', () => {
-    store.setRoleState('test-role-b', 'building');
-    store.setRoleState('test-role-b', 'idle');
-    const updated = store.getRoleState('test-role-b');
-    expect(updated?.state).toBe('idle');
-    expect(updated).not.toHaveProperty('card');
-  });
-});
+// #2632: 'Role state' describe block retired. setRoleState/getRoleState
+// were retired alongside the HTTP role-state writer (zero callers,
+// parallel to chorus-hook-shim CLI). Tests for the retired surface go
+// with the surface — no @skip-tagged keepers.
 
 describe('Query', () => {
   test('queryMessages filters by recipient and sender', () => {

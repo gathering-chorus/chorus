@@ -56,14 +56,11 @@ export class MessageStore {
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id) WHERE chat_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at);
 
-      -- #2467 / #2629: card field removed. Card lives on the board, not
-      -- in pulse role_state. Migration for existing DBs handled below.
-      CREATE TABLE IF NOT EXISTS role_state (
-        role TEXT PRIMARY KEY,
-        state TEXT NOT NULL,
-        detail TEXT,
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
+      -- #2632: role_state table retired. The HTTP role-state writer was a
+      -- parallel implementation of the chorus-hook-shim CLI with zero
+      -- callers across the codebase (probed during #2629). Single
+      -- canonical address per the no-competing-implementations principle.
+      -- DROP TABLE handled below to clean up any existing DB.
 
       CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY,
@@ -76,15 +73,14 @@ export class MessageStore {
       );
     `);
 
-    // #2629 migration: drop role_state.card column from any existing DB.
-    // SQLite ≥3.35 supports ALTER TABLE DROP COLUMN. Wrapped because
-    // (a) fresh DBs created with the new schema above don't have the
-    // column, (b) DBs already migrated don't have it either. Both cases
-    // make ALTER fail; we tolerate that.
+    // #2632 migration: drop the entire role_state table. Retirement step
+    // — this writer was unused (zero callers) and parallel to the CLI.
+    // DROP TABLE IF EXISTS is idempotent for fresh DBs (table never
+    // created) and existing DBs alike. Safe to no-op after first run.
     try {
-      this.db.exec(`ALTER TABLE role_state DROP COLUMN card`);
+      this.db.exec(`DROP TABLE IF EXISTS role_state`);
     } catch {
-      // already migrated or never had the column — both fine
+      // tolerate any DB-level oddity — retirement is best-effort
     }
   }
 
@@ -194,25 +190,12 @@ export class MessageStore {
   }
 
   // --- Role State ---
-
-  // #2467 / #2629: card removed. Card lives on the board — pulse stores
-  // session/attention metadata only. Callers must not pass card.
-  setRoleState(role: string, state: string, detail?: string): void {
-    this.db.prepare(`
-      INSERT INTO role_state (role, state, detail, updated_at)
-      VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(role) DO UPDATE SET
-        state = excluded.state,
-        detail = excluded.detail,
-        updated_at = excluded.updated_at
-    `).run(role, state, detail || null);
-  }
-
-  getRoleState(role: string): { state: string; detail: string | null; updatedAt: string } | null {
-    const row = this.db.prepare('SELECT role, state, detail, updated_at FROM role_state WHERE role = ?').get(role) as { state: string; detail: string | null; updated_at: string } | undefined;
-    if (!row) return null;
-    return { state: row.state, detail: row.detail, updatedAt: row.updated_at };
-  }
+  //
+  // #2632: setRoleState / getRoleState / role_state table retired. Pulse's
+  // HTTP role-state writer was parallel to chorus-hook-shim CLI with zero
+  // callers across the codebase — no-competing-implementations applied.
+  // Source of truth: chorus-hook-shim role-state subcommand →
+  // /tmp/claude-team-scan/<role>-declared.json.
 
   // --- Queries ---
 
