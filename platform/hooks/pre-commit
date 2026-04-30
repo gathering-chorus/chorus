@@ -287,6 +287,15 @@ for crate in "${RUST_CRATES[@]}"; do
   fi
 done
 
+# --- Check 4.65: clippy per-lint ratchet (#2532, extended for #2602 cog-complexity) ---
+# Counts may only decrease per lint per crate. Baseline at .clippy-baseline.json.
+# Runs only when Rust files stage in a tracked crate.
+if echo "$STAGED" | grep -qE "^platform/services/(chorus-hooks|chorus-inject)/.*\.rs$"; then
+  run_check "clippy-ratchet" \
+    "$REPO_ROOT" \
+    "bash platform/scripts/clippy-ratchet.sh 2>&1"
+fi
+
 # --- Check 4.7: Doc-coherence ratchet (#2451) ---
 # Wires the existing test at platform/tests/doc-coherence-ratchet.test.sh.
 # Runs only when CLAUDE.md or claudemd/ fragments stage. Local-only per
