@@ -83,71 +83,106 @@ function productEnumFor(p: AthenaProduct): string {
   return PRODUCT_LABEL_TO_ENUM[p.label] ?? p.label.toLowerCase();
 }
 
-// eslint-disable-next-line complexity
-export function buildHierarchyTree(taggedDocs: TaggedDoc[], shape: AthenaShape): HierarchyTree {
-  // Initialize product/subproduct/subdomain nodes from the Athena shape.
-  // Subdomains attach to subproduct when present, else directly to product.
-  const subdomainsBySubproduct: Record<string, SubdomainNode[]> = {};
-  const subdomainsByProduct: Record<string, SubdomainNode[]> = {};
-  const subdomainNodeById: Record<string, SubdomainNode> = {};
+// #2627: extracted phase helpers. Each phase has single-digit cog;
+// orchestrator becomes a linear sequence well under threshold 12.
 
+export interface SubdomainIndex {
+  bySubproduct: Record<string, SubdomainNode[]>;
+  byProduct: Record<string, SubdomainNode[]>;
+  byId: Record<string, SubdomainNode>;
+}
+
+export function buildSubdomainIndex(shape: AthenaShape): SubdomainIndex {
+  const idx: SubdomainIndex = { bySubproduct: {}, byProduct: {}, byId: {} };
   for (const sd of shape.subdomains) {
     const node: SubdomainNode = { id: sd.id, label: sd.label, docCount: 0 };
-    subdomainNodeById[sd.id] = node;
+    idx.byId[sd.id] = node;
     if (sd.subproduct) {
-      if (!subdomainsBySubproduct[sd.subproduct]) subdomainsBySubproduct[sd.subproduct] = [];
-      subdomainsBySubproduct[sd.subproduct].push(node);
+      (idx.bySubproduct[sd.subproduct] ||= []).push(node);
     } else if (sd.product) {
-      if (!subdomainsByProduct[sd.product]) subdomainsByProduct[sd.product] = [];
-      subdomainsByProduct[sd.product].push(node);
+      (idx.byProduct[sd.product] ||= []).push(node);
     }
   }
+  return idx;
+}
 
-  const subproductsByProduct: Record<string, SubproductNode[]> = {};
-  const subproductNodeById: Record<string, SubproductNode> = {};
+export interface SubproductIndex {
+  byProduct: Record<string, SubproductNode[]>;
+  byId: Record<string, SubproductNode>;
+}
+
+export function buildSubproductIndex(shape: AthenaShape, subdomains: SubdomainIndex): SubproductIndex {
+  const idx: SubproductIndex = { byProduct: {}, byId: {} };
   for (const sp of shape.subproducts) {
     const node: SubproductNode = {
       id: sp.id, label: sp.label, docCount: 0,
-      subdomains: subdomainsBySubproduct[sp.id] || [],
+      subdomains: subdomains.bySubproduct[sp.id] || [],
     };
-    subproductNodeById[sp.id] = node;
-    if (!subproductsByProduct[sp.product]) subproductsByProduct[sp.product] = [];
-    subproductsByProduct[sp.product].push(node);
+    idx.byId[sp.id] = node;
+    (idx.byProduct[sp.product] ||= []).push(node);
   }
+  return idx;
+}
 
-  const productNodes: ProductNode[] = shape.products.map(p => {
-    const subproducts = subproductsByProduct[p.id];
-    const directSubdomains = subdomainsByProduct[p.id];
+function buildProductNodes(
+  shape: AthenaShape,
+  subproducts: SubproductIndex,
+  subdomains: SubdomainIndex,
+): ProductNode[] {
+  return shape.products.map(p => {
     const node: ProductNode = { id: p.id, label: p.label, docCount: 0 };
-    if (subproducts && subproducts.length) node.subproducts = subproducts;
-    if (directSubdomains && directSubdomains.length) node.subdomains = directSubdomains;
+    const sps = subproducts.byProduct[p.id];
+    const sds = subdomains.byProduct[p.id];
+    if (sps?.length) node.subproducts = sps;
+    if (sds?.length) node.subdomains = sds;
     return node;
   });
+}
 
-  // Build a label→ProductNode index by both Athena id and tagger enum
-  const productNodeByEnum: Record<string, ProductNode> = {};
+function indexProductsByEnum(shape: AthenaShape, productNodes: ProductNode[]): Record<string, ProductNode> {
+  const byEnum: Record<string, ProductNode> = {};
   for (const p of shape.products) {
-    const enumName = productEnumFor(p);
     const node = productNodes.find(n => n.id === p.id);
-    if (node) productNodeByEnum[enumName] = node;
+    if (node) byEnum[productEnumFor(p)] = node;
   }
+  return byEnum;
+}
 
+function tallyOneDoc(
+  doc: TaggedDoc,
+  productByEnum: Record<string, ProductNode>,
+  subproducts: SubproductIndex,
+  subdomains: SubdomainIndex,
+): boolean {
+  const product = doc.tags.product ? productByEnum[doc.tags.product] : undefined;
+  if (!product) return false;
+  product.docCount++;
+  const sp = doc.tags.subproduct ? subproducts.byId[doc.tags.subproduct] : undefined;
+  if (sp) sp.docCount++;
+  const sd = doc.tags.subdomain ? subdomains.byId[doc.tags.subdomain] : undefined;
+  if (sd) sd.docCount++;
+  return true;
+}
+
+function tallyDocCounts(
+  docs: TaggedDoc[],
+  productByEnum: Record<string, ProductNode>,
+  subproducts: SubproductIndex,
+  subdomains: SubdomainIndex,
+): number {
   let untagged = 0;
-  for (const doc of taggedDocs) {
-    if (!doc.tags.product) { untagged++; continue; }
-    const product = productNodeByEnum[doc.tags.product];
-    if (!product) { untagged++; continue; }
-    product.docCount++;
-    if (doc.tags.subproduct) {
-      const sp = subproductNodeById[doc.tags.subproduct];
-      if (sp) sp.docCount++;
-    }
-    if (doc.tags.subdomain) {
-      const sd = subdomainNodeById[doc.tags.subdomain];
-      if (sd) sd.docCount++;
-    }
+  for (const doc of docs) {
+    if (!tallyOneDoc(doc, productByEnum, subproducts, subdomains)) untagged++;
   }
+  return untagged;
+}
 
+export function buildHierarchyTree(taggedDocs: TaggedDoc[], shape: AthenaShape): HierarchyTree {
+  const subdomains = buildSubdomainIndex(shape);
+  const subproducts = buildSubproductIndex(shape, subdomains);
+  const productNodes = buildProductNodes(shape, subproducts, subdomains);
+  const productByEnum = indexProductsByEnum(shape, productNodes);
+  const untagged = tallyDocCounts(taggedDocs, productByEnum, subproducts, subdomains);
   return {
     totalDocs: taggedDocs.length,
     products: productNodes,
