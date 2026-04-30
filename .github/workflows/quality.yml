@@ -558,6 +558,13 @@ jobs:
       # the discipline (retirement-gates, drift audits, skill-text asserts)
       # that today's manual review caught. Each check is RED-first against
       # its target failure mode; staying green is the structural guarantee.
+      #
+      # Axis-4 hermeticity contract (Silas arch-lens 2026-04-30): any bats
+      # added to this job MUST be axis-4 — no live role-state mutation,
+      # no /tmp/claude-team-scan reads, no socket binds, no real-channel
+      # nudges. Tests must read repo file contents (BATS_TEST_DIRNAME for
+      # root) or static spine.log fixtures only. Anything else makes the
+      # job's results non-deterministic across concurrent PRs.
       - name: Run structural-test bats (#2630)
         env:
           CHORUS_LOG: ${{ github.workspace }}/platform/logs/chorus.log

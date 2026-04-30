@@ -193,7 +193,16 @@ VERDICT is PASS if all checks are PASS or WARN. WARNs are logged but don't block
 
 ## On Pass
 
-1. **Emit `probe.evidence` spine event** with the live-probe stdout/artifact that the PASS rests on. **No live-probe = no PASS.** This is the structural enforcement of the rule "every gate-PASS must trace to a probe, not a paper trail" (Jeff 2026-04-30, after the #2625 paper-trail PASS cost a team-blocked window). The `probe.evidence` event makes the probe auditable — the spine-emit-drift bats catches gate-PASS comments without correlated probe.evidence.
+1. **Emit `probe.evidence` spine event** with a `probe_type` field naming what KIND of evidence the PASS rests on. **No probe = no PASS.** This is the structural enforcement of the rule "every gate-PASS must trace to a probe, not a paper trail" (Jeff 2026-04-30, after the #2625 paper-trail PASS cost a team-blocked window). The `probe.evidence` event makes the probe auditable — the spine-emit-drift bats catches gate-PASS comments without correlated probe.evidence.
+
+   **Probe types (per Silas arch-lens 2026-04-30):**
+   - `live-system` — ran a live probe against a running service/endpoint (curl, db query, log tail). Evidence = stdout/artifact.
+   - `diff-read` — read the diff at specific line ranges and verified each AC item matches. Evidence = `file:line` references mapping AC items to diff sections.
+   - `doc-check` — verified text edits to docs/skills/markdown matched what AC promised. Evidence = `file:line` references + change-summary.
+   - `grep-zero-hits` — verified absence of a retired symbol/route. Evidence = grep command + zero-hits output.
+   - `bats-suite` — ran bats files and captured pass count. Evidence = bats output summary.
+
+   Pick the type that actually applies. Do NOT emit a `live-system` probe when the card is doc-only — that recreates the performative-gate problem in a new shape. The honest probe matters more than the impressive one.
 2. Emit spine event: `gate.product.passed` with card ID
 3. Add card comment: "gate:product-pass — Wren" — include a one-line summary of the probe and what it returned
 4. Nudge Kade: "gate:product passed on #<card-id> — run /gate-code"
