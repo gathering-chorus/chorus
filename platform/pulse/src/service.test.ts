@@ -114,7 +114,7 @@ describe('pulse service — chats', () => {
   });
 });
 
-describe('pulse service — board events and role state', () => {
+describe('pulse service — board events', () => {
   it('POST /api/board-event persists board event', async () => {
     const { app } = fresh();
     const res = await request(app).post('/api/board-event').send({ from: 'kade', content: 'moved #1 to WIP' });
@@ -128,45 +128,7 @@ describe('pulse service — board events and role state', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /api/role-state + GET round-trip preserves state', async () => {
-    // #2467 / #2629: card field removed; verify createApp + MessageStore wiring directly
-    const store = new MessageStore(':memory:');
-    const app = createApp(store);
-    await request(app)
-      .post('/api/role-state')
-      .send({ role: 'kade', state: 'building', detail: 'coverage push' });
-    const res = await request(app).get('/api/role-state/kade');
-    expect(res.status).toBe(200);
-    expect(res.body.state).toBe('building');
-    expect(res.body.detail).toBe('coverage push');
-    expect(res.body).not.toHaveProperty('card');
-    const direct = store.getRoleState('kade');
-    expect(direct?.state).toBe('building');
-  });
-
-  it('POST /api/role-state rejects body containing card field (#2629)', async () => {
-    const store = new MessageStore(':memory:');
-    const app = createApp(store);
-    const res = await request(app)
-      .post('/api/role-state')
-      .send({ role: 'kade', state: 'building', card: 2237 });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/card.*no longer accepted|#2467|#2629/i);
-    expect(store.getRoleState('kade')).toBeNull();
-  });
-
-  it('POST /api/role-state rejects missing fields with 400', async () => {
-    const { app } = fresh();
-    const res = await request(app).post('/api/role-state').send({ role: 'kade' });
-    expect(res.status).toBe(400);
-  });
-
-  it('GET /api/role-state/:role returns error for unknown role', async () => {
-    const { app } = fresh();
-    const res = await request(app).get('/api/role-state/ghost');
-    expect(res.status).toBe(200);
-    expect(res.body.error).toBe('not found');
-  });
+  // #2632: /api/role-state tests retired alongside the endpoint.
 });
 
 describe('pulse service — queries and dead letter', () => {

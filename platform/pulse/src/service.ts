@@ -133,22 +133,11 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
     if (!from || !content) return res.status(400).json({ error: 'from, content required' });
     res.json({ ok: true, id: store.recordBoardEvent(from, content) });
   });
-  app.post('/api/role-state', (req, res) => {
-    // #2467 / #2629: card field removed. Body containing `card` is rejected
-    // — silent-drop would let callers reach for the dead syntax indefinitely.
-    const { role, state, card, detail } = req.body;
-    if (!role || !state) return res.status(400).json({ error: 'role, state required' });
-    if (card !== undefined) {
-      return res.status(400).json({
-        error: 'card field is no longer accepted (#2467/#2629). Card lives on the board, not in role_state. Drop the card field.'
-      });
-    }
-    store.setRoleState(role, state, detail);
-    res.json({ ok: true });
-  });
-  app.get('/api/role-state/:role', (req, res) => {
-    res.json(store.getRoleState(req.params.role) || { error: 'not found' });
-  });
+  // #2632: POST/GET /api/role-state retired. Pulse's role-state HTTP API
+  // was parallel to chorus-hook-shim CLI with zero callers across the
+  // codebase — no-competing-implementations applied. Source of truth:
+  // chorus-hook-shim role-state subcommand → /tmp/claude-team-scan/.
+
   app.get('/api/messages', (req, res) => {
     res.json(store.queryMessages({
       type: req.query.type as string | undefined,
