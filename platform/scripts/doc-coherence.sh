@@ -4,7 +4,8 @@
 # Checks:
 #   1. Content-hash duplicates — same content at multiple paths (real forks)
 #   2. Basename duplicates — same filename, different content (catalog ambiguity)
-#   3. Broken hrefs — catalog hrefs returning non-200 (live probe against localhost:3000)
+#   3. Broken hrefs — catalog hrefs returning non-200 (live probe against localhost:3340 chorus-api,
+#      falling back to localhost:3000 Gathering app for hrefs served from gathering/public/)
 #
 # Output: markdown report written to $REPORT.
 # Env:
@@ -61,10 +62,20 @@ if [ "$SKIP_HREF_PROBE" != "1" ]; then
     HREFS=$(echo "$CATALOG_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(doc['href'] for g in d['groups'] for doc in g['docs']))" 2>/dev/null)
     if [ -n "$HREFS" ]; then
       BROKEN_HREFS=$(echo "$HREFS" | xargs -I{} -P 16 -n 1 sh -c '
-        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3000$1" 2>/dev/null)
-        # 200 + redirect codes (301/302/308) are all fine — 308 is a permanent
-        # redirect (semantically equivalent to 301), used by ADR migration paths.
-        case "$code" in 200|301|302|308) : ;; *) echo "$code $1" ;; esac
+        # Catalog hrefs are served by chorus-api (3340) for chorus-side content and
+        # Gathering app (3000) for gathering/public/ content. Probe 3340 first; on
+        # 404 fall through to 3000 before reporting broken. 200 + redirect codes
+        # (301/302/308) all count as fine — 308 is permanent redirect used by ADR
+        # migration paths.
+        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3340$1" 2>/dev/null)
+        case "$code" in
+          200|301|302|308) : ;;
+          404)
+            code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3000$1" 2>/dev/null)
+            case "$code2" in 200|301|302|308) : ;; *) echo "$code2 $1" ;; esac
+            ;;
+          *) echo "$code $1" ;;
+        esac
       ' _ {})
       BROKEN_COUNT=$(echo "$BROKEN_HREFS" | grep -c . | tr -d ' ')
       [ "$BROKEN_HREFS" = "" ] && BROKEN_COUNT=0
