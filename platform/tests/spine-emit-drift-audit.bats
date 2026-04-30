@@ -68,29 +68,81 @@ setup() {
   fi
 }
 
-@test "every recent gate:product-pass comment has a probe-evidence spine event" {
-  # Look for gate:product-pass mentions in chorus.log within window. The
-  # comment itself flows through card.comment events on the spine. Each
-  # gate-PASS should have a near-by probe.evidence event (within 60s).
-  pass_count=$(grep -c "gate:product-pass" "$CHORUS_LOG" 2>/dev/null || echo 0)
+@test "every recent gate:product-pass comment has a probe-evidence spine event within 60s" {
+  # Per-comment correlation. For each gate:product-pass card-comment event
+  # in chorus.log, find a probe.evidence event with the same card_id
+  # within ±60s. Catches the paper-trail pattern (Jeff 2026-04-30 morning):
+  # gate-PASS comment without accompanying probe emission.
+  #
+  # If gate-PASS events appear but NONE has correlated probe.evidence,
+  # this is the catastrophic-drift case — fail loud.
 
-  if [ "$pass_count" = "0" ]; then
-    skip "no gate:product-pass mentions in chorus.log window — nothing to audit"
+  # Pull all card.comment events that mention gate:product-pass with their
+  # timestamp + card_id. JSON shape varies; fall back to grep-and-parse.
+  pass_lines=$(grep "\"event\":\"card\.comment\"" "$CHORUS_LOG" 2>/dev/null \
+    | grep "gate:product-pass" \
+    | head -20)
+
+  if [ -z "$pass_lines" ]; then
+    skip "no gate:product-pass card.comment events in chorus.log — nothing to audit"
   fi
 
-  # If there are no probe.evidence events at all, every gate:product-pass
-  # is a paper-trail.
-  evidence_count=$(grep -c "\"event\":\"probe\.evidence\"" "$CHORUS_LOG" 2>/dev/null || echo 0)
+  pass_total=0
+  evidence_correlated=0
+  uncorrelated=()
 
-  if [ "$evidence_count" = "0" ] && [ "$pass_count" -gt "0" ]; then
-    echo "Found ${pass_count} gate:product-pass mentions but ZERO probe.evidence"
-    echo "spine events in the same window."
+  while IFS= read -r pass_line; do
+    pass_total=$((pass_total + 1))
+    # Extract card_id from the line (best-effort against varying JSON shapes)
+    pass_card=$(echo "$pass_line" | grep -oE "\"card[_id]*\":\"?[0-9]+\"?" \
+      | head -1 | grep -oE "[0-9]+" | head -1)
+    pass_ts=$(echo "$pass_line" | grep -oE "\"timestamp\":\"[^\"]+\"" \
+      | head -1 | sed -E 's/.*"timestamp":"([^"]+)".*/\1/')
+
+    if [ -z "$pass_card" ] || [ -z "$pass_ts" ]; then
+      continue
+    fi
+
+    # Look for a probe.evidence event for this card within ±60s. Coarse
+    # match: same card_id within ±60 lines (chorus.log emits ~1/sec under
+    # load; 60 lines is a fair proxy for 60s).
+    pass_lineno=$(grep -n "\"event\":\"card\.comment\"" "$CHORUS_LOG" \
+      | grep "$pass_ts" | head -1 | cut -d: -f1)
+
+    if [ -z "$pass_lineno" ]; then
+      continue
+    fi
+
+    window_start=$((pass_lineno - 60))
+    [ $window_start -lt 1 ] && window_start=1
+    window_end=$((pass_lineno + 60))
+
+    correlated=$(sed -n "${window_start},${window_end}p" "$CHORUS_LOG" 2>/dev/null \
+      | grep "\"event\":\"probe\.evidence\"" \
+      | grep -E "\"card[_id]*\":\"?${pass_card}\"?" \
+      | head -1)
+
+    if [ -n "$correlated" ]; then
+      evidence_correlated=$((evidence_correlated + 1))
+    else
+      uncorrelated+=("#${pass_card} @ ${pass_ts}")
+    fi
+  done <<< "$pass_lines"
+
+  if [ "$pass_total" -gt 0 ] && [ "$evidence_correlated" = "0" ]; then
+    echo "Found ${pass_total} gate:product-pass card.comment events but ZERO"
+    echo "with correlated probe.evidence within ±60 lines."
     echo ""
-    echo "  Today's paper-trail pattern (Jeff 2026-04-30): gate:product-pass"
-    echo "  comments without accompanying probe-evidence emissions are"
-    echo "  ceremony, not gates. Each /gate-product invocation must emit"
-    echo "  probe.evidence with the actual stdout/probe artifact, not just"
-    echo "  a comment."
+    echo "Uncorrelated (sample, up to 10):"
+    for line in "${uncorrelated[@]:0:10}"; do
+      echo "  $line"
+    done
+    echo ""
+    echo "  Today's paper-trail pattern (Jeff 2026-04-30): every"
+    echo "  /gate-product PASS must emit probe.evidence with the live-"
+    echo "  probe stdout/artifact, not just a card comment. Without the"
+    echo "  emission, the PASS is ceremony — caught Wren's PASS on #2625"
+    echo "  before production team-block."
     false
   fi
 }
