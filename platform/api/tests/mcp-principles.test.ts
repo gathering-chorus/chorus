@@ -20,6 +20,8 @@ describe('#2476 buildMcpServer principles tools', () => {
       'chorus_principles_create',
       'chorus_principles_get',
       'chorus_principles_list',
+      'chorus_subdomains_get',
+      'chorus_subdomains_list',
     ]);
   });
 
