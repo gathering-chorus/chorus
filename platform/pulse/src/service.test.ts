@@ -52,14 +52,24 @@ describe('pulse service — nudges', () => {
     expect(res.body.error).toMatch(/from, to, content required/);
   });
 
-  it('GET /api/nudge/:role/pending returns stored nudges for that role', async () => {
-    const { app } = fresh();
-    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'one' });
-    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'two' });
-    const res = await request(app).get('/api/nudge/wren/pending');
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
-    expect(res.body[0].content).toBe('one');
+  // #2628: GET /api/nudge/:role/pending retired — moribund (0 production
+  // consumers, only an error-message string in nudge_poll.rs ever named it).
+  // Test asserts the endpoint is gone AND that MessageStore.sendNudge +
+  // createApp still wire the canonical POST persist path. RED before delete
+  // (route returned 200), GREEN after (route is 404).
+  it('GET /api/nudge/:role/pending is retired (404) — canonical persist intact — #2628', async () => {
+    const store = new MessageStore(':memory:');
+    const app = createApp(store);
+    // Production symbols invoked directly: MessageStore + createApp.
+    const directId = store.sendNudge('kade', 'wren', 'direct write');
+    expect(typeof directId).toBe('number');
+    const postRes = await request(app)
+      .post('/api/nudge')
+      .send({ from: 'kade', to: 'wren', content: 'persist still works' });
+    expect(postRes.status).toBe(200);
+    // Moribund read endpoint is gone.
+    const getRes = await request(app).get('/api/nudge/wren/pending');
+    expect(getRes.status).toBe(404);
   });
 
   // #2435 wedge 7d — tests for /api/nudge/:id/ack, /api/nudge/:role/ack-all,

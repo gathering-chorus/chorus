@@ -83,15 +83,12 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     log('info', 'nudge.stored', { id, from, to, chars: content.length, traceId: traceId || undefined });
     res.json({ ok: true, id, traceId });
   });
-  app.get('/api/nudge/:role/pending', (req, res) => {
-    res.json(store.getPendingNudges(req.params.role));
-  });
+  // #2628: GET /api/nudge/:role/pending retired (moribund — 0 production
+  // consumers, only an error-message string in nudge_poll.rs ever named it).
   // #2435 wedge 7d — /api/nudge/:id/ack + /api/nudge/:role/ack-all +
   // /api/nudge/:id/attempt retired. Kade's 0.3 audit: 0 production callers.
   // Delivery confirmation in V2 is the nudge.surfaced spine event, not an
-  // HTTP ack API. Store-side helpers (acknowledgeNudge, acknowledgeAllNudges,
-  // recordDeliveryAttempt) stay in the MessageStore for now — harmless dead
-  // code that retires with the broader messages.db nudge-write retirement.
+  // HTTP ack API.
 }
 
 function registerChatRoutes(app: Express, store: MessageStore): void {
@@ -115,17 +112,12 @@ function registerChatRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-function registerDeadLetterRoutes(app: Express, store: MessageStore): void {
-  app.get('/api/dead-letter', (_req, res) => {
-    res.json(store.getDeadLetters({ limit: 50 }));
-  });
-  app.post('/api/dead-letter/:id/replay', (req, res) => {
-    const id = parseInt(req.params.id);
-    store.replayDeadLetter(id);
-    log('info', 'dead-letter.replayed', { id });
-    res.json({ ok: true });
-  });
-}
+// #2628: registerDeadLetterRoutes retired — moribund. /api/dead-letter and
+// /api/dead-letter/:id/replay had zero production callers (Apr-30 caller
+// trace). The dead-letter mechanism itself is a vestige of the queue-based
+// nudge model retired by #2435; the canonical receiver is spine-tick-poller
+// which surfaces failures via nudge.surface.failed spine events, not dead
+// letters in messages.db.
 
 function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   app.post('/api/board-event', (req, res) => {
@@ -160,7 +152,7 @@ export function createApp(store: MessageStore): Express {
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics);
   registerChatRoutes(app, store);
-  registerDeadLetterRoutes(app, store);
+  // #2628: registerDeadLetterRoutes retired (moribund, 0 production callers).
   registerStateAndQueryRoutes(app, store);
   return app;
 }

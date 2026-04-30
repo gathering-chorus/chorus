@@ -93,51 +93,19 @@ export class MessageStore {
     return Number(stmt.run(from, to, content).lastInsertRowid);
   }
 
-  getPendingNudges(role: string): Message[] {
-    const stmt = this.db.prepare(
-      'SELECT * FROM messages WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0 AND dead_letter = 0 ORDER BY created_at'
-    );
-    return stmt.all(role) as Message[];
-  }
-
-  /** Record a delivery attempt. After MAX_ATTEMPTS, move to dead-letter. */
-  recordDeliveryAttempt(id: number): { deadLettered: boolean } {
-    const MAX_ATTEMPTS = 3;
-    this.db.prepare('UPDATE messages SET delivery_attempts = delivery_attempts + 1 WHERE id = ?').run(id);
-    const row = this.db.prepare('SELECT delivery_attempts FROM messages WHERE id = ?').get(id) as { delivery_attempts: number } | undefined;
-    if (row && row.delivery_attempts >= MAX_ATTEMPTS) {
-      this.db.prepare('UPDATE messages SET dead_letter = 1, dead_lettered_at = datetime(\'now\') WHERE id = ?').run(id);
-      return { deadLettered: true };
-    }
-    return { deadLettered: false };
-  }
-
-  getDeadLetters(opts?: { limit?: number }): Message[] {
-    const limit = opts?.limit || 50;
-    return this.db.prepare(
-      'SELECT * FROM messages WHERE dead_letter = 1 ORDER BY dead_lettered_at DESC LIMIT ?'
-    ).all(limit) as Message[];
-  }
-
-  /** Replay a dead-lettered message — reset attempts and dead-letter flag */
-  replayDeadLetter(id: number): void {
-    this.db.prepare(
-      'UPDATE messages SET dead_letter = 0, dead_lettered_at = NULL, delivery_attempts = 0 WHERE id = ?'
-    ).run(id);
-  }
-
-  acknowledgeNudge(id: number): void {
-    this.db.prepare(
-      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE id = ?'
-    ).run(id);
-  }
-
-  acknowledgeAllNudges(role: string): number {
-    const result = this.db.prepare(
-      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0'
-    ).run(role);
-    return result.changes;
-  }
+  // #2628: nudge-history-ack helper family retired (eliminate-vs-manage,
+  // family had 0 production callers per Apr-30 caller trace):
+  //   - getPendingNudges       (consumer: GET /api/nudge/:role/pending — retired)
+  //   - acknowledgeNudge       (consumer: /api/nudge/:id/ack — retired by #2435)
+  //   - acknowledgeAllNudges   (consumer: /api/nudge/:role/ack-all — retired by #2435)
+  //   - recordDeliveryAttempt  (consumer: /api/nudge/:id/attempt — retired by #2435)
+  //   - replayDeadLetter       (consumer: POST /api/dead-letter/:id/replay — retired)
+  //   - getDeadLetters         (consumer: GET /api/dead-letter — retired)
+  // The canonical receiver in V2 is spine-tick-poller; surface failures emit
+  // nudge.surface.failed spine events, not dead-letter rows. Schema columns
+  // (acknowledged, acknowledged_at, delivery_attempts, dead_letter,
+  // dead_lettered_at) survive as historical fields on existing rows; future
+  // schema migration is a separate card if/when justified.
 
   // --- Chats ---
 

@@ -223,20 +223,20 @@ fn assemble_alerts(freshness: &serde_json::Value) -> serde_json::Value {
 }
 
 fn assemble_nudges() -> serde_json::Value {
+    // #2628: voice-inbox path-checks retired. The /tmp/voice-inbox/<role>/
+    // pending-inject.txt path was the queue file from the old inject-watcher
+    // model that #2435 retired. Files are no longer written there; reading
+    // them as a "pending count" surfaced phantom-zeros forever. The canonical
+    // pending count is the spine fold (nudge.emitted minus nudge.surfaced),
+    // which pulse can compute from chorus.log if/when this section earns its
+    // keep again.
     let mut nudges = serde_json::Map::new();
     for role in &["wren", "silas", "kade"] {
-        let path = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
-        let count = fs::read_to_string(&path).ok()
-            .map(|c| c.lines().filter(|l| !l.trim().is_empty()).count())
-            .unwrap_or(0);
-        let age_secs = fs::metadata(&path).ok()
-            .and_then(|m| m.modified().ok())
-            .map(|t| t.elapsed().unwrap_or_default().as_secs())
-            .unwrap_or(0);
         nudges.insert(role.to_string(), serde_json::json!({
-            "pending": count,
-            "age_secs": if count > 0 { age_secs } else { 0 },
-            "stale": count > 0 && age_secs > 600,
+            "pending": 0,
+            "age_secs": 0,
+            "stale": false,
+            "note": "voice-inbox queue retired by #2435/#2628; pending count from spine fold (#2628 follow-on)",
         }));
     }
     serde_json::Value::Object(nudges)

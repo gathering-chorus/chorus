@@ -24,69 +24,24 @@ afterEach(() => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
 });
 
-describe('Nudge delivery', () => {
+describe('Nudge persist (#2628 — canonical write path)', () => {
   test('creates a nudge with a positive id', () => {
     const id = store.sendNudge('silas', 'wren', 'test nudge');
     expect(id).toBeGreaterThan(0);
   });
-
-  test('recipient has exactly one pending nudge after send', () => {
-    store.sendNudge('silas', 'wren', 'test nudge');
-    const pending = store.getPendingNudges('wren');
-    expect(pending).toHaveLength(1);
-    expect(pending[0].content).toBe('test nudge');
-    expect(pending[0].from).toBe('silas');
-  });
-
-  test('non-recipient has zero pending', () => {
-    store.sendNudge('silas', 'wren', 'test nudge');
-    expect(store.getPendingNudges('silas')).toHaveLength(0);
-  });
-
-  test('acknowledge clears pending', () => {
-    const id = store.sendNudge('silas', 'wren', 'test nudge');
-    store.acknowledgeNudge(id);
-    expect(store.getPendingNudges('wren')).toHaveLength(0);
-  });
 });
 
-describe('Multiple nudges + ack-all', () => {
-  test('three pending, ack-all returns 3, pending cleared', () => {
-    store.sendNudge('wren', 'kade', 'nudge 1');
-    store.sendNudge('silas', 'kade', 'nudge 2');
-    store.sendNudge('wren', 'kade', 'nudge 3');
-    expect(store.getPendingNudges('kade')).toHaveLength(3);
-
-    const acked = store.acknowledgeAllNudges('kade');
-    expect(acked).toBe(3);
-    expect(store.getPendingNudges('kade')).toHaveLength(0);
-  });
-});
-
-describe('Dead letter', () => {
-  test('third delivery attempt dead-letters the nudge', () => {
-    const id = store.sendNudge('silas', 'wren', 'will fail');
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(true);
-
-    expect(store.getPendingNudges('wren')).toHaveLength(0);
-    const dl = store.getDeadLetters();
-    expect(dl).toHaveLength(1);
-    expect(dl[0].delivery_attempts).toBe(3);
-  });
-
-  test('replay restores the nudge to pending and clears dead-letter', () => {
-    const id = store.sendNudge('silas', 'wren', 'will fail');
-    store.recordDeliveryAttempt(id);
-    store.recordDeliveryAttempt(id);
-    store.recordDeliveryAttempt(id);
-
-    store.replayDeadLetter(id);
-    expect(store.getDeadLetters()).toHaveLength(0);
-    expect(store.getPendingNudges('wren')).toHaveLength(1);
-  });
-});
+// #2628: Nudge-history-ack helper-family tests retired alongside their
+// helpers. Family had 0 production callers per Apr-30 caller trace; the
+// canonical receiver is spine-tick-poller which surfaces failures via
+// nudge.surface.failed spine events, not dead-letter rows or ack flags.
+// Specifically retired:
+//   - "recipient has exactly one pending nudge after send" (getPendingNudges)
+//   - "non-recipient has zero pending"                     (getPendingNudges)
+//   - "acknowledge clears pending"                         (acknowledgeNudge + getPendingNudges)
+//   - "three pending, ack-all returns 3, pending cleared"  (acknowledgeAllNudges + getPendingNudges)
+//   - "third delivery attempt dead-letters the nudge"      (recordDeliveryAttempt + getDeadLetters)
+//   - "replay restores the nudge to pending"               (replayDeadLetter + getPendingNudges)
 
 describe('Chat', () => {
   test('chat id is namespaced by the participant pair', () => {

@@ -192,8 +192,11 @@ pub fn format_unread_block(role: &str, nudges: &[UnreadNudge], limit: usize) -> 
         ));
     }
     if nudges.len() > shown {
+        // #2628: GET /api/nudge/:role/pending retired (moribund). Truncated
+        // list now points at the canonical spine fold (nudge.emitted minus
+        // nudge.surfaced, role-scoped) which is what nudge_poll itself reads.
         out.push_str(&format!(
-            "- ...and {} more — query /api/nudge/{}/pending for full list\n",
+            "- ...and {} more (truncated; canonical source: spine nudge.emitted/.surfaced fold for role {})\n",
             nudges.len() - shown,
             role
         ));
