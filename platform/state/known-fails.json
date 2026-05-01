@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "_doc": "Pre-commit honors carded test failures (#2497). CI does NOT use this file. Entries are local-bypass-with-trace; they audit-trail to a card. Doc-coherence ratchet warns when entries reference closed cards.",
+  "entries": []
+}
