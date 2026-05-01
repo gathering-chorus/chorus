@@ -389,7 +389,18 @@ do_push() {
   fi
 
   local exit_code=0
-  git -C "$REPO_ROOT" pull --rebase 9>&- 2>&1 && git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
+  # #2651 (#2639 AC5 re-land): skip pull --rebase when there's no upstream
+  # yet (new-branch first push). pull-before-push assumes the remote ref
+  # exists; for a brand-new branch it errors with "no such ref was fetched"
+  # and aborts the push. Originally claimed shipped in #2639 but the working
+  # -tree edit was lost in a dirty-state revert before commit.
+  local has_upstream
+  has_upstream=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+  if [ -z "$has_upstream" ]; then
+    git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
+  else
+    git -C "$REPO_ROOT" pull --rebase 9>&- 2>&1 && git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
+  fi
 
   if $stashed; then
     git -C "$REPO_ROOT" stash pop --quiet 9>&- 2>/dev/null || {
