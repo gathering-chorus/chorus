@@ -1,6 +1,18 @@
 # Commits Service Design
 
-**Kade, 2026-04-29. Card #2586.**
+**Kade, 2026-04-29. Updated 2026-05-01 (v2.5). Card #2586.**
+
+## v2.5 amendment (2026-05-01)
+
+The v2 amendment drafted earlier on 2026-05-01 (internal `chorus/.worktrees/<role>-<hash>/` + mandatory SessionStart cwd-enforcement) was rejected by Jeff. The protected primitive: **role-directory IS session-start, the foundational coherence of that is correct.** Any mechanism that moves session-start away from `/chorus/roles/<role>/` is in the rejected family. v2.5 supersedes both v1 and the abandoned v2:
+
+1. **All sibling worktrees retired** (`chorus-kade/`, `chorus-wren/`, `chorus-silas/`, `chorus-2526/`). Branches preserved in `chorus/.git/` and on origin. The team operates from `/chorus/` only.
+2. **`worktree_contamination_guard` hook retired** (#2625 dispatcher hookup removed in #2640). The guard's recommended-fix paths pointed at the now-retired siblings; without that referent it became net-negative friction. Module file kept on disk for audit history.
+3. **Three failure modes, three positions:**
+   - **(A) read-stale-content** — peer's `git checkout` rewrites disk content under your reading session. **Accepted-residual-risk.** Cost of physical isolation (worktree mechanism) was rejected as higher than residual (A) cost. Watch via spine events; if a 4-29-class incident recurs, it's a metric, not a regression.
+   - **(B) cross-role commit-on-wrong-branch** — caught by `git-queue` branch-check (#2580) + pre-push hook (#2598/#2625/#2639). **Already shipped.**
+   - **(C) same-role wrong-card** — strict `<role>/<active-card-id>` check from role-state. **Sequenced as #2641 (P1 follow-on).**
+4. **No worktree convention.** The Per-Role Worktree Convention fragment is retired (`designing/claudemd/shared/worktree-convention.md`). All three roles launch from their canonical `/chorus/roles/<role>/` directory.
 
 ## Problem
 
