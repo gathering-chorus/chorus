@@ -1,6 +1,6 @@
 {
   "_build": "217",
-  "archived_at": "2026-04-29 11:54",
+  "archived_at": "2026-05-01 12:52",
   "roles": {
     "wren": {
       "sections": [
@@ -41,11 +41,11 @@
         "roles/wren/working-with-jeff.md": "7bf6c6cea58bc6067e635e8523d2a7375d940aae7c9f044cc2cae513dea9b962",
         "roles/wren/tone.md": "3ec7c713a3c7ceb2b6be63b6d61a2dd3335684b5bdbbcba13d2c5bc6580dc364",
         "shared/communication-discipline.md": "e299ead656ea34ae4974454374896e3ea6c3ebaf4275eadb4f6aa4d6f4554223",
-        "shared/idle-awareness.md": "503afc26d9ec1e442a6677d85cac916553c63938ecf8a3959d988a4cef809de4",
+        "shared/idle-awareness.md": "13f863499a5c84fb9c1292846d860bd311de59f28d7163c8229316a5a8b6e299",
         "roles/wren/session-moderation.md": "5335ce478073e035c85ccd99e31d638fc010126fcd13810b34b93fb8778ba13f",
-        "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
+        "shared/team-kanban-board-core.md": "413014963778ec32f5136278e53fa8374953586e94d8f9076d09d8ebea1bc35a",
         "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
-        "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
+        "shared/execution-modes.md": "4a1d1632983a760bce131672d5d7774ce75a14241e66255344b0e54755be6df1",
         "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
         "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
         "shared/domain-endpoints.md": "f6abc3ffed03c16888b99abdece229a9cd44d8e4de0e52b6ac588ddc29f6609d",
@@ -54,7 +54,7 @@
         "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
         "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
         "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-        "shared/worktree-convention.md": "170ebb5cf56eeb534e9d80eff662835499f6710e8582bfb6f520ff0200e6e5f5",
+        "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
         "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
       },
       "var_hash": "fa8be4e2820d85c43f130a5ddad27b4150c9b840f4fccfcf4a4c8b571fa86873"
@@ -99,10 +99,10 @@
         "roles/silas/working-with-jeff.md": "bbe576fe333da10f8bd66acce208f3e176c8183a58bd96d7517733c1f7059585",
         "roles/silas/tone.md": "83ab3f7cd8d99c86133ed380957c5b1c4426b832c0839088cdb0e06b9a4f27f0",
         "shared/communication-discipline.md": "e299ead656ea34ae4974454374896e3ea6c3ebaf4275eadb4f6aa4d6f4554223",
-        "shared/idle-awareness.md": "503afc26d9ec1e442a6677d85cac916553c63938ecf8a3959d988a4cef809de4",
-        "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
+        "shared/idle-awareness.md": "13f863499a5c84fb9c1292846d860bd311de59f28d7163c8229316a5a8b6e299",
+        "shared/team-kanban-board-core.md": "413014963778ec32f5136278e53fa8374953586e94d8f9076d09d8ebea1bc35a",
         "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
-        "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
+        "shared/execution-modes.md": "4a1d1632983a760bce131672d5d7774ce75a14241e66255344b0e54755be6df1",
         "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
         "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
         "shared/domain-endpoints.md": "f6abc3ffed03c16888b99abdece229a9cd44d8e4de0e52b6ac588ddc29f6609d",
@@ -111,7 +111,7 @@
         "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
         "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
         "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-        "shared/worktree-convention.md": "170ebb5cf56eeb534e9d80eff662835499f6710e8582bfb6f520ff0200e6e5f5",
+        "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
         "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
       },
       "var_hash": "c39808cd9be74efa19467bee3b771a61328f816af567dae76bb34562ecc2109a"
@@ -154,10 +154,10 @@
         "roles/kade/working-with-jeff.md": "da769cc335e149a97f6404195e1199a93ecbbf39df095c6ee3ac4f1dc229d2ee",
         "roles/kade/tone.md": "f653f2cbc99caebb549357e7a16863ce87221f554498f7bff45fa961c345f3b1",
         "shared/communication-discipline.md": "e299ead656ea34ae4974454374896e3ea6c3ebaf4275eadb4f6aa4d6f4554223",
-        "shared/idle-awareness.md": "503afc26d9ec1e442a6677d85cac916553c63938ecf8a3959d988a4cef809de4",
-        "shared/team-kanban-board-core.md": "32632fe2ea42d8681ac0c37a68db2fc2dad8d1ef81ba37647a01b96a27ad08b0",
+        "shared/idle-awareness.md": "13f863499a5c84fb9c1292846d860bd311de59f28d7163c8229316a5a8b6e299",
+        "shared/team-kanban-board-core.md": "413014963778ec32f5136278e53fa8374953586e94d8f9076d09d8ebea1bc35a",
         "shared/team-operating-model.md": "cb02787712676756abf52de51d91c37b6f044e5e5f4a39a57ca7b41d19a3ecb2",
-        "shared/execution-modes.md": "2fab669b37f3bf192f033affcaf2ecfa7b97ff96a66f6d895a45187e74d46a41",
+        "shared/execution-modes.md": "4a1d1632983a760bce131672d5d7774ce75a14241e66255344b0e54755be6df1",
         "shared/intellectual-honesty.md": "1c00d2349a60e84ac3682580bf46e164da9ce23ce2553e934d8bd8d2d546b188",
         "shared/search-hierarchy.md": "64335346604fc4e1286cd8223676397cbb46b633f9865e79044b478366f72bd3",
         "shared/domain-endpoints.md": "f6abc3ffed03c16888b99abdece229a9cd44d8e4de0e52b6ac588ddc29f6609d",
@@ -166,7 +166,7 @@
         "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
         "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
         "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-        "shared/worktree-convention.md": "170ebb5cf56eeb534e9d80eff662835499f6710e8582bfb6f520ff0200e6e5f5",
+        "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
         "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
       },
       "var_hash": "d9407bddc1af5c38e5924ad184ba7a8322a5e2d952c3be5cfb72f756d0dc61ec"
