@@ -428,7 +428,7 @@ shift || true
 
 case "$cmd" in
   commit)  do_commit "$@" ;;
-  push)    do_push ;;
+  push)    do_push "$@" ;;
   add)
     echo "git-queue: 'add' is not a command — did you mean 'commit'?" >&2
     echo "  git-queue.sh commit <files...> -- -m \"message\"" >&2

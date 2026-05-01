@@ -147,9 +147,22 @@ Print summary:
   Warning diff:      PASS | FAIL (N new warnings)
   Pattern match:     PASS | WARN (new files listed)
   execSync lint:     PASS | FAIL (N files with execSync on request path)
+  Known fails:       N entries (carded — see platform/state/known-fails.json)
 
   VERDICT: PASS | FAIL
 ```
+
+### Known fails counter (#2497)
+
+Pull the count from the allowlist before printing summary:
+
+```bash
+KF_COUNT=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/known-fails-filter.sh count 2>/dev/null || echo "0")
+KF_CARDS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/known-fails-filter.sh list-cards 2>/dev/null | tr '\n' ' ')
+echo "  Known fails:       ${KF_COUNT} entries (cards: ${KF_CARDS:-none})"
+```
+
+Display only — does not affect the verdict (CI is authoritative).
 
 ## On Pass
 
