@@ -51,11 +51,13 @@ check_branch() {
     return 1
   fi
 
-  case "$actual_branch" in
-    "${ROLE}/"*)
-      return 0
-      ;;
-    *)
+  # #2639: branch-prefix match delegated to branch-check.sh (single source
+  # for the invariant; pre-push sources the same file).
+  # shellcheck source=branch-check.sh
+  source "$REPO_ROOT/platform/scripts/branch-check.sh"
+  if branch_check_match "$ROLE" "$actual_branch"; then
+    return 0
+  else
       # Forensic payload per Silas's review on #2580: cwd + commits_ahead
       # let dashboards distinguish "session-long contamination" from "one-typo".
       local _cwd _commits_ahead
@@ -84,8 +86,7 @@ check_branch() {
       echo "  Emergency override (logs the bypass, use sparingly):" >&2
       echo "    bash $0 ${op} --force-branch <args>" >&2
       return 1
-      ;;
-  esac
+  fi
 }
 
 log_event() {
