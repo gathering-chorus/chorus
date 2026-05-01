@@ -48,7 +48,7 @@
 Every commit that reaches <code>main</code> was authored on the right branch in a non-shared working tree, passed pre-commit checks, was pushed via the serialized commit queue, and merged via rebase against an up-to-date base. Five hooks fire pre-merge. An engineer joining the project should be able to read the contract once and understand which hook catches which failure mode.
 </div>
 
-<p><strong>Honest scope:</strong> four of the five surfaces block unconditionally; the fifth (pre-commit) is <code>--no-verify</code>-skippable for the carded <code>KNOWN_FAILS</code> pattern, and the allowlist enforcing that convention is still a planned card (#2497). Today's <code>/chorus</code> canonical clone is intended read-only but in practice carries an in-flight role branch — the worktree-contamination guard fires correctly, but the convention isn't structurally enforced. The successor design (#2592 workspace-API) would dissolve the queue + shim layer into a single mediated API; until then, this surface is a layered defense, not a single point.</p>
+<p><strong>Honest scope:</strong> four of the five surfaces block unconditionally; the fifth (pre-commit) is <code>--no-verify</code>-skippable for the carded <code>KNOWN_FAILS</code> pattern, and the allowlist enforcing that convention is still a planned card (#2497). Today's <code>/chorus</code> canonical clone is intended read-only but in practice carries an in-flight role branch — the worktree-contamination guard fires correctly, but the convention isn't structurally enforced. A future era of this doc (#2592 workspace-API) would dissolve the queue + shim layer into a single mediated API; until then, this surface is a layered defense, not a single point.</p>
 
 <h2>Vocabulary</h2>
 <p>The codebase uses internal terms that map to industry-standard concepts. Reading this section once lets the rest of the doc parse without translation.</p>
@@ -114,7 +114,7 @@ Every commit that reaches <code>main</code> was authored on the right branch in 
 <li><code>--no-verify</code> on commit — bypasses pre-commit; convention requires <code>#NNNN</code> trace; allowlist (#2497) not yet wired</li>
 <li><code>// cog-override: &lt;reason&gt;</code> magic comment — exempts a function from cog-complexity at error 12; emits a <code>cog.override.used</code> audit event per applied override</li>
 <li><code># worktree-override</code> magic comment — exempts a Bash command from the worktree-contamination guard for legitimate cross-worktree work; emits an audit event</li>
-<li><code>DEPLOY_ROLE_PREPUSH_OVERRIDE=1</code> env var — bypasses the pre-push git hook for emergency recovery; not for routine use. Note: not consulted by the <code>chorus-hook-shim</code> PreToolUse refusal (gap)</li>
+<li><code>DEPLOY_ROLE_PREPUSH_OVERRIDE=1</code> env var — bypasses the pre-push git hook (Layer 2). Not consulted by Layer 1 (<code>chorus-hook-shim</code> PreToolUse) because Layer 1 text-matches the agent's bash command rather than inspecting the binary; #2636 retires Layer 1's push refusal as over-broad-surface.</li>
 </ul>
 
 <h2>Pre-Commit Detail (Surface 5)</h2>
@@ -248,7 +248,7 @@ flowchart TB
     S["/chorus-silas"]
   end
 
-  subgraph WSAPI["Workspace API (#2592 successor)"]
+  subgraph WSAPI["Workspace API (#2592 — Era 2)"]
     API["mediated git-via-service<br/>(commit, push, merge)"]
   end
 
@@ -277,7 +277,7 @@ flowchart TB
 <li><code>#2500</code> required-checks drift detector — branch-protection vs Repository Rulesets stays in lockstep automatically when checks return</li>
 </ul>
 
-<p><strong>What stays the same:</strong> per-role worktrees as substrate; rebase-merge as merge style; pre-commit as the bypassable-but-load-bearing fifth surface. The successor design replaces the <em>enforcement layer</em>, not the discipline.</p>
+<p><strong>What stays the same:</strong> per-role worktrees as substrate; rebase-merge as merge style; pre-commit as the bypassable-but-load-bearing fifth surface. The Era 2 shape replaces the <em>enforcement layer</em>, not the discipline — and lives in this doc as a sibling section, not a sibling file.</p>
 
 <h2>Implementation Plan</h2>
 <p>Done across the prior arc and today's session:</p>
@@ -315,9 +315,9 @@ flowchart TB
 <li><strong>#2200 Cross-language contract tests</strong> — TS↔Rust hash-parity is the only enforcement today; broader coverage when wired</li>
 </ol>
 
-<p><strong>Successor design (NOT a phase of this design):</strong></p>
+<p><strong>Future era of this doc (NOT a phase, NOT a successor file):</strong></p>
 <ul>
-<li><strong>#2592 workspace-API</strong> — code asks the service, doesn't spawn git directly. If/when this lands, it dissolves the queue layer, the shim PreToolUse refusal, and the worktree convention into a single mediated API. That's a successor design that obsoletes this one, not a continuation of it. Deserves its own doc and a deprecation story for <code>git-queue.sh</code></li>
+<li><strong>#2592 workspace-API</strong> — code asks the service, doesn't spawn git directly. If/when this lands, it dissolves the queue layer, the shim PreToolUse refusal, and the worktree convention into a single mediated API. <strong>Per Wren PM call 2026-04-30</strong>: when #2592 lands, fold its design into this same doc as <code>## Era 2: workspace-API mediation</code> rather than spawning a successor file. One canonical reference per surface; eras are sections, not files.</li>
 </ul>
 
 <h2>Sub-Domain Interaction Model</h2>
@@ -371,7 +371,7 @@ flowchart TB
 <div class="gap"><strong>7. Daemon-during-rebase race</strong> (no card yet) — surfaced 2026-04-30 when <code>git-queue.sh</code>'s stash-pull-pop dance raced with <code>claudemd-gen</code> daemon writing to <code>manifest.json</code>. Hit twice in one session. Needs pattern-naming + card</div>
 <div class="gap"><strong>8. Two-doc-lockstep with no detector</strong> — this doc and the CI/CD service design must co-update when the surface table changes. There's no automated check that catches drift. Same failure class DEC-2525 names for required-checks but applied to designs themselves</div>
 <div class="gap"><strong>9. Canonical clone drift</strong> — <code>/chorus</code> is intended as read-only canonical, but in practice currently carries an in-flight role branch. Cross-worktree contamination guard fires correctly when this happens, but the convention "/chorus is read-only" isn't structurally enforced</div>
-<div class="gap"><strong>10. New-branch upstream gap in <code>git-queue.sh push</code></strong> (no card yet) — surfaced 2026-04-30 — <code>pull --rebase</code> requires upstream; new branches with no upstream fail before reaching <code>push</code>. Shim has no override path for <code>git push</code>, so the documented <code>DEPLOY_ROLE_PREPUSH_OVERRIDE</code> is consulted only by the pre-push git hook (not the shim). Workaround today: <code>gh pr create</code> shells out to git-push without the bash text the shim matches on. Fix: detect missing-upstream in <code>git-queue.sh:391</code> and skip <code>pull --rebase</code></div>
+<div class="gap"><strong>10. Layer 1 push-refusal is over-broad, not under-overridden</strong> (no card yet — #2636 retires it). Per Silas arch review 2026-04-30: Layer 1 (<code>chorus-hook-shim</code> PreToolUse on bash text) duplicates Layer 2 (the <code>pre-push</code> git hook) by text-matching the agent's command — text-matching can't see what binaries the command will actually invoke. Adding an override to Layer 1 doubles down on the anti-pattern. #2636's structured-input refactor either deletes Layer 1's push refusal (rely on Layer 2's working override) or migrates to binary-level hooks.</div>
 
 <h2>Cross-cutting patterns (cross-reference)</h2>
 <p>These patterns surfaced 2026-04-30 from the same substrate work but don't directly enforce the commit-flow contract — they're sibling refusal patterns that share the <em>enforcement-at-every-surface</em> shape with the Five Surfaces table. Detail lives in <code>ci-pipeline-service-design.md</code>; cross-referenced here so the commits doc isn't read in isolation.</p>
