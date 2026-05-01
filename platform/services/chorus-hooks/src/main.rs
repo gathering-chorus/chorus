@@ -244,12 +244,12 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
-            // Worktree contamination guard (#2625) — refuse git checkout/pull/reset/switch
-            // on shared /chorus when another role is `building` per role-state.json
-            _last_module = "worktree_contamination_guard".into(); let r = hooks::worktree_contamination_guard::check(input).await;
-            if r.stderr.is_some() || r.exit_code != 0 {
-                return (_last_module.clone(), r);
-            }
+            // Worktree contamination guard (#2625) — RETIRED 2026-05-01 (#2640).
+            // Hook assumed sibling worktrees (chorus-<role>/) which Jeff retired;
+            // the guard's recommended-fix path pointed at directories that no
+            // longer exist. Without that referent the hook was net-negative
+            // friction. Module file kept on disk for audit history; call site
+            // removed.
 
             // infra guardrails (engineer only)
             _last_module = "infra_guardrails".into(); let r = hooks::infra_guardrails::check(input).await;
