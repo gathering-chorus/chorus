@@ -47,6 +47,48 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "branch_check_card_match: kade/2640-narrow matches active card 2640" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2640-narrow 2640
+  [ "$status" -eq 0 ]
+}
+
+@test "branch_check_card_match: kade/2641-mode-c matches active card 2641 with suffix" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2641-mode-c 2641
+  [ "$status" -eq 0 ]
+}
+
+@test "branch_check_card_match: kade/2640 does not match active card 2641 (wrong card)" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2640-narrow 2641
+  [ "$status" -ne 0 ]
+}
+
+@test "branch_check_card_match: outer prefix mismatch fails (kade on wren/...)" {
+  source "$CHECK"
+  run branch_check_card_match kade wren/2630-nudge 2641
+  [ "$status" -ne 0 ]
+}
+
+@test "branch_check_card_match: empty active-card refuses (no card declared)" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2641-mode-c ""
+  [ "$status" -ne 0 ]
+}
+
+@test "branch_check_card_match: kade/2641 (no suffix) matches active card 2641" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2641 2641
+  [ "$status" -eq 0 ]
+}
+
+@test "branch_check_card_match: card-id substring not allowed (2641 not match 264)" {
+  source "$CHECK"
+  run branch_check_card_match kade kade/2641-mode-c 264
+  [ "$status" -ne 0 ]
+}
+
 @test "git-queue.sh sources branch-check.sh (single-source verified)" {
   run grep -E "source.+branch-check\.sh|\\. .+branch-check\.sh" \
     "$BATS_TEST_DIRNAME/../git-queue.sh"

@@ -56,6 +56,53 @@ check_branch() {
   # shellcheck source=branch-check.sh
   source "$REPO_ROOT/platform/scripts/branch-check.sh"
   if branch_check_match "$ROLE" "$actual_branch"; then
+    # #2641 mode-C: stricter inner check — branch must match the role's
+    # currently-declared active-card-id from role-state. Catches the
+    # same-role wrong-card case (e.g., kade declared building #2641 but
+    # HEAD is on kade/2640-narrow).
+    local _role_state_file="/tmp/claude-team-scan/${ROLE}-declared.json"
+    local _active_card=""
+    if [ -f "$_role_state_file" ]; then
+      _active_card=$(python3 -c "
+import json, re, sys
+try:
+    d = json.load(open('$_role_state_file'))
+    detail = d.get('detail', '') or ''
+    m = re.search(r'card=(\d+)', detail)
+    print(m.group(1) if m else '')
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+    fi
+    # Only enforce if role-state declares an active card. If empty, fall
+    # through (we've already passed the outer prefix check).
+    if [ -n "$_active_card" ]; then
+      if branch_check_card_match "$ROLE" "$actual_branch" "$_active_card"; then
+        return 0
+      fi
+      # Mismatch: same role, wrong card.
+      local _cwd
+      _cwd=$(pwd)
+      log_event "commits.branch.card_mismatch_detected" \
+        "expected=${ROLE}/${_active_card}" \
+        "actual=${actual_branch}" \
+        "op=${op}" \
+        "cwd=${_cwd}" \
+        "active_card_id=${_active_card}"
+      echo "git-queue: ERROR — same-role wrong-card guard (#2641, mode C)" >&2
+      echo "  role:            ${ROLE}" >&2
+      echo "  active card:     ${ROLE}/${_active_card}" >&2
+      echo "  actual branch:   ${actual_branch}" >&2
+      echo "  cwd:             ${_cwd}" >&2
+      echo "" >&2
+      echo "  Self-recovery:" >&2
+      echo "    git checkout ${ROLE}/${_active_card}-<slug>     # switch back" >&2
+      echo "    role-state ${ROLE} building card=<actual>       # update declared card" >&2
+      echo "" >&2
+      echo "  Emergency override:" >&2
+      echo "    bash $0 ${op} --force-branch <args>" >&2
+      return 1
+    fi
     return 0
   else
       # Forensic payload per Silas's review on #2580: cwd + commits_ahead
