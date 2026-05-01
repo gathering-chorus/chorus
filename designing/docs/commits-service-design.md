@@ -6,7 +6,7 @@
 
 Every commit that reaches `main` was authored on the right branch in a non-shared working tree, passed pre-commit checks, was pushed via the serialized commit queue, and merged via rebase against an up-to-date base. Five hooks fire pre-merge. An engineer joining the project should be able to read the contract once and understand which hook catches which failure mode.
 
-**Honest scope:** four of the five surfaces block unconditionally; the fifth (pre-commit) is `--no-verify`-skippable for the carded `KNOWN_FAILS` pattern, and the allowlist enforcing that convention is still a planned card (#2497). Today's `/chorus` canonical clone is intended read-only but in practice carries an in-flight role branch — the worktree-contamination guard fires correctly, but the convention isn't structurally enforced. The successor design (#2592 workspace-API) would dissolve the queue + shim layer into a single mediated API; until then, this surface is a layered defense, not a single point.
+**Honest scope:** four of the five surfaces block unconditionally; the fifth (pre-commit) is `--no-verify`-skippable for the carded `KNOWN_FAILS` pattern, and the allowlist enforcing that convention is still a planned card (#2497). Today's `/chorus` canonical clone is intended read-only but in practice carries an in-flight role branch — the worktree-contamination guard fires correctly, but the convention isn't structurally enforced. A future era of this doc (#2592 workspace-API) would dissolve the queue + shim layer into a single mediated API; until then, this surface is a layered defense, not a single point.
 
 ## Vocabulary
 
@@ -73,7 +73,7 @@ Failure modes the contract names:
 - `--no-verify` on commit — bypasses pre-commit; convention requires `#NNNN` trace; allowlist (#2497) not yet wired
 - `// cog-override: <reason>` magic comment — exempts a function from cog-complexity at error 12; emits a `cog.override.used` audit event per applied override
 - `# worktree-override` magic comment — exempts a Bash command from the worktree-contamination guard for legitimate cross-worktree work; emits an audit event
-- `DEPLOY_ROLE_PREPUSH_OVERRIDE=1` env var — bypasses the pre-push hook for emergency recovery; not for routine use
+- `DEPLOY_ROLE_PREPUSH_OVERRIDE=1` env var — bypasses the pre-push git hook (Layer 2) for emergency recovery; not for routine use. **Note:** consulted only by Layer 2; the `chorus-hook-shim` PreToolUse refusal (Layer 1) doesn't read this env var because Layer 1 text-matches the agent's bash command rather than inspecting the binary. Per Silas arch review 2026-04-30, this is over-broad-surface, not missing-override; #2636 retires Layer 1's push refusal
 
 ## Pre-Commit Detail (Surface 5)
 
@@ -115,7 +115,7 @@ Onboarding (per role, one-time):
 - **Lifecycle**: branch lives from `cards move WIP` to merge. After merge, branch is deleted via GitHub PR auto-delete
 - **Retirement**: stale branches (>14 days no commits, no open PR) cleaned up at session close. Inventory via `git branch -r --merged main`
 - **Long-lived branches** are an antipattern — if accretion happens, file a wave-merge card
-- **Push**: only `git-queue.sh push`. Raw `git push` is refused at three surfaces (pre-push hook, shim PreToolUse, infra-guardrails for non-Claude callers)
+- **Push**: only `git-queue.sh push`. Raw `git push` is refused at three surfaces (pre-push git hook = Layer 2; `chorus-hook-shim` PreToolUse = Layer 1, retired by #2636 as over-broad text-match; infra-guardrails for non-Claude callers)
 - **Conflict resolution**: rebase, not merge. Hook-blocked staging during rebase resolution: `git update-index --add`. The rebased commit lands as the original author
 - **Merge style**: rebase-merge (#2556 — merge-commits in main caused a 134-commit untangling). GitHub PR setting "Allow rebase merging" only
 - **Required-checks lockstep**: branch-protection AND Repository Rulesets must list the same checks (DEC-2525 amendment). Both are deferred today (empty post-#2600 cost-stop). The lockstep enforcer (#2500) is not in force; it becomes load-bearing when required checks return
@@ -191,7 +191,9 @@ What this shape buys: substrate-level isolation of `.git/HEAD` per role; layered
 
 What it costs: onboarding a role is multi-step (worktree add + memory-continuity choice + CLAUDE.md fragment); `--no-verify` is honor-system until #2497 lands; namespace drift across `commit.*` / `commits.*` / `build.*` makes spine queries inconsistent. The queue layer + shim refusal + worktree convention are three mechanisms for one invariant — workable today, but the successor design (#2592) collapses them.
 
-## Target State (To-Be)
+## Target State (To-Be — Era 2 candidate)
+
+This is the future-era shape *if* #2592 workspace-API lands. Per service-design-lineage policy (Wren 2026-04-30), it folds back into this doc as `## Era 2` rather than spawning a parallel file.
 
 ```mermaid
 flowchart TB
@@ -201,7 +203,7 @@ flowchart TB
     S["/chorus-silas"]
   end
 
-  subgraph WSAPI["Workspace API (#2592 successor)"]
+  subgraph WSAPI["Workspace API (#2592 — Era 2)"]
     API["mediated git-via-service<br/>(commit, push, merge)"]
   end
 
@@ -228,7 +230,7 @@ What changes:
 - `#2497` KNOWN_FAILS allowlist — `--no-verify` becomes machine-checkable, not honor-system
 - `#2500` required-checks drift detector — branch-protection vs Repository Rulesets stays in lockstep automatically when checks return
 
-What stays the same: per-role worktrees as substrate; rebase-merge as merge style; pre-commit as the bypassable-but-load-bearing fifth surface. The successor design replaces the *enforcement layer*, not the discipline.
+What stays the same: per-role worktrees as substrate; rebase-merge as merge style; pre-commit as the bypassable-but-load-bearing fifth surface. The Era 2 shape replaces the *enforcement layer*, not the discipline — and lives in this doc as a sibling section, not a sibling file.
 
 ## Implementation Plan
 
@@ -257,8 +259,8 @@ Done across the prior arc and today's session:
 7. **#2588 Wave 3 dead-code retirement under chorus-hooks** — architectural orphan cleanup
 8. **#2200 Cross-language contract tests** — TS↔Rust hash-parity is the only enforcement today; broader coverage when wired
 
-**Successor design (NOT a phase of this design):**
-- **#2592 workspace-API** — code asks the service, doesn't spawn git directly. If/when this lands, it dissolves the queue layer, the shim PreToolUse refusal, and the worktree convention into a single mediated API. That's a successor design that obsoletes this one, not a continuation of it. Deserves its own doc and a deprecation story for `git-queue.sh`
+**Future era of this doc (NOT a phase, NOT a successor file):**
+- **#2592 workspace-API** — code asks the service, doesn't spawn git directly. If/when this lands, it dissolves the queue layer, the shim PreToolUse refusal, and the worktree convention into a single mediated API. **Per Wren PM call 2026-04-30** (re: service-design-lineage policy): when #2592 lands, fold its design into this same doc as `## Era 2: workspace-API mediation` rather than spawning a successor file. One canonical reference per surface; eras are sections, not files. Reserve "new doc replaces old" for cases where the surface itself fundamentally changes (rare).
 
 ## Sub-Domain Interaction Model
 
@@ -310,7 +312,7 @@ The Implementation Plan above ties each gap to its card. Summary by impact:
 7. **Daemon-during-rebase race** (no card yet) — surfaced 2026-04-30 when `git-queue.sh`'s stash-pull-pop dance raced with `claudemd-gen` daemon writing to `manifest.json`. Hit twice in one session. Needs pattern-naming + card
 8. **Two-doc-lockstep with no detector** — this doc and the CI/CD service design must co-update when the surface table changes. There's no automated check that catches drift. Same failure class DEC-2525 names for required-checks but applied to designs themselves
 9. **Canonical clone drift** — `/chorus` is intended as read-only canonical, but in practice currently carries an in-flight role branch. Cross-worktree contamination guard fires correctly when this happens, but the convention "/chorus is read-only" isn't structurally enforced
-10. **New-branch upstream gap in `git-queue.sh push`** (no card yet) — surfaced 2026-04-30 — `pull --rebase` requires upstream; new branches with no upstream fail before reaching `push`. Shim has no override path for `git push`, so the documented `DEPLOY_ROLE_PREPUSH_OVERRIDE` is consulted only by the pre-push git hook (not the shim). Workaround today: `gh pr create` shells out to git-push without the bash text the shim matches on. Fix: detect missing-upstream in `git-queue.sh:391` and skip `pull --rebase`
+10. **Layer 1 push-refusal is over-broad, not under-overridden** (no card yet — but #2636 retires it) — surfaced 2026-04-30. Read changed during demo per Silas arch review: Gap #10 is not "shim has no override for git push." It's "Layer 1 (`chorus-hook-shim` PreToolUse on Bash text) duplicates Layer 2 (the `pre-push` git hook) by text-matching the agent's bash command — and text-matching can't see what binaries the command will actually invoke (`gh pr create` shells to git-push and escapes Layer 1; valid no-upstream pushes hit Layer 1 with no escape because `_GIT_QUEUE_PUSH` is the only marker and `DEPLOY_ROLE_PREPUSH_OVERRIDE` is consulted only by Layer 2). Adding an override to Layer 1 doubles down on the anti-pattern. The architectural fix is **#2636's structured-input refactor**: either delete Layer 1's push refusal (rely on Layer 2's already-working override) or migrate Layer 1 to binary-level hooks (hard on macOS without LaunchD-level instrumentation; default-delete is probably the right move). Workaround today: `gh pr create` (accidental escape, not intentional bypass), or `git-queue.sh push` once `pull --rebase` is patched for missing-upstream. Both are interim — #2636 retires the surface.
 
 ## Cross-cutting patterns (cross-reference)
 
@@ -351,5 +353,5 @@ This design slots into Layer 1 + the substrate beneath it (worktrees, queue, hoo
 - Cards (Phase A.5): #2589, #2599
 - Cards (Phase B): #2500
 - Cards (Phase C): #2588, #2200 (+ spine-namespace consolidation card pending)
-- Successor design: #2592 (workspace-API)
+- Future era of this doc: #2592 workspace-API (folds in as `## Era 2` when it lands; not a separate file — per service-design-lineage policy 2026-04-30)
 - Sibling: `ci-pipeline-service-design.md` (Layer 3 + meta-shape of the three-layer system)
