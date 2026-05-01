@@ -37,6 +37,48 @@ branch_check_match() {
   esac
 }
 
+# Function form — stricter check (#2641 mode-C): branch must match
+# `<role>/<card-id>` with optional `-<slug>` suffix. Catches the same-role
+# wrong-card case where branch_check_match passes (right role) but the
+# branch is for a different active card than role-state declares.
+#
+# Args: <role> <branch> <active-card-id>
+# Returns: 0 if branch is `<role>/<card-id>` or `<role>/<card-id>-<suffix>`
+#          1 otherwise (including empty card-id, prefix mismatch, substring)
+branch_check_card_match() {
+  local role="${1:-}"
+  local branch="${2:-}"
+  local active_card="${3:-}"
+
+  case "$role" in
+    kade|wren|silas) ;;
+    *) return 1 ;;
+  esac
+
+  if [ -z "$branch" ] || [ -z "$active_card" ]; then
+    return 1
+  fi
+
+  # Outer prefix must match first.
+  if ! branch_check_match "$role" "$branch"; then
+    return 1
+  fi
+
+  # Strip role prefix → tail = "<card-id>" or "<card-id>-<suffix>"
+  local tail="${branch#${role}/}"
+
+  # Exact: <role>/<card-id>
+  if [ "$tail" = "$active_card" ]; then
+    return 0
+  fi
+
+  # Suffixed: <role>/<card-id>-<suffix>
+  case "$tail" in
+    "${active_card}-"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Script form — only runs when invoked directly, not when sourced.
 # `${BASH_SOURCE[0]}` differs from `$0` when this file is sourced.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
