@@ -71,14 +71,14 @@ setup() {
     fi
   done <<< "$started_lines"
 
-  # Threshold: fail if more than 50% are uncorrelated (per-subagent finding:
-  # all-or-nothing gate misses partial drift).
+  # Threshold: absolute-count >3 (per Kade preview-feedback, same Why-3
+  # rationale as spine-emit-drift-audit.bats — see that file's comment
+  # block for the absolute-vs-ratio reasoning).
   if [ "$total" -gt 0 ]; then
     uncorrelated_count=$((total - closed))
-    threshold=$((total / 2))
-    if [ "$uncorrelated_count" -gt "$threshold" ]; then
+    if [ "$uncorrelated_count" -gt 3 ]; then
       echo "Found ${total} card.demo.started events but only ${closed} closed."
-      echo "${uncorrelated_count} uncorrelated (threshold for fail: >${threshold})."
+      echo "${uncorrelated_count} uncorrelated (threshold for fail: >3 absolute)."
       echo ""
       echo "Uncorrelated (sample, up to 10):"
       for line in "${uncorrelated[@]:0:10}"; do

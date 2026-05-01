@@ -151,16 +151,35 @@ ${yesterday_briefs}"
     fi
   done <<< "$pass_lines"
 
-  # Threshold: drift fails if more than 50% are uncorrelated (per-subagent
-  # finding: original `evidence_correlated == 0` gate was all-or-nothing —
-  # 11/12 drift would pass silently. 50% threshold catches partial drift.)
+  # Threshold: absolute-count, denominator-independent. Per Kade preview-
+  # feedback (2026-04-30): 50% ratio was a magic number with no Why-this-
+  # number rationale. Replaced with absolute-count threshold:
+  #
+  #   FAIL if >3 uncorrelated gate-PASS comments exist in the audited window.
+  #
+  # Why 3:
+  #   - 0 = false-fail on first uncorrelated PASS (could be in-flight or
+  #     a one-time miss; 1 isn't a structural pattern).
+  #   - 1-3 = noise tolerance — accommodates probe-evidence emitted slightly
+  #     outside the ±60-line window or events with uncommon JSON shapes the
+  #     correlator misses.
+  #   - >3 = structural pattern — multiple PASS comments without correlated
+  #     probe.evidence is the paper-trail-PASS shape Jeff named (2026-04-30
+  #     after #2625), independent of total volume.
+  #
+  # Absolute-count is denominator-independent: catches drift in low-volume
+  # windows where ratio-based misses (e.g., 4 PASSes / 0 evidence has 100%
+  # uncorrelated but only 4 events; absolute-count flags it; ratio-based
+  # would also flag it; both work). In high-volume windows, absolute-count
+  # is stricter than ratio (4 PASS uncorrelated out of 100 is 4% which a
+  # 25%-ratio would pass; absolute-count flags it as structural).
   if [ "$pass_total" -gt 0 ]; then
     uncorrelated_count=$((pass_total - evidence_correlated))
-    threshold=$((pass_total / 2))
-    if [ "$uncorrelated_count" -gt "$threshold" ]; then
+    if [ "$uncorrelated_count" -gt 3 ]; then
       echo "Found ${pass_total} gate:product-pass card.comment events but only"
       echo "${evidence_correlated} have correlated probe.evidence within ±60 lines."
-      echo "${uncorrelated_count} uncorrelated (threshold for fail: >${threshold})."
+      echo "${uncorrelated_count} uncorrelated (threshold for fail: >3 absolute,"
+      echo "regardless of total — see comment block for Why-3 rationale)."
       echo ""
       echo "Uncorrelated (sample, up to 10):"
       for line in "${uncorrelated[@]:0:10}"; do
