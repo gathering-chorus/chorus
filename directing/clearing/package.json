@@ -11,7 +11,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
+    "@anthropic-ai/sdk": "^0.92.0",
     "express": "^5.2.1",
     "playwright": "^1.58.2",
     "socket.io": "^4.7.5",
