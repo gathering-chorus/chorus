@@ -17,6 +17,6 @@
     "eslint-plugin-jest": "^29.15.2",
     "eslint-plugin-security": "^4.0.0",
     "eslint-plugin-sonarjs": "^4.0.3",
-    "globals": "^15.0.0"
+    "globals": "^17.6.0"
   }
 }
