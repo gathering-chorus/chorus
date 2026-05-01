@@ -312,6 +312,14 @@ The Implementation Plan above ties each gap to its card. Summary by impact:
 9. **Canonical clone drift** — `/chorus` is intended as read-only canonical, but in practice currently carries an in-flight role branch. Cross-worktree contamination guard fires correctly when this happens, but the convention "/chorus is read-only" isn't structurally enforced
 10. **New-branch upstream gap in `git-queue.sh push`** (no card yet) — surfaced 2026-04-30 — `pull --rebase` requires upstream; new branches with no upstream fail before reaching `push`. Shim has no override path for `git push`, so the documented `DEPLOY_ROLE_PREPUSH_OVERRIDE` is consulted only by the pre-push git hook (not the shim). Workaround today: `gh pr create` shells out to git-push without the bash text the shim matches on. Fix: detect missing-upstream in `git-queue.sh:391` and skip `pull --rebase`
 
+## Cross-cutting patterns (cross-reference)
+
+These patterns surfaced 2026-04-30 from the same substrate work but don't directly enforce the commit-flow contract — they're sibling refusal patterns that share the *enforcement-at-every-surface* shape with the Five Surfaces table. Detail lives in `ci-pipeline-service-design.md`; cross-referenced here so the commits doc isn't read in isolation.
+
+- **Affordance-layer refusal** (#2467, #2629) — when a deprecated input shape needs to disappear, refuse it at every surface that could reach the affordance (writer parser + HTTP API + bats gate + schema column drop). One invariant; four surfaces are different from this doc's five
+- **Retirement gates** (#2467, #2632) — when a surface is retired, the deletion ships with a small bats file containing grep-assertions enforcing structural absence. Forward-only structural assertion encoded as test
+- **No-warn-tier convention** — every lint either blocks or doesn't fire (Jeff's call 2026-04-30). Discipline, not currently self-enforced
+
 ## Hook-layer relationship to ADR-026
 
 ADR-026 names three quality layers:
