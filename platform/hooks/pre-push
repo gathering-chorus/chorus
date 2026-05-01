@@ -69,15 +69,21 @@ if [ -z "$branch" ]; then
   exit 1
 fi
 
-case "$branch" in
-  "${ROLE}/"*)
-    # Branch matches role prefix — allow.
-    exit 0
-    ;;
-  *)
-    echo "pre-push: ERROR — branch '$branch' does not match role prefix '${ROLE}/' (#2598)" >&2
-    echo "  Same invariant as the commit-side branch-check in #2580." >&2
-    echo "  Either switch to a ${ROLE}/<card-id> branch or use the override env var." >&2
-    exit 1
-    ;;
-esac
+# #2639: branch-prefix match delegated to branch-check.sh (single source
+# for the invariant; git-queue.sh sources the same file).
+HOOK_SOURCE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+if [ -z "$HOOK_SOURCE_ROOT" ] || [ ! -f "$HOOK_SOURCE_ROOT/platform/scripts/branch-check.sh" ]; then
+  HOOK_SOURCE_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+fi
+# shellcheck source=../scripts/branch-check.sh
+source "$HOOK_SOURCE_ROOT/platform/scripts/branch-check.sh"
+
+if branch_check_match "$ROLE" "$branch"; then
+  # Branch matches role prefix — allow.
+  exit 0
+else
+  echo "pre-push: ERROR — branch '$branch' does not match role prefix '${ROLE}/' (#2598)" >&2
+  echo "  Same invariant as the commit-side branch-check in #2580." >&2
+  echo "  Either switch to a ${ROLE}/<card-id> branch or use the override env var." >&2
+  exit 1
+fi
