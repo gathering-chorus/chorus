@@ -394,6 +394,31 @@ if echo "$STAGED" | grep -qE '(^|/)CLAUDE\.md$|^designing/claudemd/'; then
     "bash platform/tests/doc-coherence-ratchet.test.sh 2>&1"
 fi
 
+# --- Check 4.8: Known-fails allowlist coherence (#2497) ---
+# Warn when entries reference Done/Won't cards. Doesn't block — just signals
+# stale entries that should be cleaned up. Runs whenever known-fails.json stages.
+if echo "$STAGED" | grep -q '^platform/state/known-fails\.json$'; then
+  KF_FILTER="$REPO_ROOT/platform/scripts/known-fails-filter.sh"
+  if [ -x "$KF_FILTER" ]; then
+    KF_CARDS=$("$KF_FILTER" list-cards 2>/dev/null || true)
+    if [ -n "$KF_CARDS" ]; then
+      KF_STALE=""
+      for cid in $KF_CARDS; do
+        STATUS=$(curl -s "http://localhost:3340/api/chorus/cards/$cid" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null || echo "")
+        case "$STATUS" in
+          Done|"Won't"|"Won't Do"|"Wont")
+            KF_STALE="${KF_STALE} #${cid}(${STATUS})"
+            ;;
+        esac
+      done
+      if [ -n "$KF_STALE" ]; then
+        echo "pre-commit: ⚠ known-fails entries reference closed cards:${KF_STALE}" >&2
+        echo "  Clean platform/state/known-fails.json or re-card the failures." >&2
+      fi
+    fi
+  fi
+fi
+
 # --- Check 5: Compiled dist matches source — RETIRED ---
 # Was board-client-only, referenced messages/board-client/dist which lives
 # in legacy gathering-team repo, not chorus. Per ADR-026 §b "Extend or
