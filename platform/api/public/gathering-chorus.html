@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gathering + Chorus | Open Platform for Personal Knowledge & Team Coordination</title>
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Gathering + Chorus">
+    <meta property="og:description" content="A personal knowledge graph and team coordination system. Built for one, designed to share.">
+    <meta name="description" content="Gathering + Chorus — personal knowledge graph and AI team coordination platform. Open source roots, consulting-ready architecture.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Open+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue-dark: #1a2a3a;
+            --blue-medium: #2d5a7b;
+            --blue-light: #6ba3c7;
+            --gold: #c9a227;
+            --cream: #f0f0e8;
+            --warm-gray: #8b8b7a;
+            --white: #ffffff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: linear-gradient(135deg, var(--blue-dark) 0%, #0f1a24 100%);
+            color: var(--cream);
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
+
+        .hero {
+            text-align: center;
+            padding: 2.5rem 1rem 1rem;
+        }
+
+        .hero h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 3.5rem;
+            font-weight: 400;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.25rem;
+            color: var(--white);
+            line-height: 1.1;
+        }
+
+        .hero h1 span { color: var(--gold); }
+
+        .tagline {
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--blue-light);
+            margin-bottom: 1.5rem;
+        }
+
+        .intro {
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            font-size: 1.05rem;
+            font-weight: 300;
+            line-height: 1.7;
+            text-align: center;
+            color: var(--cream);
+        }
+
+        .products {
+            display: flex;
+            gap: 2rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+
+        .product {
+            flex: 1;
+            min-width: 280px;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+            border-left: 3px solid var(--gold);
+        }
+
+        .product h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--gold);
+            margin-bottom: 0.5rem;
+        }
+
+        .product p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.6;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        .product ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .product ul li {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--blue-light);
+            padding: 0.3rem 0;
+            padding-left: 1.2rem;
+            position: relative;
+        }
+
+        .product ul li::before {
+            content: "\2022";
+            color: var(--gold);
+            position: absolute;
+            left: 0;
+        }
+
+        .section {
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .section h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 1rem;
+        }
+
+        .section p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        .paths {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .path {
+            text-align: center;
+            padding: 1rem;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .path h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: var(--gold);
+            margin-bottom: 0.25rem;
+        }
+
+        .path p {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--blue-light);
+        }
+
+        .stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .stack span {
+            font-size: 0.8rem;
+            font-weight: 300;
+            color: var(--blue-light);
+            padding: 0.3rem 0.7rem;
+            border: 1px solid var(--blue-medium);
+            border-radius: 4px;
+        }
+
+        .contact {
+            text-align: center;
+            padding: 1.5rem;
+            border-top: 1px solid var(--blue-medium);
+            margin-top: 2rem;
+        }
+
+        .contact h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 0.75rem;
+        }
+
+        .contact a {
+            color: var(--gold);
+            text-decoration: none;
+        }
+
+        .contact a:hover { text-decoration: underline; }
+
+        .contact .note {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--warm-gray);
+            margin-top: 0.5rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--blue-medium);
+        }
+
+        @media print {
+            @page { size: letter; margin: 0.75in 1in; }
+            html { zoom: 1; }
+            body { min-height: auto; background: #0f1a24; -webkit-print-color-adjust: exact; }
+            .container { padding: 0.15rem 1rem; }
+            .hero { padding: 0.3rem 0.25rem 0.15rem; }
+            .hero h1 { font-size: 2rem; }
+            .tagline { margin-bottom: 0.2rem; font-size: 0.7rem; }
+            .intro { margin: 0 auto 0.3rem; font-size: 0.7rem; line-height: 1.4; max-width: 100%; }
+            .products { margin: 0.4rem 0; gap: 0.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .product { padding: 0.4rem 0.5rem; }
+            .product h3 { font-size: 1rem; margin-bottom: 0.2rem; }
+            .product p { margin-bottom: 0.15rem; font-size: 0.6rem; line-height: 1.3; }
+            .product ul li { font-size: 0.6rem; padding: 0.1rem 0; padding-left: 0.8rem; }
+            .section { padding: 0.3rem 0.5rem; margin: 0.2rem 0; }
+            .section h2 { font-size: 0.9rem; margin-bottom: 0.2rem; }
+            .section p { margin-bottom: 0.15rem; font-size: 0.6rem; line-height: 1.3; }
+            .paths { margin: 0.4rem 0; gap: 0.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .path { padding: 0.2rem; }
+            .path h3 { font-size: 0.8rem; }
+            .path p { font-size: 0.6rem; }
+            .stack { margin-top: 0.25rem; gap: 0.2rem; }
+            .stack span { font-size: 0.55rem; padding: 0.15rem 0.4rem; }
+            .contact { padding: 0.25rem; margin-top: 0.2rem; border-top-width: 0.5px; }
+            .contact h2 { font-size: 0.85rem; margin-bottom: 0.15rem; }
+            .contact .note { font-size: 0.6rem; }
+            footer { padding: 0.1rem; font-size: 0.55rem; }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.5rem; }
+            .products { flex-direction: row !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1><span>Gathering</span> + Chorus</h1>
+            <p class="tagline">Built for one. Designed to share.</p>
+        </section>
+
+        <p class="intro">
+            I built Gathering to organize the things I care about &mdash; books, music, photos, property, ideas &mdash; in a knowledge graph I own. Chorus is the team coordination system that grew out of building it: three AI roles working alongside me through shared protocols and memory. Together they've become something I think could work for other people too.
+        </p>
+
+        <div class="products">
+            <div class="product">
+                <h3>Gathering</h3>
+                <p>A privacy-first knowledge graph where everything you care about &mdash; books, music, photos, property, ideas &mdash; lives in SOLID pods you own, connected by an RDF ontology that lets meaning emerge through relationships.</p>
+                <ul>
+                    <li>Your data stays on your hardware</li>
+                    <li>Domains connect naturally &mdash; a book influences a garden plan influences a blog post</li>
+                    <li>Private by default, shared when you choose</li>
+                    <li>Harvest pipelines bring in what you already have</li>
+                    <li>Visual knowledge graph you can think with</li>
+                </ul>
+            </div>
+            <div class="product">
+                <h3>Chorus</h3>
+                <p>A team coordination system for human + AI collaboration. Three AI roles (PM, Architect, Engineer) work alongside a human through versioned protocols, shared memory, and a kanban board that enforces quality gates.</p>
+                <ul>
+                    <li>Roles exchange work through briefs, not meetings</li>
+                    <li>Shared memory index across sessions and roles</li>
+                    <li>Value stream with directing, building, and proving gates</li>
+                    <li>Decision log that prevents re-litigation</li>
+                    <li>Every pattern is forkable &mdash; bring your own roles</li>
+                </ul>
+            </div>
+        </div>
+
+        <section class="section">
+            <h2>What Makes This Different</h2>
+            <p>Most personal tools store your data in someone else's cloud and lock it in their format. Gathering runs on a Mac I own. My knowledge graph is mine &mdash; Turtle files on a filesystem, queryable with standard SPARQL, portable to any RDF-compatible system. Yours would be too.</p>
+            <p>Most AI coordination is ad hoc prompting. Chorus is a versioned protocol &mdash; 58 recorded decisions, quality gates on every card, patterns we've proven daily for how AI roles hand off work, escalate decisions, and hold shared context across sessions.</p>
+            <p>I'm not pitching a product. I'm sharing a working system &mdash; built over months of daily use with three AI collaborators, running in production right now. I think the patterns that work for me could work for you. I'd like to find out.</p>
+        </section>
+
+        <div class="paths">
+            <div class="path">
+                <h3>Open Source</h3>
+                <p>Fork the protocols, adapt the roles, run your own knowledge graph</p>
+            </div>
+            <div class="path">
+                <h3>Managed Setup</h3>
+                <p>We help you buy a Mac, install the system, and get running</p>
+            </div>
+            <div class="path">
+                <h3>Consulting</h3>
+                <p>We build something specific for your business using these patterns</p>
+            </div>
+        </div>
+
+        <section class="section">
+            <h2>The Stack</h2>
+            <p>Production-tested, observable, and designed to run on a single Mac.</p>
+            <div class="stack">
+                <span>TypeScript</span>
+                <span>Express</span>
+                <span>SOLID Pods</span>
+                <span>RDF / Turtle</span>
+                <span>Apache Jena Fuseki</span>
+                <span>SPARQL</span>
+                <span>Docker</span>
+                <span>Prometheus</span>
+                <span>Grafana</span>
+                <span>Loki</span>
+                <span>Claude API</span>
+                <span>Vikunja</span>
+            </div>
+        </section>
+
+        <section class="contact">
+            <h2>Interested?</h2>
+            <p><a href="mailto:jeffbridwell@gmail.com">jeffbridwell@gmail.com</a></p>
+            <p class="note">Boston area. Early stage &mdash; looking for the right first conversations.</p>
+        </section>
+    </div>
+
+    <footer>
+        &copy; 2026 Jeff Bridwell
+    </footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

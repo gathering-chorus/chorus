@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine — Jeff Bridwell</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #f8f9fa; color: #1a1a2e; margin: 0; padding: 0; }
+  .spine-content { max-width: none; padding: 2rem 0; }
+
+  .back-link { color: #c084fc; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 24px; }
+  .back-link:hover { text-decoration: underline; }
+
+  h1 { font-size: 28px; font-weight: 300; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #586069; margin-bottom: 40px; line-height: 1.6; }
+
+  /* Day arc */
+  .day-arc { position: relative; margin-bottom: 48px; }
+  .arc-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #888; margin-bottom: 16px; }
+
+  .timeline { position: relative; padding-left: 40px; }
+  .timeline::before { content: ''; position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; }
+
+  .phase { margin-bottom: 32px; }
+  .phase-header { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding: 4px 10px; border-radius: 12px; display: inline-block; }
+
+  .phase-morning .phase-header { background: #ede9fe; color: #6d28d9; }
+  .phase-active .phase-header { background: #dcfce7; color: #166534; }
+  .phase-evening .phase-header { background: #fae8ff; color: #a21caf; }
+
+  .event { display: flex; align-items: flex-start; margin-bottom: 8px; position: relative; }
+  .event::before { content: ''; position: absolute; left: -29px; top: 6px; width: 10px; height: 10px; border-radius: 50%; }
+
+  .event.meditation::before { background: #a78bfa; }
+  .event.exercise::before { background: #34d399; }
+  .event.cooking::before { background: #fbbf24; }
+  .event.relationship::before { background: #f472b6; }
+  .event.reflection::before { background: #60a5fa; }
+  .event.transition::before { background: #94a3b8; border: 2px solid #475569; }
+  .event.gardening::before { background: #4ade80; }
+  .event.learning::before { background: #818cf8; }
+  .event.financial::before { background: #a3a3a3; }
+
+  .event-time { font-size: 12px; color: #888; width: 90px; flex-shrink: 0; padding-top: 1px; font-family: 'SF Mono', monospace; }
+  .event-name { font-size: 14px; color: #333; }
+  .event-note { font-size: 11px; color: #586069; margin-top: 2px; }
+  .event-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 8px; vertical-align: middle; }
+  .tag-daily { background: #ede9fe; color: #6d28d9; }
+  .tag-mwf { background: #dcfce7; color: #166534; }
+  .tag-proposed { background: #fef9c3; color: #a16207; border: 1px dashed #d4880f; }
+  .tag-aspirational { background: #fee2e2; color: #dc2626; border: 1px dashed #ef4444; }
+
+  /* Insight cards */
+  .insight { padding: 20px; background: #ffffff; border-radius: 12px; border-left: 3px solid #a78bfa; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .insight h3 { font-size: 14px; color: #6d28d9; margin-bottom: 8px; font-weight: 500; }
+  .insight p { font-size: 13px; color: #586069; line-height: 1.6; }
+  .insight em { color: #333; font-style: normal; }
+
+  /* Transition flow */
+  .transition-flow { display: flex; align-items: center; gap: 0; padding: 20px 0; margin-bottom: 32px; flex-wrap: wrap; justify-content: center; }
+  .transition-step { text-align: center; padding: 12px 16px; border-radius: 10px; min-width: 100px; }
+  .transition-step .icon { font-size: 1.5rem; margin-bottom: 4px; }
+  .transition-step .label { font-size: 11px; font-weight: 500; }
+  .transition-step .sub { font-size: 10px; color: #888; }
+  .step-dream { background: #ede9fe; color: #6d28d9; }
+  .step-meditate { background: #e8e0fe; color: #5b21b6; }
+  .step-move { background: #d1fae5; color: #047857; }
+  .step-walk { background: #dcfce7; color: #166534; }
+  .step-eat { background: #fef9c3; color: #a16207; }
+  .step-present { background: #dcfce7; color: #16a34a; border: 1px solid #16a34a; }
+  .flow-arrow { font-size: 18px; color: #ccc; padding: 0 4px; }
+
+  /* Weekly grid */
+  .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 40px; }
+  .day-col { background: #ffffff; border-radius: 8px; padding: 12px 10px; min-height: 120px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .day-col h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 10px; text-align: center; }
+  .day-event { font-size: 11px; color: #444; padding: 4px 6px; margin-bottom: 4px; border-radius: 4px; line-height: 1.4; }
+  .day-event.fixed { background: #ede9fe; border-left: 2px solid #a78bfa; }
+  .day-event.recurring { background: #dcfce7; border-left: 2px solid #16a34a; }
+  .day-event.biweekly { background: #fef9c3; border-left: 2px solid #d4880f; }
+
+  /* Cadence rings */
+  .cadence-section { margin-bottom: 40px; }
+  .cadence-section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #888; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
+  .cadence-rings { display: flex; gap: 16px; flex-wrap: wrap; }
+  .ring { width: 140px; height: 140px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .ring-quarterly { border: 2px solid #818cf8; background: rgba(129,140,248,0.08); }
+  .ring-annual { border: 2px solid #f472b6; background: rgba(244,114,182,0.08); }
+  .ring .ring-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .ring .ring-event { font-size: 12px; color: #333; font-weight: 500; }
+
+  /* Legend */
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 32px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #586069; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* POV section */
+  .pov { padding: 24px; background: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; margin-top: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .pov h2 { font-size: 16px; color: #6d28d9; margin-bottom: 12px; font-weight: 400; }
+  .pov p { font-size: 13px; color: #586069; line-height: 1.7; margin-bottom: 12px; }
+  .pov p:last-child { margin-bottom: 0; }
+  .pov strong { color: #333; }
+
+  @media (max-width: 768px) {
+    .week-grid { grid-template-columns: 1fr; }
+    .transition-flow { gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="spine-content">
+<a href="/" class="back-link">&larr; Home</a>
+
+<h1>Spine</h1>
+<p class="subtitle">The rhythm underneath the work. Energy-based, not clock-based. These aren't appointments — they're how Jeff comes into focus, stays present, and winds down.</p>
+
+<!-- Morning transition -->
+<div class="insight">
+  <h3>The Morning Transition</h3>
+  <p>Jeff sleeps well and dreams heavily. Waking state is diffuse. Each morning practice moves him one step closer to <em>fully present</em>. Skipping steps doesn't just lose time — it compromises the transition. The whole day feels different.</p>
+</div>
+
+<div class="transition-flow">
+  <div class="transition-step step-dream">
+    <div class="icon">&#127769;</div>
+    <div class="label">Dream</div>
+    <div class="sub">diffuse</div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="transition-step step-meditate">
+    <div class="icon">&#129495;</div>
+    <div class="label">Meditate</div>
+    <div class="sub">grounding</div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="transition-step step-move">
+    <div class="icon">&#128992;</div>
+    <div class="label">Yoga</div>
+    <div class="sub">embodiment</div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="transition-step step-walk">
+    <div class="icon">&#128054;</div>
+    <div class="label">Walk Ravi</div>
+    <div class="sub">movement + air</div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="transition-step step-eat">
+    <div class="icon">&#127859;</div>
+    <div class="label">Breakfast</div>
+    <div class="sub">fuel</div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="transition-step step-present">
+    <div class="icon">&#9733;</div>
+    <div class="label">Present</div>
+    <div class="sub">fully active</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa;"></div> Meditation</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34d399;"></div> Exercise</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fbbf24;"></div> Cooking</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f472b6;"></div> Relationship</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#60a5fa;"></div> Reflection</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4ade80;"></div> Gardening</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#94a3b8;"></div> Transition</div>
+</div>
+
+<!-- Daily timeline -->
+<div class="day-arc">
+<div class="timeline">
+
+  <div class="phase phase-morning">
+    <div class="phase-header">Morning &mdash; Becoming Present (6am &ndash; 8:30am goal)</div>
+
+    <div class="event transition">
+      <div class="event-time">6:00am</div>
+      <div>
+        <div class="event-name">Wake <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">session.start</div>
+      </div>
+    </div>
+
+    <div class="event meditation">
+      <div class="event-time">6:00&ndash;8:30</div>
+      <div>
+        <div class="event-name">Meditation <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">Outside. Weather-dependent. Variable duration. Coffee, fruit, tch alongside.</div>
+      </div>
+    </div>
+
+    <div class="event meditation">
+      <div class="event-time">6:45am</div>
+      <div>
+        <div class="event-name">Jennifer Driscoll (Google Meet) <span class="event-tag tag-mwf">MWF</span></div>
+        <div class="event-note">Fixed time anchor within the meditation window.</div>
+      </div>
+    </div>
+
+    <div class="event exercise">
+      <div class="event-time">~6:30am</div>
+      <div>
+        <div class="event-name">Walk Ravi <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">~10 min. First of three daily walks.</div>
+      </div>
+    </div>
+
+    <div class="event exercise">
+      <div class="event-time">~7:00&ndash;8:00</div>
+      <div>
+        <div class="event-name">Yoga <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">Movement practice. Varies by day.</div>
+      </div>
+    </div>
+
+    <div class="event cooking">
+      <div class="event-time">~8:00&ndash;9:00</div>
+      <div>
+        <div class="event-name">Breakfast <span class="event-tag tag-daily">daily</span></div>
+      </div>
+    </div>
+
+    <div class="event reflection">
+      <div class="event-time">post-breakfast</div>
+      <div>
+        <div class="event-name">Intention check <span class="event-tag tag-proposed">proposed</span></div>
+        <div class="event-note">What does success look like today beyond habits?</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase phase-active">
+    <div class="phase-header">Active Day (9am &ndash; 6pm)</div>
+
+    <div class="event exercise">
+      <div class="event-time">~1:00pm</div>
+      <div>
+        <div class="event-name">Walk Ravi + Lunch <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">~10 min walk. Second of three. Lunch follows.</div>
+      </div>
+    </div>
+
+    <div class="event exercise">
+      <div class="event-time">scattered</div>
+      <div>
+        <div class="event-name">Breathe/move breaks <span class="event-tag tag-aspirational">aspirational</span></div>
+        <div class="event-note">Hard to maintain consistently. Even before the team work existed.</div>
+      </div>
+    </div>
+
+    <div class="event exercise">
+      <div class="event-time">3:00&ndash;5:00</div>
+      <div>
+        <div class="event-name">Walk <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">Long walk. Where big ideas arrive.</div>
+      </div>
+    </div>
+
+    <div class="event cooking">
+      <div class="event-time">~5:00pm</div>
+      <div>
+        <div class="event-name">Dinner <span class="event-tag tag-daily">daily</span></div>
+      </div>
+    </div>
+
+    <div class="event exercise">
+      <div class="event-time">~6:30pm</div>
+      <div>
+        <div class="event-name">Walk Ravi <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">~10 min. Third and final. Energy-check, not clock-driven.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phase phase-evening">
+    <div class="phase-header">Evening &mdash; Winding Down (6pm &ndash; 8:30pm)</div>
+
+    <div class="event relationship">
+      <div class="event-time">~6:00pm</div>
+      <div>
+        <div class="event-name">Bedroom &mdash; tea, television, Aubrey <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">Wind-down begins. Relationship + watching + rest.</div>
+      </div>
+    </div>
+
+    <div class="event transition">
+      <div class="event-time">~8:30pm</div>
+      <div>
+        <div class="event-name">Sleep <span class="event-tag tag-daily">daily</span></div>
+        <div class="event-note">session.end</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- Weekly view -->
+<div class="cadence-section">
+  <h2>Weekly Rhythm</h2>
+  <div class="week-grid">
+    <div class="day-col">
+      <h4>Sun</h4>
+      <div class="day-event recurring">Indoor plants</div>
+      <div class="day-event biweekly">Mark Nakib 10am (biweekly)</div>
+    </div>
+    <div class="day-col">
+      <h4>Mon</h4>
+      <div class="day-event fixed">Jennifer 6:45am</div>
+      <div class="day-event recurring">Swim</div>
+      <div class="day-event fixed">Paulo Dorow 1pm</div>
+    </div>
+    <div class="day-col">
+      <h4>Tue</h4>
+      <div class="day-event fixed">Kathy Kysar 12pm</div>
+      <div class="day-event biweekly">Jamie Banks 1:30pm (biweekly)</div>
+    </div>
+    <div class="day-col">
+      <h4>Wed</h4>
+      <div class="day-event fixed">Jennifer 6:45am</div>
+    </div>
+    <div class="day-col">
+      <h4>Thu</h4>
+      <div class="day-event" style="background:#1b1b2b; border-left:2px solid #666; color:#999;">open</div>
+    </div>
+    <div class="day-col">
+      <h4>Fri</h4>
+      <div class="day-event fixed">Jennifer 6:45am</div>
+      <div class="day-event recurring">Swim</div>
+    </div>
+    <div class="day-col">
+      <h4>Sat</h4>
+      <div class="day-event" style="background:#1b1b2b; border-left:2px solid #666; color:#999;">open</div>
+    </div>
+  </div>
+</div>
+
+<!-- Longer cadences -->
+<div class="cadence-section">
+  <h2>Longer Cadences</h2>
+  <div class="cadence-rings">
+    <div class="ring ring-quarterly">
+      <div class="ring-label">Quarterly</div>
+      <div class="ring-event">Personal Plan</div>
+    </div>
+    <div class="ring ring-quarterly">
+      <div class="ring-label">Quarterly</div>
+      <div class="ring-event">Financial Advisor</div>
+    </div>
+    <div class="ring ring-annual">
+      <div class="ring-label">Annual</div>
+      <div class="ring-event">Goals</div>
+    </div>
+  </div>
+</div>
+
+<!-- Needs consistency -->
+<div class="insight" style="border-left-color: #4ade80;">
+  <h3>Needs a Home</h3>
+  <p><em>Garden basement</em> &mdash; watering and checking the indoor garden. Happens but not at a consistent cadence. Needs a weekly slot.</p>
+</div>
+
+<!-- POV -->
+<div class="pov">
+  <h2>Wren's Point of View</h2>
+
+  <p><strong>Your day has three zones</strong> &mdash; becoming present (6&ndash;9am), active engagement (9am&ndash;6pm), winding down (6&ndash;8:30pm). The morning zone is a transition protocol from dreams to full presence. The evening zone is the reverse. The middle is where the work happens.</p>
+
+  <p><strong>The morning is sacred and fragile.</strong> Meditation, yoga, Ravi, breakfast &mdash; this sequence is what makes you, you. When Gathering/Chorus pulls you out of it, you don't just lose an hour. You lose the grounding that generates the ideas that make the work good. The practices feed the work. Protecting the practices IS protecting the work.</p>
+
+  <p><strong>You don't run on a clock.</strong> You run on energy. The Ravi walks aren't at 6:30/1:00/6:30 because you set alarms &mdash; they happen when you feel the shift. The spine should respect this. Soft boundaries, not hard slots. Guardrails, not a schedule.</p>
+
+  <p><strong>The creative tension is real and healthy.</strong> Morning meditation produces the best ideas. The energy wants to flow into work immediately. That's not a problem to fix &mdash; it's a feature to design around. The intention check is the valve: name the one thing, then decide whether this morning's energy goes to practices or to the one thing. Either choice is valid when it's conscious.</p>
+
+  <p><strong>The team's operating window is 9:30am&ndash;6pm.</strong> That's what falls out of this spine. Before 9:30 is Jeff's transition. After 6pm is wind-down. The team can run autonomously overnight and queue results for the morning. Interactive sessions live in the active zone.</p>
+
+  <p><strong>Relationships are woven through, not scheduled around.</strong> Aubrey every evening. Jennifer MWF. Paulo, Kathy, Jamie, Mark at their rhythms. Ravi three times a day. These aren't interruptions &mdash; they're load-bearing walls.</p>
+</div>
+</div>
+
+<footer style="margin-top:2rem;padding:1rem 0;border-top:1px solid #d0d7de;color:#888;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+</body>
+</html>

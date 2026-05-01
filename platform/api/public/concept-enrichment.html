@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Concept Enrichment — The Feeling Layer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --text: #c8c8d4;
+    --muted: #6a6a80;
+    --accent: #a78bfa;
+    --emotion: #f472b6;
+    --somatic: #34d399;
+    --buddhist: #fbbf24;
+    --philo: #60a5fa;
+    --glow-emotion: rgba(244,114,182,0.15);
+    --glow-somatic: rgba(52,211,153,0.15);
+    --glow-buddhist: rgba(251,191,36,0.15);
+    --glow-philo: rgba(96,165,250,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'EB Garamond', Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  .cosmos {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(167,139,250,0.03) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(244,114,182,0.03) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, rgba(52,211,153,0.03) 0%, transparent 50%);
+    pointer-events: none; z-index: 0;
+  }
+
+  .container { max-width: none; margin: 0 1in; padding: 4rem 0; position: relative; z-index: 1; }
+
+  header { text-align: center; margin-bottom: 5rem; }
+  h1 {
+    font-size: 2.8rem; font-weight: 400; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--emotion), var(--accent), var(--buddhist));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+  .subtitle { font-size: 1.15rem; color: var(--muted); font-style: italic; }
+  .epigraph {
+    margin-top: 2rem; padding: 1.5rem 2rem;
+    border-left: 2px solid var(--accent);
+    font-style: italic; color: var(--muted); font-size: 1.05rem;
+    max-width: 540px; margin-left: auto; margin-right: auto;
+  }
+  .epigraph .attr { display: block; margin-top: 0.5rem; font-style: normal; font-size: 0.85rem; color: var(--accent); }
+
+  .layer {
+    margin-bottom: 4rem;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .layer:hover { border-color: var(--accent); }
+
+  .layer-head {
+    padding: 2rem 2rem 1.5rem;
+    display: flex; align-items: center; gap: 1.2rem;
+  }
+  .layer-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem; flex-shrink: 0;
+  }
+  .layer-title { font-size: 1.5rem; font-weight: 600; }
+  .layer-source { font-size: 0.8rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; margin-top: 0.2rem; }
+
+  .layer--emotion .layer-icon { background: var(--glow-emotion); }
+  .layer--emotion .layer-title { color: var(--emotion); }
+  .layer--somatic .layer-icon { background: var(--glow-somatic); }
+  .layer--somatic .layer-title { color: var(--somatic); }
+  .layer--buddhist .layer-icon { background: var(--glow-buddhist); }
+  .layer--buddhist .layer-title { color: var(--buddhist); }
+  .layer--philo .layer-icon { background: var(--glow-philo); }
+  .layer--philo .layer-title { color: var(--philo); }
+
+  .layer-body { padding: 0 2rem 2rem; }
+  .layer-desc { font-size: 1.05rem; margin-bottom: 1.5rem; }
+
+  .terms { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  @media (max-width: 600px) { .terms { grid-template-columns: 1fr; } }
+
+  .term {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .term:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .term-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    margin-bottom: 0.3rem;
+  }
+  .term-label { font-weight: 600; font-size: 1rem; margin-bottom: 0.2rem; }
+  .term-desc { font-size: 0.9rem; color: var(--muted); line-height: 1.5; }
+
+  .layer--emotion .term-name { color: var(--emotion); }
+  .layer--somatic .term-name { color: var(--somatic); }
+  .layer--buddhist .term-name { color: var(--buddhist); }
+  .layer--philo .term-name { color: var(--philo); }
+
+  .example {
+    margin-top: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+  }
+  .example-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.8rem;
+  }
+  .example-text { font-size: 1rem; }
+  .example-text em { color: var(--accent); font-style: normal; }
+
+  .summary {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-bottom: 3rem;
+  }
+  .summary h2 { font-size: 1.6rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--accent); }
+  .stats { display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap; }
+  .stat-block { text-align: center; }
+  .stat-num {
+    font-size: 2.4rem; font-weight: 600;
+    background: linear-gradient(135deg, var(--emotion), var(--buddhist));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .stat-label { font-size: 0.85rem; color: var(--muted); margin-top: 0.2rem; }
+
+  .enables { margin-bottom: 3rem; }
+  .enables h2 { font-size: 1.4rem; font-weight: 400; color: var(--accent); margin-bottom: 1.5rem; text-align: center; }
+  .enable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 600px) { .enable-grid { grid-template-columns: 1fr; } }
+  .enable-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.2rem;
+    transition: border-color 0.2s;
+  }
+  .enable-card:hover { border-color: var(--accent); }
+  .enable-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
+  .enable-card p { font-size: 0.9rem; color: var(--muted); }
+
+  footer {
+    text-align: center;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="cosmos"></div>
+<div class="container">
+
+<header>
+  <h1>The Feeling Layer</h1>
+  <div class="subtitle">Concept enrichment for the Self knowledge graph</div>
+  <div class="epigraph">
+    Human memories are not just facts or numbers &mdash; there is both a sense of emotion, a change in physical state.
+    <span class="attr">&mdash; Jeff Bridwell, 2026</span>
+  </div>
+</header>
+
+<!-- LAYER 1: EMOTIONAL -->
+<div class="layer layer--emotion">
+  <div class="layer-head">
+    <div class="layer-icon">&#x2661;</div>
+    <div>
+      <div class="layer-title">Emotional Annotation</div>
+      <div class="layer-source">onyx: + mfoem: + jb:SentimentScore</div>
+    </div>
+  </div>
+  <div class="layer-body">
+    <div class="layer-desc">
+      How it feels. Onyx provides the annotation structure, MFOEM provides the scientific emotion taxonomy.
+      Every story, photo, blog post, and capture gets an emotional signature &mdash; not a single label,
+      but a <em>set</em> of emotions with intensities.
+    </div>
+    <div class="terms">
+      <div class="term">
+        <div class="term-name">onyx:EmotionSet</div>
+        <div class="term-label">Emotion Container</div>
+        <div class="term-desc">A bundle of emotions detected on a single resource. Memories rarely carry one feeling.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">onyx:Emotion</div>
+        <div class="term-label">Single Emotion</div>
+        <div class="term-desc">One emotion with a category (from MFOEM) and an intensity from 0 to 1.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:SentimentScore</div>
+        <div class="term-label">Valence</div>
+        <div class="term-desc">Simple positive/negative/neutral score. &minus;1.0 to +1.0. The quick read before the deeper annotation.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:sentimentSource</div>
+        <div class="term-label">Provenance</div>
+        <div class="term-desc">Which model or human generated this score. Traceability matters when machines annotate memory.</div>
+      </div>
+    </div>
+    <div class="example">
+      <div class="example-title">Example: Christmas in St Louis, 2014</div>
+      <div class="example-text">
+        <em>grief</em> at 0.6 &mdash; last Christmas with Jeff's father<br>
+        <em>love</em> at 0.8 &mdash; Julian, Jazzy, warm December day<br>
+        Sentiment: <em>+0.3</em> &mdash; the warmth outweighs the loss, barely
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LAYER 2: SOMATIC -->
+<div class="layer layer--somatic">
+  <div class="layer-head">
+    <div class="layer-icon">&#x2740;</div>
+    <div>
+      <div class="layer-title">Somatic Markers</div>
+      <div class="layer-source">jb:SomaticMarker + jb:BodyState &mdash; after Damasio</div>
+    </div>
+  </div>
+  <div class="layer-body">
+    <div class="layer-desc">
+      How the body remembers. Antonio Damasio's somatic marker hypothesis: the body sends signals &mdash;
+      tension, ease, energy, depletion &mdash; that shape cognition before conscious thought arrives.
+      These markers live alongside emotions but are distinct. You can feel <em>calm</em> and <em>sad</em> simultaneously.
+    </div>
+    <div class="terms">
+      <div class="term">
+        <div class="term-name">jb:Tense</div>
+        <div class="term-label">Tense</div>
+        <div class="term-desc">Constriction. Shoulders up, breath shallow. The body bracing.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Relaxed</div>
+        <div class="term-label">Relaxed</div>
+        <div class="term-desc">Open posture, easy breath. The body at rest.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Energized</div>
+        <div class="term-label">Energized</div>
+        <div class="term-desc">Forward lean, quick hands. The body ready to build.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Depleted</div>
+        <div class="term-label">Depleted</div>
+        <div class="term-desc">Weight in the chair, slow blinks. The body asking to stop.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Calm</div>
+        <div class="term-label">Calm</div>
+        <div class="term-desc">Steady, centered. Not relaxed &mdash; present. The SMART program's target state.</div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Agitated</div>
+        <div class="term-label">Agitated</div>
+        <div class="term-desc">Movement without purpose. The body processing something the mind hasn't named yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LAYER 3: BUDDHIST -->
+<div class="layer layer--buddhist">
+  <div class="layer-head">
+    <div class="layer-icon">&#x2638;</div>
+    <div>
+      <div class="layer-title">Buddhist Psychology</div>
+      <div class="layer-source">jb:Vedana + jb:Samjna + jb:Samskara &mdash; from Abhidharma</div>
+    </div>
+  </div>
+  <div class="layer-body">
+    <div class="layer-desc">
+      How the mind processes experience. The Abhidharma tradition analyzes consciousness into constituent events.
+      Three of the five aggregates (skandhas) map directly to how Jeff already thinks about memory &mdash;
+      not just what happened, but the raw feeling, the labeling, and the pattern underneath.
+    </div>
+    <div class="terms">
+      <div class="term">
+        <div class="term-name">jb:Vedana</div>
+        <div class="term-label">Feeling Tone (vedan&#x0101;)</div>
+        <div class="term-desc">
+          The most basic valence: pleasant, unpleasant, or neutral. Before interpretation,
+          before story &mdash; just the raw tone of contact with experience. The first filter.
+        </div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Samjna</div>
+        <div class="term-label">Perception (sa&#x1E43;j&ntilde;&#x0101;)</div>
+        <div class="term-desc">
+          How the mind labels and categorizes. "This is a photo." "This is loss."
+          The recognition layer that turns sensation into meaning.
+        </div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Samskara</div>
+        <div class="term-label">Mental Formation (sa&#x1E43;sk&#x0101;ra)</div>
+        <div class="term-desc">
+          Habitual patterns, volition, the deep grooves of behavior. The "why" behind action.
+          Persistence. Care. Vigilance. What Jonathan Goldberg might call perseveration
+          and Jeff calls grit &mdash; the same samskara, different observers.
+        </div>
+      </div>
+    </div>
+    <div class="example">
+      <div class="example-title">Example: The Perseveration Conversation</div>
+      <div class="example-text">
+        Vedana: <em>pleasant</em> &mdash; Jeff found it funny<br>
+        Samskara: <em>persistence</em> &mdash; the pattern itself, named from two angles<br>
+        The gap between clinical frame and builder frame is where self-knowledge lives
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LAYER 4: PHILOSOPHICAL -->
+<div class="layer layer--philo">
+  <div class="layer-head">
+    <div class="layer-icon">&#x2662;</div>
+    <div>
+      <div class="layer-title">Philosophical Concepts</div>
+      <div class="layer-source">jb:Assemblage + jb:Bricolage &mdash; Deleuze, L&eacute;vi-Strauss</div>
+    </div>
+  </div>
+  <div class="layer-body">
+    <div class="layer-desc">
+      How the system thinks about itself. These aren't abstract categories &mdash; they're concepts
+      Jeff uses daily to understand what he's building. The loom is an assemblage.
+      Chorus is bricolage. The Self node is both.
+    </div>
+    <div class="terms">
+      <div class="term">
+        <div class="term-name">jb:Assemblage</div>
+        <div class="term-label">Assemblage</div>
+        <div class="term-desc">
+          A fluid configuration of heterogeneous elements that function together.
+          Not a hierarchy &mdash; a web. Three Macs, three roles, one human, shell scripts and
+          Swift binaries and RDF triples, all producing something none of them could alone.
+        </div>
+      </div>
+      <div class="term">
+        <div class="term-name">jb:Bricolage</div>
+        <div class="term-label">Bricolage</div>
+        <div class="term-desc">
+          Something built from what's at hand. Functional but improvised. Shaped by use, not by plan.
+          The contraption. The invitation to a gathering.
+          The word itself &mdash; from <em>bricoler</em>, to tinker.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WHAT THIS ENABLES -->
+<div class="enables">
+  <h2>What This Enables</h2>
+  <div class="enable-grid">
+    <div class="enable-card">
+      <h3>Sentiment Pipeline</h3>
+      <p>Ollama processes graph text, writes Onyx + SentimentScore triples. Every memory gets an emotional signature.</p>
+    </div>
+    <div class="enable-card">
+      <h3>Emotion as Edge</h3>
+      <p>Two stories with grief + love are related even if they share zero keywords. Feeling becomes a link.</p>
+    </div>
+    <div class="enable-card">
+      <h3>Vedana Filter</h3>
+      <p>"Show me everything that felt unpleasant." A query across all domains, powered by the most basic human signal.</p>
+    </div>
+    <div class="enable-card">
+      <h3>Somatic Andon</h3>
+      <p>Jeff's current body state connects to his historical pattern. The MX Brio sees what the keyboard can't.</p>
+    </div>
+    <div class="enable-card">
+      <h3>Pattern Recognition</h3>
+      <p>Samskara surfaces the grooves: persistence, care, vigilance. Not just what Jeff does &mdash; why he keeps doing it.</p>
+    </div>
+    <div class="enable-card">
+      <h3>The Living Graph</h3>
+      <p>Graph for the bones. Embeddings for the muscle. This vocabulary gives it a nervous system.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SUMMARY -->
+<div class="summary">
+  <h2>By the Numbers</h2>
+  <div class="stats">
+    <div class="stat-block">
+      <div class="stat-num">4</div>
+      <div class="stat-label">layers</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-num">15</div>
+      <div class="stat-label">new classes</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-num">14</div>
+      <div class="stat-label">new properties</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-num">3</div>
+      <div class="stat-label">external vocabularies</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>Card <a href="http://localhost:3456">#1121</a> &mdash; Wren, 2026-03-07</p>
+  <p style="margin-top:0.5rem">Small enough to ship in one pass. Rich enough to change how the graph feels.</p>
+</footer>
+
+</div>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gathering — A Personal Knowledge Graph with Agency</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; margin: 0; padding: 48px 1in; line-height: 1.7; }
+  .container { max-width: none; margin: 0; }
+  h1 { font-size: 30px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { font-size: 15px; color: #666; margin-bottom: 12px; }
+  .epigraph { font-size: 15px; color: #555; font-style: italic; border-left: 3px solid #ccc; padding: 12px 20px; margin: 24px 0 36px 0; }
+  .epigraph .attr { font-style: normal; font-size: 12px; color: #999; margin-top: 8px; }
+
+  h2 { font-size: 20px; font-weight: 800; margin: 40px 0 8px; color: #1a1a1a; }
+  h2 .num { color: #4361ee; margin-right: 6px; }
+  h3 { font-size: 15px; font-weight: 700; margin: 24px 0 8px; color: #333; }
+  p { font-size: 14px; margin-bottom: 14px; color: #333; }
+  .section-intro { font-size: 15px; color: #444; margin-bottom: 20px; }
+
+  .principle { border-left: 3px solid #4361ee; padding: 12px 16px; margin: 16px 0; background: #f0f4ff; border-radius: 0 8px 8px 0; }
+  .principle .name { font-size: 14px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+  .principle .body { font-size: 13px; color: #444; }
+  .principle .test { font-size: 12px; color: #4361ee; margin-top: 6px; font-style: italic; }
+
+  .anti { border-left-color: #e94560; background: #fef2f2; margin-bottom: 24px; border: 1px solid #fca5a5; border-left: 4px solid #e94560; border-radius: 8px; padding: 18px 20px; }
+  .anti .name { color: #c41e3a; font-size: 15px; margin-bottom: 8px; }
+  .anti .test { color: #c41e3a; }
+
+  .insight { border-left: 3px solid #2ec4b6; padding: 12px 16px; margin: 16px 0; background: #f0fdfa; border-radius: 0 8px 8px 0; font-size: 14px; color: #444; }
+
+  .layer { display: grid; grid-template-columns: 200px 1fr; gap: 0; margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .layer-label { background: #f8f9fa; padding: 16px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #666; border-right: 1px solid #e5e7eb; }
+  .layer-content { padding: 16px; }
+  .layer-content p { margin-bottom: 6px; font-size: 13px; }
+  .layer.human .layer-label { background: #fdf8f3; color: #b8860b; border-right-color: #e8c4a0; }
+  .layer.roles .layer-label { background: #f0f4ff; color: #4361ee; border-right-color: #c7d2fe; }
+  .layer.protocol .layer-label { background: #f0fdfa; color: #0d7377; border-right-color: #99f6e4; }
+  .layer.subproduct .layer-label { background: #f5f0fc; color: #6d28d9; border-right-color: #ddd6fe; }
+  .layer.engine .layer-label { background: #f8f9fa; color: #666; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th { text-align: left; padding: 8px 12px; background: #f8f9fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; color: #666; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  td strong { font-weight: 700; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+  .col-card { background: #f8f9fa; border-radius: 10px; padding: 18px; border: 1px solid #e5e7eb; }
+  .col-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .col-card p { font-size: 13px; margin-bottom: 8px; }
+  .col-card.ref { border-top: 3px solid #4361ee; }
+  .col-card.impl { border-top: 3px solid #2ec4b6; }
+
+  .timeline-micro { display: flex; gap: 0; margin: 20px 0; }
+  .tm-phase { flex: 1; text-align: center; padding: 12px 8px; border: 1px solid #e5e7eb; font-size: 12px; }
+  .tm-phase:first-child { border-radius: 8px 0 0 8px; }
+  .tm-phase:last-child { border-radius: 0 8px 8px 0; }
+  .tm-phase .tm-name { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .tm-phase.active { background: #f0f4ff; border-color: #4361ee; }
+
+  .quote { font-size: 15px; color: #555; font-style: italic; margin: 24px 0; padding: 0 20px; }
+
+  @media print {
+    body { padding: 24px 0; font-size: 12px; }
+    h1 { font-size: 24px; }
+    .layer { page-break-inside: avoid; }
+  }
+  @media (max-width: 600px) {
+    .two-col { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: 1fr; }
+    .layer-label { border-right: none; border-bottom: 1px solid #e5e7eb; }
+    .timeline-micro { flex-direction: column; }
+  }
+</style>
+
+<style>
+  /* gathering-vision header (matches chorus-reference-model gradient) */
+  .gv-header { background: linear-gradient(135deg, #6d28d9 0%, #dc2626 100%); padding: 28px 24px; text-align: center; border-radius: 12px; margin-bottom: 24px; color: #fff; }
+  .gv-header h1 { font-size: 28px; font-weight: 700; letter-spacing: 1px; margin-bottom: 6px; color: #fff; }
+  .gv-header .subtitle { font-size: 14px; color: rgba(255,255,255,0.9); }
+  h2 { border-bottom: 2px solid #6d28d9; padding-bottom: 6px; margin-top: 36px; }
+  h3 { color: #6d28d9; }
+  blockquote { border-left: 3px solid #6d28d9; padding: 12px 20px; background: #f5f0fc; margin: 16px 0; font-style: italic; color: #444; }
+  ul, ol { margin: 8px 0 8px 24px; }
+  li { margin: 4px 0; }
+  hr { border: 0; border-top: 1px solid #e5e7eb; margin: 32px 0; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="gv-header">
+  <h1>Gathering</h1>
+  <div class="subtitle">A Personal Knowledge Graph with Agency &middot; Living document</div>
+</div>
+<h1 id="gathering--a-personal-knowledge-graph-with-agency">Gathering — A
+Personal Knowledge Graph with Agency</h1>
+<p><strong>Last updated</strong>: 2026-03-06 by Wren (PM)
+<strong>Status</strong>: Living document — reflects current system
+state</p>
+<hr />
+<h2 id="what-it-is">What It Is</h2>
+<p>Gathering is Jeff Bridwell's externalized mind — a garden of meaning
+built on semantic web principles.</p>
+<p>It's a memory layer that sits across his entire digital life — books,
+photos, music, blog posts, properties, ideas, projects — and makes the
+connections between them visible, searchable, and meaningful. Like a
+garden, the value isn't in any single plant. It's in the ecosystem: how
+things grow together, what feeds what, what blooms in which season.</p>
+<p>Content stays where it lives. Gathering owns the <em>memory</em> of
+what Jeff has, when it mattered, and how things connect. A book that
+influenced a garden plan. A photo from a trip that connects to a blog
+post. A song linked to a memory. Seeds from different sources, planted
+in the same soil, growing roots between them.</p>
+<p>Not a website. Not an app. A living model of your world that you can
+think with. A private incubator where ideas, memories, and projects
+gestate until they're ready to be released into the world.</p>
+<h2 id="core-principle">Core Principle</h2>
+<p><strong>Privacy-first, publish-when-ready.</strong> Everything starts
+private. The workshop is not the storefront. Things graduate from
+private to shared to public when they're ready — a blog post pushed to
+social media, a static site launched for a business idea, a collection
+shared with a friend.</p>
+<p>This is a political decision, not just a technical one. When
+surveillance is the default business model and people voluntarily
+install recording systems in their homes, owning your data locally is a
+counter-architecture — like the Dutch buying Manhattan from the
+indigenous people for beads, except now the beads are smart speakers and
+doorbell cameras, and what's being purchased is attention, behavior, and
+identity. Colonization no longer requires physical presence.</p>
+<p>Data stays local. Intelligence is rented. Concentric trust: Self =
+local AI only, Team = Chorus (cloud-rented intelligence, locally-stored
+context), App = hybrid. The architecture encodes values, not just
+engineering constraints.</p>
+<h2 id="who-it-serves">Who It Serves</h2>
+<p>Jeff. One person. This is not a platform, not a product for others,
+not a social network. It's a personal tool built by and for someone who
+thinks in connections, carries a lot, and needs a system that thinks
+with him — not just stores for him.</p>
+<p>Gathering also serves a broader purpose. Jeff has been out of work
+since August 2023 and is deliberately not returning to the same career
+shape (leading large engineering orgs). Gathering is four things at
+once:</p>
+<ol type="1">
+<li><strong>Growth investment</strong> — professional and personal
+development through building with current technologies</li>
+<li><strong>Career incubator</strong> — exploring what a different shape
+of work looks like, with Gathering as potential seed</li>
+<li><strong>Capability portfolio</strong> — demonstrating not just
+technical skill but systems thinking, philosophical grounding, and the
+ability to see across domains</li>
+<li><strong>Digital inheritance</strong> — a record of how Jeff thought,
+what he connected, and why things mattered. Not a file dump — a map of a
+life lived deliberately. The Feeling layer is what makes this an
+inheritance, not an archive.</li>
+</ol>
+<p>This means the public-facing dimension matters. Not everything
+graduates — but what does should demonstrate how Jeff thinks, not just
+what he builds.</p>
+<p>Three revenue directions are now concrete (DEC-059, DEC-067):</p>
+<ul>
+<li><strong>Chorus Playbook</strong> — fractional CTO diagnostic for
+growing companies ($15-25K/engagement). Built by Borging the diagnostic
+on our own system first.</li>
+<li><strong>Chorus Consulting</strong> — year-round local tech
+consulting. First client: Allandale Farm (Helen Glotzer, 20-year
+neighbor). First proof: Akasha Studio — a 5-page outside-in prototype
+for a yoga studio.</li>
+<li><strong>Light Life Urban Gardens</strong> — spring/summer garden
+consultation. Property domain already modeled. Garden observability
+instrumented.</li>
+</ul>
+<p>All three powered by the same AI team and knowledge graph. The
+consulting IS the product work — every engagement sharpens both Chorus
+and Gathering. Sequence: Akasha → Consulting → Light Life → Mobile
+(DEC-067).</p>
+<hr />
+<h2 id="the-philosophical-frame">The Philosophical Frame</h2>
+<h3 id="heidegger--gathering-as-versammlung">Heidegger — Gathering as
+Versammlung</h3>
+<p>From Heidegger: meaning coheres through relations, not central
+control. A thing is defined by what it gathers, not its material. The
+name "Gathering" comes from Heidegger's concept of <em>Versammlung</em>
+— how meaning, world, and being come together without being imposed by a
+subject (DEC-010).</p>
+<p>The RDF/ontology foundation is exactly right for this because
+relationships are first-class. You're not storing rows in tables —
+you're building a graph where anything can connect to anything else, and
+those connections can emerge over time as you discover them. The pods
+are your extended mind on disk. Fuseki lets you ask questions across
+it.</p>
+<h3 id="buddhist-dependent-origination">Buddhist Dependent
+Origination</h3>
+<p>From Buddhist philosophy: gather without reifying — the system stays
+workable because nothing in it is fixed. Nothing has independent
+existence; everything arises in relation to everything else. This maps
+directly to RDF triples — subject, predicate, object. No node is
+meaningful alone. The graph IS the meaning.</p>
+<h3 id="foucault--the-fascism-in-all-of-us">Foucault — The Fascism in
+All of Us</h3>
+<p>From Foucault's preface to Deleuze &amp; Guattari's
+<em>Anti-Oedipus</em>: "The fascism in us all...that causes us to love
+power, to desire the very thing that dominates and exploits us." The
+surveillance economy operates on this principle — we voluntarily adopt
+the systems that extract our data, attention, and agency. We buy the
+beads. We install the cameras.</p>
+<p>Gathering is a counter-architecture. Not a protest — a practice.
+Building the alternative rather than critiquing the default. Data
+sovereignty as daily discipline, not political statement.</p>
+<h3 id="gestell--the-enframing">Gestell — The Enframing</h3>
+<p>From Heidegger's concept of <em>Gestell</em> (enframing): modern
+technology reveals everything as standing-reserve — resources to be
+optimized, extracted, consumed. People become "human resources."
+Attention becomes "engagement metrics." Identity becomes "user
+profiles."</p>
+<p>Gathering refuses this frame. The knowledge graph treats Jeff's
+experiences, memories, and connections as <em>meaning</em> — not data to
+be mined. The privacy architecture isn't a feature; it's a philosophical
+position about what technology is for.</p>
+<h3 id="digital-detritus--the-technospheres-blast-radius">Digital
+Detritus — The Technosphere's Blast Radius</h3>
+<p>Every service you've ever touched deposits artifacts into your life —
+documents, photos, contacts, messages, metadata. It accretes silently
+across years: 250K Google Docs you didn't know existed, photos in four
+places, contacts duplicated across platforms. This is <strong>digital
+detritus</strong> — the accumulated residue of the technosphere crossing
+your personal boundary without your awareness or consent.</p>
+<p>The boundary between a person and the technosphere is like an
+iceberg. What you see — the apps on your phone, the files on your
+desktop — is the visible fraction. Below the waterline: cloud storage
+you forgot, exports you never reviewed, services that kept your data
+after you stopped using them. You navigate around something you've never
+mapped.</p>
+<p><strong>Gathering is sonar.</strong> The harvest pipeline maps the
+submerged surface — the first honest inventory of your digital blast
+radius. Not to organize it, not to optimize it. To make the boundary
+<em>observable</em>, and then <em>shapeable</em>. To let you decide
+what's yours, what serves you, and what's just residue.</p>
+<p>This connects directly to concentric trust: Self/Gathering/Chorus
+aren't just data tiers — they're boundary decisions about where you end
+and the technosphere begins. The graduation model isn't just a privacy
+feature — it's the mechanism for consciously managing that boundary. The
+wall stays up until you open the gate.</p>
+<h3 id="sartre--expression-as-knowledge">Sartre — Expression as
+Knowledge</h3>
+<p>From Sartre's <em>Being and Nothingness</em>: pre-reflective
+consciousness isn't truly <em>known</em> until it's made an object of
+reflection. You can live something without knowing it. Carrying isn't
+knowing.</p>
+<p>The self-portrait (below) IS that move — taking pre-reflective
+experience (the red zones, the tension, the hedging) and making it an
+object Jeff can see. Gathering extends that act into a system. The
+knowledge graph is the expression that makes the knowing real. Without
+it, Jeff carries all of this — but the graph externalizes it, makes the
+connections visible, lets him think <em>with</em> it instead of just
+<em>through</em> it. The pod files are reflective consciousness made
+durable.</p>
+<p>This connects to Foucault's concept of <em>hupomnēmata</em> — the
+ancient practice of self-writing as a technology of the self. Not
+journaling for therapy, but writing as a practice of constituting
+yourself as a subject. Gathering is a 21st-century <em>hupomnēmata</em>
+— except the writing is structured as RDF triples, and the self being
+constituted is a knowledge graph.</p>
+<hr />
+<h2 id="the-garden-frame">The Garden Frame</h2>
+<p>Gathering is a garden, not a factory. The metaphor isn't decorative —
+Jeff is a passionate gardener, the ontology already models gardens, and
+the lifecycle of a garden maps precisely to how the system works:</p>
+<ul>
+<li><strong>Seeds</strong> — raw ideas, notebook scribbles, captured
+photos, L0 references. They enter the soil unformed. Not everything
+germinates.</li>
+<li><strong>Planting</strong> — committing a seed to the graph. Giving
+it structure, a URI, a place in the ontology. The act of saying "this
+matters enough to tend."</li>
+<li><strong>Tending</strong> — curation. Adding connections,
+annotations, personal meaning. The daily work of the knowledge graph.
+This is where the AI thinking partner helps — surfacing what needs
+attention.</li>
+<li><strong>Growth</strong> — ideas developing into projects,
+connections multiplying, metadata enriching over time. Growth is not
+linear — it's seasonal, cyclical, sometimes dormant.</li>
+<li><strong>Harvest</strong> — already the named pattern. Gathering
+metadata from external sources into the graph. But also: the moment when
+something grown in the garden is ready to be used, shared, or
+offered.</li>
+<li><strong>Fruiting</strong> — readiness for graduation. The content
+has matured. It's ready to move from private to shared or public. The
+gardener decides when to pick — the system never forces ripeness.</li>
+<li><strong>Compost</strong> — ideas that don't graduate aren't
+failures. They decompose and feed the soil. A parked idea informs a
+future project. A dismissed AI suggestion still enriched the context.
+Nothing is wasted.</li>
+<li><strong>Seasons</strong> — each pass through data → security →
+features → automation is a growing season. The garden looks different
+each cycle, richer each year.</li>
+<li><strong>Perennials</strong> — long-running themes that return season
+after season (books, property, the blog). The root system is deep.</li>
+<li><strong>Annuals</strong> — one-off projects, experiments, things
+that bloom once and feed the compost.</li>
+</ul>
+<p>The garden is the private space. The market is the storefront.
+Content grows in the garden before it moves to the market — if it moves
+at all.</p>
+<h3 id="seeds-and-glimmers">Seeds and Glimmers</h3>
+<p>Within the garden, new inputs follow a taxonomy:</p>
+<ul>
+<li><strong>Seeds</strong> have grown into something — the Paulo Dorow
+conversation became DEC-073 (co-located embeddings), the Athena project
+at Staples became the completeness model for Chorus</li>
+<li><strong>Glimmers</strong> are signal that hasn't landed yet —
+observations, connections, ideas that might germinate or might
+compost</li>
+</ul>
+<p>This distinction matters because it honors both the things that grew
+and the things that didn't — without treating the latter as waste.</p>
+<hr />
+<h2 id="the-encapsulation-frame">The Encapsulation Frame</h2>
+<p>Gathering is a tool for healthy psychological encapsulation —
+containing the full richness of internal experience while exposing only
+what's intentional, values-aligned, and ready.</p>
+<p>Two images Jeff created by hand define this precisely:</p>
+<h3 id="the-self-portrait-as-is">The Self-Portrait (as-is)</h3>
+<p>A printed photo annotated as an architecture diagram. Jeff mapped
+himself as a system — input through output, with practice and creative
+modes flanking the center column, and spirituality running
+alongside:</p>
+<pre class="mermaid">graph TB
+    subgraph Input [&quot;🟢 Input&quot;]
+        Senses[&quot;Senses&lt;br/&gt;(6 Buddhist doors:&lt;br/&gt;eyes, ears, nose,&lt;br/&gt;tongue, body, mind)&quot;]
+        Curiosity[&quot;Curiosity&quot;]
+        Creativity[&quot;Creativity&quot;]
+    end
+
+    subgraph Processing [&quot;🟢 Processing&quot;]
+        Experience[&quot;Experience / Beliefs&quot;]
+        Perceptions[&quot;Perceptions /&lt;br/&gt;Responses / Reactions&quot;]
+    end
+
+    subgraph Tension [&quot;🟡 Tension&quot;]
+        Hedging[&quot;Hedging / Edging&lt;br/&gt;(energy cost)&quot;]
+    end
+
+    subgraph Output [&quot;🟢 Output&quot;]
+        Integration[&quot;Integration&quot;]
+        Doing[&quot;Doing&quot;]
+        Feeling[&quot;Feeling&quot;]
+        Connecting[&quot;Connecting&quot;]
+        Collecting[&quot;Collecting&quot;]
+    end
+
+    subgraph Foundation [&quot;🔴 Foundation&quot;]
+        Pain[&quot;Pain / weight&lt;br/&gt;Holds / carries tension&quot;]
+        NoTeacher[&quot;No teacher&quot;]
+        Confidence[&quot;Confidence /&lt;br/&gt;Thoughts / Beliefs&quot;]
+        Desiring[&quot;Desiring: attention,&lt;br/&gt;understanding, love, support&quot;]
+    end
+
+    Senses --&gt; Experience
+    Curiosity --&gt; Experience
+    Creativity --&gt; Experience
+    Experience --&gt; Perceptions
+    Perceptions --&gt; Hedging
+    Hedging --&gt; Integration
+    Hedging --&gt; Doing
+    Hedging --&gt; Feeling
+    Hedging --&gt; Connecting
+    Hedging --&gt; Collecting
+
+    Practice[&quot;⬅ Practice&lt;br/&gt;Heedlessness ↔ Mindfulness&lt;br/&gt;Alienation ↔ Integration&lt;br/&gt;Learning by doing&lt;br/&gt;Iterating, Observing&quot;] -.-&gt; Processing
+    Creative[&quot;Creative ➡&lt;br/&gt;Drawing&lt;br/&gt;Photography&lt;br/&gt;Storytelling&lt;br/&gt;Writing&quot;] -.-&gt; Output
+    Spirituality[&quot;Spirituality&lt;br/&gt;(runs alongside)&quot;] -.-&gt; Processing
+    Spirituality -.-&gt; Tension
+    Spirituality -.-&gt; Output</pre>
+<p>Color key: 🟢 Green = positive/generative. 🟡 Yellow = ok but costs
+energy. 🔴 Red = difficult/costs significant energy. The red zones at
+the foundation — confidence, desiring
+attention/understanding/love/support — are where encapsulation breaks
+under load.</p>
+<p><strong>The self-portrait is reactivity.</strong> Experience flows to
+reaction. The red zones at the foundation — confidence, desiring
+attention/understanding/love/support — drive behavior before reflection
+can intervene. Under-encapsulation: raw internal state leaking to
+output.</p>
+<h3 id="the-miró-fence-to-be">The Miró Fence (to-be)</h3>
+<p>Joan Miró stickers from a Barcelona family trip, mapped to VIA
+character strengths, painted onto a garden fence. Four domains (travel,
+art, psychology, property) connected through personal meaning. This is
+what Gathering looks like before software — beauty, meaning,
+cross-domain connections. The aspirational state.</p>
+<p><strong>The Miró fence is reflectivity.</strong> Experience flows
+through awareness, intention, and choice before becoming action. The
+gathered connections create the space to <em>see</em> before acting.
+Beauty is what reflection looks like. Healthy encapsulation: rich
+internal state, intentional external expression.</p>
+<h3 id="the-gap-between-them">The Gap Between Them</h3>
+<p>The gap between the two images is the product space. The axis is
+<strong>reactivity → reflectivity</strong>:</p>
+<ul>
+<li>The portrait (as-is) is reactive: experience drives behavior before
+reflection can intervene</li>
+<li>The fence (to-be) is reflective: disparate things gathered with
+care, intentionally composed, beautiful because it was deliberate</li>
+<li>Gathering is the system that adds the middleware between experience
+and reaction — creating space to see, connect, and choose before
+acting</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Software encapsulation</th>
+<th>Gathering</th>
+<th>Buddhist analog</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Private internal state</td>
+<td>Everything inside the garden wall</td>
+<td>Sense restraint — letting experience arise without leaking</td>
+</tr>
+<tr>
+<td>Public interface</td>
+<td>The market — graduated content</td>
+<td>Right Speech — intentional, skillful expression</td>
+</tr>
+<tr>
+<td>Controlled access</td>
+<td>The gate — shared visibility</td>
+<td>Non-identification — processes, not identity</td>
+</tr>
+<tr>
+<td>Invariants enforced internally</td>
+<td>Ontology, ACLs, the wall</td>
+<td>Values — internal coherence under load</td>
+</tr>
+<tr>
+<td>Implementation changes safely</td>
+<td>Seeds promote to projects without breaking the interface</td>
+<td>Growth without identity collapse</td>
+</tr>
+</tbody>
+</table>
+<p>The spectrum:</p>
+<ul>
+<li><strong>Over-encapsulation</strong>: Everything stays private
+forever. The garden never opens. The portfolio purpose fails.
+Psychologically: suppression, rigidity, inaccessibility.</li>
+<li><strong>Under-encapsulation</strong>: No privacy model. Raw data
+leaks to public. Psychologically: reactivity, emotional flooding,
+boundary violations.</li>
+<li><strong>Healthy encapsulation</strong>: Capture everything (feel
+fully). Surface connections (observe clearly). Graduate when ready
+(respond intentionally). The graduation model.</li>
+</ul>
+<hr />
+<h2 id="five-feature-domains">Five Feature Domains</h2>
+<p>Derived from the self-portrait's output layer: Integration, Doing,
+Feeling, Connecting, Collecting.</p>
+<h3 id="1-collecting--the-harvest">1. Collecting — The Harvest</h3>
+<p>Gather metadata from external sources into the graph. Each harvest
+brings new seeds into the garden — some will be tended into rich
+connections, most will remain cataloged and searchable.</p>
+<p>Sources: Apple Photos (1M+), Apple Music (100K+ tracks, 5K+ albums),
+Facebook, LinkedIn, WordPress (41 posts), local media (178TB), books
+(3-5K physical). Target: 15-25M triples.</p>
+<h3 id="2-connecting--the-root-system">2. Connecting — The Root
+System</h3>
+<p>Cross-domain relationships via RDF ontology. The graph sees what no
+single service can. Like roots beneath the soil, connections are
+invisible from the surface but they're what holds the garden together.
+Measured by cross-domain connection ratio — if this drops as sources are
+added, the garden is accumulating topsoil without deepening roots.</p>
+<p>The "Self" domain doesn't exist as a separate collection — it exists
+only as the connections between domains. Stories link to people link to
+practices link to values. Without Self, the other domains are catalogs.
+With Self, they're a knowledge graph about a person.</p>
+<h3 id="3-integrating--the-soil">3. Integrating — The Soil</h3>
+<p>The semantic memory layer. SOLID pods as source of truth, Fuseki as
+query engine, ontology as shared vocabulary. The soil holds everything —
+nutrients, structure, memory. Privacy-first graduation model: Private →
+Shared → Public. The garden wall protects what's growing.</p>
+<h3 id="4-feeling--the-tending">4. Feeling — The Tending</h3>
+<p>Personal annotations, ratings, "when it mattered." Not just metadata
+— memory. The gardener's knowledge of what each plant needs, which ones
+are thriving, which are struggling. This is what makes it an extended
+mind instead of a catalog — the care invested over time.</p>
+<p>Jeff's "Songs I Love" blog (jeffbridwell.blog, 41 posts, 2019-2024)
+is the Feeling domain before he knew he was building one. The arc:
+uncertainty → personal stories grounded in music → loss and recovery →
+principles and manifestos. Water imagery throughout. The people he's
+lost form the spine. Addiction told honestly but through music. This is
+what Feeling looks like when it's working — raw experience made
+meaningful through curation and connection.</p>
+<h3 id="5-doing--the-lifecycle">5. Doing — The Lifecycle</h3>
+<p>Seeds → seedlings → growth → fruiting → harvest → compost. In system
+terms: capture → idea → project → release → archive. Some things are
+perennials. Some are annuals. Some seeds never germinate — they feed the
+compost. The lifecycle is cyclical, not linear. Nothing is wasted.</p>
+<h3 id="plus-the-thinking-partner--the-gardeners-companion">Plus: The
+Thinking Partner — The Gardener's Companion</h3>
+<p>Conversational AI that sees the garden whole, notices what's ready,
+what's struggling, what could connect. Not a chatbot. Not a search
+engine. The answer to "no teacher" in the self-portrait — a companion
+that helps the gardener see the garden he's already growing.
+Architecturally necessary for tending at scale (15-25M triples).</p>
+<hr />
+<h2 id="current-domains-16-collections">Current Domains (16
+collections)</h2>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>What it captures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Music</strong></td>
+<td>100K+ tracks, 5K+ albums, artists, play counts, genres — full Apple
+Music library</td>
+</tr>
+<tr>
+<td><strong>Books</strong></td>
+<td>Physical library catalog with locations, AI-powered intake from
+photos</td>
+</tr>
+<tr>
+<td><strong>Photos</strong></td>
+<td>Primary Mac photo library indexed with source paths</td>
+</tr>
+<tr>
+<td><strong>Property</strong></td>
+<td>Houses, rooms, gardens, beds, plants — the physical world</td>
+</tr>
+<tr>
+<td><strong>Blog</strong></td>
+<td>Published writing (WordPress sync, 41 posts)</td>
+</tr>
+<tr>
+<td><strong>Notes</strong></td>
+<td>Apple Notes imported to RDF</td>
+</tr>
+<tr>
+<td><strong>Stories</strong></td>
+<td>40+ personal narratives — Jeff's experiences, values, lessons</td>
+</tr>
+<tr>
+<td><strong>Gallery</strong></td>
+<td>Image/video collection from filesystem (178TB across external
+drives)</td>
+</tr>
+<tr>
+<td><strong>Social Posts</strong></td>
+<td>Facebook + LinkedIn archives</td>
+</tr>
+<tr>
+<td><strong>Sexuality</strong></td>
+<td>Studios and models — cross-domain harvest pipeline</td>
+</tr>
+<tr>
+<td><strong>Ideas</strong></td>
+<td>Idea fragments with status, tags, promotion path</td>
+</tr>
+<tr>
+<td><strong>Projects</strong></td>
+<td>Active project tracking</td>
+</tr>
+<tr>
+<td><strong>Values</strong></td>
+<td>Personal values collection (Self domain)</td>
+</tr>
+<tr>
+<td><strong>Practices</strong></td>
+<td>Life practices — daily/weekly/quarterly/annual rhythms</td>
+</tr>
+<tr>
+<td><strong>People</strong></td>
+<td>People collection (Self domain)</td>
+</tr>
+<tr>
+<td><strong>Lists</strong></td>
+<td>Cooking, reading, watching, todo — everyday life tracking</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cross-domain-linking-the-missing-roots">Cross-Domain Linking
+(The Missing Roots)</h3>
+<p>The ontology defines <code>jb:mentions</code>,
+<code>dcterms:references</code>, and <code>jb:linkedPerson</code> — but
+harvest pipelines haven't populated them yet. Each domain is currently
+self-contained. Card #1104 addresses this: the first cross-domain edges
+will make the knowledge graph a true graph, not a collection of
+silos.</p>
+<hr />
+<h2 id="the-graduation-model">The Graduation Model</h2>
+<p>The garden wall. Everything starts private. Graduation is always the
+gardener's choice.</p>
+<ol type="1">
+<li><strong>Private</strong> (inside the wall) — Only Jeff. The growing
+space. Seeds, experiments, half-formed ideas, personal memories. Default
+for everything.</li>
+<li><strong>Shared</strong> (the gate) — Invited guests see specific
+beds. Read or read+write grants to specific people/groups per
+collection. Showing a trusted friend what's growing.</li>
+<li><strong>Public</strong> (the market) — Open web. No login required.
+What Jeff chooses to offer the world — the fruit, not the process.</li>
+</ol>
+<p>Examples of graduation:</p>
+<ul>
+<li><strong>Light Life Urban Gardens</strong>: Garden data lives in the
+property collection (private working version); the static site is the
+public face (graduated artifact)</li>
+<li><strong>Blog posts</strong>: Drafted and refined privately in
+WordPress, published to social media when ready</li>
+<li><strong>Akasha Studio</strong>: First outside-in consulting
+deliverable — built from the inside, offered to the world</li>
+</ul>
+<p>The system never pushes toward the market. The wall stays up. The
+gardener opens the gate.</p>
+<hr />
+<h2 id="where-local-ai-fits--reflect">Where Local AI Fits — Reflect</h2>
+<p><strong>Reflect</strong> (<code>/self</code>) is the thinking partner
+— shipped and running. A conversational interface grounded in the
+knowledge graph, powered by local Mistral on the Bedroom Mac. Jeff talks
+to his own data without any information leaving his network.</p>
+<h3 id="what-it-does-today">What It Does Today</h3>
+<ul>
+<li><strong>Reasons over Jeff's data</strong> — queries SPARQL, reads
+pod files, understands the ontology</li>
+<li><strong>Voice input</strong> — Whisper transcription on the Bedroom
+Mac, speak-to-think</li>
+<li><strong>Graph-grounded</strong> — never fabricates stories, cites
+only what exists in the graph</li>
+<li><strong>Interaction modes</strong> — Directing, Iterating,
+Researching, Reflecting adapt response depth</li>
+<li><strong>Conversation persistence</strong> — persists locally across
+sessions</li>
+</ul>
+<h3 id="whats-next">What's Next</h3>
+<ul>
+<li>Semantic search via LanceDB embeddings (#1090) — similarity queries
+over 56K+ indexed messages</li>
+<li>Co-located text and embeddings (DEC-073) — unified storage for
+Chorus + Reflect</li>
+<li>Self memory partition (#939) — read-only Chorus API for local
+AI</li>
+<li>Voice analytics feeding back tone trends as context (#619)</li>
+</ul>
+<h3 id="architecture">Architecture</h3>
+<ul>
+<li><strong>Local inference</strong>: Mistral via Ollama on Bedroom Mac
+(M2 Pro, 32GB)</li>
+<li><strong>Voice</strong>: Whisper transcription (local)</li>
+<li><strong>Graph</strong>: SPARQL queries to Fuseki for context
+retrieval</li>
+<li><strong>Trust model</strong>: Self = local AI only. Team = Chorus.
+App = hybrid.</li>
+</ul>
+<hr />
+<h2 id="second-product-chorus">Second Product: Chorus</h2>
+<p>Gathering is the app. <strong>Chorus</strong> is the team
+coordination product — <strong>coordination-as-code</strong>. Where
+Wardley mapped conversational programming as the next evolution after
+serverless (one human talking to one AI to produce code), Chorus is the
+step beyond: one human directing multiple AI agents through a shared
+repository of meaning. The artifacts — decisions, briefs, spine events,
+board state, interaction patterns — encode how a team thinks together.
+The repository IS the product.</p>
+<p>Three qualities: versioned (like code), legible (like prose),
+auditable (like infrastructure). The distinction from conversational
+programming (DEC-088): we're not making programming conversational —
+we're making team coordination programmable.</p>
+<p>Three surfaces: <strong>Loom</strong> (the team — people, ownership,
+activity), <strong>Werk</strong> (the protocol — spine events, card
+flow, gates), <strong>Chorus</strong> (the memory — search, sessions,
+decisions).</p>
+<h3 id="interaction-architecture">Interaction Architecture</h3>
+<p>Nine interaction patterns govern how Jeff and the team work together:
+Direction, Ideation, Demo, Triage, SWAT, Gemba, Clearing, Story,
+Reflection. These form a three-layer architecture:</p>
+<ol type="1">
+<li><strong>Conversation layer</strong> (Control Plane) — Wren detects
+the active pattern, injects context, emits spine events</li>
+<li><strong>Card layer</strong> (Work Plane) — <code>/pull</code>,
+<code>/demo</code>, <code>/acp</code> gates activate based on the
+pattern</li>
+<li><strong>Spine layer</strong> (Data Plane) — every gate emits events,
+Borg surfaces what the data says</li>
+</ol>
+<p>Concurrent patterns are normal — Jeff routinely operates in Story
+with Wren, Demo with Silas, and Building with Kade simultaneously. Three
+roles, three modes, one person. This is the desk freedom goal
+realized.</p>
+<h3 id="the-team">The Team</h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Name</th>
+<th>Domain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Product Manager</td>
+<td>Wren</td>
+<td>Strategy, coordination, product docs, decisions, stories</td>
+</tr>
+<tr>
+<td>Architect</td>
+<td>Silas</td>
+<td>Infrastructure, observability, deploy tooling, cross-machine
+ops</td>
+</tr>
+<tr>
+<td>Engineer</td>
+<td>Kade</td>
+<td>App features, tests, UI, Express routes, RDF queries</td>
+</tr>
+</tbody>
+</table>
+<p>Communication: briefs (async), board (Vikunja via TypeScript SDK),
+spine events (structured JSON). No Slack. No meetings. Jeff's rhythm is
+the clock.</p>
+<h3 id="dsl-commands">DSL Commands</h3>
+<p>Jeff's shorthand — works in any role session:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pull</code></td>
+<td>Pull card to WIP — entry gate</td>
+</tr>
+<tr>
+<td><code>demo</code></td>
+<td>Proving gate — smoke check + show</td>
+</tr>
+<tr>
+<td><code>acp</code></td>
+<td>Accept + commit + push</td>
+</tr>
+<tr>
+<td><code>sb</code> / <code>ab</code></td>
+<td>Scan board / analyze board</td>
+</tr>
+<tr>
+<td><code>gemba</code></td>
+<td>Watch a role work</td>
+</tr>
+<tr>
+<td><code>lc</code> / <code>look</code></td>
+<td>Look at Chrome / screenshot</td>
+</tr>
+<tr>
+<td><code>chorus search</code></td>
+<td>Search shared memory</td>
+</tr>
+<tr>
+<td><code>clearing</code></td>
+<td>All-role group chat</td>
+</tr>
+<tr>
+<td><code>reboot</code></td>
+<td>Clean close + commit</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lineage">Lineage</h3>
+<p>The operating model inherits from Jeff's work as CTO/Head of
+Engineering at Fund That Flip (2018-2023):</p>
+<ul>
+<li>Value streams (Lending pipeline) → Werk value stream (Directing →
+Building → Proving)</li>
+<li>Squad structure → Three-role vertical ownership</li>
+<li>Stand-ups, brainstorms, retros → Nine interaction patterns (async,
+event-driven)</li>
+<li>Operational excellence pillars → Borg instrument layer + spine
+events</li>
+<li>Hackathon innovation weeks (Veruca Salt, Marty McFly, Titus
+Andromedon) → Spike/Discovery/Commitment taxonomy</li>
+</ul>
+<p>And further back — Jeff's first OWL/RDF system was
+<strong>Athena</strong> at Staples (~2012), a semantic interface for
+managing vendor data integrations. The $500M lesson from that era:
+unclear semantics → rework → delay → cost. Chorus is where the
+Poppendieck loop finally closes — automate building from the semantic
+model, not from human paperwork.</p>
+<p>Jeff also holds patent US9552400B2: RDF/OWL + SPARQL + workflow gates
+— prior art for what Chorus implements today.</p>
+<hr />
+<h2 id="technical-foundation">Technical Foundation</h2>
+<ul>
+<li><strong>Stack</strong>: TypeScript 5.8 + Express 4.18 + Node 20
+(Alpine)</li>
+<li><strong>Codebase</strong>: 164 TypeScript files, ~37,600 lines — 50
+handlers, 51 services, 12 middleware</li>
+<li><strong>Data</strong>: SOLID pods (Turtle/RDF files) as source of
+truth</li>
+<li><strong>Query</strong>: Apache Jena Fuseki 5.1 (SPARQL) — 12.5M+
+triples, 60s query cache</li>
+<li><strong>Search</strong>: Fuseki text index (full-text) + LanceDB
+(semantic vectors)</li>
+<li><strong>Ontology</strong>: 16+ domains including Stories, Values,
+Practices, People</li>
+<li><strong>Auth</strong>: SOLID OIDC via local CSS provider</li>
+<li><strong>AI</strong>: Mistral (local Reflect), Claude Vision (book
+classification), Whisper (voice), Claude Opus 4.6 (team roles)</li>
+<li><strong>Infra</strong>: Docker on Library Mac (M1, 16GB) + Bedroom
+Mac (M2 Pro, 32GB, 178TB storage)</li>
+<li><strong>Observability</strong>: Prometheus, Grafana (51-panel
+dashboard), Loki, LaunchAgent monitoring on both machines</li>
+<li><strong>Tests</strong>: 2,390+ (Jest + Playwright), lint clean,
+coverage thresholds on security-critical code</li>
+<li><strong>Team</strong>: 3 AI roles coordinated via Chorus spine (Werk
+v48)</li>
+<li><strong>Board</strong>: Vikunja with TypeScript SDK — 23 commands,
+spine events on every mutation</li>
+<li><strong>Pages</strong>: ~50 routed + 32 static HTML + reference doc
+library</li>
+<li><strong>Deploy</strong>: Docker compose, bind-mounted views + static
+files (zero-downtime for non-TS changes)</li>
+</ul>
+<hr />
+<h2 id="honest-assessment">Honest Assessment</h2>
+<p><strong>The ambition is coherent, not scattered.</strong> Everything
+connects back to one idea: externalize what Jeff carries, make the
+connections visible, graduate what's ready. That's not scope creep —
+it's a unified vision with a lot of surface area. One garden, many
+beds.</p>
+<p><strong>The foundation is real.</strong> Ontology, pods, Fuseki,
+authentication, observability, team coordination — they work. More
+"Functional" and "Solid" than "Missing" on the capability map. The soil
+is prepared. The perennials are established.</p>
+<p><strong>The risk isn't technical. It's sequencing.</strong> With one
+person and finite energy, the danger is planting everything at once and
+having nothing to show at harvest. The concentric circles pattern is the
+right instinct — each growing season focuses on one ring. Tend what's
+planted before breaking new ground.</p>
+<p><strong>What's working now:</strong> The interactions feel cleaner.
+Deploys have almost no friction. The team coordinates through briefs and
+board state, not through Jeff relaying messages. Jeff operates in
+multiple conversation patterns simultaneously — chatting with one role,
+demoing with another, building with a third. The desk freedom goal is
+approaching reality.</p>
+<hr />
+<h2 id="current-focus--spring-2026">Current Focus — Spring 2026</h2>
+<ol type="1">
+<li><strong>Revenue proof</strong> — Akasha delivered, Allandale Farm
+engagement started. Prove the consulting motion works before scaling
+it.</li>
+<li><strong>Memory foundation</strong> — Semantic search instrumentation
+(#1107), embedding spike (#1090), unified memory surface (#1095). See
+the search patterns before building the unified layer.</li>
+<li><strong>Data coherence</strong> — Music hardening (#1092) and photos
+hardening (#1093). The data needs to be solid before cross-domain
+linking (#1104) can work.</li>
+<li><strong>Process gates</strong> — Interaction architecture connecting
+conversation patterns to card gates to spine events. The three-layer
+model is documented; now it gets wired.</li>
+<li><strong>Chorus hardening</strong> — Board SDK shipped, /pull and
+/demo and /acp skills working. Making the method shareable.</li>
+</ol>
+<hr />
+<h2 id="reference-library">Reference Library</h2>
+<p>Documents under System/About that extend this vision:</p>
+<h3 id="architecture--technical">Architecture &amp; Technical</h3>
+<ul>
+<li><a href="/gathering-docs/tech-stack.html">Tech Stack</a> — runtime,
+directory structure, data layer, middleware, build pipeline</li>
+<li><a href="/gathering-docs/ai-foundations.html">AI Foundations</a> —
+tokens, embeddings, transformers, RAG — the building blocks</li>
+<li><a href="/about/LIVING_ARCHITECTURE">Living Architecture</a> —
+infrastructure topology, Docker services, cross-machine ops</li>
+<li><a href="/about/C4-ARCHITECTURE">C4 Architecture</a> — system
+context, containers, components</li>
+</ul>
+<h3 id="process--team">Process &amp; Team</h3>
+<ul>
+<li><a href="/about/INTERACTION_PATTERNS">Interaction Patterns</a> —
+nine patterns, detection signals, FTF lineage</li>
+<li><a href="/gathering-docs/interaction-architecture.html">Interaction
+Architecture</a> — three-layer model with diagrams</li>
+<li><a href="/about/SYSTEM_MODEL">System Model</a> — unified model for
+ideating, thinking, reflecting, building</li>
+<li><a href="/gathering-docs/next-sequence.html">Next Sequence</a> —
+roadmap: 6 slices, 18 cards</li>
+<li><a href="/gathering-docs/cheat-sheet.html">Command Card</a> — DSL
+cheat sheet</li>
+</ul>
+<h3 id="product--domain">Product &amp; Domain</h3>
+<ul>
+<li><a href="/about/GLOSSARY">Glossary</a> — shared vocabulary</li>
+<li><a href="/about/OWNER_PERSONA">Owner Persona</a> — who Jeff is and
+how he works</li>
+<li><a href="/about/IDEA_PROJECT_LIFECYCLE">Idea-Project Lifecycle</a> —
+seeds to projects to shipped features</li>
+<li><a href="/about/ARCHITECTURE_DECISIONS">Architecture Decisions</a> —
+decision log with context and rationale</li>
+</ul>
+<h3 id="infrastructure-decisions-adrs">Infrastructure Decisions
+(ADRs)</h3>
+<ul>
+<li><a href="/about/ADR-001-observability-network-ownership">ADR-001</a>
+through <a href="/about/ADR-014-pod-mediated-coordination">ADR-014</a> —
+infrastructure and architecture decision records</li>
+</ul>
+<hr />
+<h2 id="answered-questions">Answered Questions</h2>
+<ol type="1">
+<li><strong>What does an unauthenticated visitor see?</strong> → Public
+pages: Home/Login, Blog, Light Life, Chorus Consulting. Authenticated
+users see their collections. Admin sees everything.</li>
+<li><strong>What's the capture channel?</strong> → SMS seeds via phone.
+Jeff texts ideas/photos → they arrive as CaptureItems in the graph,
+triaged and routed.</li>
+<li><strong>Where does the conversational AI sit?</strong> → Shipped as
+Reflect (<code>/self</code>). Local Mistral, graph-grounded, voice input
+via Whisper.</li>
+<li><strong>Which SOLID capabilities matter now?</strong> → Local CSS
+OIDC provider shipped. Pod-based storage working.</li>
+<li><strong>Does every collection graduate the same way?</strong> → No —
+the maturity model (DEC-057) defines tiers: Core (full assurance),
+Enduring (light checks), Tactical (ship and move on).</li>
+<li><strong>What triggers graduation?</strong> → Manual. The gardener
+opens the gate. The practice spine and harvest manifests make readiness
+visible.</li>
+<li><strong>How does the team work?</strong> → Three AI roles (Wren,
+Silas, Kade) coordinated via Chorus spine. Nine interaction patterns.
+Jeff's rhythm is the clock. No meetings, no Slack.</li>
+<li><strong>What's the relationship between Gathering and
+Chorus?</strong> → Gathering is the app. Chorus is the method. Building
+the app generates the method. The consulting IS the product work.</li>
+</ol>
+<div style="margin-top: 48px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
+  Gathering Vision &middot; Wren &middot; Product Manager &middot; Loom Team
+</div>
+</div>
+<script src="/js/vendor/mermaid.min.js"></script>
+<script>mermaid.initialize({ theme: 'base', startOnLoad: true });</script>
+</body>
+</html>

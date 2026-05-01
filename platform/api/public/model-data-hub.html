@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model + Data</title>
+<link rel="stylesheet" href="/css/gathering.css">
+<style>
+  .md-container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+  .back-link { display: inline-block; margin-bottom: 1rem; color: var(--accent-color, #6366F1); text-decoration: none; font-size: 0.9rem; }
+  .back-link:hover { text-decoration: underline; }
+  .md-header { margin-bottom: 2rem; }
+  .md-header h1 { margin: 0 0 0.5rem; font-size: 2rem; }
+  .md-header p { color: #666; margin: 0; font-size: 1.05rem; line-height: 1.6; }
+
+  .approach { margin-bottom: 2.5rem; padding: 1.5rem; background: #F7FAFC; border-radius: 8px; border-left: 3px solid var(--accent-color, #6366F1); }
+  .approach h2 { font-size: 1rem; margin: 0 0 0.75rem; color: #1A202C; }
+  .approach p { font-size: 0.9rem; color: #555; line-height: 1.6; margin: 0 0 0.5rem; }
+  .approach p:last-child { margin-bottom: 0; }
+
+  .products { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2.5rem; }
+  .product-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.5rem; text-decoration: none; color: inherit; transition: box-shadow 0.2s, transform 0.1s; display: flex; flex-direction: column; }
+  .product-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-1px); }
+  .product-card .icon { font-size: 2rem; margin-bottom: 0.75rem; }
+  .product-card h3 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+  .product-card .subtitle { font-size: 0.85rem; color: #888; margin: 0 0 0.75rem; }
+  .product-card p { font-size: 0.9rem; color: #555; line-height: 1.5; margin: 0 0 1rem; flex: 1; }
+  .product-card .stats { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+  .product-card .stat { font-size: 0.75rem; color: #888; }
+  .product-card .stat strong { color: var(--accent-color, #6366F1); }
+
+  .principles { margin-bottom: 2rem; }
+  .principles h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: #888; margin: 0 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0; }
+  .principle-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+  .principle { padding: 1rem; background: #FAFBFC; border-radius: 6px; }
+  .principle h3 { font-size: 0.85rem; margin: 0 0 0.25rem; }
+  .principle p { font-size: 0.8rem; color: #666; margin: 0; line-height: 1.5; }
+
+  @media (max-width: 768px) {
+    .products { grid-template-columns: 1fr; }
+    .principle-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="md-container">
+
+  <a href="/" class="back-link">&larr; Home</a>
+
+  <div class="md-header">
+    <h1>Model + Data</h1>
+    <p>Everything here is model-driven. Ontologies define the domains, RDF graphs hold the data, and views render from queries. The model is the source of truth &mdash; not the code, not the UI.</p>
+  </div>
+
+  <div class="approach">
+    <h2>The approach</h2>
+    <p>Each product starts with an ontology &mdash; classes, properties, and relationships that describe what exists and how it connects. Data enters as RDF triples stored in named graphs. Views are projections of the graph, not hand-coded pages.</p>
+    <p>This means the model can grow without rewriting the application. Add a class to the ontology, load data into a graph, and the existing views discover it. The same approach powers both products below.</p>
+  </div>
+
+  <div class="products">
+    <a href="/model-data" class="product-card">
+      <div class="icon">&#127793;</div>
+      <h3>Gathering</h3>
+      <div class="subtitle">Personal knowledge graph</div>
+      <p>Domains, collections, and the connections between them. Music, photos, books, stories, property &mdash; harvested from Apple ecosystem sources into RDF.</p>
+      <div class="stats">
+        <span class="stat"><strong>8</strong> domains</span>
+        <span class="stat"><strong>70</strong> classes</span>
+        <span class="stat"><strong>171</strong> properties</span>
+        <span class="stat"><strong>v1.1.0</strong> ontology</span>
+      </div>
+    </a>
+    <a href="/chorus-model-data.html" class="product-card">
+      <div class="icon">&#127932;</div>
+      <h3>Chorus</h3>
+      <div class="subtitle">Team coordination product</div>
+      <p>Roles, vertebrae, tools, and gates. The ontology that describes how the team works &mdash; value stream, coordination patterns, shared memory.</p>
+      <div class="stats">
+        <span class="stat"><strong>23</strong> classes</span>
+        <span class="stat"><strong>39</strong> properties</span>
+        <span class="stat"><strong>5</strong> vertebrae</span>
+        <span class="stat"><strong>v0.2.0</strong> ontology</span>
+      </div>
+    </a>
+  </div>
+
+  <div class="principles">
+    <h2>Shared principles</h2>
+    <div class="principle-grid">
+      <div class="principle">
+        <h3>Ontology first</h3>
+        <p>Define the domain before writing code. The model drives the application, not the other way around.</p>
+      </div>
+      <div class="principle">
+        <h3>Named graphs</h3>
+        <p>Data lives in graphs that can be loaded, replaced, and queried independently. Each source gets its own graph.</p>
+      </div>
+      <div class="principle">
+        <h3>SPARQL views</h3>
+        <p>Pages render from queries, not hardcoded data. Add to the model and the UI discovers it.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+<footer style="margin-top:2rem;padding:1rem 1in;border-top:1px solid #e2e8f0;color:#64748b;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

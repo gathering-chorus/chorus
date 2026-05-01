@@ -5,8 +5,8 @@
 <title>Chorus — A Reference Model for Human-AI Teams</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; padding: 48px 20px; line-height: 1.7; }
-  .container { max-width: 880px; margin: 0 auto; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; color: #1a1a1a; margin: 0; padding: 48px 1in; line-height: 1.7; }
+  .container { max-width: none; margin: 0; }
   h1 { font-size: 30px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
   .subtitle { font-size: 15px; color: #666; margin-bottom: 12px; }
   .epigraph { font-size: 15px; color: #555; font-style: italic; border-left: 3px solid #ccc; padding: 12px 20px; margin: 24px 0 36px 0; }
@@ -36,6 +36,7 @@
   .layer.human .layer-label { background: #fdf8f3; color: #b8860b; border-right-color: #e8c4a0; }
   .layer.roles .layer-label { background: #f0f4ff; color: #4361ee; border-right-color: #c7d2fe; }
   .layer.protocol .layer-label { background: #f0fdfa; color: #0d7377; border-right-color: #99f6e4; }
+  .layer.subproduct .layer-label { background: #f5f0fc; color: #6d28d9; border-right-color: #ddd6fe; }
   .layer.engine .layer-label { background: #f8f9fa; color: #666; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
@@ -76,7 +77,7 @@
 <div class="container">
 
 <h1>Chorus</h1>
-<p class="subtitle">A Reference Model for Human-AI Teams &middot; v1 &middot; March 2026</p>
+<p class="subtitle">A Reference Model for Human-AI Teams &middot; v2 &middot; May 2026</p>
 
 <div class="epigraph">
   "Look how few you need when they actually pay attention."
@@ -88,7 +89,7 @@
 
 <p class="section-intro">Chorus is a model for how one human and multiple AI roles build things together. Not a framework. Not a product spec. A <em>reference model</em> — a set of patterns that describe what works, what fails, and why, when a human directs persistent AI teammates through sustained creative and technical work.</p>
 
-<p>It emerged from 37 days of daily practice: three AI roles, one human, two products, 106 decisions, 3,855 tests, and every failure documented. The patterns were not designed up front — they were discovered under pressure, extracted from what broke, and validated by what held.</p>
+<p>It emerged from ~5 weeks of daily practice: three AI roles, one human, two products, 120+ recorded decisions, thousands of test cases, and every failure documented. The patterns were not designed up front — they were discovered under pressure, extracted from what broke, and validated by what held.</p>
 
 <p>The model has two layers:</p>
 
@@ -106,7 +107,9 @@
 <!-- ============================================================ -->
 <h2><span class="num">II.</span> The Architecture</h2>
 
-<p class="section-intro">Four layers, from human at the top to engines at the bottom. Each layer has a distinct responsibility. The boundaries between them are the most important thing in the model.</p>
+<p class="section-intro">Five layers, from human at the top to engines at the bottom. Each layer has a distinct responsibility. The boundaries between them are the most important thing in the model.</p>
+
+<p class="section-intro" style="font-style: italic; color: #666;">v2 note (2026-05-01): the original v1 had four layers — Human / Role / Protocol / Engine. The Engine layer has since decomposed into named subproducts (Athena / Werk / Convergence / Borg / Loom / Clearing) that wrap interchangeable engines underneath. Subproducts are stable; engines beneath them are swappable. The five-layer model reflects that distinction.</p>
 
 <div class="layer human">
   <div class="layer-label">Human<br>Layer</div>
@@ -136,11 +139,29 @@
   </div>
 </div>
 
+<div class="layer subproduct">
+  <div class="layer-label">Subproduct<br>Layer</div>
+  <div class="layer-content">
+    <p><strong>Named services within Chorus, each owning one verb.</strong></p>
+    <p>Six subproducts compose the team's productized capability surface. Each one wraps a swappable engine beneath; each one has a distinct verb in the value stream:</p>
+    <ul style="margin: 6px 0 8px 18px; font-size: 13px;">
+      <li><strong>Athena</strong> — <em>specifies</em>. The semantic layer (OWL/RDF, ontology, subdomains). Gives signals meaning. Domain&#8594;service&#8594;gate&#8594;role typing.</li>
+      <li><strong>Werk</strong> — <em>builds</em>. The execution substrate (cards, gates, hooks, tests, CI, branch-check, commits). Where invariant-bearing build work lives. Goal: invariant and high-quality execution.</li>
+      <li><strong>Convergence</strong> — <em>integrates</em>. Data and message integration (ICDs, service designs, NiFi flows, common envelope). Brings many sources into one shape.</li>
+      <li><strong>Borg</strong> — <em>observes</em>. Reflection and observability (alerts, logs, health, metrics, heralds). The system watching itself so the human doesn't have to.</li>
+      <li><strong>Loom</strong> — <em>captures coordination knowledge</em>. Principles, decisions, RCAs, policies, practices, analytics, metrics-of-the-team. The team's persistent product memory.</li>
+      <li><strong>Clearing</strong> — <em>convenes</em>. Real-time multi-role interaction surface for cross-role alignment.</li>
+    </ul>
+    <p>Subproducts are stable interfaces; engines beneath them are interchangeable. Adding a new capability creates a new subproduct, not a new engine adapter scattered across roles.</p>
+    <p style="font-size: 12px; color: #666; font-style: italic;">Note on horizontal capabilities: Quality (tests, gates, coverage, SLAs) cuts across all subproducts and is currently owned by Kade. It is intentionally NOT a subproduct in this model — tests are a subdomain in Athena (<code>tests-domain</code>), gates live in Werk's contract, and the horizontal concern doesn't yet have its own product name. Future work may name a /quality subproduct; today it stays as a cross-cutting capability.</p>
+  </div>
+</div>
+
 <div class="layer engine">
   <div class="layer-label">Engine<br>Layer</div>
   <div class="layer-content">
-    <p><strong>Interchangeable tools that do the actual work.</strong></p>
-    <p>Kanban engine (Vikunja, Jira, Linear). Knowledge graph (Fuseki, Neo4j). Data integration (NiFi, Airflow). AI execution (Claude Code, Cursor, Copilot Workspace). Monitoring (Grafana, Datadog). The protocol layer drives them — they don't drive the protocol.</p>
+    <p><strong>Swappable tools the subproducts ride on.</strong></p>
+    <p>Kanban engine (Vikunja, Jira, Linear). Knowledge graph (Fuseki, Neo4j). Data integration (NiFi, Airflow). AI execution (Claude Code, Cursor, Copilot Workspace). Monitoring (Grafana, Datadog). The subproduct layer wraps these — engines don't drive the protocol or the subproducts.</p>
     <p>Engine choices are buy decisions, not build decisions. The reference model is agnostic to engines.</p>
   </div>
 </div>
@@ -248,9 +269,13 @@
 <!-- ============================================================ -->
 <h2><span class="num">V.</span> The Value Stream</h2>
 
-<p class="section-intro">Work flows through four states. The human's involvement is concentrated at the boundaries — directing and proving. The middle is role work.</p>
+<p class="section-intro">Work flows through five states. The human's involvement is concentrated at three points — shaping, directing, and proving. The middle two are role work.</p>
 
 <div class="timeline-micro">
+  <div class="tm-phase">
+    <div class="tm-name">Shaping</div>
+    Jeff + Wren reflect.<br>Principles, decisions, policies form.
+  </div>
   <div class="tm-phase">
     <div class="tm-name">Directing</div>
     Jeff decides what matters.<br>Cards created. Priority set.
@@ -269,7 +294,9 @@
   </div>
 </div>
 
-<p>The ideal: Jeff touches each card <strong>twice</strong> — once to direct, once to prove. Everything in between is autonomous role work. The system's maturity is measured by how close it gets to this ideal. Today's reality: 4–6 touches per card. The gap is the improvement target.</p>
+<p><strong>Shaping</strong> is upstream of cards. It's where the team articulates how it wants to operate — principles, decisions, policies, practices, RCAs. The Loom subproduct holds the artifacts; Wren+Jeff conversations produce them. Shaping decides the shape of work *before* a card exists. In Athena's step ontology, all loom-* subdomains plus roles, skills, and spine live at this step.</p>
+
+<p>The ideal: Jeff touches each card <strong>twice</strong> — once to direct, once to prove. Shaping is the conversation that creates cards in the first place; it's not a per-card touch but a recurring, generative activity. Everything between Directing and Proving is autonomous role work. The system's maturity is measured by how close it gets to this ideal. Today's reality: 4–6 touches per card. The gap is the improvement target.</p>
 
 <!-- ============================================================ -->
 <h2><span class="num">VI.</span> The Feedback Engine</h2>
@@ -338,7 +365,7 @@
   <tr>
     <td><strong>Interpret</strong></td>
     <td>Human decodes what the role is doing from tool call output</td>
-    <td>Gemba commentary + Bridge visibility</td>
+    <td>Gemba commentary + spine events</td>
   </tr>
   <tr>
     <td><strong>Recover</strong></td>
@@ -434,7 +461,7 @@
 <!-- ============================================================ -->
 <h2><span class="num">X.</span> The Implementation (Jeff's Instance)</h2>
 
-<p class="section-intro">Everything above is the reference model — portable, tool-agnostic. Below is the proof: one human, two Macs, three AI roles, 37 days.</p>
+<p class="section-intro">Everything above is the reference model — portable, tool-agnostic. Below is the proof: one human, two Macs, three AI roles, ~5 weeks of daily use.</p>
 
 <table>
   <tr><th>Layer</th><th>Reference</th><th>Jeff's Implementation</th></tr>
@@ -449,41 +476,62 @@
     <td>Wren (PM), Silas (Architect), Kade (Engineer). Claude Opus. Persistent via CLAUDE.md + memory files.</td>
   </tr>
   <tr>
-    <td><strong>Coordination</strong></td>
-    <td>Cards, skills, hooks, briefs</td>
-    <td>Vikunja board, board-ts CLI, 30+ skills, Rust hooks service, Bridge UI</td>
+    <td><strong>Protocol</strong></td>
+    <td>Skills, hooks, cards, briefs, attention contracts</td>
+    <td>30+ skills, Rust hooks service (chorus-hooks), board-ts CLI, role-state, role briefs in <code>roles/&lt;role&gt;/briefs/</code>, spine events</td>
   </tr>
   <tr>
-    <td><strong>Knowledge</strong></td>
-    <td>Semantic graph + search</td>
-    <td>Apache Fuseki (23M+ triples), LanceDB embeddings, Chorus memory index</td>
+    <td><strong>Subproduct: Athena</strong> <em>(specifies)</em></td>
+    <td>Semantic layer over OWL/RDF</td>
+    <td>Apache Fuseki (31M+ triples, 48 subdomains), Chorus memory index</td>
   </tr>
   <tr>
-    <td><strong>Integration</strong></td>
-    <td>Flow-based ETL engine</td>
-    <td>Apache NiFi (evaluating). Currently: custom scripts (being retired).</td>
+    <td><strong>Subproduct: Werk</strong> <em>(builds)</em></td>
+    <td>Execution substrate — cards, gates, hooks, tests, CI</td>
+    <td>Vikunja board, cards CLI (<code>platform/scripts/cards</code>), chorus-hooks (Rust). Test runners: jest + cargo + bats + cucumber-js. Git hooks: pre-commit + pre-push. PreToolUse chain: TDD gate, infra_guardrails, csc_guard, session_init_gate, branch-check.sh (#2580+#2639). Ratchets: clippy-ratchet + lint-ratchet (eslint non-regression). Auto-checks: claudemd-gen (protocol + checksums), smoke-check.sh (50-page substrate health), doc-drift. Role gates (5-chain): gate:product, gate:code, gate:quality, gate:arch, gate:ops. CI: GitHub Actions on main only (per-branch retired in cost-stop). Known unprotected surface: mode (A) read-stale-content accepted-residual-risk, sensor pending (#2641 family).</td>
   </tr>
   <tr>
-    <td><strong>Monitoring</strong></td>
-    <td>Health + attention metrics</td>
-    <td>Grafana + Prometheus + Loki. Chorus spine events. Bridge activity stream.</td>
+    <td><strong>Subproduct: Convergence</strong> <em>(integrates)</em></td>
+    <td>Data and message integration; ICD-governed pipelines</td>
+    <td>Apache NiFi (evaluating). ICD service designs in <code>designing/docs/</code>. Currently retiring custom harvest scripts.</td>
+  </tr>
+  <tr>
+    <td><strong>Subproduct: Borg</strong> <em>(observes)</em></td>
+    <td>Reflection / observability — alerts, logs, health, metrics</td>
+    <td>Grafana + Prometheus + Loki (engines). Chorus spine events + index DB (history). Alertmanager + alert-runner + alert-notifier (delivery). Pulse (freshness). launchagent-metrics + cost-dashboard (operational). Herald pattern (mcp-config-herald shipping; surface to grow).</td>
+  </tr>
+  <tr>
+    <td><strong>Subproduct: Loom</strong> <em>(captures)</em></td>
+    <td>Coordination knowledge — principles, decisions, RCAs, practices</td>
+    <td>9 canonical principles in this doc; loom-policies / loom-decisions / loom-rcas / loom-practices subdomains in Athena; live HTML render at <code>/loom/</code>.</td>
+  </tr>
+  <tr>
+    <td><strong>Subproduct: Clearing</strong> <em>(convenes)</em></td>
+    <td>Real-time multi-role interaction surface</td>
+    <td>Browser-based group chat with Jeff and all three AI roles; transcripts indexed into Chorus.</td>
+  </tr>
+  <tr>
+    <td><strong>Engines</strong> <em>(swappable beneath subproducts)</em></td>
+    <td>Buy decisions, not build decisions</td>
+    <td>Vikunja (Werk), Fuseki (Athena), NiFi evaluating (Convergence), Grafana + Prometheus + Loki (Borg), Claude Code (AI execution).</td>
   </tr>
   <tr>
     <td><strong>Infrastructure</strong></td>
     <td>Compute + storage</td>
-    <td>Library Mac (M1, 16GB) + Bedroom Mac (M2 Pro, 32GB). LaunchAgents. No cloud dependency.</td>
+    <td>Library Mac + Bedroom Mac. LaunchAgents. All data stays local; AI execution via Anthropic API is the only outbound dependency.</td>
   </tr>
 </table>
 
-<h3>What It Produced (37 Days)</h3>
+<h3>What It Produced (as of 2026-05-01, ~5 weeks in)</h3>
 
 <table>
-  <tr><td><strong>Decisions</strong></td><td>106 documented, searchable, traceable</td></tr>
-  <tr><td><strong>Cards</strong></td><td>1,660+ created, tracked through Directing → Proving</td></tr>
-  <tr><td><strong>Tests</strong></td><td>3,855+ passing</td></tr>
-  <tr><td><strong>RDF Triples</strong></td><td>23M+ across 22 domains</td></tr>
-  <tr><td><strong>Domains</strong></td><td>22 (photos, music, documents, people, stories, social, ...)</td></tr>
-  <tr><td><strong>CLAUDE.md Versions</strong></td><td>73 (the protocol evolves daily)</td></tr>
+  <tr><td><strong>Decisions</strong></td><td>120+ DEC-IDs referenced across the team's memory (canonical Athena dataset pending)</td></tr>
+  <tr><td><strong>Cards</strong></td><td>2,600+ created, tracked through Directing → Proving</td></tr>
+  <tr><td><strong>Tests</strong></td><td>Thousands of test cases across hundreds of test files (jest + cargo + bats + cucumber)</td></tr>
+  <tr><td><strong>RDF Triples</strong></td><td>31M+ in Fuseki, largest graphs: sexuality, documents, photos/restored</td></tr>
+  <tr><td><strong>Subdomains</strong></td><td>48 in Athena across 6 subproducts (plus Quality as horizontal capability)</td></tr>
+  <tr><td><strong>Protocol Version</strong></td><td>1.4 (39 archived snapshots — the protocol evolves daily)</td></tr>
+  <tr><td><strong>Skills</strong></td><td>~40 invokable via Claude Code</td></tr>
   <tr><td><strong>Products</strong></td><td>2 (Gathering = personal app, Chorus = team coordination)</td></tr>
 </table>
 
@@ -495,7 +543,7 @@
 </div>
 
 <div style="margin-top: 40px; padding: 16px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center;">
-  Chorus Reference Model v1 &middot; Wren &middot; Product Manager &middot; Loom Team &middot; 2026-03-23
+  Chorus Reference Model v2 &middot; Wren &middot; Product Manager &middot; Loom Team &middot; 2026-05-01 (v1: 2026-03-23)
 </div>
 
 </div>
