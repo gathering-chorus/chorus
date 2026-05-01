@@ -9,7 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
     "prom-client": "^15.1.3"
   },
