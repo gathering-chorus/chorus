@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Jeff's Voice — Analytics</title>
+<style>
+*{box-sizing:border-box}
+body{background:#f8fafc;color:#1e293b;font-family:'SF Pro Display',-apple-system,sans-serif;margin:0;padding:32px 24px}
+h1{font-size:20px;font-weight:300;color:#475569;letter-spacing:2px;text-transform:uppercase;text-align:center;margin-bottom:4px}
+.subtitle{text-align:center;font-size:13px;color:#64748b;margin-bottom:40px}
+.section{margin-bottom:48px}
+.section h2{font-size:15px;color:#475569;font-weight:400;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:20px}
+.metric{font-size:36px;font-weight:600;line-height:1}
+.metric-label{font-size:12px;color:#64748b;margin-top:4px}
+.insight{background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 8px 8px 0;padding:12px 16px;margin:16px 0;font-size:13px;color:#475569}
+.insight strong{color:#d97706}
+.loading{text-align:center;color:#64748b;padding:60px 0;font-size:14px}
+.error{text-align:center;color:#ef4444;padding:60px 0;font-size:14px}
+.bar-row{display:flex;align-items:center;gap:8px;margin:3px 0}
+.bar-label{text-align:right;font-size:13px;color:#334155}
+.bar-count{font-size:11px;color:#64748b}
+.tag{padding:2px 8px;border-radius:12px;font-size:12px;margin:2px;display:inline-block}
+.tag small{opacity:0.6}
+</style></head><body>
+
+<h1>Jeff's Voice — Deep Analytics</h1>
+<div class="subtitle" id="subtitle">Loading...</div>
+
+<!-- HEADLINE METRICS -->
+<div id="headline" style="display:flex;gap:16px;justify-content:center;margin-bottom:40px;flex-wrap:wrap"></div>
+<div id="headline-insight" class="insight" style="display:none"></div>
+
+<!-- TONE BY ROLE -->
+<div class="section">
+    <h2>Tone by Role</h2>
+    <div class="grid3" id="tone-by-role"></div>
+    <div id="tone-role-insight" class="insight" style="display:none"></div>
+</div>
+
+<!-- TONE OVER TIME -->
+<div class="section">
+    <h2>Tone Trend (Weekly)</h2>
+    <div class="card">
+        <svg id="tone-trend-svg" width="600" height="80" style="display:block"></svg>
+        <div id="tone-trend-weeks" style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:4px"></div>
+        <div style="display:flex;gap:16px;margin-top:8px;font-size:11px">
+            <span style="color:#3b82f6">&#9644; directive</span>
+            <span style="color:#22c55e">&#9644; collaborative</span>
+            <span style="color:#eab308">&#9644; question</span>
+            <span style="color:#ef4444">&#9644; corrective</span>
+        </div>
+    </div>
+</div>
+
+<!-- ROLE ATTENTION OVER TIME -->
+<div class="section">
+    <h2>Role Attention (Weekly)</h2>
+    <div class="card">
+        <svg id="role-attention-svg" width="600" height="80" style="display:block"></svg>
+        <div id="role-attention-weeks" style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:4px"></div>
+        <div style="display:flex;gap:16px;margin-top:8px;font-size:11px">
+            <span style="color:#8b5cf6">&#9644; Wren</span>
+            <span style="color:#0891b2">&#9644; Silas</span>
+            <span style="color:#16a34a">&#9644; Kade</span>
+        </div>
+    </div>
+    <div id="role-attention-insight" class="insight" style="display:none"></div>
+</div>
+
+<!-- MESSAGE LENGTH TREND -->
+<div class="section">
+    <h2>Average Message Length (words/msg by week)</h2>
+    <div class="card">
+        <svg id="msg-length-svg" width="600" height="60" style="display:block"></svg>
+        <div id="msg-length-weeks" style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:4px"></div>
+    </div>
+    <div class="insight"><strong>Insight:</strong> Shorter messages over time = the system is learning your intent. Longer messages = you're compensating for misunderstanding. Watch the trend.</div>
+</div>
+
+<!-- HOUR OF DAY -->
+<div class="section">
+    <h2>When You Work (Boston time)</h2>
+    <div class="card">
+        <div id="hour-chart" style="display:flex;align-items:flex-end;gap:2px;justify-content:center"></div>
+        <div style="display:flex;gap:16px;justify-content:center;margin-top:12px;font-size:11px">
+            <span style="color:#8b5cf6">&#9632; Wren</span>
+            <span style="color:#0891b2">&#9632; Silas</span>
+            <span style="color:#16a34a">&#9632; Kade</span>
+        </div>
+    </div>
+</div>
+
+<!-- BIGRAMS -->
+<div class="section">
+    <h2>Your Phrases (bigrams)</h2>
+    <div class="grid2">
+        <div class="card" id="bigram-bars"></div>
+        <div class="card">
+            <div id="bigram-insights" class="insight" style="border:none;background:transparent;padding:0;margin:0"></div>
+        </div>
+    </div>
+</div>
+
+<!-- DON'T ANALYSIS -->
+<div class="section">
+    <h2>The "Don't" Tax — What You Correct Most</h2>
+    <div class="grid2">
+        <div class="card" id="corrective-bars"></div>
+        <div class="card">
+            <div id="corrective-insights" class="insight" style="border:none;background:transparent;padding:0;margin:0"></div>
+        </div>
+    </div>
+</div>
+
+<!-- DISTINCTIVE VOCABULARY -->
+<div class="section">
+    <h2>Your Distinctive Vocabulary by Role</h2>
+    <div class="card" id="distinctive-vocab"></div>
+</div>
+
+<div id="footer" style="text-align:center;font-size:11px;color:#94a3b8;margin-top:40px;font-style:italic"></div>
+
+<script>
+const TONE_COLORS = { directive: '#3b82f6', collaborative: '#22c55e', question: '#eab308', corrective: '#ef4444', neutral: '#8b5cf6' };
+const TONE_LABELS = { directive: 'Directive', collaborative: 'Collaborative', question: 'Question', corrective: 'Corrective', neutral: 'Coordination' };
+const ROLE_COLORS = { wren: '#8b5cf6', silas: '#0891b2', kade: '#16a34a' };
+const TONE_ICONS = { directive: '\u25B2', collaborative: '\u25CF', question: '?', corrective: '\u2715', neutral: '\u25C6' };
+
+function render(data) {
+    // Subtitle
+    const m = data.meta;
+    document.getElementById('subtitle').textContent =
+        `${m.messages.toLocaleString()} messages \u00B7 ${m.dateRange.from || '?'} to ${m.dateRange.to || '?'} \u00B7 ${m.days} days of data`;
+
+    // Headline metrics — show all five tones including coordination
+    const hl = document.getElementById('headline');
+    hl.innerHTML = '';
+    const toneOrder = ['directive', 'collaborative', 'question', 'corrective', 'neutral'];
+    for (const tone of toneOrder) {
+        const pct = data.headline[tone];
+        if (pct === undefined) continue;
+        const d = document.createElement('div');
+        d.className = 'card';
+        d.style.cssText = 'text-align:center;min-width:140px';
+        d.innerHTML = `<div class="metric" style="color:${TONE_COLORS[tone]}">${pct}%</div><div class="metric-label">${TONE_LABELS[tone]}</div>`;
+        hl.appendChild(d);
+    }
+
+    // Headline insight
+    const hi = document.getElementById('headline-insight');
+    const qPct = data.headline.question || 0, dPct = data.headline.directive || 0, cPct = data.headline.corrective || 0, nPct = data.headline.neutral || 0;
+    if (qPct > 0 && dPct > 0) {
+        hi.style.display = 'block';
+        let text = `<strong>Insight:</strong> You ask questions ${qPct}% of the time vs directives at ${dPct}%. `;
+        text += qPct >= dPct * 0.7 ? "That's a coaching ratio, not a command ratio. " : "";
+        text += `The ${cPct}% corrective rate is your "don't" tax \u2014 protocols should absorb it over time.`;
+        if (nPct > 40) {
+            text += ` ${nPct}% of your messages are coordination \u2014 context-setting, relaying, acknowledging. As Chorus matures, this should shrink.`;
+        }
+        hi.innerHTML = text;
+    }
+
+    // Tone by role
+    const tbr = document.getElementById('tone-by-role');
+    tbr.innerHTML = '';
+    for (const [role, tones] of Object.entries(data.toneByRole)) {
+        const d = document.createElement('div');
+        d.style.cssText = 'background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center';
+        let inner = `<div style="color:${ROLE_COLORS[role]};font-weight:500;margin-bottom:8px">${role.charAt(0).toUpperCase() + role.slice(1)}</div>`;
+        inner += '<div style="display:flex;gap:12px;justify-content:center;font-size:12px">';
+        for (const [t, p] of Object.entries(tones)) {
+            const label = t === 'neutral' ? 'coord' : t.slice(0, 6);
+            inner += `<div><span style="color:${TONE_COLORS[t]}">${TONE_ICONS[t]}</span> ${p}%<br><span style="color:#94a3b8">${label}</span></div>`;
+        }
+        inner += '</div>';
+        d.innerHTML = inner;
+        tbr.appendChild(d);
+    }
+
+    // Tone role insight
+    const tri = document.getElementById('tone-role-insight');
+    const roles = Object.keys(data.toneByRole);
+    if (roles.length >= 3) {
+        const maxCollab = roles.reduce((a, b) => (data.toneByRole[a].collaborative > data.toneByRole[b].collaborative) ? a : b);
+        const maxCorrect = roles.reduce((a, b) => (data.toneByRole[a].corrective > data.toneByRole[b].corrective) ? a : b);
+        tri.style.display = 'block';
+        tri.innerHTML = `<strong>Insight:</strong> You're most collaborative with ${maxCollab.charAt(0).toUpperCase() + maxCollab.slice(1)} and most corrective with ${maxCorrect.charAt(0).toUpperCase() + maxCorrect.slice(1)}. The corrective gap suggests ${maxCorrect.charAt(0).toUpperCase() + maxCorrect.slice(1)}'s protocols need the most encoding.`;
+    }
+
+    // SVG line chart helper
+    function polyline(svg, values, color, w, h) {
+        if (!values.length) return;
+        const max = Math.max(...values, 1);
+        const pts = values.map((v, i) => {
+            const x = values.length > 1 ? (i / (values.length - 1)) * w : w / 2;
+            const y = h - (v / max) * (h - 10) - 5;
+            return `${x},${y}`;
+        }).join(' ');
+        const el = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        el.setAttribute('points', pts);
+        el.setAttribute('fill', 'none');
+        el.setAttribute('stroke', color);
+        el.setAttribute('stroke-width', '2');
+        el.setAttribute('opacity', '0.8');
+        svg.appendChild(el);
+    }
+
+    // Tone trend SVG
+    const ttSvg = document.getElementById('tone-trend-svg');
+    ttSvg.innerHTML = '';
+    const tt = data.toneTrend;
+    polyline(ttSvg, tt.directive, '#3b82f6', 600, 80);
+    polyline(ttSvg, tt.collaborative, '#22c55e', 600, 80);
+    polyline(ttSvg, tt.question, '#eab308', 600, 80);
+    polyline(ttSvg, tt.corrective, '#ef4444', 600, 80);
+    renderWeekLabels('tone-trend-weeks', tt.weeks);
+
+    // Role attention SVG
+    const raSvg = document.getElementById('role-attention-svg');
+    raSvg.innerHTML = '';
+    const ra = data.roleAttention;
+    polyline(raSvg, ra.wren, '#8b5cf6', 600, 80);
+    polyline(raSvg, ra.silas, '#0891b2', 600, 80);
+    polyline(raSvg, ra.kade, '#16a34a', 600, 80);
+    renderWeekLabels('role-attention-weeks', ra.weeks);
+
+    // Role attention insight
+    const rai = document.getElementById('role-attention-insight');
+    rai.style.display = 'block';
+    rai.innerHTML = '<strong>Insight:</strong> Watch for sustained imbalance \u2014 if one role dominates your attention for weeks, it either means that role needs more autonomy or that domain is where the real work is.';
+
+    // Message length SVG
+    const mlSvg = document.getElementById('msg-length-svg');
+    mlSvg.innerHTML = '';
+    const ml = data.messageLengthTrend;
+    if (ml.avgWords.length > 0) {
+        const max = Math.max(...ml.avgWords, 1);
+        const pts = ml.avgWords.map((v, i) => {
+            const x = ml.avgWords.length > 1 ? (i / (ml.avgWords.length - 1)) * 600 : 300;
+            const y = 60 - (v / max) * 50 - 5;
+            return `${x},${y}`;
+        });
+        // Area fill
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', `0,60 ${pts.join(' ')} 600,60`);
+        poly.setAttribute('fill', '#c084fc');
+        poly.setAttribute('opacity', '0.15');
+        mlSvg.appendChild(poly);
+        // Line
+        polyline(mlSvg, ml.avgWords, '#a855f7', 600, 60);
+    }
+    renderWeekLabels('msg-length-weeks', ml.weeks);
+
+    // Hour of day chart
+    const hc = document.getElementById('hour-chart');
+    hc.innerHTML = '';
+    const hod = data.hourOfDay;
+    const maxH = Math.max(...[...hod.wren, ...hod.silas, ...hod.kade], 1);
+    const hourLabels = ['12am','1am','2am','3am','4am','5am','6am','7am','8am','9am','10am','11am',
+                        '12pm','1pm','2pm','3pm','4pm','5pm','6pm','7pm','8pm','9pm','10pm','11pm'];
+    for (let h = 0; h < 24; h++) {
+        const col = document.createElement('div');
+        col.style.cssText = 'display:flex;flex-direction:column-reverse;align-items:center;gap:1px;width:28px';
+        col.innerHTML = `<span style="font-size:9px;color:#94a3b8;transform:rotate(-45deg);white-space:nowrap">${hourLabels[h]}</span>` +
+            `<div style="display:flex;flex-direction:column-reverse;height:80px;width:16px;gap:1px">` +
+            `<div style="background:#8b5cf6;height:${(hod.wren[h]/maxH)*100}%;border-radius:2px" title="Wren: ${hod.wren[h]}"></div>` +
+            `<div style="background:#0891b2;height:${(hod.silas[h]/maxH)*100}%;border-radius:2px" title="Silas: ${hod.silas[h]}"></div>` +
+            `<div style="background:#16a34a;height:${(hod.kade[h]/maxH)*100}%;border-radius:2px" title="Kade: ${hod.kade[h]}"></div>` +
+            `</div>`;
+        hc.appendChild(col);
+    }
+
+    // Bigrams
+    renderBarChart('bigram-bars', data.bigrams.map(b => ({ label: b.phrase, count: b.count })), '#6366f1', 140);
+    // Bigram insights
+    const bi = document.getElementById('bigram-insights');
+    const topPhrases = data.bigrams.slice(0, 5);
+    bi.innerHTML = '<strong>What the phrases reveal:</strong><br><br>' +
+        topPhrases.map(b => `<strong>${b.phrase}</strong> (${b.count})`).join('<br><br>');
+
+    // Corrective words
+    renderBarChart('corrective-bars', data.correctiveWords.map(w => ({ label: w.word, count: w.count })), '#ef4444', 100);
+    const ci = document.getElementById('corrective-insights');
+    ci.innerHTML = '<strong>Corrective clusters:</strong><br><br>' +
+        "Every \"don't\" is a protocol gap. The goal: encode these into CLAUDE.md so you stop having to say them.";
+
+    // Distinctive vocabulary
+    const dv = document.getElementById('distinctive-vocab');
+    dv.innerHTML = '';
+    for (const [role, words] of Object.entries(data.distinctiveVocab)) {
+        const row = document.createElement('div');
+        row.style.margin = '12px 0';
+        let html = `<span style="color:${ROLE_COLORS[role]};font-weight:500;font-size:14px;margin-right:12px">${role.charAt(0).toUpperCase() + role.slice(1)}</span>`;
+        for (const w of words) {
+            html += `<span class="tag" style="background:${ROLE_COLORS[role]}18;color:${ROLE_COLORS[role]}">${w.word} <small>${w.count}</small></span> `;
+        }
+        row.innerHTML = html;
+        dv.appendChild(row);
+    }
+    // Vocab insight
+    const vocabInsight = document.createElement('div');
+    vocabInsight.className = 'insight';
+    vocabInsight.style.marginTop = '16px';
+    vocabInsight.innerHTML = '<strong>Insight:</strong> Words overrepresented when talking to each role vs overall. You naturally shift register across domains.';
+    dv.appendChild(vocabInsight);
+
+    // Footer
+    document.getElementById('footer').textContent =
+        `Live data \u00B7 ${m.messages.toLocaleString()} messages analyzed \u00B7 Jeff's actual keystrokes only \u00B7 Refreshes every 60s`;
+}
+
+function renderWeekLabels(id, weeks) {
+    const el = document.getElementById(id);
+    if (!weeks || !weeks.length) { el.innerHTML = ''; return; }
+    if (weeks.length <= 5) {
+        el.innerHTML = weeks.map(w => `<span>${w}</span>`).join('');
+    } else {
+        const step = Math.ceil(weeks.length / 5);
+        el.innerHTML = weeks.filter((_, i) => i % step === 0 || i === weeks.length - 1)
+            .map(w => `<span>${w}</span>`).join('');
+    }
+}
+
+function renderBarChart(containerId, items, color, labelWidth) {
+    const el = document.getElementById(containerId);
+    if (!items.length) { el.innerHTML = '<div style="color:#94a3b8;font-size:13px">No data</div>'; return; }
+    const max = items[0].count;
+    el.innerHTML = items.map(item =>
+        `<div class="bar-row">` +
+        `<span class="bar-label" style="width:${labelWidth}px">${item.label}</span>` +
+        `<div style="background:${color};height:14px;width:${Math.max(4, (item.count / max) * 180)}px;border-radius:2px;opacity:0.7"></div>` +
+        `<span class="bar-count">${item.count}</span>` +
+        `</div>`
+    ).join('');
+}
+
+function loadData() {
+    fetch('/api/voice-analytics')
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
+        .then(render)
+        .catch(err => {
+            document.getElementById('subtitle').innerHTML =
+                `<span class="error">Failed to load: ${err.message}. Retrying...</span>`;
+        });
+}
+
+loadData();
+setInterval(loadData, 60000);
+</script>
+
+<footer style="margin-top:2rem;padding:1rem 1in;border-top:1px solid #e2e8f0;color:#64748b;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body></html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>People &amp; Relationships — Self Domain</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --text: #1a1b2e;
+    --muted: #586069;
+    --accent: #7C3AED;
+    --accent-light: #6d28d9;
+    --pink: #DB2777;
+    --pink-light: #be185d;
+    --saffron: #e8a317;
+    --saffron-light: #b45309;
+    --green: #059669;
+    --green-light: #047857;
+    --blue: #2563EB;
+    --blue-light: #1d4ed8;
+    --border: rgba(124, 58, 237, 0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem 0;
+  }
+  a { color: var(--accent-light); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .back { font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem; display: inline-block; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.3rem; color: var(--accent-light); }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; }
+  h2 {
+    font-size: 1.2rem;
+    margin: 2.5rem 0 1rem;
+    color: var(--accent-light);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+
+  /* ===== CONCENTRIC RINGS ===== */
+  .rings-container {
+    position: relative;
+    width: 100%;
+    max-width: 700px;
+    margin: 2rem auto;
+    aspect-ratio: 1;
+  }
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ring-outer {
+    width: 100%; height: 100%;
+    top: 0; left: 0;
+    border-color: rgba(37, 99, 235, 0.3);
+    background: rgba(37, 99, 235, 0.03);
+  }
+  .ring-inner {
+    width: 62%; height: 62%;
+    top: 19%; left: 19%;
+    border-color: rgba(219, 39, 119, 0.4);
+    background: rgba(219, 39, 119, 0.04);
+  }
+  .ring-core {
+    width: 28%; height: 28%;
+    top: 36%; left: 36%;
+    border-color: rgba(232, 163, 23, 0.5);
+    background: rgba(232, 163, 23, 0.06);
+  }
+  .ring-label {
+    position: absolute;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .label-outer { top: 3%; left: 50%; transform: translateX(-50%); color: var(--blue-light); }
+  .label-inner { top: 21%; left: 50%; transform: translateX(-50%); color: var(--pink-light); }
+  .label-core { top: 38%; left: 50%; transform: translateX(-50%); color: var(--saffron-light); }
+
+  .person-node {
+    position: absolute;
+    text-align: center;
+    z-index: 2;
+  }
+  .person-avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    margin: 0 auto 4px;
+    border: 2px solid;
+  }
+  .person-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .person-cadence {
+    font-size: 0.6rem;
+    color: var(--muted);
+  }
+  .person-practice {
+    font-size: 0.58rem;
+    color: var(--accent-light);
+    font-style: italic;
+  }
+
+  /* Core ring people */
+  .core-person .person-avatar {
+    border-color: var(--saffron);
+    background: rgba(232, 163, 23, 0.12);
+  }
+  /* Inner ring people */
+  .inner-person .person-avatar {
+    border-color: var(--pink);
+    background: rgba(219, 39, 119, 0.1);
+  }
+  /* Outer ring people */
+  .outer-person .person-avatar {
+    border-color: var(--blue);
+    background: rgba(37, 99, 235, 0.1);
+  }
+
+  /* ===== RELATIONSHIP CARDS ===== */
+  .ring-section {
+    margin: 2rem 0;
+  }
+  .ring-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+  }
+  .ring-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ring-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .ring-section-desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-left: 20px;
+    margin-bottom: 1rem;
+  }
+
+  .person-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.8rem;
+  }
+  .person-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    border-left: 3px solid;
+  }
+  .person-card.core { border-left-color: var(--saffron); }
+  .person-card.inner { border-left-color: var(--pink); }
+  .person-card.outer { border-left-color: var(--blue); }
+
+  .pc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .pc-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text);
+  }
+  .pc-emoji { font-size: 1.2rem; }
+  .pc-cadence {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .cadence-daily { background: rgba(232, 163, 23, 0.15); color: var(--saffron-light); }
+  .cadence-mwf { background: rgba(124, 58, 237, 0.15); color: var(--accent-light); }
+  .cadence-weekly { background: rgba(219, 39, 119, 0.12); color: var(--pink-light); }
+  .cadence-biweekly { background: rgba(37, 99, 235, 0.12); color: var(--blue-light); }
+  .cadence-quarterly { background: rgba(37, 99, 235, 0.08); color: var(--muted); }
+
+  .pc-detail {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .pc-practice {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--accent-light);
+  }
+  .pc-spine {
+    margin-top: 0.4rem;
+    font-size: 0.72rem;
+    color: var(--green-light);
+    font-style: italic;
+  }
+
+  /* ===== CALLOUT ===== */
+  .callout {
+    background: rgba(124,58,237,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 0.8rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1.5rem 0;
+    font-size: 0.88rem;
+  }
+  .callout strong { color: var(--text); }
+  .callout.saffron { border-left-color: var(--saffron); background: rgba(232,163,23,0.06); }
+  .callout.pink { border-left-color: var(--pink); background: rgba(219,39,119,0.06); }
+
+  /* ===== ONTOLOGY BRIDGE ===== */
+  .bridge-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.82rem;
+  }
+  .bridge-table th {
+    text-align: left;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--accent-light);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .bridge-table td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    vertical-align: top;
+  }
+  .bridge-table tr:hover { background: rgba(124,58,237,0.04); }
+
+  /* ===== POV ===== */
+  .pov {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 2.5rem;
+  }
+  .pov h3 {
+    color: var(--accent-light);
+    font-size: 1rem;
+    margin-bottom: 0.8rem;
+  }
+  .pov p {
+    font-size: 0.88rem;
+    margin-bottom: 0.8rem;
+    color: var(--text);
+  }
+  .pov p:last-child { margin-bottom: 0; }
+
+  .sig {
+    text-align: right;
+    color: var(--muted);
+    margin-top: 2rem;
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 1rem; }
+    .person-cards { grid-template-columns: 1fr; }
+    .rings-container { max-width: 350px; }
+    .person-name { font-size: 0.65rem; }
+    .person-avatar { width: 36px; height: 36px; font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<a href="/self-ontology-sketch.html" class="back">&larr; Self Ontology Sketch</a>
+<h1>People &amp; Relationships</h1>
+<div class="subtitle">The relational layer of the Self domain &mdash; who Jeff shows up for, how they appear in the spine, and what they practice together.</div>
+
+<div class="callout saffron">
+  <strong>From the sketch:</strong> Jeff's diagram has three overlapping circles &mdash; Self, Relationships, and the Common Bond (Teaching/Observing) at their intersection. People aren't external to the Self domain. They live in the overlap &mdash; where inner life meets other people. Every person here binds to a practice.
+</div>
+
+<!-- ===== CONCENTRIC RINGS DIAGRAM ===== -->
+<h2>Concentric Rings</h2>
+
+<div class="rings-container">
+  <div class="ring ring-outer"></div>
+  <div class="ring ring-inner"></div>
+  <div class="ring ring-core"></div>
+
+  <span class="ring-label label-outer">Outer &mdash; Quarterly / Community</span>
+  <span class="ring-label label-inner">Inner &mdash; Weekly Practice Partners</span>
+  <span class="ring-label label-core">Core &mdash; Daily Rhythm</span>
+
+  <!-- Core ring: Aubrey, Julian, Ravi, Jeff -->
+  <div class="person-node core-person" style="top: 40%; left: 42%;">
+    <div class="person-avatar">&#129485;</div>
+    <div class="person-name">Jeff</div>
+    <div class="person-practice">center</div>
+  </div>
+  <div class="person-node core-person" style="top: 52%; left: 52%;">
+    <div class="person-avatar">&#128156;</div>
+    <div class="person-name">Aubrey</div>
+    <div class="person-cadence">daily</div>
+  </div>
+  <div class="person-node core-person" style="top: 42%; left: 56%;">
+    <div class="person-avatar">&#128102;</div>
+    <div class="person-name">Julian</div>
+    <div class="person-cadence">present</div>
+  </div>
+  <div class="person-node core-person" style="top: 54%; left: 40%;">
+    <div class="person-avatar">&#128054;</div>
+    <div class="person-name">Ravi</div>
+    <div class="person-cadence">3x daily</div>
+  </div>
+  <div class="person-node core-person" style="top: 46%; left: 35%;">
+    <div class="person-avatar">&#128153;</div>
+    <div class="person-name">Nancy</div>
+    <div class="person-cadence">mom</div>
+  </div>
+  <div class="person-node core-person" style="top: 56%; left: 54%;">
+    <div class="person-avatar">&#129309;</div>
+    <div class="person-name">Dani</div>
+    <div class="person-cadence">friend</div>
+  </div>
+
+  <div class="person-node inner-person" style="top: 64%; left: 56%;">
+    <div class="person-avatar">&#9775;</div>
+    <div class="person-name">Anthe</div>
+    <div class="person-cadence">biweekly</div>
+  </div>
+
+  <!-- Inner ring: Jennifer, Paulo, Kathy, Jamie, Mark -->
+  <div class="person-node inner-person" style="top: 22%; left: 38%;">
+    <div class="person-avatar">&#129495;</div>
+    <div class="person-name">Jennifer</div>
+    <div class="person-cadence">MWF 6:45a</div>
+  </div>
+  <div class="person-node inner-person" style="top: 30%; left: 62%;">
+    <div class="person-avatar">&#128218;</div>
+    <div class="person-name">Paulo</div>
+    <div class="person-cadence">Mon 1p</div>
+  </div>
+  <div class="person-node inner-person" style="top: 62%; left: 62%;">
+    <div class="person-avatar">&#128218;</div>
+    <div class="person-name">Kathy</div>
+    <div class="person-cadence">Tue 12p</div>
+  </div>
+  <div class="person-node inner-person" style="top: 68%; left: 42%;">
+    <div class="person-avatar">&#128218;</div>
+    <div class="person-name">Jamie</div>
+    <div class="person-cadence">biweekly Tue</div>
+  </div>
+  <div class="person-node inner-person" style="top: 26%; left: 26%;">
+    <div class="person-avatar">&#128218;</div>
+    <div class="person-name">Mark</div>
+    <div class="person-cadence">biweekly Sun</div>
+  </div>
+
+  <!-- Outer ring -->
+  <div class="person-node outer-person" style="top: 6%; left: 48%;">
+    <div class="person-avatar">&#128176;</div>
+    <div class="person-name">Financial Advisor</div>
+    <div class="person-cadence">quarterly</div>
+  </div>
+  <div class="person-node outer-person" style="top: 12%; left: 70%;">
+    <div class="person-avatar">&#127946;</div>
+    <div class="person-name">Community Center</div>
+    <div class="person-cadence">Mon + Fri</div>
+  </div>
+  <div class="person-node outer-person" style="top: 80%; left: 22%;">
+    <div class="person-avatar">&#128187;</div>
+    <div class="person-name">LLUG</div>
+    <div class="person-cadence">TBD</div>
+  </div>
+</div>
+
+<!-- ===== RING DETAILS ===== -->
+<div class="ring-section">
+  <div class="ring-section-header">
+    <div class="ring-dot" style="background: var(--saffron);"></div>
+    <div class="ring-section-title" style="color: var(--saffron-light);">Core &mdash; The Daily Texture</div>
+  </div>
+  <div class="ring-section-desc">These aren't appointments. They're the fabric of every day. Present without being scheduled.</div>
+
+  <div class="person-cards">
+    <div class="person-card core">
+      <div class="pc-header">
+        <span class="pc-name">Aubrey</span>
+        <span class="pc-cadence cadence-daily">daily</span>
+      </div>
+      <div class="pc-detail">The relationship that closes the day. Tea, television, presence. Wind-down is relational &mdash; not solo.</div>
+      <div class="pc-practice">Practice: Wind-down + Relationship + Watching</div>
+      <div class="pc-spine">Spine: ~6:00pm &rarr; 8:30pm &bull; Evening phase</div>
+    </div>
+
+    <div class="person-card core">
+      <div class="pc-header">
+        <span class="pc-name">Julian</span>
+        <span class="pc-cadence cadence-daily">present</span>
+      </div>
+      <div class="pc-detail">Referenced in Jeff's history &mdash; the morning commute and school drop-off era created the external boundary that protected practice time. Present in identity, not in daily calendar.</div>
+      <div class="pc-practice">Practice: Parenting (historical) &rarr; Identity anchor</div>
+      <div class="pc-spine">Spine: shaped the 4:45am meditation pattern</div>
+    </div>
+
+    <div class="person-card core">
+      <div class="pc-header">
+        <span class="pc-name">Ravi</span>
+        <span class="pc-cadence cadence-daily">3x daily</span>
+      </div>
+      <div class="pc-detail">Morning, midday, evening walks. ~10 minutes each. Not clock-driven &mdash; energy-driven. The real breaks in the day. A rhythm anchor disguised as a pet errand.</div>
+      <div class="pc-practice">Practice: Exercise + Grounding</div>
+      <div class="pc-spine">Spine: ~6:30am, ~1:00pm, ~6:30pm &bull; All three phases</div>
+    </div>
+
+    <div class="person-card core">
+      <div class="pc-header">
+        <span class="pc-name">Nancy Bridwell</span>
+        <span class="pc-cadence cadence-daily">mom</span>
+      </div>
+      <div class="pc-detail">Jeff's mother. Core &mdash; not because of cadence but because of depth. Family is the original ground.</div>
+      <div class="pc-practice">Practice: Family + Love</div>
+    </div>
+
+    <div class="person-card core">
+      <div class="pc-header">
+        <span class="pc-name">Dani Perea</span>
+        <span class="pc-cadence cadence-daily">friend</span>
+      </div>
+      <div class="pc-detail">Core friendship. In the inner circle not by schedule but by significance.</div>
+      <div class="pc-practice">Practice: Friendship</div>
+    </div>
+  </div>
+</div>
+
+<div class="ring-section">
+  <div class="ring-section-header">
+    <div class="ring-dot" style="background: var(--pink);"></div>
+    <div class="ring-section-title" style="color: var(--pink-light);">Inner &mdash; Practice Partners</div>
+  </div>
+  <div class="ring-section-desc">Every person here is a learning relationship. Not social &mdash; practice. Jeff shows up with regularity because the relationship IS the practice.</div>
+
+  <div class="person-cards">
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Jennifer Driscoll</span>
+        <span class="pc-cadence cadence-mwf">MWF</span>
+      </div>
+      <div class="pc-detail">Shared meditation via Google Meet. The only fixed-time event in the morning block. When Jennifer is on the calendar, the morning has structure. MWF meditation is more anchored than T/Th/Sat.</div>
+      <div class="pc-practice">Practice: Meditation &bull; Common Bond: Teaching / Observing</div>
+      <div class="pc-spine">Spine: 6:45am &bull; Morning transition phase</div>
+    </div>
+
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Paulo Dorow</span>
+        <span class="pc-cadence cadence-weekly">weekly</span>
+      </div>
+      <div class="pc-detail">Monday 1pm. Learning and relationship. Falls in the midday active phase &mdash; after morning practices, after the team operating window opens.</div>
+      <div class="pc-practice">Practice: Learning / Relationship</div>
+      <div class="pc-spine">Spine: Mon 1:00pm &bull; Active day phase</div>
+    </div>
+
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Kathy Kysar</span>
+        <span class="pc-cadence cadence-weekly">weekly</span>
+      </div>
+      <div class="pc-detail">Tuesday noon. Learning and relationship. Consistent weekly anchor point.</div>
+      <div class="pc-practice">Practice: Learning / Relationship</div>
+      <div class="pc-spine">Spine: Tue 12:00pm &bull; Active day phase</div>
+    </div>
+
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Jamie Banks</span>
+        <span class="pc-cadence cadence-biweekly">biweekly</span>
+      </div>
+      <div class="pc-detail">Every other Tuesday, 1:30pm. On Jamie weeks, Tuesday has two relationship touchpoints (Kathy at noon, Jamie at 1:30). The densest relationship day.</div>
+      <div class="pc-practice">Practice: Learning / Relationship</div>
+      <div class="pc-spine">Spine: biweekly Tue 1:30pm &bull; Active day phase</div>
+    </div>
+
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Anthe Kelly</span>
+        <span class="pc-cadence cadence-biweekly">biweekly</span>
+      </div>
+      <div class="pc-detail">Acupuncture and yoga. A body-practice relationship &mdash; not conversation-based learning but somatic. Where the Practicing value stream meets the physical.</div>
+      <div class="pc-practice">Practice: Acupuncture / Yoga &bull; Body + Healing</div>
+      <div class="pc-spine">Spine: biweekly &bull; Body practice</div>
+    </div>
+
+    <div class="person-card inner">
+      <div class="pc-header">
+        <span class="pc-name">Mark Nakib</span>
+        <span class="pc-cadence cadence-biweekly">biweekly</span>
+      </div>
+      <div class="pc-detail">Every other Sunday, 10am. The only inner-ring relationship that falls on a weekend. Sunday already has indoor plants &mdash; Mark weeks add a learning dimension.</div>
+      <div class="pc-practice">Practice: Learning / Relationship</div>
+      <div class="pc-spine">Spine: biweekly Sun 10:00am &bull; Morning phase</div>
+    </div>
+  </div>
+</div>
+
+<div class="ring-section">
+  <div class="ring-section-header">
+    <div class="ring-dot" style="background: var(--blue);"></div>
+    <div class="ring-section-title" style="color: var(--blue-light);">Outer &mdash; Community &amp; Occasional</div>
+  </div>
+  <div class="ring-section-desc">Less frequent, not less important. These relationships serve specific life functions at a wider cadence.</div>
+
+  <div class="person-cards">
+    <div class="person-card outer">
+      <div class="pc-header">
+        <span class="pc-name">Financial Advisor</span>
+        <span class="pc-cadence cadence-quarterly">quarterly</span>
+      </div>
+      <div class="pc-detail">Quarterly meetings. Part of the reflection/planning cadence alongside personal plan reviews and annual goals.</div>
+      <div class="pc-practice">Practice: Financial stewardship</div>
+    </div>
+
+    <div class="person-card outer">
+      <div class="pc-header">
+        <span class="pc-name">Community Center</span>
+        <span class="pc-cadence cadence-weekly">Mon + Fri</span>
+      </div>
+      <div class="pc-detail">Swimming. The only exercise practice that takes Jeff outside the home and into community space. Anonymous but consistent &mdash; the pool is shared practice without named relationships.</div>
+      <div class="pc-practice">Practice: Exercise (swim)</div>
+    </div>
+
+    <div class="person-card outer">
+      <div class="pc-header">
+        <span class="pc-name">LLUG</span>
+        <span class="pc-cadence cadence-quarterly">TBD</span>
+      </div>
+      <div class="pc-detail">Linux user group. Professional learning community. Cadence to be established.</div>
+      <div class="pc-practice">Practice: Learning / Professional</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ONTOLOGY BRIDGE ===== -->
+<h2>Ontology Bridge</h2>
+
+<p style="font-size: 0.88rem; color: var(--muted); margin-bottom: 1rem;">How this connects to the Self ontology sketch &mdash; the three overlapping circles.</p>
+
+<table class="bridge-table">
+  <thead>
+    <tr>
+      <th>Sketch Region</th>
+      <th>Ring</th>
+      <th>Buddhist Concept</th>
+      <th>What It Looks Like in Practice</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>The Self</strong> (large circle)</td>
+      <td style="color: var(--saffron-light);">Core</td>
+      <td><em>Vedanā</em> &mdash; feeling-tone of daily life</td>
+      <td>Aubrey, Julian, Ravi. The felt texture of each day. Not chosen in the moment &mdash; always present.</td>
+    </tr>
+    <tr>
+      <td><strong>Relationships</strong> (right circle)</td>
+      <td style="color: var(--pink-light);">Inner</td>
+      <td><em>Brahmavihāra</em> &mdash; divine abodes (loving-kindness, compassion)</td>
+      <td>Jennifer, Paulo, Kathy, Jamie, Mark. Love, support, learning. Where inner life meets other people.</td>
+    </tr>
+    <tr>
+      <td><strong>Common Bond</strong> (inner circle)</td>
+      <td style="color: var(--saffron-light);">Core &cap; Inner</td>
+      <td><em>Dhamma-vicaya</em> &mdash; investigation of phenomena</td>
+      <td>The overlap. Jennifer is meditation partner AND learning relationship. Teaching/Observing happens in every ring.</td>
+    </tr>
+    <tr>
+      <td><strong>Outside</strong></td>
+      <td style="color: var(--blue-light);">Outer</td>
+      <td><em>Saṅgha</em> &mdash; community</td>
+      <td>Community center, LLUG, financial advisor. The wider container. Shared space without intimate bond.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout pink">
+  <strong>The overlap matters most.</strong> In the sketch, the Common Bond (Teaching/Observing) sits at the intersection of Self and Relationships. In practice, that's Jennifer &mdash; she's the only inner-ring person who shares Jeff's core practice (meditation) rather than a learning conversation. She's in both circles simultaneously. The ontology should model this overlap, not force people into one ring.
+</div>
+
+<!-- ===== TRUST MODEL ===== -->
+<h2>Concentric Trust</h2>
+
+<table class="bridge-table">
+  <thead>
+    <tr>
+      <th>Ring</th>
+      <th>Data Visibility</th>
+      <th>Storage</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="color: var(--saffron-light);"><strong>Core</strong></td>
+      <td>Local AI only. Never leaves the machine. Aubrey and Julian are identity, not data.</td>
+      <td>Jeff's pod, encrypted at rest</td>
+    </tr>
+    <tr>
+      <td style="color: var(--pink-light);"><strong>Inner</strong></td>
+      <td>Visible in Gathering (names, cadences, practice bindings). Not shared externally.</td>
+      <td>Jeff's pod, standard access</td>
+    </tr>
+    <tr>
+      <td style="color: var(--blue-light);"><strong>Outer</strong></td>
+      <td>Shareable. Community connections are public by nature.</td>
+      <td>Jeff's pod or public graph</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ===== WREN'S POV ===== -->
+<div class="pov">
+  <h3>Wren's Point of View</h3>
+
+  <p>Every person in the inner ring is a <strong>learning relationship</strong>. Jeff doesn't have social appointments &mdash; he has practice partners. Jennifer is meditation. Paulo, Kathy, Jamie, Mark are growth conversations. Aubrey is the daily ground. Ravi is the rhythm.</p>
+
+  <p>This isn't a contact list. It's a map of <strong>how Jeff stays in practice</strong>. The people ARE the practices.</p>
+
+  <p>The concentric rings also map to Jeff's "weather on the inside" insight. Core ring people are the <strong>climate</strong> &mdash; always present, always shaping conditions. Inner ring people are the <strong>weather systems</strong> &mdash; they move through the week with regularity, each one bringing a different quality. Outer ring is the <strong>season</strong> &mdash; slower rhythms that set the larger context.</p>
+
+  <p>For the Self ontology: <code>jb:Person</code> and <code>jb:Relationship</code> should be first-class classes, not subclasses of anything else. A relationship has a <code>cadence</code>, a <code>ring</code>, a <code>practiceBinding</code>, and a <code>spineRole</code> (anchor, companion, teacher, advisor). The ring determines trust and visibility. The practice binding connects people to the Practicing value stream.</p>
+
+  <p>The sketch already showed us: Relationships aren't outside the Self. They're the right circle, overlapping with the left. The Common Bond at the center &mdash; Teaching/Observing &mdash; is what every relationship in every ring is doing, at different depths.</p>
+</div>
+
+<div class="sig">&mdash; Wren, 2026-02-27 &bull; <a href="/practice-spine.html">Practice Spine</a> &bull; <a href="/self-ontology-sketch.html">Self Ontology</a></div>
+
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

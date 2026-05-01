@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Playbook — DPOR Diagnostic Report</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #21262d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --white: #f0f6fc;
+    --debt: #f85149;
+    --debt-bg: rgba(248,81,73,0.1);
+    --perf: #3fb950;
+    --perf-bg: rgba(63,185,80,0.1);
+    --opp: #58a6ff;
+    --opp-bg: rgba(88,166,255,0.1);
+    --risk: #d29922;
+    --risk-bg: rgba(210,153,34,0.1);
+    --accent: #bc8cff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  header {
+    text-align: center;
+    padding: 2.5rem 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2rem;
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 0.3rem;
+  }
+  header .subtitle {
+    font-size: 1rem;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  header .meta {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  /* DPOR Legend */
+  .dpor-legend {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    margin: 1.5rem 0;
+    flex-wrap: wrap;
+  }
+  .dpor-legend .tag {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+  }
+  .dpor-legend .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
+  /* Section headings */
+  h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--white);
+    margin: 2.5rem 0 0.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h2 .section-num {
+    color: var(--accent);
+    margin-right: 0.5rem;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text);
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  p { margin-bottom: 0.75rem; font-size: 0.9rem; }
+
+  /* Finding cards */
+  .finding {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 0.75rem 0;
+    border-left: 4px solid;
+  }
+  .finding.debt { border-left-color: var(--debt); background: var(--debt-bg); }
+  .finding.perf { border-left-color: var(--perf); background: var(--perf-bg); }
+  .finding.opp { border-left-color: var(--opp); background: var(--opp-bg); }
+  .finding.risk { border-left-color: var(--risk); background: var(--risk-bg); }
+
+  .finding .tag-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.3rem;
+  }
+  .finding.debt .tag-label { color: var(--debt); }
+  .finding.perf .tag-label { color: var(--perf); }
+  .finding.opp .tag-label { color: var(--opp); }
+  .finding.risk .tag-label { color: var(--risk); }
+
+  .finding strong {
+    display: block;
+    color: var(--white);
+    margin-bottom: 0.3rem;
+    font-size: 0.95rem;
+  }
+  .finding p {
+    font-size: 0.85rem;
+    color: var(--text);
+    margin-bottom: 0;
+  }
+
+  /* Summary scorecards */
+  .scorecard {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .score-box {
+    text-align: center;
+    padding: 1.2rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .score-box .number {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .score-box.debt .number { color: var(--debt); }
+  .score-box.perf .number { color: var(--perf); }
+  .score-box.opp .number { color: var(--opp); }
+  .score-box.risk .number { color: var(--risk); }
+  .score-box .label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.2rem;
+  }
+
+  /* Stats table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--accent);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid rgba(33,38,45,0.5);
+    color: var(--text);
+  }
+  td.metric { color: var(--white); font-weight: 500; }
+
+  /* Borg section */
+  .borg-section {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 2rem 0;
+  }
+  .borg-section h3 {
+    color: var(--accent);
+    margin-top: 0;
+  }
+
+  footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+
+  @media (max-width: 600px) {
+    .scorecard { grid-template-columns: repeat(2, 1fr); }
+    .dpor-legend { gap: 1rem; }
+    .container { padding: 1rem; }
+  }
+
+  @media print {
+    body { background: #0d1117; -webkit-print-color-adjust: exact; }
+    .container { padding: 0.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<header>
+  <h1>DPOR Diagnostic Report</h1>
+  <div class="subtitle">Chorus Playbook &mdash; Self-Diagnostic (Borg Run)</div>
+  <div class="meta">Client: Gathering + Chorus | Consultant: Wren | February 26, 2026</div>
+</header>
+
+<div class="dpor-legend">
+  <div class="tag"><div class="dot" style="background: var(--debt);"></div> Debt</div>
+  <div class="tag"><div class="dot" style="background: var(--perf);"></div> Performance</div>
+  <div class="tag"><div class="dot" style="background: var(--opp);"></div> Opportunity</div>
+  <div class="tag"><div class="dot" style="background: var(--risk);"></div> Risk</div>
+</div>
+
+<!-- Executive Summary -->
+<h2><span class="section-num">0</span>Executive Summary</h2>
+
+<p>Gathering + Chorus is a dual-product personal infrastructure platform with production-grade operational discipline. 32.9K lines of TypeScript, 2,390+ tests, 23 spine emitters, 59 recorded decisions, 14,318 RDF files across 11 domains. Three AI roles coordinate via briefs, a kanban board, and structured handoffs.</p>
+
+<p>The system is <strong>strong on discipline, governance, and observability</strong> &mdash; and <strong>under-leveraged on revenue, external packaging, and data completeness</strong>. The biggest opportunity is the Chorus Playbook itself: the methodology you use daily is a sellable service. The biggest risk is single-human dependency.</p>
+
+<div class="scorecard">
+  <div class="score-box debt"><div class="number">8</div><div class="label">Debt</div></div>
+  <div class="score-box perf"><div class="number">12</div><div class="label">Performance</div></div>
+  <div class="score-box opp"><div class="number">11</div><div class="label">Opportunity</div></div>
+  <div class="score-box risk"><div class="number">7</div><div class="label">Risk</div></div>
+</div>
+
+<!-- Section 1: Interpersonal Approach -->
+<h2><span class="section-num">1</span>Interpersonal Approach</h2>
+<p>How the team communicates, decides, and coordinates. Human+AI dynamics.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P1: Decision governance is exceptional</strong>
+  <p>59 decisions with context, rationale, and status. DEC-025 (bias to action) + DEC-058 (vertical/horizontal) eliminated permission-seeking. Roles execute autonomously within domain. This is rare in any team, let alone a human+AI one.</p>
+</div>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P2: Brief-based async coordination works</strong>
+  <p>Roles exchange work through structured briefs, not meetings. Handoffs are traceable in activity.md. The Clearing exists for real-time alignment but async is the default. Low overhead, high throughput.</p>
+</div>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P3: DEC-058 vertical/horizontal model is working</strong>
+  <p>Observed during gemba walk today: Silas executing spine work with zero plan-mode stalls, no permission seeking. Roles know their domain boundaries and act within them. This was a deliberate design choice and it's paying off.</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D1: AC backlog on cards entering WIP</strong>
+  <p>Spine quality gates caught 11 cards at Done with no comments and 7 cards entering Now/WIP without descriptions. Wren's responsibility (DEC-050). Backfilled 5 today but this is process debt &mdash; the gate exists but isn't consistently enforced.</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R1: Single-human bottleneck</strong>
+  <p>Jeff is the only user, the only decision-maker, the only person who can demo, accept, and approve. If he's unavailable for a day, all three roles have no work to pull. The proving gate (DEC-048) requires Jeff for every demo. This is correct for now but doesn't scale to client engagements.</p>
+</div>
+
+<!-- Section 2: Business Model + Strategic Priorities -->
+<h2><span class="section-num">2</span>Business Model &amp; Strategy</h2>
+<p>Revenue model, market positioning, competitive advantage.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P4: Revenue model is articulated and actionable (DEC-059)</strong>
+  <p>Three streams defined today: Chorus Playbook ($15-25K fractional diagnostics), Chorus Consulting ($500-5K local tech), Light Life ($200-750 garden consultation). Pilots identified with real relationships (Helen Glotzer/Allandale, Akasha Yoga, Parkway Wealth). Not theoretical &mdash; there are named humans to call.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O1: Chorus Playbook is the highest-leverage revenue line</strong>
+  <p>One fractional diagnostic ($15-25K) equals an entire garden season of revenue. The 8-section framework exists (built as FastX). The AI team can run the diagnostic. The Borg run proves it. This is where the $60K target gets hit in Y1, not Y3.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O2: Patent lineage is under-marketed</strong>
+  <p>US9552400B2 (Bridwell patent) is direct prior art for Chorus &mdash; RDF/OWL + SPARQL + workflow gates. This isn't just "I built something cool." It's "I patented this approach a decade ago and now I'm running it with AI." That's a differentiator no competitor can claim.</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D2: No external-facing packaging</strong>
+  <p>Vision pages (gathering-chorus.html, chorus-consulting.html, business-plan.html) are internal. No public website, no LinkedIn presence, no case studies. The product exists but the market doesn't know. This is the gap between "product maturity" (DEC-057) and "revenue."</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R2: Revenue is $0 today</strong>
+  <p>All three streams are pre-revenue. LLC not yet filed. No insurance. No first invoice. The plan is excellent but execution hasn't started. Every week of delay is opportunity cost &mdash; especially for the garden season (March start window).</p>
+</div>
+
+<!-- Section 3: Organization Design -->
+<h2><span class="section-num">3</span>Organization Design &amp; Alignment</h2>
+<p>Team structure, role clarity, handoff efficiency.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P5: Three-role model with clear vertical ownership</strong>
+  <p>Wren (PM/coordination), Silas (infra/ops), Kade (app features). DEC-030 defines boundaries. DEC-022 sets attention allocation (60/25/15). Each role has its own CLAUDE.md, state files, and brief inbox. No ambiguity about who owns what.</p>
+</div>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P6: CLAUDE.md generation system is production-grade</strong>
+  <p>43 fragments assembled by claudemd-gen.sh into role-specific manifests. Versioned (Werk v1.3.27). Auto-loaded at session start via hooks. This is infrastructure other teams would pay for.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O3: The team model itself is a product</strong>
+  <p>The 3-role human+AI team pattern, the brief system, the CLAUDE.md generator, the session lifecycle hooks &mdash; this is a replicable operating model. Chorus Playbook clients aren't just getting a diagnostic; they could get the whole coordination system. "Here's how to run an AI team."</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D3: No client-facing role definitions</strong>
+  <p>The team model is well-defined internally (team-architecture.md, CLAUDE.md files) but there's no external version explaining how a client engagement would work. Who does the client talk to? What does Wren do for them vs. Kade? This needs packaging before the first Playbook engagement.</p>
+</div>
+
+<!-- Section 4: As-Is Investments (Cost) -->
+<h2><span class="section-num">4</span>As-Is Investments</h2>
+<p>What you're spending on infrastructure, compute, and AI.</p>
+
+<table>
+  <tr><th>Category</th><th>Investment</th><th>Notes</th></tr>
+  <tr><td>Claude API (Max)</td><td class="metric">$200/mo</td><td>3 roles, ~78-90% context utilization per session</td></tr>
+  <tr><td>Hardware (Library)</td><td class="metric">Sunk</td><td>Mac mini M1, 16GB, 2TB SSD</td></tr>
+  <tr><td>Hardware (Bedroom)</td><td class="metric">Sunk</td><td>Mac mini M2 Pro, 32GB, ~178TB external</td></tr>
+  <tr><td>Docker (9 services)</td><td class="metric">$0</td><td>Self-hosted, ~2GB RAM allocated</td></tr>
+  <tr><td>Vikunja (board)</td><td class="metric">$0</td><td>Self-hosted, 128MB RAM</td></tr>
+  <tr><td>Fuseki (RDF store)</td><td class="metric">$0</td><td>Self-hosted, persistent volume</td></tr>
+  <tr><td>Domain/DNS</td><td class="metric">~$15/yr</td><td>Cloudflare tunnel for external access</td></tr>
+  <tr><td><strong>Total recurring</strong></td><td class="metric"><strong>~$2,415/yr</strong></td><td>Almost entirely Claude Max subscription</td></tr>
+</table>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P7: Infrastructure cost is near-zero</strong>
+  <p>Two Macs running everything. No cloud bills. No SaaS subscriptions. The entire platform costs $200/mo in AI and $15/yr in DNS. This IS the consulting pitch &mdash; "your data, your hardware, no cloud lock-in."</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R3: No hardware redundancy</strong>
+  <p>Library Mac fails = everything stops. No backup compute. No failover. The 178TB on Bedroom is on USB enclosures with keepalive hacks. For personal infrastructure this is acceptable. For client-facing consulting ("I'll run your software on a Mac") it needs an answer.</p>
+</div>
+
+<!-- Section 5: Inventory -->
+<h2><span class="section-num">5</span>Inventory</h2>
+<p>Software, services, data stores, monitoring.</p>
+
+<table>
+  <tr><th>Category</th><th>Count</th><th>Detail</th></tr>
+  <tr><td>TypeScript (app)</td><td class="metric">32,896 lines</td><td>Express, RDF handlers, SOLID auth</td></tr>
+  <tr><td>TypeScript (Chorus)</td><td class="metric">1,399 lines</td><td>Workflow engine, board client, API</td></tr>
+  <tr><td>Tests</td><td class="metric">2,390+</td><td>Unit 1,498 + integration + security + E2E</td></tr>
+  <tr><td>RDF files</td><td class="metric">14,318</td><td>11 domains, ontology v1.1.0</td></tr>
+  <tr><td>Docker services</td><td class="metric">9</td><td>App + observability stack</td></tr>
+  <tr><td>LaunchAgents</td><td class="metric">10</td><td>7 Library + 3 Bedroom</td></tr>
+  <tr><td>Grafana dashboards</td><td class="metric">10</td><td>Cost, Alerts, Chorus Activity, Infra</td></tr>
+  <tr><td>Alert rules</td><td class="metric">35</td><td>19 app + 14 infra + 1 home</td></tr>
+  <tr><td>Spine emitters</td><td class="metric">23</td><td>18 shell + 3 TS + 2 gaps</td></tr>
+  <tr><td>Decisions</td><td class="metric">59</td><td>DEC-001 through DEC-059</td></tr>
+  <tr><td>Shell scripts</td><td class="metric">30+</td><td>Hooks, utilities, emitters</td></tr>
+  <tr><td>Board cards (total)</td><td class="metric">420</td><td>50 Done, 18 Next, 50+ Later, 30 Won't Do</td></tr>
+  <tr><td>Chorus index</td><td class="metric">33,000+</td><td>SQLite FTS5, ambient indexing</td></tr>
+</table>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P8: Observability is comprehensive</strong>
+  <p>35 alert rules with domain labels, 10 dashboards, 23 spine emitters feeding Loki, deploy-tolerant thresholds. Most enterprise teams don't have this level of operational visibility. Built in 2 weeks.</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D4: Two log files not in Loki</strong>
+  <p>command-errors.log and permission-prompts.log are not scraped by Promtail. Error introspection and tool call tracking are invisible to the spine. P1 gap identified in spine emitter inventory (#371).</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D5: Harvest pipelines are incomplete</strong>
+  <p>Music (66K tracks but from 6 partial iTunes copies &mdash; dedup incomplete), Sexuality (pipeline shipped but Mongo refresh needed), Photos (7,978 items but annotation gaps). The knowledge graph has breadth but spotty depth.</p>
+</div>
+
+<!-- Section 6: Value Discovery & Design -->
+<h2><span class="section-num">6</span>Value Discovery &amp; Design</h2>
+<p>How work gets identified, prioritized, and shaped.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P9: Card-first gate is enforced</strong>
+  <p>No work without a card. Cards have quality gates per stage (DEC-040, DEC-048). Pull order is WSJF (DEC-049). WIP limit 3 (DEC-051) with separate Harvesting (2) and SWAT lanes. This is lean manufacturing applied to software &mdash; and it works.</p>
+</div>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P10: Jeff's PDCA cycle is respected by the process</strong>
+  <p>Cards are tagged spike/discovery/commitment. High idea volume isn't treated as lack of focus but as learning process. Wren helps sort, not filter. This is a deliberate design choice that preserves creative energy while maintaining discipline.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O4: The board + quality gate system is packageable</strong>
+  <p>board-ts CLI, quality gates on add/move/done, workflow manifests, spine events on card transitions &mdash; this is a lightweight project management system built for human+AI teams. Could be extracted from Vikunja and offered as part of Chorus Playbook.</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D6: 50+ cards in Later with no triage cadence</strong>
+  <p>Later bucket has 50+ cards including stale ops-agent defects, deferred features, and strategic thinking cards. No regular sweep to won't-do or reprioritize. Cards accumulate but don't get pruned. This is inventory waste.</p>
+</div>
+
+<!-- Section 7: Product & Engineering -->
+<h2><span class="section-num">7</span>Product &amp; Engineering</h2>
+<p>Architecture, code quality, data model, testing.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P11: Test foundation is solid</strong>
+  <p>2,390+ tests, 82% coverage, lint enforced at max-warnings 10. Security tests (20), E2E smoke suite (Playwright). Most tech debt was crushed in a Feb 2026 sprint &mdash; 10 of 14 debt items resolved. Clean foundation.</p>
+</div>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P12: RDF/SOLID architecture is a genuine differentiator</strong>
+  <p>14,318 Turtle files, SPARQL queries via Fuseki, SOLID OIDC auth with ACL-based visibility. Private-by-default, publish-when-ready. This is the Bridwell patent in practice &mdash; and it's running in production. No one else in the personal software space has this.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O5: Gathering is a working demo for every consulting pitch</strong>
+  <p>When Jeff walks into Allandale and says "I can help you with technology," he can show them his own system &mdash; a knowledge graph managing 14K+ RDF files, 11 domains, live search, gallery views, music playback, garden consultation delivery. The product is the pitch deck.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O6: Chorus context index (33K+ messages) is under-leveraged</strong>
+  <p>The index has every tool call, every decision, every brief. It's used for manual /chorus search. It should feed the Playbook diagnostic &mdash; automated pattern detection, decision frequency analysis, communication health metrics. The data is there; the queries aren't.</p>
+</div>
+
+<div class="finding debt">
+  <div class="tag-label">Debt</div>
+  <strong>D7: E2E tests overwrite runtime pod data (TD-016)</strong>
+  <p>Every commit with E2E tests wipes ACL entries and users.ttl. Low severity but annoying &mdash; requires manual recreation of test users. Test isolation gap.</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R4: Whisper built from source on every Docker cache bust (TD-015)</strong>
+  <p>Adds ~2 minutes to deploy time and causes flaky builds. The voice capture feature is nice but the build cost is disproportionate. Consider pre-built binary or sidecar container.</p>
+</div>
+
+<!-- Section 8: Value Delivery -->
+<h2><span class="section-num">8</span>Value Delivery</h2>
+<p>Build, deploy, operate pipeline. How value reaches the user.</p>
+
+<div class="finding perf">
+  <div class="tag-label">Performance</div>
+  <strong>P13: Deploy pipeline is disciplined</strong>
+  <p>app-state.sh controls all lifecycle. Pre-commit hooks run Trivy security scan, npm audit, TypeScript compile, lint, TTL validation. Bind mounts for views/ and dist/ mean many changes are live on refresh. Deploy-tolerant alert thresholds prevent false alarms during 2.5-minute deploy window.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O7: The proving gate (demo to Jeff) is the consulting delivery model</strong>
+  <p>DEC-048's deploy &rarr; demo &rarr; accept pattern is exactly what a client engagement looks like. Builder does the work, shows it to the client, client accepts. The internal process IS the external service model. You've been practicing consulting delivery every day.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O8: Vision pages as deliverables are proven</strong>
+  <p>Today you built: business-plan.html, wardley-map.html, basement-garden.html. Self-contained, responsive, shareable. This is the Playbook output format &mdash; diagnostic findings rendered as professional pages the client keeps. No PDF generation needed, no third-party tools.</p>
+</div>
+
+<div class="finding opp">
+  <div class="tag-label">Opportunity</div>
+  <strong>O9: Remote Control walkthrough validates remote consulting</strong>
+  <p>Today's basement garden consultation was done via Claude Code Remote Control &mdash; Jeff walking with phone, Wren observing via photos. Beta and rough, but the model works. Remote consulting isn't hypothetical; we ran one today.</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R5: No backup or disaster recovery plan</strong>
+  <p>Git repos are on GitHub (remote backup). But Fuseki data, Docker volumes, RDF files, and the 178TB media store have no documented backup strategy. A disk failure on Library loses the knowledge graph. On Bedroom, it loses irreplaceable media.</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R6: Bedroom Mac services die on reboot</strong>
+  <p>images-api runs as bare Node, not Docker. LaunchAgents were added (#382) but video-server.js historically needs manual restart. For personal use this is a nuisance; for consulting demos it's a reliability gap.</p>
+</div>
+
+<div class="finding risk">
+  <div class="tag-label">Risk</div>
+  <strong>R7: No cost ceiling or budget</strong>
+  <p>Claude Max at $200/mo is the only recurring cost but there's no defined budget for consulting startup (LLC, insurance, tools). DEC-059 estimates $1,430-1,930 startup but no actual spending authority or timeline committed.</p>
+</div>
+
+<!-- Borg Opportunities -->
+<div class="borg-section">
+  <h3>Borg Opportunities &mdash; What to Absorb from FastX</h3>
+  <p>The FastX platform has features that Chorus should absorb. These are the Opportunity findings that specifically map to Borg work:</p>
+
+  <div class="finding opp">
+    <div class="tag-label">Opportunity &mdash; Borg</div>
+    <strong>O10: Structured interview module</strong>
+    <p>FastX has interview scheduling with Google Calendar/Meet integration, persistent storage, and name/title/email capture. Chorus needs this for Playbook client engagements. Absorb the data model; rebuild the UI in Gathering's style.</p>
+  </div>
+
+  <div class="finding opp">
+    <div class="tag-label">Opportunity &mdash; Borg</div>
+    <strong>O11: DPOR findings as RDF</strong>
+    <p>FastX stores findings in MongoDB as free-text DPOR categories. Chorus should store them as RDF in Fuseki &mdash; typed findings with provenance, linked to interview sources and diagnostic tasks. This makes findings queryable, cross-client comparable, and part of the knowledge graph.</p>
+  </div>
+
+  <div class="finding debt">
+    <div class="tag-label">Debt</div>
+    <strong>D8: FastX is a separate codebase with no Chorus integration</strong>
+    <p>The FastX platform (59 commits, Node/Express/MongoDB) is standalone. No spine events, no knowledge graph, no team coordination. The methodology is good but the tooling is disconnected. Borging means rebuilding the diagnostic workflow inside Chorus, not just importing the code.</p>
+  </div>
+</div>
+
+<!-- Summary -->
+<h2><span class="section-num">&Sigma;</span>Summary</h2>
+
+<table>
+  <tr><th>Section</th><th style="color: var(--debt);">D</th><th style="color: var(--perf);">P</th><th style="color: var(--opp);">O</th><th style="color: var(--risk);">R</th><th>Health</th></tr>
+  <tr><td>1. Interpersonal Approach</td><td>1</td><td>3</td><td>0</td><td>1</td><td>Strong</td></tr>
+  <tr><td>2. Business Model &amp; Strategy</td><td>1</td><td>1</td><td>2</td><td>1</td><td>Emerging</td></tr>
+  <tr><td>3. Org Design &amp; Alignment</td><td>1</td><td>2</td><td>1</td><td>0</td><td>Strong</td></tr>
+  <tr><td>4. As-Is Investments</td><td>0</td><td>1</td><td>0</td><td>1</td><td>Lean</td></tr>
+  <tr><td>5. Inventory</td><td>2</td><td>1</td><td>0</td><td>0</td><td>Good, gaps</td></tr>
+  <tr><td>6. Value Discovery &amp; Design</td><td>1</td><td>2</td><td>1</td><td>0</td><td>Strong</td></tr>
+  <tr><td>7. Product &amp; Engineering</td><td>1</td><td>2</td><td>2</td><td>1</td><td>Strong</td></tr>
+  <tr><td>8. Value Delivery</td><td>1</td><td>1</td><td>3</td><td>3</td><td>Good, risks</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>8</strong></td><td><strong>13</strong></td><td><strong>9</strong></td><td><strong>7</strong></td><td></td></tr>
+</table>
+
+<p style="margin-top: 1rem;"><strong>Bottom line:</strong> This system is running well. The Performance findings outnumber everything else. The Debt is manageable (no blockers, mostly process gaps). The Opportunities are where the money is &mdash; packaging what already works for external consumption. The Risks are real but addressable: single-human dependency, zero revenue, no backup strategy.</p>
+
+<p><strong>Priority actions:</strong></p>
+<ol style="margin: 0.5rem 0 0 1.5rem; font-size: 0.9rem;">
+  <li>File the LLC. This week. Everything else waits on entity.</li>
+  <li>Package the team model for client-facing use (O3, D3).</li>
+  <li>Run first Playbook engagement &mdash; Allandale discovery session (O1).</li>
+  <li>Fix Promtail gaps for command-errors.log and permission-prompts.log (D4).</li>
+  <li>Document backup strategy for Fuseki + RDF + media (R5).</li>
+</ol>
+
+</div>
+
+<footer>
+  Chorus Playbook &mdash; DPOR Diagnostic Report<br>
+  Bridwell Consulting LLC | February 26, 2026<br>
+  First self-diagnostic (Borg run) &mdash; methodology proven through execution
+</footer>
+
+</div>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

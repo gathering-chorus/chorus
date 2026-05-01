@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light Life Urban Gardens | Roslindale, MA</title>
+
+    <!-- Open Graph / Social Media Preview -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://lightlifeurbangardens.com/">
+    <meta property="og:title" content="Light Life Urban Gardens">
+    <meta property="og:description" content="Understand. Build & Change. Grow. — Collaborative urban gardening in Roslindale, MA.">
+    <meta property="og:image" content="https://lightlifeurbangardens.com/images/lightlife-preview.jpg">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Light Life Urban Gardens">
+    <meta name="twitter:description" content="Understand. Build & Change. Grow. — Collaborative urban gardening in Roslindale, MA.">
+
+    <!-- Standard meta description -->
+    <meta name="description" content="Light Life Urban Gardens — collaborative urban gardening in Roslindale, MA. Working alongside neighbors to build resilient, productive, peaceful gardens.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Open+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --green-dark: #2d4a3e;
+            --green-medium: #4a7c59;
+            --green-light: #8fbc8f;
+            --gold: #c9a227;
+            --cream: #f5f5dc;
+            --earth: #8b7355;
+            --white: #ffffff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: linear-gradient(135deg, var(--green-dark) 0%, #1a2f25 100%);
+            color: var(--cream);
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
+
+        .hero {
+            text-align: center;
+            padding: 2rem 1rem 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hero h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 3.5rem;
+            font-weight: 400;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.25rem;
+            color: var(--white);
+            text-transform: uppercase;
+            line-height: 1.1;
+        }
+
+        .hero h1 span { color: var(--gold); }
+
+        .tagline {
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            color: var(--green-light);
+            margin-bottom: 1.5rem;
+        }
+
+        .pillars {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+
+        .pillar {
+            text-align: center;
+            padding: 0.75rem;
+        }
+
+        .pillar-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+        .pillar h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: var(--gold);
+            margin-bottom: 0.25rem;
+        }
+
+        .pillar p {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--green-light);
+        }
+
+        .values {
+            text-align: center;
+            padding: 1.25rem 1.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .values h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 1rem;
+        }
+
+        .value-words {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+        }
+
+        .value-words span {
+            color: var(--green-light);
+            padding: 0.4rem 0.8rem;
+            border: 1px solid var(--green-medium);
+            border-radius: 4px;
+        }
+
+        .section {
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .section h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 1rem;
+        }
+
+        .section p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        .rhythm {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+        }
+
+        .season {
+            flex: 1;
+            min-width: 250px;
+            padding: 1.25rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .season h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: var(--gold);
+            margin-bottom: 0.5rem;
+        }
+
+        .season p {
+            font-size: 0.85rem;
+            font-weight: 300;
+            line-height: 1.6;
+            color: var(--green-light);
+        }
+
+        .leaf-decoration {
+            color: var(--green-medium);
+            font-size: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .promise {
+            text-align: center;
+            padding: 1rem 1.5rem;
+            font-style: italic;
+            font-size: 1.1rem;
+            color: var(--cream);
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .promise strong {
+            color: var(--gold);
+            font-style: normal;
+        }
+
+        .contact {
+            text-align: center;
+            padding: 1.25rem 1.5rem;
+            border-top: 1px solid var(--green-medium);
+            margin-top: 1.5rem;
+        }
+
+        .contact h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 0.75rem;
+        }
+
+        .contact-info { font-weight: 300; line-height: 1.6; }
+        .contact-info a { color: var(--gold); text-decoration: none; }
+        .contact-info a:hover { text-decoration: underline; }
+
+        .location {
+            margin-top: 0.5rem;
+            color: var(--green-light);
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--green-medium);
+        }
+
+        @media print {
+            @page { size: letter; margin: 0.75in 1in; }
+            html { zoom: 1; }
+            body { min-height: auto; background: #1a2f25; -webkit-print-color-adjust: exact; }
+            .container { padding: 0.4rem 0.5rem; }
+            .hero { padding: 0.6rem 0.5rem 0.3rem; }
+            .hero h1 { font-size: 2.2rem; margin-bottom: 0.1rem; }
+            .tagline { margin-bottom: 0.4rem; font-size: 0.7rem; }
+            .pillars { margin: 0.3rem 0; gap: 1.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .pillar { padding: 0.3rem; flex: 1 1 0 !important; min-width: 0 !important; }
+            .pillar-icon { font-size: 1.3rem; margin-bottom: 0.15rem; }
+            .pillar h3 { font-size: 1rem; margin-bottom: 0.1rem; }
+            .pillar p { font-size: 0.75rem; }
+            .values { padding: 0.4rem 0.75rem; margin: 0.4rem 0; }
+            .values h2 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+            .value-words { gap: 0.75rem; font-size: 0.8rem; }
+            .value-words span { padding: 0.25rem 0.6rem; }
+            .section { padding: 0.5rem 0.75rem; margin: 0.4rem 0; }
+            .section h2 { font-size: 1.1rem; margin-bottom: 0.3rem; }
+            .section p { margin-bottom: 0.25rem; font-size: 0.78rem; line-height: 1.5; }
+            .rhythm { margin: 0.4rem 0; gap: 0.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .season { padding: 0.5rem; flex: 1 1 0 !important; min-width: 0 !important; }
+            .season h3 { font-size: 1rem; margin-bottom: 0.15rem; }
+            .season p { font-size: 0.72rem; line-height: 1.4; }
+            .leaf-decoration { margin: 0.2rem 0; font-size: 0.9rem; }
+            .promise { padding: 0.3rem 0.75rem; font-size: 0.9rem; line-height: 1.5; }
+            .contact { padding: 0.4rem; margin-top: 0.3rem; }
+            .contact h2 { font-size: 1rem; margin-bottom: 0.2rem; }
+            .contact-info { font-size: 0.78rem; }
+            .location { font-size: 0.72rem; margin-top: 0.15rem; }
+            footer { padding: 0.2rem; font-size: 0.6rem; }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.5rem; }
+            .tagline { font-size: 1rem; letter-spacing: 0.15em; }
+            .pillars { gap: 1.5rem; }
+            .pillar { flex: 1 1 100%; }
+            .value-words { gap: 1rem; }
+            .rhythm { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1><span>Light</span> Life<br>Urban Gardens</h1>
+            <p class="tagline">Roslindale, Massachusetts</p>
+
+            <div class="pillars">
+                <div class="pillar">
+                    <div class="pillar-icon">🌱</div>
+                    <h3>Understand</h3>
+                    <p>Learn your space</p>
+                </div>
+                <div class="pillar">
+                    <div class="pillar-icon">🔨</div>
+                    <h3>Build & Change</h3>
+                    <p>Shape the garden</p>
+                </div>
+                <div class="pillar">
+                    <div class="pillar-icon">🌻</div>
+                    <h3>Grow</h3>
+                    <p>Nurture abundance</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="values">
+            <h2>Gardens that are</h2>
+            <div class="value-words">
+                <span>Resilient</span>
+                <span>Productive</span>
+                <span>Peaceful</span>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>What This Is</h2>
+            <p>I'm looking for a few people &mdash; two, three, four &mdash; who want a collaborator on their garden. Not a landscaping service. A partner who helps you see what's possible in your space, figure out what it would take, and then work alongside you to make it happen.</p>
+            <p>I've been gardening seriously in Roslindale for years. I know what grows here, what the soil needs, how the light moves through a small urban lot. I care about gardens that produce food, support pollinators, handle Boston weather, and give you a place that feels genuinely good to be in.</p>
+        </section>
+
+        <section class="section">
+            <h2>How It Works</h2>
+            <p>We start by understanding your space together &mdash; light, soil, drainage, what's already growing, what you want from it. Then we design something that fits your life, not a magazine. Some people want food. Some want beauty. Most want both. All of it should be manageable.</p>
+            <p>I'll help with the hard parts &mdash; building beds, amending soil, selecting plants, planning rotations. And I'll be around through the season. This isn't a plan-and-disappear arrangement. Gardens need attention, and so do the people tending them.</p>
+        </section>
+
+        <div class="rhythm">
+            <div class="season">
+                <h3>Spring</h3>
+                <p>Plan together. Build beds. Start seeds. Amend soil. Set the season up right.</p>
+            </div>
+            <div class="season">
+                <h3>Summer</h3>
+                <p>Tend. Harvest. Adjust. Learn what's working. Enjoy what's growing.</p>
+            </div>
+            <div class="season">
+                <h3>Fall</h3>
+                <p>Harvest the last. Put beds to rest. Reflect on the season. Plan for next year.</p>
+            </div>
+        </div>
+
+        <div class="leaf-decoration" style="text-align: center;">
+            ✦
+        </div>
+
+        <section class="promise">
+            Work done with <strong>care</strong>, <strong>quality</strong>, and <strong>commitment</strong>.<br>
+            A few gardens, tended well.
+        </section>
+
+        <section class="contact">
+            <h2>Get in Touch</h2>
+            <div class="contact-info">
+                <a href="mailto:jeffbridwell@gmail.com">jeffbridwell@gmail.com</a>
+            </div>
+            <div class="location">
+                Roslindale, MA
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        &copy; 2026 Light Life Urban Gardens
+    </footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

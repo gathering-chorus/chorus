@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Basement Garden Consultation — Light Life Urban Gardens</title>
+<style>
+  :root {
+    --soil: #3d2b1f;
+    --leaf: #4a7c59;
+    --leaf-light: #6fa87e;
+    --sun: #f5c542;
+    --sun-pale: #fdf0c4;
+    --wood: #8b6f47;
+    --blue-table: #5b8fa8;
+    --pink-light: #d94fd9;
+    --warm-light: #f5c542;
+    --bg: #faf8f4;
+    --text: #2c2c2c;
+    --ink: #1a1a1a;
+    --sketch: #555;
+    --paper: #f5f0e8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  /* Hand-drawn feel */
+  .sketch-border {
+    border: 2px solid var(--sketch);
+    border-radius: 3px;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.08);
+  }
+
+  header {
+    background: var(--leaf);
+    color: white;
+    padding: 2rem;
+    text-align: center;
+  }
+  header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+  header .subtitle {
+    font-size: 1rem;
+    opacity: 0.85;
+  }
+  header .meta {
+    font-size: 0.85rem;
+    opacity: 0.7;
+    margin-top: 0.5rem;
+  }
+
+  .content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+
+  h2 {
+    color: var(--leaf);
+    font-size: 1.3rem;
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 2px solid var(--leaf-light);
+  }
+
+  h3 {
+    color: var(--soil);
+    font-size: 1.1rem;
+    margin: 1.5rem 0 0.5rem;
+  }
+
+  p { margin-bottom: 1rem; }
+
+  /* ===== HAND-DRAWN MAP ===== */
+  .map-container {
+    background: var(--paper);
+    border: 2px solid var(--sketch);
+    border-radius: 4px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .map-title {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: var(--sketch);
+    text-align: center;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  /* SVG map */
+  .garden-map {
+    width: 100%;
+    max-width: 850px;
+    margin: 0 auto;
+    display: block;
+  }
+
+  /* Inventory cards */
+  .inventory {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .plant-card {
+    background: white;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    border-left: 4px solid var(--leaf);
+  }
+  .plant-card.concern {
+    border-left-color: #e67e22;
+  }
+  .plant-card.ok {
+    border-left-color: var(--leaf);
+  }
+  .plant-card h4 {
+    font-size: 0.95rem;
+    margin-bottom: 0.3rem;
+    color: var(--ink);
+  }
+  .plant-card .status {
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    display: inline-block;
+    margin-bottom: 0.5rem;
+  }
+  .status-good { background: #d4edda; color: #155724; }
+  .status-concern { background: #fff3cd; color: #856404; }
+  .status-action { background: #f8d7da; color: #721c24; }
+  .plant-card p {
+    font-size: 0.85rem;
+    color: #555;
+    margin-bottom: 0;
+  }
+
+  /* Assessment boxes */
+  .assessment {
+    background: white;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+  }
+  .assessment.good {
+    border-left: 4px solid var(--leaf);
+  }
+  .assessment.fix {
+    border-left: 4px solid #e67e22;
+  }
+  .assessment.critical {
+    border-left: 4px solid #e74c3c;
+  }
+  .assessment strong {
+    display: block;
+    margin-bottom: 0.3rem;
+    color: var(--ink);
+  }
+  .assessment p {
+    font-size: 0.9rem;
+    margin-bottom: 0;
+  }
+
+  /* Recommendations */
+  .rec-list {
+    list-style: none;
+    padding: 0;
+  }
+  .rec-list li {
+    background: white;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    position: relative;
+    padding-left: 3rem;
+  }
+  .rec-list li::before {
+    position: absolute;
+    left: 1rem;
+    top: 1rem;
+    font-size: 1.2rem;
+  }
+  .rec-list li:nth-child(1)::before { content: "1."; font-weight: 700; color: #e74c3c; }
+  .rec-list li:nth-child(2)::before { content: "2."; font-weight: 700; color: #e67e22; }
+  .rec-list li:nth-child(3)::before { content: "3."; font-weight: 700; color: var(--leaf); }
+  .rec-list li:nth-child(4)::before { content: "4."; font-weight: 700; color: var(--blue-table); }
+  .rec-list li:nth-child(5)::before { content: "5."; font-weight: 700; color: #8e44ad; }
+  .rec-list li strong {
+    display: block;
+    margin-bottom: 0.2rem;
+  }
+  .rec-list li p {
+    font-size: 0.9rem;
+    margin: 0;
+    color: #555;
+  }
+
+  /* Cost table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th {
+    background: var(--leaf);
+    color: white;
+    padding: 0.6rem 1rem;
+    text-align: left;
+  }
+  td {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #eee;
+  }
+  tr:nth-child(even) { background: #f9f9f9; }
+  .cost-total {
+    font-weight: 700;
+    background: var(--sun-pale) !important;
+  }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 2rem;
+    margin: 1rem 0;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--leaf-light);
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 1.2rem;
+    padding-left: 1rem;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -1.75rem;
+    top: 0.4rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--leaf);
+    border: 2px solid white;
+  }
+  .timeline-item strong {
+    color: var(--ink);
+    display: block;
+  }
+  .timeline-item p {
+    font-size: 0.85rem;
+    color: #555;
+    margin: 0;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+    font-size: 0.8rem;
+    border-top: 1px solid #eee;
+    margin-top: 2rem;
+  }
+
+  /* Print styles */
+  @media print {
+    header { background: white; color: var(--ink); border-bottom: 2px solid var(--leaf); }
+    .map-container { page-break-inside: avoid; }
+    body { padding: 0; }
+  }
+
+  @media (max-width: 600px) {
+    .content { padding: 1rem; }
+    header { padding: 1.5rem 1rem; }
+    header h1 { font-size: 1.4rem; }
+    .inventory { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Basement Garden Consultation</h1>
+  <div class="subtitle">Light Life Urban Gardens</div>
+  <div class="meta">Jeff Bridwell — Roslindale, MA | February 26, 2026 | Remote walkthrough via Claude</div>
+</header>
+
+<div class="content">
+
+<h2>Site Map</h2>
+
+<div class="map-container">
+  <div class="map-title">Basement Layout — Overhead View (not to scale)</div>
+  <svg class="garden-map" viewBox="0 0 850 520" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background -->
+    <rect x="0" y="0" width="850" height="520" fill="#f5f0e8"/>
+
+    <!-- Grid lines (sketch feel) -->
+    <line x1="50" y1="30" x2="50" y2="490" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <line x1="200" y1="30" x2="200" y2="490" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <line x1="425" y1="30" x2="425" y2="490" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <line x1="650" y1="30" x2="650" y2="490" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4,4"/>
+    <line x1="800" y1="30" x2="800" y2="490" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4,4"/>
+
+    <!-- Compass -->
+    <text x="790" y="25" font-family="Courier New" font-size="11" fill="#999">N</text>
+    <line x1="795" y1="28" x2="795" y2="45" stroke="#999" stroke-width="1" marker-end="none"/>
+    <polygon points="795,28 791,36 799,36" fill="#999"/>
+
+    <!-- === TABLE 1 (Left) — Seeds & Starts === -->
+    <rect x="60" y="60" width="340" height="200" rx="3" fill="#5b8fa8" fill-opacity="0.3" stroke="#5b8fa8" stroke-width="2"/>
+    <text x="230" y="52" font-family="Courier New" font-size="12" fill="#5b8fa8" text-anchor="middle" font-weight="700">TABLE 1 — Seeds &amp; Starts</text>
+
+    <!-- Seedling zone -->
+    <rect x="75" y="80" width="140" height="100" rx="2" fill="none" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <text x="145" y="97" font-family="Courier New" font-size="9" fill="#e67e22" text-anchor="middle">SEEDLINGS</text>
+    <!-- Small pots -->
+    <circle cx="95" cy="120" r="8" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="115" cy="115" r="7" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="135" cy="122" r="8" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="155" cy="118" r="7" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="100" cy="145" r="7" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="120" cy="148" r="8" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="145" cy="142" r="7" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="165" cy="150" r="7" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="185" cy="140" r="6" fill="#6fa87e" fill-opacity="0.5" stroke="#4a7c59" stroke-width="1"/>
+    <text x="145" y="175" font-family="Courier New" font-size="8" fill="#555" text-anchor="middle">kale, spinach, broccoli raab</text>
+    <text x="145" y="184" font-family="Courier New" font-size="8" fill="#555" text-anchor="middle">tomato, cilantro</text>
+
+    <!-- Problem annotation -->
+    <line x1="215" y1="130" x2="260" y2="100" stroke="#e74c3c" stroke-width="1"/>
+    <text x="262" y="97" font-family="Courier New" font-size="8" fill="#e74c3c">LEGGY — lights</text>
+    <text x="262" y="107" font-family="Courier New" font-size="8" fill="#e74c3c">too far (3ft+)</text>
+
+    <!-- Herbs zone -->
+    <rect x="75" y="190" width="90" height="55" rx="2" fill="none" stroke="#4a7c59" stroke-width="1" stroke-dasharray="3,3"/>
+    <circle cx="95" cy="215" r="10" fill="#6fa87e" fill-opacity="0.4" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="120" cy="210" r="9" fill="#6fa87e" fill-opacity="0.4" stroke="#4a7c59" stroke-width="1"/>
+    <circle cx="140" cy="220" r="8" fill="#6fa87e" fill-opacity="0.4" stroke="#4a7c59" stroke-width="1"/>
+    <text x="110" y="243" font-family="Courier New" font-size="8" fill="#555" text-anchor="middle">herbs</text>
+
+    <!-- Tropicals on table 1 -->
+    <circle cx="280" cy="120" r="22" fill="#4a7c59" fill-opacity="0.3" stroke="#3d6b4a" stroke-width="1.5"/>
+    <text x="280" y="124" font-family="Courier New" font-size="8" fill="#3d6b4a" text-anchor="middle">elephant</text>
+    <text x="280" y="133" font-family="Courier New" font-size="8" fill="#3d6b4a" text-anchor="middle">ear</text>
+
+    <circle cx="340" cy="170" r="16" fill="#4a7c59" fill-opacity="0.3" stroke="#3d6b4a" stroke-width="1.5"/>
+    <text x="340" y="174" font-family="Courier New" font-size="8" fill="#3d6b4a" text-anchor="middle">anthurium</text>
+
+    <circle cx="270" cy="200" r="14" fill="#4a7c59" fill-opacity="0.3" stroke="#3d6b4a" stroke-width="1.5"/>
+    <text x="270" y="203" font-family="Courier New" font-size="7" fill="#3d6b4a" text-anchor="middle">banana</text>
+
+    <circle cx="340" cy="230" r="13" fill="#4a7c59" fill-opacity="0.3" stroke="#3d6b4a" stroke-width="1.5"/>
+    <text x="340" y="233" font-family="Courier New" font-size="7" fill="#3d6b4a" text-anchor="middle">maples</text>
+
+    <!-- Passionflower -->
+    <circle cx="220" cy="230" r="12" fill="#8e44ad" fill-opacity="0.2" stroke="#8e44ad" stroke-width="1"/>
+    <text x="220" y="233" font-family="Courier New" font-size="7" fill="#8e44ad" text-anchor="middle">passion</text>
+    <text x="220" y="253" font-family="Courier New" font-size="7" fill="#8e44ad" text-anchor="middle">x2 types</text>
+
+    <!-- Roses -->
+    <rect x="180" y="80" width="40" height="40" rx="2" fill="none" stroke="#c0392b" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="200" y="95" font-family="Courier New" font-size="7" fill="#c0392b" text-anchor="middle">roses</text>
+    <text x="200" y="105" font-family="Courier New" font-size="7" fill="#c0392b" text-anchor="middle">(bare)</text>
+
+    <!-- === TABLE 2 (Right) — Peppers === -->
+    <rect x="460" y="60" width="340" height="200" rx="3" fill="#5b8fa8" fill-opacity="0.3" stroke="#5b8fa8" stroke-width="2"/>
+    <text x="630" y="52" font-family="Courier New" font-size="12" fill="#5b8fa8" text-anchor="middle" font-weight="700">TABLE 2 — Overwintering Peppers</text>
+
+    <!-- Pepper pots -->
+    <circle cx="510" cy="120" r="14" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="560" cy="110" r="13" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="610" cy="125" r="14" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="660" cy="115" r="12" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="710" cy="120" r="13" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="750" cy="130" r="11" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="520" cy="165" r="13" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="570" cy="170" r="14" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="620" cy="175" r="12" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="670" cy="168" r="13" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="720" cy="172" r="11" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="540" cy="215" r="12" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="590" cy="220" r="13" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="650" cy="218" r="11" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+    <circle cx="710" cy="222" r="12" fill="#c0392b" fill-opacity="0.2" stroke="#c0392b" stroke-width="1"/>
+
+    <text x="630" y="250" font-family="Courier New" font-size="9" fill="#c0392b" text-anchor="middle">peppers — prune hard, lower lights</text>
+
+    <!-- Annotation -->
+    <line x1="770" y1="160" x2="810" y2="140" stroke="#e67e22" stroke-width="1"/>
+    <text x="770" y="135" font-family="Courier New" font-size="8" fill="#e67e22" text-anchor="end">Goal: survive to</text>
+    <text x="770" y="145" font-family="Courier New" font-size="8" fill="#e67e22" text-anchor="end">spring transplant</text>
+
+    <!-- === FLOOR PLANTS === -->
+    <text x="230" y="300" font-family="Courier New" font-size="11" fill="#555" text-anchor="middle">— Floor level, around tables —</text>
+
+    <circle cx="100" cy="370" r="30" fill="#4a7c59" fill-opacity="0.2" stroke="#4a7c59" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="100" y="367" font-family="Courier New" font-size="9" fill="#3d6b4a" text-anchor="middle">palm</text>
+    <text x="100" y="380" font-family="Courier New" font-size="8" fill="#888" text-anchor="middle">(floor)</text>
+
+    <circle cx="230" cy="380" r="28" fill="#4a7c59" fill-opacity="0.2" stroke="#4a7c59" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="230" y="377" font-family="Courier New" font-size="9" fill="#3d6b4a" text-anchor="middle">yucca</text>
+    <text x="230" y="390" font-family="Courier New" font-size="8" fill="#888" text-anchor="middle">(floor)</text>
+
+    <circle cx="370" cy="370" r="26" fill="#4a7c59" fill-opacity="0.2" stroke="#4a7c59" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="370" y="367" font-family="Courier New" font-size="9" fill="#3d6b4a" text-anchor="middle">rubber</text>
+    <text x="370" y="378" font-family="Courier New" font-size="9" fill="#3d6b4a" text-anchor="middle">tree</text>
+    <text x="370" y="393" font-family="Courier New" font-size="8" fill="#888" text-anchor="middle">(floor)</text>
+
+    <text x="250" y="430" font-family="Courier New" font-size="8" fill="#888" text-anchor="middle">Tropicals — low light OK, just surviving winter</text>
+
+    <!-- === LIGHTS (overhead, shown as dashed lines) === -->
+    <text x="425" y="475" font-family="Courier New" font-size="11" fill="#d94fd9" text-anchor="middle" font-weight="700">CEILING LIGHTS (overhead projection)</text>
+
+    <!-- T8 bars -->
+    <line x1="80" y1="490" x2="380" y2="490" stroke="#d94fd9" stroke-width="3" opacity="0.6"/>
+    <line x1="80" y1="500" x2="380" y2="500" stroke="#d94fd9" stroke-width="3" opacity="0.6"/>
+    <line x1="80" y1="510" x2="380" y2="510" stroke="#d94fd9" stroke-width="3" opacity="0.6"/>
+    <text x="230" y="525" font-family="Courier New" font-size="8" fill="#d94fd9" text-anchor="middle">6x Barrina T8 (2-3ft above canopy)</text>
+
+    <!-- Spot floods -->
+    <circle cx="500" cy="500" r="12" fill="none" stroke="#f5c542" stroke-width="2"/>
+    <text x="500" y="504" font-family="Courier New" font-size="8" fill="#f5c542" text-anchor="middle">spot</text>
+    <circle cx="600" cy="500" r="12" fill="none" stroke="#f5c542" stroke-width="2"/>
+    <text x="600" y="504" font-family="Courier New" font-size="8" fill="#f5c542" text-anchor="middle">spot</text>
+    <circle cx="700" cy="500" r="12" fill="none" stroke="#f5c542" stroke-width="2"/>
+    <text x="700" y="504" font-family="Courier New" font-size="8" fill="#f5c542" text-anchor="middle">spot</text>
+    <text x="600" y="525" font-family="Courier New" font-size="8" fill="#f5c542" text-anchor="middle">5-6 additional spot/flood grow lights</text>
+
+  </svg>
+</div>
+
+<h2>Plant Inventory</h2>
+
+<h3>Table 1 — Seeds &amp; Starts (mixed use)</h3>
+<div class="inventory">
+  <div class="plant-card concern">
+    <h4>Kale, Spinach, Broccoli Raab</h4>
+    <span class="status status-action">Needs attention</span>
+    <p>From seed. Leggy, slow growth. Cool-season crops that love 55-65&deg;F — temperature is perfect, light distance is the problem. Getting maybe 30% of usable photons at 3ft from T8s.</p>
+  </div>
+  <div class="plant-card concern">
+    <h4>Tomato (from seed)</h4>
+    <span class="status status-concern">Watch</span>
+    <p>Warm-season crop trying to grow in cool basement. Will be leggy regardless at these temps. Better as a spring start — don't expect much until transplant outside.</p>
+  </div>
+  <div class="plant-card concern">
+    <h4>Cilantro</h4>
+    <span class="status status-concern">Watch</span>
+    <p>Cool-season herb, loves the temp. Bolts fast in heat so basement is actually ideal. Needs closer light to build leaf mass instead of stretching.</p>
+  </div>
+  <div class="plant-card ok">
+    <h4>Overwintering Herbs</h4>
+    <span class="status status-good">OK for now</span>
+    <p>Just surviving winter. Not expected to produce heavily. Will bounce back when moved outside or given more light in spring.</p>
+  </div>
+  <div class="plant-card ok">
+    <h4>Banana, Flowering Maples, Anthurium</h4>
+    <span class="status status-good">Fine</span>
+    <p>Tropicals overwintering. Not trying to produce — just don't die. Current light and temp are adequate. Don't overwater at these temps.</p>
+  </div>
+  <div class="plant-card ok">
+    <h4>Passionflower (2 types)</h4>
+    <span class="status status-good">Fine</span>
+    <p>Vines will get leggy in basement regardless — that's their nature. They'll explode once outside in spring. Just keep alive.</p>
+  </div>
+  <div class="plant-card ok">
+    <h4>Roses (bare/dormant)</h4>
+    <span class="status status-good">Dormant — correct</span>
+    <p>Bare stems at 55-65&deg;F is exactly right for dormant overwintering roses. Don't push them to grow. They'll leaf out when temps rise.</p>
+  </div>
+</div>
+
+<h3>Table 2 — Overwintering Peppers</h3>
+<div class="inventory">
+  <div class="plant-card concern">
+    <h4>Pepper Plants (15+ pots)</h4>
+    <span class="status status-concern">Action recommended</span>
+    <p>Alive but barely metabolizing at 55-65&deg;F. Peppers want 70&deg;F+ to grow. At these temps they're in suspended animation — fine for survival, but they'll come back stronger if pruned hard now and given closer light to build root energy for spring.</p>
+  </div>
+</div>
+
+<h3>Floor Level — Large Tropicals</h3>
+<div class="inventory">
+  <div class="plant-card ok">
+    <h4>Palms, Yucca, Rubber Tree</h4>
+    <span class="status status-good">Low priority</span>
+    <p>Can't overwinter outside in Boston. Current setup keeps them alive. These are not yield plants — don't optimize for them. Spot floods are adequate.</p>
+  </div>
+</div>
+
+<h2>Assessment</h2>
+
+<div class="assessment critical">
+  <strong>Primary Issue: Light distance is killing your seedlings</strong>
+  <p>T8 LED grow lights lose intensity rapidly with distance. At 6 inches you get ~100% output. At 12 inches, ~50%. At 24 inches, ~25%. At 36 inches (where your seedlings are), you're getting maybe 10-15% of what those lights can deliver. Your seedlings are stretching toward light they can barely detect. This is called etiolation — the plant spends all its energy growing tall instead of growing leaves.</p>
+</div>
+
+<div class="assessment fix">
+  <strong>Secondary Issue: Mixed heights on one table</strong>
+  <p>The elephant ear, banana, and anthurium are 2-3x taller than the seedling pots. The tall plants are closer to the lights (good for them) and casting shadows on the short plants (bad for starts). You need vertical separation — either physically separate zones or raise the small pots to close the gap.</p>
+</div>
+
+<div class="assessment good">
+  <strong>What's Working: Temperature is ideal for cool-season crops</strong>
+  <p>55-65&deg;F is exactly what kale, spinach, broccoli raab, and cilantro want. Most growers struggle to keep temps this low. Your basement is a natural cool-season growing chamber. The 14-hour light schedule (5:30a-7:30p) is also solid — mimics a long spring day.</p>
+</div>
+
+<div class="assessment good">
+  <strong>What's Working: The overwintering strategy is sound</strong>
+  <p>Peppers, tropicals, roses — the approach of "keep them alive in the basement until spring" is correct. These don't need optimization. They need survival.</p>
+</div>
+
+<h2>Recommendations</h2>
+
+<ul class="rec-list">
+  <li>
+    <strong>Lower lights over seedlings — today, $0</strong>
+    <p>Put the seedling pots on upturned milk crates, boxes, or a shelf to raise them within 8-10 inches of the T8 bars. Or if you can rig one T8 bar on chains at table level, hang it directly over the seed zone. This single change will transform your seedling growth within 7-10 days.</p>
+  </li>
+  <li>
+    <strong>Separate the seed zone from the tropicals</strong>
+    <p>Move the elephant ear, banana, anthurium, and maples to one end of Table 1. Group all seedlings together at the other end directly under the T8s. The tropicals don't need the light as much — give the prime real estate to the plants trying to produce.</p>
+  </li>
+  <li>
+    <strong>Hard prune the peppers now</strong>
+    <p>Cut overwintering peppers back to 6-8 inch stubs with 2-3 main branch nodes. This feels violent but it redirects energy to roots. When they go outside in spring, they'll push vigorous new growth from those nodes instead of trying to support leggy winter stems. Do this 6-8 weeks before your last frost date.</p>
+  </li>
+  <li>
+    <strong>Consider one more T8 bar set ($25-35)</strong>
+    <p>A second Barrina 4ft T8 set mounted low — on a simple frame or hung from chains at 8-10 inches above the seed table — would double your seedling light. Zip-tie to a wire shelf frame or suspend from the ceiling joists with S-hooks and chain. This is the single best dollar-for-dollar investment.</p>
+  </li>
+  <li>
+    <strong>Start timing your spring transition</strong>
+    <p>Boston last frost is typically mid-April to early May (Zone 6b). Work backward: harden off peppers starting 2 weeks before last frost. Start warm-season seeds (more tomatoes, squash) indoors 6-8 weeks before last frost — that's early March. You're in the window now.</p>
+  </li>
+</ul>
+
+<h2>Spring Transition Calendar</h2>
+
+<div class="timeline">
+  <div class="timeline-item">
+    <strong>Now — Early March</strong>
+    <p>Lower lights. Separate zones. Hard prune peppers. Start warm-season seeds (tomato, squash, more peppers if desired). Continue cool-season crops — they're producing if you fix the light.</p>
+  </div>
+  <div class="timeline-item">
+    <strong>Mid March</strong>
+    <p>Cool-season seedlings should be strong enough to pot up. Transplant kale, spinach, broccoli raab into larger containers or prep for outdoor beds.</p>
+  </div>
+  <div class="timeline-item">
+    <strong>Early April</strong>
+    <p>Move cool-season crops outside on warm days (above 40&deg;F) to start hardening off. They can handle light frost. Peppers stay inside.</p>
+  </div>
+  <div class="timeline-item">
+    <strong>Mid April — Last Frost</strong>
+    <p>Begin hardening peppers and tropicals — 2 hours outside in shade, increase daily. Watch nighttime lows.</p>
+  </div>
+  <div class="timeline-item">
+    <strong>May 1 — Full Transition</strong>
+    <p>Everything outside. Peppers in full sun. Tropicals in their summer spots. Basement becomes storage again until October.</p>
+  </div>
+</div>
+
+<h2>Materials (if needed)</h2>
+
+<table>
+  <tr><th>Item</th><th>Why</th><th>Cost</th></tr>
+  <tr><td>Milk crates or risers (2-3)</td><td>Raise seedlings closer to existing lights</td><td>$0 (use what you have)</td></tr>
+  <tr><td>Barrina T8 LED grow light set (4ft, 6-pack)</td><td>Dedicated low-mount light for seed zone</td><td>$25-35</td></tr>
+  <tr><td>S-hooks + lightweight chain (6ft)</td><td>Adjustable hanging for low light bar</td><td>$8-12</td></tr>
+  <tr><td>Pruning shears (if needed)</td><td>Hard prune peppers</td><td>$0 (you have them — I saw them on the table)</td></tr>
+  <tr class="cost-total"><td colspan="2">Total (if buying light set)</td><td>$33-47</td></tr>
+</table>
+
+<h2>Process Notes</h2>
+
+<div class="assessment good">
+  <strong>About this consultation</strong>
+  <p>This is a Light Life Urban Gardens dogfood run — Jeff as the first client, Wren as the remote consultant. The walkthrough was done via Claude Code Remote Control (beta), with photos sent from phone during a basement walk. The format — observe, inventory, assess, recommend — is the same deliverable we'd provide to a paying client. What worked: photo-based remote observation, structured assessment, actionable recommendations with costs. What to improve: remote connection was rough (beta), would benefit from video or multiple angle shots, and a follow-up visit in 2-3 weeks to see if recommendations took hold.</p>
+</div>
+
+</div>
+
+<footer>
+  Light Life Urban Gardens — Roslindale, MA<br>
+  Consultation by Wren | February 26, 2026
+</footer>
+
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

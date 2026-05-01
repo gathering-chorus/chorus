@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gathering — End-to-End Flow Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Inter', -apple-system, sans-serif; padding: 2rem 1in; }
+  h1 { color: #c4a35a; margin-bottom: 0.25rem; font-size: 1.6rem; }
+  .subtitle { color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+
+  /* Nav */
+  .flow-nav { display: flex; gap: 0.5rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .flow-nav button { background: #16213e; border: 1px solid #2a2a4a; color: #a0a0a0; padding: 0.4rem 0.8rem; border-radius: 999px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+  .flow-nav button:hover, .flow-nav button.active { background: #2a2a4a; color: #c4a35a; border-color: #c4a35a; }
+  .flow-nav .sep { color: #333; align-self: center; }
+
+  /* Flow sections */
+  .flow-section { display: none; margin-bottom: 3rem; }
+  .flow-section.visible { display: block; }
+  .flow-title { color: #c4a35a; font-size: 1.2rem; margin-bottom: 0.5rem; }
+  .flow-desc { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+  /* Pipeline */
+  .pipeline { display: flex; flex-direction: column; gap: 0; position: relative; padding-left: 2rem; }
+  .hop { position: relative; padding: 0.75rem 1rem; background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; margin-bottom: 0.75rem; transition: border-color 0.2s; }
+  .hop:hover { border-color: #818cf8; }
+  .hop::before { content: ''; position: absolute; left: -1.5rem; top: 0; bottom: -0.75rem; width: 2px; background: #2a2a4a; }
+  .hop:last-child::before { bottom: 50%; }
+  .hop::after { content: ''; position: absolute; left: -1.5rem; top: 50%; width: 0.5rem; height: 2px; background: #2a2a4a; }
+  .hop .hop-num { position: absolute; left: -2.25rem; top: 50%; transform: translateY(-50%); background: #1a1a2e; color: #818cf8; font-size: 0.7rem; font-weight: 700; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid #818cf8; z-index: 1; }
+  .hop .hop-title { font-weight: 600; font-size: 0.9rem; color: #e0e0e0; margin-bottom: 0.25rem; }
+  .hop .hop-data { font-size: 0.8rem; color: #a0a0a0; }
+  .hop .hop-system { font-size: 0.75rem; color: #818cf8; margin-top: 0.25rem; }
+
+  /* Boundary markers */
+  .boundary { background: rgba(129, 140, 248, 0.08); border-color: #818cf8; }
+  .boundary .hop-title::after { content: ' ⚡'; font-size: 0.7rem; }
+
+  /* Assertion points */
+  .assertion { position: relative; }
+  .assertion::after { content: '✓ testable'; position: absolute; right: 0.5rem; top: 0.5rem; font-size: 0.65rem; color: #10B981; background: rgba(16, 185, 129, 0.1); padding: 1px 6px; border-radius: 3px; }
+
+  /* Partials table */
+  .partials-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  .partials-table th { text-align: left; color: #c4a35a; font-size: 0.8rem; padding: 0.5rem; border-bottom: 1px solid #2a2a4a; }
+  .partials-table td { padding: 0.5rem; font-size: 0.8rem; border-bottom: 1px solid #16213e; }
+  .partials-table td:first-child { color: #818cf8; font-family: monospace; }
+
+  /* Summary */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .summary-card { background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; padding: 1rem; }
+  .summary-card h3 { color: #c4a35a; font-size: 0.95rem; margin-bottom: 0.5rem; }
+  .summary-card .endpoints { font-size: 0.8rem; color: #a0a0a0; }
+  .summary-card .boundaries { font-size: 0.75rem; color: #818cf8; margin-top: 0.5rem; }
+
+  /* Legend */
+  .legend { display: flex; gap: 1.5rem; margin-bottom: 1.5rem; font-size: 0.75rem; color: #888; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 0.3rem; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-boundary { background: #818cf8; }
+  .dot-assertion { background: #10B981; }
+  .dot-hop { background: #2a2a4a; border: 1px solid #e0e0e0; }
+</style>
+</head>
+<body>
+
+<h1>End-to-End Flow Map</h1>
+<p class="subtitle">Every hop, handoff, and boundary — the test surface for #1227</p>
+<p class="subtitle" style="margin-top:-1.5rem">10 flows: 4 app + 6 team</p>
+
+<div class="legend">
+  <span><span class="dot dot-hop"></span> Hop</span>
+  <span><span class="dot dot-boundary"></span> System boundary crossing</span>
+  <span><span class="dot dot-assertion"></span> Testable assertion point</span>
+</div>
+
+<div class="flow-nav">
+  <button data-flow="summary" class="active">Overview</button>
+  <span class="sep">|</span>
+  <button data-flow="page-render">Page Render</button>
+  <button data-flow="seed-pipeline">Seed Pipeline</button>
+  <button data-flow="deploy">Deploy</button>
+  <button data-flow="partials">Shared Partials</button>
+  <span class="sep">|</span>
+  <button data-flow="card-lifecycle">Card Lifecycle</button>
+  <button data-flow="brief">Brief Pipeline</button>
+  <button data-flow="demo">Demo Pipeline</button>
+  <button data-flow="nudge">Nudge Pipeline</button>
+  <button data-flow="clearing">Clearing</button>
+  <button data-flow="gemba">Gemba</button>
+</div>
+
+<!-- OVERVIEW -->
+<div class="flow-section visible" id="summary">
+  <h2 class="flow-title">All Flows</h2>
+  <p class="flow-desc">10 flows, 4 app + 6 team. Click any flow or card to see its hops.</p>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <h3>Page Render</h3>
+      <div class="endpoints">HTTP Request → Express → SPARQL → EJS → HTML</div>
+      <div class="boundaries">App ↔ Fuseki, App ↔ Client</div>
+    </div>
+    <div class="summary-card">
+      <h3>Seed (SMS) Pipeline</h3>
+      <div class="endpoints">Twilio → Webhook → Adapter → Pod Write → Fuseki Sync</div>
+      <div class="boundaries">Twilio → App, App → NFS, App → Fuseki</div>
+    </div>
+    <div class="summary-card">
+      <h3>Deploy Pipeline</h3>
+      <div class="endpoints">app-state.sh → Build → Health Gate → Metrics</div>
+      <div class="boundaries">Host ↔ Docker, App → Prometheus, App → Chorus</div>
+    </div>
+    <div class="summary-card">
+      <h3>Shared Partials</h3>
+      <div class="endpoints">8 partials shared across all pages</div>
+      <div class="boundaries">head, navbar, page-head, page-close, footer, content-actions, annotation, session-recorder</div>
+    </div>
+    <div class="summary-card">
+      <h3>Card Lifecycle</h3>
+      <div class="endpoints">Idea → Capture → Direct → Build → Prove → Done</div>
+      <div class="boundaries">Clearing ↔ Kanban, Kanban ↔ git</div>
+    </div>
+    <div class="summary-card">
+      <h3>Brief Pipeline</h3>
+      <div class="endpoints">Handoff → Write to briefs/ → Hook delivers at session start</div>
+      <div class="boundaries">Writer → Recipient fs, Hook → /tmp/</div>
+    </div>
+    <div class="summary-card">
+      <h3>Demo Pipeline</h3>
+      <div class="endpoints">board-ts demo → Nudge observers → Jeff sees → Accept/Reject</div>
+      <div class="boundaries">Kanban → Nudge, App → Jeff, Wren → Card</div>
+    </div>
+    <div class="summary-card">
+      <h3>Nudge Pipeline</h3>
+      <div class="endpoints">Event → Queue/Inject → Drain on idle → 2-exchange limit</div>
+      <div class="boundaries">Event source → Queue → Jeff's session</div>
+    </div>
+    <div class="summary-card">
+      <h3>Clearing</h3>
+      <div class="endpoints">/clearing → Roles join → Conversation → Decisions → Transcript indexed</div>
+      <div class="boundaries">Browser ↔ Clearing server, Clearing → Chorus index</div>
+    </div>
+    <div class="summary-card">
+      <h3>Gemba</h3>
+      <div class="endpoints">/gemba → Tail builder → Cron loop → Commentary → Exit</div>
+      <div class="boundaries">Observer → Chorus query, Cron → Observer session</div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE RENDER -->
+<div class="flow-section" id="page-render">
+  <h2 class="flow-title">Page Render Flow</h2>
+  <p class="flow-desc">HTTP Request → Express → SPARQL → EJS → HTML Response</p>
+  <div class="pipeline">
+    <div class="hop assertion"><span class="hop-num">1</span><div class="hop-title">HTTP Request → Router</div><div class="hop-data">GET /path + query params</div><div class="hop-system">Express routing table</div></div>
+    <div class="hop"><span class="hop-num">2</span><div class="hop-title">Middleware Stack</div><div class="hop-data">Auth + CSRF + CSP nonce + visibility rules</div><div class="hop-system">auth, csp-nonce, collection-visibility middleware</div></div>
+    <div class="hop"><span class="hop-num">3</span><div class="hop-title">Handler Execution</div><div class="hop-data">Construct SPARQL query from route params</div><div class="hop-system">Handler class (MusicHandler, BookHandler, etc.)</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">Cache Check</div><div class="hop-data">Query hash → 60s TTL in-memory cache</div><div class="hop-system">SparqlService cache (hit/miss tracked)</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">5</span><div class="hop-title">SPARQL Query → Fuseki</div><div class="hop-data">URL-encoded query to /pods/query endpoint</div><div class="hop-system">App container → Fuseki container (port 3030)</div></div>
+    <div class="hop"><span class="hop-num">6</span><div class="hop-title">Fuseki Response</div><div class="hop-data">JSON bindings: { head: { vars }, results: { bindings } }</div><div class="hop-system">Fuseki SPARQL endpoint</div></div>
+    <div class="hop"><span class="hop-num">7</span><div class="hop-title">Handler Render → EJS</div><div class="hop-data">res.render(template, { results, locals })</div><div class="hop-system">Express/EJS engine</div></div>
+    <div class="hop assertion"><span class="hop-num">8</span><div class="hop-title">Partial Inclusion</div><div class="hop-data">head, navbar, page-head, content-actions, footer, page-close</div><div class="hop-system">EJS include directives — shared partials</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">9</span><div class="hop-title">HTML Response → Browser</div><div class="hop-data">Rendered HTML + inline CSS/JS with CSP nonce</div><div class="hop-system">Container → Client</div></div>
+  </div>
+</div>
+
+<!-- SEED PIPELINE -->
+<div class="flow-section" id="seed-pipeline">
+  <h2 class="flow-title">Seed (SMS) Pipeline</h2>
+  <p class="flow-desc">SMS → Twilio Webhook → Adapter → Pod Write → Fuseki Sync → Page Render</p>
+  <div class="pipeline">
+    <div class="hop boundary"><span class="hop-num">1</span><div class="hop-title">Twilio Webhook</div><div class="hop-data">POST /api/webhook/sms — Body, From, NumMedia, MediaUrl</div><div class="hop-system">Twilio → App (webhookAuthMiddleware verifies signature)</div></div>
+    <div class="hop assertion"><span class="hop-num">2</span><div class="hop-title">SmsSeedAdapter.extractContent</div><div class="hop-data">Parse sender, detect type (text/link/photo), extract hashtag</div><div class="hop-system">Adapter pattern (in-process)</div></div>
+    <div class="hop assertion"><span class="hop-num">3</span><div class="hop-title">Route Decision</div><div class="hop-data">#hashtag → collection (idea→ideas, garden→garden-bed, etc.) Default: seeds</div><div class="hop-system">HASHTAG_ROUTES lookup in SeedHandler</div></div>
+    <div class="hop boundary"><span class="hop-num">4</span><div class="hop-title">OG Metadata Fetch (if link)</div><div class="hop-data">URL → title, description, image from meta tags</div><div class="hop-system">App → External webpage</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">5</span><div class="hop-title">Pod Write</div><div class="hop-data">Turtle file written to pod graph</div><div class="hop-system">App → NFS mount (/Volumes/Gathering/)</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">6</span><div class="hop-title">Fuseki Sync</div><div class="hop-data">New triples POST to /pods dataset</div><div class="hop-system">App → Fuseki (async)</div></div>
+    <div class="hop"><span class="hop-num">7</span><div class="hop-title">Twilio Response</div><div class="hop-data">&lt;Response/&gt; (empty TwiML — prevents retry)</div><div class="hop-system">App → Twilio</div></div>
+    <div class="hop assertion"><span class="hop-num">8</span><div class="hop-title">Page Renders Seed</div><div class="hop-data">SPARQL query returns new seed on /seeds page</div><div class="hop-system">Page render flow (see above)</div></div>
+  </div>
+</div>
+
+<!-- DEPLOY -->
+<div class="flow-section" id="deploy">
+  <h2 class="flow-title">Deploy Pipeline</h2>
+  <p class="flow-desc">app-state.sh deploy → Build → Health Gate → Live</p>
+  <div class="pipeline">
+    <div class="hop assertion"><span class="hop-num">1</span><div class="hop-title">Pre-flight Gates</div><div class="hop-data">check_freeze, check_cooldown, acquire_lock, check_disk, ensure_docker</div><div class="hop-system">app-state.sh (host shell)</div></div>
+    <div class="hop"><span class="hop-num">2</span><div class="hop-title">Tag Previous Image</div><div class="hop-data">docker tag latest → previous (rollback safety)</div><div class="hop-system">Docker daemon</div></div>
+    <div class="hop boundary"><span class="hop-num">3</span><div class="hop-title">Docker Build</div><div class="hop-data">Dockerfile context: src/, package.json, views/, public/</div><div class="hop-system">Host → Docker daemon (30s SLA)</div></div>
+    <div class="hop boundary"><span class="hop-num">4</span><div class="hop-title">Compose Up (app only)</div><div class="hop-data">Stop old container, start new from latest image</div><div class="hop-system">Docker daemon (Fuseki stays running)</div></div>
+    <div class="hop assertion"><span class="hop-num">5</span><div class="hop-title">Health Gate Wait</div><div class="hop-data">Poll Docker health status until "healthy" (120s budget)</div><div class="hop-system">Docker health check</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">6</span><div class="hop-title">HTTP Health Check</div><div class="hop-data">GET /health → { version, uptime, status }</div><div class="hop-system">App container health endpoint</div></div>
+    <div class="hop"><span class="hop-num">7</span><div class="hop-title">LAN Smoke Test</div><div class="hop-data">GET http://&lt;lan-ip&gt;:3000/ (async, non-blocking)</div><div class="hop-system">Host → Docker bridge network</div></div>
+    <div class="hop boundary"><span class="hop-num">8</span><div class="hop-title">Emit Metrics + Spine Events</div><div class="hop-data">deploy_metrics.prom + chorus-log.sh deploy.pipeline.succeeded</div><div class="hop-system">App → Prometheus + Chorus</div></div>
+  </div>
+</div>
+
+<!-- PARTIALS -->
+<div class="flow-section" id="partials">
+  <h2 class="flow-title">Shared Partials Inventory</h2>
+  <p class="flow-desc">8 EJS partials shared across pages — a change to any one affects all consumers.</p>
+  <table class="partials-table">
+    <tr><th>Partial</th><th>Purpose</th><th>Used By</th></tr>
+    <tr><td>head.ejs</td><td>CSP nonce, CSRF token, theme setup</td><td>Nearly all pages</td></tr>
+    <tr><td>navbar.ejs</td><td>Navigation bar, auth links</td><td>Nearly all pages</td></tr>
+    <tr><td>page-head.ejs</td><td>Title injection, layout wrapper open</td><td>Nearly all pages</td></tr>
+    <tr><td>page-close.ejs</td><td>Layout close, session-recorder injection</td><td>Nearly all pages</td></tr>
+    <tr><td>footer.ejs</td><td>Footer bar, copyright</td><td>Detail pages (music, book, photo, note, etc.)</td></tr>
+    <tr><td>content-actions.ejs</td><td>PDF / Share / Reflect buttons</td><td>Collection + detail pages</td></tr>
+    <tr><td>annotation.ejs</td><td>Rating + notes widget</td><td>Detail pages (music, photo, book, note, reading, watching)</td></tr>
+    <tr><td>session-recorder.ejs</td><td>Session replay telemetry</td><td>Injected by page-close.ejs</td></tr>
+  </table>
+</div>
+
+<!-- CARD LIFECYCLE -->
+<div class="flow-section" id="card-lifecycle">
+  <h2 class="flow-title">Card Lifecycle</h2>
+  <p class="flow-desc">Idea → Capture → Direct → Build → Prove → Done</p>
+  <div class="pipeline">
+    <div class="hop"><span class="hop-num">1</span><div class="hop-title">Idea Emergence</div><div class="hop-data">Jeff speaks idea in session, Clearing, or SMS</div><div class="hop-system">Any interaction pattern</div></div>
+    <div class="hop assertion"><span class="hop-num">2</span><div class="hop-title">Capture → board-ts add</div><div class="hop-data">Title: &lt;verb&gt; &lt;what&gt; — &lt;why&gt;, labels: owner, P1-P3, size tag</div><div class="hop-system">Wren → Vikunja via board-ts</div></div>
+    <div class="hop assertion"><span class="hop-num">3</span><div class="hop-title">Directing — AC Written</div><div class="hop-data">Description + acceptance criteria (3-line min). Brief to builder if cross-role.</div><div class="hop-system">Wren writes AC before card enters Building</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">WIP Transition</div><div class="hop-data">board-ts move &lt;id&gt; WIP + role-state.sh building</div><div class="hop-system">Kanban board + andon state (WIP limit: 3)</div></div>
+    <div class="hop"><span class="hop-num">5</span><div class="hop-title">Building</div><div class="hop-data">Comments: [start] → [progress] → [done]. Commits ref (#N).</div><div class="hop-system">Builder's workspace</div></div>
+    <div class="hop assertion"><span class="hop-num">6</span><div class="hop-title">Smoke Check</div><div class="hop-data">Builder walks happy path end-to-end, 60s hands-on</div><div class="hop-system">Running app</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">7</span><div class="hop-title">Deploy (if code change)</div><div class="hop-data">app-state.sh deploy → container healthy</div><div class="hop-system">See deploy pipeline</div></div>
+    <div class="hop assertion"><span class="hop-num">8</span><div class="hop-title">Demo to Jeff</div><div class="hop-data">Builder shows AC met. Jeff sees behavior. 3 sentences max.</div><div class="hop-system">See demo pipeline</div></div>
+    <div class="hop assertion"><span class="hop-num">9</span><div class="hop-title">Accept / Reject</div><div class="hop-data">Wren or Jeff confirms AC met → board-ts done. Reject → reason + back to WIP.</div><div class="hop-system">Kanban board (no self-service Done for code)</div></div>
+  </div>
+</div>
+
+<!-- BRIEF PIPELINE -->
+<div class="flow-section" id="brief">
+  <h2 class="flow-title">Brief Pipeline</h2>
+  <p class="flow-desc">Cross-role handoff → Write to briefs/ → Session hook delivers</p>
+  <div class="pipeline">
+    <div class="hop"><span class="hop-num">1</span><div class="hop-title">Handoff Need Identified</div><div class="hop-data">Work touches another role's domain or needs coordination</div><div class="hop-system">Active role's session</div></div>
+    <div class="hop assertion"><span class="hop-num">2</span><div class="hop-title">Write Brief to Recipient's Dir</div><div class="hop-data">Markdown: question, context, constraints, response needed</div><div class="hop-system">Writer → {architect|engineer|product-manager}/briefs/</div></div>
+    <div class="hop"><span class="hop-num">3</span><div class="hop-title">Log in activity.md</div><div class="hop-data">[Writer] → [Brief] → [Recipient]</div><div class="hop-system">Shared activity log</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">Session Start Hook Delivers</div><div class="hop-data">werk-init.sh detects new briefs, includes in session-start-&lt;role&gt;.md</div><div class="hop-system">Hook → /tmp/session-start-*.md</div></div>
+    <div class="hop"><span class="hop-num">5</span><div class="hop-title">Recipient Reads + Responds</div><div class="hop-data">Response via message, comment, or return brief</div><div class="hop-system">Recipient's session</div></div>
+  </div>
+</div>
+
+<!-- DEMO PIPELINE -->
+<div class="flow-section" id="demo">
+  <h2 class="flow-title">Demo Pipeline</h2>
+  <p class="flow-desc">board-ts demo → Nudge observers → Show Jeff → Accept/Reject</p>
+  <div class="pipeline">
+    <div class="hop assertion"><span class="hop-num">1</span><div class="hop-title">board-ts demo &lt;id&gt;</div><div class="hop-data">Logs demo started on card, emits card.demo.started event</div><div class="hop-system">Kanban board + spine</div></div>
+    <div class="hop boundary"><span class="hop-num">2</span><div class="hop-title">Nudge Observers</div><div class="hop-data">[demo] nudge to Wren + other roles → enter gemba mode</div><div class="hop-system">nudge.sh → recipient inboxes</div></div>
+    <div class="hop"><span class="hop-num">3</span><div class="hop-title">Builder Opens Feature</div><div class="hop-data">Navigate to page, walk happy path. Stakes first, then show.</div><div class="hop-system">Browser at localhost:3000</div></div>
+    <div class="hop"><span class="hop-num">4</span><div class="hop-title">Jeff Observes</div><div class="hop-data">Sees page, asks questions, gives feedback</div><div class="hop-system">Jeff's browser / /look screenshots</div></div>
+    <div class="hop assertion"><span class="hop-num">5</span><div class="hop-title">Wren Captures Decision</div><div class="hop-data">Accept: board-ts done + card.accepted event. Reject: reason + back to WIP.</div><div class="hop-system">Kanban board + spine events</div></div>
+  </div>
+</div>
+
+<!-- NUDGE PIPELINE -->
+<div class="flow-section" id="nudge">
+  <h2 class="flow-title">Nudge Pipeline</h2>
+  <p class="flow-desc">Event → Queue or Inject → Drain on idle → 2-exchange limit</p>
+  <div class="pipeline">
+    <div class="hop"><span class="hop-num">1</span><div class="hop-title">Trigger Event</div><div class="hop-data">Demo ready, card mentioned, brief sent, or role-to-role tap</div><div class="hop-system">nudge.sh send &lt;role&gt; "message"</div></div>
+    <div class="hop assertion"><span class="hop-num">2</span><div class="hop-title">Queue or Inject</div><div class="hop-data">Target idle → inject immediately. Target busy → queue to /tmp/nudge-inbox-&lt;role&gt;/</div><div class="hop-system">nudge.sh (checks role-state)</div></div>
+    <div class="hop assertion"><span class="hop-num">3</span><div class="hop-title">Stale Discard (>24h)</div><div class="hop-data">Auto-drain discards messages older than 24h with spine event</div><div class="hop-system">role-state.sh drain trigger (#1224)</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">Drain on Idle/Session Start</div><div class="hop-data">role-state.sh waiting/idle → drain inbox. werk-init.sh → drain at boot.</div><div class="hop-system">Auto-drain (#1224)</div></div>
+    <div class="hop"><span class="hop-num">5</span><div class="hop-title">2-Exchange Limit</div><div class="hop-data">3rd nudge between same pair refused → redirect to /clearing</div><div class="hop-system">nudge.sh counter (DEC-079)</div></div>
+  </div>
+</div>
+
+<!-- CLEARING -->
+<div class="flow-section" id="clearing">
+  <h2 class="flow-title">Clearing Flow</h2>
+  <p class="flow-desc">/clearing → Roles join → Conversation → Decisions captured → Transcript indexed</p>
+  <div class="pipeline">
+    <div class="hop assertion"><span class="hop-num">1</span><div class="hop-title">/clearing Invoked</div><div class="hop-data">Jeff or Wren triggers multi-role alignment session</div><div class="hop-system">Clearing LaunchAgent (port 3460)</div></div>
+    <div class="hop boundary"><span class="hop-num">2</span><div class="hop-title">Browser Session Opens</div><div class="hop-data">WebSocket connection, Jeff + 3 AI roles join chat</div><div class="hop-system">Browser → Clearing server (ws://localhost:3460)</div></div>
+    <div class="hop"><span class="hop-num">3</span><div class="hop-title">Roles Enter Conversation</div><div class="hop-data">Each role gets context injection from /chorus. 3 sentences max per turn.</div><div class="hop-system">Clearing server → role sessions</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">Decision Capture</div><div class="hop-data">Messages prefixed DECISION: auto-captured to decisions log</div><div class="hop-system">Clearing transcript parser</div></div>
+    <div class="hop boundary assertion"><span class="hop-num">5</span><div class="hop-title">Transcript Indexed</div><div class="hop-data">Full conversation → Chorus index (source: clearing)</div><div class="hop-system">Clearing → Chorus index pipeline</div></div>
+    <div class="hop"><span class="hop-num">6</span><div class="hop-title">Commitments Routed</div><div class="hop-data">Cards created, briefs sent, state files updated from decisions</div><div class="hop-system">Wren post-clearing routing</div></div>
+  </div>
+</div>
+
+<!-- GEMBA -->
+<div class="flow-section" id="gemba">
+  <h2 class="flow-title">Gemba Flow</h2>
+  <p class="flow-desc">/gemba → Tail builder → Cron loop → Commentary → Jeff observes → Exit</p>
+  <div class="pipeline">
+    <div class="hop assertion"><span class="hop-num">1</span><div class="hop-title">/gemba &lt;role&gt; Invoked</div><div class="hop-data">Card context (board-ts view) + tail snapshot (last 20 lines) + declare observing</div><div class="hop-system">Observer role — 3 calls, &lt;5 seconds (DEC-071)</div></div>
+    <div class="hop boundary"><span class="hop-num">2</span><div class="hop-title">Background Tail Starts</div><div class="hop-data">chorus-query.sh tail &lt;role&gt; --follow (background task)</div><div class="hop-system">Observer → Chorus query service</div></div>
+    <div class="hop"><span class="hop-num">3</span><div class="hop-title">Cron Loop Fires</div><div class="hop-data">Every 1 minute: check tail for new batches, digest for Jeff</div><div class="hop-system">CronCreate (self-sustaining loop)</div></div>
+    <div class="hop assertion"><span class="hop-num">4</span><div class="hop-title">Play-by-Play Commentary</div><div class="hop-data">[HH:MM] what happened · what it means · flag if any</div><div class="hop-system">Observer interprets, doesn't dump raw output</div></div>
+    <div class="hop"><span class="hop-num">5</span><div class="hop-title">Jeff Interacts</div><div class="hop-data">Comments, questions, feedback — relayed or carded, not fixed in-flight</div><div class="hop-system">Jeff → Observer (ceremony discipline)</div></div>
+    <div class="hop assertion"><span class="hop-num">6</span><div class="hop-title">Exit (TTL or Signal)</div><div class="hop-data">10-min TTL, "stop", card.accepted/rejected, or Jeff redirects</div><div class="hop-system">CronDelete + TaskStop + debrief</div></div>
+  </div>
+</div>
+
+<script src="/js/flow-map.js"></script>
+</body>
+</html>

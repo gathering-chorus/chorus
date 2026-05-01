@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bridwell Consulting LLC | Business Plan</title>
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Bridwell Consulting LLC — Business Plan">
+    <meta property="og:description" content="Two seasonal revenue streams under one LLC. Chorus Consulting + Light Life Urban Gardens. Boston area.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Open+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue-dark: #1a2a3a;
+            --blue-medium: #2d5a7b;
+            --blue-light: #6ba3c7;
+            --gold: #c9a227;
+            --cream: #f0f0e8;
+            --warm-gray: #8b8b7a;
+            --white: #ffffff;
+            --green: #5a9a6b;
+            --green-light: #7bc48e;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: linear-gradient(135deg, var(--blue-dark) 0%, #0f1a24 100%);
+            color: var(--cream);
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
+
+        .hero {
+            text-align: center;
+            padding: 2.5rem 1rem 1rem;
+        }
+
+        .hero h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 3rem;
+            font-weight: 400;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.25rem;
+            color: var(--white);
+            line-height: 1.1;
+        }
+
+        .hero h1 span { color: var(--gold); }
+
+        .tagline {
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--blue-light);
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            font-weight: 300;
+            color: var(--warm-gray);
+            margin-bottom: 1.5rem;
+        }
+
+        .intro {
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            font-size: 1.05rem;
+            font-weight: 300;
+            line-height: 1.7;
+            text-align: center;
+            color: var(--cream);
+        }
+
+        .streams {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+        }
+
+        .stream {
+            flex: 1;
+            min-width: 280px;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+        }
+
+        .stream.playbook { border-left: 3px solid #e06060; }
+        .stream.consulting { border-left: 3px solid var(--gold); }
+        .stream.gardens { border-left: 3px solid var(--green); }
+        .stream.product { border-left: 3px solid var(--blue-light); }
+
+        .stream h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 500;
+            margin-bottom: 0.15rem;
+        }
+
+        .stream.playbook h3 { color: #e06060; }
+        .stream.consulting h3 { color: var(--gold); }
+        .stream.gardens h3 { color: var(--green-light); }
+        .stream.product h3 { color: var(--blue-light); }
+
+        .stream .season {
+            font-size: 0.8rem;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+        }
+
+        .stream.playbook .season { color: #e06060; opacity: 0.7; }
+        .stream.consulting .season { color: var(--gold); opacity: 0.7; }
+        .stream.gardens .season { color: var(--green-light); opacity: 0.7; }
+        .stream.product .season { color: var(--blue-light); opacity: 0.7; }
+
+        .stream p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.6;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        .section {
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .section h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 1rem;
+        }
+
+        .section p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+        }
+
+        th {
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--blue-light);
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--blue-medium);
+        }
+
+        td {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--cream);
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid rgba(45, 90, 123, 0.3);
+        }
+
+        td.amount {
+            color: var(--gold);
+            font-weight: 400;
+        }
+
+        td.green { color: var(--green-light); }
+
+        .calendar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.75rem;
+            margin: 1rem 0;
+        }
+
+        .month {
+            padding: 0.75rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .month .name {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--white);
+            margin-bottom: 0.25rem;
+        }
+
+        .month .focus {
+            font-size: 0.75rem;
+            font-weight: 300;
+            line-height: 1.4;
+            color: var(--warm-gray);
+        }
+
+        .month .bar {
+            display: flex;
+            height: 4px;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+            gap: 1px;
+        }
+
+        .bar-playbook { background: #e06060; }
+        .bar-consulting { background: var(--gold); }
+        .bar-gardens { background: var(--green); }
+        .bar-product { background: var(--blue-light); }
+
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+
+        .checklist li {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--cream);
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+            border-bottom: 1px solid rgba(45, 90, 123, 0.2);
+        }
+
+        .checklist li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0.65rem;
+            width: 12px;
+            height: 12px;
+            border: 1px solid var(--blue-medium);
+            border-radius: 2px;
+        }
+
+        .checklist .timing {
+            font-size: 0.75rem;
+            color: var(--warm-gray);
+            display: block;
+            margin-top: 0.15rem;
+        }
+
+        .targets {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .target {
+            text-align: center;
+            padding: 1.25rem 1.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            min-width: 180px;
+        }
+
+        .target .number {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 2rem;
+            font-weight: 400;
+        }
+
+        .target.y1 .number { color: var(--gold); }
+        .target.y2 .number { color: var(--green-light); }
+        .target.y3 .number { color: var(--white); }
+
+        .target .label {
+            font-size: 0.8rem;
+            font-weight: 300;
+            color: var(--warm-gray);
+            margin-top: 0.25rem;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            margin: 0.5rem 0 1rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.75rem;
+            font-weight: 300;
+            color: var(--warm-gray);
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+
+        .pilots {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+
+        .pilot {
+            flex: 1;
+            min-width: 200px;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .pilot h4 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--gold);
+            margin-bottom: 0.25rem;
+        }
+
+        .pilot .type {
+            font-size: 0.75rem;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--blue-light);
+            margin-bottom: 0.5rem;
+        }
+
+        .pilot p {
+            font-size: 0.8rem;
+            font-weight: 300;
+            color: var(--warm-gray);
+            line-height: 1.4;
+        }
+
+        .gtm {
+            list-style: none;
+            padding: 0;
+            counter-reset: gtm;
+        }
+
+        .gtm li {
+            font-size: 0.9rem;
+            font-weight: 300;
+            color: var(--cream);
+            padding: 0.6rem 0;
+            padding-left: 2rem;
+            position: relative;
+            counter-increment: gtm;
+        }
+
+        .gtm li::before {
+            content: counter(gtm);
+            position: absolute;
+            left: 0;
+            top: 0.6rem;
+            width: 1.4rem;
+            height: 1.4rem;
+            background: var(--blue-medium);
+            border-radius: 50%;
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gtm li .detail {
+            font-size: 0.8rem;
+            color: var(--warm-gray);
+            display: block;
+            margin-top: 0.15rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1.5rem 1rem;
+            font-size: 0.75rem;
+            color: var(--blue-medium);
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.2rem; }
+            .streams { flex-direction: column; }
+            .calendar { grid-template-columns: repeat(2, 1fr); }
+            .pilots { flex-direction: column; }
+        }
+
+        @media print {
+            @page { size: letter; margin: 0.5in 0.75in; }
+            body { min-height: auto; background: #0f1a24; -webkit-print-color-adjust: exact; }
+            .container { padding: 0.15rem 0.5rem; }
+            .hero { padding: 0.3rem 0.25rem 0.15rem; }
+            .hero h1 { font-size: 1.8rem; }
+            .tagline { margin-bottom: 0.2rem; font-size: 0.65rem; }
+            .intro { margin: 0 auto 0.3rem; font-size: 0.65rem; line-height: 1.3; }
+            .streams { gap: 0.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .stream { padding: 0.4rem 0.5rem; }
+            .stream h3 { font-size: 0.9rem; }
+            .stream p { font-size: 0.55rem; line-height: 1.3; margin-bottom: 0.15rem; }
+            .section { padding: 0.3rem 0.5rem; margin: 0.3rem 0; }
+            .section h2 { font-size: 0.85rem; margin-bottom: 0.2rem; }
+            .section p { font-size: 0.55rem; line-height: 1.3; }
+            table { font-size: 0.55rem; }
+            th, td { padding: 0.2rem 0.4rem; }
+            .calendar { grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
+            .month { padding: 0.3rem; }
+            .month .name { font-size: 0.75rem; }
+            .month .focus { font-size: 0.55rem; }
+            .checklist li { font-size: 0.6rem; padding: 0.2rem 0 0.2rem 1.2rem; }
+            .targets { gap: 0.5rem; }
+            .target { padding: 0.5rem; min-width: 120px; }
+            .target .number { font-size: 1.3rem; }
+            footer { padding: 0.25rem; font-size: 0.55rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1><span>Bridwell</span> Consulting</h1>
+            <p class="tagline">Three streams. One practice.</p>
+            <p class="subtitle">LLC &mdash; Roslindale, Jamaica Plain, Brookline</p>
+        </section>
+
+        <p class="intro">
+            One LLC, three revenue streams, complementary rhythms. Chorus Playbook delivers fractional CTO diagnostics for growing tech companies. Chorus Consulting builds technology for local businesses year-round. Light Life Urban Gardens designs gardens with people in spring and summer. All three feed the same practice &mdash; listening, assessing, building things that last. Powered by the same AI team and knowledge graph underneath.
+        </p>
+
+        <!-- Four Streams -->
+        <div class="streams">
+            <div class="stream playbook">
+                <h3>Chorus Playbook</h3>
+                <p class="season">Year-round &mdash; 1&ndash;2 engagements per quarter</p>
+                <p>Fractional CTO diagnostic for fast-growing small and medium companies. An 8-section framework &mdash; business model, org design, cost inventory, tech stack, value delivery &mdash; delivered through structured interviews, task-based discovery, and findings synthesis (Debt, Performance, Opportunity, Risk).</p>
+                <p>Powered by Chorus: the AI team runs the diagnostic, captures findings in the knowledge graph, delivers a professional DPOR report. First engagement: run the diagnostic on our own system &mdash; borging the playbook through Chorus to prove it works.</p>
+            </div>
+            <div class="stream consulting">
+                <h3>Chorus Consulting</h3>
+                <p class="season">Year-round &mdash; limited availability in summer</p>
+                <p>I help small local businesses navigate technology transitions &mdash; new stores, new systems, new ways of reaching customers. Your data, your hardware, no cloud lock-in. I work with an AI team to move fast and keep costs low.</p>
+                <p>Discovery session &rarr; technology roadmap &rarr; system setup &rarr; monthly support. Whether it's POS and inventory for a farm opening a new store, or a yoga studio wanting to own their booking data. Retainer clients get year-round support.</p>
+            </div>
+            <div class="stream gardens">
+                <h3>Light Life Urban Gardens</h3>
+                <p class="season">Spring &amp; Summer</p>
+                <p>I show up, walk through your garden, mostly listen. I draw and take notes. You get a hand-drawn map of your space with ideas and next steps.</p>
+                <p>Consultation &rarr; seasonal design package &rarr; collaborative build days. Not a landscaper &mdash; a garden partner.</p>
+            </div>
+            <div class="stream product">
+                <h3>Gathering + Chorus</h3>
+                <p class="season">Year-round investment</p>
+                <p>The platform underneath. A personal knowledge graph and AI team coordination system. Every consulting engagement makes it better. The consulting IS the product work.</p>
+            </div>
+        </div>
+
+        <!-- Pricing -->
+        <section class="section">
+            <h2>Pricing</h2>
+
+            <table>
+                <tr><th colspan="3" style="color: #e06060;">Chorus Playbook &mdash; Fractional CTO Diagnostic</th></tr>
+                <tr><td>Full diagnostic (2 weeks)</td><td class="amount" style="color: #e06060;">$15,000&ndash;25,000</td><td>8-section framework, interviews, DPOR report</td></tr>
+                <tr><td>Diagnostic sprint (1 week, scoped)</td><td class="amount" style="color: #e06060;">$7,500&ndash;12,000</td><td>Focused on 2&ndash;3 sections, rapid findings</td></tr>
+                <tr><td>Ongoing fractional CTO retainer</td><td class="amount" style="color: #e06060;">$3,000&ndash;5,000/mo</td><td>Post-diagnostic: strategy, hiring, architecture decisions</td></tr>
+            </table>
+
+            <table>
+                <tr><th colspan="3" style="color: #e06060;">Playbook Engagement Timeline (2 weeks, not 6)</th></tr>
+                <tr><td>Week 1: Discovery</td><td class="amount" style="color: #e06060;">Day 1&ndash;5</td><td>On-site discovery with client. Walk the business, interview stakeholders, capture structured findings. AI team synthesizes in real-time.</td></tr>
+                <tr><td>Week 2: Diagnostic</td><td class="amount" style="color: #e06060;">Day 6&ndash;10</td><td>AI team runs full 8-section diagnostic. Infra audit, code review, process assessment, cost analysis. DPOR report rendered as professional deliverable.</td></tr>
+                <tr><td>Delivery</td><td class="amount" style="color: #e06060;">Day 10</td><td>DPOR report + priority actions + priced roadmap. Self-contained HTML page the client keeps.</td></tr>
+            </table>
+            <p style="font-size: 0.85rem; color: var(--warm-gray); margin-top: 0.5rem;">Traditional fractional CTO: 4&ndash;6 weeks, $50&ndash;75K. Chorus Playbook: 2 weeks, $15&ndash;25K. The AI team is the speed advantage. Proven on our own system &mdash; 38 findings across 8 sections, synthesized in one session.</p>
+
+            <table>
+                <tr><th colspan="3" style="color: var(--gold);">Chorus Consulting</th></tr>
+                <tr><td>Discovery session (2&ndash;3 hrs)</td><td class="amount">Gratis in Y1</td><td>Learn what you actually need</td></tr>
+                <tr><td>Technology roadmap (half-day)</td><td class="amount">$500&ndash;750</td><td>Inventory current tools, map gaps, recommend stack</td></tr>
+                <tr><td>Setup engagement (Mac + install + config)</td><td class="amount">$2,000&ndash;4,000</td><td>One-time. Hardware cost separate.</td></tr>
+                <tr><td>Monthly support retainer</td><td class="amount">$300&ndash;500/mo</td><td>Check-ins, updates, troubleshooting</td></tr>
+                <tr><td>Custom feature work</td><td class="amount">$100&ndash;150/hr</td><td>When you need something specific</td></tr>
+            </table>
+
+            <table>
+                <tr><th colspan="3" style="color: var(--green-light);">Light Life Urban Gardens</th></tr>
+                <tr><td>Garden consultation (2&ndash;3 hrs on site)</td><td class="amount green">$200&ndash;300</td><td>Walk, listen, draw, deliver hand-drawn map</td></tr>
+                <tr><td>Seasonal design package (3 visits)</td><td class="amount green">$500&ndash;750</td><td>Spring plan &rarr; mid-season &rarr; fall prep</td></tr>
+                <tr><td>Collaborative build day</td><td class="amount green">$400&ndash;600/day</td><td>We work together. Knowledge + labor.</td></tr>
+                <tr><td>Ongoing garden advisory</td><td class="amount green">$100&ndash;150/mo</td><td>Photo check-ins, seasonal guidance</td></tr>
+            </table>
+        </section>
+
+        <!-- Revenue Targets -->
+        <section class="section">
+            <h2>Revenue Path</h2>
+            <div class="targets">
+                <div class="target y1">
+                    <div class="number">$33&ndash;63K</div>
+                    <div class="label">Year 1 &mdash; Learn + Earn</div>
+                </div>
+                <div class="target y2">
+                    <div class="number">$60&ndash;90K</div>
+                    <div class="label">Year 2 &mdash; Scale</div>
+                </div>
+                <div class="target y3">
+                    <div class="number">$100K+</div>
+                    <div class="label">Year 3 &mdash; Sustain</div>
+                </div>
+            </div>
+            <table>
+                <tr><th>Stream</th><th>Y1 Conservative</th><th>Y1 Stretch</th></tr>
+                <tr><td style="color: #e06060;">Chorus Playbook (1&ndash;2 engagements)</td><td class="amount" style="color: #e06060;">$15K</td><td class="amount" style="color: #e06060;">$30K</td></tr>
+                <tr><td>Chorus Consulting (year-round)</td><td class="amount">$15K</td><td class="amount">$25K</td></tr>
+                <tr><td>Light Life Gardens (seasonal)</td><td class="amount green">$5K</td><td class="amount green">$10K</td></tr>
+                <tr><td>Annual overhead</td><td style="color: var(--warm-gray);">&minus;$1,500</td><td style="color: var(--warm-gray);">&minus;$1,500</td></tr>
+                <tr><td><strong>Net</strong></td><td class="amount"><strong>$33,500</strong></td><td class="amount"><strong>$63,500</strong></td></tr>
+            </table>
+            <p style="margin-top: 0.75rem;">Playbook changes the math. One fractional diagnostic ($15&ndash;25K) is worth more than an entire garden season. Y1: run 1&ndash;2 Playbook engagements, build Chorus Consulting retainers, learn the garden business. The stretch target hits $60K in year one &mdash; not year three. A single ongoing fractional CTO retainer ($3&ndash;5K/mo) would reach $60K on its own.</p>
+        </section>
+
+        <!-- Seasonal Calendar -->
+        <section class="section">
+            <h2>Seasonal Calendar</h2>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background: #e06060;"></div> Chorus Playbook</div>
+                <div class="legend-item"><div class="legend-dot" style="background: var(--gold);"></div> Consulting</div>
+                <div class="legend-item"><div class="legend-dot" style="background: var(--green);"></div> Gardens</div>
+                <div class="legend-item"><div class="legend-dot" style="background: var(--blue-light);"></div> Product</div>
+            </div>
+            <div class="calendar">
+                <div class="month">
+                    <div class="name">Mar</div>
+                    <div class="focus">Garden planning<br>Borg Playbook diagnostic</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:25"></div><div class="bar-consulting" style="flex:20"></div><div class="bar-gardens" style="flex:25"></div><div class="bar-product" style="flex:30"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Apr</div>
+                    <div class="focus">Garden season opens<br>Playbook + consulting</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:20"></div><div class="bar-consulting" style="flex:15"></div><div class="bar-gardens" style="flex:45"></div><div class="bar-product" style="flex:20"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">May</div>
+                    <div class="focus">Gardens peak<br>Light fractional</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:10"></div><div class="bar-consulting" style="flex:15"></div><div class="bar-gardens" style="flex:55"></div><div class="bar-product" style="flex:20"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Jun</div>
+                    <div class="focus">Gardens full swing<br>Retainers only</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:10"></div><div class="bar-consulting" style="flex:15"></div><div class="bar-gardens" style="flex:55"></div><div class="bar-product" style="flex:20"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Jul</div>
+                    <div class="focus">Gardens + advisory<br>Retainers only</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:10"></div><div class="bar-consulting" style="flex:15"></div><div class="bar-gardens" style="flex:55"></div><div class="bar-product" style="flex:20"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Aug</div>
+                    <div class="focus">Gardens winding<br>Playbook ramps</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:20"></div><div class="bar-consulting" style="flex:20"></div><div class="bar-gardens" style="flex:35"></div><div class="bar-product" style="flex:25"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Sep</div>
+                    <div class="focus">Fall garden prep<br>Playbook + consulting push</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:25"></div><div class="bar-consulting" style="flex:25"></div><div class="bar-gardens" style="flex:15"></div><div class="bar-product" style="flex:35"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Oct</div>
+                    <div class="focus">Garden close-out<br>Fractional full</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:30"></div><div class="bar-consulting" style="flex:30"></div><div class="bar-gardens" style="flex:5"></div><div class="bar-product" style="flex:35"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Nov</div>
+                    <div class="focus">Playbook + consulting<br>Product investment</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:30"></div><div class="bar-consulting" style="flex:25"></div><div class="bar-gardens" style="flex:0"></div><div class="bar-product" style="flex:45"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Dec</div>
+                    <div class="focus">Renewals + planning<br>Fractional engagements</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:25"></div><div class="bar-consulting" style="flex:30"></div><div class="bar-gardens" style="flex:5"></div><div class="bar-product" style="flex:40"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Jan</div>
+                    <div class="focus">Seed ordering<br>Playbook + consulting</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:25"></div><div class="bar-consulting" style="flex:25"></div><div class="bar-gardens" style="flex:15"></div><div class="bar-product" style="flex:35"></div></div>
+                </div>
+                <div class="month">
+                    <div class="name">Feb</div>
+                    <div class="focus">Garden prep begins<br>Playbook + consulting</div>
+                    <div class="bar"><div class="bar-playbook" style="flex:25"></div><div class="bar-consulting" style="flex:20"></div><div class="bar-gardens" style="flex:20"></div><div class="bar-product" style="flex:35"></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pilot Engagements -->
+        <section class="section">
+            <h2>Pilot Engagements (Gratis)</h2>
+            <div class="pilots">
+                <div class="pilot">
+                    <h4>Akasha Yoga</h4>
+                    <div class="type">Chorus Consulting</div>
+                    <p>Small studio, local, relationship-based. What would their software look like on their own hardware?</p>
+                </div>
+                <div class="pilot">
+                    <h4>Allandale Farm</h4>
+                    <div class="type">Chorus Consulting</div>
+                    <p>Oldest continuously operating farm in the US, opening a new year-round market barn + greenhouse in 2026. CEO Helen Glotzer is a 20-year neighbor. Entry: "What's your tech stack for the new store?" POS, inventory, CSA management, online ordering, greenhouse monitoring &mdash; they know farming, not systems integration.</p>
+                </div>
+                <div class="pilot">
+                    <h4>Parkway Wealth</h4>
+                    <div class="type">Chorus Consulting</div>
+                    <p>Professional services with real data and workflow needs. Good test of the consulting model.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Startup Costs -->
+        <section class="section">
+            <h2>Startup &amp; Overhead</h2>
+            <table>
+                <tr><th>Item</th><th>Cost</th><th>When</th></tr>
+                <tr><td>MA LLC filing</td><td class="amount">$500</td><td>This week</td></tr>
+                <tr><td>EIN (IRS)</td><td class="amount">$0</td><td>Same day as LLC</td></tr>
+                <tr><td>DBA: Chorus Consulting</td><td class="amount">$65</td><td>After LLC approved</td></tr>
+                <tr><td>DBA: Light Life Urban Gardens</td><td class="amount">$65</td><td>After LLC approved</td></tr>
+                <tr><td>General liability insurance</td><td class="amount">$300&ndash;500/yr</td><td>March</td></tr>
+                <tr><td>Professional liability (E&amp;O)</td><td class="amount">$500&ndash;800/yr</td><td>March</td></tr>
+                <tr><td>Business bank account</td><td class="amount">$0</td><td>After EIN</td></tr>
+                <tr><td style="border-bottom: none;"><strong>Y1 startup total</strong></td><td class="amount" style="border-bottom: none;"><strong>~$1,430&ndash;1,930</strong></td><td style="border-bottom: none;"></td></tr>
+            </table>
+            <table style="margin-top: 1rem;">
+                <tr><th>Recurring annual</th><th>Cost</th></tr>
+                <tr><td>LLC annual report (MA)</td><td class="amount">$500/yr</td></tr>
+                <tr><td>Insurance (GL + E&amp;O)</td><td class="amount">~$1,000/yr</td></tr>
+                <tr><td>DBA renewals (every 4 years)</td><td class="amount">~$33/yr avg</td></tr>
+                <tr><td style="border-bottom: none;"><strong>Total fixed overhead</strong></td><td class="amount" style="border-bottom: none;"><strong>~$1,533/yr</strong></td></tr>
+            </table>
+            <p style="margin-top: 0.75rem;">No special licenses needed. Garden consultation is advice, not construction &mdash; no Home Improvement Contractor registration. Tech consulting has no MA licensing requirement.</p>
+        </section>
+
+        <!-- Go to Market -->
+        <section class="section">
+            <h2>Go to Market</h2>
+            <p>This is a neighborhood business. Your market is people who know someone who knows you.</p>
+            <ol class="gtm">
+                <li>Word of mouth from pilots <span class="detail">Akasha, Allandale, Parkway tell their people</span></li>
+                <li>Vision pages as your website <span class="detail">gathering-chorus.html, chorus-consulting.html, lightlife.html &mdash; already built</span></li>
+                <li>Local presence <span class="detail">Roslindale Farmers Market, Allandale bulletin board, JP community boards, Brookline Booksmith</span></li>
+                <li>Hand-drawn garden maps as marketing <span class="detail">Post a few with permission. People see the map and say "I want that for my yard."</span></li>
+                <li>Nextdoor &mdash; Roslindale / JP / Brookline <span class="detail">One post about garden consultations will get responses</span></li>
+            </ol>
+            <p style="margin-top: 1rem;">You don't need a marketing budget. You need 5 good conversations with people in the neighborhood.</p>
+        </section>
+
+        <!-- Action Checklist -->
+        <section class="section">
+            <h2>Action Sequence</h2>
+            <ul class="checklist">
+                <li>File LLC online at mass.gov <span class="timing">This week &mdash; pick registered agent (yourself, home address)</span></li>
+                <li>Get EIN from IRS.gov <span class="timing">Same day as LLC filing</span></li>
+                <li>File both DBAs at Boston City Hall <span class="timing">Next week &mdash; $65 each</span></li>
+                <li>Open business bank account <span class="timing">Next week &mdash; after EIN</span></li>
+                <li>Get insurance quotes (NEXT or Hiscox) <span class="timing">March &mdash; bind GL + E&amp;O</span></li>
+                <li>Run Chorus Playbook diagnostic on our own system (Borg run) <span class="timing">March &mdash; prove the methodology through Chorus</span></li>
+                <li>Reach out to Akasha, Allandale, Parkway <span class="timing">March &mdash; "I'm starting something, can I practice on you?"</span></li>
+                <li>First garden consultation <span class="timing">April</span></li>
+                <li>First tech consulting engagement <span class="timing">April</span></li>
+                <li>First Chorus Playbook fractional engagement <span class="timing">Q2&ndash;Q3 &mdash; through network referrals</span></li>
+            </ul>
+        </section>
+    </div>
+
+    <footer>
+        &copy; 2026 Jeff Bridwell &mdash; Bridwell Consulting LLC
+    </footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

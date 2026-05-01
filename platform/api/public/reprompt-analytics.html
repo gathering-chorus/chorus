@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Re-prompt Analytics — Attention Cost</title>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f8fafc; --border: #e2e8f0;
+    --text: #1e293b; --muted: #64748b;
+    --reprompt: #dc2626; --approval: #d97706; --correction: #7c3aed;
+    --wren: #16a34a; --silas: #d97706; --kade: #2563eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
+  .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
+  .stat-value { font-size: 1.8rem; font-weight: 700; }
+  .stat-sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+
+  .section { margin-bottom: 2rem; }
+  .section-title { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; }
+
+  .role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .role-card { background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
+  .role-name { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .role-bar { display: flex; gap: 0.25rem; margin-bottom: 0.25rem; height: 1.2rem; border-radius: 4px; overflow: hidden; }
+  .role-bar span { display: block; }
+  .role-detail { font-size: 0.75rem; color: var(--muted); }
+
+  .chart { width: 100%; height: 200px; display: flex; align-items: flex-end; gap: 2px; }
+  .chart-bar { display: flex; flex-direction: column; align-items: center; flex: 1; }
+  .chart-stack { width: 100%; display: flex; flex-direction: column-reverse; }
+  .chart-stack span { width: 100%; border-radius: 2px 2px 0 0; }
+  .chart-label { font-size: 0.6rem; color: var(--muted); margin-top: 4px; writing-mode: vertical-lr; text-orientation: mixed; max-height: 4rem; overflow: hidden; }
+
+  .legend { display: flex; gap: 1.5rem; margin-bottom: 0.75rem; font-size: 0.75rem; color: var(--muted); }
+  .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+  .legend-dot { width: 0.6rem; height: 0.6rem; border-radius: 2px; }
+
+  .phrases { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .phrase { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.75rem; font-size: 0.8rem; }
+  .phrase-count { font-weight: 700; color: var(--muted); margin-left: 0.25rem; }
+
+  .events { font-size: 0.8rem; }
+  .event { display: grid; grid-template-columns: 6rem 5rem 5rem 1fr; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); align-items: center; }
+  .event-type { font-weight: 600; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; text-align: center; }
+  .type-reprompt { background: rgba(220,38,38,0.1); color: var(--reprompt); }
+  .type-approval { background: rgba(217,119,6,0.1); color: var(--approval); }
+  .type-correction { background: rgba(124,58,237,0.1); color: var(--correction); }
+  .event-role { font-size: 0.75rem; font-weight: 600; }
+  .event-time { font-size: 0.7rem; color: var(--muted); }
+  .event-text { color: var(--text); }
+
+  .loading { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>Re-prompt Analytics</h1>
+<p class="subtitle">Attention cost signal — when Jeff repeats, corrects, or rubber-stamps. Lower is better.</p>
+
+<div class="stats" id="stats"><div class="loading">Loading...</div></div>
+
+<div class="section">
+  <div class="section-title">Daily Trend</div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--reprompt)"></div> Re-prompt</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--approval)"></div> Approval overhead</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--correction)"></div> Correction</div>
+  </div>
+  <div class="chart" id="chart"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">By Role</div>
+  <div class="role-grid" id="roles"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Top Phrases</div>
+  <div class="phrases" id="phrases"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Recent Events</div>
+  <div class="events" id="events"></div>
+</div>
+
+<script src="/js/reprompt-analytics.js"></script>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

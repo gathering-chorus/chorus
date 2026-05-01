@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemba — As-Is Flow Analysis</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1c2333;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --amber: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --wren-color: #16a34a;
+      --silas-color: #d97706;
+      --kade-color: #2563eb;
+      --jeff-color: #8b5cf6;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* === HERO === */
+    .hero {
+      position: relative;
+      padding: 4rem 2rem 3rem;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at center, rgba(88, 166, 255, 0.08) 0%, transparent 60%);
+      animation: pulse 8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+
+    .hero h1 {
+      font-size: 2.8rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      position: relative;
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      position: relative;
+    }
+
+    .hero .kanji {
+      font-size: 5rem;
+      opacity: 0.06;
+      position: absolute;
+      top: 1rem;
+      right: 10%;
+      font-weight: 300;
+    }
+
+    /* === LAYOUT === */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    section {
+      margin-bottom: 3rem;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--accent);
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--text);
+    }
+
+    /* === FLOW DIAGRAM === */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      overflow-x: auto;
+      padding: 1.5rem 0;
+      margin-bottom: 1rem;
+    }
+
+    .flow-step {
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      min-width: 140px;
+      text-align: center;
+      position: relative;
+      transition: all 0.3s;
+    }
+
+    .flow-step:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(88, 166, 255, 0.15);
+    }
+
+    .flow-step .step-num {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+
+    .flow-step .step-label {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .flow-step .step-time {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .flow-arrow {
+      flex-shrink: 0;
+      width: 40px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+    }
+
+    /* === VARIANCE HEATMAP === */
+    .heatmap {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+
+    .heatmap th {
+      background: var(--surface);
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+      position: sticky;
+      top: 0;
+    }
+
+    .heatmap td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .heatmap tr:hover td {
+      background: var(--surface);
+    }
+
+    .heatmap .role-header {
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .role-wren { color: var(--wren-color); }
+    .role-silas { color: var(--silas-color); }
+    .role-kade { color: var(--kade-color); }
+
+    /* === SCORE BADGES === */
+    .score {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .score.good { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .score.warn { background: rgba(210, 153, 34, 0.15); color: var(--amber); }
+    .score.fail { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .score.none { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
+
+    .score::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .score.good::before { background: var(--green); }
+    .score.warn::before { background: var(--amber); }
+    .score.fail::before { background: var(--red); }
+    .score.none::before { background: var(--text-muted); }
+
+    /* === QUOTE CARDS === */
+    .quotes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+
+    .quote-card {
+      background: var(--surface);
+      border-left: 3px solid var(--jeff-color);
+      border-radius: 0 8px 8px 0;
+      padding: 1rem 1.25rem;
+    }
+
+    .quote-card .quote-text {
+      font-style: italic;
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .quote-card .quote-meaning {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .quote-card .quote-tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.5rem;
+    }
+
+    .tag-continuity { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .tag-focus { background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+    .tag-affirm { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+
+    /* === GAP ANALYSIS === */
+    .gap-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .gap-card:hover {
+      border-color: var(--amber);
+    }
+
+    .gap-rank {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--amber);
+      line-height: 1;
+    }
+
+    .gap-content h4 {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .gap-content p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .gap-status {
+      text-align: right;
+      font-size: 0.8rem;
+    }
+
+    /* === TARGET STATE === */
+    .target-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+
+    .target-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      transition: all 0.3s;
+    }
+
+    .target-card:hover {
+      border-color: var(--green);
+      box-shadow: 0 4px 20px rgba(63, 185, 80, 0.1);
+    }
+
+    .target-card .target-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .target-card h4 {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .target-card ul {
+      list-style: none;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .target-card li {
+      padding: 0.2rem 0;
+      padding-left: 1rem;
+      position: relative;
+    }
+
+    .target-card li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--green);
+    }
+
+    /* === LENS COMPARISON === */
+    .lens-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin: 1rem 0;
+    }
+
+    .lens-box {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.5rem;
+      border-top: 3px solid;
+    }
+
+    .lens-box.pm { border-top-color: var(--wren-color); }
+    .lens-box.arch { border-top-color: var(--silas-color); }
+
+    .lens-box h4 {
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    .lens-example {
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      margin: 0.5rem 0;
+      font-family: 'SF Mono', Menlo, monospace;
+    }
+
+    /* === FOOTER === */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2rem; }
+      .flow { flex-wrap: wrap; justify-content: center; }
+      .flow-arrow { transform: rotate(90deg); width: auto; }
+      .quotes { grid-template-columns: 1fr; }
+      .target-grid { grid-template-columns: 1fr 1fr; }
+      .lens-compare { grid-template-columns: 1fr; }
+      .gap-card { grid-template-columns: auto 1fr; }
+      .gap-status { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="kanji">現場</div>
+  <h1><span>Gemba</span> — As-Is Flow</h1>
+  <p class="subtitle">Go to where the work happens. Watch. Learn. #1225</p>
+</div>
+
+<div class="container">
+
+  <!-- PRESCRIBED FLOW -->
+  <section>
+    <h2>Prescribed Flow</h2>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-num">Step 1</div>
+        <div class="step-label">Fast Entry</div>
+        <div class="step-time">&lt; 5 seconds</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">Step 2</div>
+        <div class="step-label">Initial Read</div>
+        <div class="step-time">2-3 sentences</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">Step 3</div>
+        <div class="step-label">Follow Tail</div>
+        <div class="step-time">background task</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">Step 4</div>
+        <div class="step-label">Cron Loop</div>
+        <div class="step-time">every 1 min</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">Step 5</div>
+        <div class="step-label">Commentary</div>
+        <div class="step-time">play-by-play</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">Step 6</div>
+        <div class="step-label">Exit</div>
+        <div class="step-time">10 min TTL</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROLE VARIANCE HEATMAP -->
+  <section>
+    <h2>Role Variance Heatmap</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">How each role actually performs against the prescribed pattern.</p>
+
+    <table class="heatmap">
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th class="role-header role-wren">Wren</th>
+          <th class="role-header role-silas">Silas</th>
+          <th class="role-header role-kade">Kade</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Entry Speed</strong></td>
+          <td><span class="score warn">5-10s, over-invests</span></td>
+          <td><span class="score good">Fixed via #1208</span></td>
+          <td><span class="score none">No data</span></td>
+        </tr>
+        <tr>
+          <td><strong>Commentary Lens</strong></td>
+          <td><span class="score warn">PM analysis, sometimes verbose</span></td>
+          <td><span class="score good">Technical, concise</span></td>
+          <td><span class="score none">No data</span></td>
+        </tr>
+        <tr>
+          <td><strong>Loop Discipline</strong></td>
+          <td><span class="score fail">Manual, forgets</span></td>
+          <td><span class="score warn">Cron shipped, untested</span></td>
+          <td><span class="score none">No data</span></td>
+        </tr>
+        <tr>
+          <td><strong>Jeff Attention Cost</strong></td>
+          <td><span class="score warn">Needs "keep going" nudges</span></td>
+          <td><span class="score good">Lower after #1208</span></td>
+          <td><span class="score none">No data</span></td>
+        </tr>
+        <tr>
+          <td><strong>Debrief Quality</strong></td>
+          <td><span class="score warn">Good but sometimes skipped</span></td>
+          <td><span class="score good">Consistent</span></td>
+          <td><span class="score none">No data</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- JEFF'S INTERVENTIONS -->
+  <section>
+    <h2>Jeff's Interventions</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Things Jeff shouldn't have to say. Each quote is failure demand — his attention spent compensating for process gaps.</p>
+
+    <div class="quotes">
+      <div class="quote-card">
+        <div class="quote-text">"I thought gemba would loop — maybe poll 15s, comment/wait for 15s, poll again"</div>
+        <div class="quote-meaning">Loop wasn't self-sustaining. Jeff had to describe the pattern he expected.</div>
+        <span class="quote-tag tag-continuity">continuity</span>
+      </div>
+      <div class="quote-card">
+        <div class="quote-text">"keep observing you just missed the demo"</div>
+        <div class="quote-meaning">Observer stopped watching during a key moment. Jeff caught it before the role did.</div>
+        <span class="quote-tag tag-focus">focus</span>
+      </div>
+      <div class="quote-card">
+        <div class="quote-text">"this play by play helps me and i think is valuable for you all too"</div>
+        <div class="quote-meaning">Affirming the pattern works when done right. The value is real.</div>
+        <span class="quote-tag tag-affirm">affirm</span>
+      </div>
+      <div class="quote-card">
+        <div class="quote-text"><em>[redirects observer back to the role being watched]</em></div>
+        <div class="quote-meaning">Observer drifted into own work or analysis instead of watching.</div>
+        <span class="quote-tag tag-focus">focus</span>
+      </div>
+    </div>
+
+    <p style="margin-top: 1rem; font-size: 0.9rem;">
+      <strong>Pattern:</strong> Jeff's interventions cluster around two themes —
+      <span class="quote-tag tag-continuity" style="font-size: 0.75rem;">continuity</span> (keep watching) and
+      <span class="quote-tag tag-focus" style="font-size: 0.75rem;">focus</span> (watch them, not your own thoughts).
+    </p>
+  </section>
+
+  <!-- COMMENTARY LENS -->
+  <section>
+    <h2>Commentary Lens — Same Event, Different Eyes</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Wren sees product impact. Silas sees technical patterns. Both are valuable — but Jeff should know which he's getting.</p>
+
+    <div class="lens-compare">
+      <div class="lens-box pm">
+        <h4 class="role-wren">Wren — PM Lens</h4>
+        <div class="lens-example">[12:14] He's adding iframes to the style guide. If this works, the guide self-validates — drift shows up in the doc itself. Smart forcing function.</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">Focuses on: user value, product implications, what to card</p>
+      </div>
+      <div class="lens-box arch">
+        <h4 class="role-silas">Silas — Architecture Lens</h4>
+        <div class="lens-example">[12:14] Iframe src="/seeds" will hit the auth wall — same-origin cookie should pass but the doc-chrome wrapper may strip the session. Worth watching.</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">Focuses on: technical risks, infrastructure concerns, failure modes</p>
+      </div>
+    </div>
+
+    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+      <strong>Target:</strong> Name your lens explicitly. <code style="background: var(--surface-2); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85rem;">PM lens:</code> or <code style="background: var(--surface-2); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85rem;">Arch lens:</code> before the observation.
+    </p>
+  </section>
+
+  <!-- TOP GAPS -->
+  <section>
+    <h2>Top Gaps — Ranked</h2>
+
+    <div class="gap-card">
+      <div class="gap-rank">1</div>
+      <div class="gap-content">
+        <h4>Loop Discipline</h4>
+        <p>Observers don't self-sustain. Jeff has to re-trigger or remind them to keep watching. The cron pattern fixes this mechanically but hasn't been battle-tested across all roles.</p>
+      </div>
+      <div class="gap-status">
+        <span class="score warn">In progress</span><br>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">#1208 shipped cron</span>
+      </div>
+    </div>
+
+    <div class="gap-card">
+      <div class="gap-rank">2</div>
+      <div class="gap-content">
+        <h4>Entry Over-Investment</h4>
+        <p>All roles spend too long building context before watching. The tail IS the context. board-ts view is enough — stop reading artifacts.</p>
+      </div>
+      <div class="gap-status">
+        <span class="score good">Fixed</span><br>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">SKILL.md updated</span>
+      </div>
+    </div>
+
+    <div class="gap-card">
+      <div class="gap-rank">3</div>
+      <div class="gap-content">
+        <h4>Kade Has Never Observed</h4>
+        <p>No data on Kade as gemba observer. Pattern is defined for 2 of 3 roles. First Kade gemba will reveal if the skill file is sufficient.</p>
+      </div>
+      <div class="gap-status">
+        <span class="score none">No data</span><br>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">Needs first run</span>
+      </div>
+    </div>
+
+    <div class="gap-card">
+      <div class="gap-rank">4</div>
+      <div class="gap-content">
+        <h4>Exit Inconsistency</h4>
+        <p>Sometimes abrupt — Jeff moves on and observer doesn't formally close. Debriefs skipped. 10-min TTL is new and untested.</p>
+      </div>
+      <div class="gap-status">
+        <span class="score warn">Prescribed</span><br>
+        <span style="font-size: 0.75rem; color: var(--text-muted);">Needs testing</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TARGET STATE -->
+  <section>
+    <h2>Target State</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">What gemba should look like every time, regardless of who observes.</p>
+
+    <div class="target-grid">
+      <div class="target-card">
+        <div class="target-icon">⚡</div>
+        <h4>Entry</h4>
+        <ul>
+          <li>3 parallel calls</li>
+          <li>Under 5 seconds</li>
+          <li>2-3 sentence read</li>
+          <li>No artifact exploration</li>
+        </ul>
+      </div>
+      <div class="target-card">
+        <div class="target-icon">🔄</div>
+        <h4>Loop</h4>
+        <ul>
+          <li>Cron every 1 minute</li>
+          <li>2-3 lines per digest</li>
+          <li>Self-sustaining</li>
+          <li>Jeff interjects freely</li>
+        </ul>
+      </div>
+      <div class="target-card">
+        <div class="target-icon">🎙️</div>
+        <h4>Commentary</h4>
+        <ul>
+          <li>What happened (1 line)</li>
+          <li>What it means</li>
+          <li>Flag if any</li>
+          <li>Name your lens</li>
+        </ul>
+      </div>
+      <div class="target-card">
+        <div class="target-icon">🏁</div>
+        <h4>Exit</h4>
+        <ul>
+          <li>10 min TTL max</li>
+          <li>Clean up cron + tail</li>
+          <li>1 paragraph debrief</li>
+          <li>Card follow-ups</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  Gemba As-Is Analysis — Card #1225 — Wren — 2026-03-09<br>
+  <span style="opacity: 0.5;">現場 — "the real place"</span>
+</footer>
+
+</body>
+</html>

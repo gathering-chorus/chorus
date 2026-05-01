@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>V1 Acceptance Criteria — Gathering + Chorus</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap');
+
+  :root {
+    --bg: #ffffff;
+    --surface: #f8fafc;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #6d28d9;
+    --green: #059669;
+    --amber: #d97706;
+    --red: #dc2626;
+    --blue: #2563eb;
+    --pink: #db2777;
+    --gathering: #6d28d9;
+    --chorus: #2563eb;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'EB Garamond', Georgia, serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  .cosmos { display: none; }
+
+  .container { margin: 0 1in; padding: 4rem 0; position: relative; z-index: 1; }
+
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--gathering), var(--chorus));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle { color: var(--muted); font-size: 1rem; margin-bottom: 0.5rem; }
+
+  .epigraph {
+    border-left: 2px solid var(--accent);
+    padding: 1rem 1.5rem;
+    margin: 2rem 0;
+    font-style: italic;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1.8;
+  }
+  .epigraph .attribution { display: block; margin-top: 0.5rem; font-style: normal; color: var(--accent); font-size: 0.85rem; }
+
+  .product-section {
+    margin: 3rem 0;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .product-header {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .product-name {
+    font-size: 1.8rem;
+    font-weight: 600;
+  }
+
+  .product-tagline {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 1rem;
+  }
+
+  .theme {
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .theme-name {
+    font-size: 1.2rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .theme-icon {
+    font-size: 0.9rem;
+    opacity: 0.7;
+  }
+
+  .criteria-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+
+  .criteria-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .criteria-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid rgba(30,30,46,0.5);
+    vertical-align: top;
+  }
+
+  .criteria-table tr:hover { background: rgba(109,40,217,0.04); }
+
+  .cid {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .cid-gathering { color: var(--gathering); }
+  .cid-chorus { color: var(--chorus); }
+
+  .criterion-text { font-weight: 600; }
+  .verify-text { color: var(--muted); font-size: 0.88rem; }
+
+  .status-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .status-shipped { background: rgba(5,150,105,0.1); color: var(--green); }
+  .status-wip { background: rgba(217,119,6,0.1); color: var(--amber); }
+  .status-gap { background: rgba(220,38,38,0.08); color: var(--red); }
+
+  /* Not section */
+  .not-section {
+    margin: 3rem 0;
+    padding: 1.5rem 2rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(220,38,38,0.03);
+  }
+
+  .not-section h2 {
+    font-size: 1.3rem;
+    color: var(--red);
+    margin-bottom: 1rem;
+  }
+
+  .not-list {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .not-list li {
+    padding: 0.5rem 0.75rem;
+    border-left: 2px solid var(--red);
+    font-size: 0.9rem;
+  }
+
+  .not-list li strong { color: var(--text); }
+  .not-list li span { color: var(--muted); }
+
+  /* Gap table */
+  .gap-section {
+    margin: 3rem 0;
+  }
+
+  .gap-section h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--amber);
+  }
+
+  .gap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .gap-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .gap-table td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid rgba(30,30,46,0.5);
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    gap: 2rem;
+    margin: 2rem 0;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Story section */
+  .story {
+    margin: 3rem 0;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(109,40,217,0.04), rgba(37,99,235,0.04));
+  }
+
+  .story h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, var(--gathering), var(--chorus));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .story p { margin-bottom: 1rem; font-size: 1.05rem; }
+  .story p:last-child { margin-bottom: 0; }
+
+  /* Progress bar */
+  .progress-section {
+    margin: 2rem 0;
+  }
+
+  .progress-section h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .progress-track {
+    height: 1.5rem;
+    background: rgba(30,30,46,0.8);
+    border-radius: 999px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .progress-fill {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .progress-shipped { background: var(--green); }
+  .progress-wip { background: var(--amber); }
+  .progress-gap { background: rgba(220,38,38,0.15); color: var(--red); }
+
+  .progress-legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .progress-legend span::before {
+    content: '';
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+  }
+
+  .legend-shipped::before { background: var(--green); }
+  .legend-wip::before { background: var(--amber); }
+  .legend-gap::before { background: rgba(220,38,38,0.5); }
+
+  /* Fitness functions */
+  .fitness-section {
+    margin: 3rem 0;
+  }
+
+  .fitness-section h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--green);
+  }
+
+  .fitness-section .subtitle {
+    margin-bottom: 1.5rem;
+  }
+
+  .fitness-layer {
+    margin: 1.5rem 0;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .fitness-layer-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .fitness-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .fitness-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .fitness-table td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid rgba(226,232,240,0.5);
+    vertical-align: top;
+  }
+
+  .fitness-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--green);
+    white-space: nowrap;
+  }
+
+  .fitness-metric { font-weight: 600; }
+
+  .fitness-direction {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .dir-down { color: var(--green); }
+  .dir-up { color: var(--green); }
+  .dir-stable { color: var(--blue); }
+  .dir-threshold { color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="cosmos"></div>
+<div class="container">
+
+<h1>V1 Acceptance Criteria</h1>
+<p class="subtitle">Gathering + Chorus &mdash; Wren, 2026-03-07</p>
+
+<div class="epigraph">
+  Can Jeff think with his own data, supported by a team that watches itself work?
+  <span class="attribution">The V1 question</span>
+</div>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value" style="color:var(--gathering)">15</div>
+    <div class="stat-label">Gathering criteria</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--chorus)">20</div>
+    <div class="stat-label">Chorus criteria</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">31</div>
+    <div class="stat-label">Shipped</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--amber)">4</div>
+    <div class="stat-label">In progress</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--red)">0</div>
+    <div class="stat-label">Gap</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--text)">16M</div>
+    <div class="stat-label">Triples</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--text)">74K</div>
+    <div class="stat-label">Chorus messages</div>
+  </div>
+</div>
+
+<div class="progress-section">
+  <h3>V1 Progress</h3>
+  <div class="progress-track">
+    <div class="progress-fill progress-shipped" style="width:88.57%">31 / 35</div>
+    <div class="progress-fill progress-wip" style="width:11.43%">4</div>
+  </div>
+  <div class="progress-legend">
+    <span class="legend-shipped">Shipped (31)</span>
+    <span class="legend-wip">WIP (4)</span>
+  </div>
+</div>
+
+<!-- ============== GATHERING ============== -->
+<div class="product-section" style="border-color: rgba(167,139,250,0.3);">
+  <div class="product-header">
+    <span class="product-name" style="color:var(--gathering)">Gathering</span>
+    <span class="product-tagline">"The graph knows me"</span>
+  </div>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> The Graph &mdash; bones</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-gathering">G1</span></td>
+        <td><span class="criterion-text">All personal domains are in the graph.</span> Music, Photos, Stories, Blog, Notes, Captures, Social, Codebase &mdash; each with typed entities and domain-specific properties.</td>
+        <td class="verify-text">37K+ graphs, 16M+ triples across all domains.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G2</span></td>
+        <td><span class="criterion-text">Cross-domain connections exist.</span> Stories reference photos. Blog posts mention tracks. The graph is not siloed.</td>
+        <td class="verify-text">Cross-domain links &gt; 50 via jb:mentions + dcterms:references. Currently: 34.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G3</span></td>
+        <td><span class="criterion-text">The Self node is the hub.</span> Jeff's identity connects to practices, values, intentions, stories. Navigable, not just metadata.</td>
+        <td class="verify-text">Self page shows connected practices, values, stories. Hub for all domains.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G4</span></td>
+        <td><span class="criterion-text">The ontology models feeling, not just structure.</span> Emotional annotation (Onyx/MFOEM), somatic markers, vedana, philosophical concepts.</td>
+        <td class="verify-text">Enrichment classes in Turtle. 12 instances: PhilosophicalConcept(5), Vedana(3), SomaticMarker(2), EmotionalAnnotation(2). #1174.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G5</span></td>
+        <td><span class="criterion-text">Music data is coherent.</span> Albums &rarr; artists &rarr; tracks linked. Play counts, source paths, album art present.</td>
+        <td class="verify-text">Music page loads &lt; 2s. Navigation works. No orphaned tracks.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G6</span></td>
+        <td><span class="criterion-text">Photos data is coherent.</span> GPS, face detections, dates, albums render. Gallery navigation works.</td>
+        <td class="verify-text">Photos page loads, filters by date/location/person.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Search &mdash; muscle</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-gathering">G7</span></td>
+        <td><span class="criterion-text">Dual-engine search works.</span> FTS + semantic + hybrid mode via RRF ranking across all domains.</td>
+        <td class="verify-text">/search?q=resilience returns cross-domain results. &lt; 500ms.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G8</span></td>
+        <td><span class="criterion-text">Embeddings cover all text content.</span> Stories, blog posts, notes, captures embedded in LanceDB.</td>
+        <td class="verify-text">Semantic search returns results from every text domain.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Navigation &mdash; skin</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-gathering">G9</span></td>
+        <td><span class="criterion-text">Mind map home is the front door.</span> All domains as navigable nodes.</td>
+        <td class="verify-text">Load / &rarr; mind map &rarr; click domain &rarr; opens browse view.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G10</span></td>
+        <td><span class="criterion-text">Knowledge graph visualization works.</span> D3 interactive view with domain filtering and zoom.</td>
+        <td class="verify-text">Filter by domain. Click node &rarr; entity detail. No hang.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G11</span></td>
+        <td><span class="criterion-text">System/About is complete.</span> All docs as browsable HTML with shared chrome.</td>
+        <td class="verify-text">Navigate System/About. Every doc loads. Nav works between docs.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G12</span></td>
+        <td><span class="criterion-text">Navbar dropdowns reflect the mind map.</span> Spoke pages reachable from global nav.</td>
+        <td class="verify-text">Hover navbar &rarr; dropdown &rarr; click spoke page &rarr; loads.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Self &amp; Reflection</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-gathering">G13</span></td>
+        <td><span class="criterion-text">Reflect works.</span> Local LLM with conversational access to Jeff's stories, practices, values.</td>
+        <td class="verify-text">Ask about resilience &rarr; answer grounded in Jeff's stories, not hallucinated.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G14</span></td>
+        <td><span class="criterion-text">Stories are first-class.</span> 86+ stories, searchable, browsable, connected to Self.</td>
+        <td class="verify-text">Stories page. Search by keyword. Detail shows text + connections.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-gathering">G15</span></td>
+        <td><span class="criterion-text">Practice calendar visible.</span> Jeff's daily habits mapped onto the session tempo chart. Practices are not hidden &mdash; they're part of the rhythm.</td>
+        <td class="verify-text">Session tempo page shows practice overlay. Habits visible by day. #1127.</td>
+        <td><span class="status-badge status-wip">WIP</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============== CHORUS ============== -->
+<div class="product-section" style="border-color: rgba(96,165,250,0.3);">
+  <div class="product-header">
+    <span class="product-name" style="color:var(--chorus)">Chorus</span>
+    <span class="product-tagline">"The method watches itself"</span>
+  </div>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> The Spine &mdash; nervous system</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C1</span></td>
+        <td><span class="criterion-text">Spine events flow end-to-end.</span> Emit &rarr; chorus.log &rarr; index &rarr; queryable via API.</td>
+        <td class="verify-text">Emit event &rarr; appears in chorus search within 60s.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C2</span></td>
+        <td><span class="criterion-text">Chorus index is comprehensive.</span> All sessions, spine events, briefs, decisions indexed. Hybrid search.</td>
+        <td class="verify-text">74K+ messages. chorus search returns cross-source results.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C3</span></td>
+        <td><span class="criterion-text">Context loads automatically.</span> SessionStart hook generates full context per role.</td>
+        <td class="verify-text">Session start &rarr; first read provides cards, board state, boot checks.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> The Board &mdash; flow</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C4</span></td>
+        <td><span class="criterion-text">Card lifecycle is gated.</span> Capture &rarr; Direct &rarr; Build &rarr; Prove &rarr; Accept. No self-acceptance for code.</td>
+        <td class="verify-text">Card without AC &rarr; blocked from Building. Done only after demo.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C5</span></td>
+        <td><span class="criterion-text">Board is the single source of truth.</span> All work tracked via board-ts. Spine events on every mutation.</td>
+        <td class="verify-text">board-ts list shows state. Every mutation &rarr; spine event.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C6</span></td>
+        <td><span class="criterion-text">Pull order is deterministic.</span> WSJF, WIP limit 3, Harvesting 2, SWAT bypass.</td>
+        <td class="verify-text">Three P2 cards &rarr; smallest pulled first. WIP 4 &rarr; blocked.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Jeff's State &mdash; the mood ring</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C7</span></td>
+        <td><span class="criterion-text">Andon shows Jeff's composite state.</span> Keyboard + mouse + posture + sentiment &rarr; one indicator.</td>
+        <td class="verify-text">Session Tempo &rarr; Jeff's panel has andon color reflecting real signal.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C8</span></td>
+        <td><span class="criterion-text">Session tempo is visible.</span> Prompt rate, turn duration, role activity as time-series.</td>
+        <td class="verify-text">Team Rhythm chart shows all participants. Matches actual session.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C9</span></td>
+        <td><span class="criterion-text">Idle and breaks are tracked.</span> Idle duration and last break time visible.</td>
+        <td class="verify-text">Step away 5 min &rarr; return &rarr; andon shows idle + last break.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C10</span></td>
+        <td><span class="criterion-text">Jeff operations dashboard exists.</span> State, energy, practices, attention cost in one surface.</td>
+        <td class="verify-text">Load ops dashboard &rarr; current state + practice schedule + energy.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Process Quality</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C11</span></td>
+        <td><span class="criterion-text">Decision gate suppresses known-answer questions.</span> Hook checks against jeff-preferences.json.</td>
+        <td class="verify-text">Question matching known preference &rarr; suppressed or logged.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C12</span></td>
+        <td><span class="criterion-text">Re-prompt rate is tracked and visible.</span> Per-role breakdown with proportional bars.</td>
+        <td class="verify-text">Analytics show re-prompt / approval / correction per role with %.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C13</span></td>
+        <td><span class="criterion-text">Blast radius assessed before work starts.</span> Codebase graph generates what-it-touches on WIP entry.</td>
+        <td class="verify-text">Move card to WIP &rarr; blast radius output (files, domains).</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Legibility</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C14</span></td>
+        <td><span class="criterion-text">Decisions are browsable.</span> 69+ decisions in a legible, auditable, searchable surface.</td>
+        <td class="verify-text">Decision log &rarr; browse by date/topic/role. Click &rarr; full context.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C15</span></td>
+        <td><span class="criterion-text">Next-sequence pipeline is the v1 scoreboard.</span> Slices 1&ndash;4b all green.</td>
+        <td class="verify-text">Load next-sequence &rarr; all slices through 4b green. 5+ marked v2.</td>
+        <td><span class="status-badge status-gap">GAP</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="theme">
+    <div class="theme-name"><span class="theme-icon">&#9670;</span> Team Coordination</div>
+  </div>
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid cid-chorus">C16</span></td>
+        <td><span class="criterion-text">Briefs flow without Jeff as relay.</span> Roles write to each other's directories. Handoffs logged.</td>
+        <td class="verify-text">Brief in architect/briefs/ &rarr; Silas reads on boot &rarr; work proceeds.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C17</span></td>
+        <td><span class="criterion-text">Gemba works as shared observation.</span> Background tail + 30s commentary loop. Play-by-play.</td>
+        <td class="verify-text">/gemba silas &rarr; live commentary &rarr; discuss &rarr; act on observations.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C18</span></td>
+        <td><span class="criterion-text">CLAUDE.md is generated.</span> 43+ fragments compose into role-specific files.</td>
+        <td class="verify-text">Edit fragment &rarr; run generator &rarr; all three roles update.</td>
+        <td><span class="status-badge status-shipped">SHIPPED</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C19</span></td>
+        <td><span class="criterion-text">Guests can join the Clearing.</span> External parties enter via invite link &mdash; session token auth, Cloudflare tunnel, guest join screen.</td>
+        <td class="verify-text">clearing --guest &rarr; share link &rarr; guest joins, messages visible. File proxy disabled. #1188.</td>
+        <td><span class="status-badge status-wip">WIP</span></td>
+      </tr>
+      <tr>
+        <td><span class="cid cid-chorus">C20</span></td>
+        <td><span class="criterion-text">Voice input works.</span> /talk provides floating voice input for hands-free direction to any role.</td>
+        <td class="verify-text">Jeff speaks &rarr; transcribed &rarr; routed to active role session. No keyboard needed. #269.</td>
+        <td><span class="status-badge status-wip">WIP</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============== CROSS-PRODUCT ============== -->
+<div class="product-section" style="border-color: rgba(107,114,128,0.3);">
+  <div class="product-header">
+    <span class="product-name" style="color:var(--text)">Cross-Product</span>
+    <span class="product-tagline">"The foundation under both"</span>
+  </div>
+
+  <table class="criteria-table">
+    <thead><tr><th>ID</th><th>Criterion</th><th>Verification</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="cid" style="background:var(--text);color:#fff">X1</span></td>
+        <td><span class="criterion-text">Production runtime is current.</span> Node 20 &rarr; 22 LTS. Dockerfile base image + all dependencies verified.</td>
+        <td class="verify-text">node --version returns 22.x in container. All tests pass. #537.</td>
+        <td><span class="status-badge status-wip">WIP</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============== NOT ============== -->
+<div class="not-section">
+  <h2>What V1 Is NOT</h2>
+  <ul class="not-list">
+    <li><strong>Not public.</strong> <span>No external users beyond invited guests. Localhost is the primary deployment target.</span></li>
+    <li><strong>Not voice-first.</strong> <span>/talk is V1 but as input assist, not primary interface.</span></li>
+    <li><strong>Not a product for sale.</strong> <span>Chorus SDK is v2. The method works for Jeff first.</span></li>
+    <li><strong>Not feature-frozen.</strong> <span>V1 is a milestone, not a release. Work continues on a proven foundation.</span></li>
+  </ul>
+</div>
+
+<!-- ============== GAP TABLE ============== -->
+<div class="gap-section">
+  <h2>Gap to V1</h2>
+  <table class="gap-table">
+    <thead><tr><th>Criterion</th><th>Card</th><th>Size</th><th>Blocker</th></tr></thead>
+    <tbody>
+      <tr><td><s>G2 Cross-domain links</s></td><td style="color:var(--green)">#1123 DONE</td><td>&mdash;</td><td>Shipped: 7.5K inferred links</td></tr>
+      <tr><td><s>G4 Concept enrichment</s></td><td style="color:var(--green)">#1174 DONE</td><td>&mdash;</td><td>Shipped: 12 instances across 4 classes (PhilosophicalConcept, Vedana, SomaticMarker, EmotionalAnnotation)</td></tr>
+      <tr><td><s>G5 Music coherence</s></td><td style="color:var(--green)">#1092 DONE</td><td>&mdash;</td><td>Shipped: artist cache 750x, pagination</td></tr>
+      <tr><td><s>G6 Photos coherence</s></td><td style="color:var(--green)">#1093 DONE</td><td>&mdash;</td><td>Shipped: SQLite fix, thumbnail fix, 86% coverage</td></tr>
+      <tr><td><s>G12 Navbar dropdowns</s></td><td style="color:var(--green)">#1103 DONE</td><td>&mdash;</td><td>Shipped: dropdown menus match mind map</td></tr>
+      <tr><td><s>C4 Card lifecycle gates</s></td><td style="color:var(--green)">#1085 #1086 #1083 DONE</td><td>&mdash;</td><td>Shipped: capture gate, WIP gate, proving gate</td></tr>
+      <tr><td><s>C10 Jeff ops dashboard</s></td><td style="color:var(--green)">#1105 DONE</td><td>&mdash;</td><td>Shipped: state, energy, practices, attention cost</td></tr>
+      <tr><td><s>C14 Decision log surface</s></td><td style="color:var(--green)">#1126 DONE</td><td>&mdash;</td><td>Shipped: 74 decisions, search, filter, deep-link</td></tr>
+      <tr><td>C15 Scoreboard green</td><td style="color:var(--amber)">this card</td><td>small</td><td>Update next-sequence.html slices</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============== FITNESS FUNCTIONS ============== -->
+<div class="fitness-section">
+  <h2>Fitness Functions</h2>
+  <p class="subtitle">The AC says what should be true. Fitness functions say how we know it's <em>still</em> true. These are the regression guards after V1 ships.</p>
+
+  <div class="fitness-layer">
+    <div class="fitness-layer-header" style="color:var(--gathering)">&#9670; Graph Fitness &mdash; the bones stay healthy</div>
+    <table class="fitness-table">
+      <thead><tr><th>ID</th><th>Metric</th><th>Target</th><th>Direction</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="fitness-id">F1</span></td>
+          <td><span class="fitness-metric">Cross-domain link count</span></td>
+          <td>Monotonically increasing. Never regresses after a deploy.</td>
+          <td><span class="fitness-direction dir-up">&uarr; UP</span></td>
+          <td>SPARQL count of jb:mentions + dcterms:references</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F2</span></td>
+          <td><span class="fitness-metric">Orphaned entity rate</span></td>
+          <td>&lt; 1%. Tracks without albums, photos without dates, stories without Self links.</td>
+          <td><span class="fitness-direction dir-down">&darr; DOWN</span></td>
+          <td>SPARQL orphan queries per domain</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F3</span></td>
+          <td><span class="fitness-metric">Search recall</span></td>
+          <td>"resilience" returns stories + blog + notes. No domain siloed.</td>
+          <td><span class="fitness-direction dir-stable">&bull; STABLE</span></td>
+          <td>Search benchmark harness (17 functional tests)</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F4</span></td>
+          <td><span class="fitness-metric">Query response p95</span></td>
+          <td>&lt; 500ms for search, &lt; 2s for browse pages.</td>
+          <td><span class="fitness-direction dir-threshold">&le; CEILING</span></td>
+          <td>Grafana / Loki request duration</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F5</span></td>
+          <td><span class="fitness-metric">Triple count</span></td>
+          <td>Never decreases except by deliberate dedup. Currently 16M+.</td>
+          <td><span class="fitness-direction dir-up">&uarr; UP</span></td>
+          <td>Fuseki stats / SPARQL count</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="fitness-layer">
+    <div class="fitness-layer-header" style="color:var(--chorus)">&#9670; Process Fitness &mdash; the method stays honest</div>
+    <table class="fitness-table">
+      <thead><tr><th>ID</th><th>Metric</th><th>Target</th><th>Direction</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="fitness-id">F6</span></td>
+          <td><span class="fitness-metric">Re-prompt rate per role</span></td>
+          <td>Trending down. Jeff repeating himself = system failure.</td>
+          <td><span class="fitness-direction dir-down">&darr; DOWN</span></td>
+          <td>Re-prompt analytics / spine events</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F7</span></td>
+          <td><span class="fitness-metric">Approval tax</span></td>
+          <td>% of Jeff's prompts that are "yes" / "go ahead" &rarr; trending toward zero.</td>
+          <td><span class="fitness-direction dir-down">&darr; DOWN</span></td>
+          <td>Spine interaction.pattern events + prompt classification</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F8</span></td>
+          <td><span class="fitness-metric">Card cycle time by size</span></td>
+          <td>Small &lt; 1 session. Medium &lt; 2 sessions. Large &lt; 3 sessions.</td>
+          <td><span class="fitness-direction dir-threshold">&le; CEILING</span></td>
+          <td>Board timestamps (created &rarr; done)</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F9</span></td>
+          <td><span class="fitness-metric">WIP age</span></td>
+          <td>No card in WIP &gt; 3 sessions without a comment.</td>
+          <td><span class="fitness-direction dir-threshold">&le; CEILING</span></td>
+          <td>board-ts audit / card timestamps</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F10</span></td>
+          <td><span class="fitness-metric">Spine event coverage</span></td>
+          <td>Every card mutation, pattern detection, session start/close emits. No silent work.</td>
+          <td><span class="fitness-direction dir-stable">&bull; STABLE</span></td>
+          <td>Chorus index event count vs board mutation count</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="fitness-layer">
+    <div class="fitness-layer-header" style="color:var(--pink)">&#9670; Jeff Fitness &mdash; the system serves the person</div>
+    <table class="fitness-table">
+      <thead><tr><th>ID</th><th>Metric</th><th>Target</th><th>Direction</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="fitness-id">F11</span></td>
+          <td><span class="fitness-metric">Interaction cost</span></td>
+          <td>Keystrokes + mouse moves per unit of shipped work &rarr; trending down.</td>
+          <td><span class="fitness-direction dir-down">&darr; DOWN</span></td>
+          <td>Andon input signals / cards shipped per session</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F12</span></td>
+          <td><span class="fitness-metric">Break frequency</span></td>
+          <td>At least one break per 90-minute block.</td>
+          <td><span class="fitness-direction dir-stable">&bull; STABLE</span></td>
+          <td>Andon idle/break tracking (#1097)</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F13</span></td>
+          <td><span class="fitness-metric">Sentiment trajectory</span></td>
+          <td>Session-end sentiment &ge; session-start sentiment. Sessions shouldn't drain him.</td>
+          <td><span class="fitness-direction dir-up">&uarr; UP</span></td>
+          <td>Prompt sentiment scoring / andon enrichment</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F14</span></td>
+          <td><span class="fitness-metric">Cold start duration</span></td>
+          <td>&lt; 10 minutes from session open to first productive output.</td>
+          <td><span class="fitness-direction dir-down">&darr; DOWN</span></td>
+          <td>Session tempo dashboard (gap between start and first activity)</td>
+        </tr>
+        <tr>
+          <td><span class="fitness-id">F15</span></td>
+          <td><span class="fitness-metric">Autonomy ratio</span></td>
+          <td>% of role activity that occurs during Jeff gaps &rarr; trending up. Roles sustain work without prompting.</td>
+          <td><span class="fitness-direction dir-up">&uarr; UP</span></td>
+          <td>Session tempo: role activity during Jeff idle windows</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============== STORY ============== -->
+<div class="story">
+  <h2>The V1 Story</h2>
+  <p>A year ago, Jeff drew domains on graph paper. Today, 16 million triples model his music, photos, stories, blog, notes, relationships, and codebase. The system knows what he has, how he relates to it, and &mdash; with the enrichment layer &mdash; how it feels.</p>
+  <p>Three AI roles coordinate through a protocol that watches itself: spine events, proving gates, re-prompt tracking, blast radius assessment. The team's rhythm is visible on a dashboard. Jeff's state &mdash; keystrokes, posture, sentiment &mdash; is the andon light.</p>
+  <p>V1 is when the scoreboard goes green. Not everything built. Everything that matters for Jeff to trust the system as a thinking partner.</p>
+</div>
+
+</div>
+<footer style="margin-top:2rem;padding:1rem 1in;border-top:1px solid #e2e8f0;color:#64748b;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

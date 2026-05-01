@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operations | Gathering</title>
+<link rel="stylesheet" href="/css/gathering.css">
+<style>
+  .ops-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  .ops-header { margin-bottom: 2rem; }
+  .ops-header h1 { margin: 0 0 0.25rem; }
+  .ops-header p { color: var(--text-muted); margin: 0; }
+  .ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+  .ops-section h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+  .ops-card { background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.25rem; display: flex; align-items: flex-start; gap: 1rem; text-decoration: none; color: inherit; transition: box-shadow 0.2s, transform 0.1s; }
+  .ops-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-1px); }
+  .ops-card .icon { font-size: 1.5rem; flex-shrink: 0; width: 2.5rem; height: 2.5rem; display: flex; align-items: center; justify-content: center; background: #F7FAFC; border-radius: 8px; }
+  .ops-card .info { flex: 1; }
+  .ops-card .info h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  .ops-card .info p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+  .ops-card .badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px; background: #EDF2F7; color: var(--text-muted); white-space: nowrap; }
+  .ops-card .badge.grafana { background: #FFF3E0; color: #E65100; }
+  .ops-card .badge.cli { background: #E8EAF6; color: #283593; }
+  .ops-card .badge.service { background: #E8F5E9; color: #2E7D32; }
+
+  .ops-section-full { margin-bottom: 2rem; }
+  .tool-table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+  .tool-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 0.75rem 1rem; background: #F7FAFC; }
+  .tool-table td { padding: 0.75rem 1rem; border-top: 1px solid var(--border-color); font-size: 0.9rem; }
+  .tool-table code { background: #EDF2F7; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.8rem; }
+  .back-link { display: inline-block; margin-bottom: 1rem; color: var(--accent-color); text-decoration: none; font-size: 0.9rem; }
+  .back-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="ops-container">
+
+  <a href="/" class="back-link">&larr; Home</a>
+
+  <div class="ops-header">
+    <h1>Operations</h1>
+    <p>Dashboards, monitoring, and infrastructure tooling</p>
+  </div>
+
+  <!-- Grafana Dashboards -->
+  <div class="ops-section">
+    <h2>Dashboards (Grafana)</h2>
+  </div>
+  <div class="ops-grid">
+    <a href="http://localhost:3100/d/alerts-overview" target="_blank" class="ops-card">
+      <div class="icon">&#128680;</div>
+      <div class="info">
+        <h3>Alerts Overview</h3>
+        <p>All alerts — firing, history, timeline, and trends in one view</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/app-operations/app-operations-jeff-bridwell-personal-site?orgId=1" target="_blank" class="ops-card">
+      <div class="icon">&#9881;</div>
+      <div class="info">
+        <h3>App Operations</h3>
+        <p>Request rates, error rates, response times, Fuseki query performance</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/home-cloud" target="_blank" class="ops-card">
+      <div class="icon">&#9729;</div>
+      <div class="info">
+        <h3>Home Cloud</h3>
+        <p>All containers, resource usage, disk, memory across both Macs</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/home-network" target="_blank" class="ops-card">
+      <div class="icon">&#128268;</div>
+      <div class="info">
+        <h3>Home Network</h3>
+        <p>22 LAN devices, connectivity, bandwidth on 192.168.86.0/24</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/cost-dashboard" target="_blank" class="ops-card">
+      <div class="icon">&#128176;</div>
+      <div class="info">
+        <h3>Cost Dashboard</h3>
+        <p>Claude burn rate, per-role breakdown, daily/hourly activity, monthly totals</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/chorus-activity" target="_blank" class="ops-card">
+      <div class="icon">&#127926;</div>
+      <div class="info">
+        <h3>Chorus Activity</h3>
+        <p>Team events, card-commit linking, session activity, brief flow</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/docker-containers" target="_blank" class="ops-card">
+      <div class="icon">&#128230;</div>
+      <div class="info">
+        <h3>Docker Containers</h3>
+        <p>Container health, resource limits, restart counts, uptime</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/node-metrics" target="_blank" class="ops-card">
+      <div class="icon">&#128187;</div>
+      <div class="info">
+        <h3>Node Metrics</h3>
+        <p>CPU, memory, disk I/O, network for both Mac minis</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/logs-explorer" target="_blank" class="ops-card">
+      <div class="icon">&#128220;</div>
+      <div class="info">
+        <h3>Logs Explorer</h3>
+        <p>Loki log search — structured labels, full-text, time-range filtering</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+    <a href="http://localhost:3100/d/service-overview" target="_blank" class="ops-card">
+      <div class="icon">&#128301;</div>
+      <div class="info">
+        <h3>Service Overview</h3>
+        <p>Cross-service health, dependency map, alert status</p>
+      </div>
+      <span class="badge grafana">Grafana</span>
+    </a>
+  </div>
+
+  <!-- Services -->
+  <div class="ops-section">
+    <h2>Services</h2>
+  </div>
+  <div class="ops-grid">
+    <a href="http://localhost:3100" target="_blank" class="ops-card">
+      <div class="icon">&#128200;</div>
+      <div class="info">
+        <h3>Grafana</h3>
+        <p>Visualization platform — all dashboards live here</p>
+      </div>
+      <span class="badge service">:3100</span>
+    </a>
+    <a href="http://localhost:9090" target="_blank" class="ops-card">
+      <div class="icon">&#128293;</div>
+      <div class="info">
+        <h3>Prometheus</h3>
+        <p>Metrics collection, alerting rules, target status</p>
+      </div>
+      <span class="badge service">:9090</span>
+    </a>
+    <a href="http://localhost:9093" target="_blank" class="ops-card">
+      <div class="icon">&#128276;</div>
+      <div class="info">
+        <h3>Alertmanager</h3>
+        <p>Alert routing, silencing, active/resolved alerts</p>
+      </div>
+      <span class="badge service">:9093</span>
+    </a>
+    <a href="http://localhost:3030" target="_blank" class="ops-card">
+      <div class="icon">&#128450;</div>
+      <div class="info">
+        <h3>Fuseki Admin</h3>
+        <p>SPARQL triplestore — dataset management, query UI, stats</p>
+      </div>
+      <span class="badge service">:3031</span>
+    </a>
+    <a href="http://localhost:3456" target="_blank" class="ops-card">
+      <div class="icon">&#128203;</div>
+      <div class="info">
+        <h3>Vikunja (Board)</h3>
+        <p>Team kanban board — Gathering + Chorus cards</p>
+      </div>
+      <span class="badge service">:3456</span>
+    </a>
+    <a href="http://192.168.86.36:8081" target="_blank" class="ops-card">
+      <div class="icon">&#128394;</div>
+      <div class="info">
+        <h3>WordPress</h3>
+        <p>Blog admin — lifes-practice.com</p>
+      </div>
+      <span class="badge service">:8081</span>
+    </a>
+  </div>
+
+  <!-- CLI Tools -->
+  <div class="ops-section-full">
+    <div class="ops-section">
+      <h2>CLI Tooling</h2>
+    </div>
+    <table class="tool-table">
+      <thead>
+        <tr><th>Tool</th><th>Purpose</th><th>Location</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>app-state.sh</strong></td><td>Start / stop / restart / deploy / rollback — the ONLY way to manage services</td><td><code>jeff-bridwell-personal-site/app-state.sh</code></td></tr>
+        <tr><td><strong>board-ts</strong></td><td>Kanban board CLI — list, add, move, done, audit</td><td><code>messages/scripts/board-ts</code></td></tr>
+        <tr><td><strong>fuseki-perf.sh</strong></td><td>SPARQL benchmark harness — measures query response times, writes Prometheus metrics</td><td><code>jeff-bridwell-personal-site/scripts/fuseki-perf.sh</code></td></tr>
+        <tr><td><strong>chorus-audit.sh</strong></td><td>Full system audit — disk, containers, gates, board health</td><td><code>messages/scripts/chorus-audit.sh</code></td></tr>
+        <tr><td><strong>system-state.sh</strong></td><td>System state snapshot — containers, ports, disk, memory</td><td><code>messages/scripts/system-state.sh</code></td></tr>
+        <tr><td><strong>session-start.sh</strong></td><td>Session initialization — parallel pre-fetch of board, briefs, workflows, state</td><td><code>messages/scripts/session-start.sh</code></td></tr>
+        <tr><td><strong>workflow.sh</strong></td><td>Workflow engine — create, advance, list, visualize decision workflows</td><td><code>messages/scripts/workflow.sh</code></td></tr>
+        <tr><td><strong>chorus-log.sh</strong></td><td>Event logging — structured events to Loki via chorus pipeline</td><td><code>messages/scripts/chorus-log.sh</code></td></tr>
+        <tr><td><strong>cost-metrics.py</strong></td><td>Claude cost exporter — scans JSONL session files, writes Prometheus textfile</td><td><code>shared-observability/scripts/cost-metrics.py</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>
