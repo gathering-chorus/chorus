@@ -554,6 +554,30 @@ jobs:
           bats platform/tests/mcp-nudge.test.sh
           bats platform/tests/mcp-principles.test.sh
 
+      # #2630: structural-test bats family — runs on every PR to enforce
+      # the discipline (retirement-gates, drift audits, skill-text asserts)
+      # that today's manual review caught. Each check is RED-first against
+      # its target failure mode; staying green is the structural guarantee.
+      #
+      # Axis-4 hermeticity contract (Silas arch-lens 2026-04-30): any bats
+      # added to this job MUST be axis-4 — no live role-state mutation,
+      # no /tmp/claude-team-scan reads, no socket binds, no real-channel
+      # nudges. Tests must read repo file contents (BATS_TEST_DIRNAME for
+      # root) or static spine.log fixtures only. Anything else makes the
+      # job's results non-deterministic across concurrent PRs.
+      - name: Run structural-test bats (#2630)
+        env:
+          CHORUS_LOG: ${{ github.workspace }}/platform/logs/chorus.log
+        run: |
+          # Retirement-gates (forward-only structural absence assertions)
+          bats platform/tests/role-state-card-decoupled.bats
+          bats platform/tests/nudge-cleanup-retirement.bats
+          # Drift audits (correlate emit-events to follow-up events)
+          bats platform/tests/spine-emit-drift-audit.bats
+          bats platform/tests/demo-complete-drift-audit.bats
+          # Skill-text structural asserts (markdown declares mandatory steps)
+          bats platform/tests/skill-text-structural-asserts.bats
+
       - name: Stop chorus-api
         if: always()
         run: |
