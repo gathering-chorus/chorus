@@ -209,7 +209,10 @@ fn query_git(pattern: &str) -> Option<String> {
     let home = std::env::var("HOME").unwrap_or_default();
     let repo = format!("{}/CascadeProjects/chorus", home);
 
-    let output = std::process::Command::new("git")
+    // #2589: env-scrub helper — was raw Command::new("git") which inherited
+    // GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE from per-role-worktree parent
+    // processes, silently producing empty results.
+    let output = crate::shared::git_command::git_command()
         .args(["log", "--oneline", "--all", "-10", "--grep", pattern])
         .current_dir(&repo)
         .output()

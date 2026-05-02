@@ -83,18 +83,18 @@ fn is_code_file(path: &str) -> bool {
 /// Check if a file has any git commits (#2041).
 /// New files (never committed) skip the git history gate.
 fn file_has_git_history(file_path: &str) -> bool {
-    use std::process::Command;
     // Find the git repo root from the file path
     let dir = std::path::Path::new(file_path)
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
-    let output = Command::new("git")
+    // #2589: env-scrub helper. Was inline env_remove triplet (#2560 wave 2,
+    // commit 87946caa); extracted to shared/git_command.rs so all spawn
+    // sites use the same scrubbing — sister sites in search_hierarchy.rs
+    // and session.rs are migrated in the same commit.
+    let output = crate::shared::git_command::git_command()
         .args(["log", "--oneline", "-1", "--", file_path])
         .current_dir(&dir)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
         .output();
     match output {
         Ok(o) => !o.stdout.is_empty(),
