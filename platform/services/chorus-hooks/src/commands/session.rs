@@ -218,8 +218,9 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
             fs::write(format!("/tmp/close-audit-{}.txt", role), &o.stdout).ok()
         });
 
-    // Uncommitted
-    let uncommitted = std::process::Command::new("git")
+    // Uncommitted (#2589: env-scrub helper — was raw Command::new("git").
+    // -C flag overrides cwd but does NOT override inherited GIT_DIR.)
+    let uncommitted = crate::shared::git_command::git_command()
         .args(["-C", repo_root(), "status", "--porcelain", &format!("{}/", role_dir)])
         .output().ok().and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.lines().count()).unwrap_or(0);
