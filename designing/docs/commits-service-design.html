@@ -332,11 +332,99 @@ layer.</li>
 <li>It does not specify the wire protocol (HTTP vs MCP vs IPC) —
 implementation detail for cards under this design.</li>
 </ul>
-<h3 id="sequencing">Sequencing</h3>
-<p>To be filed as cards under this design after v3 is signed off. PR #75
-(silas/2626 follow-on, quote-aware command split) becomes obsolete under
-v3 — it patches a hook that doesn’t exist after v3 retires text-parsing
-surfaces; close on v3 sign-off.</p>
+<h3 id="as-is-v2.5-today-2026-05-02">As-Is (v2.5 today, 2026-05-02)</h3>
+<pre class="mermaid"><code>flowchart TB
+  subgraph AGT[&quot;Agent (any role)&quot;]
+    EDIT[&quot;edit files in /chorus&quot;]
+    CHECKOUT[&quot;git checkout / switch / reset&lt;br/&gt;(unrestricted)&quot;]
+    Q[&quot;bash git-queue.sh commit&quot;]
+    PUSH[&quot;bash git-queue.sh push&quot;]
+    ENV[&quot;set CHORUS_TEST_FORCE_FIX_CARD&lt;br/&gt;--no-verify, etc.&quot;]
+  end
+
+  subgraph SUB[&quot;Substrate (best-effort, agent-discipline-dependent)&quot;]
+    BC[&quot;branch-check.sh&quot;]
+    PC[&quot;pre-commit hook&lt;br/&gt;(--no-verify skippable)&quot;]
+    LOCK[&quot;flock /tmp/chorus-git-queue.lock&quot;]
+  end
+
+  subgraph WT[&quot;Shared working tree&quot;]
+    SHR[&quot;/chorus — one .git/HEAD&lt;br/&gt;shared across all roles&quot;]
+  end
+
+  subgraph CI[&quot;GitHub&quot;]
+    GH[&quot;actions + branch protection&lt;br/&gt;rebase-merge&quot;]
+  end
+
+  EDIT --&gt; SHR
+  CHECKOUT --&gt; SHR
+  Q --&gt; BC --&gt; PC --&gt; LOCK --&gt; SHR
+  PUSH --&gt; SHR
+  ENV -.bypass.-&gt; PC
+  CHECKOUT -.modeA contamination.-&gt; SHR
+  SHR --&gt; GH</code></pre>
+<p>Failure surfaces visible in the diagram: agent has direct paths to
+working tree (edit, checkout) and to git operations (commit, push).
+Bypass envs short-circuit the pre-commit step. Mode A contamination
+follows from any agent’s <code>git checkout</code> rewriting shared
+<code>.git/HEAD</code>.</p>
+<h3 id="to-be-v3">To-Be (v3)</h3>
+<pre class="mermaid"><code>flowchart TB
+  subgraph AGT[&quot;Agent (any role)&quot;]
+    EDIT[&quot;edit files in /chorus&quot;]
+    CALL[&quot;mcp__chorus-api__chorus_commit&lt;br/&gt;(role, paths, message)&quot;]
+    STATUS[&quot;mcp__chorus-api__chorus_commit_status&lt;br/&gt;(role)&quot;]
+  end
+
+  subgraph SVC[&quot;chorus_commit service (chorus-api)&quot;]
+    DERIVE[&quot;derive card from role-state&lt;br/&gt;(no agent-passed card-id)&quot;]
+    SWAT[&quot;read card.type&lt;br/&gt;apply ruleset:&lt;br/&gt;default | swat&quot;]
+    BRANCH[&quot;create/switch branch&lt;br/&gt;(only service moves HEAD)&quot;]
+    STAGE[&quot;stage declared paths&quot;]
+    HOOKS[&quot;run pre-commit checks&lt;br/&gt;(internal, no --no-verify)&quot;]
+    LOCK[&quot;internal flock&quot;]
+    PUSH_INT[&quot;push via internal queue&lt;br/&gt;(rebase-on-conflict)&quot;]
+    EVENT[&quot;emit chorus_commit.invoked / refused&quot;]
+  end
+
+  subgraph WT[&quot;Working tree&quot;]
+    TREE[&quot;/chorus — only service moves HEAD&lt;br/&gt;agent cannot run git mutations&quot;]
+  end
+
+  subgraph CI[&quot;GitHub&quot;]
+    GH[&quot;actions + branch protection&lt;br/&gt;rebase-merge to main&quot;]
+  end
+
+  EDIT --&gt; TREE
+  CALL --&gt; DERIVE --&gt; SWAT --&gt; BRANCH --&gt; STAGE --&gt; HOOKS --&gt; LOCK --&gt; PUSH_INT --&gt; GH
+  PUSH_INT --&gt; EVENT
+  STATUS --&gt; SVC
+  TREE --&gt; BRANCH</code></pre>
+<p>Failure surfaces removed: agent has no
+<code>git checkout</code>/<code>commit</code>/<code>push</code>
+exposure. No env on the wire — <code>chorus_commit</code> accepts
+<code>(role, paths, message)</code> only. Card-id is derived, not
+passed. The substrate is the only entity that can move HEAD; Mode A
+contamination disappears structurally.</p>
+<h3 id="sequencing-cards-filed-under-this-design">Sequencing — cards
+filed under this design</h3>
+<ul>
+<li><strong>#2661 v3-1</strong> chorus_commit MCP tool — agent’s only
+commit surface (load-bearing, ships first)</li>
+<li><strong>#2662 v3-2</strong> migrate skills to chorus_commit (after
+v3-1)</li>
+<li><strong>#2663 v3-3</strong> block raw git mutations on /chorus
+(after v3-2 — closes Mode A)</li>
+<li><strong>#2665 v3-4</strong> retire CHORUS_TEST_FORCE_FIX_CARD
+env-bypass</li>
+<li><strong>#2666 v3-5</strong> SWAT-as-card-type encoding (Wren
+constraint)</li>
+<li><strong>#2667 v3-6</strong> retire bash git-queue.sh +
+branch-check.sh + pre-commit (deletion completes v3)</li>
+</ul>
+<p>PR #75 (silas/2626 follow-on, quote-aware command split) was closed
+on 2026-05-02 by Silas as obsolete under v3 — it patched a hook that
+doesn’t exist after v3 retires text-parsing surfaces.</p>
 <h2 id="v2.5-amendment-2026-05-01">v2.5 amendment (2026-05-01)</h2>
 <p>The v2 amendment drafted earlier on 2026-05-01 (internal
 <code>chorus/.worktrees/&lt;role&gt;-&lt;hash&gt;/</code> + mandatory
@@ -748,5 +836,14 @@ governance</li>
 <li>Wren’s #2585 spike brief (chat transcript 2026-04-29) — Claude Code
 project-keying findings</li>
 </ul>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+  document.querySelectorAll('pre.mermaid').forEach((pre) => {
+    const code = pre.querySelector('code');
+    if (code) pre.innerHTML = code.textContent;
+  });
+  await mermaid.run({ querySelector: 'pre.mermaid' });
+</script>
 </body>
 </html>
