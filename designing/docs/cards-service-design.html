@@ -1,1455 +1,375 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="generator" content="pandoc" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Cards Service Design</title>
-  <style>
-    html {
-      color: #1a1a1a;
-      background-color: #fdfdfd;
-    }
-    body {
-      margin: 0 auto;
-      max-width: 36em;
-      padding-left: 50px;
-      padding-right: 50px;
-      padding-top: 50px;
-      padding-bottom: 50px;
-      hyphens: auto;
-      overflow-wrap: break-word;
-      text-rendering: optimizeLegibility;
-      font-kerning: normal;
-    }
-    @media (max-width: 600px) {
-      body {
-        font-size: 0.9em;
-        padding: 12px;
-      }
-      h1 {
-        font-size: 1.8em;
-      }
-    }
-    @media print {
-      html {
-        background-color: white;
-      }
-      body {
-        background-color: transparent;
-        color: black;
-        font-size: 12pt;
-      }
-      p, h2, h3 {
-        orphans: 3;
-        widows: 3;
-      }
-      h2, h3, h4 {
-        page-break-after: avoid;
-      }
-    }
-    p {
-      margin: 1em 0;
-    }
-    a {
-      color: #1a1a1a;
-    }
-    a:visited {
-      color: #1a1a1a;
-    }
-    img {
-      max-width: 100%;
-    }
-    svg {
-      height: auto;
-      max-width: 100%;
-    }
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 1.4em;
-    }
-    h5, h6 {
-      font-size: 1em;
-      font-style: italic;
-    }
-    h6 {
-      font-weight: normal;
-    }
-    ol, ul {
-      padding-left: 1.7em;
-      margin-top: 1em;
-    }
-    li > ol, li > ul {
-      margin-top: 0;
-    }
-    blockquote {
-      margin: 1em 0 1em 1.7em;
-      padding-left: 1em;
-      border-left: 2px solid #e6e6e6;
-      color: #606060;
-    }
-    code {
-      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
-      font-size: 85%;
-      margin: 0;
-      hyphens: manual;
-    }
-    pre {
-      margin: 1em 0;
-      overflow: auto;
-    }
-    pre code {
-      padding: 0;
-      overflow: visible;
-      overflow-wrap: normal;
-    }
-    .sourceCode {
-     background-color: transparent;
-     overflow: visible;
-    }
-    hr {
-      background-color: #1a1a1a;
-      border: none;
-      height: 1px;
-      margin: 1em 0;
-    }
-    table {
-      margin: 1em 0;
-      border-collapse: collapse;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-      font-variant-numeric: lining-nums tabular-nums;
-    }
-    table caption {
-      margin-bottom: 0.75em;
-    }
-    tbody {
-      margin-top: 0.5em;
-      border-top: 1px solid #1a1a1a;
-      border-bottom: 1px solid #1a1a1a;
-    }
-    th {
-      border-top: 1px solid #1a1a1a;
-      padding: 0.25em 0.5em 0.25em 0.5em;
-    }
-    td {
-      padding: 0.125em 0.5em 0.25em 0.5em;
-    }
-    header {
-      margin-bottom: 4em;
-      text-align: center;
-    }
-    #TOC li {
-      list-style: none;
-    }
-    #TOC ul {
-      padding-left: 1.3em;
-    }
-    #TOC > ul {
-      padding-left: 0;
-    }
-    #TOC a:not(:hover) {
-      text-decoration: none;
-    }
-    code{white-space: pre-wrap;}
-    span.smallcaps{font-variant: small-caps;}
-    div.columns{display: flex; gap: min(4vw, 1.5em);}
-    div.column{flex: auto; overflow-x: auto;}
-    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
-    /* The extra [class] is a hack that increases specificity enough to
-       override a similar rule in reveal.js */
-    ul.task-list[class]{list-style: none;}
-    ul.task-list li input[type="checkbox"] {
-      font-size: inherit;
-      width: 0.8em;
-      margin: 0 0.8em 0.2em -1.6em;
-      vertical-align: middle;
-    }
-    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
-    /* CSS for syntax highlighting */
-    html { -webkit-text-size-adjust: 100%; }
-    pre > code.sourceCode { white-space: pre; position: relative; }
-    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-    pre > code.sourceCode > span:empty { height: 1.2em; }
-    .sourceCode { overflow: visible; }
-    code.sourceCode > span { color: inherit; text-decoration: inherit; }
-    div.sourceCode { margin: 1em 0; }
-    pre.sourceCode { margin: 0; }
-    @media screen {
-    div.sourceCode { overflow: auto; }
-    }
-    @media print {
-    pre > code.sourceCode { white-space: pre-wrap; }
-    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-    }
-    pre.numberSource code
-      { counter-reset: source-line 0; }
-    pre.numberSource code > span
-      { position: relative; left: -4em; counter-increment: source-line; }
-    pre.numberSource code > span > a:first-child::before
-      { content: counter(source-line);
-        position: relative; left: -1em; text-align: right; vertical-align: baseline;
-        border: none; display: inline-block;
-        -webkit-touch-callout: none; -webkit-user-select: none;
-        -khtml-user-select: none; -moz-user-select: none;
-        -ms-user-select: none; user-select: none;
-        padding: 0 4px; width: 4em;
-        color: #aaaaaa;
-      }
-    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
-    div.sourceCode
-      {   }
-    @media screen {
-    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-    }
-    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
-    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
-    code span.at { color: #7d9029; } /* Attribute */
-    code span.bn { color: #40a070; } /* BaseN */
-    code span.bu { color: #008000; } /* BuiltIn */
-    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
-    code span.ch { color: #4070a0; } /* Char */
-    code span.cn { color: #880000; } /* Constant */
-    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
-    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
-    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
-    code span.dt { color: #902000; } /* DataType */
-    code span.dv { color: #40a070; } /* DecVal */
-    code span.er { color: #ff0000; font-weight: bold; } /* Error */
-    code span.ex { } /* Extension */
-    code span.fl { color: #40a070; } /* Float */
-    code span.fu { color: #06287e; } /* Function */
-    code span.im { color: #008000; font-weight: bold; } /* Import */
-    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
-    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
-    code span.op { color: #666666; } /* Operator */
-    code span.ot { color: #007020; } /* Other */
-    code span.pp { color: #bc7a00; } /* Preprocessor */
-    code span.sc { color: #4070a0; } /* SpecialChar */
-    code span.ss { color: #bb6688; } /* SpecialString */
-    code span.st { color: #4070a0; } /* String */
-    code span.va { color: #19177c; } /* Variable */
-    code span.vs { color: #4070a0; } /* VerbatimString */
-    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cards — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #065f46; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-missing { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } pre.mermaid { page-break-inside: avoid; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
 </head>
 <body>
-<header id="title-block-header">
-<h1 class="title">Cards Service Design</h1>
-</header>
-<h1 id="cards-service-design">Cards Service Design</h1>
-<p><strong>Wren, 2026-05-01 (initial). Reviewed by subagent 2026-05-01;
-counts verified against
-<code>directing/products/cards/src/config.ts</code> and emit calls in
-<code>src/sdk.ts</code>.</strong></p>
-<p><strong>Owner:</strong> Wren (interaction layer — semantic ownership
-of board+tag schema, Athena coupling, single-implementation invariant).
-<strong>Implementer:</strong> Kade (canonical CLI is TypeScript under
-<code>directing/products/cards/</code>; code-domain is Kade's Athena
-subdomain). <strong>Cards:</strong> #2643 (this design), #2642 (Wren
-morning-state validator — consumes this contract for AC5 owner-subdomain
-alignment).</p>
-<h2
-id="structural-invariant-jeff-2026-04-30-applied-to-cards-2026-05-01">Structural
-invariant (Jeff, 2026-04-30, applied to cards 2026-05-01)</h2>
-<blockquote>
-<p>"Flows like this must have exactly and only one addressable
-implementation — not MCP + CLI + API + whatever."</p>
-</blockquote>
-<p>Cards has the same shape as nudge: every external surface (bash CLI,
-MCP tool, HTTP mutation endpoint, future Slack/webhook/web UI) MUST be a
-thin wrapper around one canonical implementation. Today the canonical
-implementation is <code>directing/products/cards/src/cli.ts</code>
-(TypeScript, 991 lines, dispatch via the <code>buildCliHandlers()</code>
-handler-map). All surfaces converge there or violate the invariant.</p>
-<p>This is structural, not advisory. The drift class it prevents:
-tag-validation in CLI but not in MCP; spine emit in <code>done</code>
-but not in <code>tag</code>; role attribution in one path but not
-another. Each is a competing-implementation failure that produces silent
-state drift.</p>
-<h2
-id="structural-invariant-jeff-2026-05-01-applied-to-taxonomy">Structural
-invariant (Jeff, 2026-05-01, applied to taxonomy)</h2>
-<blockquote>
-<p>"Invariant execution — if these tags get all messed up, it's
-recurring rework for us."</p>
-</blockquote>
-<p>Card metadata schema is closed-list and validated at the writing
-surface. Source of truth is <strong>Athena</strong> for
-<code>subdomain:</code> (live query); internal closed list (in
-<code>config.ts</code>) for the other axes. No silent-accept-then-drift.
-If a value isn't in the schema, the mutation refuses before the card is
-created/updated.</p>
-<h2 id="problem">Problem</h2>
-<p>Cards-CLI is one of the most-used substrates in Chorus — every WIP
-move, every tag change, every audit, every brief routes through it — and
-has no canonical service design. Concrete consequences observed
-2026-04-30 / 2026-05-01:</p>
-<ul>
-<li>A two-hour manual audit was needed to re-tag ~50 cards across
-<code>sequence:harness</code>, <code>sequence:pulse</code>,
-<code>sequence:chorus</code>, <code>sequence:werk</code> because no
-validation refuses unknown sequence values, and the existing closed list
-in <code>config.ts</code> (32 sequence values) is heavily polluted with
-legacy / dead values (<code>v1</code>, <code>hardening</code>,
-<code>style</code>, <code>sparql</code>, <code>flow-tests</code>,
-<code>visibility</code>, <code>gates</code>, <code>spine</code>,
-<code>ops</code>, <code>strategy</code>, <code>icd</code>,
-<code>infrastructure</code>, <code>content</code>,
-<code>framework</code>, <code>awareness</code>,
-<code>coordination</code>, <code>surfaces</code>, <code>quality</code>,
-<code>harness</code>, <code>cards</code>, <code>context</code>,
-<code>protocol</code>, <code>pulse</code>) co-existing with live values
-(<code>werk</code>, <code>clearing</code>, <code>loom</code>,
-<code>athena</code>, <code>convergence</code>, <code>borg</code>,
-<code>seeds</code>, <code>chorus</code>, <code>gathering</code>).</li>
-<li>Role attribution drift ("cards-CLI by wren" bug observed by Kade
-today): <code>detectRole()</code> at <code>config.ts:155</code> infers
-role from <code>cwd</code> and silently defaults to <code>wren</code>
-when cwd doesn't match <code>engineer/</code>, <code>architect/</code>,
-<code>product-manager/</code>. Spine events emit wrong role;
-brief-notifications go to wrong person; audit accountability is
-misattributed.</li>
-<li>Mutation surfaces are not unified: bash CLI is canonical, Chorus API
-exposes only read-only GETs, MCP exposes 0 cards tools today
-(<code>platform/api/src/mcp/server.ts</code> has 9 tools — none
-cards-related). Future surfaces (Slack → card, webhook → card, web UI)
-have no contract to follow; each will reinvent.</li>
-<li>Existing event-name drift inside cards itself:
-<code>card.unblocked</code> AND <code>card.item.unblocked</code> both
-emit today (one from the <code>unblock</code> command, one from the
-<code>item.unblocked</code> historical pattern). This design retires the
-inconsistency.</li>
-<li>Several existing mutations (<code>set</code> for non-tag fields)
-emit <code>card.item.set</code> but without <code>old_value</code> /
-<code>new_value</code> detail required for audit reconstruction.
-Subscribers can't diff.</li>
-<li><code>client.ts</code> (Vikunja persistence layer, 645 lines) has
-44% coverage per the latest jest summary — the most consequential
-surface, the least-tested.</li>
-</ul>
-<h2 id="as-is-verified-against-code-2026-05-01">As-Is (verified against
-code 2026-05-01)</h2>
-<p>Single canonical implementation exists; surfaces are uneven;
-validation is inconsistent; role identity is fragile. See "Caller trace"
-below.</p>
-<h3 id="caller-trace-2026-05-01-empirical-probe">Caller trace
-(2026-05-01, empirical probe)</h3>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Canonical service-design shape for Cards.</strong> Related: <a href="/designing/docs/commits-service-design.html">Commits</a> · <a href="/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> · <a href="/designing/docs/services-service-design.html">Services</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+
+<h1>Cards <span>— Service Design</span></h1>
+<p class="date">2026-05-01 — Wren (#2643). Refreshed 2026-05-02 — consumer-first restructure (Silas walk), versioned-output bridge for #2676. Implementation: <code>#2652</code> accepted. Open cards: <code>#2671</code> fail-loud sweep, <code>#2672</code> Vikunja-write-refusal hook, <code>#2673</code> cards-service Athena populate, <code>#2676</code> validation single-source + dual-emit bridge.</p>
+
+<div class="promise">
+A card mutation lands when, and only when, the role's request reaches the canonical adapter (the <code>cards</code> CLI) and the adapter (a) validates the input against a single canonical schema, (b) refuses unknown values at the writing surface, (c) writes to Vikunja through one client, and (d) emits exactly one spine event reflecting the actual state change. Direct writes to Vikunja are refused by hook. Spine events never lie about whether work happened. Validation has one source. Consumer migrations are bounded by a deprecation window with a hard retirement date — no follow-on-forever.
+</div>
+
+<h2>Overview</h2>
+<p>Cards is the kanban substrate for team coordination. Every unit of work (feature, fix, audit, follow-on) lives as a Vikunja card with structured labels (priority, owner, type, origin, domain, subdomain, subproduct). The substrate is API-with-validation: one canonical schema, transports derived from it, consumers migrating across a versioned bridge. Standard deprecation practice, not novel architecture.</p>
+
+<h2>Vocabulary</h2>
 <table>
-<thead>
-<tr>
-<th>Surface</th>
-<th>Path:line</th>
-<th>Type</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>cards</code> bash wrapper</td>
-<td><code>platform/scripts/cards</code> (19 lines)</td>
-<td>Thin dispatcher</td>
-<td>Spawns compiled JS or <code>ts-node src/cli.ts</code> fallback</td>
-</tr>
-<tr>
-<td><code>cards</code> CLI</td>
-<td><code>directing/products/cards/src/cli.ts</code> (991 lines)</td>
-<td><strong>Canonical implementation</strong></td>
-<td>All subcommands dispatch through <code>buildCliHandlers()</code>
-handler-map</td>
-</tr>
-<tr>
-<td><code>BoardClient</code></td>
-<td><code>directing/products/cards/src/client.ts</code> (645 lines)</td>
-<td><strong>Canonical persistence wrapper</strong></td>
-<td>Wraps Vikunja REST API; coverage 44% per latest jest summary</td>
-</tr>
-<tr>
-<td>Vikunja REST</td>
-<td><code>localhost:3456/api/v1/*</code></td>
-<td><strong>Canonical store</strong></td>
-<td>External SaaS; tasks + labels + buckets</td>
-</tr>
-<tr>
-<td>SQLite cache</td>
-<td><code>~/.chorus/vikunja/db/vikunja.db</code></td>
-<td>Optional read fallback</td>
-<td>Bucket-state lookup; degrades to API if absent</td>
-</tr>
-<tr>
-<td><code>GET /api/chorus/card-story/:id</code></td>
-<td><code>platform/api/src/server.ts</code></td>
-<td>Read endpoint</td>
-<td>Card timeline; spawns <code>cards view &lt;id&gt; --json</code></td>
-</tr>
-<tr>
-<td><code>GET /api/athena/card/:id</code></td>
-<td><code>platform/api/src/server.ts</code></td>
-<td>Read endpoint</td>
-<td>Card+AC parse; spawns <code>cards view</code></td>
-</tr>
-<tr>
-<td><code>GET /api/athena/subdomains/:id/cards</code></td>
-<td><code>platform/api/src/server.ts</code></td>
-<td>Read endpoint</td>
-<td>Filter by <code>domain:</code> or <code>sequence:</code> matching
-subdomain</td>
-</tr>
-<tr>
-<td><code>GET /api/chorus/context/board/{wip,next,swat}</code></td>
-<td><code>platform/api/src/server.ts</code></td>
-<td>Read endpoint</td>
-<td>Bucket snapshot, cached</td>
-</tr>
-<tr>
-<td>MCP cards tools</td>
-<td><code>platform/api/src/mcp/server.ts</code></td>
-<td><strong>Missing</strong></td>
-<td>0 cards-related MCP tools today</td>
-</tr>
-<tr>
-<td>HTTP mutation endpoints</td>
-<td>—</td>
-<td><strong>Missing</strong></td>
-<td>No <code>POST/PUT/DELETE /api/cards</code></td>
-</tr>
-<tr>
-<td>Slack/webhook ingress</td>
-<td>—</td>
-<td><strong>Missing</strong></td>
-<td>No external trigger surface</td>
-</tr>
-<tr>
-<td><code>detectRole()</code></td>
-<td><code>directing/products/cards/src/config.ts:149-156</code></td>
-<td>Role identity</td>
-<td><strong>Buggy</strong> — cwd-based, defaults to
-<code>wren</code></td>
-</tr>
-<tr>
-<td>Spine emission</td>
-<td>Inline calls in <code>directing/products/cards/src/sdk.ts</code>
-(40+ sites)</td>
-<td>Audit surface</td>
-<td>29 distinct <code>card.*</code> event types; alias drift today
-(<code>card.unblocked</code> ↔︎ <code>card.item.unblocked</code>)</td>
-</tr>
-</tbody>
+<tr><th>Internal term</th><th>What it actually is</th></tr>
+<tr><td><code>cards</code> CLI</td><td>TypeScript CLI in <code>directing/products/cards/src/</code>; canonical write path</td></tr>
+<tr><td><code>BoardClient</code></td><td>Transport wrapper around Vikunja's REST API + sqlite read fast-path</td></tr>
+<tr><td>Refuse-at-source</td><td>Validation in <code>sdk.ts</code> BEFORE persistence — unknown values refused with non-zero exit + spine event</td></tr>
+<tr><td>Spine event</td><td>One JSONL entry in <code>chorus.log</code> per actual state change</td></tr>
+<tr><td>Subprocess pattern</td><td>MCP/HTTP wrappers spawn <code>cards &lt;verb&gt; --json</code> subprocess and parse stdout</td></tr>
+<tr><td><code>DEPLOY_ROLE</code></td><td>Env var read by <code>detectRole()</code>; values: <code>wren | silas | kade | jeff | automation</code></td></tr>
+<tr><td>Dual-emit bridge</td><td>During the deprecation window, the CLI emits both old prose output AND new <code>--json</code> structured output. Old format carries deprecation marker with consumer attribution. Hard retirement date in schema metadata.</td></tr>
 </table>
-<p><strong>Key observation:</strong> The canonical implementation exists
-and works. The gaps are at the <em>edges</em> — surfaces that don't yet
-defer to it (MCP, HTTP mutation), validation that doesn't fire, role
-identity that lies, and one already-shipped event-name alias. The
-single-implementation invariant is <strong>structurally honored</strong>
-(one CLI, one BoardClient, one Vikunja) but <strong>operationally
-violated</strong> (validation skipped at flag-parse time; role
-mis-attributed; one event has two names today).</p>
-<pre class="mermaid"><code>flowchart LR
-  subgraph SURFACES[&quot;Surfaces today&quot;]
-    BASH[&quot;bash &#39;cards&#39; wrapper&lt;br/&gt;platform/scripts/cards&quot;]
-    READ_API[&quot;chorus-api GET /api/*&lt;br/&gt;(read-only, spawns CLI)&quot;]
-    MCP_NONE[&quot;MCP tools&lt;br/&gt;NONE TODAY&quot;]
-    HTTP_NONE[&quot;HTTP mutation&lt;br/&gt;NONE TODAY&quot;]
+
+<h2>Consumer contracts</h2>
+<p>Consumers come first. The substrate exists to serve them. Today's cards-service has consumers that depend on undeclared contracts (mostly regex-on-prose-output). Substrate changes that ignore these contracts break Jeff's daily workflows.</p>
+
+<h3>The Clearing — primary human-facing client (Jeff uses daily)</h3>
+<p>Read-only on cards (no mutations). Contract: <strong>regex parsers on cards-CLI prose output</strong> + HTTP shape expectations on chorus-api board endpoints. Source: <code>directing/clearing/src/server.ts</code> + <code>tiles.ts</code> + <code>tailer.ts</code>.</p>
+
+<table>
+<tr><th>Surface</th><th>Call</th><th>Contract (parsed shape)</th><th>Frequency</th></tr>
+<tr><td>Board / flow view</td><td><code>execSync('bash cards list')</code> at <code>server.ts:694</code></td><td>Regex <code>/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/</code> on every card row; status header <code>/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/</code>; tag separator <code>[tag1|tag2]</code></td><td>Interactive — Jeff clicks board tab</td></tr>
+<tr><td>Card detail</td><td><code>execSync('bash cards view ID')</code> at <code>server.ts:717</code></td><td>~10 regex parsers on title, status, owner, desc (2-space field-header indent + 4-space body), AC items <code>- [ ]</code>/<code>- [x]</code>, comments, blast/domain radius markers</td><td>Interactive — Jeff clicks card</td></tr>
+<tr><td>Tile board cache</td><td><code>fetch('/api/chorus/context/board/wip')</code> + <code>.../swat</code> at <code>tiles.ts:88-89</code></td><td>Response: <code>{data: {cards: [{id: number, owner: string, title: string, ...}]}}</code>; role filter on <code>owner.toLowerCase()</code></td><td>Background poll every 5s</td></tr>
+<tr><td>Spine event tail</td><td>Tails <code>chorus.log</code> at <code>tailer.ts</code></td><td>Subscribes to <code>card.demo.started</code>, <code>card.accepted</code>, <code>card.pulled</code>, <code>role.state.changed</code>, <code>nudge.emitted</code>; checks both <code>card</code> and <code>card_id</code> field; <code>acceptor</code> defaults to 'jeff'</td><td>2s poll</td></tr>
+</table>
+
+<p><strong>Top breakage risks for The Clearing</strong> — any silently breaks Jeff's UI:</p>
+<ol>
+<li><strong>Status header format.</strong> <code>WIP (3):</code> → <code>WIP(3):</code> silently skips entire bucket.</li>
+<li><strong>Description indentation.</strong> 2-space field / 4-space body is hard-coded; change → corrupted render.</li>
+<li><strong>Card ID type.</strong> Number → string in HTTP responses → role-filter numeric comparison breaks silently.</li>
+<li><strong>AC checkbox format.</strong> <code>- [x]</code> → other → checklist disappears.</li>
+<li><strong>Tag separator.</strong> <code>[tag1|tag2]</code> → other → board loses metadata filtering.</li>
+<li><strong>Spine event field naming.</strong> <code>card</code>/<code>card_id</code> dual-checked; new field name → silent miss.</li>
+</ol>
+
+<p><strong>Migration path under #2676 (the versioned-output bridge):</strong> The Clearing migrates from regex-on-prose to consuming <code>--json</code> structured output during the dual-emit window. Old prose continues to work and emits a deprecation marker tagged with consumer attribution (<code>X-Source: clearing</code>) so the team sees which consumers haven't migrated. Hard retirement date in schema metadata: <strong>2026-06-15</strong> (~6 weeks soak). After that, old prose format errors out — The Clearing breaks loud if it hasn't migrated.</p>
+
+<h3>Skill consumers (gate skills, /pull, /demo, /acp)</h3>
+<p>Skills shell out to <code>cards view</code>, <code>cards comment</code>, <code>cards move</code>, <code>cards done</code>. Most parse output via simpler regexes (status check, AC count). Same fragility class as The Clearing but smaller blast radius — a broken parser = one skill breaks. Contract: existing exit codes (0 success, 2 validation, 3 persistence) and existing comment format (<code>demo:preflight-pass</code>, <code>gate:product-pass</code>) preserved. Migration: skills move to <code>--json</code> output during the dual-emit window; deprecation marker tagged with skill name as consumer attribution.</p>
+
+<h3>Morning-validator (#2642), Borg, Loom-rcas</h3>
+<p>Spine event consumers. Depend on existing event names (<code>card.item.tagged</code>, <code>card.item.set</code>, <code>card.item.created</code>, <code>card.item.moved</code>, <code>card.item.unblocked</code>, <code>card.accepted</code>) and field shapes. <strong>#2671's spine emit invariant</strong> — emit only on actual state change — changes the volume but not the event names. Subscribers should not break. New event <code>card.item.tag.idempotent</code> is additive (subscribers can ignore). No migration needed; consumer contract preserved.</p>
+
+<h3>HTTP read endpoints (browsers, doc-catalog)</h3>
+<p><code>GET /api/chorus/card-story/:id</code> currently returns 200 + empty on bogus id; #2671 closes this to 404 on not-found. Migration: any consumer that today silently absorbs the empty-body response will start seeing 404s — that's the desired behavior, but consumers checking <code>res.status === 200</code> as their sole signal must update to handle 404. Contract change is bounded by #2671's scope.</p>
+
+<h2>Loom contracts (three roles)</h2>
+<p>Cards routinely cite Loom artifacts (DEC-NNN decisions, ADR-NNN architecture decisions, principle URIs, practice URIs, policy URIs). These citations are part of the cards-service contract. Today there is no validation, no back-reference, no propagation on rename — citations rot silently.</p>
+
+<h3>Per-role production + consumption</h3>
+<table>
+<tr><th>Role</th><th>Produces into Loom</th><th>Where written</th><th>Consumes from Loom</th></tr>
+<tr><td><strong>Wren</strong> (PM)</td><td>DECs (decisions), story-memory entries</td><td><code>roles/wren/decisions.md</code> (~200 entries, manual edit + git); stories via <code>write-story.sh</code> per DEC-099</td><td>Decisions to cite in PM rationale at gate-product; principles to apply when refusing scope</td></tr>
+<tr><td><strong>Silas</strong> (Architect)</td><td>ADRs, principles, policies</td><td><code>roles/silas/adr/ADR-NNN-title.md</code> (30+ files); principles via <code>chorus_principles_create</code> MCP tool; policies via TTL edits in <code>roles/silas/ontology/chorus.ttl</code></td><td>ADRs in arch reviews; principles as design constraints; policies for substrate enforcement</td></tr>
+<tr><td><strong>Kade</strong> (Engineer)</td><td>Rarely; occasional principle when implementation surfaces one. No DEC/ADR production path.</td><td>Principles via Silas's MCP tool (or via brief to Silas); no first-class write surface</td><td>Principles when implementing (CLAUDE.md emphasis list); ADRs when refactoring touches architecture</td></tr>
+</table>
+
+<h3>Citation patterns observed in cards</h3>
+<ul>
+<li>Bare ID: <code>DEC-107</code>, <code>ADR-026</code></li>
+<li>With label: <code>DEC-107 (nudge delivery)</code></li>
+<li>Prose: <code>"Per DEC-107, nudge fires both persist AND deliver paths"</code></li>
+<li>Principle URI: <code>chorus:loom-principles-principle-value-first-who-benefits-and-how</code></li>
+<li>Format drift across all of the above: lowercase variants, missing hyphens, paraphrase-without-ID</li>
+</ul>
+
+<h3>Gaps in the cards↔Loom contract</h3>
+
+<div class="gap"><strong>L1. No citation validation at card-write time.</strong> <code>cards add --desc "..."</code> accepts any free-text description. A card can cite <code>DEC-9999</code> that doesn't exist; cards-service does not query Loom to verify.</div>
+
+<div class="gap"><strong>L2. No back-reference from Loom artifact to driving card.</strong> <code>chorus_principles_create</code> MCP tool accepts optional <code>dcSource</code> but no <code>cardId</code>. <code>handlers/loom-decisions.ts</code> response has no <code>relatedCard</code> field. Query "which card filed this decision?" is unanswerable.</div>
+
+<div class="gap"><strong>L3. No propagation when Loom artifact renames or retires.</strong> Decision DEC-NNN gets superseded; cards still cite the old ID with no flag.</div>
+
+<div class="gap"><strong>L4. No production gate.</strong> Anyone can call <code>chorus_principles_create</code> regardless of subdomain ownership. <code>TEAM_PROTOCOL.md</code> is descriptive, not enforced.</div>
+
+<div class="gap"><strong>L5. No citation audit script.</strong> No scheduled scan detecting "card #N cites DEC-X, but DEC-X does not exist." <code>lint-fragments.sh</code> R5 checks CLAUDE.md fragments, not card descriptions.</div>
+
+<h2>Sub-Domain Interaction Model</h2>
+<p>Cards as substrate; every cards mutation is one card-id'd event consumed by gates, observability, and morning audits.</p>
+<table>
+<tr><th>Trigger</th><th>Produces</th><th>Consumed By</th><th>Surface</th></tr>
+<tr><td>Role runs <code>cards add ...</code></td><td><code>card.item.created</code> spine event + Vikunja card row</td><td>morning-validator (#2642), Borg flow metrics, gate-product on demo</td><td>bash/CLI subprocess + Vikunja REST</td></tr>
+<tr><td>Role runs <code>cards move &lt;id&gt; WIP</code></td><td><code>card.item.moved</code> + role-state declare via <code>/pull</code> skill</td><td>gates, demo, observer</td><td>CLI subprocess</td></tr>
+<tr><td>Role runs <code>cards tag &lt;id&gt; ...</code> (state-changing)</td><td><code>card.item.tagged</code> (only when actually changed; idempotency-at-API)</td><td>morning-validator (subproduct alignment), audit</td><td>CLI subprocess</td></tr>
+<tr><td>Role runs <code>cards tag &lt;id&gt; ...</code> (already-applied)</td><td>exit 0 with <code>{"status":"no-op"}</code>, <strong>no spine event</strong>, no Vikunja call</td><td>— (no observability noise)</td><td>CLI subprocess</td></tr>
+<tr><td>MCP <code>chorus_cards_*</code> tool invocation</td><td>Spawns <code>cards &lt;verb&gt; --json</code> subprocess with <code>DEPLOY_ROLE</code> injected</td><td>Same as bash CLI</td><td>MCP host → spawn</td></tr>
+<tr><td>HTTP <code>POST /api/cards/&lt;verb&gt;</code> with <code>X-Role</code> header</td><td>Spawns <code>cards &lt;verb&gt; --json</code> subprocess with that role</td><td>Same as bash CLI</td><td>Express route → spawn</td></tr>
+<tr><td><code>cards done &lt;id&gt;</code></td><td><code>card.accepted</code> spine event</td><td>acp skill, gate chain, morning-validator</td><td>CLI subprocess</td></tr>
+</table>
+<p><strong>Spine emit invariant:</strong> the spine reflects what actually happened, not what was requested. A <code>card.item.tagged</code> event fires only when a tag was actually added or removed. When the requested tag was already present (or absent on remove), the canonical adapter emits no event. Subscribers folding spine events compute correct state.</p>
+
+<h2>Dependencies</h2>
+
+<h3>Service-level deps (lifecycle-coupled)</h3>
+<table>
+<tr><th>Dependency</th><th>Why</th></tr>
+<tr><td>Vikunja (<code>localhost:3456</code>)</td><td>Persistence — Vikunja down = no card mutations possible</td></tr>
+<tr><td>chorus-api</td><td>Hosts MCP transport + HTTP <code>/api/cards/*</code> routes</td></tr>
+<tr><td>Athena (chorus-api endpoints)</td><td>Subdomain refuse-at-source query (<code>fetchSubdomainSet</code>); Athena unreachable = subdomain validation degraded</td></tr>
+<tr><td><code>chorus.log</code> writer (chorus-hooks)</td><td>Spine event emission; if down, mutations succeed but audit trail is incomplete</td></tr>
+</table>
+
+<h3>Subdomain-level deps (substrate references, read-only)</h3>
+<table>
+<tr><th>Dependency</th><th>Why</th></tr>
+<tr><td><code>loom-decisions</code></td><td>DEC-048 (no self-accept), DEC-107 (persist+deliver), DEC-074 (search hierarchy) referenced in CLI behavior</td></tr>
+<tr><td><code>loom-policies</code></td><td>Single-implementation invariant policy; this design enforces it for cards</td></tr>
+<tr><td><code>loom-principles</code></td><td>Writing-surface-discipline, observe-and-interact (look-left-look-right) — referenced in refuse-at-source design</td></tr>
+<tr><td><code>loom-skills</code></td><td><code>/pull</code>, <code>/demo</code>, <code>/acp</code>, <code>/gate-product</code> skills consume cards CLI verbs</td></tr>
+</table>
+
+<h2>Surfaces</h2>
+<table>
+<tr><th>Surface</th><th>Consumers</th><th>Transport</th><th>Status</th></tr>
+<tr><td>Bash CLI (<code>cards</code> script)</td><td>Roles in terminal sessions, scripts, <code>/pull</code> <code>/demo</code> <code>/acp</code> skills</td><td>fork+exec</td><td><span class="tag-real">REAL</span></td></tr>
+<tr><td>MCP (<code>chorus_cards_*</code>)</td><td>Agent sessions via Claude Code</td><td>MCP host → subprocess spawn</td><td><span class="tag-real">REAL</span> (post-#2652)</td></tr>
+<tr><td>HTTP (<code>POST /api/cards/*</code>)</td><td><strong>The Clearing</strong> (primary human-facing surface, used daily), Slack-webhook, external automation</td><td>HTTPS on :3340 → subprocess spawn</td><td><span class="tag-real">REAL</span> (post-#2652)</td></tr>
+<tr><td>HTTP read (<code>GET /api/chorus/card-story/:id</code>)</td><td>Browsers, doc-catalog renderers</td><td>HTTPS on :3340</td><td><span class="tag-partial">PARTIAL</span> — fail-loud gap closes via #2671</td></tr>
+</table>
+
+<h2>Components (designed)</h2>
+
+<div class="component">
+<h3>Canonical zod schema + dual-emit bridge (<strong>#2676</strong>)</h3>
+<p>One file: <code>directing/products/cards/src/schema.ts</code>. Per-verb input shape with required fields, enums, refinements (subdomain ∈ Athena live query, subproduct ∈ closed list <code>{athena, loom, werk, borg, convergence, clearing}</code>). Source of truth for sdk + MCP + HTTP + CLI output schema + spec-doc generation. No hand-redeclared validation anywhere downstream.</p>
+<p><strong>Dual-emit bridge (consumer migration mechanism):</strong></p>
+<ul>
+<li>CLI emits both old prose output AND new <code>--json</code> structured output during the bridge window.</li>
+<li>Old prose format carries a deprecation marker tagged with consumer attribution (X-Source header from The Clearing, calling-script name from skills, role from MCP/HTTP transports).</li>
+<li>Telemetry visible in Borg per-consumer; team sees who's still on old format and at what rate.</li>
+<li>Hard retirement date in schema metadata: <strong>2026-06-15</strong> (~6 weeks soak).</li>
+<li>After retirement date, old prose format errors out; consumers migrate or break loud. No card cascade, no follow-on-forever, no per-consumer cards.</li>
+</ul>
+</div>
+
+<div class="component">
+<h3><code>cards</code> CLI canonical adapter</h3>
+<p>Verb router at <code>directing/products/cards/src/cli.ts</code>. Bash, MCP, HTTP all spawn <code>cards &lt;verb&gt; --json</code> with <code>DEPLOY_ROLE</code> injected. Verbs: add, move, done, tag, set, view, list, check, comment, swat, sequence-tag, bulk-move, snapshot, audit. Exit codes: <code>0</code> success/no-op | <code>2</code> validation | <code>3</code> persistence | <code>4</code> network | <code>1</code> unhandled.</p>
+</div>
+
+<div class="component">
+<h3><code>sdk.ts</code> business logic + truthful spine emit (<strong>#2671</strong>)</h3>
+<p>Validation derives from canonical schema (no hand-declared shape). Spine events fire only when state actually changes. Idempotent operations emit <code>card.item.tag.idempotent</code> (or no event); state-changing operations emit <code>card.item.tagged</code>. The "spine reflects what actually happened" rule is enforced at every emit site.</p>
+</div>
+
+<div class="component">
+<h3><code>BoardClient</code> Vikunja transport (<strong>#2671</strong>)</h3>
+<p><code>client.ts</code> returns typed results that distinguish <em>did-the-work</em> from <em>already-in-target-state</em>. <code>AlreadyTaggedError</code> typed; 409 surfaced as a result type, not silently absorbed. Author field never defaults to 'unknown' — substrate corruption signal preserved by throwing on missing author. Per-role tokens loaded by <code>config.ts:loadEnv</code>.</p>
+</div>
+
+<div class="component">
+<h3>Vikunja-write-refusal hook (<strong>#2672</strong>)</h3>
+<p>PreToolUse Bash hook in chorus-hooks detects bypass patterns: <code>curl.*localhost:3456</code>, <code>fetch.*localhost:3456</code>, <code>gh api.*vikunja</code>. Refuses with explicit message: "Direct Vikunja write blocked — use cards CLI." Allow-listed for the cards CLI binary itself. Bypass override <code>CHORUS_VIKUNJA_DIRECT_WRITE=1</code> for one-off migration; bypass MUST emit a spine event for audit. Canonical-by-enforcement, not canonical-by-convention.</p>
+</div>
+
+<div class="component">
+<h3><code>DEPLOY_ROLE</code>-required identity</h3>
+<p><code>config.ts:detectRole()</code> reads <code>DEPLOY_ROLE</code> env. Values: <code>wren | silas | kade | jeff | automation</code>. cwd-parsing fallback retired — refuse if unset (<strong>#2671</strong>). Role identity is required, not guessed.</p>
+</div>
+
+<div class="component">
+<h3>Generated spec doc</h3>
+<p>This document is generated from <code>schema.ts</code> downstream once #2676 lands. Build pipeline regenerates on schema change. The doc is never the source of truth; the schema is. Hand-edited prose lives only in non-contract sections (Promise, As-Is observations, design rationale).</p>
+</div>
+
+<h2>As-Is — 2026-05-02 today</h2>
+<p>The CLI is canonical for routing — bash, MCP tools, HTTP routes all spawn it as a subprocess and parse its output (post-#2652). It is NOT canonical for validation: three surfaces (sdk, MCP zod, HTTP if-checks) re-declare the same input shape with no shared source. The audit trail lies in specific places: <code>client.ts:324</code> swallows 409 errors silently while <code>sdk.ts:1160</code> emits success spine events unconditionally; three try/catch blocks during card-create swallow tag failures while reporting card-creation success. There is no hook refusing direct Vikunja writes.</p>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph SURFACES["Transports (delegate to CLI)"]
+    BASH["bash 'cards' wrapper"]
+    MCP["MCP chorus_cards_*<br/>(zod schema, hand-declared)"]
+    HTTP["HTTP POST /api/cards/*<br/>(if-checks, hand-declared)"]
+    DIRECT["curl localhost:3456<br/>(BYPASS — no hook refuses)"]
   end
 
-  subgraph CANON[&quot;Canonical implementation&quot;]
-    CLI[&quot;cli.ts dispatch&lt;br/&gt;directing/products/cards/src/cli.ts&lt;br/&gt;buildCliHandlers()&quot;]
-    SDK[&quot;sdk.ts&lt;br/&gt;(business logic + emit)&quot;]
-    CLIENT[&quot;BoardClient&lt;br/&gt;client.ts (44% covered)&quot;]
+  subgraph CANON["Canonical adapter"]
+    CLI["cards CLI<br/>cli.ts dispatch"]
+    SDK["sdk.ts<br/>(validation hand-declared,<br/>40+ spine emit sites)"]
+    CLIENT["BoardClient<br/>client.ts:324 swallows 409<br/>client.ts:355 author='unknown'"]
   end
 
-  subgraph STORE[&quot;Persistence&quot;]
-    VIK[&quot;Vikunja REST&lt;br/&gt;localhost:3456&quot;]
-    SQLITE[&quot;SQLite cache&lt;br/&gt;~/.chorus/vikunja/db/&lt;br/&gt;(read fallback)&quot;]
+  subgraph STORE["Persistence"]
+    VIK["Vikunja REST<br/>localhost:3456"]
   end
 
-  subgraph EMIT[&quot;Audit&quot;]
-    SPINE[&quot;chorus.log&lt;br/&gt;29 distinct card.* events&lt;br/&gt;(plus alias drift today)&quot;]
+  subgraph EMIT["Audit"]
+    SPINE["chorus.log<br/>card.item.tagged emitted<br/>UNCONDITIONALLY (lies on idempotent ops)"]
   end
 
-  BASH --&gt; CLI
-  READ_API --&gt; CLI
-  CLI --&gt; SDK
-  SDK --&gt; CLIENT
-  SDK --&gt; SPINE
-  CLIENT --&gt; VIK
-  CLIENT --&gt; SQLITE
+  BASH --> CLI
+  MCP --> CLI
+  HTTP --> CLI
+  DIRECT -.->|BYPASS| VIK
+  CLI --> SDK
+  SDK --> CLIENT
+  SDK --> SPINE
+  CLIENT --> VIK
 
-  classDef missing fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef bypass fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef lying fill:#fef3c7,stroke:#d97706,color:#78350f
   classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
-  classDef gap fill:#fef3c7,stroke:#d97706,color:#78350f
-  class MCP_NONE,HTTP_NONE missing
-  class CLI,SDK,CLIENT,VIK canon
-  class SPINE gap</code></pre>
-<p>Green = canonical. Red = missing surfaces (must converge through
-canon when added). Yellow = audit surface with one known alias to
-retire.</p>
-<h2 id="to-be">To-Be</h2>
-<p>Three additions, no replacements:</p>
-<ol type="1">
-<li><strong>MCP cards tool</strong> added as thin wrapper to
-<code>cards</code> CLI (spawns subprocess with <code>DEPLOY_ROLE</code>
-injected, passes args, parses <code>--json</code> output). One MCP tool
-per mutation verb (<code>chorus_cards_add</code>,
-<code>chorus_cards_move</code>, <code>chorus_cards_done</code>,
-<code>chorus_cards_tag</code>, <code>chorus_cards_set</code>,
-<code>chorus_cards_view</code>).</li>
-<li><strong>HTTP mutation API</strong> added as another thin wrapper to
-<code>cards</code> CLI (<code>POST /api/cards/&lt;verb&gt;</code>
-Express route → spawns CLI with <code>DEPLOY_ROLE</code> from
-<code>X-Role</code> header → returns CLI's JSON output verbatim).
-Enables Slack webhook + future web UI without reimplementation.</li>
-<li><strong>Validation hardened</strong> at flag-parse time inside
-<code>cli.ts</code>: <code>subdomain:</code> (new),
-<code>subproduct:</code> (new), and existing <code>domain:</code> /
-<code>chunk:</code> / <code>sequence:</code> get refuse-at-source
-against closed lists. Existing tags get a deprecation-warn window before
-refuse-mode flips on.</li>
-</ol>
-<p>Plus four corrections:</p>
-<ol start="4" type="1">
-<li><strong>Role identity:</strong> <code>detectRole()</code> switches
-to "DEPLOY_ROLE-required-with-automation-fallback" — recognized roles
-are <code>wren|silas|kade|jeff|automation</code>. Bash wrapper exports
-DEPLOY_ROLE (see "Role Identity Surface" below).
-Default-to-<code>wren</code> removed.</li>
-<li><strong>Spine alias retirement:</strong> <code>card.unblocked</code>
-retired in favor of <code>card.item.unblocked</code> (Phase 1 of
-migration; subscribers updated atomically).</li>
-<li><strong><code>card.item.set</code> payload extended</strong> to
-include <code>field</code>, <code>old_value</code>,
-<code>new_value</code> so audit subscribers can reconstruct field
-history.</li>
-<li><strong>Test coverage:</strong> raise <code>client.ts</code> from
-44% to ≥70% as part of implementation work.</li>
-</ol>
-<pre class="mermaid"><code>flowchart LR
-  subgraph SURFACES[&quot;Surfaces (all thin wrappers)&quot;]
-    BASH[&quot;bash &#39;cards&#39; wrapper&lt;br/&gt;(exports DEPLOY_ROLE)&quot;]
-    MCP[&quot;chorus_cards_* MCP tools&lt;br/&gt;spawn cli.ts via subprocess&quot;]
-    HTTP[&quot;POST /api/cards/&amp;lt;verb&amp;gt;&lt;br/&gt;X-Role header → DEPLOY_ROLE&quot;]
-    READ_API[&quot;chorus-api GET /api/*&quot;]
-    FUTURE[&quot;Future surfaces:&lt;br/&gt;Slack, webhook, web UI&quot;]
+  class DIRECT bypass
+  class CLIENT,SPINE lying
+  class CLI,SDK,VIK canon
+</pre>
+
+<h2>To-Be — designed target state</h2>
+<p>One canonical zod schema declares per-verb input shape; sdk, HTTP routes, and MCP tools all derive from it via TypeScript type inference (no drift surface — the compiler enforces alignment). The CLI emits dual output (old prose + new <code>--json</code>) during the bridge window; deprecation telemetry tracks per-consumer migration; old format errors out at the hard retirement date. <code>BoardClient</code> returns typed results that distinguish "did the work" from "already in target state"; sdk emits distinct spine events per actual outcome. Read paths return non-zero exit / 404 on not-found. A PreToolUse hook refuses bash patterns matching <code>curl localhost:3456</code> outside the cards CLI binary.</p>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph SCHEMA["Single canonical source"]
+    ZOD["zod schema<br/>directing/products/cards/src/schema.ts<br/>(per-verb input + refinements)"]
   end
 
-  subgraph CANON[&quot;Canonical implementation&quot;]
-    CLI[&quot;cli.ts dispatch&quot;]
-    VAL[&quot;validateTags()&lt;br/&gt;closed-list refuse&quot;]
-    SDK[&quot;sdk.ts (≥70% covered)&quot;]
-    CLIENT[&quot;BoardClient (≥70% covered)&quot;]
+  subgraph DERIVED["Transports (derived via TS inference)"]
+    SDK2["sdk.ts validation<br/>(z.parse from schema)"]
+    MCP2["MCP inputSchema<br/>(zod-to-json-schema)"]
+    HTTP2["HTTP route validators<br/>(z.parse middleware)"]
+    DOCGEN["cards-service-design.md<br/>(generated from schema)"]
   end
 
-  subgraph STORE[&quot;Persistence&quot;]
-    VIK[&quot;Vikunja REST&quot;]
-    SQLITE[&quot;SQLite cache&quot;]
+  subgraph BRIDGE["Dual-emit bridge (until 2026-06-15)"]
+    PROSE["Old prose output<br/>+ deprecation marker<br/>+ X-Source attribution"]
+    JSON["New --json structured output<br/>(consumers migrate to this)"]
+    TELEM["Per-consumer telemetry in Borg"]
   end
 
-  subgraph EMIT[&quot;Audit (existing events preserved)&quot;]
-    SPINE[&quot;chorus.log&lt;br/&gt;card.item.* (canonical)&lt;br/&gt;card.unblocked (RETIRED)&quot;]
+  subgraph HOOK["Bypass refusal"]
+    PRETOOL["PreToolUse hook<br/>refuses curl :3456 outside CLI"]
   end
 
-  subgraph SOT[&quot;Schema source of truth&quot;]
-    ATHENA[&quot;Athena&lt;br/&gt;GET /api/athena/subdomains&lt;br/&gt;(48 entries today, live)&quot;]
-    CL[&quot;Closed lists in config.ts&lt;br/&gt;subproduct (NEW): 6&lt;br/&gt;domain: 43&lt;br/&gt;chunk: 12&lt;br/&gt;sequence: 32→9&lt;br/&gt;type/origin/priority/owner: existing&quot;]
+  subgraph CANON2["Canonical adapter"]
+    CLI2["cards CLI"]
+    CLIENT2["BoardClient<br/>typed AlreadyTaggedError<br/>authoritative author or throw"]
   end
 
-  BASH --&gt; CLI
-  MCP --&gt; CLI
-  HTTP --&gt; CLI
-  READ_API --&gt; CLI
-  FUTURE -.-&gt; CLI
-  CLI --&gt; VAL
-  VAL --&gt; ATHENA
-  VAL --&gt; CL
-  VAL --&gt; SDK
-  SDK --&gt; CLIENT
-  SDK --&gt; SPINE
-  CLIENT --&gt; VIK
-  CLIENT --&gt; SQLITE
+  subgraph EMIT2["Truthful audit"]
+    SPINE2["chorus.log<br/>card.item.tagged on actual change<br/>card.item.tag.idempotent on no-op<br/>distinct events per actual outcome"]
+  end
 
-  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
-  classDef gateway fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
-  classDef future fill:#f3e8ff,stroke:#7e22ce,color:#581c87
-  class CLI,SDK,CLIENT,VIK,SPINE canon
-  class VAL,ATHENA,CL gateway
-  class MCP,HTTP,FUTURE future</code></pre>
-<p>Green = canonical / complete. Blue = validation gateway. Purple = new
-or future surfaces, all routing through canon.</p>
-<h2 id="single-contract">Single Contract</h2>
-<p>One path. No variants.</p>
-<pre><code>cards &lt;subcommand&gt; [args] [flags]
-  │
-  ├── 1. detectRole() → DEPLOY_ROLE env (canonical)
-  │                     refuse-at-source if unset (no silent default)
-  │                     &#39;automation&#39; is a valid value for non-role callers
-  │
-  ├── 2. validateTags() → refuse-at-source if subdomain ∉ Athena
-  │                       refuse-at-source if subproduct ∉ closed list
-  │                       refuse-at-source if domain/chunk/sequence/type/origin ∉ closed list
-  │                       (deprecated values warn-then-refuse during deprecation window)
-  │
-  ├── 3. dispatch → cli.ts buildCliHandlers()[subcommand] → sdk.ts (business logic)
-  │                  cli.ts is the verb-router (thin); sdk.ts is where mutations happen and spine events fire.
-  │                  sdk.ts is the contract surface subscribers conceptually depend on.
-  │
-  ├── 4. mutate → BoardClient (transport) → Vikunja HTTP REST + sqlite-via-execSync
-  │                BoardClient is two surfaces: HTTP API (canonical) AND local sqlite read (`VIKUNJA_DB`,
-  │                accessed via `execSync` per `client.ts:7,11`). The sqlite read is a substrate property —
-  │                not part of the canonical write chain, but real for read-fast-paths.
-  │
-  └── 5. emit → chorus.log card.item.&lt;verb&gt; spine event (via sdk.ts emit sites, ~40 of them)
-              (typed, with role attribution, card id, mutation details, old/new values where applicable)</code></pre>
-<p><strong>MCP path:</strong> <code>chorus_cards_&lt;verb&gt;</code> MCP
-tool → spawns <code>cards &lt;subcommand&gt; --json</code> subprocess
-with <code>DEPLOY_ROLE</code> injected → returns parsed JSON output.
-Same canonical chain.</p>
-<p><strong>HTTP path:</strong> <code>POST /api/cards/&lt;verb&gt;</code>
-Express route → reads <code>X-Role</code> header → spawns
-<code>cards &lt;subcommand&gt; --json</code> subprocess with that
-DEPLOY_ROLE → returns CLI's JSON verbatim. Same canonical chain.</p>
-<p><strong>Read path:</strong>
-<code>GET /api/chorus/card-story/:id</code>,
-<code>GET /api/athena/card/:id</code>, etc. — read-only handlers spawn
-<code>cards view &lt;id&gt; --json</code> for the canonical render.
-Stays as-is.</p>
-<h2 id="tag-schema-locked-2026-05-01-verified-counts">Tag Schema
-(locked, 2026-05-01, verified counts)</h2>
-<p>Closed lists with explicit source of truth:</p>
+  ZOD --> SDK2
+  ZOD --> MCP2
+  ZOD --> HTTP2
+  ZOD --> DOCGEN
+  SDK2 --> CLI2
+  MCP2 --> CLI2
+  HTTP2 --> CLI2
+  CLI2 --> PROSE
+  CLI2 --> JSON
+  PROSE --> TELEM
+  PRETOOL -.->|REFUSES BYPASS| CLI2
+  CLI2 --> CLIENT2
+  CLI2 --> SPINE2
+
+  classDef source fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef enforced fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef deprecated fill:#fef3c7,stroke:#d97706,color:#78350f
+  class ZOD source
+  class CLIENT2,SPINE2,PRETOOL enforced
+  class PROSE deprecated
+</pre>
+
+<h2>Gaps to close</h2>
+
+<div class="gap"><strong>Validation duplicated, no source-of-truth.</strong> Three hand-declared validators (sdk, MCP zod, HTTP if-checks). Closed by <strong>#2676</strong> (zod canonical + sdk/HTTP/MCP derive + dual-emit bridge + per-consumer telemetry + 2026-06-15 retirement).</div>
+
+<div class="gap"><strong>Audit trail lies on idempotent + partial-success operations.</strong> <code>client.ts:324</code> swallows 409; <code>sdk.ts:1160</code> emits unconditionally. <code>sdk.ts:656</code>, <code>:832</code> continue on tag failure during card-create. Closed by <strong>#2671</strong>.</div>
+
+<div class="gap"><strong>Read-path returns success on not-found.</strong> <code>/api/chorus/card-story/&lt;bogus-id&gt;</code> = 200 + empty; <code>cards view &lt;bogus-id&gt;</code> = exit 0. Closed by <strong>#2671</strong>.</div>
+
+<div class="gap"><strong><code>detectRole()</code> cwd-fallback warns-then-continues.</strong> Closed by <strong>#2671</strong>.</div>
+
+<div class="gap"><strong>No hook refuses direct Vikunja write.</strong> Bypass surface tempting and not bitten. Closed by <strong>#2672</strong>.</div>
+
+<div class="gap"><strong>cards-service Athena subdomain incomplete.</strong> 6/16 sections. Architecture conforms; data missing. Closed by <strong>#2673</strong>.</div>
+
+<div class="gap"><strong>Loom citation contracts (L1-L5).</strong> No citation validation, no back-reference, no propagation, no production gate, no audit. Named in Loom contracts section above; cards to file separately or fold into #2676 scope.</div>
+
+<div class="gap"><strong>Filesystem stomp at read path (Mode A).</strong> Shared <code>/chorus</code> tree; peer <code>git checkout</code> rewrites disk in place; uncommitted edits silently overwritten. Receipts: Silas's ontology + design-doc work this morning, this doc twice today. Commits-service-v3 (PR #100) addresses the commit path but does not intercept read-time stomp. <strong>Open — fix not yet designed.</strong></div>
+
+<h2>Implementation Plan</h2>
 <table>
-<thead>
-<tr>
-<th>Tag</th>
-<th>Source of Truth</th>
-<th>Count</th>
-<th>Validation</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>product:</code></td>
-<td>Hardcoded closed list in <code>config.ts</code></td>
-<td>2 (gathering, chorus)</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing. Portfolio level.</td>
-</tr>
-<tr>
-<td><code>subproduct:</code></td>
-<td>Hardcoded closed list in <code>config.ts</code></td>
-<td>6 initially (Athena, Loom, Werk, Borg, Convergence, Clearing)</td>
-<td>At flag-parse, refuse unknown</td>
-<td><strong>New axis.</strong> Applies to <code>product:chorus</code>
-cards. Replaces what <code>sequence:</code> carries today inside Chorus.
-Gathering has no subproducts (the entire surface IS the product).</td>
-</tr>
-<tr>
-<td><code>subdomain:</code></td>
-<td>Live query to <code>GET /api/athena/subdomains</code></td>
-<td>48 today (Athena governs)</td>
-<td>At flag-parse, refuse unknown</td>
-<td><strong>New axis.</strong> Adding a subdomain in Athena makes it
-valid for cards without code change.</td>
-</tr>
-<tr>
-<td><code>domain:</code></td>
-<td>Hardcoded closed list in <code>config.ts</code> (43 values)</td>
-<td>43 (audit candidate, see open question)</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing. Top-level area pointer.</td>
-</tr>
-<tr>
-<td><code>chunk:</code></td>
-<td>Hardcoded closed list in <code>config.ts</code> (12 values)</td>
-<td>12 (audit candidate)</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing. Abstract category.</td>
-</tr>
-<tr>
-<td><code>sequence:</code></td>
-<td><strong>Deprecated</strong> — translates to <code>subproduct:</code>
-after migration</td>
-<td>32 today → 9 live → 0</td>
-<td>Warn during deprecation window, refuse after</td>
-<td>Migration: existing cards keep <code>sequence:</code> until
-backfilled; new cards use <code>subproduct:</code>; mass-rename in a
-separate migration card.</td>
-</tr>
-<tr>
-<td><code>type:</code></td>
-<td>Hardcoded {new, enhance, fix, chore, swat}</td>
-<td>5</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing.</td>
-</tr>
-<tr>
-<td><code>origin:</code></td>
-<td>Hardcoded {reflective, reactive}</td>
-<td>2</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing.</td>
-</tr>
-<tr>
-<td><code>priority:</code></td>
-<td>Hardcoded {P1, P2, P3}</td>
-<td>3</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing.</td>
-</tr>
-<tr>
-<td><code>owner:</code></td>
-<td>Hardcoded {wren, silas, kade, jeff}</td>
-<td>4</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing.</td>
-</tr>
-<tr>
-<td><code>stream:</code></td>
-<td>Hardcoded {sowing, growing, practicing, harvesting, reflecting,
-connecting}</td>
-<td>6</td>
-<td>At flag-parse, refuse unknown</td>
-<td>Existing.</td>
-</tr>
-</tbody>
+<tr><th>#</th><th>Action</th><th>Closes</th><th>Owner</th></tr>
+<tr><td>#2676</td><td>Cards validation single-source — zod canonical + sdk/HTTP/MCP/CLI all derive + dual-emit bridge + per-consumer attribution telemetry + hard retirement 2026-06-15</td><td>Validation source-of-truth gap; consumer migration end-to-end-whole</td><td>Wren</td></tr>
+<tr><td>#2671</td><td>Fail-loud sweep — typed errors, distinct spine taxonomy, non-zero exits across every named lying path</td><td>Audit-trail-lies + read-path gap + role-identity warn-then-continue</td><td>Wren</td></tr>
+<tr><td>#2672</td><td>Vikunja-write-refusal hook — PreToolUse Bash refusal of direct :3456 writes</td><td>Hook-bites-bypass gap</td><td>Wren</td></tr>
+<tr><td>#2673</td><td>cards-service subdomain Athena populate — fill 10 missing sections</td><td>Subdomain plumbing data gap</td><td>Wren</td></tr>
+<tr><td>L1-L5 (to file or fold)</td><td>Loom citation contracts — validation at write, back-reference, propagation, production gate, audit</td><td>Cards↔Loom contract gap</td><td>Wren + Silas</td></tr>
+<tr><td>(unfiled)</td><td>Read-time filesystem stomp prevention — likely a per-role staging area, fsync-during-edit lock, or active-edit detection before checkout</td><td>Filesystem stomp gap (Mode A read path)</td><td>—</td></tr>
+<tr><td>PR #100 (Kade)</td><td>Commits-service-v3 — substrate owns the working tree at the COMMIT path</td><td>Filesystem stomp gap (commit path only — read path remains open)</td><td>Kade</td></tr>
 </table>
-<p><strong>Multi-pick discipline:</strong> Every tag axis is single-pick
-per card by convention. Vikunja allows multi-label per task;
-<code>config.ts</code> does not enforce single-pick. Audit query (filed
-as follow-on card): identify any card violating single-pick on
-<code>chunk</code>, <code>sequence</code>, <code>subproduct</code>,
-<code>subdomain</code> axes; reconcile to single-pick.</p>
-<p><strong>Free-text:</strong> Title, description, AC body, comments —
-unstructured, not validated. The structured metadata is what
-validates.</p>
-<h2 id="spine-event-contract-existing-names-preserved">Spine Event
-Contract (existing names preserved)</h2>
-<p>Every mutation emits exactly one typed event. <strong>The contract
-preserves existing event names — no renames in this design except
-retiring <code>card.unblocked</code> in favor of
-<code>card.item.unblocked</code>.</strong></p>
-<h3
-id="existing-events-emitted-by-cards-29-card--8-cross-prefix--37-total-verified-2026-05-01-from-srcsdkts--srcclits">Existing
-events emitted by cards (29 <code>card.*</code> + 8 cross-prefix = 37
-total, verified 2026-05-01 from <code>src/sdk.ts</code> +
-<code>src/cli.ts</code>)</h3>
-<p>The 29 <code>card.*</code> events listed below preserve verbatim. The
-other 8 — <code>ac.ticked</code>, <code>board.snapshot.taken</code>,
-<code>board.audit.started</code>, <code>board.audit.closed</code>,
-<code>board.limit.set</code>, <code>workflow.manifest.created</code>,
-<code>workflow.manifest.archived</code>,
-<code>deploy.verification.completed</code> — are cards-emitted but use
-non-<code>card.*</code> prefixes; they show up in the table near the
-bottom.</p>
-<p><strong>Anomaly to resolve (Kade audit, 2026-05-01):</strong> Two
-emit functions exist today — <code>emitSpineEvent</code> (36 call sites)
-and <code>emitChorusEvent</code> (1 call site,
-<code>deploy.verification.completed</code> at <code>sdk.ts:889</code>).
-The "one canonical chain" invariant is structurally violated by two emit
-functions. Either retire <code>emitChorusEvent</code> and migrate the
-one event, or document why the dual path is intentional.
-<strong>Recommendation:</strong> retire and migrate. File as follow-on
-if not done in this card's implementation.</p>
-<table>
-<thead>
-<tr>
-<th>Event</th>
-<th>Trigger</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>card.item.created</code></td>
-<td><code>add</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.quick.created</code></td>
-<td>quick-capture path</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.moved</code></td>
-<td><code>move</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.bulk.moved</code></td>
-<td><code>bulk-move</code></td>
-<td>Kept (one event per bulk op, with <code>ids</code> array)</td>
-</tr>
-<tr>
-<td><code>card.item.completed</code></td>
-<td><code>done</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.accepted</code></td>
-<td><code>done --proven</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.accepted.proven</code></td>
-<td>back-link side of <code>done --proven</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.demo.started</code></td>
-<td><code>demo</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.rejected</code></td>
-<td><code>reject</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.reassigned</code></td>
-<td><code>reassign</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.updated</code></td>
-<td><code>update</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.commented</code></td>
-<td><code>comment</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.blocked</code></td>
-<td><code>block</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.item.unblocked</code></td>
-<td><code>unblock</code></td>
-<td><strong>Canonical</strong> (retire alias)</td>
-</tr>
-<tr>
-<td><code>card.unblocked</code></td>
-<td><code>unblock</code> legacy path</td>
-<td><strong>Retired</strong> in Phase 1 — subscribers migrate to
-<code>card.item.unblocked</code></td>
-</tr>
-<tr>
-<td><code>card.item.tagged</code></td>
-<td><code>tag</code>, <code>untag</code>,
-<code>set &lt;tag&gt;</code></td>
-<td>Kept; payload to include <code>category</code>, <code>value</code>,
-<code>op</code> (<code>add</code>/<code>remove</code>)</td>
-</tr>
-<tr>
-<td><code>card.item.set</code></td>
-<td><code>set &lt;field&gt;</code> non-tag fields</td>
-<td>Kept; payload extended with <code>field</code>,
-<code>old_value</code>, <code>new_value</code></td>
-</tr>
-<tr>
-<td><code>card.sequence.bulk_tagged</code></td>
-<td><code>sequence-tag</code></td>
-<td>Kept (one event per bulk op)</td>
-</tr>
-<tr>
-<td><code>card.swat.created</code></td>
-<td><code>swat</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.pulled</code></td>
-<td><code>move &lt;id&gt; Now</code> triggered by role-state</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.owner.notified</code></td>
-<td>brief-write side-effect of reassign/done</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.pm.briefed</code></td>
-<td>brief-write side-effect of completion</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.quality.warned</code></td>
-<td>AC/completeness signal at gate-time</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.quality.blocked</code></td>
-<td>quality gate failure</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.stale.detected</code></td>
-<td>card unchanged &gt; N days</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.wip_overlap.detected</code></td>
-<td>card in WIP + another status</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.blast_radius.generated</code></td>
-<td>code-impact analysis complete</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.blast_radius.zero_code</code></td>
-<td>no code files match domain</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>card.blast_radius.failed</code></td>
-<td>analysis error</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>ac.ticked</code></td>
-<td>AC checkbox toggled in description</td>
-<td>Kept (not <code>card.*</code> but cards-emitted)</td>
-</tr>
-<tr>
-<td><code>board.snapshot.taken</code></td>
-<td><code>snapshot</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>board.audit.started</code></td>
-<td><code>audit-start</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>board.audit.closed</code></td>
-<td><code>audit-close</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>board.limit.set</code></td>
-<td><code>set-limit</code></td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>workflow.manifest.created</code></td>
-<td>workflow side-effect</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>workflow.manifest.archived</code></td>
-<td>workflow side-effect</td>
-<td>Kept</td>
-</tr>
-<tr>
-<td><code>deploy.verification.completed</code></td>
-<td>deploy-gate side-effect</td>
-<td>Kept</td>
-</tr>
-</tbody>
-</table>
-<h3 id="standard-envelope">Standard envelope</h3>
-<div class="sourceCode" id="cb4"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;card.item.&lt;verb&gt;&quot;</span><span class="fu">,</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;role&quot;</span><span class="fu">:</span> <span class="st">&quot;&lt;wren|silas|kade|jeff|automation&gt;&quot;</span><span class="fu">,</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ts&quot;</span><span class="fu">:</span> <span class="st">&quot;&lt;ISO 8601&gt;&quot;</span><span class="fu">,</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;card_id&quot;</span><span class="fu">:</span> <span class="er">&lt;int&gt;</span><span class="fu">,</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;board&quot;</span><span class="fu">:</span> <span class="st">&quot;&lt;gathering|self&gt;&quot;</span><span class="fu">,</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;...verb-specific fields&quot;</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
-<h3 id="idempotency-rule">Idempotency rule</h3>
-<p>If a mutation would not change state (re-tag with same tag, re-set
-with same value), CLI exits 0 with <code>{"status":"no-op"}</code>,
-emits <strong>no spine event</strong>, and makes <strong>no Vikunja API
-call</strong>. The no-op detection happens in <code>sdk.ts</code> BEFORE
-<code>BoardClient</code> is invoked — not just at the spine layer. Audit
-logs don't fill with phantom changes; Vikunja's API doesn't see
-redundant writes (Kade audit, 2026-05-01: idempotency at API level, not
-just spine).</p>
-<h3 id="subscribers">Subscribers</h3>
-<p><code>wren-morning-validator</code> (#2642) consumes
-<code>card.item.tagged</code>, <code>card.item.set</code>,
-<code>card.item.created</code>, <code>card.item.moved</code>,
-<code>card.item.unblocked</code>. Borg observability consumes the full
-set. Loom-rcas reconstructs incidents from the spine fold. Spine is the
-audit log.</p>
-<h2 id="sender-detection">Sender Detection</h2>
-<p>Switch from cwd-based to env-required:</p>
-<pre><code>detectRole():
-  1. DEPLOY_ROLE env var (canonical) — must be one of:
-       wren | silas | kade | jeff | automation
-  2. If unset: refuse with explicit error message naming the env var
-  3. cwd parsing REMOVED (was the source of &quot;by wren&quot; bug)</code></pre>
-<p>This mirrors nudge's resolution.</p>
-<p><strong>Automation role:</strong> <code>automation</code> is a valid
-<code>DEPLOY_ROLE</code> for cron jobs, post-commit hooks, LaunchAgents,
-CI runners — callers without a human role identity. Spine events emitted
-with <code>role=automation</code> are audit-trackable but never get
-owner-of-the-card notifications. Mass-renames, nightly drift queries,
-and morning-validators all use this role.</p>
-<p>The <code>wren</code> default-fallback is removed. Phase 2 of
-migration ensures every active caller sets DEPLOY_ROLE before this
-becomes refuse-mode (see Migration Discipline).</p>
-<h2 id="role-identity-surface-for-httpmcp">Role Identity Surface for
-HTTP/MCP</h2>
-<p>External surfaces inject role identity at the wrapper layer, not in
-the canonical CLI:</p>
+
+<h2>Not in scope</h2>
 <ul>
-<li><strong>MCP tool:</strong> invokes <code>cards</code> with
-<code>DEPLOY_ROLE=&lt;calling role&gt;</code> set in the spawned
-subprocess env. Role determined by the calling Claude session's role
-identity.</li>
-<li><strong>HTTP route:</strong> requires <code>X-Role</code> header;
-refuses request without it (HTTP 400). Spawns CLI with
-<code>DEPLOY_ROLE=&lt;X-Role&gt;</code>. Authorized roles per route
-enforced at the route layer (see Authz below), not in the CLI.</li>
-<li><strong>Bash wrapper:</strong> <code>platform/scripts/cards</code>
-exports <code>DEPLOY_ROLE</code> only if it's already set in the calling
-environment AND not already exported. The wrapper does NOT infer role;
-it is a no-op if the parent didn't set it. Refusing-on-unset is the
-CLI's job.</li>
+<li>Cards CLI ergonomics (<code>--desc-file</code>, <code>create→add</code> alias) — separate card #2143.</li>
+<li>Cross-board cards — the <code>self</code> board has its own design needs.</li>
+<li>Backfill of stale labels on existing cards — separate cards (#1405, #1328 already Done).</li>
+<li>Graph-backed migration of cards (Class A version) — Vikunja remains canonical store.</li>
+<li>Subdomain populate beyond cards-service — other subdomains have their own cards.</li>
 </ul>
-<p>CLI itself does not honor <code>X-Role</code> (it's HTTP-specific).
-The contract is: external surfaces translate their identity mechanism to
-<code>DEPLOY_ROLE</code>, then defer.</p>
-<h2 id="subprocess-contract-mcp--http-wrappers">Subprocess Contract (MCP
-&amp; HTTP wrappers)</h2>
-<p>Spawning the TS CLI from a Node service is the chosen pattern.
-Trade-offs and contract:</p>
+
+<h2>References</h2>
 <ul>
-<li><strong>Cold-start cost:</strong> ~300-800ms per invocation
-including ts-node fallback path. Acceptable for human-paced operations
-(an MCP tool call is typically one-per-keystroke). Unacceptable for
-high-frequency calls; if a future surface needs &gt; 10 calls/sec, the
-contract revisits.</li>
-<li><strong>Spawn env:</strong> <code>DEPLOY_ROLE</code> must be in env.
-<code>cwd</code> is irrelevant (cwd-parsing removed from
-<code>detectRole()</code>); pass any working directory.</li>
-<li><strong><code>--json</code> mandatory:</strong> wrappers spawn with
-<code>--json</code> flag; CLI emits structured output to stdout, human
-messages to stderr. Wrappers parse stdout JSON and forward stderr
-unchanged.</li>
-<li><strong>Exit codes:</strong>
-<ul>
-<li><code>0</code> = success</li>
-<li><code>2</code> = validation failure (unknown tag value, missing
-required arg, refused state)</li>
-<li><code>3</code> = persistence failure (Vikunja unreachable, label not
-found, conflict)</li>
-<li><code>4</code> = network failure (timeout, DNS)</li>
-<li><code>1</code> = unhandled / unknown</li>
-</ul></li>
-<li><strong>Wrapper translation:</strong> MCP returns
-<code>is_error: true</code> with the stderr message on non-zero exit.
-HTTP returns 400 (exit 2), 502 (exit 3), 503 (exit 4), 500 (exit
-1).</li>
-<li><strong>Timeout:</strong> wrappers enforce 10s per invocation;
-longer = exit 4.</li>
-<li><strong>Signal propagation:</strong> parent kill propagates SIGTERM
-to subprocess.</li>
+<li>Cards filed 2026-05-02: <strong>#2671</strong>, <strong>#2672</strong>, <strong>#2673</strong>, <strong>#2676</strong>; <strong>#2669</strong> + <strong>#2670</strong> retracted to Won't Do per ADR-028 Addendum 2 (drift tests between internal sources are forbidden; single-source mandated)</li>
+<li>Audit comment on <strong>#2652</strong> (Wren+Silas, 2026-05-02) — find-record</li>
+<li>Silas walk 2026-05-02 (chat <code>silas-wren-1777737643</code>) — four lenses (consumer-first, contract validation non-negotiable, end-to-end-whole, stop-dressing-as-architecture); landed dual-emit bridge + per-consumer attribution + hard 2026-06-15 retirement</li>
+<li>PR #100 (Kade, commits-service-v3) — same single-source pattern at the commits substrate</li>
+<li><a href="/designing/docs/nudge-service-design.html"><code>nudge-service-design</code></a>, <a href="/designing/docs/commits-service-design.html"><code>commits-service-design</code></a>, <a href="/designing/docs/services-service-design.html"><code>services-service-design</code></a>, <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design</code></a> — sibling service designs</li>
+<li><code>directing/products/cards/src/cli.ts</code>, <code>sdk.ts</code>, <code>client.ts</code>, <code>config.ts</code> — canonical implementation files</li>
+<li><code>platform/api/src/mcp/server.ts</code>, <code>platform/api/src/server.ts</code> — MCP + HTTP transports</li>
+<li><code>directing/clearing/src/server.ts</code>, <code>tiles.ts</code>, <code>tailer.ts</code> — primary consumer (The Clearing)</li>
+<li>DEC-048 (no self-accept on code cards), DEC-107 (persist + deliver), DEC-074 (search hierarchy), DEC-099 (stories single-write-path)</li>
 </ul>
-<h2 id="authorization">Authorization</h2>
-<p>Per-role Vikunja tokens already exist (env var per role, see
-<code>config.ts:loadEnv</code>). The CLI loads the token matching
-<code>DEPLOY_ROLE</code>. Authorization beyond token-existence is
-<strong>not</strong> enforced at the CLI layer — any role that can spawn
-the CLI with their token can mutate any card. The control is
-observation/audit (every mutation emits a typed spine event with role
-attribution). HTTP route layer MAY enforce additional authz (e.g.,
-refuse Slack webhook from posting as <code>silas</code>); this design
-names the surface but leaves the policy to a follow-on card.</p>
-<h2 id="concurrency--ordering">Concurrency / Ordering</h2>
-<p>Two roles <code>cards move 100 wip</code> simultaneously: Vikunja
-accepts both (last-write-wins on Vikunja's side); spine emits two
-<code>card.item.moved</code> events with distinct timestamps.
-Subscribers fold by <code>ts</code>; UI debounces. No additional locking
-at the CLI layer. If conflict detection becomes needed (e.g., two roles
-updating description), a separate card adds an <code>If-Match</code>
-header pattern.</p>
-<h2 id="idempotency-on-cards-add">Idempotency on
-<code>cards add</code></h2>
-<p>Re-running <code>cards add "same title" ...</code> creates a
-duplicate card today. This design preserves that behavior (no implicit
-dedup); a separate card may add
-<code>--idempotency-key &lt;key&gt;</code> if Slack-webhook or other
-automation needs it.</p>
-<h2 id="future-proofing-the-invariant">Future-proofing the
-invariant</h2>
-<p>Future cards surfaces (Slack <code>/card</code> slash-command, web UI
-button, iOS app, webhook trigger) MUST be thin wrappers around
-<code>cards</code> CLI. Acceptable patterns:</p>
-<ul>
-<li>Spawn the CLI as a subprocess, pass args + read <code>--json</code>
-result (MCP / HTTP route pattern)</li>
-<li>Call a thin HTTP endpoint that forwards to the CLI with no logic of
-its own (NOT a new endpoint that writes to Vikunja directly)</li>
-</ul>
-<p>Unacceptable patterns:</p>
-<ul>
-<li>Reimplementing tag validation, persistence, or spine emit in another
-language</li>
-<li>Writing to Vikunja from a service other than
-<code>BoardClient</code></li>
-<li>Adding flags or paths that diverge from the CLI's contract</li>
-<li>Introducing a separate "cards-lite" or "cards-fast"
-implementation</li>
-</ul>
-<p>PM check: any new cards surface proposal goes through Wren before
-merge. The question is "does this delegate to the canonical CLI, or
-reimplement the flow?" If the latter, reject.</p>
-<h2 id="what-gets-removed">What Gets Removed</h2>
-<table>
-<thead>
-<tr>
-<th>Path</th>
-<th>Verdict</th>
-<th>Reason</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>cwd-based default-to-<code>wren</code> in <code>detectRole()</code>
-(<code>config.ts:149-156</code>)</td>
-<td><strong>Removed Phase 2</strong></td>
-<td>Source of role-attribution drift; switch to DEPLOY_ROLE-required
-with <code>automation</code> as the catch-all for non-role callers</td>
-</tr>
-<tr>
-<td>Stale sequence values:
-<code>v1, hardening, style, sparql, flow-tests, visibility, gates, spine, ops, strategy, icd, infrastructure, content, framework, awareness, coordination, surfaces, quality, harness, cards, context, protocol, pulse</code></td>
-<td><strong>Removed Phase 3</strong></td>
-<td>Closed list reduces to live values:
-<code>werk, clearing, loom, athena, convergence, borg, seeds, chorus, gathering</code>
-(9). Backfill cards before Vikunja-label deletion.</td>
-</tr>
-<tr>
-<td><code>card.unblocked</code> event name</td>
-<td><strong>Removed Phase 1</strong></td>
-<td>Alias drift — <code>card.item.unblocked</code> is canonical;
-subscribers migrate atomically before retire</td>
-</tr>
-</tbody>
-</table>
-<h2 id="what-gets-kept">What Gets Kept</h2>
-<table>
-<thead>
-<tr>
-<th>Path</th>
-<th>Verdict</th>
-<th>Reason</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Vikunja as canonical store</td>
-<td><strong>Kept</strong></td>
-<td>External SaaS already serves UI + API; not a violation; replacement
-would be optimization</td>
-</tr>
-<tr>
-<td><code>BoardClient</code> as persistence wrapper</td>
-<td><strong>Kept</strong></td>
-<td>One client, all writes through it</td>
-</tr>
-<tr>
-<td><code>cards</code> CLI as canonical implementation</td>
-<td><strong>Kept</strong></td>
-<td>All surfaces converge here</td>
-</tr>
-<tr>
-<td>Read-only Chorus API GET endpoints</td>
-<td><strong>Kept</strong></td>
-<td>They spawn the CLI for canonical render; consistent with
-single-implementation invariant</td>
-</tr>
-<tr>
-<td>SQLite cache fallback</td>
-<td><strong>Kept</strong></td>
-<td>Read-only optimization; degrades cleanly</td>
-</tr>
-<tr>
-<td><code>directing/products/cards/src/</code> location</td>
-<td><strong>Kept</strong></td>
-<td>Canonical address; don't move during this design</td>
-</tr>
-<tr>
-<td>All <code>card.item.*</code>, <code>card.accepted*</code>,
-<code>card.quick.*</code>, <code>card.swat.*</code>,
-<code>card.pulled</code>, <code>card.owner.notified</code>,
-<code>card.pm.briefed</code>, <code>card.quality.*</code>,
-<code>card.stale.detected</code>,
-<code>card.wip_overlap.detected</code>,
-<code>card.blast_radius.*</code>, <code>card.bulk.moved</code>,
-<code>card.demo.started</code>, <code>card.rejected</code>,
-<code>card.sequence.bulk_tagged</code>, <code>ac.ticked</code>,
-<code>board.*</code>, <code>workflow.*</code>, <code>deploy.*</code>
-events</td>
-<td><strong>Kept</strong></td>
-<td>Existing names preserved; no rename storm.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="backwards-compatibility">Backwards Compatibility</h2>
-<p>Cards in Vikunja today carry stale <code>sequence:</code> values. Two
-choices for those cards during the deprecation window:</p>
-<ol type="1">
-<li><strong>Phase 1 (validation in warn mode):</strong>
-<code>cards view &lt;id&gt;</code> on a card with
-<code>sequence:hardening</code> succeeds with a stderr warning;
-<code>cards update &lt;id&gt; ...</code> succeeds; new cards can't add
-the stale value.</li>
-<li><strong>Phase 3 (mass-rename followed by refuse mode):</strong>
-Backfill cards (assign <code>subproduct:</code> based on a translation
-table; remove <code>sequence:</code> label after backfill); flip
-validation to refuse mode; delete stale Vikunja labels last.</li>
-</ol>
-<p>No card breaks. The morning-validator (#2642) flags any card still
-carrying a stale <code>sequence:</code> value during the deprecation
-window as drift, then the Phase 3 backfill clears it.</p>
-<p><strong>Vikunja label rename mechanism:</strong> Vikunja's
-<code>PUT /api/v1/labels/{id}</code> updates label title in place,
-preserving card associations. Phase 3 uses
-<code>add-new-and-remove-old</code> for labels that change identity
-(e.g., <code>sequence:foo</code> → <code>subproduct:bar</code>), since
-the semantic mapping isn't 1:1.</p>
-<h2 id="migration-discipline">Migration Discipline</h2>
-<p><strong>Phase 0 (this design + #2643):</strong> Document the
-contract. Don't migrate data. Don't break wrappers.</p>
-<p><strong>Phase 1 (separate card, follow-on):</strong></p>
-<ul>
-<li>Add <code>subdomain:</code> flag with Athena validation
-(refuse-at-source).</li>
-<li>Add <code>subproduct:</code> flag with closed-list validation
-(refuse-at-source).</li>
-<li>Add MCP tools that spawn CLI (with subprocess contract above).</li>
-<li>Add HTTP mutation routes that spawn CLI.</li>
-<li>Validation for existing tags ships in <strong>warn mode</strong>
-(refuse only for new tag values; existing values pass with
-warning).</li>
-<li>Retire <code>card.unblocked</code> in favor of
-<code>card.item.unblocked</code>; subscribers migrate first.</li>
-<li>Backfill spine emit gaps: <code>card.item.set</code> payload
-extended with <code>field</code>, <code>old_value</code>,
-<code>new_value</code>; <code>card.item.tagged</code> payload extended
-with <code>op</code> (<code>add</code>/<code>remove</code>).</li>
-</ul>
-<p><strong>Phase 2 (separate card, follow-on):</strong></p>
-<ul>
-<li>Switch <code>detectRole()</code> to DEPLOY_ROLE-required (refuse on
-unset).</li>
-<li>Bash <code>cards</code> wrapper exports DEPLOY_ROLE only if parent
-set it; CLI refuses if missing.</li>
-<li>Audit role-attribution events for last 90 days; flag mis-attributed
-events to surface impact.</li>
-<li>All cron jobs / LaunchAgents / hooks updated to set
-<code>DEPLOY_ROLE=automation</code> if no human role applies.</li>
-</ul>
-<p><strong>Phase 3 (separate card, follow-on):</strong></p>
-<ul>
-<li>Mass-backfill <code>subproduct:</code> tag on existing cards from
-translation table (<code>sequence:werk</code> →
-<code>subproduct:werk</code>, etc.).</li>
-<li>Remove stale <code>sequence:</code> labels from cards (after
-backfill).</li>
-<li>Flip validation to refuse mode for <code>sequence:</code>
-values.</li>
-<li>Delete unused Vikunja labels (<code>hardening</code>,
-<code>style</code>, <code>sparql</code>, etc.).</li>
-<li>Wren morning-validator (#2642) starts firing AC5 owner-subdomain
-alignment query.</li>
-</ul>
-<p><strong>Phase 4 (separate card, follow-on):</strong></p>
-<ul>
-<li>Raise <code>client.ts</code> test coverage to ≥70%.</li>
-<li>Audit and tighten <code>domain:</code> (43 → smaller closed list)
-and <code>chunk:</code> (12 → audited closed list).</li>
-<li>Single-pick discipline audit for multi-valued axes.</li>
-</ul>
-<p><strong>Ordering dependencies:</strong></p>
-<ul>
-<li>Phase 1's warn-mode is a precondition for Phase 3; refuse-mode in
-Phase 1 would make Phase 3 unable to operate on existing cards.</li>
-<li>Phase 2's <code>automation</code> role is a precondition for any
-cron / LaunchAgent updating cards (including Phase 3 backfill — must run
-as <code>automation</code>).</li>
-<li>Phase 4 is gated on Phase 3 (no point auditing closed lists while
-migration is in flight).</li>
-</ul>
-<p>Each phase ships independently; later phases gate on earlier ones. No
-big-bang migration.</p>
-<h2 id="files-in-scope-this-design-landing-only">Files in Scope (this
-design landing only)</h2>
-<ul>
-<li><code>designing/docs/cards-service-design.md</code> — this doc</li>
-<li><code>designing/docs/cards-service-design.html</code> — HTML render
-via doc-catalog</li>
-<li><code>roles/wren/CLAUDE.md</code> (or shared fragment) — one-line
-pointer to this design</li>
-<li><code>directing/products/cards/README.md</code> — one-line pointer
-to this design</li>
-</ul>
-<h2
-id="cards-cli-surface-map-verified-2026-05-01-from-directingproductscardssrc">Cards-CLI
-surface map (verified 2026-05-01 from
-<code>directing/products/cards/src/</code>)</h2>
-<p>The canonical implementation is layered, not flat. Subscribers and
-observers depend on different layers:</p>
-<table>
-<thead>
-<tr>
-<th>File</th>
-<th>Role</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>cli.ts</code> (991 lines)</td>
-<td>Verb-router</td>
-<td>Thin dispatch via <code>buildCliHandlers()</code>; no business
-logic</td>
-</tr>
-<tr>
-<td><code>sdk.ts</code> (~40 emit sites)</td>
-<td><strong>Business logic + spine emit</strong></td>
-<td>Where mutations happen; the contract surface for subscribers</td>
-</tr>
-<tr>
-<td><code>client.ts</code> aka <code>BoardClient</code> (645 lines, 44%
-covered)</td>
-<td>Transport</td>
-<td>Wraps Vikunja HTTP REST; ALSO reads sqlite via <code>execSync</code>
-(line 7) using <code>VIKUNJA_DB</code> (line 11). Object-injection lint
-suppressed at file head.</td>
-</tr>
-<tr>
-<td><code>events.ts</code></td>
-<td>Spine emit helpers</td>
-<td>Hosts both <code>emitSpineEvent</code> AND
-<code>emitChorusEvent</code> — the dual-emit-path anomaly noted
-above</td>
-</tr>
-<tr>
-<td><code>config.ts</code></td>
-<td>LABELS registry, <code>detectRole</code>,
-<code>resolveBucket</code></td>
-<td>Schema source for all hardcoded closed lists</td>
-</tr>
-<tr>
-<td><code>blast-radius.ts</code></td>
-<td>Auto-generated blast-radius comments</td>
-<td>Side-effect on <code>add</code> / <code>swat</code></td>
-</tr>
-<tr>
-<td><code>ac-tick-detection.ts</code></td>
-<td>AC checkbox parsing</td>
-<td>Side-effect on <code>update</code> for AC progress</td>
-</tr>
-<tr>
-<td><code>cli-add-helpers.ts</code></td>
-<td>Verb-specific helpers</td>
-<td><code>add</code> flag parsing</td>
-</tr>
-<tr>
-<td><code>cli-view-helpers.ts</code></td>
-<td>Verb-specific helpers</td>
-<td><code>view</code> rendering</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Implication for the canonical chain:</strong> future
-role-state-validators, borg-observers, and morning-validator should
-depend on <code>sdk.ts</code> events (the contract layer), not
-<code>BoardClient</code> (the transport). The Single Contract section
-above names this explicitly.</p>
-<h2 id="open-questions">Open Questions</h2>
-<ol type="1">
-<li><strong>Domain count</strong>: 43 entries today, many legacy
-(<code>health</code>, <code>save</code>, <code>make</code>,
-<code>house-garden</code>, <code>gathering</code>, etc.). Audit
-candidate — file Phase 4 card.</li>
-<li><strong>Chunk count</strong>: 12 entries today. Some abstract
-(<code>spine</code>, <code>senses</code>), some concrete
-(<code>ci</code>, <code>tests</code>). Audit whether chunk should align
-to subdomain instead — separate design conversation.</li>
-<li><strong><code>subproduct:Chorus</code> and
-<code>product:chorus</code> collision</strong>: by current design, a
-Chorus app card carries <code>product:chorus subproduct:chorus</code> if
-the work is on Chorus-the-app at layer 6 of the reference model (vs
-Chorus-the-portfolio at layer 1). This is awkward. Open question: is
-"Chorus-the-app" a valid subproduct value, or do those cards just carry
-<code>product:chorus</code> without subproduct? Defer to Jeff.</li>
-<li><strong>Authorization policy</strong>: per-route HTTP authz (Slack
-webhook can/can't post as <code>silas</code>) is named but not
-specified. Phase 1 ships permissive; tightening is a follow-on.</li>
-</ol>
-<h2 id="decisions">Decisions</h2>
-<p>The following should be filed as DECs:</p>
-<ul>
-<li><strong>DEC-NNN: Canonical implementation =
-<code>directing/products/cards/src/cli.ts</code></strong>. All wrappers
-spawn it. No reimplementations.</li>
-<li><strong>DEC-NNN: Persistence = Vikunja REST API.</strong> SQLite is
-read-only cache, not a competing store.</li>
-<li><strong>DEC-NNN: Schema source of truth = Athena (subdomain) +
-closed lists (everything else).</strong></li>
-<li><strong>DEC-NNN: Role identity = DEPLOY_ROLE env, refuse on unset,
-<code>automation</code> is a valid value.</strong></li>
-<li><strong>DEC-NNN: Validation = at flag-parse,
-refuse-at-source.</strong> No silent-accept-then-drift.</li>
-<li><strong>DEC-NNN: Spine emit = every state-changing mutation, typed
-event envelope.</strong> No-ops emit no event.</li>
-<li><strong>DEC-NNN: MCP + HTTP-mutation = thin wrappers spawning
-CLI.</strong> Subprocess contract specified.</li>
-</ul>
-<h2 id="references">References</h2>
-<ul>
-<li><code>designing/docs/nudge-service-design.md</code> (Wren, refreshed
-2026-04-30 in #2631) — precedent + structural invariant</li>
-<li><code>designing/docs/commits-service-design.md</code> (Kade,
-in-flight 2026-05-01) — sibling redesign in same shape</li>
-<li><code>directing/products/cards/src/cli.ts</code> (991 lines) —
-canonical implementation address</li>
-<li><code>directing/products/cards/src/client.ts</code> (645 lines, 44%
-covered) — persistence wrapper</li>
-<li><code>directing/products/cards/src/sdk.ts</code> — spine emit call
-sites (40+)</li>
-<li><code>directing/products/cards/src/config.ts:149-156</code> —
-<code>detectRole()</code> cwd fallback (bug source)</li>
-<li><code>directing/products/cards/src/config.ts:LABELS</code> — label
-registry (43 domain, 12 chunk, 32 sequence, 6 stream, 5 type, 2 origin,
-4 owner, 3 priority, 2 product)</li>
-<li><code>platform/api/src/mcp/server.ts</code> — MCP host (no cards
-tools today)</li>
-<li>DEC (pending): card-tag schema is closed-list, validated at writing
-surface</li>
-<li>Memory: <code>feedback_writing_surface_over_review_surface</code> —
-quality lives where the artifact is written</li>
-<li>Memory: <code>feedback_no_competing_implementations</code> —
-single-implementation invariant</li>
-<li>Memory: <code>feedback_eliminate_runtime_dep_dont_manage_it</code> —
-eliminate runtime deps over manage</li>
-<li>Memory: persist-vs-deliver corollary (DEC-107) — applies to nudge;
-cards has no parallel persist</li>
-<li>Cards: #2642 (Wren morning-state validator — consumes this contract
-for AC5 owner-subdomain alignment); #2643 (this design)</li>
-</ul>
-<h2 id="review-trail">Review trail</h2>
-<ul>
-<li>Initial draft: Wren, 2026-05-01</li>
-<li>Subagent review (general-purpose, 2026-05-01): caught new-event-name
-conflict with existing <code>card.item.*</code> names (would have
-introduced the drift this design exists to prevent), wrong file citation
-(<code>events.ts</code> → <code>sdk.ts</code>), miscounted tags (34
-domain → 43, 13 chunk → 12), product/subproduct collision, undefined
-backward compat for cards with stale labels, missing automation role for
-Phase 2, hand-waved bash wrapper, missing subprocess contract, missing
-authz/concurrency/idempotency/error-contract sections.</li>
-<li>Revisions applied: all blockers resolved before this version.
-Yellow-bar items (Phase 4 audits, authz policy,
-chunk-alignment-to-subdomain) deferred to follow-on cards.</li>
-</ul>
+
+<p class="footer">Wren, 2026-05-01 / refreshed 2026-05-02 (consumer-first restructure + dual-emit bridge + lens 4 trim).</p>
+
 </body>
 </html>
