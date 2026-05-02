@@ -1,6 +1,81 @@
 # Commits Service Design
 
-**Kade, 2026-04-29. Updated 2026-05-01 (v2.5). Card #2586.**
+**Kade, 2026-04-29. Updated 2026-05-02 (v3). PM constraint: Wren. Architecture: Silas. Card #2586.**
+
+## v3 amendment (2026-05-02)
+
+**Architectural primitive (load-bearing): the substrate owns the working tree.** Everything else in this amendment — who owns branches, locks, hooks, push, role-state — follows from that single shift.
+
+**Class B implementation mode — thin → thick.** ADR-028's Class B "single canonical adapter" did not previously distinguish thin (shells out to git, integrity depends on agent discipline) from thick (substrate executes the contract internally). v2.5's `git-queue.sh` is thin; v3 graduates it to thick. Same shape as #2652 cards CLI (was thin shell-script, became canonical adapter all transports delegate to) and #2649 chorus-api (was vendor copies, became transport over gathering's `public/`). v3 is the same move applied to commits. Maps to `chorus:AuthBoundary.checkType: 'service'` vs `'ad-hoc'` from the security model — ad-hoc boundaries are migration candidates exactly because their integrity depends on agent discipline.
+
+v2.5 named three failure modes and accepted (A) read-stale-content as residual risk. The morning of 2026-05-02 produced the (A) receipt: Silas's uncommitted ontology + design-doc work was overwritten on disk when Kade ran `git checkout` on the shared tree to gate-code wren/2649. Cost: ~30 min of architect work, recovered from `/tmp` fragments. The lesson is not "be more careful" — it's that **invariant execution cannot rest on agent discipline.** v2.5's accepted-residual was a norm with a hopeful name.
+
+This amendment names the structural answer.
+
+### Invariant vs norm
+
+A norm asks each agent to remember N rules every commit (don't switch branches with peer dirty, don't bypass pre-commit, don't set the test override env, don't push raw, don't merge with merge-commit, etc.). Invariant execution makes the rules properties of the system: the only paths exposed to the agent are paths that satisfy the contract. There is no env to flip because no env is on the wire. There is no flag to skip because no flag is on the wire. There is no shared `.git/HEAD` to corrupt because the agent does not touch git directly.
+
+### Inversion of control
+
+Today: agent runs the procedure (stage → branch-check → hook → queue → push → watch for race → watch for env → watch for tree-state). Ten things, every commit, hoping. Inverted: the agent makes one declarative request — "commit my changes for the card I'm building" — and the substrate runs the procedure or refuses with a reason. The remembering-surface goes to zero because there is nothing left to remember.
+
+This is the same shape as #2652 (CLI canonical, MCP/HTTP delegate), #2649 (chorus-api as single source for static assets), DEC-107 (nudge persist+deliver atomic). The pattern repeats: one canonical surface owns the work, peripheral surfaces delegate to it. v3 is not "add a new service" — it is "finish that pattern for the commits surface."
+
+### What the substrate owns
+
+- **Working tree.** Service owns a working directory per role. Agent reads but does not switch HEAD.
+- **Branches.** Service creates/switches/pushes the branch that matches the role's active card. Agent has no `git checkout` exposure.
+- **Locks.** Lock acquisition is internal. Agent does not see flock or its absence.
+- **Hooks.** Pre-commit checks run inside the service. Their pass/fail is the service's response to the agent. There is no `--no-verify` because there is no `git commit` for the agent to run.
+- **Push protocol.** Rebase, retry-on-conflict, race serialization are service properties. Agent gets a single response: landed-on-main with SHA, or refused-with-reason.
+- **Role-state-to-card attestation.** Service reads role-state internally to derive the active card. Agent does not pass card-id at all — the service derives it from the role's declared state. Closes (C) same-role-wrong-card structurally: agent and substrate cannot disagree about which card is being committed for, because there is only one source.
+
+### What the agent calls
+
+A small declarative interface:
+
+- `commit(role, paths, message)` — service derives card from role-state, stages, validates, commits, pushes, returns SHA or reason. (Card is **not** an agent-passed argument; service derives it.)
+- `status(role)` — current branch state, any pending push, any hook failures from the last attempt.
+- (no other surface)
+
+No `branch_create`, no `push`, no `set_env`, no `bypass`. If the surface needs to grow, it grows by adding card-types the service recognizes — never by adding flags the agent passes.
+
+### SWAT / emergency — encoded as card type, not as flag (Wren constraint)
+
+Any "skip" or "emergency" flag exposed at the wire is a bypass-class door. v3 closes that door by making fast-path a property of the **card** the agent is committing for, not of the call.
+
+A `type:swat` card declares its lighter-weight rules (e.g., allow no-test-evidence, allow same-branch-as-target). The service reads the card type at commit time and applies the matching rule set. The agent's call is the same — `commit(role, paths, message)` — but the card itself carries the relaxation. There is no agent-side flag to flip; the relaxation is a property of the work, not of the actor.
+
+### Failure modes after v3
+
+- **(A) read-stale-content** — disappears. Agent does not switch HEAD. Service's working directory per role removes shared `.git/HEAD`.
+- **(B) cross-role commit-on-wrong-branch** — disappears. Service derives branch from role's active card; agent cannot specify branch.
+- **(C) same-role wrong-card** — disappears. Service binds commit to the role's active card; mismatched intent fails at the wire.
+- **(D) raw-push race** — disappears. No raw push surface.
+- **(E) stale-CI on merged SHA** — addressed at the GitHub side (already-shipped settings + lockstep enforcer, deferred); v3 does not change this.
+
+### Single Contract — restated
+
+> **A commit lands when, and only when, the role calls the service's `commit` for its active card, and the service (a) verifies the role's branch matches its role-prefix and active-card, (b) runs the pre-commit checks against the staged paths and they pass, (c) pushes via its serialized internal queue, and (d) GitHub's branch-protection rebase-merges to main with required-checks green against the merged SHA. The agent's only signal is the response from the service: SHA-on-main, or refused-with-reason.**
+
+### Status of v2.5 mechanisms after v3
+
+- **`git-queue.sh`** — internal mechanism of the service. Agent no longer calls it directly.
+- **Branch-check (#2580/#2641)** — internal validation step inside the service.
+- **Pre-commit hook** — internal validation step inside the service. The bypass surface (`--no-verify`) is no longer exposed because the agent does not run `git commit`.
+- **`CHORUS_TEST_FORCE_FIX_CARD` env (and any other test/smoke bypass)** — does not exist after v3. Tests that need fix-card behavior receive it as a parameter or as service state, not as a process env.
+
+### What this amendment does not do
+
+- It does not rename existing artifacts (`git-queue.sh`, hooks). They become internal.
+- It does not retire `--no-verify` from raw git — that's outside chorus's enforcement scope. It removes the *path* through chorus that exposes it.
+- It does not solve (E) stale-CI; that lives at the GitHub-settings layer.
+- It does not specify the wire protocol (HTTP vs MCP vs IPC) — implementation detail for cards under this design.
+
+### Sequencing
+
+To be filed as cards under this design after v3 is signed off. PR #75 (silas/2626 follow-on, quote-aware command split) becomes obsolete under v3 — it patches a hook that doesn't exist after v3 retires text-parsing surfaces; close on v3 sign-off.
 
 ## v2.5 amendment (2026-05-01)
 
