@@ -32,11 +32,16 @@ const NudgeInput = z.object({
 
 export type NudgeArgs = z.infer<typeof NudgeInput>;
 
-/** #2474 — async exec contract: takes a promisified execFile-shaped fn. */
+/** #2474 — async exec contract: takes a promisified execFile-shaped fn.
+ *  #2662 — opts gains `cwd` so callers spawning binaries that run relative
+ *  to repo root (e.g., chorus_commit → git-queue.sh staging paths) can set
+ *  it explicitly. Without this, chorus-api's process cwd (platform/api)
+ *  leaked into git add and broke path resolution.
+ */
 export type ExecFileAsync = (
   file: string,
   args: string[],
-  opts: { env?: NodeJS.ProcessEnv; timeout?: number },
+  opts: { env?: NodeJS.ProcessEnv; timeout?: number; cwd?: string },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** #2474 — DI seam for tests: inject mock execFile / fixed shim path.
@@ -485,12 +490,19 @@ const COMMIT_TOOL_DEF = {
 } as const;
 
 // #2682 — classify a git-queue.sh non-zero-exit into a typed refusal reason.
-// commit-phase failures: branch-check signature → branch-mismatch; otherwise hook-fail.
-// push-phase failures: always push-conflict (rebase/lock/network all surface here).
-function classifyCommitFailure(stderr: string): 'branch-mismatch' | 'hook-fail' {
+// Order-sensitive: check most specific patterns first, fall through to hook-fail.
+//   branch-check signature       → branch-mismatch
+//   `could not open directory`   → path-not-found (#2662 dogfood receipt)
+//   `did not match any files`    → path-not-found
+//   anything else                → hook-fail (pre-commit + downstream)
+// push-phase failures route through push-conflict; this fn covers commit-phase only.
+function classifyCommitFailure(stderr: string): 'branch-mismatch' | 'path-not-found' | 'hook-fail' {
   const lower = stderr.toLowerCase();
   if (lower.includes('branch-check') || /head\s+is\s+\S+\/.+,\s*expected/.test(lower)) {
     return 'branch-mismatch';
+  }
+  if (lower.includes('could not open directory') || lower.includes('did not match any files')) {
+    return 'path-not-found';
   }
   return 'hook-fail';
 }
@@ -528,16 +540,34 @@ async function executeCommit(
 
   const card = board.cards[0];
   const branch = `${role}/${card.id}`;
+
+  // #2662 — chorus-api's launchctl PATH puts /opt/homebrew/bin first, which
+  // is Node 23. The chorus-api process itself runs the team's nvm Node 20
+  // (absolute path in launch plist), but subprocess PATH-resolution of
+  // `node`/`npx`/`npm` (used by pre-commit's `npx jest`) picks up the
+  // Homebrew binary, breaking native modules compiled for Node 20.
+  // Prepend the parent node's bin dir so the subprocess chain stays on the
+  // same Node version as chorus-api itself.
+  const path = require('path') as typeof import('path');
+  const parentNodeBinDir = path.dirname(process.execPath);
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
+    PATH: `${parentNodeBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
+
+  // #2662 — git-queue.sh stages paths via `git add <path>` which resolves
+  // them relative to cwd. chorus-api runs from platform/api, so without
+  // an explicit cwd, paths like "skills/acp/SKILL.md" became
+  // "platform/api/skills/acp/SKILL.md" (404). Derive repo root from the
+  // gitQueuePath = "<repo>/platform/scripts/git-queue.sh".
+  const repoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
 
   // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
   let commitStdout: string;
   try {
     const commitArgs = ['commit', ...paths, '--', '-m', message];
-    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000 });
+    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
     commitStdout = stdout;
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
@@ -552,7 +582,7 @@ async function executeCommit(
 
   // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
   try {
-    await execFileAsync(gitQueuePath, ['push'], { env, timeout: 60_000 });
+    await execFileAsync(gitQueuePath, ['push'], { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
     emit(CHORUS_COMMIT_REFUSED, { role, card_id: card.id, reason: 'push-conflict', detail: stderr.slice(0, 500) });

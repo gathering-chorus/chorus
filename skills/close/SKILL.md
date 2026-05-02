@@ -31,7 +31,7 @@ The skill invokes `platform/scripts/close-out.sh` with your role + paragraph. Th
 1. **Writes `roles/<role>/next-session.md`** — handoff for next session. Overwrites previous (next-session is ephemeral; journal is the durable record). Paragraph + derived WIP + derived Next from board.
 2. **Appends to `activity.md`** — one-line team audit entry: `- TIMESTAMP [role] close → <summary>`.
 3. **Writes/appends `roles/<role>/journal/YYYY-MM-DD.md`** — if entry for today exists, appends a new "Session close TIMESTAMP" section. Else creates the day's journal with the paragraph.
-4. **Invokes `session-close.sh`** — existing script (#1866) that runs board audit-close + git-queue commit with your paragraph as the commit summary.
+4. **Invokes `session-close.sh`** — existing script (#1866) that runs board audit-close and emits a session-close commit with your paragraph as the summary. The script's commit path is internal substrate (out of scope for #2662 skill-surface migration); the skill-facing surface for any other direct commits is `mcp__chorus-api__chorus_commit`.
 
 Prints a single confirmation line when done.
 
