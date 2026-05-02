@@ -23,6 +23,7 @@ import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from '../shim-path';
 import { resolveCardsPath } from '../cards-path';
+import { resolveGitQueuePath } from '../git-queue-path';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -62,6 +63,10 @@ export interface McpServerDeps {
   // #2661 — spine event emitter DI seam. Default writes a JSON line to
   // stderr (same channel as logEvent); tests inject a capture function.
   emitSpineEvent?: SpineEmitter;
+  // #2682 — git-queue.sh path. The chorus_commit handler spawns it as
+  // the canonical commit+push surface. Default resolves to the repo's
+  // platform/scripts/git-queue.sh; tests inject a fake path + mock execFileAsync.
+  gitQueuePath?: string;
 }
 
 export type BoardCard = { id: number; owner: string; title: string };
@@ -119,6 +124,16 @@ const CardsViewInput = z.object({
 // card lives on the board, role-state owns session/attention only).
 const CommitStatusInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service queries the board for this role\'s active WIP card.'),
+}).strict();
+
+// #2682 — chorus_commit (write) input schema. Service derives the active
+// card from the board (boardReader), validates branch, runs hooks, commits
+// + pushes via existing git-queue.sh. No card_id / branch / force / bypass /
+// env-overrides on the wire.
+const CommitInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service derives the active card from the board.'),
+  paths: z.array(z.string().min(1)).min(1).describe('Paths to stage and commit, relative to repo root. Same files passed to `git add` and `git commit -- <paths>` to prevent cross-role staging collisions.'),
+  message: z.string().min(1).describe('Commit message body. Service does not modify it; agent supplies the full text including role prefix and card reference.'),
 }).strict();
 
 const PrinciplesGetInput = z.object({
@@ -431,6 +446,128 @@ function defaultBoardReader(fetchImpl: FetchImpl, apiBase: string): BoardReader 
 function defaultSpineEmitter(): SpineEmitter {
   return (event, fields) => {
     process.stderr.write(JSON.stringify({ level: 'info', event, ts: new Date().toISOString(), ...fields }) + '\n');
+  };
+}
+
+// #2682 — spine event names. Extracted as consts because sonarjs flags
+// duplicated string literals (>5 occurrences across emit + throw paths).
+const CHORUS_COMMIT_REFUSED = 'chorus_commit.refused';
+const CHORUS_COMMIT_INVOKED = 'chorus_commit.invoked';
+
+// #2682 — chorus_commit (write) tool def. Wraps git-queue.sh commit + push
+// behind one declarative call. Service derives card via boardReader; refuses
+// with typed reasons (no-wip-card / multi-wip / board-unreachable from
+// boardReader, branch-mismatch / hook-fail / push-conflict from git-queue
+// exit + stderr classification).
+const COMMIT_TOOL_DEF = {
+  name: 'chorus_commit',
+  description:
+    'Use this to commit + push changes for the card you\'re currently building. Service derives the active card from the board (status=WIP, owner=role), validates HEAD matches `<role>/<card-id>`, runs the canonical pre-commit hook chain, and pushes via the serialized queue. Returns SHA + branch + card_id on success, or a typed refusal: no-wip-card / multi-wip / board-unreachable / branch-mismatch / hook-fail / push-conflict. Do NOT use raw `git commit` or `bash git-queue.sh` — those bypass the typed refusal taxonomy and the board-derived card binding.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Calling role — pick one: kade (engineer), wren (PM), silas (architect/ops). Determines DEPLOY_ROLE attribution and which board WIP-card the commit is bound to.',
+      },
+      paths: {
+        type: 'array',
+        items: { type: 'string', minLength: 1 },
+        minItems: 1,
+        description: 'Paths to stage and commit, relative to repo root',
+      },
+      message: { type: 'string', minLength: 1, description: 'Commit message body' },
+    },
+    required: ['role', 'paths', 'message'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #2682 — classify a git-queue.sh non-zero-exit into a typed refusal reason.
+// commit-phase failures: branch-check signature → branch-mismatch; otherwise hook-fail.
+// push-phase failures: always push-conflict (rebase/lock/network all surface here).
+function classifyCommitFailure(stderr: string): 'branch-mismatch' | 'hook-fail' {
+  const lower = stderr.toLowerCase();
+  if (lower.includes('branch-check') || /head\s+is\s+\S+\/.+,\s*expected/.test(lower)) {
+    return 'branch-mismatch';
+  }
+  return 'hook-fail';
+}
+
+interface CommitArgs {
+  role: 'kade' | 'wren' | 'silas';
+  paths: string[];
+  message: string;
+}
+
+async function executeCommit(
+  args: CommitArgs,
+  boardReader: BoardReader,
+  emit: SpineEmitter,
+  execFileAsync: ExecFileAsync,
+  gitQueuePath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { role, paths, message } = args;
+
+  // Step 1 — derive card from board (same path as chorus_commit_status).
+  const board = await boardReader(role);
+  if (!board.ok) {
+    emit(CHORUS_COMMIT_REFUSED, { role, reason: board.reason, detail: board.detail });
+    throw new Error(`chorus_commit refused: board-unreachable${board.detail ? ` (${board.detail})` : ''}`);
+  }
+  if (board.cards.length === 0) {
+    emit(CHORUS_COMMIT_REFUSED, { role, reason: 'no-wip-card' });
+    throw new Error(`chorus_commit refused: no-wip-card — role ${role} has no card in WIP`);
+  }
+  if (board.cards.length > 1) {
+    const ids = board.cards.map((c) => c.id).join(',');
+    emit(CHORUS_COMMIT_REFUSED, { role, reason: 'multi-wip', card_ids: ids });
+    throw new Error(`chorus_commit refused: multi-wip — role ${role} has ${board.cards.length} cards in WIP (${ids})`);
+  }
+
+  const card = board.cards[0];
+  const branch = `${role}/${card.id}`;
+  const env = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+  } as NodeJS.ProcessEnv;
+
+  // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
+  let commitStdout: string;
+  try {
+    const commitArgs = ['commit', ...paths, '--', '-m', message];
+    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000 });
+    commitStdout = stdout;
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
+    const reason = classifyCommitFailure(stderr);
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: card.id, reason, detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
+  }
+
+  // Extract SHA from `[branch sha] message` line (git's standard commit output).
+  const shaMatch = commitStdout.match(/\[\S+\s+([a-f0-9]+)\]/);
+  const sha = shaMatch ? shaMatch[1] : 'unknown';
+
+  // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
+  try {
+    await execFileAsync(gitQueuePath, ['push'], { env, timeout: 60_000 });
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: card.id, reason: 'push-conflict', detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_commit refused: push-conflict — ${stderr.split('\n')[0]}`);
+  }
+
+  // Step 4 — success. Emit invoked and return structured payload.
+  emit(CHORUS_COMMIT_INVOKED, { role, card_id: card.id, paths_count: paths.length, sha });
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ role, card_id: card.id, branch, sha }, null, 2),
+      },
+    ],
   };
 }
 
@@ -842,6 +979,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const apiBase = deps.apiBase ?? 'http://localhost:3340';
   const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
   const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
+  const gitQueuePath = deps.gitQueuePath ?? resolveGitQueuePath();
   const server = new Server(
     {
       name: 'chorus-api',
@@ -870,6 +1008,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_SET_TOOL_DEF,
       CARDS_VIEW_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
+      COMMIT_TOOL_DEF,
     ],
   }));
 
@@ -968,6 +1107,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCommitStatus(parsed.data, boardReader, emitSpineEvent);
+      }
+      case 'chorus_commit': {
+        const parsed = CommitInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
