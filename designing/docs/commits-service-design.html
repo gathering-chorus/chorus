@@ -61,9 +61,6 @@ A commit lands when, and only when, the role calls the service's <code>commit</c
 <p style="font-size: 1em; margin-bottom: 0;"><strong>The substrate owns the working tree.</strong> Everything else in this design — who owns branches, locks, hooks, push, role-state — follows from that single shift.</p>
 </div>
 
-<h2>Class B implementation mode — thin → thick</h2>
-<p>ADR-028's Class B "single canonical adapter" did not previously distinguish <em>thin</em> (shells out to git, integrity depends on agent discipline) from <em>thick</em> (substrate executes the contract internally). v2.5's <code>git-queue.sh</code> is thin; v3 graduates it to thick. Same shape as <code>#2652</code> cards CLI (was thin shell-script, became canonical adapter all transports delegate to) and <code>#2649</code> chorus-api (was vendor copies, became transport over gathering's <code>public/</code>). v3 is the same move applied to commits. Maps to <code>chorus:AuthBoundary.checkType: 'service'</code> vs <code>'ad-hoc'</code> from the security model — ad-hoc boundaries are migration candidates exactly because their integrity depends on agent discipline.</p>
-
 <h2>As-Is — v2.5 today (norms with hopeful names)</h2>
 <p>Agent has direct paths to the working tree (edit, checkout) and to git operations (commit, push). Bypass envs short-circuit pre-commit. Mode A contamination follows from any agent's <code>git checkout</code> rewriting shared <code>.git/HEAD</code>.</p>
 <div class="flow">
@@ -128,6 +125,9 @@ A commit lands when, and only when, the role calls the service's <code>commit</c
 </div>
 <div class="resolved"><strong>Failure surfaces removed:</strong> no agent-side checkout, commit, push, env, or flag. Card-id derived. HEAD-mover is the substrate. Mode A is structurally impossible.</div>
 
+<h2>Class B implementation mode — thin → thick</h2>
+<p>The shift above (As-Is → To-Be) is a single architectural move named in ADR-028 terms. ADR-028's Class B "single canonical adapter" did not previously distinguish <em>thin</em> (shells out to git, integrity depends on agent discipline) from <em>thick</em> (substrate executes the contract internally). v2.5's <code>git-queue.sh</code> is thin; v3 graduates it to thick. Same shape as <code>#2652</code> cards CLI (was thin shell-script, became canonical adapter all transports delegate to) and <code>#2649</code> chorus-api (was vendor copies, became transport over gathering's <code>public/</code>). v3 is the same move applied to commits. Maps to <code>chorus:AuthBoundary.checkType: 'service'</code> vs <code>'ad-hoc'</code> from the security model — ad-hoc boundaries are migration candidates exactly because their integrity depends on agent discipline.</p>
+
 <h2>What the substrate owns</h2>
 <table>
 <tr><th>Surface</th><th>Owned by service</th><th>What the agent sees</th></tr>
@@ -166,6 +166,21 @@ A commit lands when, and only when, the role calls the service's <code>commit</c
 <tr><td>(E) stale-CI on merged SHA</td><td>GitHub-side: "Require up-to-date" + lockstep enforcer (deferred)</td><td>Unchanged — still GitHub-side; v3 does not address</td></tr>
 </table>
 
+<h2>ADR-028 conformance audit — 2026-05-02</h2>
+<p>Walked with Silas (chat <code>silas-kade-1777734925</code>) — same fail-loud lens that produced cards' <code>#2671</code>. Two-column verdict: today (v2.5) and after v3 lands.</p>
+<table>
+<tr><th>Clause</th><th>Today (v2.5)</th><th>After v3</th></tr>
+<tr><td>MUST 1 — schema/data separation</td><td><span class="tag-real">PASS</span></td><td><span class="tag-real">PASS</span></td></tr>
+<tr><td>MUST 2 — single canonical adapter</td><td><span class="tag-partial">PARTIAL</span> (raw-git path bypassable)</td><td><span class="tag-real">CLOSED</span></td></tr>
+<tr><td>MUST 3 — single canonical query</td><td><span class="tag-partial">PARTIAL</span></td><td><span class="tag-partial">PARTIAL</span> — gap explicitly named (raw-git reads stay direct, safe-by-construction)</td></tr>
+<tr><td>MUST 4 — cite-by-ID</td><td><span class="tag-real">PASS</span></td><td><span class="tag-real">PASS</span></td></tr>
+<tr><td>MUST 5 — hook bites bypass</td><td><span class="tag-partial">PARTIAL</span></td><td><span class="tag-real">CLOSED</span></td></tr>
+<tr><td>MUST 6 — adapter-vs-spec drift test</td><td><span class="tag-none">GAP</span></td><td><span class="tag-real">CLOSED</span> via AC7 on <code>#2661</code> (contract test + fail-loud)</td></tr>
+<tr><td>MUST 7 — subdomain plumbing (Athena)</td><td><span class="tag-none">GAP</span> — wip:edges, done:actors+scenarios+contract</td><td><span class="tag-partial">populate-card</span> filed (cards-<code>#2673</code> pattern)</td></tr>
+<tr><td>Addendum 2 — single declarative schema</td><td><span class="tag-none">GAP</span> (validation in 5 procedural sources)</td><td><span class="tag-real">CLOSED</span> structurally — contract IS service code</td></tr>
+</table>
+<div class="resolved"><strong>Fail-loud built into v3, not retrofit:</strong> #2661 AC7 asserts every refused commit emits a typed error response, non-zero return, AND a <code>chorus_commit.refused</code> spine event with reason. No silent swallowing, no log-and-pass. v2.5 fail-loud audit skipped (sunk cost — substrate retiring).</div>
+
 <h2>Status of v2.5 mechanisms after v3</h2>
 <table>
 <tr><th>Mechanism</th><th>v3 disposition</th></tr>
@@ -178,7 +193,7 @@ A commit lands when, and only when, the role calls the service's <code>commit</c
 <h2>Sequencing — cards filed under this design</h2>
 <table>
 <tr><th>Card</th><th>Title</th><th>Depends on</th></tr>
-<tr><td><code>#2661</code></td><td>v3-1 <code>chorus_commit</code> MCP tool — agent's only commit surface</td><td>(load-bearing — ships first)</td></tr>
+<tr><td><code>#2661</code></td><td>v3-1 <code>chorus_commit</code> MCP tool — agent's only commit surface (AC7 added 2026-05-02: contract test + fail-loud — typed errors, non-zero return, spine event on every refusal)</td><td>(load-bearing — ships first)</td></tr>
 <tr><td><code>#2662</code></td><td>v3-2 migrate skills to <code>chorus_commit</code></td><td>#2661</td></tr>
 <tr><td><code>#2663</code></td><td>v3-3 block raw git mutations on <code>/chorus</code></td><td>#2662 (closes Mode A)</td></tr>
 <tr><td><code>#2665</code></td><td>v3-4 retire <code>CHORUS_TEST_FORCE_FIX_CARD</code> env-bypass</td><td>#2661</td></tr>
@@ -193,6 +208,7 @@ A commit lands when, and only when, the role calls the service's <code>commit</c
 <li>It does not retire <code>--no-verify</code> from raw git — that's outside chorus's enforcement scope. It removes the <em>path</em> through chorus that exposes it.</li>
 <li>It does not solve (E) stale-CI; that lives at the GitHub-settings layer.</li>
 <li>It does not specify the wire protocol (HTTP vs MCP vs IPC) — implementation detail for cards under this design.</li>
+<li>It does not canonicalize raw-git read surfaces (<code>git log</code>, <code>git diff</code>, <code>git show</code>, <code>git blame</code>); these stay direct. Reads are safe-by-construction (no HEAD or tree mutation). ADR-028 MUST 3 audit verdict: PARTIAL, gap explicitly accepted.</li>
 </ul>
 
 <h2>History</h2>
