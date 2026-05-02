@@ -23,6 +23,9 @@ mod session_cache;
 pub use hooks::session_init_gate;
 pub use state::AppState;
 pub use types::HookInput;
+// #2644 AC2 — narrow test-surface re-export so integration tests can verify
+// the CHORUS_FIX_CARD_OVERRIDE deterministic-smoke contract.
+pub use types::is_fix_card;
 
 /// Remove the daemon's runtime files (socket + pid) on clean shutdown.
 ///

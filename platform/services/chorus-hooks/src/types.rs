@@ -259,7 +259,24 @@ pub fn card_type_for_role(role: &str) -> String {
 }
 
 /// Check if ANY building role is working a fix card.
+///
+/// Test/smoke override: `CHORUS_TEST_FORCE_FIX_CARD=1` forces true,
+/// `CHORUS_TEST_FORCE_FIX_CARD=0` forces false. Used by gate smoke checks
+/// so the smoke is deterministic (does not depend on live board WIP).
+/// Name is intentionally `CHORUS_TEST_*`-scoped to mark intent and discourage
+/// shell-discoverable use as a runtime gate-bypass (silas review #2644).
+/// Every override-fire emits a `gate.bypass.fix_card_override` spine event for
+/// audit (ADR-028 hook-bypass discipline; same family as CHORUS_MCP_BYPASS).
 pub fn is_fix_card() -> bool {
+    if let Ok(v) = std::env::var("CHORUS_TEST_FORCE_FIX_CARD") {
+        let forced = v == "1" || v.eq_ignore_ascii_case("true");
+        // Best-effort spine emit; failures must not affect gate behavior.
+        let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
+            .args(["gate.bypass.fix_card_override", "kade",
+                   &format!("forced={} value={}", forced, v)])
+            .output();
+        return forced;
+    }
     for role in &["kade", "silas", "wren"] {
         if card_type_for_role(role) == "fix" {
             return true;

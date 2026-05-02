@@ -180,6 +180,14 @@ fn log_protocol_violation(role: &str, v: &protocol_contract::Violation) {
 fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     use crate::hooks::{log_first_gate, memory_gate};
 
+    // Force is_fix_card() to true regardless of live board state — the smoke
+    // is verifying gate-blocking logic, not querying chorus-api. Without this,
+    // smoke is non-deterministic: passes only when some role has a type:fix
+    // WIP card on the board (#2644 AC2).
+    let prior_override = std::env::var("CHORUS_TEST_FORCE_FIX_CARD").ok();
+    // SAFETY: smoke runs at session boot before workers spawn; tests are serial.
+    unsafe { std::env::set_var("CHORUS_TEST_FORCE_FIX_CARD", "1"); }
+
     // Save current state file
     let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
     let backup = std::fs::read_to_string(&state_path).ok();
@@ -271,6 +279,13 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
         None => { let _ = std::fs::remove_file(&state_path); }
     }
     let _ = std::fs::remove_file(&jsonl_path);
+    // SAFETY: see set_var above — single-threaded smoke path.
+    unsafe {
+        match prior_override {
+            Some(v) => std::env::set_var("CHORUS_TEST_FORCE_FIX_CARD", v),
+            None => std::env::remove_var("CHORUS_TEST_FORCE_FIX_CARD"),
+        }
+    }
 
     if all_pass {
         info!(gate = "smoke-check", role = role, "All gate smoke checks passed");
