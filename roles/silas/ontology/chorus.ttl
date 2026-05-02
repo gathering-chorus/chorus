@@ -822,13 +822,6 @@ chorus:alerts-monitors-domain a chorus:SubDomain ;
     chorus:primaryStep chorus:Proving ;
     chorus:belongsTo chorus:observability-domain .
 
-chorus:security-domain a chorus:SubDomain ;
-    rdfs:label "Security" ;
-    rdfs:comment "Cross-cutting: auth, ports, CVEs, permission models, write-scrubber." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:observability-domain .
-
 chorus:convergence-product a chorus:SubProduct ;
     rdfs:label "Convergence" ;
     rdfs:comment "Cross-domain integration — ICDs, harvesters, data pipelines." ;
@@ -940,11 +933,11 @@ chorus:properties-domain a chorus:SubDomain ;
     chorus:runsOn chorus:library, chorus:bedroom .
 
 chorus:security-domain a chorus:SubDomain ;
-    rdfs:label "Security" ;
-    rdfs:comment "Token management, credential rotation, access control. Auto-renewal paths for service tokens." ;
+    rdfs:label "Security & Trust" ;
+    rdfs:comment "Authn / authz / permissions / health / monitoring / keys+tokens. Bootstrap-as-security cross-cutting — every domain consumes it. Owner: silas. #2659." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library .
+    chorus:runsOn chorus:library, chorus:bedroom .
 
 chorus:time-domain a chorus:SubDomain ;
     rdfs:label "Time" ;
@@ -1517,6 +1510,233 @@ chorus:UtilitySkill a owl:Class ;
     rdfs:subClassOf chorus:Skill ;
     rdfs:label "Utility Skill" ;
     rdfs:comment "A skill that provides a utility action (open tab, share, listen, simplify, check-seeds, interrupt, cron-tick) and is not an enactment of a specific practice. Subclass exists so the orphan-skill query honestly excludes utilities: FILTER NOT EXISTS { ?s a chorus:UtilitySkill }. #2348 sub-spike 3A." .
+
+# --- Security domain classes (#2659) ---
+
+chorus:Credential a owl:Class ;
+    rdfs:label "Credential" ;
+    rdfs:comment "A secret value or token used to authenticate. Schema only — actual credential values never live in the graph; instances reference source location (env-var name, plist key, keychain item) and metadata. #2659." .
+
+chorus:Permission a owl:Class ;
+    rdfs:label "Permission" ;
+    rdfs:comment "An authorization rule binding a subject (role or domain) to an action on a resource. Explicit-grant true = whitelist (allow); false = denial (blacklist). Conditions narrow the rule (env, time-of-day, resource pattern). #2659." .
+
+chorus:SecurityProbe a owl:Class ;
+    rdfs:label "Security Probe" ;
+    rdfs:comment "A health or monitoring signal scoped to security posture — credential expiry, port exposure, hook bypass count, write-scrubber match rate. Framing class names whether the probe reports a symptom, a cause, or a steady-state status. #2659." .
+
+chorus:AuthBoundary a owl:Class ;
+    rdfs:label "Auth Boundary" ;
+    rdfs:comment "A trust edge between two domains where authentication or integrity is verified. Captures check type, env vars that disable the check (bypass), and whether a bypass emits a spine audit event. #2659." .
+
+# --- Security domain properties (#2659) ---
+
+chorus:scope a owl:DatatypeProperty ;
+    rdfs:label "scope" ;
+    rdfs:comment "Credential scope: 'session' | 'service' | 'system' | 'external'. Drives rotation cadence and blast radius assessment." ;
+    rdfs:domain chorus:Credential ;
+    rdfs:range xsd:string .
+
+chorus:rotationPolicy a owl:DatatypeProperty ;
+    rdfs:label "rotation policy" ;
+    rdfs:comment "Free-text rotation cadence and trigger (e.g., '90d', 'on-leak', 'manual', 'launchd-restart')." ;
+    rdfs:domain chorus:Credential ;
+    rdfs:range xsd:string .
+
+chorus:severityIfLeaked a owl:DatatypeProperty ;
+    rdfs:label "severity if leaked" ;
+    rdfs:comment "Blast radius if credential is exposed: 'low' | 'medium' | 'high' | 'critical'." ;
+    rdfs:domain chorus:Credential ;
+    rdfs:range xsd:string .
+
+chorus:source a owl:DatatypeProperty ;
+    rdfs:label "source" ;
+    rdfs:comment "Where the credential lives at runtime: 'env-var' | 'plist' | 'keychain' | 'fuseki' | 'external'. Names the surface, not the value." ;
+    rdfs:domain chorus:Credential ;
+    rdfs:range xsd:string .
+
+chorus:ownerRole a owl:ObjectProperty ;
+    rdfs:label "owner role" ;
+    rdfs:comment "The role accountable for the security artifact (credential rotation, probe response, boundary integrity). Distinct from chorus:ownedBy on SubDomains." ;
+    rdfs:domain [ owl:unionOf ( chorus:Credential chorus:SecurityProbe ) ] ;
+    rdfs:range chorus:Role .
+
+chorus:subject a owl:ObjectProperty ;
+    rdfs:label "subject" ;
+    rdfs:comment "The actor (role or sub-domain) the permission applies to." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range [ owl:unionOf ( chorus:Role chorus:SubDomain ) ] .
+
+chorus:action a owl:DatatypeProperty ;
+    rdfs:label "action" ;
+    rdfs:comment "The verb the permission grants or denies (e.g., 'read', 'write', 'deploy', 'kickstart', 'commit-to-main')." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range xsd:string .
+
+chorus:resource a owl:DatatypeProperty ;
+    rdfs:label "resource" ;
+    rdfs:comment "The object the permission binds to. URI when graph-resolvable (a SubDomain, Service); string when a path glob, env name, or external resource." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range xsd:string .
+
+chorus:conditions a owl:DatatypeProperty ;
+    rdfs:label "conditions" ;
+    rdfs:comment "Free-text predicates that narrow the rule (env=='prod', requires-mfa, branch=='main')." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range xsd:string .
+
+chorus:explicitGrant a owl:DatatypeProperty ;
+    rdfs:label "explicit grant" ;
+    rdfs:comment "Boolean. true = whitelist (rule allows); false = blacklist (rule denies). Default closed-world: absence of an explicit grant denies." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range xsd:boolean .
+
+chorus:target a owl:DatatypeProperty ;
+    rdfs:label "target" ;
+    rdfs:comment "What the security probe observes (port, file path, env var name, service URL)." ;
+    rdfs:domain chorus:SecurityProbe ;
+    rdfs:range xsd:string .
+
+chorus:signalType a owl:DatatypeProperty ;
+    rdfs:label "signal type" ;
+    rdfs:comment "How the signal arrives (e.g., 'expiry-check', 'log-pattern', 'http-probe', 'fs-watch')." ;
+    rdfs:domain chorus:SecurityProbe ;
+    rdfs:range xsd:string .
+
+chorus:framingClass a owl:DatatypeProperty ;
+    rdfs:label "framing class" ;
+    rdfs:comment "Whether the probe reports a 'symptom' (downstream effect), 'cause' (root condition), or 'status' (steady-state posture). Forces probes to declare their layer; mirrors the alert-ladder discipline." ;
+    rdfs:domain chorus:SecurityProbe ;
+    rdfs:range xsd:string .
+
+chorus:severity a owl:DatatypeProperty ;
+    rdfs:label "severity" ;
+    rdfs:comment "Probe severity when firing: 'info' | 'warn' | 'critical'." ;
+    rdfs:domain chorus:SecurityProbe ;
+    rdfs:range xsd:string .
+
+chorus:sourceAlert a owl:ObjectProperty ;
+    rdfs:label "source alert" ;
+    rdfs:comment "If the security probe is materialized from an alert rule, this links to the alert. Optional." ;
+    rdfs:domain chorus:SecurityProbe .
+
+chorus:betweenDomainA a owl:ObjectProperty ;
+    rdfs:label "between domain a" ;
+    rdfs:comment "One side of the auth boundary. The boundary is symmetric in declaration but the direction of trust may not be — see chorus:checkType." ;
+    rdfs:domain chorus:AuthBoundary ;
+    rdfs:range chorus:SubDomain .
+
+chorus:betweenDomainB a owl:ObjectProperty ;
+    rdfs:label "between domain b" ;
+    rdfs:comment "The other side of the auth boundary." ;
+    rdfs:domain chorus:AuthBoundary ;
+    rdfs:range chorus:SubDomain .
+
+chorus:checkType a owl:DatatypeProperty ;
+    rdfs:label "check type" ;
+    rdfs:comment "Verification mechanism at the boundary: 'header' | 'signature' | 'ledger' | 'ad-hoc'. 'ad-hoc' is a smell — boundaries with ad-hoc checks are migration candidates." ;
+    rdfs:domain chorus:AuthBoundary ;
+    rdfs:range xsd:string .
+
+chorus:bypassEnvs a owl:DatatypeProperty ;
+    rdfs:label "bypass envs" ;
+    rdfs:comment "Env var names (comma-separated) that, when set, disable the check. Empty string = no bypass. Listing them in the graph forces them to be visible." ;
+    rdfs:domain chorus:AuthBoundary ;
+    rdfs:range xsd:string .
+
+chorus:bypassAudit a owl:DatatypeProperty ;
+    rdfs:label "bypass audit" ;
+    rdfs:comment "Boolean. true = bypass emits a spine event (auditable); false = bypass is silent (a debt to repay). Mirrors ADR-028 §schema-write hook bypass discipline." ;
+    rdfs:domain chorus:AuthBoundary ;
+    rdfs:range xsd:boolean .
+
+# --- Security domain SHACL (#2659) ---
+
+chorus:CredentialShape a sh:NodeShape ;
+    sh:targetClass chorus:Credential ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:scope ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:source ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+chorus:PermissionShape a sh:NodeShape ;
+    sh:targetClass chorus:Permission ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:subject ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path chorus:action ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:resource ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:explicitGrant ;
+        sh:minCount 1 ;
+        sh:datatype xsd:boolean ;
+    ] .
+
+chorus:SecurityProbeShape a sh:NodeShape ;
+    sh:targetClass chorus:SecurityProbe ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:target ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:framingClass ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
+chorus:AuthBoundaryShape a sh:NodeShape ;
+    sh:targetClass chorus:AuthBoundary ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:betweenDomainA ;
+        sh:minCount 1 ;
+        sh:class chorus:SubDomain ;
+    ] ;
+    sh:property [
+        sh:path chorus:betweenDomainB ;
+        sh:minCount 1 ;
+        sh:class chorus:SubDomain ;
+    ] ;
+    sh:property [
+        sh:path chorus:checkType ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
 
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;
