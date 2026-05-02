@@ -73,9 +73,91 @@ A `type:swat` card declares its lighter-weight rules (e.g., allow no-test-eviden
 - It does not solve (E) stale-CI; that lives at the GitHub-settings layer.
 - It does not specify the wire protocol (HTTP vs MCP vs IPC) — implementation detail for cards under this design.
 
-### Sequencing
+### As-Is (v2.5 today, 2026-05-02)
 
-To be filed as cards under this design after v3 is signed off. PR #75 (silas/2626 follow-on, quote-aware command split) becomes obsolete under v3 — it patches a hook that doesn't exist after v3 retires text-parsing surfaces; close on v3 sign-off.
+```mermaid
+flowchart TB
+  subgraph AGT["Agent (any role)"]
+    EDIT["edit files in /chorus"]
+    CHECKOUT["git checkout / switch / reset<br/>(unrestricted)"]
+    Q["bash git-queue.sh commit"]
+    PUSH["bash git-queue.sh push"]
+    ENV["set CHORUS_TEST_FORCE_FIX_CARD<br/>--no-verify, etc."]
+  end
+
+  subgraph SUB["Substrate (best-effort, agent-discipline-dependent)"]
+    BC["branch-check.sh"]
+    PC["pre-commit hook<br/>(--no-verify skippable)"]
+    LOCK["flock /tmp/chorus-git-queue.lock"]
+  end
+
+  subgraph WT["Shared working tree"]
+    SHR["/chorus — one .git/HEAD<br/>shared across all roles"]
+  end
+
+  subgraph CI["GitHub"]
+    GH["actions + branch protection<br/>rebase-merge"]
+  end
+
+  EDIT --> SHR
+  CHECKOUT --> SHR
+  Q --> BC --> PC --> LOCK --> SHR
+  PUSH --> SHR
+  ENV -.bypass.-> PC
+  CHECKOUT -.modeA contamination.-> SHR
+  SHR --> GH
+```
+
+Failure surfaces visible in the diagram: agent has direct paths to working tree (edit, checkout) and to git operations (commit, push). Bypass envs short-circuit the pre-commit step. Mode A contamination follows from any agent's `git checkout` rewriting shared `.git/HEAD`.
+
+### To-Be (v3)
+
+```mermaid
+flowchart TB
+  subgraph AGT["Agent (any role)"]
+    EDIT["edit files in /chorus"]
+    CALL["mcp__chorus-api__chorus_commit<br/>(role, paths, message)"]
+    STATUS["mcp__chorus-api__chorus_commit_status<br/>(role)"]
+  end
+
+  subgraph SVC["chorus_commit service (chorus-api)"]
+    DERIVE["derive card from role-state<br/>(no agent-passed card-id)"]
+    SWAT["read card.type<br/>apply ruleset:<br/>default | swat"]
+    BRANCH["create/switch branch<br/>(only service moves HEAD)"]
+    STAGE["stage declared paths"]
+    HOOKS["run pre-commit checks<br/>(internal, no --no-verify)"]
+    LOCK["internal flock"]
+    PUSH_INT["push via internal queue<br/>(rebase-on-conflict)"]
+    EVENT["emit chorus_commit.invoked / refused"]
+  end
+
+  subgraph WT["Working tree"]
+    TREE["/chorus — only service moves HEAD<br/>agent cannot run git mutations"]
+  end
+
+  subgraph CI["GitHub"]
+    GH["actions + branch protection<br/>rebase-merge to main"]
+  end
+
+  EDIT --> TREE
+  CALL --> DERIVE --> SWAT --> BRANCH --> STAGE --> HOOKS --> LOCK --> PUSH_INT --> GH
+  PUSH_INT --> EVENT
+  STATUS --> SVC
+  TREE --> BRANCH
+```
+
+Failure surfaces removed: agent has no `git checkout`/`commit`/`push` exposure. No env on the wire — `chorus_commit` accepts `(role, paths, message)` only. Card-id is derived, not passed. The substrate is the only entity that can move HEAD; Mode A contamination disappears structurally.
+
+### Sequencing — cards filed under this design
+
+- **#2661 v3-1** chorus_commit MCP tool — agent's only commit surface (load-bearing, ships first)
+- **#2662 v3-2** migrate skills to chorus_commit (after v3-1)
+- **#2663 v3-3** block raw git mutations on /chorus (after v3-2 — closes Mode A)
+- **#2665 v3-4** retire CHORUS_TEST_FORCE_FIX_CARD env-bypass
+- **#2666 v3-5** SWAT-as-card-type encoding (Wren constraint)
+- **#2667 v3-6** retire bash git-queue.sh + branch-check.sh + pre-commit (deletion completes v3)
+
+PR #75 (silas/2626 follow-on, quote-aware command split) was closed on 2026-05-02 by Silas as obsolete under v3 — it patched a hook that doesn't exist after v3 retires text-parsing surfaces.
 
 ## v2.5 amendment (2026-05-01)
 
