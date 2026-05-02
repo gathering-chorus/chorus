@@ -43,7 +43,7 @@ export type ExecFileAsync = (
  *  spawning a binary (the principles tools call existing Athena REST). Default
  *  is the runtime's globalThis.fetch (Node 18+).
  */
-export type FetchImpl = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{
+export type FetchImpl = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
   ok: boolean;
   status?: number;
   json: () => Promise<unknown>;
@@ -55,7 +55,21 @@ export interface McpServerDeps {
   cardsPath?: string;
   fetchImpl?: FetchImpl;
   apiBase?: string;
+  // #2661 — board reader DI seam. Returns cards matching (owner, status=WIP).
+  // Default impl fetches /api/chorus/context/board/wip and filters by owner.
+  // Tests inject mocks to drive refusal taxonomy without standing up chorus-api.
+  boardReader?: BoardReader;
+  // #2661 — spine event emitter DI seam. Default writes a JSON line to
+  // stderr (same channel as logEvent); tests inject a capture function.
+  emitSpineEvent?: SpineEmitter;
 }
+
+export type BoardCard = { id: number; owner: string; title: string };
+export type BoardReaderResult =
+  | { ok: true; cards: BoardCard[] }
+  | { ok: false; reason: 'board-unreachable'; detail?: string };
+export type BoardReader = (role: 'kade' | 'wren' | 'silas') => Promise<BoardReaderResult>;
+export type SpineEmitter = (event: string, fields: Record<string, unknown>) => void;
 
 // #2652 (AC8) — cards MCP tool input schemas. Each tool spawns the cards bash
 // wrapper as a subprocess with DEPLOY_ROLE injected. Args are positional per
@@ -98,6 +112,14 @@ const CardsSetInput = z.object({
 const CardsViewInput = z.object({
   id: z.number().int().positive().describe('Card id to view'),
 });
+
+// #2661 — chorus_commit_status MCP tool input. Single role field; per the
+// commits-service-design v3 contract, no card_id / branch / force / bypass
+// on the wire. Service derives the active card from the BOARD (#2467/#2629:
+// card lives on the board, role-state owns session/attention only).
+const CommitStatusInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service queries the board for this role\'s active WIP card.'),
+}).strict();
 
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
@@ -344,6 +366,109 @@ const CARDS_VIEW_TOOL_DEF = {
 
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
+}
+
+// #2661 — chorus_commit_status tool def. Read-only: agent gets back the role's
+// active WIP card and the derived branch (`<role>/<card-id>`). Refuses with a
+// typed reason if 0/2+ cards or board is unreachable. Refusal emits the same
+// chorus_commit.status_queried spine event as success — silent return is the bug.
+const COMMIT_STATUS_TOOL_DEF = {
+  name: 'chorus_commit_status',
+  description:
+    'Get the role\'s current commit-state — active WIP card, derived branch (`<role>/<card-id>`), and refusal-readiness. Use before calling chorus_commit (write) to confirm the substrate sees the card you think you\'re building. Service derives card from the board (`status=WIP`, `owner=<role>`); agent never passes card_id. Refuses with `no-wip-card` (0 cards), `multi-wip` (>1), or `board-unreachable` (board API down). Do NOT use to fetch a specific card by id — that\'s chorus_cards_view.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Role whose commit-state to query — kade, wren, or silas',
+      },
+    },
+    required: ['role'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #2661 — default board reader: GET /api/chorus/context/board/wip → filter by
+// owner. The endpoint returns `{ data: { cards: [{ id, owner, title, ... }] } }`.
+// Owner casing is capitalized server-side ("Kade"); we capitalize before filter.
+// 5s fetch timeout — a slow/hung board surfaces as `board-unreachable` per AC3
+// rather than hanging the caller.
+const BOARD_FETCH_TIMEOUT_MS = 5_000;
+
+function defaultBoardReader(fetchImpl: FetchImpl, apiBase: string): BoardReader {
+  return async (role) => {
+    const url = `${apiBase}/api/chorus/context/board/wip`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), BOARD_FETCH_TIMEOUT_MS);
+    try {
+      const resp = await fetchImpl(url, { signal: controller.signal } as never);
+      if (!resp.ok) {
+        return { ok: false, reason: 'board-unreachable', detail: `status ${resp.status ?? 'unknown'}` };
+      }
+      const body = (await resp.json()) as { data?: { cards?: BoardCard[] } };
+      const allCards = body.data?.cards ?? [];
+      const want = role.charAt(0).toUpperCase() + role.slice(1);
+      const cards = allCards.filter((c) => c.owner === want);
+      return { ok: true, cards };
+    } catch (err) {
+      const isAbort = err instanceof Error && (err.name === 'AbortError' || /aborted/i.test(err.message));
+      const detail = isAbort
+        ? `timeout after ${BOARD_FETCH_TIMEOUT_MS}ms`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      return { ok: false, reason: 'board-unreachable', detail };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+// #2661 — default spine emitter: stderr JSON line. Aligns with logEvent shape.
+// Production this is what chorus-api stderr → log file → spine-tail consumes.
+function defaultSpineEmitter(): SpineEmitter {
+  return (event, fields) => {
+    process.stderr.write(JSON.stringify({ level: 'info', event, ts: new Date().toISOString(), ...fields }) + '\n');
+  };
+}
+
+async function executeCommitStatus(
+  args: { role: 'kade' | 'wren' | 'silas' },
+  boardReader: BoardReader,
+  emit: SpineEmitter,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { role } = args;
+  const board = await boardReader(role);
+
+  if (!board.ok) {
+    emit('chorus_commit.status_queried', { role, reason: board.reason, detail: board.detail });
+    throw new Error(`chorus_commit_status refused: board-unreachable${board.detail ? ` (${board.detail})` : ''}`);
+  }
+
+  if (board.cards.length === 0) {
+    emit('chorus_commit.status_queried', { role, reason: 'no-wip-card' });
+    throw new Error(`chorus_commit_status refused: no-wip-card — role ${role} has no card in WIP`);
+  }
+
+  if (board.cards.length > 1) {
+    const ids = board.cards.map((c) => c.id).join(',');
+    emit('chorus_commit.status_queried', { role, reason: 'multi-wip', card_ids: ids });
+    throw new Error(`chorus_commit_status refused: multi-wip — role ${role} has ${board.cards.length} cards in WIP (${ids})`);
+  }
+
+  const card = board.cards[0];
+  const branch = `${role}/${card.id}`;
+  emit('chorus_commit.status_queried', { role, card_id: card.id });
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ role, card_id: card.id, branch, title: card.title }, null, 2),
+      },
+    ],
+  };
 }
 
 interface PrincipleRecord {
@@ -715,6 +840,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const cardsPath = deps.cardsPath ?? resolveCardsPath();
   const fetchImpl: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
   const apiBase = deps.apiBase ?? 'http://localhost:3340';
+  const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
+  const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
   const server = new Server(
     {
       name: 'chorus-api',
@@ -742,6 +869,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_TAG_TOOL_DEF,
       CARDS_SET_TOOL_DEF,
       CARDS_VIEW_TOOL_DEF,
+      COMMIT_STATUS_TOOL_DEF,
     ],
   }));
 
@@ -833,6 +961,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCardsView(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_commit_status': {
+        const parsed = CommitStatusInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCommitStatus(parsed.data, boardReader, emitSpineEvent);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
