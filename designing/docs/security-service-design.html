@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Service Design — Security Domain</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Iowan Old Style', Georgia, 'Times New Roman', serif; background: #fdfcf8; color: #1a1a1a; margin: 48px 1in; line-height: 1.65; }
+  h1 { font-size: 1.7em; border-bottom: 2px solid #4a3a2a; padding-bottom: 8px; margin-bottom: 4px; letter-spacing: -0.3px; }
+  h1 span { color: #8b5a2b; font-weight: normal; font-size: 0.65em; }
+  .date { color: #888; font-size: 0.82em; margin-bottom: 18px; font-style: italic; }
+  h2 { font-size: 1.25em; margin-top: 2.2em; color: #4a3a2a; border-bottom: 1px solid #d6cfc1; padding-bottom: 4px; }
+  h3 { font-size: 1.02em; margin-top: 1.4em; color: #5a4a36; }
+  p { margin-bottom: 11px; font-size: 0.92em; }
+  ul, ol { margin: 8px 0 14px 22px; font-size: 0.92em; }
+  li { margin-bottom: 5px; }
+  code { background: #f3ede0; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; font-family: 'Menlo', 'Consolas', monospace; color: #5a3a1f; }
+  strong { color: #2a1f12; }
+  .promise { background: #f0e9d6; padding: 14px 18px; margin: 18px 0; border-radius: 4px; border-left: 4px solid #8b5a2b; font-style: italic; font-size: 0.94em; }
+  .promise ol { margin-top: 10px; font-style: normal; }
+  .promise strong { color: #4a3a2a; }
+  .numbers { display: inline-block; background: #fef3c7; color: #78350f; padding: 2px 8px; border-radius: 3px; font-weight: 700; font-size: 0.85em; }
+  .anti { border-left: 4px solid #c41e3a; background: #fef2f2; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; font-size: 0.9em; }
+  .insight { border-left: 3px solid #2ec4b6; background: #f0fdfa; padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 0.9em; }
+  .failure-mode { background: #fef9c3; border-left: 4px solid #ca8a04; padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; font-size: 0.9em; color: #713f12; }
+  .must { background: #d1fae5; border-left: 4px solid #059669; padding: 10px 14px; margin: 10px 0; border-radius: 0 5px 5px 0; font-size: 0.9em; }
+  .must strong { color: #064e3b; }
+  .should { background: #dbeafe; border-left: 4px solid #2563eb; padding: 10px 14px; margin: 10px 0; border-radius: 0 5px 5px 0; font-size: 0.9em; }
+  .should strong { color: #1e3a8a; }
+  .may { background: #ede9fe; border-left: 4px solid #7c3aed; padding: 10px 14px; margin: 10px 0; border-radius: 0 5px 5px 0; font-size: 0.9em; }
+  .may strong { color: #5b21b6; }
+  .mustnot { background: #fee2e2; border-left: 4px solid #dc2626; padding: 10px 14px; margin: 10px 0; border-radius: 0 5px 5px 0; font-size: 0.9em; }
+  .mustnot strong { color: #7f1d1d; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.85em; }
+  th { text-align: left; padding: 7px 10px; background: #ede4d0; color: #4a3a2a; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #c4b896; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e8e1d0; vertical-align: top; }
+  tr:hover td { background: #f8f3e6; }
+  pre.mermaid { background: #fff; border: 1px solid #d6cfc1; border-radius: 6px; padding: 14px; margin: 14px 0; overflow-x: auto; text-align: center; font-family: 'Menlo', monospace; font-size: 0.85em; }
+  .footer { color: #888; font-size: 0.75em; margin-top: 3em; border-top: 1px solid #d6cfc1; padding-top: 10px; font-style: italic; }
+  @page { margin: 1in; }
+  @media print { body { margin: 24px 1in; font-size: 11pt; background: #fff; } h2 { break-after: avoid; } pre.mermaid, table { break-inside: avoid; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Security Domain <span>— Service Design</span></h1>
+<p class="date">Silas, 2026-05-01 (initial). Card #2659. Status: Draft. Class A per ADR-028.</p>
+
+<p><strong>Owner:</strong> Silas (operations layer — DEC-022 makes ops including security a Silas responsibility).<br>
+<strong>Persistence:</strong> <code>urn:chorus:instances</code> (Class A — graph-backed substrate).<br>
+<strong>Schema:</strong> <code>urn:chorus:ontology</code> — <code>chorus:Credential</code>, <code>chorus:Permission</code>, <code>chorus:SecurityProbe</code>, <code>chorus:AuthBoundary</code> declared at <code>roles/silas/ontology/chorus.ttl:1514–1738</code> (committed 2026-05-02).<br>
+<strong>Subdomain:</strong> <code>chorus:security-domain</code> (registered in chorus.ttl, currently consumed by 26+ peer domains).</p>
+
+<h2>Promise</h2>
+<div class="promise">
+When the security domain is complete, Chorus answers four questions about every role action with attestation, not assertion:
+<ol>
+  <li><strong>Who is acting</strong> — role-identity from bootstrap, verified at the boundary the action crosses (<code>chorus:AuthBoundary</code>).</li>
+  <li><strong>What they are allowed to do</strong> — authority resolved from <code>chorus:Permission</code> instances against subject + action + resource, closed-world default.</li>
+  <li><strong>What credentials are in play</strong> — <code>chorus:Credential</code> instances declare scope, source location, rotation policy, severity-if-leaked. Values never live in the graph; only the references and metadata.</li>
+  <li><strong>What the current security posture is</strong> — <code>chorus:SecurityProbe</code> instances continuously attest credential expiry, port exposure, hook bypass count, and write-scrubber match rates. Drift between declared posture and observed state is itself a probe.</li>
+</ol>
+The security domain owns these four classes end-to-end. Today they exist as schema only. The work is populating instances, wiring the canonical write/read paths, and turning the existing scattered enforcement into observable surface.
+</div>
+
+<h2>Cards in Flight</h2>
+<p>The work below is what Chorus has filed against security shape today. <span class="numbers">6 cards</span> — receipts of specific gaps, not a roadmap.</p>
+<ul>
+  <li><strong>#2444</strong> — Threat model for Chorus (Greshake-aware, role-boundary-aware). AC1 is the parallel populate-instances card to this design.</li>
+  <li><strong>#2645</strong> — Outbound secret detector — write-scrubber hardening at the boundary.</li>
+  <li><strong>#2572</strong> — Greshake / inbound prompt-injection protections at session boundaries.</li>
+  <li><strong>#2290</strong> — C4 enforcement — boundary-as-architecture, related to <code>chorus:AuthBoundary</code>.</li>
+  <li><strong>#2436</strong> — CORS narrowing on chorus-api endpoints.</li>
+  <li><strong>#2646</strong> — Cloudflare tunnel audit — external-edge boundary review.</li>
+</ul>
+<p>Six cards, no shared model, no inventory, no canonical service. This design proposes the model that lets each card land into a coherent surface.</p>
+
+<h2>Problem</h2>
+<p>The security domain has five concrete gaps today:</p>
+<ol>
+  <li><strong>No canonical model.</strong> Credentials live as env-var names in <code>config/profiles/*.json</code>, plist keys, and shell scripts. Permissions are encoded across permission profiles, hook decision tables, and inline string checks. There is no graph-citable surface for "what credentials does Chorus depend on" or "what is the role × action × resource grant table."</li>
+  <li><strong>Distributed enforcement, no inventory.</strong> Pre-commit hooks, the <code>write_scrubber</code> PreToolUse hook, the sensitive-paths hook, the SessionStart inject, role permission profiles, and worktree contamination guards each enforce a slice. None of them know about the others. Adding a new boundary means adding a new enforcement point; removing one is invisible.</li>
+  <li><strong>Six cards, no domain.</strong> #2444 / #2645 / #2572 / #2290 / #2436 / #2646 each address a real gap. Without a domain to land into, each card invents its own shape — a threat-model doc here, a CORS list there, a Cloudflare audit somewhere else. The next card (and there will be one) reinvents again.</li>
+  <li><strong>No live attestation surface.</strong> Security posture today is "Silas read the relevant config files this morning and they looked fine." There is no <code>GET /api/athena/subdomains/security-domain/probes</code> returning current state of credential expiry, port exposure, or bypass counts.</li>
+  <li><strong>Bootstrap-as-security implicit.</strong> SessionStart establishes role-identity, protocol-trust, context-attestation, and authority-assertion. Today these are availability-framed concerns. Bypass paths (e.g., <code>CHORUS_MCP_BYPASS=1</code>) cross the boundary that establishes those primitives, but the audit captures rate, not what guarantee degraded.</li>
+</ol>
+<div class="failure-mode"><strong>Cost of staying scattered:</strong> every security card pays the discovery cost of "where does this fit?" Decisions in one card (e.g., "credentials reference env-var name, never value") are not visible to the next. Drift accumulates across the cards before they ship. The principles arc paid this cost five times before the contract was named (ADR-028); the security domain is on track to pay it six.</div>
+
+<h2>As-Is</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph SCATTERED["Enforcement today (no shared model)"]
+    PROFILES["config/profiles/*.json<br/>per-role allow/deny lists"]
+    ENV["env vars<br/>scattered across .env / plists / launchd"]
+    PLISTS["LaunchAgent plists<br/>~/Library/LaunchAgents/"]
+    SCRUB["write_scrubber<br/>PreToolUse Rust hook"]
+    SENS["sensitive-paths hook<br/>blocks writes to /etc, ~/.ssh, etc."]
+    INJECT["SessionStart inject<br/>role-identity at boot"]
+    PRECOMMIT["pre-commit secrets scan"]
+  end
+  subgraph CARDS["Cards in flight (no shared shape)"]
+    C2444["#2444 threat model"]
+    C2645["#2645 outbound secret detector"]
+    C2572["#2572 Greshake inbound"]
+    C2290["#2290 C4 enforcement"]
+    C2436["#2436 CORS narrowing"]
+    C2646["#2646 Cloudflare audit"]
+  end
+  subgraph CONSUMERS["Consumers (no canonical query)"]
+    SILAS["Silas reads files manually"]
+    JEFF["Jeff asks Silas"]
+    ROLES["Roles read profiles inline"]
+  end
+  PROFILES --> ROLES
+  ENV --> ROLES
+  PLISTS --> ROLES
+  SCRUB --> ROLES
+  SENS --> ROLES
+  INJECT --> ROLES
+  PRECOMMIT --> ROLES
+  CARDS -.-> SILAS
+  CONSUMERS -.-> SILAS
+  SILAS -.-> JEFF
+  classDef scattered fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef cards fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef consumers fill:#fef9c3,stroke:#854d0e,color:#713f12
+  class PROFILES,ENV,PLISTS,SCRUB,SENS,INJECT,PRECOMMIT scattered
+  class C2444,C2645,C2572,C2290,C2436,C2646 cards
+  class SILAS,JEFF,ROLES consumers
+</pre>
+<p>Red = enforcement points without a shared model. Yellow = open work that has nowhere coherent to land. The three consumers all flow through Silas-as-human-index because no canonical query exists.</p>
+
+<h2>To-Be</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph ONTO["urn:chorus:ontology"]
+    CRED_C["chorus:Credential"]
+    PERM_C["chorus:Permission"]
+    PROBE_C["chorus:SecurityProbe"]
+    BOUND_C["chorus:AuthBoundary"]
+    SHACL["SHACL shapes<br/>(committed 2026-05-02)"]
+  end
+  subgraph INST["urn:chorus:instances"]
+    CRED_I["Credential instances<br/>(env-var refs, rotation, scope)"]
+    PERM_I["Permission instances<br/>(subject × action × resource)"]
+    PROBE_I["SecurityProbe instances<br/>(port, expiry, bypass-count)"]
+    BOUND_I["AuthBoundary instances<br/>(domain↔domain edges)"]
+  end
+  subgraph WRITE["Single write path (Athena)"]
+    REST_W["POST /api/athena/subdomains/<br/>security-domain/{credentials,<br/>permissions,probes,boundaries}"]
+    MCP_W["MCP tools<br/>chorus_credentials_create<br/>chorus_permissions_create<br/>chorus_probes_create"]
+  end
+  subgraph READ["Single read path"]
+    REST_R["GET /api/athena/subdomains/<br/>security-domain/..."]
+    MCP_R["MCP tools<br/>chorus_credentials_list/get<br/>chorus_permissions_list/get<br/>chorus_probes_list/get"]
+    PAGE["/security/dashboard<br/>(live attestation page)"]
+  end
+  subgraph BACKSTOP["Hooks + drift"]
+    HOOK["pre-commit backstop<br/>refuses direct TTL adds<br/>of Credential/Permission/<br/>SecurityProbe/AuthBoundary"]
+    DRIFT["drift test<br/>book/security-reconstructed.html<br/>vs graph"]
+    SHACL_V["SHACL validation<br/>cross-graph"]
+  end
+  ONTO --> SHACL_V
+  SHACL_V --> INST
+  REST_W --> INST
+  MCP_W --> REST_W
+  INST --> REST_R
+  REST_R --> MCP_R
+  REST_R --> PAGE
+  HOOK -.->|blocks bypass| INST
+  DRIFT -.->|gates CI| INST
+  classDef onto fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+  classDef inst fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef path fill:#f3e8ff,stroke:#7e22ce,color:#581c87
+  classDef gate fill:#fef9c3,stroke:#854d0e,color:#713f12
+  class CRED_C,PERM_C,PROBE_C,BOUND_C,SHACL onto
+  class CRED_I,PERM_I,PROBE_I,BOUND_I inst
+  class REST_W,MCP_W,REST_R,MCP_R,PAGE path
+  class HOOK,DRIFT,SHACL_V gate
+</pre>
+<p>Blue = ontology (schema). Green = instances (populated content). Purple = single canonical write/read paths. Yellow = backstop and gates. The arrows describe the only legal flows.</p>
+
+<h2>Single Contract</h2>
+<p><strong>The security domain owns:</strong></p>
+<ul>
+  <li>The four canonical classes (<code>chorus:Credential</code>, <code>chorus:Permission</code>, <code>chorus:SecurityProbe</code>, <code>chorus:AuthBoundary</code>) and their instance population.</li>
+  <li>The canonical Athena write/read paths for those classes.</li>
+  <li>The MCP tool surface (<code>chorus_credentials_*</code>, <code>chorus_permissions_*</code>, <code>chorus_probes_*</code>, <code>chorus_boundaries_*</code>).</li>
+  <li>The pre-commit backstop hook for direct-TTL writes against the four classes.</li>
+  <li>The drift test that gates CI against the security graph.</li>
+  <li>Spine event emission for security-shaped state changes.</li>
+</ul>
+<p><strong>The security domain does NOT own:</strong></p>
+<ul>
+  <li>The actual hook implementations enforcing permissions (those are infrastructure / per-role tooling — security publishes the contract, hooks consume it).</li>
+  <li>Secret value storage (keychain, env vars, plists are the runtime — security publishes the location, never the value).</li>
+  <li>The threat model itself as a free-text artifact (#2444 produces that — security domain provides the structured shape <code>chorus:SecurityProbe</code> instances reference).</li>
+  <li>The CI workflow or branch-protection config (those live in code-domain / commits-domain — security expresses the invariant, the gates enforce).</li>
+  <li>Bootstrap procedure code (lives in chorus-domain / SessionStart — security names what bootstrap establishes, not how).</li>
+</ul>
+
+<h2>Components</h2>
+<p>Six sub-areas. Most are unstarted today.</p>
+<table>
+  <tr><th>Sub-area</th><th>Current State</th><th>Target State</th><th>Named Cards</th><th>OWL Class</th></tr>
+  <tr><td><strong>Authentication</strong></td><td>Implicit — role from cwd / env / DEPLOY_ROLE</td><td>Cryptographic role-identity at session start, attested by AuthBoundary instance check</td><td>#2311, #2450</td><td><code>chorus:AuthBoundary</code></td></tr>
+  <tr><td><strong>Authorization</strong></td><td>Permission profiles per role (JSON, ungoverned)</td><td><code>chorus:Permission</code> instances, closed-world default, queryable surface</td><td>#2290</td><td><code>chorus:Permission</code></td></tr>
+  <tr><td><strong>Permissions</strong></td><td>Static JSON allow/deny lists</td><td>Generated from <code>chorus:Permission</code> instances; profiles become projections</td><td>#2290</td><td><code>chorus:Permission</code></td></tr>
+  <tr><td><strong>Security health</strong></td><td>Manual file reads (Silas eyes)</td><td><code>chorus:SecurityProbe</code> instances reporting expiry / exposure / bypass / scrubber-match continuously</td><td>#2645</td><td><code>chorus:SecurityProbe</code></td></tr>
+  <tr><td><strong>Security monitoring</strong></td><td>write_scrubber + sensitive-paths hooks (no inventory)</td><td>Probes register with the alerts/monitors domain; bypass events emit to spine</td><td>#2572, #2645</td><td><code>chorus:SecurityProbe</code></td></tr>
+  <tr><td><strong>Keys+tokens storage</strong></td><td>Scattered env / plist / keychain</td><td><code>chorus:Credential</code> instances reference source location + rotation policy; values stay where they live</td><td>#2436, #2646</td><td><code>chorus:Credential</code></td></tr>
+</table>
+
+<h3>Authentication</h3>
+<p><strong>Current:</strong> Role identity is inferred at every boundary independently — <code>detectRole()</code> cwd parsing in <code>cards</code>, <code>DEPLOY_ROLE</code> env var in nudge, the SessionStart inject for first-turn context. No single attestation. No verification — a role asserts identity, the boundary trusts it.</p>
+<p><strong>Target:</strong> <code>chorus:AuthBoundary</code> instances declare every trust edge. Each boundary names check type (<code>header</code> / <code>signature</code> / <code>ledger</code> / <code>ad-hoc</code>); <code>ad-hoc</code> is a smell. Bootstrap establishes role-identity once at session start; downstream boundaries verify via the established attestation rather than re-inferring.</p>
+<p><strong>Cards:</strong> #2311 (boot-time protocol contract); #2450 (SessionStart inject — boot envelope).</p>
+
+<h3>Authorization</h3>
+<p><strong>Current:</strong> <code>config/profiles/*.json</code> per role, hand-maintained, no graph.</p>
+<p><strong>Target:</strong> <code>chorus:Permission</code> instances bind subject (Role or SubDomain) × action × resource × conditions × explicitGrant. Closed-world default — absence denies. Queryable: "what is silas allowed to do in production?" answered by SPARQL over instances.</p>
+<p><strong>Cards:</strong> #2290 (C4 enforcement — boundary-as-architecture).</p>
+
+<h3>Permissions</h3>
+<p><strong>Current:</strong> profile JSON files are the source. Drift between profiles and runtime behavior is invisible.</p>
+<p><strong>Target:</strong> Profile JSON becomes a projection generated from <code>chorus:Permission</code> instances. The graph is the source; the JSON is materialized for runtime consumption. Adding or revoking a permission means writing through the canonical Athena path; the next generator run produces the matching profile.</p>
+<p><strong>Cards:</strong> #2290.</p>
+
+<h3>Security health</h3>
+<p><strong>Current:</strong> Posture is whatever Silas remembers. No probes, no continuous attestation.</p>
+<p><strong>Target:</strong> <code>chorus:SecurityProbe</code> instances declare what's watched (port, file path, env var name, service URL), how the signal arrives (<code>expiry-check</code>, <code>log-pattern</code>, <code>http-probe</code>, <code>fs-watch</code>), and framing class (<code>symptom</code> / <code>cause</code> / <code>status</code>). Probes fire on schedule and emit results to the spine. The dashboard renders current state from probe results.</p>
+<p><strong>Cards:</strong> #2645 (outbound secret detector — first probe to land).</p>
+
+<h3>Security monitoring</h3>
+<p><strong>Current:</strong> Hooks fire when triggered. Match rates are not aggregated; bypasses are not counted; trends are invisible.</p>
+<p><strong>Target:</strong> Each enforcement point registers as a probe. Probes report match rate, bypass count, last-fired timestamp. Alerts wire to the alerts-monitors domain. Greshake-class inbound (#2572) becomes a probe with framing-class <code>cause</code> and signal-type <code>log-pattern</code>.</p>
+<p><strong>Cards:</strong> #2572, #2645.</p>
+
+<h3>Keys+tokens storage</h3>
+<p><strong>Current:</strong> Env vars in shell rc, plists in LaunchAgent, keychain entries — three locations, no inventory.</p>
+<p><strong>Target:</strong> Every credential gets a <code>chorus:Credential</code> instance referencing its source location (<code>env-var</code> / <code>plist</code> / <code>keychain</code> / <code>fuseki</code> / <code>external</code>), scope (<code>session</code> / <code>service</code> / <code>system</code> / <code>external</code>), rotation policy, severity-if-leaked. Values never enter the graph. Rotation cadence becomes queryable; expired credentials trigger probes.</p>
+<p><strong>Cards:</strong> #2436 (CORS narrowing), #2646 (Cloudflare tunnel audit).</p>
+
+<h2>Bootstrap-as-Security (Layer 0 cross-cutting)</h2>
+<div class="insight">Bootstrap is not an availability primitive. It is the security primitive that fires at session-start and establishes four guarantees:</div>
+<ol>
+  <li><strong>Role-identity</strong> — this session is authentically silas / kade / wren, not a peer or external actor.</li>
+  <li><strong>Protocol-trust</strong> — running the right protocol version, with non-tampered CLAUDE.md, with verified principles set.</li>
+  <li><strong>Context-attestation</strong> — operating under known role-state, declared active card, claimed authority within bounds.</li>
+  <li><strong>Authority-assertion</strong> — what the role is allowed to do (commit / push / read / write across role-boundary) is bounded and verifiable.</li>
+</ol>
+<p>Cards anchored here:</p>
+<ul>
+  <li><strong>#2311</strong> — boot-time protocol contract (the hash that says "you are running v1.3 with the right CLAUDE.md").</li>
+  <li><strong>#2450</strong> — SessionStart inject (the live principles + state context that turns CLAUDE.md from a static file into an attested boot envelope).</li>
+  <li>Project memory: <code>project_bootstrap_is_security.md</code>.</li>
+</ul>
+<div class="anti"><strong>Anti-pattern:</strong> bypass paths (<code>CHORUS_MCP_BYPASS=1</code>, <code>--no-verify</code>, others) cross the boundary that establishes these primitives. Each bypass MUST be modeled as a <code>chorus:AuthBoundary</code> instance with <code>bypassEnvs</code> populated and <code>bypassAudit=true</code>. A silent bypass (<code>bypassAudit=false</code>) is debt the security domain owns repaying.</div>
+
+<h2>Spine Events</h2>
+<p>The security domain emits and consumes the following typed events:</p>
+<table>
+  <tr><th>Event</th><th>Fired when</th><th>Payload</th></tr>
+  <tr><td><code>security.bypass.detected</code></td><td>A boundary's <code>bypassEnvs</code> is set during a privileged operation</td><td><code>boundary_uri</code>, <code>env_var</code>, <code>caller_role</code>, <code>operation</code></td></tr>
+  <tr><td><code>security.credential.rotated</code></td><td>A <code>chorus:Credential</code> instance is updated with a new rotation timestamp</td><td><code>credential_uri</code>, <code>old_rotated_at</code>, <code>new_rotated_at</code>, <code>actor</code></td></tr>
+  <tr><td><code>security.permission.violated</code></td><td>An action fails the <code>chorus:Permission</code> check</td><td><code>subject</code>, <code>action</code>, <code>resource</code>, <code>closest_grant_uri</code></td></tr>
+  <tr><td><code>security.probe.fired</code></td><td>A <code>chorus:SecurityProbe</code> reports a signal change</td><td><code>probe_uri</code>, <code>framing_class</code>, <code>severity</code>, <code>target</code>, <code>value</code></td></tr>
+  <tr><td><code>security.attestation.completed</code></td><td>Bootstrap completes its four-primitive establishment</td><td><code>role</code>, <code>session_id</code>, <code>protocol_hash</code>, <code>boundary_uris[]</code></td></tr>
+</table>
+<p>These names are reserved and additive — they MUST NOT collide with existing <code>borg.*</code> or <code>alert.*</code> events. <code>security.probe.fired</code> is a sibling of <code>borg.probe.fired</code>, not a rename; security probes are a subset of probes (see Connections below).</p>
+
+<h2>Decisions</h2>
+<p><strong>DEC-022 (anchored):</strong> Operations responsibilities — Silas owns ops including security. This design lands inside that mandate; no new DEC needed for ownership.</p>
+<p><strong>Possible new DECs to surface during build:</strong></p>
+<ul>
+  <li><strong>DEC (closed-world default for <code>chorus:Permission</code>):</strong> absence of an explicit grant denies. Whitelist-only, no implicit allow. Aligns with the SHACL <code>explicitGrant</code> field minCount 1.</li>
+  <li><strong>DEC (audit-on-bypass invariant):</strong> every <code>chorus:AuthBoundary</code> with non-empty <code>bypassEnvs</code> MUST set <code>bypassAudit=true</code>. Silent bypass rejected at SHACL validation time once the constraint lands.</li>
+  <li><strong>DEC (credential value stays out of graph):</strong> <code>chorus:Credential</code> instances reference source location only. Writing a value into a credential instance is rejected by the write API.</li>
+  <li><strong>DEC (security-probe materialization):</strong> when a probe is materialized from an alert rule (<code>chorus:sourceAlert</code>), the alert and probe stay synchronized — alert change triggers probe re-materialization.</li>
+</ul>
+<p>These are draft. Final DEC numbers assigned on first card that needs to bind.</p>
+
+<h2>Connections</h2>
+<p>The security domain does not stand alone. Five named connections to peer domains:</p>
+<ul>
+  <li><strong>Borg (observability).</strong> Security signals are observability signals. <code>chorus:SecurityProbe</code> ⊂ <code>chorus:Probe</code> family; security dashboards reuse borg's probe rendering. The split exists because the framing-class question (<code>symptom</code> / <code>cause</code> / <code>status</code>) needs to be answerable for security posture independent of generic operational health.</li>
+  <li><strong>Commits (substrate enforcement).</strong> The pre-commit hook is the substrate enforcement layer for security writes. Direct TTL adds of <code>chorus:Credential</code> / <code>chorus:Permission</code> / <code>chorus:SecurityProbe</code> / <code>chorus:AuthBoundary</code> are blocked by the commits hook; the typed API is the only legal write surface.</li>
+  <li><strong>Cards.</strong> Security-shaped cards route to security-domain via subdomain query. Once the canonical Athena <code>subdomain:</code> axis is live (per cards-service-design), <code>subdomain:security-domain</code> becomes the routing tag and #2444 / #2645 / #2572 / #2290 / #2436 / #2646 all carry it.</li>
+  <li><strong>Alerts-monitors.</strong> Probes and alerts overlap by construction. A <code>chorus:SecurityProbe</code> MAY reference its source <code>chorus:Alert</code> via <code>chorus:sourceAlert</code>; the alert rule fires the probe. New alerts in security territory get a probe instance the same day.</li>
+  <li><strong>Athena (governance).</strong> All four canonical classes are governed via Athena's subdomain registry. <code>chorus:security-domain</code> already lists 26+ consumers (chorus.ttl:1268–1297); reads and writes flow through the standard subdomain handler chain.</li>
+</ul>
+
+<h2>ADR-028 Class A Conformance</h2>
+<p>Walk through the seven universal MUSTs.</p>
+
+<div class="must"><strong>MUST 1 — Graph separation (Layer 1, data).</strong> Schema (<code>chorus:Credential</code>, <code>chorus:Permission</code>, <code>chorus:SecurityProbe</code>, <code>chorus:AuthBoundary</code> + properties + SHACL shapes) is in <code>urn:chorus:ontology</code> (chorus.ttl:1514–1738, committed 2026-05-02). Instances live in <code>urn:chorus:instances</code>. URIs preserved if instances later relocate.</div>
+<div class="should"><strong>SHOULD</strong> test cross-graph SHACL hermetically before the first credential instance lands; the SHACL shapes are committed but cross-graph enforcement is unverified for these specific classes.</div>
+
+<div class="must"><strong>MUST 2 — Single write path (Layer 2, write).</strong> Write through <code>POST/PUT/DELETE /api/athena/subdomains/security-domain/{credentials,permissions,probes,boundaries}</code>. SPARQL prefixes via <code>SPARQL_PREFIXES</code> constant. URIs minted as <code>https://jeffbridwell.com/chorus#security-domain-{credential|permission|probe|boundary}-{slug}</code>.</div>
+<div class="mustnot"><strong>MUST NOT</strong> any other write surface — no direct TTL edits, no SPARQL UPDATE outside Athena handlers, no script-direct writes.</div>
+
+<div class="must"><strong>MUST 3 — Single read path (Layer 3, read).</strong> Read through <code>GET /api/athena/subdomains/security-domain/{credentials,permissions,probes,boundaries}</code> returning <code>{entities:[...]}</code>. Any predecessor read path 308-redirects to canonical (e.g., when <code>/api/chorus/context/security</code> is introduced as convenience, it redirects rather than re-implements).</div>
+<div class="mustnot"><strong>MUST NOT</strong> parallel read implementations.</div>
+
+<div class="must"><strong>MUST 4 — Cite-by-ID (Layer 5, citation).</strong> Hooks, scripts, role fragments reference URIs (<code>chorus:security-domain-permission-silas-deploy-prod</code>), never paraphrased names ("silas can deploy prod"). Role fragments: redirect-to-canonical only. <code>claudemd-gen.sh</code> regenerates after any fragment edit.</div>
+
+<div class="must"><strong>MUST 5 — Hook backstop (Layer 6, enforcement).</strong> Pre-commit rejects staged commits adding <code>chorus:Credential</code> / <code>chorus:Permission</code> / <code>chorus:SecurityProbe</code> / <code>chorus:AuthBoundary</code> triples to chorus.ttl outside the schema-only path. Hook scoped to the watched file.</div>
+<div class="may"><strong>MAY</strong> bypass via <code>SECURITY_DIRECT_EDIT_SKIP=1</code> for one-off migration / schema-only commits; bypass MUST emit <code>security.bypass.detected</code> for audit. The typed API becomes least-resistance; the hook bites the path it replaces.</div>
+
+<div class="must"><strong>MUST 6 — Drift test (Layer 9, test).</strong> A static baseline page (<code>book/security-reconstructed.html</code>) holds against the graph; divergence fails CI. Subdomain integration tests pass on every commit. Hook hermetic tests pass deterministically.</div>
+<div class="should"><strong>SHOULD</strong> count assertions are floors (<code>≥N</code> credentials, <code>≥N</code> boundaries) — graphs grow.</div>
+
+<div class="must"><strong>MUST 7 — Subdomain plumbing (Layer 8, governance).</strong> <code>chorus:security-domain</code> registered (chorus.ttl:935). Meta-alerts wired for stale instance index, API errors on canonical path, orphan instances. MCP tools single-verb-single-target: <code>chorus_credentials_list/get/create</code>, <code>chorus_permissions_list/get/create</code>, <code>chorus_probes_list/get/create</code>, <code>chorus_boundaries_list/get/create</code>. No <code>*_op(action,...)</code> collapses. <code>X-Chorus-Role</code> header propagates end-to-end into spine events. Tool descriptions carry (a) what it does, (b) when to reach for it, (c) what it is NOT for.</div>
+
+<h2>Migration Plan</h2>
+<p>Six phases, lowest-blast-radius first per ADR-028 I-10.</p>
+<table>
+  <tr><th>Phase</th><th>Work</th><th>Status</th></tr>
+  <tr><td>1</td><td>Subdomain registration — <code>chorus:security-domain</code> + <code>consumes</code> edges</td><td>Shipped 2026-05-02</td></tr>
+  <tr><td>2</td><td>Class declarations — Credential / Permission / SecurityProbe / AuthBoundary + properties + SHACL</td><td>Shipped 2026-05-02 (chorus.ttl:1514–1738)</td></tr>
+  <tr><td>3</td><td>Athena handlers — extend ENTITY_SECTIONS; POST/PUT/DELETE/GET routes; per-class atomic commit</td><td>Pending</td></tr>
+  <tr><td>4</td><td>MCP tools — single-verb-single-target; X-Chorus-Role propagation</td><td>Pending</td></tr>
+  <tr><td>5</td><td>Hook backstop — pre-commit refusing direct TTL adds outside API path; SECURITY_DIRECT_EDIT_SKIP bypass</td><td>Pending</td></tr>
+  <tr><td>6</td><td>Drift test — <code>book/security-reconstructed.html</code> static baseline; CI floor assertions</td><td>Pending</td></tr>
+</table>
+<p>Each phase is a card. Phase 3's per-class atomic commit means four small commits (one per class), not one big-bang.</p>
+
+<h2>Open Questions</h2>
+<p>Deferred decisions, surface during build:</p>
+<ol>
+  <li><strong>Cryptographic role-identity.</strong> Today role-identity is asserted via env var. Should bootstrap establish a per-session keypair and have downstream boundaries verify via signature? Trade-off: stronger guarantee vs. operational complexity. Defer to #2311 sub-spike.</li>
+  <li><strong>Threat-model population.</strong> #2444 AC1 is the parallel populate-instances card. Question: is the threat model itself a <code>chorus:SecurityProbe</code> (status framing) or a separate class? Lean toward probe-with-framing-class=<code>status</code>, but #2444 may surface a need for a distinct <code>chorus:Threat</code> class.</li>
+  <li><strong>MCP tool granularity.</strong> <code>chorus_permissions_create</code> accepts a single permission. Bulk operations (e.g., grant 12 permissions for a new role onboarding) — single tool with array, or 12 tool calls? ADR-028 leans single-target; revisit when first onboarding card lands.</li>
+  <li><strong>SHACL constraints on Permission entities.</strong> The current shape requires subject/action/resource/explicitGrant. Should it also enforce that <code>subject</code> resolves to a known <code>chorus:Role</code> or <code>chorus:SubDomain</code> URI (not a string)? Closed-world enforcement at the schema layer.</li>
+  <li><strong>Profile-as-projection generator.</strong> If <code>config/profiles/*.json</code> becomes generated from <code>chorus:Permission</code> instances, what's the generator address? <code>platform/scripts/generate-profiles.sh</code>? When does it run — pre-commit, post-merge, on Athena write?</li>
+</ol>
+
+<h2>References</h2>
+<p><strong>ADRs:</strong></p>
+<ul>
+  <li>ADR-025 — Ontology vs Instances graph separation (foundational).</li>
+  <li>ADR-028 — Substrate-class domain contract (the seven universal MUSTs + Class A/B addendum).</li>
+</ul>
+<p><strong>Cards in flight:</strong> #2444, #2645, #2572, #2290, #2436, #2646, #2659 (this design).</p>
+<p><strong>Pages:</strong></p>
+<ul>
+  <li><code>/loom/principles-reference-impl.html</code> — the principles arc as proof of pattern.</li>
+  <li><code>book/security-reconstructed.html</code> — drift baseline (planned, Phase 6).</li>
+</ul>
+<p><strong>Project memory:</strong></p>
+<ul>
+  <li><code>project_bootstrap_is_security.md</code> — bootstrap = role-identity + protocol-trust + context-attestation + authority-assertion.</li>
+  <li><code>project_no_competing_implementations.md</code> — single-implementation invariant applies to write paths.</li>
+</ul>
+<p><strong>Loom principles:</strong></p>
+<ul>
+  <li><code>chorus:principle-no-competing-implementations</code> — security domain = one model, one write path.</li>
+  <li><code>chorus:principle-services-reliable-bounded-idempotent</code> — probes idempotent, attestation bounded.</li>
+  <li><code>chorus:principle-self-healing</code> — probes detect drift; rotation triggers self-healing on expiry.</li>
+</ul>
+<p><strong>Sibling service designs:</strong></p>
+<ul>
+  <li><code>designing/docs/cards-service-design.md</code> — Class B precedent for tone and structure.</li>
+  <li><code>designing/docs/ci-pipeline-service-design.html</code> — HTML look-and-feel reference.</li>
+  <li><code>designing/docs/chorus-reference-model.html</code> — typography and palette reference.</li>
+</ul>
+
+<p class="footer">Status: Draft. Pending Wren review (interaction-layer impact: MCP tool surface). Pending Kade review (code-impact: handler list, generator surface). Pending Jeff sign-off.</p>
+
+</body>
+</html>
