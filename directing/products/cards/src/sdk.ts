@@ -11,12 +11,15 @@ import * as path from 'path';
 import { BoardClient } from './client';
 import { BoardTask } from './types';
 import { detectRole, LABELS } from './config';
-import { emitSpineEvent, emitChorusEvent } from './events';
+import { emitSpineEvent } from './events';
 import { spawnSync } from 'child_process';
 
 // Auto-declare role state from card actions (#1782)
 // Eliminates manual role-state calls — state follows card lifecycle.
 const ROLE_STATE_BIN = path.resolve(__dirname, '../../../../platform/scripts/role-state');
+
+// #2652 — extract repeated event name (was duplicated 5x, sonarjs flagged at #2603 threshold).
+const EVENT_CARD_QUALITY_BLOCKED = 'card.quality.blocked';
 function autoRoleState(state: string, extra: string = ''): void {
   const role = detectRole();
   if (!role) return;
@@ -276,7 +279,7 @@ export function enforceNowDescriptionGate(index: number, title: string, descript
 
   if (!desc) {
     console.error(`ERROR: Cards entering Now require Experience + AC in description. Card #${index} has no description.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
+    emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
       card_id: String(index), title, gate: 'now_description_missing', stage: 'directing', board,
     });
     return false;
@@ -292,7 +295,7 @@ export function enforceNowDescriptionGate(index: number, title: string, descript
   if (!hasExperience || !hasAC) {
     const missing = [!hasExperience && '## Experience', !hasAC && '## AC'].filter(Boolean).join(' and ');
     console.error(`ERROR: Cards entering Now require Experience + AC in description. Card #${index} is missing ${missing}.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
+    emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
       card_id: String(index), title, gate: 'now_description_incomplete', stage: 'directing', board,
     });
     return false;
@@ -321,7 +324,7 @@ export function enforceExperienceGate(index: number, title: string, description:
     console.error(`ERROR: Card #${index} needs an Experience section before entering WIP.`);
     console.error('  Add "## Experience" with 2-5 sentences in Jeff\'s voice describing what he sees/feels/gets.');
     console.error('  Route to Wren to draft the Experience section.');
-    emitSpineEvent('card.quality.blocked', detectRole(), {
+    emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
       card_id: String(index), title, gate: 'experience_missing', stage: 'building', board,
     });
     return false;
@@ -354,7 +357,7 @@ export function enforceACGate(index: number, title: string, description: string 
 
   if (!hasAC) {
     console.error(`ERROR: Card #${index} needs acceptance criteria before entering WIP. Route to Wren.`);
-    emitSpineEvent('card.quality.blocked', detectRole(), {
+    emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
       card_id: String(index), title, gate: 'capture_ac_missing', stage: 'building', board,
     });
     return false;
@@ -473,6 +476,7 @@ export async function auditStart(client: BoardClient, role: string): Promise<{
   return { staleNow: staleNow.length, staleNext: staleNext.length, nowCount: nowTasks.length };
 }
 
+// cog-override: auditClose: snapshot diff with multi-bucket per-card classification — pre-existing complexity, refactor candidate not in #2652 scope.
 export async function auditClose(client: BoardClient, role: string): Promise<{
   newCards: number; newlyDone: number; retroactive: number;
 }> {
@@ -571,7 +575,34 @@ type AddOpts = {
   status?: string; owner?: string; priority?: string; domain?: string;
   description?: string; product?: string; chunk?: string; sequence?: string;
   type?: string; origin?: string; quick?: boolean;
+  // #2652 AC1+AC2 — new tag axes
+  subdomain?: string; subproduct?: string;
 };
+
+// #2652 AC2 — subproduct closed list. Athena models 7 subproducts today; doc
+// (cards-service-design.md) names 6 user-facing — Quality is intentionally
+// not exposed as a subproduct on cards yet (horizontal capability per Jeff
+// 2026-05-01). Add Quality if/when it becomes a tagged surface.
+const VALID_SUBPRODUCTS = new Set(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']);
+
+// #2652 AC1 — subdomain closed list sourced LIVE from Athena. Cached per
+// process lifetime to keep validation fast; refresh on cache-miss.
+let SUBDOMAIN_CACHE: Set<string> | null = null;
+async function fetchSubdomainSet(): Promise<Set<string>> {
+  if (SUBDOMAIN_CACHE) return SUBDOMAIN_CACHE;
+  try {
+    const resp = await fetch('http://localhost:3340/api/athena/subdomains');
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    const body = await resp.json() as { data?: Array<{ id: string }> };
+    const ids = (body.data || []).map((r) => r.id);
+    SUBDOMAIN_CACHE = new Set(ids);
+    return SUBDOMAIN_CACHE;
+  } catch (err) {
+    // If Athena is unreachable at validation time, fail closed: refuse-at-source
+    // means we'd rather block the add than let an unvalidated subdomain land.
+    throw new Error(`subdomain validation requires Athena (localhost:3340/api/athena/subdomains): ${err instanceof Error ? err.message : err}`);
+  }
+}
 
 // Mutates opts to fill in type/chunk/origin from title and domain where possible.
 function inferCardDefaults(title: string, opts: AddOpts): void {
@@ -600,7 +631,8 @@ function inferCardDefaults(title: string, opts: AddOpts): void {
 }
 
 // Validates required fields and collects error strings.
-function collectRequiredFieldErrors(opts: AddOpts): string[] {
+// cog-override: required-field validator with per-axis branches (#2652 added subdomain+subproduct; pre-existing for type/priority/origin/domain). Each branch is one check with specific error text; collapsing to a loop would lose per-axis error-message clarity.
+async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   const errors: string[] = [];
   if (!opts.domain) errors.push('Missing --domain <name>');
   const validTypes = Object.keys(LABELS.type).join(', ');
@@ -609,6 +641,25 @@ function collectRequiredFieldErrors(opts: AddOpts): string[] {
   if (!opts.priority) errors.push('Missing --priority P1|P2|P3');
   if (!opts.origin) errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
   else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
+  // #2652 AC2 — subproduct refuse-at-source (closed list)
+  if (opts.subproduct) {
+    const sp = opts.subproduct.toLowerCase();
+    if (!VALID_SUBPRODUCTS.has(sp)) {
+      errors.push(`Unknown --subproduct "${opts.subproduct}". Valid: ${Array.from(VALID_SUBPRODUCTS).join(', ')}`);
+    }
+  }
+  // #2652 AC1 — subdomain refuse-at-source (Athena live query, fail-closed)
+  if (opts.subdomain) {
+    try {
+      const valid = await fetchSubdomainSet();
+      if (!valid.has(opts.subdomain)) {
+        const preview = Array.from(valid).slice(0, 8).join(', ');
+        errors.push(`Unknown --subdomain "${opts.subdomain}". Athena reports ${valid.size} valid subdomains (e.g. ${preview}, ...). Add new subdomain in Athena before tagging.`);
+      }
+    } catch (err) {
+      errors.push(`--subdomain validation failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
   return errors;
 }
 
@@ -641,7 +692,7 @@ function validateDescription(
 function reportErrorsAndExit(errors: string[], title: string, boardName: string): never {
   console.error(`ERROR: Card creation failed (${errors.length} issue${errors.length > 1 ? 's' : ''}):`);
   for (const err of errors) console.error(`  • ${err}`);
-  emitSpineEvent('card.quality.blocked', detectRole(), {
+  emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
     title, gate: 'add_validation_failed', board: boardName,
     errors: errors.join('; '),
   });
@@ -649,6 +700,7 @@ function reportErrorsAndExit(errors: string[], title: string, boardName: string)
 }
 
 // Applies post-add tags (sequence, origin) and triggers workflow if status is Now.
+// cog-override: applyPostAddTags: per-axis tag-application chain (#2652 added subdomain+subproduct branches; pre-existing for sequence/origin/workflow). Sequential branches, intentional.
 async function applyPostAddTags(
   client: BoardClient, task: BoardTask, opts: AddOpts,
 ): Promise<void> {
@@ -660,10 +712,32 @@ async function applyPostAddTags(
     try { await client.tag(task.index, 'origin', opts.origin.toLowerCase()); }
     catch (err: unknown) { console.error(`  (origin tag: ${err instanceof Error ? err.message : err})`); }
   }
+  // #2652 AC1+AC2 — apply new tag axes (already validated refuse-at-source).
+  // Labels auto-create on first use; subdomain/subproduct categories not in
+  // LABELS config so use direct label add via client.applyLabelByName helper.
+  if (opts.subproduct) {
+    try { await applyDynamicLabel(client, task.index, `subproduct:${opts.subproduct.toLowerCase()}`); }
+    catch (err: unknown) { console.error(`  (subproduct tag: ${err instanceof Error ? err.message : err})`); }
+  }
+  if (opts.subdomain) {
+    try { await applyDynamicLabel(client, task.index, `subdomain:${opts.subdomain}`); }
+    catch (err: unknown) { console.error(`  (subdomain tag: ${err instanceof Error ? err.message : err})`); }
+  }
   if (task.status.toLowerCase() === 'now') {
     try { await triggerWorkflow(client, task.index); }
     catch (err: unknown) { console.error(`  (workflow: ${err instanceof Error ? err.message : err})`); }
   }
+}
+
+// #2652 AC1+AC2 — apply a label by full name (e.g. "subdomain:cards-service"),
+// auto-creating the Vikunja label if it doesn't exist. Subdomain/subproduct
+// labels are not in LABELS config (Athena is source of truth for subdomain;
+// closed-list for subproduct). Reuses applyLabelByName which handles the
+// find-or-create path.
+async function applyDynamicLabel(
+  client: BoardClient, index: number, labelName: string,
+): Promise<void> {
+  await client.applyLabelByName(index, labelName);
 }
 
 export async function addCard(
@@ -675,7 +749,7 @@ export async function addCard(
   // --quick only exempts description/AC requirement.
   inferCardDefaults(title, opts);
 
-  const errors = collectRequiredFieldErrors(opts);
+  const errors = await collectRequiredFieldErrors(opts);
   validateDescription(opts, title, client.boardName, errors);
   if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
 
@@ -886,7 +960,10 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
   });
   autoRoleState('idle');
 
-  emitChorusEvent('deploy.verification.completed', role, {
+  // #2652 AC3 — single emit function in cards. Was emitChorusEvent (different
+  // appName/component); migrated to emitSpineEvent so all card-emitted events
+  // share one canonical chain. Single-implementation invariant.
+  emitSpineEvent('deploy.verification.completed', role, {
     card_id: String(index), title, result: 'pass', method: 'manual',
   });
 
@@ -916,7 +993,9 @@ async function maybeUnblockGated(client: BoardClient, gatedId: number, completed
   if (gatedCard.status !== 'Later') return;
   await client.move(gatedId, 'Next');
   console.log(`  Unblocked #${gatedId} — moved Later → Next`);
-  emitSpineEvent('card.unblocked', role, {
+  // #2652 AC4 — was 'card.unblocked' (alias retired 2026-05-02 — no live
+  // consumers in chorus tree per grep audit). Canonical name: 'card.item.unblocked'.
+  emitSpineEvent('card.item.unblocked', role, {
     card_id: String(gatedId), title: gatedCard.title, unblocked_by: String(completedIndex),
   });
 }
@@ -982,6 +1061,58 @@ export async function unblockCard(client: BoardClient, index: number): Promise<v
   });
 }
 
+/**
+ * #2652 AC12 — `cards check <id> AC<n>` — single-keystroke checkbox flip on
+ * description from anywhere a role is working. Closes the comments-vs-description
+ * divergence: roles routinely evidence AC completion in comments while the
+ * description checkboxes stay unchecked, blocking gate-product reads (Kade
+ * observation 2026-05-01). Spine event: `card.ac.checked` with
+ * {card_id, ac_index, role}.
+ *
+ * Behavior:
+ *   - Find the Nth `- [ ]` line in the description (1-indexed)
+ *   - Flip to `- [x]`
+ *   - Update card via existing updateCard path (which emits ac.ticked)
+ *   - Emit card.ac.checked
+ *
+ * Errors:
+ *   - If AC<n> doesn't exist or is already checked, print message + exit 0 (no-op).
+ */
+export async function checkCardAc(
+  client: BoardClient, index: number, acIndex: number
+): Promise<void> {
+  const role = detectRole();
+  const card = await client.view(index);
+  const desc = card.description || '';
+  const lines = desc.split('\n');
+  let countUnchecked = 0;
+  let targetLine = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*-\s*\[) \](.*)$/);
+    if (m) {
+      countUnchecked++;
+      if (countUnchecked === acIndex) {
+        targetLine = i;
+        break;
+      }
+    }
+  }
+  if (targetLine === -1) {
+    console.log(`#${index} has no unchecked AC${acIndex} (only ${countUnchecked} unchecked items found) — no-op`);
+    return;
+  }
+  lines[targetLine] = lines[targetLine].replace(/^(\s*-\s*\[) \]/, '$1x]');
+  const newDesc = lines.join('\n');
+  await client.update(index, { description: newDesc });
+  console.log(`Checked AC${acIndex} on #${index}`);
+  emitSpineEvent('card.ac.checked', role, {
+    card_id: String(index),
+    ac_index: String(acIndex),
+    board: client.boardName,
+  });
+}
+
+// cog-override: updateCard: title/desc/product merge with prior-state read for ac.ticked diff — pre-existing complexity, structurally cohesive.
 export async function updateCard(
   client: BoardClient, index: number,
   fields: { title?: string; description?: string; product?: string }
@@ -1068,14 +1199,24 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
   notifyOwnerIfDifferent(index, title, displayOwner, `reassigned-to-${displayOwner}`, detectRole());
 }
 
-const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates']);
-const SET_CARD_TAG_CATEGORIES = ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin'];
+// #2652 AC1+AC2 — subdomain + subproduct keys accepted on `cards set`. They
+// route through the dynamic-label path (Vikunja label auto-create) since
+// they're not in LABELS config — same as the create path's applyDynamicLabel.
+// `product` (gathering|chorus portfolio) added so all four taxonomy axes —
+// product / subproduct / domain / subdomain — are settable on existing cards
+// per Jeff direction 2026-05-02 (board-wide attribute backfill).
+const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subdomain', 'subproduct', 'product']);
+const SET_CARD_TAG_CATEGORIES = ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'product'];
 
 function validateSetKeys(pairs: Record<string, string>): void {
   for (const key of Object.keys(pairs)) {
     if (!SET_CARD_VALID_KEYS.has(key)) {
       throw new Error(`Unknown key "${key}". Valid: ${[...SET_CARD_VALID_KEYS].join(', ')}`);
     }
+  }
+  // #2652 AC2 — subproduct closed-list refuse-at-source on set path
+  if (pairs.subproduct && !VALID_SUBPRODUCTS.has(pairs.subproduct.toLowerCase())) {
+    throw new Error(`Unknown subproduct "${pairs.subproduct}". Valid: ${Array.from(VALID_SUBPRODUCTS).join(', ')}`);
   }
 }
 
@@ -1089,6 +1230,21 @@ async function applyTagChanges(client: BoardClient, index: number, pairs: Record
   if (pairs.priority) {
     await client.tag(index, 'priority', pairs.priority.toUpperCase());
     changes.push(`priority=${pairs.priority}`);
+  }
+  // #2652 AC1+AC2 — apply dynamic-label categories. Subdomain refuses-at-source
+  // against Athena (live query, fail-closed); subproduct is closed-list
+  // (validated in validateSetKeys above).
+  if (pairs.subdomain) {
+    const valid = await fetchSubdomainSet();
+    if (!valid.has(pairs.subdomain)) {
+      throw new Error(`Unknown subdomain "${pairs.subdomain}". Athena reports ${valid.size} valid subdomains.`);
+    }
+    await client.applyLabelByName(index, `subdomain:${pairs.subdomain}`);
+    changes.push(`subdomain=${pairs.subdomain}`);
+  }
+  if (pairs.subproduct) {
+    await client.applyLabelByName(index, `subproduct:${pairs.subproduct.toLowerCase()}`);
+    changes.push(`subproduct=${pairs.subproduct}`);
   }
 }
 
@@ -1125,6 +1281,10 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
   validateSetKeys(pairs);
   const changes: string[] = [];
 
+  // #2652 AC5 — capture before-state for per-field diff payload.
+  let beforeCard: BoardTask | undefined;
+  try { beforeCard = await client.view(index); } catch { /* view may fail; diff payload omitted */ }
+
   await applyTagChanges(client, index, pairs, changes);
 
   if (pairs.owner) {
@@ -1147,24 +1307,98 @@ export async function setCard(client: BoardClient, index: number, pairs: Record<
   await applyRelationPairs(client, index, pairs, changes);
   await printResultingCard(client, index, changes);
 
+  // #2652 AC5 — extend card.item.set payload with {field, old_value, new_value}
+  // diffs so subscribers can reconstruct field history, not just see "something
+  // changed." Old-value capture is best-effort (beforeCard view may have failed);
+  // existing 'changes' string preserved for backward compat.
+  const fieldChanges = beforeCard
+    ? buildFieldChanges(beforeCard, pairs)
+    : [];
   emitSpineEvent('card.item.set', detectRole(), {
-    card_id: String(index), changes: changes.join(','), board: client.boardName,
+    card_id: String(index),
+    changes: changes.join(','),
+    field_changes: JSON.stringify(fieldChanges),
+    board: client.boardName,
   });
 }
 
+// #2652 AC5 — build {field, old_value, new_value} diff records from before-state
+// + requested changes. Tag categories (domain/chunk/sequence/type/origin) read
+// the prior label off the card; structured fields (owner/priority/title/status)
+// read from the BoardTask shape.
+function buildFieldChanges(
+  before: BoardTask, pairs: Record<string, string>,
+): Array<{ field: string; old_value: string; new_value: string }> {
+  const out: Array<{ field: string; old_value: string; new_value: string }> = [];
+  const tagCategories = ['domain', 'chunk', 'sequence', 'type', 'origin'];
+  const beforeLabels = before.domains || [];
+  for (const [key, value] of Object.entries(pairs)) {
+    if (tagCategories.includes(key)) {
+      const prior = beforeLabels.find((l) => l.startsWith(`${key}:`));
+      out.push({ field: key, old_value: prior ? prior.slice(key.length + 1) : '', new_value: value });
+    } else if (key === 'owner') {
+      out.push({ field: 'owner', old_value: before.owner ?? '', new_value: value });
+    } else if (key === 'priority') {
+      out.push({ field: 'priority', old_value: before.priority ?? '', new_value: value });
+    } else if (key === 'title') {
+      out.push({ field: 'title', old_value: before.title ?? '', new_value: value });
+    } else if (key === 'status') {
+      out.push({ field: 'status', old_value: before.status ?? '', new_value: value });
+    } else if (key === 'desc' || key === 'description') {
+      // Don't include full desc text in spine payload; just signal length delta.
+      out.push({ field: 'description', old_value: '(omitted)', new_value: `(${value.length} chars)` });
+    }
+    // 'after' / 'gates' relation pairs are not field-set; they emit relation events elsewhere.
+  }
+  return out;
+}
+
 export async function tagCard(client: BoardClient, index: number, value: string, category: string = 'chunk'): Promise<void> {
+  // #2652 AC7 — idempotency at API level. If the card already carries this
+  // exact tag, skip the BoardClient call AND the spine emit. Vikunja sees no
+  // redundant write; audit logs don't fill with phantom changes.
   let title = '';
-  try { title = (await client.view(index)).title; } catch { /* best effort */ }
+  let alreadyHas = false;
+  try {
+    const card = await client.view(index);
+    title = card.title;
+    alreadyHas = (card.domains || []).includes(`${category}:${value.toLowerCase()}`)
+              || (card.domains || []).includes(`${category}:${value}`);
+  } catch { /* best effort */ }
+  if (alreadyHas) {
+    console.log(`#${index} already has ${category}:${value} — no-op`);
+    return;
+  }
   await client.tag(index, category, value);
   console.log(`Tagged #${index} → ${category}:${value}`);
+  // #2652 AC6 — payload includes 'op' so subscribers can reconstruct tag history
+  // (add vs remove). Was implicit-add before; explicit op is more honest.
   emitSpineEvent('card.item.tagged', detectRole(), {
-    card_id: String(index), title, [category]: value, board: client.boardName,
+    card_id: String(index), title, category, value, op: 'add', [category]: value, board: client.boardName,
   });
 }
 
 export async function untagCard(client: BoardClient, index: number, value: string, category: string = 'chunk'): Promise<void> {
+  // #2652 AC7 — idempotency at API level. If the card doesn't carry this tag,
+  // skip the BoardClient call AND the spine emit (the prior code would 404 on
+  // missing-label removal; this is cleaner).
+  let alreadyAbsent = false;
+  try {
+    const card = await client.view(index);
+    alreadyAbsent = !(card.domains || []).some((l) =>
+      l === `${category}:${value.toLowerCase()}` || l === `${category}:${value}`);
+  } catch { /* best effort — fall through to attempt */ }
+  if (alreadyAbsent) {
+    console.log(`#${index} does not have ${category}:${value} — no-op`);
+    return;
+  }
   await client.untag(index, category, value);
   console.log(`Untagged #${index} → removed ${category}:${value}`);
+  // #2652 AC6 — emit symmetric event on remove. Previously untag was silent on
+  // the spine; subscribers could see additions but not removals. Closes the gap.
+  emitSpineEvent('card.item.tagged', detectRole(), {
+    card_id: String(index), category, value, op: 'remove', board: client.boardName,
+  });
 }
 
 export async function swatCard(client: BoardClient, title: string): Promise<BoardTask> {

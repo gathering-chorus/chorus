@@ -453,6 +453,10 @@ describe('tagCard / untagCard', () => {
     const mock = new MockClient();
     await mock.add('card', {});
     const [index] = Array.from(mock.tasks.keys());
+    // #2652 AC7 — idempotency: untag is now a no-op if the label isn't present.
+    // Seed the label so the test exercises the pass-through path it intends.
+    const seeded = mock.tasks.get(index);
+    if (seeded) (seeded as { domains: string[] }).domains = ['sequence:coordination'];
     const cap = silenceConsole();
     try {
       await untagCard(asBoardClient(mock), index, 'coordination', 'sequence');

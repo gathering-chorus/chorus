@@ -110,6 +110,7 @@ export function resolveBucket(board: BoardConfig, status: string): number {
 }
 
 /** Load Vikunja config from env or .env file */
+// cog-override: loadEnv: env-resolution with per-source fallback chain — pre-existing complexity, intentional cascade.
 export function loadEnv(): { url: string; token: string } {
   if (process.env.VIKUNJA_URL && process.env.VIKUNJA_TOKEN) {
     return { url: process.env.VIKUNJA_URL, token: process.env.VIKUNJA_TOKEN };
@@ -146,11 +147,32 @@ export function loadEnv(): { url: string; token: string } {
   throw new Error('No .env file found and VIKUNJA_TOKEN not set');
 }
 
-/** Detect role from cwd */
+/**
+ * #2652 AC10 — DEPLOY_ROLE-required identity. cwd-parsing retired (was the
+ * source of the cards-CLI "by wren" mis-attribution bug). Recognized roles:
+ * wren | silas | kade | jeff | automation. The 'automation' value is for
+ * cron jobs / LaunchAgents / hooks that have no human role.
+ *
+ * Behavior:
+ *   - DEPLOY_ROLE in {wren, silas, kade, jeff, automation} → return it
+ *   - DEPLOY_ROLE unset or unknown → fall back to legacy cwd-parsing with
+ *     a warning to stderr (so existing automation isn't immediately broken).
+ *     The fallback is deprecated; future cards card retires it entirely.
+ */
+const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff', 'automation']);
+
 export function detectRole(): string {
+  const env = (process.env.DEPLOY_ROLE || '').toLowerCase();
+  if (VALID_ROLES.has(env)) return env;
+  // Legacy cwd fallback — warn once, deprecated path.
+  if (env) {
+    process.stderr.write(`detectRole: DEPLOY_ROLE="${env}" not in valid set; falling back to cwd parse\n`);
+  } else {
+    process.stderr.write('detectRole: DEPLOY_ROLE unset; falling back to cwd parse (deprecated)\n');
+  }
   const cwd = process.cwd();
-  if (cwd.includes('engineer')) return 'kade';
-  if (cwd.includes('product-manager')) return 'wren';
-  if (cwd.includes('architect')) return 'silas';
-  return 'wren';
+  if (cwd.includes('engineer') || cwd.includes('roles/kade')) return 'kade';
+  if (cwd.includes('product-manager') || cwd.includes('roles/wren')) return 'wren';
+  if (cwd.includes('architect') || cwd.includes('roles/silas')) return 'silas';
+  return 'automation';
 }

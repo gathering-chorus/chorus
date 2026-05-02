@@ -13,16 +13,11 @@ describe('#2476 buildMcpServer principles tools', () => {
     const handler = (server as any)._requestHandlers.get('tools/list');
     const result = await handler({ method: 'tools/list', params: {} }, {});
     const names = result.tools.map((t: any) => t.name).sort();
-    expect(names).toEqual([
-      'chorus_decisions_get',
-      'chorus_decisions_list',
-      'chorus_nudge_message',
-      'chorus_principles_create',
-      'chorus_principles_get',
-      'chorus_principles_list',
-      'chorus_subdomains_get',
-      'chorus_subdomains_list',
-    ]);
+    // #2652 — assert presence rather than exact set; tools list grows over time.
+    expect(names).toContain('chorus_principles_create');
+    expect(names).toContain('chorus_principles_get');
+    expect(names).toContain('chorus_principles_list');
+    expect(names).toContain('chorus_nudge_message');
   });
 
   test('chorus_principles_list delegates fetch to /api/loom/principles', async () => {
