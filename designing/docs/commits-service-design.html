@@ -1,849 +1,223 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="generator" content="pandoc" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Commits Service Design</title>
-  <style>
-    html {
-      color: #1a1a1a;
-      background-color: #fdfdfd;
-    }
-    body {
-      margin: 0 auto;
-      max-width: 36em;
-      padding-left: 50px;
-      padding-right: 50px;
-      padding-top: 50px;
-      padding-bottom: 50px;
-      hyphens: auto;
-      overflow-wrap: break-word;
-      text-rendering: optimizeLegibility;
-      font-kerning: normal;
-    }
-    @media (max-width: 600px) {
-      body {
-        font-size: 0.9em;
-        padding: 12px;
-      }
-      h1 {
-        font-size: 1.8em;
-      }
-    }
-    @media print {
-      html {
-        background-color: white;
-      }
-      body {
-        background-color: transparent;
-        color: black;
-        font-size: 12pt;
-      }
-      p, h2, h3 {
-        orphans: 3;
-        widows: 3;
-      }
-      h2, h3, h4 {
-        page-break-after: avoid;
-      }
-    }
-    p {
-      margin: 1em 0;
-    }
-    a {
-      color: #1a1a1a;
-    }
-    a:visited {
-      color: #1a1a1a;
-    }
-    img {
-      max-width: 100%;
-    }
-    svg {
-      height: auto;
-      max-width: 100%;
-    }
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 1.4em;
-    }
-    h5, h6 {
-      font-size: 1em;
-      font-style: italic;
-    }
-    h6 {
-      font-weight: normal;
-    }
-    ol, ul {
-      padding-left: 1.7em;
-      margin-top: 1em;
-    }
-    li > ol, li > ul {
-      margin-top: 0;
-    }
-    blockquote {
-      margin: 1em 0 1em 1.7em;
-      padding-left: 1em;
-      border-left: 2px solid #e6e6e6;
-      color: #606060;
-    }
-    code {
-      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
-      font-size: 85%;
-      margin: 0;
-      hyphens: manual;
-    }
-    pre {
-      margin: 1em 0;
-      overflow: auto;
-    }
-    pre code {
-      padding: 0;
-      overflow: visible;
-      overflow-wrap: normal;
-    }
-    .sourceCode {
-     background-color: transparent;
-     overflow: visible;
-    }
-    hr {
-      background-color: #1a1a1a;
-      border: none;
-      height: 1px;
-      margin: 1em 0;
-    }
-    table {
-      margin: 1em 0;
-      border-collapse: collapse;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-      font-variant-numeric: lining-nums tabular-nums;
-    }
-    table caption {
-      margin-bottom: 0.75em;
-    }
-    tbody {
-      margin-top: 0.5em;
-      border-top: 1px solid #1a1a1a;
-      border-bottom: 1px solid #1a1a1a;
-    }
-    th {
-      border-top: 1px solid #1a1a1a;
-      padding: 0.25em 0.5em 0.25em 0.5em;
-    }
-    td {
-      padding: 0.125em 0.5em 0.25em 0.5em;
-    }
-    header {
-      margin-bottom: 4em;
-      text-align: center;
-    }
-    #TOC li {
-      list-style: none;
-    }
-    #TOC ul {
-      padding-left: 1.3em;
-    }
-    #TOC > ul {
-      padding-left: 0;
-    }
-    #TOC a:not(:hover) {
-      text-decoration: none;
-    }
-    code{white-space: pre-wrap;}
-    span.smallcaps{font-variant: small-caps;}
-    div.columns{display: flex; gap: min(4vw, 1.5em);}
-    div.column{flex: auto; overflow-x: auto;}
-    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
-    /* The extra [class] is a hack that increases specificity enough to
-       override a similar rule in reveal.js */
-    ul.task-list[class]{list-style: none;}
-    ul.task-list li input[type="checkbox"] {
-      font-size: inherit;
-      width: 0.8em;
-      margin: 0 0.8em 0.2em -1.6em;
-      vertical-align: middle;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commits — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #dbeafe; color: #1d4ed8; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #1d4ed8; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .flow { display: grid; grid-template-columns: 1fr; gap: 0; margin: 14px 0; }
+  .flow-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e5e7eb; }
+  .flow-row:last-child { border-bottom: none; }
+  .flow-actor { font-weight: 600; font-size: 0.85em; color: #1d4ed8; }
+  .flow-actor.norm { color: #b45309; }
+  .flow-actor.danger { color: #dc2626; }
+  .flow-step { background: #f8f8f8; border: 1px solid #e5e7eb; border-left: 3px solid #2563eb; border-radius: 4px; padding: 8px 12px; font-size: 0.85em; }
+  .flow-step.danger { border-left-color: #dc2626; background: #fef2f2; }
+  .flow-step.norm { border-left-color: #d97706; background: #fffbeb; }
+  .flow-step strong { color: #1d4ed8; }
+  .flow-step.danger strong { color: #dc2626; }
+  .flow-step.norm strong { color: #92400e; }
+  .arrow { color: #6b7280; font-weight: 700; padding: 0 4px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
 </head>
 <body>
-<header id="title-block-header">
-<h1 class="title">Commits Service Design</h1>
-</header>
-<h1 id="commits-service-design">Commits Service Design</h1>
-<p><strong>Kade, 2026-04-29. Updated 2026-05-02 (v3). PM constraint:
-Wren. Architecture: Silas. Card #2586.</strong></p>
-<h2 id="v3-amendment-2026-05-02">v3 amendment (2026-05-02)</h2>
-<p><strong>Architectural primitive (load-bearing): the substrate owns
-the working tree.</strong> Everything else in this amendment — who owns
-branches, locks, hooks, push, role-state — follows from that single
-shift.</p>
-<p><strong>Class B implementation mode — thin → thick.</strong>
-ADR-028’s Class B “single canonical adapter” did not previously
-distinguish thin (shells out to git, integrity depends on agent
-discipline) from thick (substrate executes the contract internally).
-v2.5’s <code>git-queue.sh</code> is thin; v3 graduates it to thick. Same
-shape as #2652 cards CLI (was thin shell-script, became canonical
-adapter all transports delegate to) and #2649 chorus-api (was vendor
-copies, became transport over gathering’s <code>public/</code>). v3 is
-the same move applied to commits. Maps to
-<code>chorus:AuthBoundary.checkType: 'service'</code> vs
-<code>'ad-hoc'</code> from the security model — ad-hoc boundaries are
-migration candidates exactly because their integrity depends on agent
-discipline.</p>
-<p>v2.5 named three failure modes and accepted (A) read-stale-content as
-residual risk. The morning of 2026-05-02 produced the (A) receipt:
-Silas’s uncommitted ontology + design-doc work was overwritten on disk
-when Kade ran <code>git checkout</code> on the shared tree to gate-code
-wren/2649. Cost: ~30 min of architect work, recovered from
-<code>/tmp</code> fragments. The lesson is not “be more careful” — it’s
-that <strong>invariant execution cannot rest on agent
-discipline.</strong> v2.5’s accepted-residual was a norm with a hopeful
-name.</p>
-<p>This amendment names the structural answer.</p>
-<h3 id="invariant-vs-norm">Invariant vs norm</h3>
-<p>A norm asks each agent to remember N rules every commit (don’t switch
-branches with peer dirty, don’t bypass pre-commit, don’t set the test
-override env, don’t push raw, don’t merge with merge-commit, etc.).
-Invariant execution makes the rules properties of the system: the only
-paths exposed to the agent are paths that satisfy the contract. There is
-no env to flip because no env is on the wire. There is no flag to skip
-because no flag is on the wire. There is no shared
-<code>.git/HEAD</code> to corrupt because the agent does not touch git
-directly.</p>
-<h3 id="inversion-of-control">Inversion of control</h3>
-<p>Today: agent runs the procedure (stage → branch-check → hook → queue
-→ push → watch for race → watch for env → watch for tree-state). Ten
-things, every commit, hoping. Inverted: the agent makes one declarative
-request — “commit my changes for the card I’m building” — and the
-substrate runs the procedure or refuses with a reason. The
-remembering-surface goes to zero because there is nothing left to
-remember.</p>
-<p>This is the same shape as #2652 (CLI canonical, MCP/HTTP delegate),
-#2649 (chorus-api as single source for static assets), DEC-107 (nudge
-persist+deliver atomic). The pattern repeats: one canonical surface owns
-the work, peripheral surfaces delegate to it. v3 is not “add a new
-service” — it is “finish that pattern for the commits surface.”</p>
-<h3 id="what-the-substrate-owns">What the substrate owns</h3>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 40px;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Canonical service-design shape for Commits.</strong> Related: <a href="/designing/docs/cards-service-design.html">Cards</a> · <a href="/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> · <a href="/designing/docs/chorus-service-design.html">Chorus</a>.</div>
+
+<h1>Commits <span>— Service Design</span></h1>
+<p class="date">2026-04-29 — Kade (#2586). <strong>Updated 2026-05-02 — v3, three-lens authoring: PM constraint Wren, architecture Silas.</strong> Today's landing: <code>#2645</code> v3 amendment — substrate owns the working tree, inversion of control, Class B thin→thick, SWAT-as-card-type encoding (Wren), substrate-owns role-state-to-card attestation (Silas). Cards filed: <code>#2661</code> v3-1 chorus_commit MCP tool, <code>#2662</code> v3-2 skill migration, <code>#2663</code> v3-3 block raw git mutations, <code>#2665</code> v3-4 retire env-bypass, <code>#2666</code> v3-5 SWAT-as-type, <code>#2667</code> v3-6 retire bash scripts.</p>
+
+<div class="promise">
+A commit lands when, and only when, the role calls the service's <code>commit</code> for its active card, and the service (a) verifies the role's branch matches its role-prefix and active-card, (b) runs the pre-commit checks against the staged paths and they pass, (c) pushes via its serialized internal queue, and (d) GitHub's branch-protection rebase-merges to <code>main</code> with required-checks green against the merged SHA. The agent's only signal is the response from the service: SHA-on-main, or refused-with-reason.
+</div>
+
+<h2>Why v3</h2>
+<p>v2.5 named three failure modes (A read-stale-content, B cross-role wrong-branch, C same-role wrong-card) and accepted (A) as residual risk because physical isolation (worktrees) was rejected. The morning of 2026-05-02 produced the (A) receipt: Silas's uncommitted ontology + design-doc work was overwritten on disk when Kade ran <code>git checkout</code> on the shared tree to gate-code <code>wren/2649</code>. ~30 min of architect work, recovered from <code>/tmp</code> fragments. The lesson is not "be more careful" — it's that <strong>invariant execution cannot rest on agent discipline</strong>. v2.5's accepted-residual was a norm with a hopeful name.</p>
+
+<h2>Architectural primitive (load-bearing)</h2>
+<div class="component" style="border-left: 4px solid #2563eb;">
+<p style="font-size: 1em; margin-bottom: 0;"><strong>The substrate owns the working tree.</strong> Everything else in this design — who owns branches, locks, hooks, push, role-state — follows from that single shift.</p>
+</div>
+
+<h2>Class B implementation mode — thin → thick</h2>
+<p>ADR-028's Class B "single canonical adapter" did not previously distinguish <em>thin</em> (shells out to git, integrity depends on agent discipline) from <em>thick</em> (substrate executes the contract internally). v2.5's <code>git-queue.sh</code> is thin; v3 graduates it to thick. Same shape as <code>#2652</code> cards CLI (was thin shell-script, became canonical adapter all transports delegate to) and <code>#2649</code> chorus-api (was vendor copies, became transport over gathering's <code>public/</code>). v3 is the same move applied to commits. Maps to <code>chorus:AuthBoundary.checkType: 'service'</code> vs <code>'ad-hoc'</code> from the security model — ad-hoc boundaries are migration candidates exactly because their integrity depends on agent discipline.</p>
+
+<h2>As-Is — v2.5 today (norms with hopeful names)</h2>
+<p>Agent has direct paths to the working tree (edit, checkout) and to git operations (commit, push). Bypass envs short-circuit pre-commit. Mode A contamination follows from any agent's <code>git checkout</code> rewriting shared <code>.git/HEAD</code>.</p>
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-actor">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>edit files</strong> in shared <code>/chorus</code> working tree</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor danger">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step danger"><strong>git checkout / switch / reset</strong> — unrestricted; rewrites shared <code>.git/HEAD</code> and overwrites peers' uncommitted work on disk (Mode A)</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor norm">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step norm"><strong>set <code>CHORUS_TEST_FORCE_FIX_CARD</code></strong>, <code>--no-verify</code>, etc. — bypass envs/flags short-circuit gates</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong><code>bash git-queue.sh commit</code></strong> <span class="arrow">→</span> branch-check.sh <span class="arrow">→</span> pre-commit hook (skippable) <span class="arrow">→</span> <code>flock</code> <span class="arrow">→</span> stage</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong><code>bash git-queue.sh push</code></strong> <span class="arrow">→</span> rebase-on-conflict <span class="arrow">→</span> push</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">GitHub <span class="arrow">▸</span></div>
+    <div class="flow-step">actions + branch protection <span class="arrow">→</span> rebase-merge to <code>main</code></div>
+  </div>
+</div>
+<div class="gap"><strong>Failure surfaces visible:</strong> agent has direct paths into both working tree and git operations. Bypass envs/flags work. Mode A is structurally possible.</div>
+
+<h2>To-Be — v3 (substrate owns the working tree)</h2>
+<p>Agent has no <code>git checkout</code>/<code>commit</code>/<code>push</code> exposure. No env on the wire — <code>chorus_commit</code> accepts <code>(role, paths, message)</code> only. Card-id is derived from role-state, not passed. The substrate is the only entity that can move <code>HEAD</code>; Mode A contamination disappears structurally.</p>
+<div class="flow">
+  <div class="flow-row">
+    <div class="flow-actor">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>edit files</strong> in <code>/chorus</code> (read + write content; cannot move HEAD or run git mutations)</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Agent <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong><code>chorus_commit(role, paths, message)</code></strong> — single declarative call. No card-id arg. No flags. No envs.</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Service <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>derive card</strong> from role-state (no agent-passed card-id) <span class="arrow">→</span> <strong>read <code>card.type</code></strong> <span class="arrow">→</span> apply ruleset (<em>default</em> or <em>swat</em>)</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Service <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>create / switch branch</strong> — only the service moves HEAD <span class="arrow">→</span> <strong>stage paths</strong> <span class="arrow">→</span> <strong>run pre-commit</strong> (internal, no <code>--no-verify</code>) <span class="arrow">→</span> <strong>internal flock</strong> <span class="arrow">→</span> <strong>push</strong> (rebase-on-conflict)</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Service <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>emit spine event</strong> <code>chorus_commit.invoked</code> / <code>refused</code> with reason</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">GitHub <span class="arrow">▸</span></div>
+    <div class="flow-step">actions + branch protection <span class="arrow">→</span> rebase-merge to <code>main</code> (required-checks green against merged SHA)</div>
+  </div>
+  <div class="flow-row">
+    <div class="flow-actor">Service <span class="arrow">▸</span></div>
+    <div class="flow-step"><strong>response to agent</strong>: SHA-on-main, or refused-with-reason. That is the agent's only signal.</div>
+  </div>
+</div>
+<div class="resolved"><strong>Failure surfaces removed:</strong> no agent-side checkout, commit, push, env, or flag. Card-id derived. HEAD-mover is the substrate. Mode A is structurally impossible.</div>
+
+<h2>What the substrate owns</h2>
+<table>
+<tr><th>Surface</th><th>Owned by service</th><th>What the agent sees</th></tr>
+<tr><td>Working tree</td><td>One directory; only service moves HEAD</td><td>File-level read/write only</td></tr>
+<tr><td>Branches</td><td>Service creates/switches/pushes the role's active-card branch</td><td>No <code>git checkout</code>; no branch arg</td></tr>
+<tr><td>Locks</td><td>Internal <code>flock</code></td><td>Not exposed</td></tr>
+<tr><td>Hooks</td><td>Pre-commit checks run inside the service</td><td>Pass/fail surfaces as response; no <code>--no-verify</code> because no <code>git commit</code> for the agent</td></tr>
+<tr><td>Push protocol</td><td>Rebase, retry-on-conflict, race serialization</td><td>One response: landed-with-SHA, or refused-with-reason</td></tr>
+<tr><td>Role-state-to-card attestation</td><td>Service reads role-state internally to derive active card</td><td>No card-id passed; agent and substrate cannot disagree</td></tr>
+</table>
+
+<h2>What the agent calls</h2>
+<div class="component">
+<h3>Declarative interface</h3>
+<table>
+<tr><th>Call</th><th>Args</th><th>Returns</th></tr>
+<tr><td><code>chorus_commit</code></td><td><code>role, paths, message</code></td><td>SHA-on-main, or refused-with-reason. Card derived from role-state.</td></tr>
+<tr><td><code>chorus_commit_status</code></td><td><code>role</code></td><td>Current branch, last attempt result, hook status.</td></tr>
+</table>
+<p>No <code>branch_create</code>, no <code>push</code>, no <code>set_env</code>, no <code>bypass</code>. If the surface needs to grow, it grows by adding card-types the service recognizes — never by adding flags the agent passes.</p>
+</div>
+
+<h2>SWAT / emergency — encoded as card type, not as flag</h2>
+<p>(Wren constraint.) Any "skip" or "emergency" flag exposed at the wire is a bypass-class door. v3 closes that door by making fast-path a property of the <strong>card</strong> the agent is committing for, not of the call.</p>
+<div class="component">
+<p>A <code>type:swat</code> card declares its lighter-weight rules (e.g., allow no-test-evidence, allow same-branch-as-target). The service reads the card type at commit time and applies the matching rule set. The agent's call is the same — <code>chorus_commit(role, paths, message)</code> — but the card itself carries the relaxation. There is no agent-side flag to flip; the relaxation is a property of the work, not of the actor. Spine event <code>chorus_commit.swat_path_used</code> emits on every fast-path use, with reason and card id.</p>
+</div>
+
+<h2>Failure modes after v3</h2>
+<table>
+<tr><th>Mode</th><th>v2.5 status</th><th>v3 status</th></tr>
+<tr><td>(A) read-stale-content</td><td><span class="tag-none">ACCEPTED RESIDUAL</span> — receipt fired 2026-05-02</td><td><span class="tag-real">CLOSED</span> — agent does not switch HEAD; only service moves it</td></tr>
+<tr><td>(B) cross-role wrong-branch</td><td><span class="tag-real">SHIPPED</span> — branch-check (#2580) + pre-push (#2598/#2625/#2639)</td><td><span class="tag-real">CLOSED</span> — service derives branch from role's active card</td></tr>
+<tr><td>(C) same-role wrong-card</td><td><span class="tag-partial">SEQUENCED</span> — #2641 P1 follow-on</td><td><span class="tag-real">CLOSED</span> — service binds commit to role's active card</td></tr>
+<tr><td>(D) raw-push race</td><td><span class="tag-real">SHIPPED</span> — git-queue.sh push only</td><td><span class="tag-real">CLOSED</span> — no raw-push surface</td></tr>
+<tr><td>(E) stale-CI on merged SHA</td><td>GitHub-side: "Require up-to-date" + lockstep enforcer (deferred)</td><td>Unchanged — still GitHub-side; v3 does not address</td></tr>
+</table>
+
+<h2>Status of v2.5 mechanisms after v3</h2>
+<table>
+<tr><th>Mechanism</th><th>v3 disposition</th></tr>
+<tr><td><code>git-queue.sh</code></td><td>Internal mechanism of the service. Agent no longer calls it directly. Retired from agent surface in <code>#2667</code>.</td></tr>
+<tr><td>Branch-check (#2580 / #2641)</td><td>Internal validation step inside the service.</td></tr>
+<tr><td>Pre-commit hook (<code>platform/hooks/pre-commit</code>)</td><td>Internal validation step inside the service. The bypass surface (<code>--no-verify</code>) is no longer exposed because the agent does not run <code>git commit</code>.</td></tr>
+<tr><td><code>CHORUS_TEST_FORCE_FIX_CARD</code> env (and any other test/smoke bypass)</td><td>Does not exist after v3. Tests that need fix-card behavior receive it as fixture state, not as a process env. Retired in <code>#2665</code>.</td></tr>
+</table>
+
+<h2>Sequencing — cards filed under this design</h2>
+<table>
+<tr><th>Card</th><th>Title</th><th>Depends on</th></tr>
+<tr><td><code>#2661</code></td><td>v3-1 <code>chorus_commit</code> MCP tool — agent's only commit surface</td><td>(load-bearing — ships first)</td></tr>
+<tr><td><code>#2662</code></td><td>v3-2 migrate skills to <code>chorus_commit</code></td><td>#2661</td></tr>
+<tr><td><code>#2663</code></td><td>v3-3 block raw git mutations on <code>/chorus</code></td><td>#2662 (closes Mode A)</td></tr>
+<tr><td><code>#2665</code></td><td>v3-4 retire <code>CHORUS_TEST_FORCE_FIX_CARD</code> env-bypass</td><td>#2661</td></tr>
+<tr><td><code>#2666</code></td><td>v3-5 SWAT-as-card-type encoding</td><td>#2661</td></tr>
+<tr><td><code>#2667</code></td><td>v3-6 retire bash <code>git-queue.sh</code> + <code>branch-check.sh</code> + pre-commit (deletion completes v3)</td><td>#2662, #2663 landed cleanly</td></tr>
+</table>
+<p>PR <code>#75</code> (silas/2626 follow-on, quote-aware command split) was closed on 2026-05-02 by Silas as obsolete under v3 — it patched a hook that doesn't exist after v3 retires text-parsing surfaces.</p>
+
+<h2>What this design does not do</h2>
 <ul>
-<li><strong>Working tree.</strong> Service owns a working directory per
-role. Agent reads but does not switch HEAD.</li>
-<li><strong>Branches.</strong> Service creates/switches/pushes the
-branch that matches the role’s active card. Agent has no
-<code>git checkout</code> exposure.</li>
-<li><strong>Locks.</strong> Lock acquisition is internal. Agent does not
-see flock or its absence.</li>
-<li><strong>Hooks.</strong> Pre-commit checks run inside the service.
-Their pass/fail is the service’s response to the agent. There is no
-<code>--no-verify</code> because there is no <code>git commit</code> for
-the agent to run.</li>
-<li><strong>Push protocol.</strong> Rebase, retry-on-conflict, race
-serialization are service properties. Agent gets a single response:
-landed-on-main with SHA, or refused-with-reason.</li>
-<li><strong>Role-state-to-card attestation.</strong> Service reads
-role-state internally to derive the active card. Agent does not pass
-card-id at all — the service derives it from the role’s declared state.
-Closes (C) same-role-wrong-card structurally: agent and substrate cannot
-disagree about which card is being committed for, because there is only
-one source.</li>
+<li>It does not rename existing artifacts (<code>git-queue.sh</code>, hooks). They become internal.</li>
+<li>It does not retire <code>--no-verify</code> from raw git — that's outside chorus's enforcement scope. It removes the <em>path</em> through chorus that exposes it.</li>
+<li>It does not solve (E) stale-CI; that lives at the GitHub-settings layer.</li>
+<li>It does not specify the wire protocol (HTTP vs MCP vs IPC) — implementation detail for cards under this design.</li>
 </ul>
-<h3 id="what-the-agent-calls">What the agent calls</h3>
-<p>A small declarative interface:</p>
+
+<h2>History</h2>
+<div class="component">
+<h3>v2.5 (2026-05-01) — worktree retirement, mode A residual accepted</h3>
+<p>The v2 amendment drafted earlier on 2026-05-01 (internal <code>chorus/.worktrees/&lt;role&gt;-&lt;hash&gt;/</code> + mandatory SessionStart cwd-enforcement) was rejected by Jeff. Protected primitive: <strong>role-directory IS session-start.</strong> Any mechanism that moves session-start away from <code>/chorus/roles/&lt;role&gt;/</code> is in the rejected family.</p>
 <ul>
-<li><code>commit(role, paths, message)</code> — service derives card
-from role-state, stages, validates, commits, pushes, returns SHA or
-reason. (Card is <strong>not</strong> an agent-passed argument; service
-derives it.)</li>
-<li><code>status(role)</code> — current branch state, any pending push,
-any hook failures from the last attempt.</li>
-<li>(no other surface)</li>
+<li>All sibling worktrees retired (<code>chorus-kade/</code>, <code>chorus-wren/</code>, <code>chorus-silas/</code>, <code>chorus-2526/</code>).</li>
+<li><code>worktree_contamination_guard</code> hook retired (#2625 dispatcher hookup removed in #2640).</li>
+<li>Three failure modes named: (A) read-stale-content accepted-residual; (B) cross-role caught by branch-check + pre-push; (C) same-role wrong-card sequenced as #2641.</li>
 </ul>
-<p>No <code>branch_create</code>, no <code>push</code>, no
-<code>set_env</code>, no <code>bypass</code>. If the surface needs to
-grow, it grows by adding card-types the service recognizes — never by
-adding flags the agent passes.</p>
-<h3
-id="swat-emergency-encoded-as-card-type-not-as-flag-wren-constraint">SWAT
-/ emergency — encoded as card type, not as flag (Wren constraint)</h3>
-<p>Any “skip” or “emergency” flag exposed at the wire is a bypass-class
-door. v3 closes that door by making fast-path a property of the
-<strong>card</strong> the agent is committing for, not of the call.</p>
-<p>A <code>type:swat</code> card declares its lighter-weight rules
-(e.g., allow no-test-evidence, allow same-branch-as-target). The service
-reads the card type at commit time and applies the matching rule set.
-The agent’s call is the same — <code>commit(role, paths, message)</code>
-— but the card itself carries the relaxation. There is no agent-side
-flag to flip; the relaxation is a property of the work, not of the
-actor.</p>
-<h3 id="failure-modes-after-v3">Failure modes after v3</h3>
+</div>
+<div class="component">
+<h3>v1 (2026-04-29) — original service-design surface</h3>
+<p>The commits domain — every git mechanic between "I have a change" and "main reflects it" — emerged as a stack of tactical fixes rather than a designed surface. v1 named the four classes of incident (cross-branch contamination ×3, required-checks asymmetry, git-queue branch-blindness, worktree grain unresolved) and proposed per-role worktrees + branch-check + GIT_* env scrub + lockstep enforcer as the To-Be moves.</p>
+</div>
+
+<h2>References</h2>
 <ul>
-<li><strong>(A) read-stale-content</strong> — disappears. Agent does not
-switch HEAD. Service’s working directory per role removes shared
-<code>.git/HEAD</code>.</li>
-<li><strong>(B) cross-role commit-on-wrong-branch</strong> — disappears.
-Service derives branch from role’s active card; agent cannot specify
-branch.</li>
-<li><strong>(C) same-role wrong-card</strong> — disappears. Service
-binds commit to the role’s active card; mismatched intent fails at the
-wire.</li>
-<li><strong>(D) raw-push race</strong> — disappears. No raw push
-surface.</li>
-<li><strong>(E) stale-CI on merged SHA</strong> — addressed at the
-GitHub side (already-shipped settings + lockstep enforcer, deferred); v3
-does not change this.</li>
+<li>Cards: #2586 (this design, v1) · #2640 (v2.5 worktree retirement) · #2645 (v3 amendment) · #2661–#2667 (v3 sequencing)</li>
+<li>ADR-026 — three quality layers</li>
+<li>ADR-028 — Class B canonical-adapter (thin / thick distinction added by v3)</li>
+<li>DEC-107 — nudge persist+deliver (same shape v3 applies to commits)</li>
+<li>Receipts: chat <code>kade-wren-1777729532</code> (PM constraint), chat <code>kade-silas-1777731926</code> (architecture)</li>
 </ul>
-<h3 id="single-contract-restated">Single Contract — restated</h3>
-<blockquote>
-<p><strong>A commit lands when, and only when, the role calls the
-service’s <code>commit</code> for its active card, and the service (a)
-verifies the role’s branch matches its role-prefix and active-card, (b)
-runs the pre-commit checks against the staged paths and they pass, (c)
-pushes via its serialized internal queue, and (d) GitHub’s
-branch-protection rebase-merges to main with required-checks green
-against the merged SHA. The agent’s only signal is the response from the
-service: SHA-on-main, or refused-with-reason.</strong></p>
-</blockquote>
-<h3 id="status-of-v2.5-mechanisms-after-v3">Status of v2.5 mechanisms
-after v3</h3>
-<ul>
-<li><strong><code>git-queue.sh</code></strong> — internal mechanism of
-the service. Agent no longer calls it directly.</li>
-<li><strong>Branch-check (#2580/#2641)</strong> — internal validation
-step inside the service.</li>
-<li><strong>Pre-commit hook</strong> — internal validation step inside
-the service. The bypass surface (<code>--no-verify</code>) is no longer
-exposed because the agent does not run <code>git commit</code>.</li>
-<li><strong><code>CHORUS_TEST_FORCE_FIX_CARD</code> env (and any other
-test/smoke bypass)</strong> — does not exist after v3. Tests that need
-fix-card behavior receive it as a parameter or as service state, not as
-a process env.</li>
-</ul>
-<h3 id="what-this-amendment-does-not-do">What this amendment does not
-do</h3>
-<ul>
-<li>It does not rename existing artifacts (<code>git-queue.sh</code>,
-hooks). They become internal.</li>
-<li>It does not retire <code>--no-verify</code> from raw git — that’s
-outside chorus’s enforcement scope. It removes the <em>path</em> through
-chorus that exposes it.</li>
-<li>It does not solve (E) stale-CI; that lives at the GitHub-settings
-layer.</li>
-<li>It does not specify the wire protocol (HTTP vs MCP vs IPC) —
-implementation detail for cards under this design.</li>
-</ul>
-<h3 id="as-is-v2.5-today-2026-05-02">As-Is (v2.5 today, 2026-05-02)</h3>
-<pre class="mermaid"><code>flowchart TB
-  subgraph AGT[&quot;Agent (any role)&quot;]
-    EDIT[&quot;edit files in /chorus&quot;]
-    CHECKOUT[&quot;git checkout / switch / reset&lt;br/&gt;(unrestricted)&quot;]
-    Q[&quot;bash git-queue.sh commit&quot;]
-    PUSH[&quot;bash git-queue.sh push&quot;]
-    ENV[&quot;set CHORUS_TEST_FORCE_FIX_CARD&lt;br/&gt;--no-verify, etc.&quot;]
-  end
 
-  subgraph SUB[&quot;Substrate (best-effort, agent-discipline-dependent)&quot;]
-    BC[&quot;branch-check.sh&quot;]
-    PC[&quot;pre-commit hook&lt;br/&gt;(--no-verify skippable)&quot;]
-    LOCK[&quot;flock /tmp/chorus-git-queue.lock&quot;]
-  end
-
-  subgraph WT[&quot;Shared working tree&quot;]
-    SHR[&quot;/chorus — one .git/HEAD&lt;br/&gt;shared across all roles&quot;]
-  end
-
-  subgraph CI[&quot;GitHub&quot;]
-    GH[&quot;actions + branch protection&lt;br/&gt;rebase-merge&quot;]
-  end
-
-  EDIT --&gt; SHR
-  CHECKOUT --&gt; SHR
-  Q --&gt; BC --&gt; PC --&gt; LOCK --&gt; SHR
-  PUSH --&gt; SHR
-  ENV -.bypass.-&gt; PC
-  CHECKOUT -.modeA contamination.-&gt; SHR
-  SHR --&gt; GH</code></pre>
-<p>Failure surfaces visible in the diagram: agent has direct paths to
-working tree (edit, checkout) and to git operations (commit, push).
-Bypass envs short-circuit the pre-commit step. Mode A contamination
-follows from any agent’s <code>git checkout</code> rewriting shared
-<code>.git/HEAD</code>.</p>
-<h3 id="to-be-v3">To-Be (v3)</h3>
-<pre class="mermaid"><code>flowchart TB
-  subgraph AGT[&quot;Agent (any role)&quot;]
-    EDIT[&quot;edit files in /chorus&quot;]
-    CALL[&quot;mcp__chorus-api__chorus_commit&lt;br/&gt;(role, paths, message)&quot;]
-    STATUS[&quot;mcp__chorus-api__chorus_commit_status&lt;br/&gt;(role)&quot;]
-  end
-
-  subgraph SVC[&quot;chorus_commit service (chorus-api)&quot;]
-    DERIVE[&quot;derive card from role-state&lt;br/&gt;(no agent-passed card-id)&quot;]
-    SWAT[&quot;read card.type&lt;br/&gt;apply ruleset:&lt;br/&gt;default | swat&quot;]
-    BRANCH[&quot;create/switch branch&lt;br/&gt;(only service moves HEAD)&quot;]
-    STAGE[&quot;stage declared paths&quot;]
-    HOOKS[&quot;run pre-commit checks&lt;br/&gt;(internal, no --no-verify)&quot;]
-    LOCK[&quot;internal flock&quot;]
-    PUSH_INT[&quot;push via internal queue&lt;br/&gt;(rebase-on-conflict)&quot;]
-    EVENT[&quot;emit chorus_commit.invoked / refused&quot;]
-  end
-
-  subgraph WT[&quot;Working tree&quot;]
-    TREE[&quot;/chorus — only service moves HEAD&lt;br/&gt;agent cannot run git mutations&quot;]
-  end
-
-  subgraph CI[&quot;GitHub&quot;]
-    GH[&quot;actions + branch protection&lt;br/&gt;rebase-merge to main&quot;]
-  end
-
-  EDIT --&gt; TREE
-  CALL --&gt; DERIVE --&gt; SWAT --&gt; BRANCH --&gt; STAGE --&gt; HOOKS --&gt; LOCK --&gt; PUSH_INT --&gt; GH
-  PUSH_INT --&gt; EVENT
-  STATUS --&gt; SVC
-  TREE --&gt; BRANCH</code></pre>
-<p>Failure surfaces removed: agent has no
-<code>git checkout</code>/<code>commit</code>/<code>push</code>
-exposure. No env on the wire — <code>chorus_commit</code> accepts
-<code>(role, paths, message)</code> only. Card-id is derived, not
-passed. The substrate is the only entity that can move HEAD; Mode A
-contamination disappears structurally.</p>
-<h3 id="sequencing-cards-filed-under-this-design">Sequencing — cards
-filed under this design</h3>
-<ul>
-<li><strong>#2661 v3-1</strong> chorus_commit MCP tool — agent’s only
-commit surface (load-bearing, ships first)</li>
-<li><strong>#2662 v3-2</strong> migrate skills to chorus_commit (after
-v3-1)</li>
-<li><strong>#2663 v3-3</strong> block raw git mutations on /chorus
-(after v3-2 — closes Mode A)</li>
-<li><strong>#2665 v3-4</strong> retire CHORUS_TEST_FORCE_FIX_CARD
-env-bypass</li>
-<li><strong>#2666 v3-5</strong> SWAT-as-card-type encoding (Wren
-constraint)</li>
-<li><strong>#2667 v3-6</strong> retire bash git-queue.sh +
-branch-check.sh + pre-commit (deletion completes v3)</li>
-</ul>
-<p>PR #75 (silas/2626 follow-on, quote-aware command split) was closed
-on 2026-05-02 by Silas as obsolete under v3 — it patched a hook that
-doesn’t exist after v3 retires text-parsing surfaces.</p>
-<h2 id="v2.5-amendment-2026-05-01">v2.5 amendment (2026-05-01)</h2>
-<p>The v2 amendment drafted earlier on 2026-05-01 (internal
-<code>chorus/.worktrees/&lt;role&gt;-&lt;hash&gt;/</code> + mandatory
-SessionStart cwd-enforcement) was rejected by Jeff. The protected
-primitive: <strong>role-directory IS session-start, the foundational
-coherence of that is correct.</strong> Any mechanism that moves
-session-start away from <code>/chorus/roles/&lt;role&gt;/</code> is in
-the rejected family. v2.5 supersedes both v1 and the abandoned v2:</p>
-<ol type="1">
-<li><strong>All sibling worktrees retired</strong>
-(<code>chorus-kade/</code>, <code>chorus-wren/</code>,
-<code>chorus-silas/</code>, <code>chorus-2526/</code>). Branches
-preserved in <code>chorus/.git/</code> and on origin. The team operates
-from <code>/chorus/</code> only.</li>
-<li><strong><code>worktree_contamination_guard</code> hook
-retired</strong> (#2625 dispatcher hookup removed in #2640). The guard’s
-recommended-fix paths pointed at the now-retired siblings; without that
-referent it became net-negative friction. Module file kept on disk for
-audit history.</li>
-<li><strong>Three failure modes, three positions:</strong>
-<ul>
-<li><strong>(A) read-stale-content</strong> — peer’s
-<code>git checkout</code> rewrites disk content under your reading
-session. <strong>Accepted-residual-risk.</strong> Cost of physical
-isolation (worktree mechanism) was rejected as higher than residual (A)
-cost. Watch via spine events; if a 4-29-class incident recurs, it’s a
-metric, not a regression.</li>
-<li><strong>(B) cross-role commit-on-wrong-branch</strong> — caught by
-<code>git-queue</code> branch-check (#2580) + pre-push hook
-(#2598/#2625/#2639). <strong>Already shipped.</strong></li>
-<li><strong>(C) same-role wrong-card</strong> — strict
-<code>&lt;role&gt;/&lt;active-card-id&gt;</code> check from role-state.
-<strong>Sequenced as #2641 (P1 follow-on).</strong></li>
-</ul></li>
-<li><strong>No worktree convention.</strong> The Per-Role Worktree
-Convention fragment is retired
-(<code>designing/claudemd/shared/worktree-convention.md</code>). All
-three roles launch from their canonical
-<code>/chorus/roles/&lt;role&gt;/</code> directory.</li>
-</ol>
-<h2 id="problem">Problem</h2>
-<p>The commits domain — every git mechanic between “I have a change” and
-“main reflects it” — emerged as a stack of tactical fixes rather than a
-designed surface. Today (2026-04-29) surfaced four classes of incident
-in a single session:</p>
-<ol type="1">
-<li><strong>Cross-branch contamination ×3</strong> — wren and kade share
-<code>/chorus</code>’s working tree; one role’s checkout is the other
-role’s working state. Wren’s #2575 fix landed on kade’s #2558 branch;
-kade’s #2558 narrow-refinement started on wren’s branch. Substrate:
-shared <code>.git/HEAD</code>. (#2582 ships per-role worktrees as the
-structural fix.)</li>
-<li><strong>Required-checks asymmetry</strong> (#2498 side-finding) —
-branch-protection rules and Repository Rulesets list different sets of
-required jobs. Merges that satisfy one bypass the other. DEC-2525
-amendment names both systems as required surfaces.</li>
-<li><strong>git-queue branch-blindness</strong> (#2580) — git-queue.sh
-commits whatever branch the working tree is on; if the role’s session
-left a peer’s branch checked out, the commit lands on the wrong branch
-with no warning. P1 defense-in-depth for the worktree convention.</li>
-<li><strong>Worktree grain</strong> unresolved — silas adopted per-card
-worktree (chorus-2526), kade adopted per-role (chorus-kade); wren is
-mid-decision (#2585 spike). No design says which is the convention vs
-the exception.</li>
-</ol>
-<p>Each was handled tactically. None has a unified service-design
-surface, so future commits-related cards re-litigate the same
-questions.</p>
-<p>The pattern matches nudge-service-design /
-independence-service-design / gate-set-service-design: a parent design
-lands first, tactical cards align under it. Kade owns commits per the
-2026-04-26 cross-cutting allocation (Code · Tests · Commits · Pipelines
-· Heralds).</p>
-<h2 id="as-is-verified-2026-04-29">As-Is (verified 2026-04-29)</h2>
-<pre class="mermaid"><code>flowchart TB
-  subgraph WT[&quot;Working trees&quot;]
-    SHR[&quot;/chorus&lt;br/&gt;(shared — kade + wren)&quot;]
-    K[&quot;/chorus-kade&lt;br/&gt;(kade only — adopted today)&quot;]
-    S[&quot;/chorus-2526&lt;br/&gt;(silas — per-card)&quot;]
-  end
-
-  subgraph CMT[&quot;Commit path&quot;]
-    Q[&quot;git-queue.sh commit&lt;br/&gt;(serialized via flock)&quot;]
-    PC[&quot;pre-commit hook&lt;br/&gt;platform/hooks/pre-commit&lt;br/&gt;4 checks: lint-ratchet, principle-edit, oversize, cargo --lib --bins&quot;]
-    AB[&quot;claudemd-gen auto-bump&lt;br/&gt;(_build counter on protocol-relevant changes)&quot;]
-  end
-
-  subgraph PSH[&quot;Push path&quot;]
-    PQ[&quot;git-queue.sh push&lt;br/&gt;(rebase-on-conflict, retries under lock)&quot;]
-  end
-
-  subgraph CI[&quot;CI / branch protection&quot;]
-    GH[&quot;GitHub Actions&lt;br/&gt;.github/workflows/quality.yml&quot;]
-    BP[&quot;Branch protection rules&lt;br/&gt;(legacy)&quot;]
-    RR[&quot;Repository Rulesets&lt;br/&gt;(new — DEC-2525 amendment)&quot;]
-  end
-
-  WT --&gt; Q
-  Q --&gt; PC
-  PC --&gt; AB
-  AB --&gt; PQ
-  PQ --&gt; GH
-  GH --&gt; BP
-  GH --&gt; RR</code></pre>
-<p>What’s actually in place today:</p>
-<ul>
-<li><strong>git-queue.sh</strong> — <code>commit</code> and
-<code>push</code> subcommands; <code>flock</code> on
-<code>/tmp/chorus-git-queue.lock</code> serializes across roles. Reads
-<code>DEPLOY_ROLE</code> env. Stages listed paths plus any prior-staged
-mods (#feedback_git_queue_stages_more_than_listed).</li>
-<li><strong>pre-commit hook</strong>
-(<code>platform/hooks/pre-commit</code>) — runs lint-ratchet,
-principle-direct-edit, catalog-oversize, and
-<code>cargo test --lib --bins</code> per affected Rust crate (DEC-2525
-wave 1). Skippable via <code>--no-verify</code> (CI is
-authoritative).</li>
-<li><strong>claudemd-gen auto-bump</strong> — when fragments under
-<code>designing/claudemd/</code> change, <code>_build</code> counter
-increments and CLAUDE.md regenerates.</li>
-<li><strong>Branch naming</strong> —
-<code>&lt;role&gt;/&lt;card-id&gt;</code> per kade’s AC7 of #2556.
-Lifecycle is informal (branches accrete; #2440 had ~134 commits before
-merge).</li>
-<li><strong>Required checks</strong> — listed in branch-protection AND
-Repository Rulesets; DEC-2525 amendment makes the lockstep explicit but
-enforcement is manual when adding a new check.</li>
-<li><strong>Hooks layer</strong> (Layer 1 of ADR-026) — pre-commit only.
-No post-commit, no pre-push (a pre-push would catch git-queue
-branch-blindness if the user-side push slipped past the queue).</li>
-</ul>
-<h2 id="to-be">To-Be</h2>
-<pre class="mermaid"><code>flowchart TB
-  subgraph WT[&quot;Per-role worktrees (#2582, #2583, #2585)&quot;]
-    K[&quot;/chorus-kade — kade&lt;br/&gt;HEAD = kade/&lt;card&gt;&quot;]
-    W[&quot;/chorus-wren — wren&lt;br/&gt;HEAD = wren/&lt;card&gt;&quot;]
-    S[&quot;/chorus-silas — silas&lt;br/&gt;HEAD = silas/&lt;card&gt;&quot;]
-  end
-
-  subgraph CMT[&quot;Commit path (unchanged surface, hardened)&quot;]
-    Q[&quot;git-queue.sh commit&lt;br/&gt;+ branch-check (#2580)&quot;]
-    PC[&quot;pre-commit hook&lt;br/&gt;(GIT_* env scrub fixed in #2560)&quot;]
-    AB[&quot;claudemd-gen auto-bump&quot;]
-  end
-
-  subgraph PSH[&quot;Push path&quot;]
-    PQ[&quot;git-queue.sh push&lt;br/&gt;+ pre-push hook (deferred)&quot;]
-    R[&quot;rebase-merge to main&lt;br/&gt;(no merge-commits per #2556)&quot;]
-  end
-
-  subgraph CI[&quot;CI required-checks&quot;]
-    GH[&quot;GitHub Actions&quot;]
-    LS[&quot;Lockstep enforcer (deferred)&lt;br/&gt;branch-protection ↔ rulesets parity check&quot;]
-  end
-
-  K --&gt; Q
-  W --&gt; Q
-  S --&gt; Q
-  Q --&gt; PC
-  PC --&gt; AB
-  AB --&gt; PQ
-  PQ --&gt; R
-  R --&gt; GH
-  GH --&gt; LS</code></pre>
-<p>The five To-Be moves:</p>
-<ol type="1">
-<li><strong>Per-role worktrees as default</strong> — convention extends
-to all three roles. Symlink at
-<code>~/.claude/projects/&lt;encoded-cwd&gt;/</code> preserves Claude
-Code memory continuity (Wren’s #2585 spike). Per-card worktrees become a
-documented exception for crisis/swat work.</li>
-<li><strong>git-queue branch-check</strong> (#2580) — verifies
-<code>HEAD</code> matches <code>&lt;role&gt;/*</code> before staging;
-refuses to commit on a peer’s branch.</li>
-<li><strong>GIT_* env scrub</strong> in code paths that spawn
-<code>git</code> (#2560 wave 2 fixed <code>file_has_git_history</code>;
-sweep needed across other call sites).</li>
-<li><strong>Role-suffixed runtime sockets</strong> —
-<code>/tmp/chorus-hooks-&lt;role&gt;.sock</code> once per-role daemons
-land (Silas’s #2559 SIGTERM cleanup is the precondition; multi-role
-launch is the trigger). Today’s single-instance assumption is fine while
-only one role runs the daemon, but per-role worktrees + per-role daemons
-removes that assumption.</li>
-<li><strong>Required-checks lockstep enforcer</strong> (deferred card) —
-script that diffs branch-protection’s required-checks against Repository
-Rulesets’, fails CI if they drift.</li>
-</ol>
-<h2 id="single-contract">Single Contract</h2>
-<blockquote>
-<p><strong>A commit lands when, and only when, it (a) was authored on
-the role’s own worktree and branch, (b) passed the local pre-commit hook
-layer, (c) was pushed via git-queue, (d) merged to main via rebase-merge
-after CI’s required-checks (mirrored in branch-protection AND rulesets)
-ran green, and (e) the merged SHA is the SHA against which
-required-checks ran green.</strong></p>
-</blockquote>
-<p>Failure modes the contract names: - (a) excludes cross-branch
-contamination — caught by per-role worktrees + git-queue branch-check. -
-(b) excludes broken-tree commits — caught by pre-commit; CI is the
-authoritative re-check. - (c) excludes raw-<code>git push</code> races —
-git-queue.sh push is the only sanctioned path. - (d) excludes
-merge-commit cruft and one-system-only required-checks — rebase-merge
-per #2556, lockstep per DEC-2525 amendment. - (e) excludes
-stale-CI-on-force-push and config-drift between checks-ran-against and
-checks-required-on-merge — addressed via GitHub branch-protection
-setting “Require branches to be up to date before merging” plus the
-lockstep enforcer (deferred card). Per Silas’s #44 review: day-1 without
-(e) we hit a case where (a-d) all read green and a force-pushed SHA
-lands on main without re-running checks.</p>
-<h2 id="worktree-grain-resolved">Worktree grain — resolved</h2>
-<p><strong>Per-role is the convention.</strong> Per-card is the
-exception.</p>
-<p>Rationale: - <strong>Per-role</strong> retires the substrate
-condition (shared <code>.git/HEAD</code>) for the failure class. One
-worktree per role, branch checkouts within the worktree are role-scoped,
-peer’s checkout never affects yours. - <strong>Per-card</strong> would
-multiply onboarding cost (Claude Code project-keying setup per worktree,
-per Wren’s #2585 spike) and create transient state to garbage-collect. -
-<strong>Crisis/swat exception</strong>: when a role is mid-card and a
-swat lands on the same role, a temporary chorus-<role>-<swatcard>
-worktree is acceptable. Document, retire after merge.</p>
-<p>Onboarding cost (per role, one-time): 1.
-<code>git worktree add ../chorus-&lt;role&gt; &lt;role&gt;/main-checkpoint</code>
-2. <strong>Memory continuity choice</strong> (per Wren’s #2585 + #2583
-reasoning): either (a) symlink
-<code>~/.claude/projects/&lt;encoded-cwd-of-worktree&gt;</code> →
-<code>~/.claude/projects/&lt;encoded-cwd-of-canonical&gt;</code> to
-preserve accumulated session memory, OR (b) split-memory: accept that
-the new worktree’s project-key starts empty and rebuilds in-place. (a)
-preserves continuity at the cost of one piece of indirection; (b) honors
-no-symlinks discipline at the cost of memory-rebuild time (days, not
-weeks). Both are valid; pick by your role’s preference. Wren chose (b)
-for chorus-wren onboarding. Kade chose (a) implicitly during chorus-kade
-adoption today. 3. Update role startup CLAUDE.md fragment to launch from
-the worktree 4. Smoke-test: read a memory file, verify it
-round-trips</p>
-<h2
-id="cross-branch-contamination-class-canonical-evidence">Cross-branch
-contamination class — canonical evidence</h2>
-<p>Three incidents, 2026-04-29 ~11:00–11:30: 1. Wren’s #2575 fix
-committed via git-queue from /chorus while kade’s #2558 branch was
-checked out → fix landed on kade’s branch. 2. Kade started #2558
-narrow-refinement work in /chorus while wren’s branch was the active
-checkout → edits applied against wren’s tree. 3. Kade’s manifest.json
-regeneration in /chorus while a third checkout was active → contaminated
-mid-rebase.</p>
-<p>Substrate cause: <code>/chorus/.git/HEAD</code> is one variable
-shared across all sessions in <code>/chorus/</code>. Trigger: any role’s
-<code>git checkout</code> mutates it. No detection until after the
-fact.</p>
-<p>The class disappears under per-role worktrees because each worktree
-has its own <code>HEAD</code>. git-queue branch-check (#2580) is
-defense-in-depth.</p>
-<h2 id="branch-protocol">Branch protocol</h2>
-<ul>
-<li><strong>Naming</strong>: <code>&lt;role&gt;/&lt;card-id&gt;</code>
-(e.g., <code>kade/2560-clippy-ops-cascade</code>). Optional kebab suffix
-for human readability.</li>
-<li><strong>Lifecycle</strong>: branch lives from
-<code>cards move WIP</code> to merge. After merge, branch is deleted via
-GitHub PR auto-delete.</li>
-<li><strong>Retirement</strong>: stale branches (&gt;14 days no commits,
-no open PR) are cleaned up by the role who created them at session
-close. Inventory check via
-<code>git branch -r --merged main</code>.</li>
-<li><strong>Long-lived branches</strong> (134-commit #2440 case) are an
-antipattern; if accretion happens, file a card to wave-merge.</li>
-</ul>
-<h2 id="pushmerge-protocol">Push/merge protocol</h2>
-<ul>
-<li><strong>Push</strong>: only <code>git-queue.sh push</code>. Raw
-<code>git push</code> is contraindicated (loses lock serialization, no
-rebase-on-conflict).</li>
-<li><strong>Conflict resolution</strong>: rebase, not merge.
-<code>git update-index --add</code> for hook-blocked staging during
-rebase resolution; commit lands as the rebased version of the
-original.</li>
-<li><strong>Merge style</strong>: rebase-merge (#2556 lesson —
-merge-commits in main caused the 134-commit untangling). GitHub PR
-setting “Allow rebase merging” only.</li>
-<li><strong>Required checks</strong>: branch-protection AND Repository
-Rulesets must list the same checks (DEC-2525 amendment). Until the
-lockstep enforcer ships, manual diff at every promotion.</li>
-<li><strong>Merge-on-CI-green discipline</strong>: don’t merge red.
-Don’t merge yellow with the intent to “fix forward” — fix on the PR
-branch.</li>
-</ul>
-<h2 id="hook-layer-relationship-to-adr-026">Hook layer (relationship to
-ADR-026)</h2>
-<p>Layer 1 of ADR-026 (“will this commit obviously break something?”) =
-pre-commit. Today this layer covers:</p>
-<ul>
-<li>Lint-ratchet (eslint baseline non-regression)</li>
-<li>Principle-direct-edit (catalog content protection)</li>
-<li>Catalog-oversize (file-size budget)</li>
-<li>Rust hermetic test slice (<code>cargo test --lib --bins</code> per
-affected crate)</li>
-<li>Doc-coherence ratchet (when CLAUDE.md fragments change)</li>
-</ul>
-<p>High-priority follow-on: - <strong>pre-push hook</strong> —
-load-bearing for the cross-branch-commit failure class, not optional.
-<strong>#2580 (Done) closes the queue-path half</strong> by enforcing
-<code>branch-prefix = role</code> inside
-<code>git-queue.sh commit</code> and <code>git-queue.sh push</code>. A
-pre-push hook is the <strong>unfinished defense-in-depth half</strong> —
-it would catch raw <code>git push</code> invocations that bypass
-git-queue entirely. Together they cover both queue-path and bypass-path;
-without pre-push, anyone running <code>git push</code> directly still
-slips through. Driver: cross-branch failure class. Per Silas’s #2580
-review.</p>
-<p>Deferred / not yet shipped: - <strong>post-commit hook</strong> —
-would emit <code>commits.commit.created</code> spine events for
-analytics. Cost: noise unless filtered. - <strong>commit-msg
-hook</strong> — would enforce
-<code>&lt;role&gt;: &lt;verb&gt; #&lt;card&gt;</code> format. Cost:
-existing message lint isn’t blocking and hasn’t drifted enough to
-warrant.</p>
-<p>The principle: <strong>Layer 1 (hooks) makes the obviously-broken
-case fast-fail; Layer 3 (CI) is authoritative on main.</strong> Don’t
-let Layer 1 grow into a CI mirror — its job is the obviously-broken
-slice, not the full battery.</p>
-<h2 id="governance-dec-2525-required-checks">Governance — DEC-2525
-required-checks</h2>
-<p>DEC-2525 amendment names two surfaces (branch protection + Repository
-Rulesets) as joint authorities. Promotion criteria for adding a check:
-1. Check is hermetic (no external state, no network, no live-role
-coupling — axis-4 per #2526). 2. Check has been run in CI as
-<code>continue-on-error: true</code> for ≥1 week with no flake. 3. Check
-is added to <strong>both</strong> branch-protection and Repository
-Rulesets in the same PR. 4. Lockstep verified manually post-merge until
-the enforcer ships.</p>
-<p>Demotion criteria: if a check flakes ≥3× in 30 days for non-code
-reasons (env, infra), demote to non-required and file a hardening
-card.</p>
-<h2 id="spine-events">Spine events</h2>
-<p>Canonical namespace: <code>commits.*</code> (rename existing
-<code>git-queue.commit.*</code> emissions to <code>commits.*</code> in
-the implementation pass — one canonical surface before #2528 sensor
-consumer registry reads it). Past-tense event shape per existing
-convention (<code>nudge.emitted</code>, <code>card.pulled</code>,
-<code>gate.completed</code>):</p>
-<pre><code>commits.queue.lock_acquired      &lt;role&gt; branch=&lt;branch&gt;
-commits.commit.created           &lt;role&gt; branch=&lt;branch&gt; sha=&lt;sha&gt;
-commits.commit.pushed            &lt;role&gt; branch=&lt;branch&gt; sha=&lt;sha&gt;
-commits.branch.mismatch_detected &lt;role&gt; expected=&lt;role&gt;/* actual=&lt;branch&gt;   (#2580)
-commits.merge.rebased            &lt;role&gt; pr=&lt;num&gt; base_sha=&lt;sha&gt;
-commits.required_checks.drift_detected   delta=&lt;list&gt;   (lockstep enforcer)
-commits.force_push.detected      &lt;role&gt; branch=&lt;branch&gt; old_sha=&lt;sha&gt; new_sha=&lt;sha&gt;   (clause-(e) backstop)</code></pre>
-<p>Renames vs the first draft:
-<code>queue.acquired → queue.lock_acquired</code> (disambiguates what
-was acquired); <code>queue.committed → commit.created</code>
-(past-tense, non-reflexive, symmetric with <code>card.pulled</code>);
-<code>queue.pushed → commit.pushed</code>;
-<code>branch.mismatch → branch.mismatch_detected</code> and
-<code>required_checks.drift → required_checks.drift_detected</code>
-(past-tense parity for noun-state events). Per Silas’s review.</p>
-<h2 id="connections">Connections</h2>
-<ul>
-<li><strong>#2582</strong> (Done — worktree convention fragment) — this
-design names per-role as canonical.</li>
-<li><strong>#2583</strong> (WIP — wren onboards) — pending #2585 spike
-outcome.</li>
-<li><strong>#2585</strong> (Wren spike) — Claude Code project-keying via
-symlink. <strong>Per-role worktree IS viable.</strong></li>
-<li><strong>#2580</strong> (P1 — git-queue branch-check) — tactical,
-defense-in-depth.</li>
-<li><strong>#2556</strong> (Done — rebase-merge lesson, #2440
-untangling) — informs push/merge protocol.</li>
-<li><strong>#2498</strong> (side-finding — required-checks asymmetry) —
-informs DEC-2525 amendment.</li>
-<li><strong>#2526</strong> wave-N — pre-commit narrowed to
-<code>--lib --bins</code>; informs hook-layer scope.</li>
-<li><strong>#2560</strong> wave 2 — GIT_* env scrub fix in
-<code>file_has_git_history</code> (one site).</li>
-<li><strong>#2588</strong> (P3 — Wave 3 dead-code) — architectural
-orphan retirement under chorus-hooks.</li>
-<li><strong>#2589</strong> (P2 — env-scrub helper) — class-fix follow-on
-to #2560; migrates three known git-spawn sites behind a
-<code>git_command()</code> helper.</li>
-<li><strong>ADR-026</strong> — three quality layers; this design slots
-into Layer 1 + Layer 3 boundary.</li>
-<li><strong>DEC-2525</strong> + amendment — required-checks
-governance.</li>
-<li>Sibling designs: nudge-service-design (Silas),
-independence-service-design (Wren), gate-set-service-design (Wren).</li>
-<li><strong>#2592 (P2 — forward arc)</strong> — workspace-API (“code
-asks the service, doesn’t spawn git”). Per-role worktrees retire the
-<code>HEAD</code>-sharing instance of
-role-identity-bound-to-filesystem-location coupling, but not the
-underlying class — code that reaches into git’s filesystem state (e.g.,
-<code>file_has_git_history</code> spawning <code>git log</code> and
-inheriting GIT_*) carries the same coupling. The forward arc decouples
-by mediating all git access through a service. This design (#2586) does
-not block on it; it slots under #2592 when that lands.</li>
-</ul>
-<h2 id="references">References</h2>
-<ul>
-<li><code>platform/scripts/git-queue.sh</code> — commit/push
-surface</li>
-<li><code>platform/hooks/pre-commit</code> — Layer 1 hook</li>
-<li><code>designing/claudemd/manifest.json</code> — auto-bump
-trigger</li>
-<li><code>.github/workflows/quality.yml</code> — CI required jobs</li>
-<li><code>roles/kade/CLAUDE.md</code> — Per-Role Worktree Convention
-fragment (#2582)</li>
-<li><code>decisions/DEC-2525.md</code> + amendment — required-checks
-governance</li>
-<li><code>decisions/ADR-026.md</code> — three quality layers</li>
-<li>Wren’s #2585 spike brief (chat transcript 2026-04-29) — Claude Code
-project-keying findings</li>
-</ul>
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: false, theme: 'default' });
-  document.querySelectorAll('pre.mermaid').forEach((pre) => {
-    const code = pre.querySelector('code');
-    if (code) pre.innerHTML = code.textContent;
-  });
-  await mermaid.run({ querySelector: 'pre.mermaid' });
-</script>
 </body>
 </html>
