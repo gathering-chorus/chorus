@@ -17,7 +17,9 @@ export function emitSpineEvent(event: string, role: string, extra: Record<string
   emit(event, role, extra, { appName: 'cards', component: 'cli' });
 }
 
-export function emitChorusEvent(event: string, role: string, extra: Record<string, string> = {}): void {
-  if (IS_TEST_ENV) return;
-  emit(event, role, extra, { appName: 'chorus-events', component: 'lifecycle' });
-}
+// #2652 AC3 — emitChorusEvent retired 2026-05-02. Single emit function in
+// cards (emitSpineEvent above). The one prior call site
+// (deploy.verification.completed at sdk.ts:889) migrated to emitSpineEvent for
+// canonical-chain uniformity. If a downstream subscriber needs the old envelope
+// shape (appName='chorus-events' component='lifecycle'), surface here before
+// re-introducing.

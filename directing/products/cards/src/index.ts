@@ -8,7 +8,8 @@ export { GATHERING, SELF, LABELS, loadEnv, detectRole, resolveBucket } from './c
 export type { BoardConfig, BoardTask, BoardSnapshot, VikunjaTask, Role, Priority } from './types';
 
 // Events
-export { emitSpineEvent, emitChorusEvent } from './events';
+// #2652 AC3 — emitChorusEvent retired; single emit path via emitSpineEvent.
+export { emitSpineEvent } from './events';
 export type { SpineEvent } from './events';
 
 // SDK — high-level operations (importable by scripts)

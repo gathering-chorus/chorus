@@ -202,7 +202,7 @@ describe('runCli — extended dispatch', () => {
 
   it('untag <id> <category:value> calls client.untag', async () => {
     const mock = new MockClient();
-    const index = await seed(mock);
+    const index = await seed(mock, { domains: ['sequence:quality'] });
     const cap = silence();
     try {
       await runCli(['node', 'cards', 'untag', String(index), 'sequence:quality'], factory(mock));

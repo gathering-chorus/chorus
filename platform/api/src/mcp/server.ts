@@ -22,6 +22,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from '../shim-path';
+import { resolveCardsPath } from '../cards-path';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -51,9 +52,52 @@ export type FetchImpl = (url: string, init?: { method?: string; headers?: Record
 export interface McpServerDeps {
   execFileAsync?: ExecFileAsync;
   shimPath?: string;
+  cardsPath?: string;
   fetchImpl?: FetchImpl;
   apiBase?: string;
 }
+
+// #2652 (AC8) — cards MCP tool input schemas. Each tool spawns the cards bash
+// wrapper as a subprocess with DEPLOY_ROLE injected. Args are positional per
+// the cards CLI; tools translate structured MCP arguments to argv.
+const CardsAddInput = z.object({
+  title: z.string().min(1).describe('Short imperative card title'),
+  owner: z.enum(['wren', 'silas', 'kade', 'jeff']).describe('Owner role'),
+  priority: z.enum(['P1', 'P2', 'P3']).describe('Priority — P1 highest'),
+  domain: z.string().min(1).describe('Domain label (e.g., chorus, photos, seeds)'),
+  type: z.enum(['new', 'enhance', 'fix', 'chore', 'swat']).describe('Card type'),
+  origin: z.enum(['reflective', 'reactive']).describe('Origin — reflective=chosen, reactive=responding to breakage'),
+  desc: z.string().min(1).describe('Card description (Experience + AC, markdown)'),
+  sequence: z.string().optional().describe('Sequence label (deprecated by subproduct per #2643)'),
+  chunk: z.string().optional().describe('Optional chunk (app, ops, memory, ...)'),
+  subproduct: z.enum(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']).optional().describe('Subproduct — implementation within Chorus (#2652 AC2)'),
+  subdomain: z.string().optional().describe('Subdomain — Athena subdomain id, refused-at-source against live /api/athena/subdomains (#2652 AC1)'),
+});
+
+const CardsMoveInput = z.object({
+  id: z.number().int().positive().describe('Card id'),
+  status: z.enum(['Now', 'Next', 'Later', 'WIP', 'Blocked', 'Done', 'Won\'t Do', 'Harvesting', 'SWAT']).describe('New status'),
+});
+
+const CardsDoneInput = z.object({
+  id: z.number().int().positive().describe('Card id to mark Done'),
+});
+
+const CardsTagInput = z.object({
+  id: z.number().int().positive().describe('Card id'),
+  category: z.enum(['sequence', 'domain', 'chunk']).describe('Tag axis'),
+  value: z.string().min(1).describe('Tag value (e.g., werk, chorus, app)'),
+  op: z.enum(['add', 'remove']).default('add').describe('add (default) or remove'),
+});
+
+const CardsSetInput = z.object({
+  id: z.number().int().positive().describe('Card id'),
+  fields: z.record(z.string(), z.string()).describe('Field=value pairs (e.g., {priority: "P1", owner: "wren"})'),
+});
+
+const CardsViewInput = z.object({
+  id: z.number().int().positive().describe('Card id to view'),
+});
 
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
@@ -198,6 +242,106 @@ const NUDGE_TOOL_DEF = {
     required: ['to', 'message'],
   },
 } as const;
+
+// #2652 (AC8) — cards MCP tool defs. Each tool is a thin wrapper around the
+// canonical cards bash CLI; MCP and bash callers run the same code path.
+const CARDS_ADD_TOOL_DEF = {
+  name: 'chorus_cards_add',
+  description:
+    'Create a new card on the team kanban board. Use this when filing tracked work — a feature, fix, follow-on, or formalized thread. Wraps the canonical `cards add` CLI; spawned with the calling role as DEPLOY_ROLE for attribution. Description must include Experience (what changes for the user) and AC (acceptance criteria, markdown checklist) so gate-product can read both. Do NOT use for ephemeral scratch notes or thoughts — those belong in role memory or a brief, not on the board.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1, description: 'Short imperative card title' },
+      owner: { type: 'string', enum: ['wren', 'silas', 'kade', 'jeff'], description: 'Owner role — pick one of these specific roles (wren=PM, silas=architect/ops, kade=engineer, jeff=human director)' },
+      priority: { type: 'string', enum: ['P1', 'P2', 'P3'], description: 'Priority — pick one: P1=highest/now, P2=meaningful/soon, P3=eventual' },
+      domain: { type: 'string', minLength: 1, description: 'Domain label (chorus, photos, seeds, ...)' },
+      type: { type: 'string', enum: ['new', 'enhance', 'fix', 'chore', 'swat'], description: 'Card type — pick one: new=greenfield, enhance=existing-feature-improvement, fix=bug, chore=housekeeping, swat=crisis' },
+      origin: { type: 'string', enum: ['reflective', 'reactive'], description: 'Origin — pick one: reflective=chosen work, reactive=responding to breakage' },
+      desc: { type: 'string', minLength: 1, description: 'Markdown description (Experience + AC sections)' },
+      sequence: { type: 'string', description: 'Sequence label — legacy axis (deprecated by subproduct per #2643)' },
+      chunk: { type: 'string', description: 'Chunk label (app, ops, memory, ...)' },
+      subproduct: { type: 'string', enum: ['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing'], description: 'Subproduct — pick one Chorus implementation product: athena=ontology, loom=team-knowledge, werk=execution-substrate, borg=observability, convergence=integration, clearing=interaction. Refused if not in this closed list (#2652 AC2).' },
+      subdomain: { type: 'string', description: 'Subdomain — Athena subdomain id (e.g. cards-service, gates-service). Refused if not in Athena (#2652 AC1).' },
+    },
+    required: ['title', 'owner', 'priority', 'domain', 'type', 'origin', 'desc'],
+  },
+} as const;
+
+const CARDS_MOVE_TOOL_DEF = {
+  name: 'chorus_cards_move',
+  description:
+    'Move a card to a new status lane on the kanban board. Use this for routine board flow — Next→WIP when pulling, WIP→Blocked when stuck, Later→Next when triaged. Do NOT use for done-with-evidence — chorus_cards_done is the canonical acceptance path because it emits card.accepted spine event subscribers depend on (DEC-048).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', minimum: 1, description: 'Card id' },
+      status: { type: 'string', enum: ['Now', 'Next', 'Later', 'WIP', 'Blocked', 'Done', "Won't Do", 'Harvesting', 'SWAT'], description: 'New status — pick one of these specific lanes (Now=pulled, Next=queued, Later=parked, WIP=actively-building, Blocked=stuck, Done=accepted, Won\'t Do=killed, Harvesting=ingestion, SWAT=crisis)' },
+    },
+    required: ['id', 'status'],
+  },
+} as const;
+
+const CARDS_DONE_TOOL_DEF = {
+  name: 'chorus_cards_done',
+  description:
+    'Mark a card Done — the canonical acceptance verb. Use this when accepting completed work after demo + gate chain. Emits card.accepted spine event subscribers depend on. Do NOT use to self-accept code cards (DEC-048: builders cannot accept their own code work — Wren or Jeff invokes); do NOT use chorus_cards_move with status=Done as a substitute because that path skips the audit emit.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', minimum: 1, description: 'Card id to accept' },
+    },
+    required: ['id'],
+  },
+} as const;
+
+const CARDS_TAG_TOOL_DEF = {
+  name: 'chorus_cards_tag',
+  description:
+    'Add or remove a tag on an existing card. Use this to set the subproduct, retag during audits, or fix mis-tagged cards. Sequence tags route through the dedicated bulk-tag verb; domain/chunk through label add/remove. Do NOT use for owner/priority/type/origin/title/status — those are structured fields, use chorus_cards_set instead.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', minimum: 1, description: 'Card id' },
+      category: { type: 'string', enum: ['sequence', 'domain', 'chunk'], description: 'Tag axis — pick one: sequence=subproduct-tag, domain=top-level-area, chunk=abstract-category' },
+      value: { type: 'string', minLength: 1, description: 'Tag value (e.g., werk, chorus, app)' },
+      op: { type: 'string', enum: ['add', 'remove'], default: 'add', description: 'Operation — pick one: add (default) or remove' },
+    },
+    required: ['id', 'category', 'value'],
+  },
+} as const;
+
+const CARDS_SET_TOOL_DEF = {
+  name: 'chorus_cards_set',
+  description:
+    'Atomic update of one or more structured card fields. Use this for owner reassignment, priority bumps, title fixes, status moves, or multi-field changes that should land together. Pass {fields: {priority: "P1", owner: "wren"}}. Do NOT use chorus_cards_tag for owner/priority/type/origin — those are structured fields and chorus_cards_set is the canonical path that emits card.item.set per change.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', minimum: 1, description: 'Card id' },
+      fields: {
+        type: 'object',
+        description: 'field=value map (priority, owner, title, status, type, origin, subdomain, subproduct, ...)',
+        additionalProperties: { type: 'string' },
+      },
+    },
+    required: ['id', 'fields'],
+  },
+} as const;
+
+const CARDS_VIEW_TOOL_DEF = {
+  name: 'chorus_cards_view',
+  description:
+    'Get full card detail as structured JSON — title, status, owner, priority, domains, description, comments. Use this when you need to inspect a card programmatically before acting on it (gates, demos, audits, conditional logic). Always invokes --json so the response shape is stable. Do NOT use this for human-readable output — use the bash `cards view <id>` directly which formats for terminal.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'integer', minimum: 1, description: 'Card id to fetch' },
+    },
+    required: ['id'],
+  },
+} as const;
+
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
 }
@@ -437,6 +581,129 @@ async function executeNudge(
   }
 }
 
+// #2652 (AC8) — cards execute helpers. Each spawns the cards bash CLI with
+// DEPLOY_ROLE=from so attribution matches whichever role invoked the MCP tool.
+// Same canonical chain as bash CLI; MCP is a thin wrapper.
+
+async function execCardsCli(
+  verb: string,
+  argv: string[],
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+  toolName: string,
+): Promise<string> {
+  const env = {
+    ...process.env,
+    DEPLOY_ROLE: from,
+    CHORUS_CARDS_ORIGIN: 'mcp',
+  } as NodeJS.ProcessEnv;
+  logEvent('info', `mcp.cards.${verb}.invoked`, { from, argv });
+  try {
+    const { stdout, stderr } = await execFileAsync(cardsPath, [verb, ...argv], { env, timeout: 10_000 });
+    logEvent('info', `mcp.cards.${verb}.delivered`, { from, stdout: stdout.slice(0, 200) });
+    return stdout || stderr || `(no output from ${toolName})`;
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg });
+    throw new Error(`${toolName} failed: ${errMsg}`);
+  }
+}
+
+async function executeCardsAdd(
+  args: z.infer<typeof CardsAddInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const argv = [
+    args.title,
+    '--owner', args.owner,
+    '--priority', args.priority,
+    '--domain', args.domain,
+    '--type', args.type,
+    '--origin', args.origin,
+    '--desc', args.desc,
+  ];
+  if (args.sequence) argv.push('--sequence', args.sequence);
+  if (args.chunk) argv.push('--chunk', args.chunk);
+  if (args.subproduct) argv.push('--subproduct', args.subproduct);
+  if (args.subdomain) argv.push('--subdomain', args.subdomain);
+  const out = await execCardsCli('add', argv, from, execFileAsync, cardsPath, 'chorus_cards_add');
+  return { content: [{ type: 'text', text: out }] };
+}
+
+async function executeCardsMove(
+  args: z.infer<typeof CardsMoveInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const out = await execCardsCli('move', [String(args.id), args.status], from, execFileAsync, cardsPath, 'chorus_cards_move');
+  return { content: [{ type: 'text', text: out }] };
+}
+
+async function executeCardsDone(
+  args: z.infer<typeof CardsDoneInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const out = await execCardsCli('done', [String(args.id)], from, execFileAsync, cardsPath, 'chorus_cards_done');
+  return { content: [{ type: 'text', text: out }] };
+}
+
+async function executeCardsTag(
+  args: z.infer<typeof CardsTagInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // Sequence uses the dedicated `sequence-tag` verb; domain/chunk use `label add/remove`.
+  let verb: string;
+  let argv: string[];
+  const op = args.op ?? 'add';
+  if (args.category === 'sequence') {
+    if (op !== 'add') {
+      // Removal of a sequence tag goes through generic untag.
+      verb = 'untag';
+      argv = [String(args.id), `sequence:${args.value}`];
+    } else {
+      verb = 'sequence-tag';
+      argv = [String(args.id), args.value];
+    }
+  } else {
+    verb = op === 'add' ? 'tag' : 'untag';
+    argv = [String(args.id), `${args.category}:${args.value}`];
+  }
+  const out = await execCardsCli(verb, argv, from, execFileAsync, cardsPath, 'chorus_cards_tag');
+  return { content: [{ type: 'text', text: out }] };
+}
+
+async function executeCardsSet(
+  args: z.infer<typeof CardsSetInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const argv: string[] = [String(args.id)];
+  for (const [key, value] of Object.entries(args.fields)) {
+    argv.push(`${key}=${value}`);
+  }
+  const out = await execCardsCli('set', argv, from, execFileAsync, cardsPath, 'chorus_cards_set');
+  return { content: [{ type: 'text', text: out }] };
+}
+
+async function executeCardsView(
+  args: z.infer<typeof CardsViewInput>,
+  from: string,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const out = await execCardsCli('view', [String(args.id), '--json'], from, execFileAsync, cardsPath, 'chorus_cards_view');
+  return { content: [{ type: 'text', text: out }] };
+}
+
 /**
  * Build the MCP server with one tool registered. Caller mounts a transport.
  * Caller passes a context-resolver that returns the sender role for a request
@@ -445,6 +712,7 @@ async function executeNudge(
 export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps = {}): Server {
   const execFileAsync: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
   const shimPath = deps.shimPath ?? resolveShimPath();
+  const cardsPath = deps.cardsPath ?? resolveCardsPath();
   const fetchImpl: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
   const apiBase = deps.apiBase ?? 'http://localhost:3340';
   const server = new Server(
@@ -468,9 +736,18 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       DECISIONS_GET_TOOL_DEF,
       SUBDOMAINS_LIST_TOOL_DEF,
       SUBDOMAINS_GET_TOOL_DEF,
+      CARDS_ADD_TOOL_DEF,
+      CARDS_MOVE_TOOL_DEF,
+      CARDS_DONE_TOOL_DEF,
+      CARDS_TAG_TOOL_DEF,
+      CARDS_SET_TOOL_DEF,
+      CARDS_VIEW_TOOL_DEF,
     ],
   }));
 
+  // cog-override: switch dispatcher across 14 MCP tools. Cog-complexity grows
+  // 1-per-case; refactoring would mean a name-keyed lookup object losing the
+  // per-case zod parsing branches. Acceptable concentration of complexity.
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const from = getCallerRole();
     switch (req.params.name) {
@@ -514,6 +791,48 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeSubdomainsGet(parsed.data, fetchImpl, apiBase, from);
+      }
+      case 'chorus_cards_add': {
+        const parsed = CardsAddInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsAdd(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_cards_move': {
+        const parsed = CardsMoveInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsMove(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_cards_done': {
+        const parsed = CardsDoneInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsDone(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_cards_tag': {
+        const parsed = CardsTagInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsTag(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_cards_set': {
+        const parsed = CardsSetInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsSet(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_cards_view': {
+        const parsed = CardsViewInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeCardsView(parsed.data, from, execFileAsync, cardsPath);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);

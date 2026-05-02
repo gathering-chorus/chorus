@@ -13,7 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { emitSpineEvent, emitChorusEvent } from '../src/events';
+import { emitSpineEvent } from '../src/events';
 
 describe('events.ts — NODE_ENV=test suppresses spine emissions', () => {
   const logPath = path.resolve(__dirname, '..', '..', '..', 'platform', 'logs', 'chorus.log');
@@ -28,11 +28,5 @@ describe('events.ts — NODE_ENV=test suppresses spine emissions', () => {
     expect(after).toBe(before);
   });
 
-  it('emitChorusEvent does not append to chorus.log under jest', () => {
-    expect(process.env.NODE_ENV).toBe('test');
-    const before = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-    emitChorusEvent('test.event', 'kade', { ping: 'pong' });
-    const after = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-    expect(after).toBe(before);
-  });
+  // #2652 AC3 — emitChorusEvent retired 2026-05-02. Single emit function in cards.
 });

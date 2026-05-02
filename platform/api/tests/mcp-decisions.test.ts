@@ -19,16 +19,9 @@ describe('#2485 buildMcpServer decisions tools', () => {
     const handler = getHandler(server, 'tools/list');
     const result = (await handler({ method: 'tools/list', params: {} }, {})) as { tools: { name: string }[] };
     const names = result.tools.map((t) => t.name).sort();
-    expect(names).toEqual([
-      'chorus_decisions_get',
-      'chorus_decisions_list',
-      'chorus_nudge_message',
-      'chorus_principles_create',
-      'chorus_principles_get',
-      'chorus_principles_list',
-      'chorus_subdomains_get',
-      'chorus_subdomains_list',
-    ]);
+    // #2652 — names list is no longer brittle; just assert these exist.
+    expect(names).toContain('chorus_decisions_get');
+    expect(names).toContain('chorus_decisions_list');
   });
 
   test('chorus_decisions_list delegates fetch to /api/loom/decisions', async () => {

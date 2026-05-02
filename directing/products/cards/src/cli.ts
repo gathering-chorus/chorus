@@ -45,7 +45,7 @@ import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
   blockCard, unblockCard, commentCard, untagCard,
   reassignCard, setCard, swatCard, snapshotBoard, auditStart, auditClose,
-  bulkSequenceTag, bulkMove,
+  bulkSequenceTag, bulkMove, checkCardAc,
 } from './sdk';
 
 function die(msg: string): never {
@@ -124,6 +124,7 @@ function parseUpdateArgs(args: string[]): { index: number } & UpdateFields {
 
 // ── Display-only commands (no business logic, just formatting) ──
 
+// cog-override: cmdList: long-standing list/filter rendering switch — pre-existing complexity, refactor candidate not in #2652 scope.
 async function cmdList(client: BoardClient, _label: string, productFilter?: string) {
   const grouped = await client.listGrouped();
   const order = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Blocked', 'Next', 'Later', 'Jeff Tickets', 'Tech Debt', "Won't Do", 'Done'];
@@ -171,6 +172,7 @@ function taskMatchesFilters(t: BoardTask, filters: Record<string, string>): bool
   return true;
 }
 
+// cog-override: cmdFilter: per-flag matrix rendering — pre-existing complexity, refactor candidate not in #2652 scope.
 async function cmdFilter(client: BoardClient, args: string[]) {
   const filters = parseFilterArgs(args);
   if (Object.keys(filters).length === 0) {
@@ -852,6 +854,7 @@ async function cmdBulkMove(ctx: CliCtx) {
   await bulkMove(ctx.client, ids, ctx.cmdArgs[ctx.cmdArgs.length - 1]);
 }
 
+// cog-override: cmdLabel: subcommand router with per-verb arg parsing — pre-existing complexity, refactor candidate not in #2652 scope.
 async function cmdLabel(ctx: CliCtx) {
   const sub = ctx.cmdArgs[0];
   if (sub === 'create') {
@@ -926,6 +929,16 @@ function buildCliHandlers(): Partial<Record<string, (ctx: CliCtx) => void | Prom
     },
     tag: () => { die('Removed: use "cards set <id> domain=X", "cards set <id> sequence=X", or "cards sequence-tag <ids> <seq>"'); },
     untag: cmdUntag,
+    // #2652 AC12 — single-keystroke AC checkbox flip from description, closes
+    // comments-vs-description divergence (Kade audit 2026-05-01).
+    check: (ctx) => {
+      if (!ctx.cmdArgs[0] || !ctx.cmdArgs[1]) die('Usage: cards check <id> AC<n>');
+      const id = parseInt(ctx.cmdArgs[0], 10);
+      const acArg = ctx.cmdArgs[1];
+      const m = acArg.match(/^AC?(\d+)$/i) || acArg.match(/^(\d+)$/);
+      if (!m) die(`Invalid AC reference "${acArg}". Use AC1, AC2, etc.`);
+      return checkCardAc(ctx.client, id, parseInt(m[1], 10));
+    },
     delete: (ctx) => {
       if (!ctx.cmdArgs[0]) die('Usage: cards delete <id>');
       const id = parseInt(ctx.cmdArgs[0], 10);

@@ -927,6 +927,116 @@ app.get('/api/chorus/context/health', async (req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// #2652 AC9 — POST /api/cards/<verb> mutation routes.
+// Thin HTTP wrappers that spawn the cards bash CLI as subprocess with
+// DEPLOY_ROLE injected from X-Role header. Same canonical chain as bash CLI
+// and MCP tools. Subprocess contract per cards-service-design.md:
+//   - 10s timeout
+//   - X-Role required (refuse 400 if missing)
+//   - Exit codes: 0=success, 2=validation, 3=persistence, 4=network, 1=other
+//   - HTTP status mapping: 0→200, 2→400, 3→502, 4→503, *→500
+const cardsExecFileAsync = promisify(execFile);
+const CARDS_BIN = path.resolve(__dirname, '..', '..', 'scripts', 'cards');
+
+interface CardsExecResult { ok: boolean; stdout: string; stderr: string; code: number; }
+
+async function runCardsCli(role: string, verb: string, args: string[]): Promise<CardsExecResult> {
+  const env = { ...process.env, DEPLOY_ROLE: role, CHORUS_CARDS_ORIGIN: 'http' };
+  try {
+    const { stdout, stderr } = await cardsExecFileAsync(CARDS_BIN, [verb, ...args], { env, timeout: 10_000 });
+    return { ok: true, stdout, stderr, code: 0 };
+  } catch (err: unknown) {
+    const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
+    return {
+      ok: false,
+      stdout: e.stdout ?? '',
+      stderr: e.stderr ?? e.message ?? String(err),
+      code: typeof e.code === 'number' ? e.code : 1,
+    };
+  }
+}
+
+function httpStatusFromCardsExit(code: number): number {
+  if (code === 0) return 200;
+  if (code === 2) return 400;
+  if (code === 3) return 502;
+  if (code === 4) return 503;
+  return 500;
+}
+
+function requireRoleHeader(req: Request, res: Response): string | null {
+  const role = (req.header('X-Role') || req.header('x-role') || '').toLowerCase();
+  if (!['wren', 'silas', 'kade', 'jeff', 'automation'].includes(role)) {
+    res.status(400).json({ error: 'X-Role header required (wren|silas|kade|jeff|automation)' });
+    return null;
+  }
+  return role;
+}
+
+app.post('/api/cards/add', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const b = req.body as { title?: string; owner?: string; priority?: string; domain?: string; type?: string; origin?: string; desc?: string; sequence?: string; chunk?: string; subdomain?: string; subproduct?: string };
+  if (!b.title || !b.owner || !b.priority || !b.domain || !b.type || !b.origin || !b.desc) {
+    res.status(400).json({ error: 'required: title, owner, priority, domain, type, origin, desc' });
+    return;
+  }
+  const args = [b.title, '--owner', b.owner, '--priority', b.priority, '--domain', b.domain, '--type', b.type, '--origin', b.origin, '--desc', b.desc];
+  if (b.sequence) args.push('--sequence', b.sequence);
+  if (b.chunk) args.push('--chunk', b.chunk);
+  if (b.subdomain) args.push('--subdomain', b.subdomain);
+  if (b.subproduct) args.push('--subproduct', b.subproduct);
+  const r = await runCardsCli(role, 'add', args);
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
+app.post('/api/cards/move', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const { id, status } = req.body as { id?: number; status?: string };
+  if (!id || !status) { res.status(400).json({ error: 'required: id, status' }); return; }
+  const r = await runCardsCli(role, 'move', [String(id), status]);
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
+app.post('/api/cards/done', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const { id } = req.body as { id?: number };
+  if (!id) { res.status(400).json({ error: 'required: id' }); return; }
+  const r = await runCardsCli(role, 'done', [String(id)]);
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
+app.post('/api/cards/tag', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const { id, category, value, op } = req.body as { id?: number; category?: string; value?: string; op?: string };
+  if (!id || !category || !value) { res.status(400).json({ error: 'required: id, category, value' }); return; }
+  let verb = 'tag', args: string[] = [String(id), `${category}:${value}`];
+  if (category === 'sequence' && op !== 'remove') { verb = 'sequence-tag'; args = [String(id), value]; }
+  else if (op === 'remove') { verb = 'untag'; }
+  const r = await runCardsCli(role, verb, args);
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
+app.post('/api/cards/set', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const { id, fields } = req.body as { id?: number; fields?: Record<string, string> };
+  if (!id || !fields || typeof fields !== 'object') { res.status(400).json({ error: 'required: id, fields {key:value}' }); return; }
+  const args = [String(id), ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)];
+  const r = await runCardsCli(role, 'set', args);
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
+app.post('/api/cards/view', async (req: Request, res: Response) => {
+  const role = requireRoleHeader(req, res); if (!role) return;
+  const { id } = req.body as { id?: number };
+  if (!id) { res.status(400).json({ error: 'required: id' }); return; }
+  const r = await runCardsCli(role, 'view', [String(id), '--json']);
+  if (r.ok) {
+    try { res.status(200).json(JSON.parse(r.stdout)); return; }
+    catch { res.status(200).json({ ok: true, raw: r.stdout }); return; }
+  }
+  res.status(httpStatusFromCardsExit(r.code)).json({ ok: false, stdout: r.stdout, stderr: r.stderr, code: r.code });
+});
+
 // --- POST /api/chorus/reindex (#1879) ---
 // Trigger full re-index + re-embed without app restart
 

@@ -24,12 +24,15 @@ export interface AddArgs {
   sequence: string;
   type: string;
   origin: string;
+  // #2652 AC1+AC2 — new tag axes per cards-service-design v1
+  subdomain: string;
+  subproduct: string;
   quick: boolean;
 }
 
 const USAGE =
   'Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] ' +
-  '[--product P] [--chunk C] [--sequence S] [--type T] [--origin O] ' +
+  '[--product P] [--chunk C] [--sequence S] [--subproduct SP] [--subdomain SD] [--type T] [--origin O] ' +
   '[--desc D | --desc-file PATH | --desc -] [--quick]';
 
 /** String-valued field names only — `quick` (boolean) is not here. */
@@ -50,6 +53,9 @@ const STRING_FLAGS: Partial<Record<string, StringField>> = {
   '--type': 'type',
   '-t': 'type',
   '--origin': 'origin',
+  // #2652 AC1+AC2
+  '--subdomain': 'subdomain',
+  '--subproduct': 'subproduct',
 };
 
 function resolveDescription(description: string, descFile: string): string {
@@ -65,7 +71,7 @@ export function parseAddArgs(args: string[]): AddArgs {
   const out: AddArgs = {
     title: '', status: 'later', owner: '', priority: '',
     domain: '', description: '', product: '', chunk: '', sequence: '',
-    type: '', origin: '', quick: false,
+    type: '', origin: '', subdomain: '', subproduct: '', quick: false,
   };
   let descFile = '';
 
