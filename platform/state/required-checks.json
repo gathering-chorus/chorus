@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "_doc": "Canonical required-status-checks list per DEC-2525. Drift detector (#2500, platform/scripts/required-checks-drift.sh) verifies this list against quality.yml jobs + GitHub branch-protection + Repository Rulesets. Changes go through PR review per DEC-2525 enforcement clause.",
+  "required": [
+    {
+      "name": "unit-tests",
+      "card": 2526,
+      "added": "2026-04-25",
+      "rationale": "DEC-2525: jest hermetic baseline; *.integration.test.ts excluded per #2524 convention"
+    },
+    {
+      "name": "cargo-test",
+      "card": 2526,
+      "added": "2026-04-25",
+      "rationale": "DEC-2525: --lib --bins inline #[test] only; integration tests in scheduled drift lane"
+    }
+  ]
+}

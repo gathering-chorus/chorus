@@ -394,6 +394,19 @@ if echo "$STAGED" | grep -qE '(^|/)CLAUDE\.md$|^designing/claudemd/'; then
     "bash platform/tests/doc-coherence-ratchet.test.sh 2>&1"
 fi
 
+# --- Check 4.85: Required-checks drift (#2500) ---
+# Local-only — verify quality.yml jobs cover canonical required-checks list.
+# Fires when either file stages. CI is authoritative for protection-side
+# drift (the gh-api side runs on schedule, not pre-commit).
+if echo "$STAGED" | grep -qE '^\.github/workflows/quality\.yml$|^platform/state/required-checks\.json$'; then
+  RC_DRIFT="$REPO_ROOT/platform/scripts/required-checks-drift.sh"
+  if [ -x "$RC_DRIFT" ]; then
+    run_check "required-checks-drift (workflow)" \
+      "$REPO_ROOT" \
+      "bash platform/scripts/required-checks-drift.sh diff-workflow .github/workflows/quality.yml 2>&1"
+  fi
+fi
+
 # --- Check 4.8: Known-fails allowlist coherence (#2497) ---
 # Warn when entries reference Done/Won't cards. Doesn't block — just signals
 # stale entries that should be cleaned up. Runs whenever known-fails.json stages.
