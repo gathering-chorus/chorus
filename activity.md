@@ -1177,3 +1177,18 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 
 **Memory saved:** feedback_dont_add_role_infrastructure_layers · feedback_audit_is_not_a_proposal_pile · feedback_team_writes_too_much · project_slot_shortage_pattern.
 - [silas] → 2026-04-30 PM session reboot: #2467 4-wave saga complete (PR #72 wave 1, #77 wave 2, #78 wave 3, #80 wave 4). Plus #2625 (PR #71) + #2626 (PR #73) worktree-guard. Carried wren's #2628 (3rd carry today). Used --no-verify on #2628 with cause documented; Jeff named this as the wrong move. Substrate-debt diagnosed: 8 paper-cuts in chorus-hooks/pulse/git-queue. Filed #2636 (Kade owner, P1, type:fix) for the sweep with 10 AC + phasing per kade's enforcement-order constraint (substrate flakes first, --no-verify tightening last). Architectural framing: substrate domains earn different rigor; hooks-on-text-substring is anti-pattern; ownership reframed code-vs-contract — kade owns chorus-hooks code, silas owns hook contracts. Wren scoped #2633 loom-policies (single-implementation invariant + 3 corollaries + over-narrow-structural-constraint failure mode). Gate-arch + gate-ops on #2630, gate-arch on #2635/#2637. /clearing tomorrow with Jeff+wren+kade for substrate-design refresh. → Wren, Kade
+
+## 2026-05-02 11:30 — kade session reboot
+
+**Shipped:** #2644 (chorus-hooks pre-existing test failures fixed) · #2668 (v3 diagrams w/ mermaid loader, superseded by #2674) · #2674 (commits-service-design rewritten in chorus/loom hand-crafted chrome) · #2675 (ADR-028 audit results + Wren reorder folded into doc).
+
+**v3 commits-service-design (PR #100, #102, #103):** substrate owns the working tree. Authored with Wren PM constraint (SWAT-as-card-type, not skip flag) and Silas architecture (load-bearing primitive named, Class B thin→thick, substrate-owns role-state-to-card attestation). ADR-028 conformance audit walked with Silas: M2/M5/M6/A2 closed by v3, M3 partial-with-gap-named, M7 populate-card filed.
+
+**v3 sequencing cards filed:** #2661 v3-1 chorus_commit MCP tool (load-bearing) · #2662 v3-2 skill migration · #2663 v3-3 block raw git mutations · #2665 v3-4 retire CHORUS_TEST_FORCE_FIX_CARD env-bypass · #2666 v3-5 SWAT-as-card-type · #2667 v3-6 retire bash git-queue/branch-check/pre-commit.
+
+**PR sweep:** 10 → 1 open. Merged my #98/#100/#101/#102/#103. Closed my #84 as superseded. Closed silas's #75 (his action, v3 obsolescence). Merged 5 dependabot bumps (#88-92). Wren cleared #82/#83 after urgent nudge.
+
+**Key receipts this session:**
+- Mode A contamination fired live: my `git checkout` overwrote Silas's uncommitted ontology + design-doc work (~30 min). Receipt for "v2.5 accepted-residual was a norm with a hopeful name" — direct trigger for v3 design.
+- Jeff's diagnostic: "feels like we are treating something invariant like its 'best effort' and based on 'agent memory'." → led to inversion-of-control framing.
+- Jeff's correction: env-bypass (CHORUS_TEST_FORCE_FIX_CARD) is the antipattern v3 closes; backdoors don't earn audit-spine.
