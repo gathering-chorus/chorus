@@ -204,6 +204,41 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('hook-fail');
     });
 
+    test('passes PATH with parent node bin dir prepended (env consistency)', async () => {
+      // #2662 dogfood receipt: chorus-api's launchctl PATH puts Homebrew Node
+      // first, so subprocess `npx jest` in pre-commit hits a different Node
+      // than chorus-api's own runtime. The handler prepends the parent
+      // node's bin dir to PATH so subprocesses use the same interpreter
+      // (and same compiled native modules).
+      const path = require('path') as typeof import('path');
+      const expectedPrefix = path.dirname(process.execPath);
+      const calls: Array<{ env?: Record<string, string | undefined> }> = [];
+      const exec = jest.fn(async (_file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
+        calls.push({ env: opts.env });
+        if (args[0] === 'commit') return { stdout: '[kade/2682-x abcd1234] kade: m', stderr: '' };
+        if (args[0] === 'push') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected args: ${args.join(' ')}`);
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } },
+        {},
+      );
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      for (const c of calls) {
+        const pathEnv = c.env?.PATH ?? '';
+        expect(pathEnv.startsWith(`${expectedPrefix}:`)).toBe(true);
+      }
+    });
+
     test('refuses push-conflict when commit succeeds but push rebase fails', async () => {
       const exec = jest.fn(async (_file: string, args: string[]) => {
         if (args[0] === 'commit') return { stdout: '[kade/2682-x abcd1234] kade: msg\n', stderr: '' };

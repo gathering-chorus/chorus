@@ -30,11 +30,19 @@ When Jeff types `/reboot`, run the Hard 4 close-out and exit so a fresh session 
 
 5. **Verify** — run `chorus-hook-shim session-close <role>`. Check for warns. Fix any before committing.
 
-6. **Commit + Push** — use `git-queue.sh` to commit all changes, then push:
-   ```bash
-   cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh commit <role-dirs>/ -- -m "<role>: session reboot — <summary>"
-   cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh push
+6. **Commit + Push** — call `mcp__chorus-api__chorus_commit` with role + paths + message. The service stages, validates branch, runs hooks, and pushes internally.
    ```
+   mcp__chorus-api__chorus_commit({
+     role: "<role>",
+     paths: ["<role-dirs>/", ...],
+     message: "<role>: session reboot — <summary>"
+   })
+   ```
+   On success: `{role, card_id, branch, sha}`. On refusal you get a typed reason (`no-wip-card | multi-wip | board-unreachable | branch-mismatch | hook-fail | push-conflict`) — fix and retry.
+
+   **No-WIP reboot:** if the role has no WIP card at reboot time, `chorus_commit` refuses with `no-wip-card`. That means there's nothing card-bound to commit — write the state files (next-session.md, activity.md), skip the commit, exit. Next session picks up the uncommitted state changes via diff and decides whether they belong to a future card. The reboot doesn't get its own special-case bypass.
+
+   If the MCP tool itself isn't reachable (chorus-api down), escalate to ops — don't reach around the typed surface.
 
 7. **Exit** — say one line summarizing the session, then tell Jeff you're done.
 
