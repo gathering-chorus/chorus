@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Version Control — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .source-note { background: #eff6ff; border-left: 4px solid #2563eb; padding: 10px 14px; margin: 16px 0; border-radius: 4px; font-size: 0.85em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #065f46; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-missing { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } pre.mermaid { page-break-inside: avoid; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for Version Control.</strong> Related: <a href="/designing/docs/cards-service-design.html">Cards</a> · <a href="/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> · <a href="/designing/docs/services-service-design.html">Services</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+
+<h1>Version Control <span>— Service Design</span></h1>
+<p class="date">2026-05-03 — Wren + Kade pair (#2683). Replaces <code>commits-service-design.html</code>; subdomain renamed from <code>commits-domain</code> to <code>version-control-domain</code> the same day. Origin: chorus_commit MCP regression surfaced that the prior framing anchored on commit-side mechanics while the actual incidents were pull / checkout / working-tree races. The rewrite covers the full lifecycle.</p>
+
+<div class="source-note">
+<strong>Source of truth:</strong> Live actor list, BDD scenarios, contract entries, dependencies, gaps, and integrations live at
+<a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain"><code>/athena/domain-detail.html?id=version-control-domain</code></a>.
+This doc narrates <em>structure and intent</em> — diagrams, rejected paths, implementation plan. It does not restate counts or content from the graph; references point at graph entities via the page above.
+</div>
+
+<div class="promise">
+<strong>Designed target state.</strong> A version-control operation lands when, and only when, the role's request reaches <code>git-queue.sh</code> through the typed MCP surface (<code>chorus_commit</code> for write, <code>chorus_commit_status</code> for read), and the adapter (a) stages caller-named paths, (b) runs the pre-commit hook synchronously and surfaces stderr on failure, (c) commits and pushes under flock with bounded retry, and (d) emits one <code>commit.landed</code> spine event reflecting the actual SHA on main. Refusal taxonomy is strictly commit-safety: <code>hook-fail</code>, <code>push-conflict</code>. Coordination state — board status, role-state, branch-naming convention — never refuses Jeff's commit. Coordination is observed after the fact via spine, not enforced at the surface. The shared <code>/chorus/.git/HEAD</code> race during pull / checkout is an accepted residual risk addressed at the branching layer (micro-branches), not the substrate layer. <em>Today's code does not yet match this contract — see As-Is below.</em>
+</div>
+
+<h2>Overview</h2>
+<p>Version control is the substrate for how code in the chorus repo moves through its full git lifecycle: branch creation, commit, push, pull, rebase, merge, tag. The adapter is <code>git</code> wrapped by <code>git-queue.sh</code> — a shell-level flock-serialized surface for stage / commit / push. Gates run via standard git hooks (<code>pre-commit</code>, <code>pre-push</code>) at the adapter boundary; agents reach the surface through the typed <code>chorus_commit</code> MCP wrapper or the <code>/acp</code> slash command. The operating model is trunk-based development; the substrate exists to serve that discipline, not to invent a parallel coordination layer.</p>
+
+<h2>Vocabulary</h2>
+<table>
+<tr><th>Internal term</th><th>What it actually is</th></tr>
+<tr><td><code>git-queue.sh</code></td><td>Shell adapter at <code>platform/scripts/git-queue.sh</code>. Flock-serialized stage / commit / push with bounded retry. Emits <code>commit.landed</code> on successful push. Exits non-zero on hook failure or push conflict; specific exit codes are internal.</td></tr>
+<tr><td><code>chorus_commit</code> MCP (write)</td><td>Typed wrapper roles call to commit. <strong>Today's refusal taxonomy</strong> (see <code>platform/api/src/mcp/server.ts</code>): <code>board-unreachable</code>, <code>no-wip-card</code>, <code>multi-wip</code>, <code>branch-mismatch</code>, <code>path-not-found</code>, <code>hook-fail</code>, <code>push-conflict</code>. <strong>Designed target taxonomy</strong>: <code>hook-fail</code>, <code>push-conflict</code> only. The strip of coordination-state reasons is open work.</td></tr>
+<tr><td><code>chorus_commit_status</code> MCP (read)</td><td>Read-only board query (#2661). Service derives the role's active card from the board (<code>status=WIP</code>, <code>owner=&lt;role&gt;</code>) and reports it plus derived branch (<code>&lt;role&gt;/&lt;card-id&gt;</code>) and refusal-readiness. Refusal reasons match the write taxonomy. Does not gate commits.</td></tr>
+<tr><td><code>pre-commit</code> hook</td><td>Synchronous validator on staged paths at <code>platform/hooks/pre-commit</code>. Failure surfaces stderr to caller.</td></tr>
+<tr><td><code>write-scrubber</code></td><td>Rust crate at <code>platform/services/chorus-hooks/</code>. Matches credential patterns; refuses staged content that contains secrets. Runs inside the pre-commit hook.</td></tr>
+<tr><td><code>branch-check.sh</code></td><td><code>platform/scripts/branch-check.sh</code>. Branch-naming convention enforcer — exits non-zero if branch does not match <code>&lt;role&gt;/...</code> prefix (#2580 invariant). Blocking, not advisory.</td></tr>
+<tr><td><code>flock</code> contention</td><td>Serialization point inside <code>git-queue.sh</code>: only one role's commit holds the flock at a time. Pull operations also acquire it.</td></tr>
+<tr><td>shared HEAD race</td><td><code>/chorus/.git/HEAD</code> is one variable across all role sessions. A peer's <code>git checkout</code> rewrites it under another role's reading session. Race window equals branch lifespan.</td></tr>
+<tr><td>Mode A</td><td>"Read-stale-content — accepted residual risk." Per CLAUDE.md and the ADR-028 family, the team absorbs this rather than pay the physical-isolation cost. Watched via spine events.</td></tr>
+<tr><td><code>/acp</code></td><td>Jeff-facing slash command. Pulls + commits + pushes via <code>chorus_commit</code>. Inherits today's refusal taxonomy until the strip work lands.</td></tr>
+</table>
+
+<h2>Consumer contracts</h2>
+<p>Three consumer classes call this surface. Each has an explicit contract — substrate change that breaks any of these is a regression.</p>
+
+<h3>Roles (Wren, Silas, Kade) — agent-facing primary</h3>
+<p>Roles call <code>chorus_commit</code> for write, <code>chorus_commit_status</code> for read. <strong>Today</strong>: response includes the full coordination-aware refusal taxonomy listed in Vocabulary. <strong>Target</strong>: refusal taxonomy reduced to <code>hook-fail</code> and <code>push-conflict</code>; coordination signals (no-WIP-card, multi-WIP, board-unreachable) are still readable via <code>chorus_commit_status</code> but no longer block writes.</p>
+
+<table>
+<tr><th>Surface</th><th>Call</th><th>Contract</th><th>Frequency</th></tr>
+<tr><td>chorus_commit MCP (write)</td><td>typed MCP tool — role + paths + message</td><td>Returns <code>{ ok, sha?, reason?, detail? }</code>. Today: refuses on coordination state. Target: refuses only on commit-safety.</td><td>Per ACP cycle</td></tr>
+<tr><td>chorus_commit_status MCP (read)</td><td>typed MCP tool — role only</td><td>Returns active card, derived branch, refusal-readiness. Read-only — never gates a commit.</td><td>On role-state queries</td></tr>
+<tr><td>git-queue.sh (shell)</td><td><code>bash git-queue.sh ...</code></td><td>Same flock + hook surface as MCP path; bypasses MCP-level typing. Exits non-zero on hook-fail or push-conflict; emits <code>commit.landed</code> on success.</td><td>Fallback / scripting</td></tr>
+</table>
+
+<h3>Jeff — human-facing</h3>
+<p>Jeff invokes commits via the <code>/acp</code> slash command, which routes through <code>chorus_commit</code>. Contract: the command performs commit + push and reports back what happened. <strong>Target contract</strong>: it does not refuse on coordination state. Coordination violations (wrong branch, no WIP card) are observed after the fact via spine, not surfaced as refusal text Jeff has to interpret. Today the inherited refusals can still surface; the strip work closes that gap.</p>
+
+<h3>Spine consumers (Borg, dashboards, Loki)</h3>
+<p>Tail <code>platform/logs/chorus.log</code> for <code>commit.landed</code> events. Contract: one event per successful push, fields <code>{ sha, role, branch, timestamp }</code>. Borg ingests for activity heatmaps; dashboards count emit-rate; Loki indexes for retrieval. Additional events <code>chorus_commit.refused</code> and <code>chorus_commit.status_queried</code> are emitted today and consumed by audit views.</p>
+
+<h2>Sub-Domain Interaction Model</h2>
+<p>Single happy-path flow from role to landed SHA. The interaction shape is identical As-Is and To-Be; the difference is what the surface refuses.</p>
+
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Role as Role / Jeff (via /acp)
+  participant CC as chorus_commit (MCP)
+  participant GQ as git-queue.sh
+  participant Hook as pre-commit hook
+  participant Origin as Remote (origin/main)
+  participant Spine as chorus.log (spine)
+
+  Role->>CC: commit(role, paths, message)
+  CC->>GQ: stage + commit + push (under flock)
+  GQ->>Hook: validate staged paths
+  alt hook passes
+    Hook-->>GQ: ok
+    GQ->>Origin: push
+    alt push succeeds
+      Origin-->>GQ: SHA-on-main
+      GQ->>Spine: emit commit.landed
+      GQ-->>CC: { ok: true, sha }
+      CC-->>Role: { ok: true, sha }
+    else non-fast-forward
+      Origin-->>GQ: conflict
+      GQ-->>CC: { ok: false, reason: push-conflict }
+      CC-->>Role: { ok: false, reason: push-conflict }
+    end
+  else hook fails
+    Hook-->>GQ: stderr
+    GQ-->>CC: { ok: false, reason: hook-fail, detail }
+    CC-->>Role: { ok: false, reason: hook-fail, detail }
+  end
+</pre>
+
+<h2>Dependencies</h2>
+<p>Pulled from the <a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain"><code>version-control-domain</code> graph</a>. Counts and updates flow from there.</p>
+
+<table>
+<tr><th>Direction</th><th>Subdomain</th><th>Why</th></tr>
+<tr><td>consumes</td><td>cards-service</td><td><code>chorus_commit</code> queries the board for active WIP card. Today: gate. Target: read-only annotation.</td></tr>
+<tr><td>consumes</td><td>infrastructure-domain</td><td>git-queue.sh runs as a process; depends on the shared filesystem at <code>/chorus/.git</code>.</td></tr>
+<tr><td>consumes</td><td>gates-service</td><td>Pre-commit and pre-push hooks are gates; the surface invokes them synchronously.</td></tr>
+<tr><td>consumed-by</td><td>gates-service</td><td>Gates run pre-commit; their effect depends on this surface invoking them.</td></tr>
+<tr><td>consumed-by</td><td>pipelines-domain</td><td>CI/CD pipelines trigger on commits landed at origin.</td></tr>
+<tr><td>consumed-by</td><td>spine-service</td><td>Spine consumes <code>commit.landed</code> events from the surface.</td></tr>
+</table>
+
+<h2>Surfaces</h2>
+
+<div class="component">
+<h3>Write surfaces</h3>
+<ul>
+<li><strong>chorus_commit MCP</strong> <span class="tag-partial">PARTIAL</span> — typed wrapper, canonical write path for roles. Refusal taxonomy still includes coordination-state reasons; strip pending. #2682.</li>
+<li><strong><code>/acp</code> slash command</strong> <span class="tag-real">SHIPPED</span> — Jeff-facing wrapper. Routes through chorus_commit. #2662 migrated this off legacy bash.</li>
+<li><strong>git-queue.sh direct (shell)</strong> <span class="tag-real">SHIPPED</span> — fallback. Reaches the same flock + hook surface; bypasses MCP typing.</li>
+<li><strong>direct <code>git commit</code> CLI</strong> <span class="tag-partial">BYPASS</span> — uncontrolled write path. git-native hooks still run (pre-commit, pre-push fire because they live in <code>.git/hooks/</code>), but git-queue.sh's flock and the <code>commit.landed</code> spine emit do not. Concurrent invocations race.</li>
+</ul>
+</div>
+
+<div class="component">
+<h3>Read surfaces</h3>
+<ul>
+<li><strong>chorus_commit_status MCP</strong> <span class="tag-real">SHIPPED</span> — typed read of WIP card, branch, refusal-readiness. #2661.</li>
+<li><strong>chorus.log tail</strong> <span class="tag-real">SHIPPED</span> — JSONL stream of <code>commit.landed</code>, <code>chorus_commit.refused</code>, <code>chorus_commit.status_queried</code>.</li>
+<li><strong>direct <code>git log</code> / <code>git status</code></strong> <span class="tag-real">SHIPPED</span> — git-native reads. Always available; no synchronization needed.</li>
+</ul>
+</div>
+
+<h2>Components (designed)</h2>
+
+<div class="component">
+<h3>Adapter — <code>git-queue.sh</code> <span class="tag-real">SHIPPED</span></h3>
+<p>The serialized commit surface. Wraps <code>git stage / commit / push</code> in a <code>flock</code> so concurrent role commits queue rather than race. Emits <code>commit.landed</code> on successful push. Returns non-zero on hook failure or persistent push conflict.</p>
+</div>
+
+<div class="component">
+<h3>Hook layer — <code>pre-commit</code>, <code>pre-push</code>, <code>branch-check</code>, <code>write-scrubber</code> <span class="tag-real">SHIPPED</span></h3>
+<p>Synchronous gates at the git boundary. <code>pre-commit</code> runs <code>write-scrubber</code> + <code>branch-check</code> on staged paths; <code>pre-push</code> validates outbound refs. All run inside <code>git-queue.sh</code>; failures surface stderr to the caller. <em>Internal to the adapter — not separate actors.</em></p>
+</div>
+
+<div class="component">
+<h3>MCP wrappers — <code>chorus_commit</code>, <code>chorus_commit_status</code> <span class="tag-partial">PARTIAL</span></h3>
+<p>Typed surfaces over <code>git-queue.sh</code>. Refusal taxonomy strict by design but not yet by code: today's <code>chorus_commit</code> still refuses on board state. The rewrite target removes the coordination-state reasons.</p>
+</div>
+
+<div class="component">
+<h3>Trunk-based discipline (operating model, not code) <span class="tag-missing">NOT ADOPTED</span></h3>
+<p>Micro-branches, feature flags, vertical slicing, hard CI gate, force-rebase-before-merge, active-zones, merge train, fast rollback. The substrate doesn't enforce these — they're how the team uses the substrate. Adoption tracked separately as practice work.</p>
+</div>
+
+<h2>Loom contracts</h2>
+<p>No <code>loom-decision</code>, <code>loom-policy</code>, or <code>loom-practice</code> currently cites version-control-domain. If a "no force-push to main" policy or similar formalizes, this section gains content. No fabricated citations until then.</p>
+
+<h2>As-Is — 2026-05-03 today</h2>
+<p>The typed write path ships and works for the commit half of the lifecycle: <code>chorus_commit</code> MCP routes through <code>git-queue.sh</code>, hooks run, push under flock, spine emits <code>commit.landed</code>. The refusal taxonomy in code still includes coordination-state reasons (<code>board-unreachable</code>, <code>no-wip-card</code>, <code>multi-wip</code>, <code>branch-mismatch</code>) — the v3 regression that triggered this rewrite. The pull half does not yet have a typed surface; roles fall back to direct <code>git pull</code> / <code>git rebase</code>. The <code>chorus_commit</code> handler has a known false-positive: returns <code>push-conflict</code> when the push actually succeeded but git-queue.sh exits non-zero on a warning path. The shared <code>/chorus/.git/HEAD</code> race during pull / checkout is unmediated by the surface.</p>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph SURFACES["Write surfaces (today)"]
+    ACP["/acp slash command"]
+    MCP["chorus_commit MCP<br/>(refuses on board state)"]
+    GQDIR["git-queue.sh direct"]
+    BYPASS["direct git commit<br/>(BYPASS — no flock, no spine emit)"]
+  end
+
+  subgraph ADAPTER["Adapter"]
+    GQ["git-queue.sh<br/>(flock + retry)"]
+    HOOK["pre-commit / pre-push<br/>(write-scrubber, branch-check)"]
+  end
+
+  subgraph PROBLEMS["Today's failure modes"]
+    FP["false-positive push-conflict<br/>(handler treats non-zero as conflict)"]
+    COORD["coordination-state refusals<br/>(no-wip-card, multi-wip, branch-mismatch)"]
+    RACE["shared HEAD race<br/>(pull/checkout, unmediated)"]
+  end
+
+  subgraph STORE["Store"]
+    GIT[".git working tree<br/>(shared across roles)"]
+    ORIGIN["origin/main"]
+  end
+
+  subgraph EMIT["Spine"]
+    CL["commit.landed<br/>chorus_commit.refused<br/>chorus_commit.status_queried"]
+  end
+
+  ACP --> MCP
+  MCP --> GQ
+  GQDIR --> GQ
+  BYPASS -.->|skips flock + spine| GIT
+  GQ --> HOOK
+  HOOK --> GIT
+  GQ --> ORIGIN
+  GQ --> CL
+  MCP -.-> COORD
+  MCP -.-> FP
+  GIT -.-> RACE
+
+  classDef bypass fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  classDef regression fill:#fef3c7,stroke:#d97706,color:#78350f
+  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
+  class BYPASS,FP,COORD,RACE bypass
+  class MCP regression
+  class GQ,HOOK,ORIGIN,CL canon
+</pre>
+
+<h2>To-Be — designed target state</h2>
+<p>The typed surface extends across the full lifecycle. Pull and rebase get the same shape as commit: a typed wrapper over <code>git-queue.sh</code> with refusal taxonomy strictly limited to safety (<code>rebase-conflict</code>, <code>flock-timeout</code>) — no coordination state. <code>chorus_commit</code>'s refusal taxonomy reduces to <code>hook-fail</code> and <code>push-conflict</code> only; the coordination-state reasons (<code>no-wip-card</code>, etc.) become <em>readable</em> via <code>chorus_commit_status</code> but never <em>blocking</em>. Trunk-based prerequisites land: micro-branches collapse the HEAD-race window from days to minutes; feature flags allow incomplete work on main; merge train serializes PR integration deliberately rather than as a flock side-effect. The false-positive push-conflict is fixed by distinguishing git-queue.sh's exit codes from push success. Spine carries the full lifecycle (event names below are design intent — not yet emitted): <code>pull.fetched</code>, <code>rebase.attempted</code>, <code>rebase.aborted</code> alongside <code>commit.landed</code>.</p>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph SURFACES2["Write surfaces (target)"]
+    ACP2["/acp slash command"]
+    MCP2["chorus_commit MCP<br/>(refuses only hook-fail, push-conflict)"]
+    PULL2["chorus_pull MCP<br/>(typed pull/rebase surface)"]
+    GQDIR2["git-queue.sh direct"]
+  end
+
+  subgraph HOOK2["Bypass refusal"]
+    PRETOOL["PreToolUse hook<br/>refuses direct git commit outside surface"]
+  end
+
+  subgraph ADAPTER2["Adapter"]
+    GQ2["git-queue.sh<br/>(flock + retry, exit-code typed)"]
+    HOOKS2["pre-commit / pre-push<br/>(unchanged)"]
+  end
+
+  subgraph DISCIPLINE["Trunk-based practice (operating model)"]
+    MICRO["micro-branches<br/>(collapse HEAD-race window)"]
+    FLAGS["feature flags<br/>(allow WIP on main)"]
+    TRAIN["merge train<br/>(serialize PR integration)"]
+  end
+
+  subgraph STORE2["Store"]
+    GIT2[".git working tree"]
+    ORIGIN2["origin/main"]
+  end
+
+  subgraph EMIT2["Spine (full lifecycle)"]
+    EVENTS["commit.landed<br/>pull.fetched (target)<br/>rebase.attempted (target)<br/>rebase.aborted (target)"]
+  end
+
+  ACP2 --> MCP2
+  ACP2 --> PULL2
+  MCP2 --> GQ2
+  PULL2 --> GQ2
+  GQDIR2 --> GQ2
+  PRETOOL -.->|REFUSES BYPASS| GQ2
+  GQ2 --> HOOKS2
+  HOOKS2 --> GIT2
+  GQ2 --> ORIGIN2
+  GQ2 --> EVENTS
+  MICRO -.-> GIT2
+  FLAGS -.-> ORIGIN2
+  TRAIN -.-> ORIGIN2
+
+  classDef target fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef enforced fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef practice fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+  class MCP2,PULL2,EVENTS target
+  class GQ2,HOOKS2,PRETOOL enforced
+  class MICRO,FLAGS,TRAIN practice
+</pre>
+
+<h2>Gaps to close</h2>
+
+<div class="gap"><strong>chorus_commit refusal taxonomy still includes coordination-state reasons.</strong> Code at <code>platform/api/src/mcp/server.ts</code> refuses on <code>board-unreachable</code>, <code>no-wip-card</code>, <code>multi-wip</code>, <code>branch-mismatch</code>, <code>path-not-found</code>. Designed target: only <code>hook-fail</code>, <code>push-conflict</code>. Strip not yet shipped.</div>
+
+<div class="gap"><strong>False-positive push-conflict in <code>chorus_commit</code> handler.</strong> Returns <code>push-conflict</code> with empty stderr while origin has the SHA. Cause: handler treats any non-zero exit from <code>git-queue.sh</code> as push-conflict regardless of whether push succeeded.</div>
+
+<div class="gap"><strong>Pull / rebase has no typed surface.</strong> Roles fall back to direct <code>git pull</code> / <code>git rebase</code>. Lifecycle is half-typed (commit yes, pull no). Symmetry with commit-side is the right shape.</div>
+
+<div class="gap"><strong>Working-tree HEAD race during pull / checkout — Problem 1.</strong> <code>/chorus/.git/HEAD</code> shared across role sessions; peer's <code>git checkout</code> rewrites it under another role's working tree. Race window equals branch lifespan. Receipts: 2026-04-29 Wren ~30min loss; 2026-05-02 Wren <code>/reboot</code> blocked by Kade mid-<code>/acp</code> staged tree. Mitigation lives at branching layer (micro-branches), not substrate layer (worktrees rejected).</div>
+
+<div class="gap"><strong>Long-lived <code>&lt;role&gt;/&lt;card-id&gt;</code> branches widen the race window.</strong> Branch lifespan in hours to days. Trunk-based playbook says micro-branches collapse this. Adoption not started.</div>
+
+<div class="gap"><strong>No feature flags — incomplete work cannot merge to main safely.</strong> Without flags, agents stay on long branches because main cannot tolerate WIP. Trunk-based prerequisite.</div>
+
+<div class="gap"><strong>No merge train — concurrent green PRs can break each other on integration.</strong> <code>flock</code> serializes commits but not PR-merge integration. Standard fix is a merge queue.</div>
+
+<div class="gap"><strong>No PreToolUse hook refusing direct <code>git commit</code> outside the surface.</strong> Bypass surface tempting; flock and spine emit can be skipped silently. Hook would refuse <code>git commit</code> Bash patterns outside <code>git-queue.sh</code> / chorus_commit.</div>
+
+<h2>Implementation Plan</h2>
+
+<div class="promise" style="background:#dbeafe;border-left-color:#2563eb">
+<strong>The actors and BDD scenarios above are the contract. Every row in this plan is bound by them.</strong> A card changes the surface only if (a) the existing actors still describe who interacts, and (b) the existing scenarios still describe what happens — <em>or</em> the change updates the actor model / BDD <em>first</em>, on the page, with PM approval, before any code edit. Page-graph mutations on actors / scenarios precede the code that satisfies them. New scenarios are authored before they are implementable. Rejected scenarios retire before the code that violates them. The BDD is the regression line; the plan is its execution sequence. Anything that drifts from the page is the bug, not the page.
+</div>
+
+<p><strong>Honest cost.</strong> Twenty-one rows below across three card-classes — not the original eight. The strip-refusals "row" is five atomic edits; the <code>chorus_pull</code> "row" is seven; trunk-based adoption is four phase-rows, three of which are themselves arcs.</p>
+
+<p><strong>Cards filed 2026-05-03 from this plan:</strong> <code>#2687</code> (strip-refusals bundle, AC1-AC6 = rows 2-6), <code>#2688</code> (chorus_pull bundle, AC1-AC8 = rows 8-15), <code>#2689</code> (false-positive push-conflict fix = row 7), <code>#2690</code> (PreToolUse direct-git-commit refusal = row 16), <code>#2691</code> (retire worktree-convention.md = row 22), <code>#2692</code> (audit worktree_contamination_guard.rs = row 23), <code>#2693</code> (update TEAM_PROTOCOL.md = row 24). Plus <code>#2641</code> moved to <code>wont-do</code> (row 21). The four trunk-based practice rows (17-20) are unfiled — practice-class work that hasn't been opened.</p>
+
+<p><strong>Size-class legend.</strong> <code>atomic</code> = single edit + test, one card; <code>arc</code> = multi-card thread that will spawn 2–5 follow-ons when pulled; <code>practice</code> = behavior / protocol change measured in weeks-to-months, not code edits.</p>
+
+<h3>Build / fix</h3>
+<table>
+<tr><th>#</th><th>Card</th><th>Size</th><th>Action</th><th>Closes / bound by</th><th>Owner</th></tr>
+<tr><td>1</td><td>#2683 (this card)</td><td><code>arc</code></td><td>Surface version-control-domain Athena page from graph; rewrite this design doc as a derived view.</td><td>Page-graph completeness; doc-as-derived-view pattern</td><td>Wren + Kade</td></tr>
+<tr><td>2</td><td>(file)</td><td><code>atomic</code></td><td>Strip refusal: remove <code>board-unreachable</code> from <code>chorus_commit</code> write-path taxonomy. Keep readable via <code>chorus_commit_status</code>.</td><td>Refusal-taxonomy gap; Scenario "Coordination violation: commit STILL lands"</td><td>Kade</td></tr>
+<tr><td>3</td><td>(file)</td><td><code>atomic</code></td><td>Strip refusals: remove <code>no-wip-card</code> + <code>multi-wip</code> from write-path. Keep readable via status.</td><td>Same as #2</td><td>Kade</td></tr>
+<tr><td>4</td><td>(file)</td><td><code>atomic</code></td><td>Strip refusal: remove <code>branch-mismatch</code> classifier path from <code>chorus_commit</code>.</td><td>Same as #2</td><td>Kade</td></tr>
+<tr><td>5</td><td>(file)</td><td><code>atomic</code></td><td>Strip refusal: remove <code>path-not-found</code> classifier path from <code>chorus_commit</code>.</td><td>Same as #2</td><td>Kade</td></tr>
+<tr><td>6</td><td>(file)</td><td><code>atomic</code></td><td>Spine-event rename for honest audit: distinguish refused-on-coordination (now informational) from refused-on-safety (still blocking) at the spine layer.</td><td>Refusal-taxonomy gap (audit half)</td><td>Kade</td></tr>
+<tr><td>7</td><td>(file)</td><td><code>atomic</code></td><td>Fix false-positive push-conflict — distinguish <code>git-queue.sh</code> exit-code semantics from push success in the handler. Verify <code>cards</code> CLI / <code>/acp</code> / hooks don't break on the change; may spawn one consumer-fix card.</td><td>False-positive gap</td><td>Kade</td></tr>
+<tr><td>8</td><td>(file)</td><td><code>atomic</code></td><td><code>chorus_pull</code>: typed input schema (zod) — role + branch + remote.</td><td>Half-typed-lifecycle; Scenarios "Pull happy path", "Pull conflict", "Rebase conflict"</td><td>Kade</td></tr>
+<tr><td>9</td><td>(file)</td><td><code>atomic</code></td><td><code>chorus_pull</code>: error taxonomy — <code>rebase-conflict</code>, <code>flock-timeout</code> only. No coordination-state.</td><td>Same as #8</td><td>Kade</td></tr>
+<tr><td>10</td><td>(file)</td><td><code>atomic</code></td><td><code>chorus_pull</code>: exit-code mapping in handler; symmetric to chorus_commit's mapping.</td><td>Same as #8</td><td>Kade</td></tr>
+<tr><td>11</td><td>(file)</td><td><code>atomic</code></td><td><code>chorus_pull</code>: rebase-conflict detection logic — read <code>git rebase</code> stderr, classify, abort cleanly.</td><td>Same as #8; Scenario "Rebase conflict"</td><td>Kade</td></tr>
+<tr><td>12</td><td>(file)</td><td><code>arc</code></td><td><code>chorus_pull</code>: integration tests covering all 5 pull / rebase scenarios from the page (happy path, conflict, flock contention, working-tree contamination, rebase conflict, no-Broker concurrent rebase).</td><td>Same as #8</td><td>Kade</td></tr>
+<tr><td>13</td><td>(file)</td><td><code>atomic</code></td><td><code>chorus_pull</code>: MCP tool registration in <code>server.ts</code> — name, description, inputSchema, handler wiring.</td><td>Same as #8</td><td>Kade</td></tr>
+<tr><td>14</td><td>(file)</td><td><code>atomic</code></td><td><code>/acp</code> wiring: invoke <code>chorus_pull</code> before <code>chorus_commit</code> in the slash-command flow.</td><td>Same as #8</td><td>Wren</td></tr>
+<tr><td>15</td><td>(file)</td><td><code>atomic</code></td><td>Spine-event additions: <code>pull.fetched</code>, <code>rebase.attempted</code>, <code>rebase.aborted</code>. Wire from <code>chorus_pull</code>.</td><td>Half-typed-lifecycle (audit half)</td><td>Kade</td></tr>
+<tr><td>16</td><td>(file)</td><td><code>atomic</code></td><td>PreToolUse hook refusing direct <code>git commit</code> Bash outside <code>git-queue.sh</code> / <code>chorus_commit</code>. Verify legitimate uses (gate-ops debugging? hook-shim patches?) before landing — surface to allowlist-or-card decision.</td><td>Bypass-surface gap</td><td>Silas</td></tr>
+</table>
+
+<h3>Practice (trunk-based adoption)</h3>
+<table>
+<tr><th>#</th><th>Card</th><th>Size</th><th>Action</th><th>Closes / bound by</th><th>Owner</th></tr>
+<tr><td>17</td><td>(file)</td><td><code>practice</code></td><td>Phase 1 — micro-branches behavior change. Daily friction; team adopts branch lifespans measured in minutes-to-hours, not days. Each role files atomic-feature branches; long-lived <code>&lt;role&gt;/&lt;card-id&gt;</code> branches retire.</td><td>Long-branch gap; HEAD-race mitigation (the actual one)</td><td>Wren + Silas</td></tr>
+<tr><td>18</td><td>(file)</td><td><code>arc</code></td><td>Phase 2 — feature flag infrastructure. We have none. Pick a flag library or build a thin shim, wire in a per-product flag store, define rollout/teardown discipline. Multi-card.</td><td>No-feature-flags gap</td><td>Silas</td></tr>
+<tr><td>19</td><td>(file)</td><td><code>arc</code></td><td>Phase 3 — merge train tooling. We have no PR-merge queue. Either adopt GitHub merge queue (free with branch protection) or build a thin equivalent. Multi-card depending on tooling choice.</td><td>No-merge-train gap</td><td>Silas</td></tr>
+<tr><td>20</td><td>(file)</td><td><code>arc</code></td><td>Phase 4 — rollback workflows. Instant-revert tooling, auto-rollback on health-check fail, deploy markers in Loki. Multi-card.</td><td>Trunk-based prerequisite (recoverability)</td><td>Silas</td></tr>
+</table>
+
+<h3>Retire (lurking artifacts the rewrite implies)</h3>
+<table>
+<tr><th>#</th><th>Card</th><th>Size</th><th>Action</th><th>Why retire</th><th>Owner</th></tr>
+<tr><td>21</td><td>#2641</td><td><code>atomic</code></td><td>Move <code>git-queue active-card-check</code> from Later to <code>wont-do</code>. The active-card-check is the exact coordination-state refusal the rewrite strips.</td><td>Stops being pullable; rationale lives in this doc</td><td>Kade</td></tr>
+<tr><td>22</td><td>(file)</td><td><code>atomic</code></td><td>Retire <code>designing/claudemd/shared/worktree-convention.md</code> — either delete or mark explicitly historical with retirement date and reason. Convention was retired 2026-05-01 (#2640) but the doc still exists.</td><td>Source-of-truth drift — doc says one thing, CLAUDE.md says another</td><td>Wren</td></tr>
+<tr><td>23</td><td>(file)</td><td><code>atomic</code></td><td>Audit <code>platform/services/chorus-hooks/src/hooks/worktree_contamination_guard.rs</code> — references retired sibling-worktree paths. Either update for the post-retirement world (still useful as a guard against mode-A contamination via branch-shape) or remove as dead code.</td><td>Dead-code-vs-still-useful is unknown; doc named the retirement, code wasn't audited</td><td>Silas</td></tr>
+<tr><td>24</td><td>(file)</td><td><code>atomic</code></td><td>Update <code>TEAM_PROTOCOL.md</code> sibling-worktree references to reflect the retirement (the role CLAUDE.md files already do).</td><td>Doc-vs-doc drift</td><td>Wren</td></tr>
+</table>
+
+<h2>Not in scope</h2>
+<p>Approaches explicitly rejected, with the family they belong to. These do not return without naming why the rejection no longer applies.</p>
+<ul>
+<li><strong>Per-role sibling worktrees</strong> (<code>chorus-kade/</code>, <code>chorus-wren/</code>, <code>chorus-silas/</code>) — RETIRED 2026-05-01 (#2640). Broke <em>role-directory-is-session-start</em>. Family: any mechanism that moves session-start away from <code>/chorus/roles/&lt;role&gt;/</code>.</li>
+<li><strong>Internal worktrees with cwd enforcement</strong> (<code>chorus/.worktrees/&lt;role&gt;-&lt;hash&gt;/</code>) — REJECTED same day as #2640. Same family.</li>
+<li><strong>Working-tree-lock service</strong> — adapter-side mutex on the working tree. Not pursued. Coordination cost moved into Jeff's commit path; trunk-based playbook handles this at branching layer.</li>
+<li><strong>Broker layer between roles</strong> — agent-to-agent coordination edges through a centralized broker before commits hit git. Jeff: "no broker." Coordination is observed via spine after the fact; never enforced at the surface.</li>
+<li><strong>Coordination-state refusals in <code>chorus_commit</code></strong> — retiring as part of this rewrite. The active-card-check (#2641) and the v3 board-state refusals belong to this family.</li>
+<li><strong>Pre-commit hook as a coordination broker</strong> — using the hook layer to enforce board state, role-state, or peer activity. Hooks remain strictly commit-safety (write-scrubber for credentials, branch-check for naming convention).</li>
+<li><strong>Class-A graph-backed migration of git history</strong> — replacing <code>.git</code> with a graph projection. Out of scope; git remains canonical store.</li>
+<li><strong>Service-design content as inline restatement of graph data</strong> — this doc references the page; it does not duplicate counts or actor lists from the graph (per ADR-028 graduation rule pending).</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+<li><a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain">Athena: <code>version-control-domain</code></a> — live source of truth for actors, scenarios, contract, dependencies, gaps, integrations</li>
+<li><code>commits-service-design.md.pre-rewrite-2026-05-02</code> — preserved older v1+v2.5+v3 stack for receipts. The intermediate Silas-rewrite (<code>commits-service-design.md</code>) and the May-2 <code>.html</code> were retired 2026-05-03 as part of #2683 — content folded into this doc; old artifacts deleted to prevent stale-source confusion (filing-cabinet principle).</li>
+<li>ADR-028 — service-design canonical-source policy; graduation amendment pending</li>
+<li>#2683 — Surface commits-domain (now version-control-domain) Athena page from graph (parent card)</li>
+<li>#2661 — chorus_commit_status MCP (read)</li>
+<li>#2682 — chorus_commit MCP (write)</li>
+<li>#2662 — /acp migration to chorus_commit</li>
+<li>#2640 — sibling worktrees retired</li>
+<li>#2641 — git-queue active-card-check (mode C; reconsider per strip)</li>
+<li>#2580 — branch-check invariant</li>
+<li>Trunk-based development — <a href="https://trunkbaseddevelopment.com/">trunkbaseddevelopment.com</a></li>
+</ul>
+
+<div class="footer">Version Control · Service Design · 2026-05-03</div>
+
+</body>
+</html>

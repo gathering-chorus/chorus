@@ -233,9 +233,13 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
-    // Skip TDD for chore and swat cards
+    // Skip TDD for card types that are not code-with-tests:
+    //   - chore / swat: existing skips
+    //   - doc / design: documentation, service-design rewrites, ADRs, page-graph populates,
+    //     ontology curation. Not behavioral code; demos validate by reading the doc / viewing
+    //     the page, not by running tests. (#2683 evidence: 100+ prior misfires of the same shape.)
     let card_type = crate::types::card_type_for_role(input.role().as_str());
-    if card_type == "chore" || card_type == "swat" {
+    if card_type == "chore" || card_type == "swat" || card_type == "doc" || card_type == "design" {
         return HookResponse::allow();
     }
 
@@ -259,15 +263,13 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             )));
         }
 
-    // Gate 2: Demo/done/acp — require test runs (only if production code was edited)
-    if is_demo_or_done(input)
-        && has_production_code_edit(input, state) && !has_test_run(input, state) {
-            return HookResponse::deny(&permission_deny_json(
-                "TDD gate: no test runs detected in this session. \
-                 Run tests (cargo test, npx jest, bats, npx cucumber-js) before demo/done. \
-                 DEC-1674: AC → tests → code → green → demo."
-            ));
-        }
+    // Gate 2 retired (2026-05-03): the demo-time "did THIS session run tests" check
+    // misfired ~100+ times across 03/04 (chorus-index search receipts) on doc work,
+    // bats tests, cross-session work, page-graph populates. The discipline lives at
+    // Gate 1 (code-edit time), not at demo time. Validation surface for non-code
+    // cards is the demo itself, not a synthetic test-run check. is_demo_or_done /
+    // has_production_code_edit / has_test_run helpers are kept for now; they may be
+    // removed in a follow-up if no consumer surfaces.
 
     HookResponse::allow()
 }
@@ -364,6 +366,27 @@ mod tests {
         let input = make_input("Skill", "skill", "demo");
         let r = check(&input, &state());
         assert!(r.stdout.is_none());
+    }
+
+    #[test]
+    fn demo_with_session_no_longer_denies() {
+        // Gate 2 retirement (2026-05-03): demo invocations with a session_id present
+        // and prior production_code edits no longer trigger the "no test runs" deny.
+        // The discipline lives at Gate 1 (code-edit time), not at demo time.
+        let input = HookInput {
+            tool_name: Some("Skill".into()),
+            tool_input: Some(serde_json::json!({"skill": "demo", "args": "1234"})),
+            tool_response: None,
+            session_id: Some("test-session".into()),
+            cwd: Some(format!("{}/roles/kade", chorus_root())),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("kade".into()),
+            chorus_worktree_override: None,
+        };
+        let r = check(&input, &state());
+        assert!(r.stdout.is_none(), "Gate 2 should be retired — demo must allow regardless of test-run history");
     }
 
     // --- #2297: bats detection ---

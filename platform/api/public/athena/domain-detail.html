@@ -90,6 +90,24 @@
   #content-sections summary { cursor: pointer; padding: 12px 0; }
   .tag-mock { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
 
+  /* #2683 — definition tooltip (CSS-driven, replaces native title= UX) */
+  .herald-def { position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; margin-left: 6px;
+    border: 1px solid #d1d5db; border-radius: 50%;
+    font-size: 0.75em; font-style: italic; font-weight: 600;
+    color: #6b7280; background: #fff; cursor: default; }
+  .herald-def::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    width: max-content; max-width: 320px; padding: 8px 12px;
+    background: #1f2937; color: #f9fafb;
+    font-size: 12px; font-style: normal; font-weight: 400; line-height: 1.45; text-align: left;
+    border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    opacity: 0; pointer-events: none; transition: opacity 120ms ease 0ms;
+    white-space: normal; z-index: 100;
+  }
+  .herald-def:hover::after { opacity: 1; transition-delay: 80ms; }
+
   .footer { text-align: center; margin-top: 48px; font-size: 11px; color: #555; }
 
   /* #2431 — print layout keeps each instance body on one page */
@@ -122,6 +140,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({ startOnLoad: false, theme: 'neutral' });</script>
-<script src="/athena/domain-detail.js?v=2.6"></script>
+<script src="/athena/domain-detail.js?v=2.11"></script>
 </body>
 </html>
