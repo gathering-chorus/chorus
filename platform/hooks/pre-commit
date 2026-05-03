@@ -16,51 +16,8 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# --- WIP card gate (#1799, #2204) ---
-# Reject commits when the committing role has no WIP card declared.
-# State file is a cache; board is authoritative (#2204) — fall back to
-# `cards list --status WIP` when cache is missing/stale/idle, so a role with
-# real WIP commits even after declared.json drifts.
-# Bypass: no DEPLOY_ROLE (Jeff direct), swat/chore/acp/close/reboot commits.
-_WIP_ROLE="${DEPLOY_ROLE:-}"
-_WIP_MSG="${_COMMIT_MSG:-}"
-if [ -n "$_WIP_ROLE" ]; then
-  _wip_bypass=false
-  # #1977: acp commits are acceptance actions — valid after card moves to Done
-  # close/reboot commits happen after WIP cards are Done — bypass WIP gate
-  echo "$_WIP_MSG" | grep -qiE '\b(swat|chore|acp|close|reboot)\b' && _wip_bypass=true
-
-  if ! $_wip_bypass; then
-    _state_file="/tmp/claude-team-scan/${_WIP_ROLE}-declared.json"
-    _wip_ok=false
-    if [ -f "$_state_file" ]; then
-      _state=$(python3 -c "import json; d=json.load(open('${_state_file}')); print(d.get('state',''))" 2>/dev/null || echo "")
-      _card=$(python3 -c "import json; d=json.load(open('${_state_file}')); print(d.get('card',''))" 2>/dev/null || echo "")
-      if [ "$_state" = "building" ] && [ -n "$_card" ] && [ "$_card" != "None" ]; then
-        _wip_ok=true
-      fi
-    fi
-    if ! $_wip_ok; then
-      # `cards list --status WIP` returns the WIP section AND a Next section
-      # below it. Scope to the WIP block (between "WIP (" and the next blank
-      # line / "Next (") so a role with cards only in Next doesn't pass.
-      # Anchor the grep to the metadata bracket shape '[Role|P<digit>' —
-      # priority is always immediately after the role pipe, and titles
-      # don't contain that pattern. Without this, a card whose TITLE
-      # contains literal '[Role|' false-positives (kade #2204 review).
-      _cards_cmd="${CARDS_CMD:-${REPO_ROOT}/platform/scripts/cards}"
-      if "$_cards_cmd" list --status WIP 2>/dev/null \
-          | awk '/^WIP \(/{p=1; next} /^[A-Z]/ && p{p=0} p' \
-          | grep -qiE "\[${_WIP_ROLE}\|P[0-9]"; then
-        _wip_ok=true
-      fi
-    fi
-    if ! $_wip_ok; then
-      echo "pre-commit: 🔴 blocked — ${_WIP_ROLE} has no WIP card declared. Pull a card first."
-      exit 1
-    fi
-  fi
-fi
+# WIP card gate retired #2696 — parallel to #2687 chorus_commit coordination-state strip.
+# Commit-safety only at this layer; card binding lives at the message/board layer.
 
 DETAIL_FILE="/tmp/pre-commit-detail.md"
 CHECKS_RUN=0

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Test: pre-commit lint ratchet — reject commits that raise any rule count (#2462/#2464)
 # RED before hook block exists. GREEN after.
-# Mirrors platform/tests/pre-commit-wip-gate-test.sh pattern: extract the gate logic
-# into a function, then exercise it in a fixture.
+# Extracts the gate logic into a function, then exercises it in a fixture.
 set -uo pipefail
 
 PASS=0
