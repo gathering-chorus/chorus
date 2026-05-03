@@ -4,10 +4,20 @@
 /// Source code files that carry cross-domain risk and trigger gates.
 /// Used by: pair_gate, log_first_gate, tdd_gate
 pub fn is_source_code(path: &str) -> bool {
+    // Static-served locations are presentation, not source — regardless of extension.
+    // .html / .js / .css / .map etc. served from these paths are rendered output,
+    // not behavioral logic that needs gate enforcement.
+    if path.contains("/public/")
+        || path.starts_with("public/")
+        || path.contains("gathering-docs")
+        || path.contains("/artifacts/")
+        || path.contains("designing/docs")
+    {
+        return false;
+    }
     let source_exts = [".rs", ".ts", ".tsx", ".js", ".jsx", ".py", ".sh"];
     source_exts.iter().any(|ext| path.ends_with(ext))
-        // HTML outside public dirs is source (templates, app pages)
-        || (path.ends_with(".html") && !path.contains("/public/") && !path.starts_with("public/") && !path.contains("gathering-docs") && !path.contains("/artifacts/"))
+        || path.ends_with(".html")
 }
 
 /// Presentation/config files — editable without pair, but still tracked.

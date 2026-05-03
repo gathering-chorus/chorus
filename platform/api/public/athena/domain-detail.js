@@ -221,17 +221,25 @@ function tracedFetch(url) {
 // declare `extract(data)` to compute the items count for the header.
 const HERALD_FACETS = [
   { key: 'actors', title: 'Actors', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/actors'; }, listKey: 'actors',
+    definition: 'Who interacts with this subdomain — roles, services, humans. The agents in the system.',
     customRender: function(items, ctx) {
-      var chart = 'graph LR\n  DOMAIN["' + (ctx.label || '') + '"]\n';
+      // #2683: mermaid quoted labels accept parens, slashes, hyphens, dots, commas.
+      // Only strip what would terminate the quoted string or break edge syntax:
+      // double-quotes (closes the label) and pipes (close the edge label).
+      // Drop the 50-char truncation — the action sentences ARE the contract.
+      function safeLabel(s) { return String(s || '').replace(/["\n\r]/g, ''); }
+      function safeAction(s) { return String(s || '').replace(/["|\n\r]/g, ''); }
+      var chart = 'graph LR\n  DOMAIN["' + safeLabel(ctx.label) + '"]\n';
       items.forEach(function(a, i) {
-        var safeLabel = (a.label || (a.role || '').split('#').pop() || 'unknown').replace(/[^a-zA-Z0-9 .]/g, '');
-        var safeAction = (a.action || 'interacts').replace(/[^a-zA-Z0-9 ,./]/g, '').substring(0, 50);
-        chart += '  A' + i + '["' + safeLabel + '"] -->|"' + safeAction + '"| DOMAIN\n';
+        var label = a.label || (a.role || '').split('#').pop() || 'unknown';
+        var action = a.action || 'interacts';
+        chart += '  A' + i + '["' + safeLabel(label) + '"] -->|"' + safeAction(action) + '"| DOMAIN\n';
       });
       return '<div class="mermaid" id="mermaid-actors-' + Date.now() + '">' + chart + '</div>';
     },
     emptyMsg: 'No actors for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/actors' } },
   { key: 'scenarios', title: 'Scenarios', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/scenarios'; }, listKey: 'scenarios',
+    definition: 'BDD scenarios (given/when/then) describing how this subdomain behaves.',
     customRender: function(items) {
       return items.map(function(s) {
         var body = '<div style="padding:4px 0 8px 16px;">';
@@ -245,6 +253,7 @@ const HERALD_FACETS = [
     },
     emptyMsg: 'No scenarios for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/scenarios' } },
   { key: 'dependencies', title: 'Dependencies', endpoint: function(id) { return DOMAIN_API + '/' + id + '/dependencies'; },
+    definition: 'Typed graph edges — which other subdomains this one consumes (depends on) and is consumed by.',
     extract: function(data) {
       var direct = (data && data.direct) || { consumes: [], consumedBy: [] };
       var shared = (data && data.shared) || [];
@@ -273,20 +282,21 @@ const HERALD_FACETS = [
       return html;
     },
     emptyMsg: 'No dependencies for this domain', source: { kind: 'derived', from: 'graph edges: chorus:dependsOn / consumedBy / sharedVia' } },
-  { key: 'pages', title: 'UI Pages', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/pages'; }, listKey: 'pages', columns: ['route', 'path', 'pageType'], emptyMsg: 'No UI pages for this domain', source: { kind: 'derived', from: 'discover-pages scanner' } },
-  { key: 'integrations', title: 'Integration', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/integrations'; }, listKey: 'integrations', columns: ['label', 'source', 'path', 'status'], emptyMsg: 'No integrations for this domain', source: { kind: 'hybrid', from: 'icd-instance TTL + integration scanner' } },
-  { key: 'endpoints', title: 'Endpoints', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/services'; }, listKey: 'endpoints', altKey: 'services', columns: ['method', 'path', 'handler'], emptyMsg: 'No endpoints for this domain', source: { kind: 'derived', from: 'discover-endpoints scanner' } },
-  { key: 'code', title: 'Code', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/code'; }, listKey: 'files', columns: ['path', 'type'], emptyMsg: 'No code for this domain', source: { kind: 'derived', from: 'discover-code scanner' } },
-  { key: 'tests', title: 'Tests', endpoint: function(id) { return DOMAIN_API + '/' + id + '/tests'; }, listKey: 'tests', columns: ['path', 'type'], emptyMsg: 'No tests for this domain', source: { kind: 'derived', from: 'discover-tests scanner' } },
-  { key: 'persistence', title: 'Persistence', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/persistence'; }, listKey: 'stores', altKey: 'persistence', columns: ['label', 'namespace', 'records', 'status'], emptyMsg: 'No persistence for this domain', source: { kind: 'derived', from: 'icd persistence section' } },
-  { key: 'pipeline', title: 'Pipeline', endpoint: function(id) { return DOMAIN_API + '/' + id + '/pipeline'; }, listKey: 'stages', columns: ['name', 'status', 'evidence', 'summary'], emptyMsg: 'No pipeline for this domain', source: { kind: 'authored', from: 'pipeline manifest per domain' } },
-  { key: 'releases', title: 'Release History', endpoint: function(id) { return DOMAIN_API + '/' + id + '/releases'; }, listKey: 'releases', columns: ['timestamp', 'cardId', 'title', 'role', 'commit'], emptyMsg: 'No releases for this domain', source: { kind: 'derived', from: 'git log / acp commits' } },
-  { key: 'infra', title: 'Infrastructure', endpoint: function(id) { return DOMAIN_API + '/' + id + '/infra'; }, listKey: 'environments', columns: ['name', 'port', 'engine', 'host'], emptyMsg: 'No infrastructure for this domain', source: { kind: 'derived', from: 'infra config / launchd services' } },
-  { key: 'priorArt', title: 'Prior Art', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/prior-art'; }, listKey: 'items', columns: ['label', 'path', 'description'], emptyMsg: 'No prior art for this domain', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/prior-art' } },
-  { key: 'decisions', title: 'Decisions', endpoint: function(id) { return DOMAIN_API + '/' + id + '/decisions'; }, listKey: 'decisions', columns: ['id', 'title', 'type', 'enforcement', 'date'], emptyMsg: 'No decisions for this domain', source: { kind: 'derived', from: 'DEC/ADR harvest filtered to this domain' } },
-  { key: 'logs', title: 'Logs', endpoint: function(id) { return DOMAIN_API + '/' + id + '/logs'; }, listKey: 'logs', columns: ['label', 'location', 'retention', 'status'], emptyMsg: 'No logs for this domain', source: { kind: 'derived', from: 'log config / promtail jobs' } },
-  { key: 'alerts', title: 'Alerts', endpoint: function(id) { return DOMAIN_API + '/' + id + '/alerts'; }, listKey: 'alerts', columns: ['name', 'description', 'severity'], emptyMsg: 'No alerts for this domain', source: { kind: 'derived', from: 'proving/domains/alerts/*.yml' } },
+  { key: 'pages', title: 'UI Pages', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/pages'; }, listKey: 'pages', columns: ['route', 'path', 'pageType'], emptyMsg: 'No UI pages for this domain', definition: 'HTML pages that present this subdomain to humans.', source: { kind: 'derived', from: 'discover-pages scanner' } },
+  { key: 'integrations', title: 'Integration', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/integrations'; }, listKey: 'integrations', columns: ['label', 'source', 'path', 'status'], emptyMsg: 'No integrations for this domain', definition: 'Wire protocols and contracts — how this subdomain talks to others (transport, payload format, error semantics). Not who, but how.', source: { kind: 'hybrid', from: 'icd-instance TTL + integration scanner' } },
+  { key: 'endpoints', title: 'Endpoints', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/services'; }, listKey: 'endpoints', altKey: 'services', columns: ['method', 'path', 'handler'], emptyMsg: 'No endpoints for this domain', definition: 'HTTP routes this subdomain exposes (chorus-api or app-side).', source: { kind: 'derived', from: 'discover-endpoints scanner' } },
+  { key: 'code', title: 'Code', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/code'; }, listKey: 'files', columns: ['path', 'type'], emptyMsg: 'No code for this domain', definition: 'Source files implementing this subdomain.', source: { kind: 'derived', from: 'discover-code scanner' } },
+  { key: 'tests', title: 'Tests', endpoint: function(id) { return DOMAIN_API + '/' + id + '/tests'; }, listKey: 'tests', columns: ['path', 'type'], emptyMsg: 'No tests for this domain', definition: 'Test files exercising this subdomain.', source: { kind: 'derived', from: 'discover-tests scanner' } },
+  { key: 'persistence', title: 'Persistence', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/persistence'; }, listKey: 'stores', altKey: 'persistence', columns: ['label', 'namespace', 'records', 'status'], emptyMsg: 'No persistence for this domain', definition: 'Data stores this subdomain reads from or writes to.', source: { kind: 'derived', from: 'icd persistence section' } },
+  { key: 'pipeline', title: 'Pipeline', endpoint: function(id) { return DOMAIN_API + '/' + id + '/pipeline'; }, listKey: 'stages', columns: ['name', 'status', 'evidence', 'summary'], emptyMsg: 'No pipeline for this domain', definition: 'Build/deploy/CI stages this subdomain participates in.', source: { kind: 'authored', from: 'pipeline manifest per domain' } },
+  { key: 'releases', title: 'Release History', endpoint: function(id) { return DOMAIN_API + '/' + id + '/releases'; }, listKey: 'releases', columns: ['timestamp', 'cardId', 'title', 'role', 'commit'], emptyMsg: 'No releases for this domain', definition: 'Shipped versions of this subdomain (git tags / acp commits).', source: { kind: 'derived', from: 'git log / acp commits' } },
+  { key: 'infra', title: 'Infrastructure', endpoint: function(id) { return DOMAIN_API + '/' + id + '/infra'; }, listKey: 'environments', columns: ['name', 'port', 'engine', 'host'], emptyMsg: 'No infrastructure for this domain', definition: 'Runtime environment — processes, launchd jobs, hosts, filesystem layout.', source: { kind: 'derived', from: 'infra config / launchd services' } },
+  { key: 'priorArt', title: 'Prior Art', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/prior-art'; }, listKey: 'items', columns: ['label', 'path', 'description'], emptyMsg: 'No prior art for this domain', definition: 'External references, design predecessors, related ADRs that informed this subdomain.', source: { kind: 'authored', from: 'POST /api/athena/subdomains/:id/prior-art' } },
+  { key: 'decisions', title: 'Decisions', endpoint: function(id) { return DOMAIN_API + '/' + id + '/decisions'; }, listKey: 'decisions', columns: ['id', 'title', 'type', 'enforcement', 'date'], emptyMsg: 'No decisions for this domain', definition: 'Architectural decisions (DEC-NNN, ADR-NNN) recorded for this subdomain.', source: { kind: 'derived', from: 'DEC/ADR harvest filtered to this domain' } },
+  { key: 'logs', title: 'Logs', endpoint: function(id) { return DOMAIN_API + '/' + id + '/logs'; }, listKey: 'logs', columns: ['label', 'location', 'retention', 'status'], emptyMsg: 'No logs for this domain', definition: 'Log streams emitted by this subdomain.', source: { kind: 'derived', from: 'log config / promtail jobs' } },
+  { key: 'alerts', title: 'Alerts', endpoint: function(id) { return DOMAIN_API + '/' + id + '/alerts'; }, listKey: 'alerts', columns: ['name', 'description', 'severity'], emptyMsg: 'No alerts for this domain', definition: 'Alert rules monitoring this subdomain\'s health.', source: { kind: 'derived', from: 'proving/domains/alerts/*.yml' } },
   { key: 'gaps', title: 'Gaps & Status', endpoint: function(id) { return ATHENA + '/subdomains/' + id + '/gaps'; }, listKey: 'gaps',
+    definition: 'Known gaps, missing data, or incomplete implementation in this subdomain.',
     customRender: function(items) {
       return items.map(function(g) {
         var cls = g.type === 'resolved' ? 'resolved' : 'gap';
@@ -320,7 +330,16 @@ function renderHeraldFacet(facetDef, raw, ctx) {
     var srcTitle = facetDef.source.from ? ' title="from: ' + facetDef.source.from + '"' : '';
     srcLabel = '<span class="herald-src" data-source="' + srcText + '"' + srcTitle + ' style="margin-left:8px;font-size:0.7em;font-weight:400;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">' + srcText + '</span>';
   }
-  var html = '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + facetDef.title + (count ? ' (' + count + ')' : '') + srcLabel + '</summary>';
+  // #2683 — definition badge: CSS-driven hover tooltip explaining what this fold
+  // represents. Replaces native title= which had inconsistent rendering.
+  // Prevents column-overload (Integrations vs Dependencies confusion).
+  // All visual styling lives in domain-detail.html .herald-def CSS.
+  var defLabel = '';
+  if (facetDef.definition) {
+    var defText = facetDef.definition.replace(/"/g, '&quot;');
+    defLabel = '<span class="herald-def" data-tip="' + defText + '">i</span>';
+  }
+  var html = '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + facetDef.title + ' (' + count + ')' + defLabel + srcLabel + '</summary>';
   if (count > 0) {
     if (facetDef.customRender) {
       html += facetDef.customRender(items, ctx || {}, data);
@@ -639,7 +658,7 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
 
   html += '</details>';
 
-  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">API Contract' + (apiEndpoints.length ? ' (' + apiEndpoints.length + ' endpoints)' : '') + '</summary>';
+  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">API Contract' + (apiEndpoints.length ? ' (' + apiEndpoints.length + ' endpoints)' : '') + '<span class="herald-def" data-tip="API surface — endpoints, methods, payload semantics, what callers can rely on.">i</span></summary>';
   if (apiEndpoints.length > 0) {
     // Method summary badges
     var methodCounts = {};
@@ -914,7 +933,7 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   // (#2485 round 2) — strays from the old leave-open pattern removed; Cards
   // now self-closes so the second-wave herald loop is not nested under Cards.
 
-  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Cards (' + (cards ? cards.length : 0) + ')</summary>';
+  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Cards (' + (cards ? cards.length : 0) + ')<span class="herald-def" data-tip="Kanban work-units tagged to this subdomain.">i</span></summary>';
   if (cards && cards.length > 0) {
     html += '<div class="card-sort-controls" style="margin-bottom:8px;font-size:0.85em;">';
     html += 'Sort: <button data-sort="status" style="cursor:pointer;background:#1e293b;color:#93c5fd;border:1px solid #334155;border-radius:4px;padding:2px 8px;margin:0 4px;">Status</button>';
@@ -940,7 +959,7 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
 
   // Blast Radius — always render (Jeff's rule); empty placeholder if no consumers.
   var blast = blastConsumers || [];
-  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Blast Radius' + (blast.length ? ' (' + blast.length + ')' : '') + '</summary>';
+  html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">Blast Radius' + (blast.length ? ' (' + blast.length + ')' : '') + '<span class="herald-def" data-tip="Which subdomains break or degrade if this one fails — failure-impact view (the inverse of Dependencies\' consumedBy).">i</span></summary>';
   if (blast.length > 0) {
     html += '<div class="blast"><h3>If ' + d.label + ' fails:</h3>';
     blast.forEach(function(c) {
@@ -954,14 +973,20 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
 
   document.getElementById('content-sections').innerHTML = html;
 
-  // --- Herald auto-wiring: enrich empty facets with herald data (#2104) ---
-  // #2683: skip facets that use extract/customRender — those are special-cased
-  // (e.g., dependencies has direct.consumes/consumedBy shape, not a flat list).
-  // The first-pass herald loop above already rendered them correctly via
-  // customRender; this auto-wiring loop only handles the flat-list listKey
-  // shape. Without the skip, this loop overwrites the correct render with
-  // count=0 and an undefined emptyMsg.
+  // --- Herald auto-wiring: DISABLED (#2683) ---
+  // The first-pass herald loop (above) renders every facet correctly using
+  // dataMap built from the initial Promise.all fetches. The auto-wiring
+  // loop was a post-render refresh that:
+  //   (a) re-fetched endpoints already fetched in Promise.all (redundant),
+  //   (b) overwrote summary.textContent — clobbering definition badges
+  //       (the i span injected in renderHeraldFacet),
+  //   (c) for extract/customRender facets, replaced correct shape with an
+  //       empty listKey-based render + undefined emptyMsg.
+  // No facet currently depends on this loop for correctness. Early-return
+  // the loop body to keep the iteration structure but skip all work.
   HERALD_FACETS.forEach(function(facet) {
+    return;
+    // eslint-disable-next-line no-unreachable
     if (facet.extract || facet.customRender) return;
     var ep = facet.endpoint(domainId);
     tracedFetch(ep).then(function(r) { return r.ok ? r.json() : null; }).then(function(raw) {
