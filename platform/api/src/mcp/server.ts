@@ -541,10 +541,15 @@ async function executeCommit(
   // same Node version as chorus-api itself.
   const path = require('path') as typeof import('path');
   const parentNodeBinDir = path.dirname(process.execPath);
+  // #2687 — also prepend the user's cargo bin so chorus-hooks rust checks
+  // (clippy-ratchet) find cargo. chorus-api's launchctl PATH doesn't include
+  // ~/.cargo/bin; subprocess pre-commit hits FileNotFoundError on cargo.
+  // Same launchctl-PATH-leak shape as #2662's Node 20/23 mismatch.
+  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
-    PATH: `${parentNodeBinDir}:${process.env.PATH ?? ''}`,
+    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
 
   // #2662 — git-queue.sh stages paths via `git add <path>` which resolves
