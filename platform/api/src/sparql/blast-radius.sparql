@@ -1,7 +1,7 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?consumer ?consumerLabel WHERE {
-  GRAPH <urn:chorus:ontology> {
+  GRAPH <urn:chorus:instances> {
     ?consumer chorus:consumes <$URI> .
     OPTIONAL { ?consumer rdfs:label ?consumerLabel }
   }

@@ -46,12 +46,12 @@ export async function fetchChorusDomainDependencies(
 
     const directQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?dir ?other ?label WHERE {
-  GRAPH <urn:chorus:ontology> {
+  GRAPH <urn:chorus:instances> {
     { <${sdUri}> chorus:consumes ?other . BIND("consumes" AS ?dir) }
     UNION
     { ?other chorus:consumes <${sdUri}> . BIND("consumedBy" AS ?dir) }
-    OPTIONAL { ?other rdfs:label ?label }
   }
+  OPTIONAL { GRAPH <urn:chorus:ontology> { ?other rdfs:label ?label } }
 }`;
     const directResult = (await deps.sparql(directQuery)) as BindingsOf<DirectBinding>;
     const consumes: Array<{ id: string; label: string }> = [];
