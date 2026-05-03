@@ -63,22 +63,33 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
     });
   });
 
-  describe('AC2 — board-derived refusals (inherited from #2661 boardReader)', () => {
-    test('refuses no-wip-card when role has no WIP', async () => {
+  describe('AC2 — coordination state observed, never refuses (#2687 strip)', () => {
+    function buildOkExec() {
+      return jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'commit') return { stdout: '[kade/x abcd1234] kade: m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        throw new Error('unexpected ' + args.join(' '));
+      });
+    }
+
+    test('no-wip-card: commit lands, emits coordination_observed event, no refusal', async () => {
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
         boardReader: (async () => ({ ok: true, cards: [] })) as never,
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: buildOkExec() as never,
+        gitQueuePath: '/fake/git-queue.sh',
       } as never);
       // @ts-expect-error - private handler access
       const handler = (server as any)._requestHandlers.get('tools/call');
-      await expect(
-        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
-      ).rejects.toThrow(/no-wip-card/);
-      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('no-wip-card');
+      const res = await handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {});
+      expect(res.content[0].text).toContain('abcd1234');
+      const obs = events.find((e) => e.event === 'chorus_commit.coordination_observed');
+      expect(obs?.fields.reason).toBe('no-wip-card');
+      expect(events.find((e) => e.event === 'chorus_commit.refused')).toBeUndefined();
     });
 
-    test('refuses multi-wip when role has 2+ WIP cards', async () => {
+    test('multi-wip: commit lands, emits coordination_observed with card_ids', async () => {
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
         boardReader: (async () => ({
@@ -89,27 +100,33 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
           ],
         })) as never,
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: buildOkExec() as never,
+        gitQueuePath: '/fake/git-queue.sh',
       } as never);
       // @ts-expect-error - private handler access
       const handler = (server as any)._requestHandlers.get('tools/call');
-      await expect(
-        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
-      ).rejects.toThrow(/multi-wip/);
-      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('multi-wip');
+      const res = await handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {});
+      expect(res.content[0].text).toContain('abcd1234');
+      const obs = events.find((e) => e.event === 'chorus_commit.coordination_observed');
+      expect(obs?.fields.reason).toBe('multi-wip');
+      expect(events.find((e) => e.event === 'chorus_commit.refused')).toBeUndefined();
     });
 
-    test('refuses board-unreachable when boardReader fails', async () => {
+    test('board-unreachable: commit lands, emits coordination_observed', async () => {
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
         boardReader: (async () => ({ ok: false, reason: 'board-unreachable', detail: 'cli failure' })) as never,
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: buildOkExec() as never,
+        gitQueuePath: '/fake/git-queue.sh',
       } as never);
       // @ts-expect-error - private handler access
       const handler = (server as any)._requestHandlers.get('tools/call');
-      await expect(
-        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
-      ).rejects.toThrow(/board-unreachable/);
-      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('board-unreachable');
+      const res = await handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {});
+      expect(res.content[0].text).toContain('abcd1234');
+      const obs = events.find((e) => e.event === 'chorus_commit.coordination_observed');
+      expect(obs?.fields.reason).toBe('board-unreachable');
+      expect(events.find((e) => e.event === 'chorus_commit.refused')).toBeUndefined();
     });
   });
 
@@ -145,6 +162,9 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(parsed.branch).toBe('kade/2682');
       expect(calls).toHaveLength(2);
       expect(calls[0].args[0]).toBe('commit');
+      // #2687: --force-branch passed so git-queue's branch-check doesn't surface
+      // as a refusal (branch naming is observed via spine, not enforced at write).
+      expect(calls[0].args[1]).toBe('--force-branch');
       expect(calls[0].env?.DEPLOY_ROLE).toBe('kade');
       expect(calls[1].args[0]).toBe('push');
       const invoked = events.find((e) => e.event === 'chorus_commit.invoked');
@@ -152,31 +172,6 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(invoked?.fields.card_id).toBe(2682);
       expect(invoked?.fields.paths_count).toBe(2);
       expect(invoked?.fields.sha).toBe('abcd1234');
-    });
-
-    test('refuses branch-mismatch when git-queue rejects HEAD branch', async () => {
-      const exec = jest.fn(async (_file: string, args: string[]) => {
-        if (args[0] === 'commit') {
-          const err = new Error('branch-check refused');
-          (err as unknown as { code: number; stderr: string }).code = 1;
-          (err as unknown as { code: number; stderr: string }).stderr = 'git-queue: branch-check refused — HEAD is wren/foo, expected kade/*';
-          throw err;
-        }
-        return { stdout: '', stderr: '' };
-      });
-      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
-      const server = buildMcpServer(() => 'kade', {
-        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
-        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
-        execFileAsync: exec as never,
-        gitQueuePath: '/fake/git-queue.sh',
-      } as never);
-      // @ts-expect-error - private handler access
-      const handler = (server as any)._requestHandlers.get('tools/call');
-      await expect(
-        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
-      ).rejects.toThrow(/branch-mismatch/);
-      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('branch-mismatch');
     });
 
     test('refuses hook-fail when git-queue commit blocked by pre-commit', async () => {
