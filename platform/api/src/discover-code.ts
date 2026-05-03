@@ -46,6 +46,7 @@ const OVERRIDES: Record<string, string[]> = {
   'knowledge-domain': ['knowledge', 'knowledge-graph'],
   'sexuality-domain': ['sexuality', 'self-ai'],
   'seeds-domain': ['seeds', 'seed', 'sms-seed'],
+  'commits-domain': ['commits', 'commit', 'git-queue', 'pre-commit', 'branch-check', 'write-scrubber', 'commit-lock'],
   'convergence-domain': ['convergence', 'ontology'],
   'chorus-domain': ['chorus', 'clearing', 'bridge', 'context-cache'],
   'infra-service': ['infrastructure', 'infra', 'app-state', 'agent-state'],
