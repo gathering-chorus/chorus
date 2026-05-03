@@ -260,4 +260,151 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('push-conflict');
     });
   });
+
+  describe('#2689 + #2697 — classifier split + Mode-A push protection', () => {
+    const oneCard: BoardCard[] = [{ id: 2689, owner: 'Wren', title: 'classifier split' }];
+
+    test('#2689 — push subprocess receives --force-branch (mirrors commit step, defends Mode-A wrong-HEAD)', async () => {
+      // Repro: server.ts:584 originally invoked git-queue with bare ['push'].
+      // Mode-A puts HEAD on a non-role-prefix branch, do_push's check_branch
+      // exits 1 BEFORE log_event "build.push.started", chorus_commit catches
+      // the non-zero and reports false-positive push-conflict.
+      // Fix: push call passes --force-branch, mirroring commit step (line 568).
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        calls.push({ args });
+        if (args[0] === 'commit') return { stdout: '[wren/2689 abcd1234] m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected: ${args.join(' ')}`);
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'wren: doc' } } },
+        {},
+      );
+      const pushCall = calls.find((c) => c.args[0] === 'push');
+      expect(pushCall).toBeDefined();
+      expect(pushCall?.args).toContain('--force-branch');
+    });
+
+    test('#2697 — commit-fail (not hook-fail) when commit stderr does not match pre-commit signature', async () => {
+      // Classifier split: hook-fail reserved for stderr matching pre-commit
+      // hook output. Other commit-phase failures (nothing-to-commit, malformed
+      // args, unknown subprocess error) classify as commit-fail.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'commit') {
+          const err = new Error('nothing to commit');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          (err as unknown as { code: number; stderr: string }).stderr = 'nothing to commit, working tree clean';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/commit-fail/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('commit-fail');
+    });
+
+    test('#2697 — hook-fail label preserved when stderr matches pre-commit signature (regression guard)', async () => {
+      // Existing line 177 test asserts hook-fail. After classifier split, that
+      // path must still classify pre-commit-emitted failures as hook-fail.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'commit') {
+          const err = new Error('cmd failed');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          (err as unknown as { code: number; stderr: string }).stderr = 'pre-commit: 🔴 blocked — lint-ratchet failed';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/hook-fail/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('hook-fail');
+    });
+
+    test('#2689 — push-fail (not push-conflict) when push stderr does not match rebase/conflict signature', async () => {
+      // Classifier split: push-conflict reserved for actual rebase conflicts.
+      // Other push failures (auth, network, hook-block, branch-mismatch leak)
+      // classify as push-fail.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'commit') return { stdout: '[wren/2689 abcd1234] m\n', stderr: '' };
+        if (args[0] === 'push') {
+          const err = new Error('push failed');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          (err as unknown as { code: number; stderr: string }).stderr = 'remote: unauthorized';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/push-fail/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('push-fail');
+    });
+
+    test('#2689 — push-conflict label preserved when stderr matches rebase signature (regression guard)', async () => {
+      // Existing line 237 test asserts push-conflict on rebase failure. After
+      // split, real rebase conflicts must still classify as push-conflict.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'commit') return { stdout: '[wren/2689 abcd1234] m\n', stderr: '' };
+        if (args[0] === 'push') {
+          const err = new Error('push failed');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          (err as unknown as { code: number; stderr: string }).stderr = 'rebase: conflict on platform/api/src/foo.ts';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/push-conflict/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('push-conflict');
+    });
+  });
 });

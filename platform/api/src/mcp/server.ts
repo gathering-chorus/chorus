@@ -503,6 +503,20 @@ interface CommitArgs {
   message: string;
 }
 
+// #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
+// complexity under threshold. Each returns the typed reason for its phase.
+function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fail' {
+  return /^pre-commit:|^.. blocked|hook failed/i.test(stderr) ? 'hook-fail' : 'commit-fail';
+}
+
+function classifyPushFailure(stderr: string): 'push-conflict' | 'push-fail' {
+  return /rebase|conflict|merge/i.test(stderr) ? 'push-conflict' : 'push-fail';
+}
+
+function extractStderr(err: unknown): string {
+  return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
+}
+
 async function executeCommit(
   args: CommitArgs,
   boardReader: BoardReader,
@@ -569,10 +583,10 @@ async function executeCommit(
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
     commitStdout = stdout;
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-    // #2687 — collapsed classifier: any commit-phase non-zero exit is hook-fail.
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason: 'hook-fail', detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_commit refused: hook-fail — ${stderr.split('\n')[0]}`);
+    const stderr = extractStderr(err);
+    const reason = classifyCommitFailure(stderr);
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
   }
 
   // Extract SHA from `[branch sha] message` line (git's standard commit output).
@@ -580,12 +594,16 @@ async function executeCommit(
   const sha = shaMatch ? shaMatch[1] : 'unknown';
 
   // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
+  // #2689 — pass --force-branch (mirrors #2687's commit-side fix). Without it,
+  // a Mode-A bump between commit and push triggered do_push's check_branch and
+  // surfaced as a false-positive push-conflict (6001a6be / b53a7fe5 / e19588b0).
   try {
-    await execFileAsync(gitQueuePath, ['push'], { env, timeout: 60_000, cwd: repoRoot });
+    await execFileAsync(gitQueuePath, ['push', '--force-branch'], { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason: 'push-conflict', detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_commit refused: push-conflict — ${stderr.split('\n')[0]}`);
+    const stderr = extractStderr(err);
+    const reason = classifyPushFailure(stderr);
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
   }
 
   // Step 4 — success. Emit invoked and return structured payload.
