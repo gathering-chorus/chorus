@@ -489,23 +489,13 @@ const COMMIT_TOOL_DEF = {
   },
 } as const;
 
-// #2682 — classify a git-queue.sh non-zero-exit into a typed refusal reason.
-// Order-sensitive: check most specific patterns first, fall through to hook-fail.
-//   branch-check signature       → branch-mismatch
-//   `could not open directory`   → path-not-found (#2662 dogfood receipt)
-//   `did not match any files`    → path-not-found
-//   anything else                → hook-fail (pre-commit + downstream)
-// push-phase failures route through push-conflict; this fn covers commit-phase only.
-function classifyCommitFailure(stderr: string): 'branch-mismatch' | 'path-not-found' | 'hook-fail' {
-  const lower = stderr.toLowerCase();
-  if (lower.includes('branch-check') || /head\s+is\s+\S+\/.+,\s*expected/.test(lower)) {
-    return 'branch-mismatch';
-  }
-  if (lower.includes('could not open directory') || lower.includes('did not match any files')) {
-    return 'path-not-found';
-  }
-  return 'hook-fail';
-}
+// #2687 — classifier collapsed: write-path refusal taxonomy is commit-safety
+// only. branch-mismatch retired (we pass --force-branch to git-queue, so its
+// internal branch-check no longer surfaces). path-not-found retired (git-add
+// failures fold into hook-fail with stderr detail intact). All commit-phase
+// non-zero exits → hook-fail. Push-phase failures route through push-conflict
+// in executeCommit directly.
+const CHORUS_COMMIT_COORDINATION_OBSERVED = 'chorus_commit.coordination_observed';
 
 interface CommitArgs {
   role: 'kade' | 'wren' | 'silas';
@@ -522,24 +512,25 @@ async function executeCommit(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, paths, message } = args;
 
-  // Step 1 — derive card from board (same path as chorus_commit_status).
+  // #2687 — Step 1: best-effort board lookup for spine attribution. NEVER
+  // refuses. Coordination state (no-wip-card / multi-wip / board-unreachable)
+  // is observed via chorus_commit.coordination_observed event; the commit
+  // proceeds regardless. This is the v3-regression strip: the write-path
+  // refusal taxonomy is commit-safety only (hook-fail / push-conflict).
   const board = await boardReader(role);
+  let cardId: number | null = null;
   if (!board.ok) {
-    emit(CHORUS_COMMIT_REFUSED, { role, reason: board.reason, detail: board.detail });
-    throw new Error(`chorus_commit refused: board-unreachable${board.detail ? ` (${board.detail})` : ''}`);
-  }
-  if (board.cards.length === 0) {
-    emit(CHORUS_COMMIT_REFUSED, { role, reason: 'no-wip-card' });
-    throw new Error(`chorus_commit refused: no-wip-card — role ${role} has no card in WIP`);
-  }
-  if (board.cards.length > 1) {
+    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: board.reason, detail: board.detail });
+  } else if (board.cards.length === 0) {
+    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: 'no-wip-card' });
+  } else if (board.cards.length > 1) {
     const ids = board.cards.map((c) => c.id).join(',');
-    emit(CHORUS_COMMIT_REFUSED, { role, reason: 'multi-wip', card_ids: ids });
-    throw new Error(`chorus_commit refused: multi-wip — role ${role} has ${board.cards.length} cards in WIP (${ids})`);
+    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: 'multi-wip', card_ids: ids });
+    cardId = board.cards[0].id; // best-guess attribution for spine
+  } else {
+    cardId = board.cards[0].id;
   }
-
-  const card = board.cards[0];
-  const branch = `${role}/${card.id}`;
+  const branch = cardId ? `${role}/${cardId}` : `${role}/uncoordinated`;
 
   // #2662 — chorus-api's launchctl PATH puts /opt/homebrew/bin first, which
   // is Node 23. The chorus-api process itself runs the team's nvm Node 20
@@ -564,16 +555,19 @@ async function executeCommit(
   const repoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
 
   // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
+  // #2687 — pass --force-branch so git-queue's branch-check (coordination
+  // refusal) doesn't surface. Branch naming is observed via spine, not
+  // enforced at the write surface.
   let commitStdout: string;
   try {
-    const commitArgs = ['commit', ...paths, '--', '-m', message];
+    const commitArgs = ['commit', '--force-branch', ...paths, '--', '-m', message];
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
     commitStdout = stdout;
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-    const reason = classifyCommitFailure(stderr);
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: card.id, reason, detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
+    // #2687 — collapsed classifier: any commit-phase non-zero exit is hook-fail.
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason: 'hook-fail', detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_commit refused: hook-fail — ${stderr.split('\n')[0]}`);
   }
 
   // Extract SHA from `[branch sha] message` line (git's standard commit output).
@@ -585,17 +579,17 @@ async function executeCommit(
     await execFileAsync(gitQueuePath, ['push'], { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: card.id, reason: 'push-conflict', detail: stderr.slice(0, 500) });
+    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason: 'push-conflict', detail: stderr.slice(0, 500) });
     throw new Error(`chorus_commit refused: push-conflict — ${stderr.split('\n')[0]}`);
   }
 
   // Step 4 — success. Emit invoked and return structured payload.
-  emit(CHORUS_COMMIT_INVOKED, { role, card_id: card.id, paths_count: paths.length, sha });
+  emit(CHORUS_COMMIT_INVOKED, { role, card_id: cardId, paths_count: paths.length, sha });
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify({ role, card_id: card.id, branch, sha }, null, 2),
+        text: JSON.stringify({ role, card_id: cardId, branch, sha }, null, 2),
       },
     ],
   };
