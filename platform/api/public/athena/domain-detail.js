@@ -955,7 +955,14 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   document.getElementById('content-sections').innerHTML = html;
 
   // --- Herald auto-wiring: enrich empty facets with herald data (#2104) ---
+  // #2683: skip facets that use extract/customRender — those are special-cased
+  // (e.g., dependencies has direct.consumes/consumedBy shape, not a flat list).
+  // The first-pass herald loop above already rendered them correctly via
+  // customRender; this auto-wiring loop only handles the flat-list listKey
+  // shape. Without the skip, this loop overwrites the correct render with
+  // count=0 and an undefined emptyMsg.
   HERALD_FACETS.forEach(function(facet) {
+    if (facet.extract || facet.customRender) return;
     var ep = facet.endpoint(domainId);
     tracedFetch(ep).then(function(r) { return r.ok ? r.json() : null; }).then(function(raw) {
       if (!raw) return;

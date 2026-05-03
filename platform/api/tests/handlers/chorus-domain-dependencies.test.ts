@@ -49,6 +49,22 @@ function deps(over: Partial<ChorusDomainDependenciesDeps> = {}): ChorusDomainDep
 }
 
 describe('fetchChorusDomainDependencies (#2188)', () => {
+  test('consumes query reads from urn:chorus:instances (graph-split: writes go there per ADR-025)', async () => {
+    // #2683 receipt: consumes-edges are POSTed to urn:chorus:instances
+    // by /api/athena/subdomains/:id/consumes; this query previously read
+    // urn:chorus:ontology and returned empty for every domain.
+    const queries: string[] = [];
+    const sparql = (async (q: string) => {
+      queries.push(q);
+      return { results: { bindings: [] } };
+    }) as ChorusDomainDependenciesDeps['sparql'];
+    await fetchChorusDomainDependencies(deps({ sparql }), 'commits');
+    const consumesQuery = queries.find((q) => q.includes('chorus:consumes'));
+    expect(consumesQuery).toBeDefined();
+    expect(consumesQuery).toContain('urn:chorus:instances');
+    expect(consumesQuery).not.toMatch(/GRAPH\s+<urn:chorus:ontology>\s*\{[^}]*chorus:consumes/);
+  });
+
   test('both queries empty → zeros', async () => {
     const body = (await fetchChorusDomainDependencies(deps(), 'photos')).body as {
       _meta: { direct_count: number; shared_count: number };
