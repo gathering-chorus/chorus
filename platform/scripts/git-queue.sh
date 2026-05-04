@@ -405,6 +405,15 @@ do_push() {
     force_flag="--force-branch"
     shift
   fi
+  # #2701: --delete <branch> is a remote-only deletion path. No commit lands,
+  # no role-attribution semantics, no working-tree interaction. Bypass
+  # check_branch (delete-remote isn't a role push) and dispatch to
+  # do_delete_remote which sets the pre-push marker and emits branch.deleted.
+  if [ "${1:-}" = "--delete" ]; then
+    shift
+    do_delete_remote "${1:-}"
+    return $?
+  fi
   if ! check_branch "push" "$force_flag"; then
     exit 1
   fi
@@ -478,6 +487,56 @@ do_push() {
 
   if [ $exit_code -ne 0 ]; then
     echo "git-queue: push failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
+# --- Delete remote branch (#2701) ---
+# Typed remote-branch deletion via the canonical adapter so cleanup ops don't
+# need a heredoc bypass through chorus-hooks. No lock (no working-tree change),
+# no rebase, no stash. Sets _GIT_QUEUE_PUSH=1 so the pre-push hook accepts.
+do_delete_remote() {
+  local branch="${1:-}"
+  if [ -z "$branch" ]; then
+    echo "git-queue: error — push --delete requires <branch>" >&2
+    echo "  Usage: git-queue.sh push --delete <branch>" >&2
+    return 1
+  fi
+
+  # Verify branch exists on remote — no destructive force, fail clean.
+  if ! git -C "$REPO_ROOT" ls-remote --heads origin "$branch" 2>/dev/null | grep -q .; then
+    echo "git-queue: error — branch '${branch}' does not exist on origin" >&2
+    log_event "build.delete.skipped" "reason=missing" "branch=${branch}"
+    return 1
+  fi
+
+  # Warn if branch has commits not reachable from origin/main — caller may
+  # legitimately want to drop unmerged work, but it's worth surfacing.
+  local main_ref="origin/main"
+  if ! git -C "$REPO_ROOT" rev-parse --verify "$main_ref" >/dev/null 2>&1; then
+    main_ref="origin/master"
+  fi
+  if git -C "$REPO_ROOT" rev-parse --verify "$main_ref" >/dev/null 2>&1; then
+    local unique_count
+    unique_count=$(git -C "$REPO_ROOT" rev-list --count "${main_ref}..origin/${branch}" 2>/dev/null || echo "0")
+    if [ "${unique_count:-0}" -gt 0 ]; then
+      echo "git-queue: WARNING — origin/${branch} has ${unique_count} commit(s) not reachable from ${main_ref}; deleting anyway" >&2
+    fi
+  fi
+
+  # #2598: marker so pre-push hook accepts the invocation.
+  export _GIT_QUEUE_PUSH=1
+  log_event "build.delete.started" "branch=${branch}"
+
+  local exit_code=0
+  git -C "$REPO_ROOT" push origin --delete "$branch" || exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    log_event "branch.deleted" "branch=${branch}" "remote=origin"
+    echo "git-queue: deleted origin/${branch}"
+  else
+    log_event "build.delete.failed" "branch=${branch}" "exit_code=${exit_code}"
+    echo "git-queue: delete failed (exit ${exit_code})" >&2
   fi
   return $exit_code
 }
