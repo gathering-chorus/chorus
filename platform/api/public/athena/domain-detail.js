@@ -123,18 +123,126 @@ function renderPolicy(inst) {
   return html;
 }
 
+// Slug derived from URI is the stable agent identity (e.g. "adr-028" from
+// chorus#adr-028, or "dec_095" from urn:chorus:decision:dec_095). Used as
+// anchor + filter key. (#2716)
+function decisionAnchor(inst) {
+  var u = inst.uri || '';
+  var idx = Math.max(u.lastIndexOf('#'), u.lastIndexOf('/'), u.lastIndexOf(':'));
+  return idx >= 0 ? u.slice(idx + 1).toLowerCase() : (inst.id || inst.label || '').toLowerCase();
+}
+
+// First non-empty body line that isn't the markdown H1 (which usually
+// re-states the title). Truncated for the fold summary so each row tells you
+// what it's *about*, not just its name. (#2716)
+function decisionSynopsis(inst) {
+  var raw = (inst.comment || '').trim();
+  if (!raw) return '';
+  var lines = raw.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    if (/^#+\s/.test(line)) continue;            // skip "# ADR-028: …" titles
+    if (/^---+$/.test(line)) continue;
+    var stripped = line
+      .replace(/^\*\*(.+?)\*\*\s*[:\-—]?\s*/, '$1: ')   // **Status:** Accepted → Status: Accepted
+      .replace(/[*_`]/g, '');
+    return stripped.length > 110 ? stripped.slice(0, 110) + '…' : stripped;
+  }
+  return '';
+}
+
 function renderDecision(inst) {
   var enriched = INSTANCE_ENRICHMENT[inst.uri] || {};
-  var html = '<details class="instance-body"><summary style="cursor:pointer;padding:6px 0;color:#0369a1;font-weight:500;">' + escapeHtml(inst.label) + '</summary>';
+  var anchor = decisionAnchor(inst);
+  var synopsis = decisionSynopsis(inst);
+  var typeBadge = enriched.decisionType ? '<span style="display:inline-block;background:#1e293b;color:#cbd5e1;font-size:0.7em;font-weight:600;padding:1px 6px;border-radius:3px;margin-right:6px;vertical-align:1px;">' + escapeHtml(enriched.decisionType) + '</span>' : '';
+  var summaryLine = typeBadge
+    + '<span style="color:#64748b;font-weight:400;font-size:0.85em;font-family:ui-monospace,Menlo,monospace;margin-right:8px;">[' + escapeHtml(anchor) + ']</span>'
+    + escapeHtml(inst.label || '');
+  var synopsisLine = synopsis
+    ? '<div style="color:#475569;font-size:0.85em;font-weight:400;padding:2px 0 2px 0;">' + escapeHtml(synopsis) + '</div>'
+    : '';
+  var html = '<details class="instance-body decision-row" data-anchor="' + escapeHtml(anchor) + '" data-search="' + escapeHtml(((inst.label || '') + ' ' + anchor + ' ' + (inst.comment || '')).toLowerCase()) + '" id="' + escapeHtml(anchor) + '"><summary style="cursor:pointer;padding:6px 0;color:#0369a1;font-weight:500;">' + summaryLine + synopsisLine + '</summary>';
   html += '<div style="padding:0 0 12px 16px;">';
-  if (inst.comment) html += '<p>' + escapeHtml(inst.comment) + '</p>';
+  // Preserve markdown body whitespace so headers/lists/paragraphs read as the
+  // author wrote them. Proper markdown→HTML render is a follow-on; this is
+  // the readable-raw-text floor. (#2716)
+  if (inst.comment) html += '<div class="decision-body" style="white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.85em;line-height:1.5;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:12px;">' + escapeHtml(inst.comment) + '</div>';
   var meta = [];
   if (enriched.decisionDate) meta.push('<strong>Date:</strong> ' + escapeHtml(enriched.decisionDate));
   if (enriched.status) meta.push('<strong>Status:</strong> ' + escapeHtml(enriched.status));
   if (enriched.enforcementLevel) meta.push('<strong>Enforcement:</strong> ' + escapeHtml(enriched.enforcementLevel));
-  if (meta.length > 0) html += '<p style="font-size:0.9em;color:#64748b;">' + meta.join(' · ') + '</p>';
+  if (meta.length > 0) html += '<p style="font-size:0.9em;color:#64748b;margin-top:8px;">' + meta.join(' · ') + '</p>';
   html += '</div></details>';
   return html;
+}
+
+// Decision-instance group toolbar: filter input + sort dropdown.
+// Default sort puts ADRs first then DECs, both id-ascending. Filter substring-
+// matches against label, slug, and body. (#2716 — "150 unsorted folds is the
+// bug, not a discoverability tax on the user.")
+function renderDecisionGroupToolbar(groupId) {
+  return ''
+    + '<div class="decision-toolbar" style="display:flex;gap:8px;margin-bottom:8px;font-size:0.9em;align-items:center;">'
+    + '  <input type="text" data-decision-filter="' + groupId + '" placeholder="Filter — id, label, body…" '
+    + '         style="flex:1;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9em;">'
+    + '  <label style="color:#475569;">Sort'
+    + '    <select data-decision-sort="' + groupId + '" style="margin-left:4px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;">'
+    + '      <option value="id">id (ADR then DEC, asc)</option>'
+    + '      <option value="label">label (a→z)</option>'
+    + '    </select>'
+    + '  </label>'
+    + '</div>';
+}
+
+function decisionSortKey(el, mode) {
+  if (mode === 'label') {
+    var sum = el.querySelector('summary');
+    return (sum ? sum.textContent : '').trim().toLowerCase();
+  }
+  // id mode: prefix "0_" for ADR, "1_" for DEC, "2_" for everything else, then
+  // numeric pad of the trailing number so adr-9 sorts before adr-10.
+  var anchor = (el.getAttribute('data-anchor') || '').toLowerCase();
+  var bucket = anchor.indexOf('adr') === 0 || anchor.indexOf('adr_') === 0 ? '0' : (anchor.indexOf('dec') === 0 || anchor.indexOf('dec_') === 0 ? '1' : '2');
+  var num = (anchor.match(/(\d+)/) || [, '0'])[1].padStart(6, '0');
+  return bucket + '_' + num + '_' + anchor;
+}
+
+function wireDecisionToolbar(groupId) {
+  var groupEl = document.getElementById(groupId);
+  if (!groupEl) return;
+  var rows = Array.prototype.slice.call(groupEl.querySelectorAll('.decision-row'));
+  var input = document.querySelector('[data-decision-filter="' + groupId + '"]');
+  var select = document.querySelector('[data-decision-sort="' + groupId + '"]');
+  function applyFilter() {
+    var q = (input && input.value || '').trim().toLowerCase();
+    rows.forEach(function(r) {
+      var hay = r.getAttribute('data-search') || '';
+      r.style.display = !q || hay.indexOf(q) !== -1 ? '' : 'none';
+    });
+  }
+  function applySort() {
+    var mode = select && select.value || 'id';
+    var ordered = rows.slice().sort(function(a, b) {
+      var ka = decisionSortKey(a, mode);
+      var kb = decisionSortKey(b, mode);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    ordered.forEach(function(r) { groupEl.appendChild(r); });
+  }
+  if (input) input.addEventListener('input', applyFilter);
+  if (select) select.addEventListener('change', applySort);
+  applySort();
+  // Honor URL hash like #adr-028: open and scroll the matching row.
+  var hash = (window.location.hash || '').replace(/^#/, '').toLowerCase();
+  if (hash) {
+    var target = groupEl.querySelector('.decision-row[data-anchor="' + hash + '"]');
+    if (target) {
+      target.setAttribute('open', '');
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 }
 
 // #2431 — load per-type enrichment when subdomain contains content-bearing
@@ -911,8 +1019,11 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
       var headerName = pluralize(typeName);
       var collapsed = group.length > 20;
       var groupId = 'instgroup-' + typeName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      html += '<details><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + headerName + ' (' + group.length + ')</summary>';
+      html += '<details' + (typeName === 'Decision' ? ' open' : '') + '><summary style="cursor:pointer;font-size:1.2em;font-weight:600;padding:8px 0;">' + headerName + ' (' + group.length + ')</summary>';
       html += '<div style="padding:0 0 12px 16px;" data-instance-group="' + typeName + '" id="' + groupId + '">';
+      if (typeName === 'Decision') {
+        html += renderDecisionGroupToolbar(groupId);
+      }
       if (collapsed) {
         html += '<button class="instance-expand-all" data-group-id="' + groupId + '" style="font-size:0.85em;background:#1e293b;color:#93c5fd;border:1px solid #334155;border-radius:4px;padding:2px 8px;margin-bottom:8px;cursor:pointer;">Expand all</button>';
       }
@@ -972,6 +1083,11 @@ function renderDomain(d, blastConsumers, cards, codeFiles, alerts, completeness,
   html += '</details>';
 
   document.getElementById('content-sections').innerHTML = html;
+
+  // Wire any Decision-instance group toolbars rendered above (#2716).
+  Array.prototype.slice
+    .call(document.querySelectorAll('[data-instance-group="Decision"]'))
+    .forEach(function(g) { wireDecisionToolbar(g.id); });
 
   // --- Herald auto-wiring: DISABLED (#2683) ---
   // The first-pass herald loop (above) renders every facet correctly using

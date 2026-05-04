@@ -111,7 +111,13 @@ export async function createSubdomainDecision(
   const entityUri = `${CHORUS_PREFIX}${input.id.toLowerCase()}`;
   const sdUri = `${CHORUS_PREFIX}${subdomainId}`;
   const triples = tripleSet(entityUri, input);
-  const subdomainEdge = `<${entityUri}> chorus:hasDomain <${sdUri}> .`;
+  // ADR-028 MUST 1: subdomain links to instance via chorus:contains on every
+  // create. The reverse hasDomain edge alone is not enough — subdomain-detail
+  // SPARQL enumerates instances by chorus:contains, so missing this edge makes
+  // the entity invisible to /api/athena/subdomains/:id and the page above it.
+  // (#2716 follow-on — caught when ADR-028 itself was not visible on its own
+  // subdomain page after PUT.)
+  const subdomainEdge = `<${entityUri}> chorus:hasDomain <${sdUri}> . <${sdUri}> chorus:contains <${entityUri}> .`;
   const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} ${subdomainEdge} } }`;
   try {
     await deps.sparqlUpdate(update);
@@ -160,7 +166,13 @@ export async function updateSubdomainDecision(
   const entityUri = `${CHORUS_PREFIX}${entityId.toLowerCase()}`;
   const sdUri = `${CHORUS_PREFIX}${subdomainId}`;
   const triples = tripleSet(entityUri, input);
-  const subdomainEdge = `<${entityUri}> chorus:hasDomain <${sdUri}> .`;
+  // ADR-028 MUST 1: subdomain links to instance via chorus:contains on every
+  // create. The reverse hasDomain edge alone is not enough — subdomain-detail
+  // SPARQL enumerates instances by chorus:contains, so missing this edge makes
+  // the entity invisible to /api/athena/subdomains/:id and the page above it.
+  // (#2716 follow-on — caught when ADR-028 itself was not visible on its own
+  // subdomain page after PUT.)
+  const subdomainEdge = `<${entityUri}> chorus:hasDomain <${sdUri}> . <${sdUri}> chorus:contains <${entityUri}> .`;
   const deleteQuery = `${SPARQL_PREFIXES} DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o } }`;
   const insertQuery = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} ${subdomainEdge} } }`;
   try {

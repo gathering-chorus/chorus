@@ -184,19 +184,33 @@
       })[c]);
     }
 
+    // GET /api/athena/subdomains/loom-decisions/decisions returns:
+    //   d.id    = rdfs:label (human title, e.g. "Substrate-Class Domain Contract")
+    //   d.title = rdfs:comment (the ADR/DEC body)
+    //   d.uri   = canonical URI; the trailing slug ("adr-028") is the stable agent id
+    // (#2716 follow-on — same field-mismatch bug as the MCP layer)
+    function decisionSlug(d) {
+      const u = d.uri || '';
+      const idx = Math.max(u.lastIndexOf('#'), u.lastIndexOf('/'));
+      return idx >= 0 ? u.slice(idx + 1) : '';
+    }
+
     function renderDecision(d) {
       const cls = d.decisionType === 'ADR' ? 'adr' : 'dec';
       const status = d.status ? `<span class="status ${escapeHtml((d.status||'').toLowerCase())}">${escapeHtml(d.status)}</span>` : '';
       const created = d.created ? `<span>Date: ${escapeHtml(d.created)}</span>` : '';
       const card = d.relatedCard ? `<span>Card: <a href="http://localhost:3456/projects/2/tasks/${d.relatedCard}">#${d.relatedCard}</a></span>` : '';
-      const body = (d.comment || '').trim();
+      const body = (d.title || '').trim();
       const preview = body.length > 600 ? body.slice(0, 600) + '…' : body;
       const fullBody = body.length > 600
         ? `<details><summary>Show full body</summary><div class="full-body">${escapeHtml(body)}</div></details>`
         : '';
+      const slug = decisionSlug(d);
+      const anchor = slug || d.id;
+      const idTag = slug && slug.toLowerCase() !== (d.id || '').toLowerCase() ? slug : d.id;
       return `
-        <article class="decision ${cls}" id="${escapeHtml(d.id)}">
-          <h3>${escapeHtml(d.label || '(no label)')} <span class="id">[${escapeHtml(d.id)}]</span></h3>
+        <article class="decision ${cls}" id="${escapeHtml(anchor)}">
+          <h3>${escapeHtml(d.id || '(no label)')} <span class="id">[${escapeHtml(idTag)}]</span></h3>
           <div class="row">${status}${created}${card}</div>
           <div class="body">${escapeHtml(preview)}</div>
           ${fullBody}
