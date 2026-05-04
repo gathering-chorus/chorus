@@ -22,7 +22,7 @@ if [ ! -f "$SHIM" ]; then
   log "FATAL: shim binary not found at ${SHIM}"
   echo "${CMD}: chorus-hook-shim not found" >&2
   echo "  Path: ${SHIM}" >&2
-  echo "  Fix: cd ${CHORUS_ROOT}/platform/services/chorus-hooks && cargo build --release --bin chorus-hook-shim" >&2
+  echo "  Fix: bash ${CHORUS_ROOT}/platform/scripts/build-signed.sh chorus-hooks" >&2
   exit 1
 fi
 

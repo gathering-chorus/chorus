@@ -171,17 +171,18 @@ cmd_deploy() {
     target_dir="release-dev"
   fi
 
-  # Build chorus-hook-shim
+  # Build + sign chorus-hook-shim (#2548 — keychain identity keeps cdhash
+  # stable across rebuilds so macOS TCC AppleEvents grant survives).
   echo
-  echo "→ cargo build --release ($target_dir) chorus-hook-shim"
+  echo "→ build-signed chorus-hooks ($target_dir)"
   if [ "$mode" = "canonical" ]; then
-    (cd "$CHORUS_ROOT/platform/services/chorus-hooks" && cargo build --release --bin chorus-hook-shim 2>&1 | tail -3) || {
-      echo "werk: cargo build failed" >&2
+    (bash "$CHORUS_ROOT/platform/scripts/build-signed.sh" chorus-hooks 2>&1 | tail -5) || {
+      echo "werk: build-signed chorus-hooks failed" >&2
       emit "werk.deploy.failed" "step=cargo-build" "mode=$mode"
       exit 1
     }
   else
-    # --dev: build to release-dev
+    # --dev: build to release-dev (signing not load-bearing for dev runs)
     (cd "$CHORUS_ROOT/platform/services/chorus-hooks" && CARGO_TARGET_DIR=target-dev cargo build --release --bin chorus-hook-shim 2>&1 | tail -3) || {
       echo "werk: cargo build (dev) failed" >&2
       emit "werk.deploy.failed" "step=cargo-build-dev" "mode=$mode"
