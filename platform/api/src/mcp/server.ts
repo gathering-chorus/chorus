@@ -659,8 +659,8 @@ async function executeCommit(
   // against Mode-A: a peer's checkout between this point and the push step
   // would silently move HEAD; bare `git push` would then push the wrong branch
   // (because #2689's --force-branch escape disabled do_push's check_branch).
-  // Captured ref passes through to do_push via _CHORUS_PUSH_REF env so the
-  // push targets that specific branch regardless of where HEAD currently sits.
+  // #2705 — Captured ref passes via explicit --branch arg (substrate-uniform
+  // with --force-branch shape; env-on-the-wire retired per silas gate-arch).
   let pushRef = '';
   try {
     const { stdout: headOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
@@ -668,16 +668,18 @@ async function executeCommit(
   } catch {
     // capture failed — fall through to bare push (current behavior, accepts Mode-A residual)
   }
-  const pushEnv: NodeJS.ProcessEnv = pushRef ? { ...env, _CHORUS_PUSH_REF: pushRef } : env;
 
   // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
   // #2689 — pass --force-branch (mirrors #2687's commit-side fix). Without it,
   // a Mode-A bump between commit and push triggered do_push's check_branch and
   // surfaced as a false-positive push-conflict (6001a6be / b53a7fe5 / e19588b0).
-  // #2699 — _CHORUS_PUSH_REF env carries the captured branch; do_push targets
-  // origin REF:REF when set.
+  // #2705 — --branch <ref> targets origin REF:REF when set; mirrors the
+  // explicit-arg shape, no env-on-the-wire.
+  const pushArgs = pushRef
+    ? ['push', '--force-branch', '--branch', pushRef]
+    : ['push', '--force-branch'];
   try {
-    await execFileAsync(gitQueuePath, ['push', '--force-branch'], { env: pushEnv, timeout: 60_000, cwd: repoRoot });
+    await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
     const stderr = extractStderr(err);
     const reason = classifyPushFailure(stderr);

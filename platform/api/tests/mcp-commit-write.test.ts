@@ -416,11 +416,12 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
   describe('#2699 — HEAD-pin defensive + classifier regex tighten', () => {
     const oneCard: BoardCard[] = [{ id: 2699, owner: 'Kade', title: 'HEAD-pin' }];
 
-    test('captures HEAD ref between commit and push, passes to push via _CHORUS_PUSH_REF env', async () => {
+    test('captures HEAD ref between commit and push, passes to push via --branch arg (#2705)', async () => {
       // Mode-A defensive: even if HEAD gets bumped between commit and push by
       // a peer's checkout, we push the ref name we captured immediately after
-      // commit landed. git-queue.sh do_push reads _CHORUS_PUSH_REF and pushes
-      // that specific ref pair (origin REF:REF).
+      // commit landed. #2705: explicit --branch <ref> arg replaces the
+      // _CHORUS_PUSH_REF env-carry shipped in #2699 (substrate-uniform with
+      // --force-branch shape per silas gate-arch feedback).
       const calls: Array<{ args: string[]; env?: Record<string, string | undefined>; file: string }> = [];
       const exec = jest.fn(async (file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
         calls.push({ file, args, env: opts.env });
@@ -450,9 +451,14 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       const pushIdx = calls.findIndex((c) => c.args[0] === 'push');
       expect(revParseIdx).toBeGreaterThan(commitIdx);
       expect(pushIdx).toBeGreaterThan(revParseIdx);
-      // push call carries the captured ref via env
+      // #2705: push call carries the captured ref via explicit --branch arg
+      // (env-carry retired). AC5: assert --branch arg appears in push call args.
       const pushCall = calls[pushIdx];
-      expect(pushCall.env?._CHORUS_PUSH_REF).toBe('kade/2699');
+      expect(pushCall.args).toContain('--branch');
+      const branchIdx = pushCall.args.indexOf('--branch');
+      expect(pushCall.args[branchIdx + 1]).toBe('kade/2699');
+      // AC3: env-carry removed
+      expect(pushCall.env?._CHORUS_PUSH_REF).toBeUndefined();
     });
 
     test('classifier regex requires failure marker after pre-commit prefix (#2699 tighten)', async () => {
