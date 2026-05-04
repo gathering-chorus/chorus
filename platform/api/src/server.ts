@@ -693,7 +693,7 @@ function runFreshnessHandler() {
       db,
       exists: (p) => fs.existsSync(p),
       readFile: (p, enc) => fs.readFileSync(p, enc),
-      spineLogPath: path.join(REPO_ROOT, 'platform/logs/chorus.log'),
+      spineLogPath: `${process.env.HOME}/.chorus/chorus.log`,
       cadence: SOURCE_CADENCE,
       timestamp: bostonNow,
     });
@@ -769,11 +769,11 @@ const readRoleStateFile = (role: string): { role: string; state: string; card?: 
 };
 
 const tailSpineForRole = (role: string): { timestamp: string; role: string; event: string } | null => {
-  // CHORUS_ROOT points to chorus/ in prod (LaunchAgent) and to its parent in
-  // dev fallback; try both candidates without branching on shape.
+  // Producer is chorus-hook-shim writing to ~/.chorus/chorus.log (CSC: Runtime
+  // Artifacts). 2026-05-04: moved out of repo working tree because branch
+  // checkouts were clobbering unstaged writes.
   const candidates = [
-    `${CHORUS_ROOT}/platform/logs/chorus.log`,
-    `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`,
+    `${process.env.HOME}/.chorus/chorus.log`,
   ];
   const logPath = candidates.find((p) => fs.existsSync(p));
   if (!logPath) return null;
@@ -830,8 +830,7 @@ app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
   const readLog = () => {
     const candidates = [
-      `${CHORUS_ROOT}/platform/logs/chorus.log`,
-      `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`,
+      `${process.env.HOME}/.chorus/chorus.log`,
     ];
     const logPath = candidates.find((p) => fs.existsSync(p));
     if (!logPath) return null;
@@ -1130,7 +1129,7 @@ app.post('/api/chorus/embed', async (_req: Request, res: Response) => {
 // Lifecycle-write handlers (pulse / role-state / alert) moved to
 // src/lifecycle-writes.ts (#2205 wave 19).
 import { handlePulse, handleRoleState, handleAlert } from './lifecycle-writes';
-const LIFECYCLE_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
+const LIFECYCLE_LOG = `${process.env.HOME}/.chorus/chorus.log`;
 app.post('/api/chorus/pulse', (req: Request, res: Response) => {
   handlePulse(req, res, {
     appendFileSync: fs.appendFileSync,
@@ -2758,7 +2757,7 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
 
 // Spine event POST handler moved to src/spine-event-write.ts (#2205 wave 21).
 import { handleSpineEvent } from './spine-event-write';
-const SPINE_EVENT_LOG = `${CHORUS_ROOT}/chorus/platform/logs/chorus.log`;
+const SPINE_EVENT_LOG = `${process.env.HOME}/.chorus/chorus.log`;
 app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
     appendFileSync: fs.appendFileSync,
@@ -3023,7 +3022,7 @@ app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
 
 // Audit feed for a single doc — reads chorus.log directly (Loki ingestion
 // of catalog.* events is unreliable today; file is source-of-truth).
-const CHORUS_LOG_FILE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/logs/chorus.log');
+const CHORUS_LOG_FILE = path.join(os.homedir(), '.chorus', 'chorus.log');
 
 // #2627: extracted from inline arrow function (was cog=21 inside route).
 type CatalogAuditEvent = { timestamp: string; event: string; role: string; fields: Record<string, string> };

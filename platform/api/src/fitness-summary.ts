@@ -14,8 +14,7 @@
 
 import * as fs from 'fs';
 
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
-const CHORUS_LOG = process.env.CHORUS_LOG_PATH || `${CHORUS_ROOT}/platform/logs/chorus.log`;
+const CHORUS_LOG = process.env.CHORUS_LOG_PATH || `${process.env.HOME}/.chorus/chorus.log`;
 
 const ROLES = ['silas', 'wren', 'kade'] as const;
 type Role = typeof ROLES[number];

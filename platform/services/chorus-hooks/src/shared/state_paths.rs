@@ -35,9 +35,13 @@ pub const SCAN_DIR: &str = "/tmp/claude-team-scan";
 /// Voice inbox directory — nudge queue files
 pub const VOICE_INBOX_DIR: &str = "/tmp/voice-inbox";
 
-/// Chorus log file — spine events (the log file, not the script)
+/// Chorus log file — spine events (the log file, not the script).
+/// Lives in ~/.chorus/ alongside index.db etc. (CSC: Runtime Artifacts).
+/// Was platform/logs/chorus.log (in working tree, set by #2505); moved
+/// 2026-05-04 after branch checkouts clobbered the unstaged file mid-write.
 pub fn chorus_log_file() -> String {
-    format!("{}/platform/logs/chorus.log", chorus_root())
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    format!("{}/.chorus/chorus.log", home)
 }
 
 /// Chorus log script — emits spine events (the CLI tool)

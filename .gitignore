@@ -38,6 +38,7 @@ ops/logs/permission-prompts.log
 ops/logs/command-errors.log
 ops/logs/*.log.*.gz
 ops/logs/board-snapshot-*.json
+platform/logs/chorus.log
 platform/logs/permission-prompts.log
 platform/logs/command-errors.log
 platform/logs/board-snapshot-*.json

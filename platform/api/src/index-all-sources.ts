@@ -77,7 +77,7 @@ function runSource(name: string, results: Record<string, string>, fn: () => stri
 }
 
 function indexSpine(ctx: IndexCtx): string | void {
-  const logPath = ctx.path.join(ctx.repoRoot, 'platform/logs/chorus.log');
+  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
   if (!ctx.fs.existsSync(logPath)) return;
   const content = String(ctx.fs.readFileSync(logPath, 'utf-8'));
   const lines = content.trim().split('\n');
