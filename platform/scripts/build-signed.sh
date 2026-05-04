@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# build-signed.sh — cargo build + post-build codesign with stable identifier.
+# build-signed.sh — cargo build + post-build codesign with stable identity.
 #
-# Why: cargo build --release emits ad-hoc-signed Mach-O with a rebuild-dependent
-# identifier suffix (e.g., chorus_hook_shim-d1da85efc2bf3103). macOS TCC can
-# treat each rebuild as a new binary and re-evaluate Accessibility grants,
-# which occasionally flips them OFF. Pinning the identifier with
-# `codesign --identifier` keeps TCC's identity stable across rebuilds.
+# Why: cargo build --release emits ad-hoc-signed Mach-O with a rebuild-
+# dependent identifier suffix (e.g., chorus_hook_shim-d1da85efc2bf3103),
+# AND ad-hoc signing produces a fresh ephemeral identity per build. macOS
+# TCC binds AppleEvents permission to the cdhash, so every rebuild silently
+# revokes the grant. Pinning the identifier AND signing with a stable
+# keychain identity keeps the cdhash deterministic across rebuilds.
 #
-# Note: this does NOT prevent macOS overnight security re-validation from
-# flipping grants independently (see RCA #114). That's a separate problem.
-# This script only addresses the rebuild-triggered class.
+# Identity:    Chorus Local Signing (self-signed cert in the user keychain;
+#              hash 9086CB9855BC4642CA03D0B6415A50BD90B86AE3 by default,
+#              override via CHORUS_SIGNING_IDENTITY env var).
+#
+# History note: prior version of this script (silas #2218) used `--sign -`
+# (ad-hoc) with a stable identifier. That fixed the identifier-suffix churn
+# but did NOT survive TCC's keychain-identity check — ad-hoc binaries get
+# different TCC treatment than identity-signed ones. #2548 (2026-05-04)
+# upgraded to keychain-identity signing after the System Events daemon
+# cache + cdhash-rebuild interaction was reproduced.
 #
 # Usage:
 #   build-signed.sh <shortcut>
@@ -17,12 +25,18 @@
 #
 # Shortcuts:
 #   build-signed.sh chorus-hooks    → signs chorus-hook-shim as com.chorus.hook-shim
+#                                     AND chorus-hooks as com.chorus.hooks
 #   build-signed.sh chorus-inject   → signs chorus-inject as com.chorus.inject
 set -euo pipefail
+
+SIGNING_IDENTITY="${CHORUS_SIGNING_IDENTITY:-9086CB9855BC4642CA03D0B6415A50BD90B86AE3}"
 
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 resolve_crate() {
+  # chorus-hooks shortcut signs BOTH binaries (chorus-hook-shim + chorus-hooks)
+  # via a follow-up sign step at the bottom. Returned spec drives the primary
+  # binary; the second is handled inline post-build.
   case "$1" in
     chorus-hooks)  echo "$ROOT/platform/services/chorus-hooks|com.chorus.hook-shim|chorus-hook-shim" ;;
     chorus-inject) echo "$ROOT/platform/services/chorus-inject|com.chorus.inject|chorus-inject" ;;
@@ -61,10 +75,20 @@ if [ ! -f "$binary" ]; then
   exit 1
 fi
 
-echo "build-signed: codesign --force --sign - --identifier $identifier"
-codesign --force --sign - --identifier "$identifier" "$binary"
+echo "build-signed: codesign --force --sign $SIGNING_IDENTITY --identifier $identifier"
+codesign --force --sign "$SIGNING_IDENTITY" --identifier "$identifier" "$binary"
+
+# chorus-hooks shortcut: also sign the second crate binary (chorus-hooks)
+if [ "${1:-}" = "chorus-hooks" ]; then
+  HOOKS_BIN="$crate_dir/target/release/chorus-hooks"
+  if [ -f "$HOOKS_BIN" ]; then
+    codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.chorus.hooks" "$HOOKS_BIN"
+    echo "build-signed: $(basename "$HOOKS_BIN") signed identifier=com.chorus.hooks"
+  fi
+fi
 
 echo "build-signed: verify"
-codesign -dvvv "$binary" 2>&1 | grep -E "^Identifier=" | head -1
-
+codesign -dvvv "$binary" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
+CDHASH=$(codesign -dvvv "$binary" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+echo "build-signed: cdhash=$CDHASH"
 echo "build-signed: done"
