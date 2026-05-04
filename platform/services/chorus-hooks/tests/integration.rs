@@ -129,21 +129,12 @@ fn test_hook_response_format_block() {
     assert!(response["stderr"].as_str().unwrap().contains("DEC-025"));
 }
 
-/// Nudge inbox isolation — roles should only drain their own inbox
-#[test]
-fn test_inbox_isolation_paths() {
-    let roles = vec!["wren", "silas", "kade"];
-    for role in &roles {
-        let inbox = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
-        // Each role has a distinct path — no cross-role bleed possible
-        for other in &roles {
-            if other != role {
-                let other_inbox = format!("/tmp/voice-inbox/{}/pending-inject.txt", other);
-                assert_ne!(inbox, other_inbox, "Inbox paths must be unique per role");
-            }
-        }
-    }
-}
+// #2664: test_inbox_isolation_paths retired. The voice-inbox file family
+// (/tmp/voice-inbox/<role>/pending-inject.txt) was retired by #2435 along
+// with the inject-watcher LaunchAgent. No production code reads these
+// paths anymore (assemble_nudges in pulse.rs sources from the chorus.log
+// spine fold). The retired test asserted only that string concatenation
+// produces distinct strings — DEC-1674: tests exercise real behavior.
 
 /// Verify permission_deny_json format
 #[test]

@@ -192,8 +192,10 @@ pub fn format_unread_block(role: &str, nudges: &[UnreadNudge], limit: usize) -> 
         ));
     }
     if nudges.len() > shown {
+        // #2664: /api/nudge/:role/pending retired. Full list is in the spine
+        // log (chorus.log) — fold nudge.emitted minus nudge.surfaced for `role`.
         out.push_str(&format!(
-            "- ...and {} more — query /api/nudge/{}/pending for full list\n",
+            "- ...and {} more — see chorus.log spine fold for {}\n",
             nudges.len() - shown,
             role
         ));

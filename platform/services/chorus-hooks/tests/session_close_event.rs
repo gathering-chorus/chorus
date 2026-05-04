@@ -55,14 +55,13 @@ fn session_close_emits_role_ended_with_duration() {
     );
 }
 
-// === #2071: nudge.stale alert rule ===
-
-#[test]
-fn nudge_stale_alert_rule_exists() {
-    let rule_path = &format!("{}/proving/domains/alerts/nudge-stale.yml", chorus_root());
-    assert!(
-        std::path::Path::new(rule_path).exists(),
-        "nudge-stale.yml alert rule must exist at {}",
-        rule_path
-    );
-}
+// === #2071: nudge.stale alert rule — RETIRED by #2664 ===
+//
+// The alert was reading /tmp/voice-inbox/<role>/pending-inject.txt mtime,
+// but the writer (inject-watcher LaunchAgent) was retired by #2435.
+// 13+ false-positive fires/day with no underlying signal trained the
+// team past the alarm. Retired alongside the helper family + watcher.
+// If pending-count alerting earns its keep again, source from the spine
+// fold (nudge.emitted minus nudge.surfaced); the existence-of-this-yml
+// assertion was structural, not behavioral. See nudge-cleanup-retirement.bats
+// for the retirement gate.

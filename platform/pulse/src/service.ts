@@ -83,15 +83,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     log('info', 'nudge.stored', { id, from, to, chars: content.length, traceId: traceId || undefined });
     res.json({ ok: true, id, traceId });
   });
-  app.get('/api/nudge/:role/pending', (req, res) => {
-    res.json(store.getPendingNudges(req.params.role));
-  });
-  // #2435 wedge 7d — /api/nudge/:id/ack + /api/nudge/:role/ack-all +
-  // /api/nudge/:id/attempt retired. Kade's 0.3 audit: 0 production callers.
-  // Delivery confirmation in V2 is the nudge.surfaced spine event, not an
-  // HTTP ack API. Store-side helpers (acknowledgeNudge, acknowledgeAllNudges,
-  // recordDeliveryAttempt) stay in the MessageStore for now — harmless dead
-  // code that retires with the broader messages.db nudge-write retirement.
+  // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
+  // the spine fold (nudge.emitted minus nudge.surfaced) via
+  // chorus-hooks/nudge_poll, not from messages.db. The pulse JSON shape
+  // is unchanged; assemble_nudges in pulse.rs sources from spine.
+  // #2435 wedge 7d retired the ack/attempt HTTP surface alongside this.
 }
 
 function registerChatRoutes(app: Express, store: MessageStore): void {
@@ -115,17 +111,10 @@ function registerChatRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-function registerDeadLetterRoutes(app: Express, store: MessageStore): void {
-  app.get('/api/dead-letter', (_req, res) => {
-    res.json(store.getDeadLetters({ limit: 50 }));
-  });
-  app.post('/api/dead-letter/:id/replay', (req, res) => {
-    const id = parseInt(req.params.id);
-    store.replayDeadLetter(id);
-    log('info', 'dead-letter.replayed', { id });
-    res.json({ ok: true });
-  });
-}
+// #2664: registerDeadLetterRoutes retired. GET /api/dead-letter and
+// POST /api/dead-letter/:id/replay had zero production callers; the
+// delivery model that produced dead-letter state (recordDeliveryAttempt
+// from inject-watcher) was retired by #2435.
 
 function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   app.post('/api/board-event', (req, res) => {
@@ -160,7 +149,6 @@ export function createApp(store: MessageStore): Express {
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics);
   registerChatRoutes(app, store);
-  registerDeadLetterRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
   return app;
 }

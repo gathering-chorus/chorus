@@ -223,20 +223,43 @@ fn assemble_alerts(freshness: &serde_json::Value) -> serde_json::Value {
 }
 
 fn assemble_nudges() -> serde_json::Value {
+    // #2664: source from the spine fold (nudge.emitted minus nudge.surfaced)
+    // instead of the retired voice-inbox file path. The voice-inbox writer
+    // (inject-watcher) was retired by #2435 along with the LaunchAgent;
+    // the path-check was the source of the dead nudge-stale alert that
+    // fired 13+/day. Reuses nudge_poll's fold semantics inline (shim crate
+    // doesn't have hooks::nudge_poll in scope; this is a minimal duplicate
+    // of the substring filter — full parsing lives in nudge_poll::fetch_unread).
+    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
+    let content = fs::read_to_string(&log_path).unwrap_or_default();
+    let lines: Vec<&str> = content.lines().collect();
+    let window = 5000usize;
+    let start = lines.len().saturating_sub(window);
+    let recent = &lines[start..];
+
     let mut nudges = serde_json::Map::new();
     for role in &["wren", "silas", "kade"] {
-        let path = format!("/tmp/voice-inbox/{}/pending-inject.txt", role);
-        let count = fs::read_to_string(&path).ok()
-            .map(|c| c.lines().filter(|l| !l.trim().is_empty()).count())
-            .unwrap_or(0);
-        let age_secs = fs::metadata(&path).ok()
-            .and_then(|m| m.modified().ok())
-            .map(|t| t.elapsed().unwrap_or_default().as_secs())
-            .unwrap_or(0);
+        let to_marker = format!("to={}", role);
+        let role_marker = format!(r#""role":"{}""#, role);
+        let mut emitted_traces: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut surfaced_traces: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for line in recent {
+            let is_emitted = line.contains(r#""event":"nudge.emitted""#) && line.contains(&to_marker);
+            let is_surfaced = line.contains(r#""event":"nudge.surfaced""#) && line.contains(&role_marker);
+            if !is_emitted && !is_surfaced { continue; }
+            // Trace id key: `trace=ntr-...,` — bounded by `,` or end of value.
+            let Some(idx) = line.find("trace=") else { continue; };
+            let tail = &line[idx + 6..];
+            let end = tail.find([',', '"']).unwrap_or(tail.len());
+            let trace = tail[..end].to_string();
+            if is_surfaced { surfaced_traces.insert(trace); }
+            else { emitted_traces.insert(trace); }
+        }
+        let pending = emitted_traces.difference(&surfaced_traces).count();
         nudges.insert(role.to_string(), serde_json::json!({
-            "pending": count,
-            "age_secs": if count > 0 { age_secs } else { 0 },
-            "stale": count > 0 && age_secs > 600,
+            "pending": pending,
+            "age_secs": 0,
+            "stale": false,
         }));
     }
     serde_json::Value::Object(nudges)

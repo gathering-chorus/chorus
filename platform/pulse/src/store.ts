@@ -93,51 +93,13 @@ export class MessageStore {
     return Number(stmt.run(from, to, content).lastInsertRowid);
   }
 
-  getPendingNudges(role: string): Message[] {
-    const stmt = this.db.prepare(
-      'SELECT * FROM messages WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0 AND dead_letter = 0 ORDER BY created_at'
-    );
-    return stmt.all(role) as Message[];
-  }
-
-  /** Record a delivery attempt. After MAX_ATTEMPTS, move to dead-letter. */
-  recordDeliveryAttempt(id: number): { deadLettered: boolean } {
-    const MAX_ATTEMPTS = 3;
-    this.db.prepare('UPDATE messages SET delivery_attempts = delivery_attempts + 1 WHERE id = ?').run(id);
-    const row = this.db.prepare('SELECT delivery_attempts FROM messages WHERE id = ?').get(id) as { delivery_attempts: number } | undefined;
-    if (row && row.delivery_attempts >= MAX_ATTEMPTS) {
-      this.db.prepare('UPDATE messages SET dead_letter = 1, dead_lettered_at = datetime(\'now\') WHERE id = ?').run(id);
-      return { deadLettered: true };
-    }
-    return { deadLettered: false };
-  }
-
-  getDeadLetters(opts?: { limit?: number }): Message[] {
-    const limit = opts?.limit || 50;
-    return this.db.prepare(
-      'SELECT * FROM messages WHERE dead_letter = 1 ORDER BY dead_lettered_at DESC LIMIT ?'
-    ).all(limit) as Message[];
-  }
-
-  /** Replay a dead-lettered message — reset attempts and dead-letter flag */
-  replayDeadLetter(id: number): void {
-    this.db.prepare(
-      'UPDATE messages SET dead_letter = 0, dead_lettered_at = NULL, delivery_attempts = 0 WHERE id = ?'
-    ).run(id);
-  }
-
-  acknowledgeNudge(id: number): void {
-    this.db.prepare(
-      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE id = ?'
-    ).run(id);
-  }
-
-  acknowledgeAllNudges(role: string): number {
-    const result = this.db.prepare(
-      'UPDATE messages SET acknowledged = 1, acknowledged_at = datetime(\'now\') WHERE type = \'nudge\' AND "to" = ? AND acknowledged = 0'
-    ).run(role);
-    return result.changes;
-  }
+  // #2664: getPendingNudges, recordDeliveryAttempt, getDeadLetters,
+  // replayDeadLetter, acknowledgeNudge, acknowledgeAllNudges retired.
+  // Delivery confirmation is the nudge.surfaced spine event (DEC-107
+  // canonical persist + osascript inject; receipts via spine fold).
+  // The acknowledged / delivery_attempts / dead_letter columns remain
+  // in the schema as vestigial — write-once-zero — to keep the migration
+  // forward-only. A column-drop pass is its own card.
 
   // --- Chats ---
 

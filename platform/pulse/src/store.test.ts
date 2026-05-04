@@ -24,68 +24,26 @@ afterEach(() => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
 });
 
-describe('Nudge delivery', () => {
-  test('creates a nudge with a positive id', () => {
+describe('Nudge persist (canonical path — DEC-107)', () => {
+  test('sendNudge writes to messages.db and returns positive id', () => {
     const id = store.sendNudge('silas', 'wren', 'test nudge');
     expect(id).toBeGreaterThan(0);
   });
 
-  test('recipient has exactly one pending nudge after send', () => {
+  test('queryMessages surfaces persisted nudges by recipient (#2664: replaces getPendingNudges read path)', () => {
     store.sendNudge('silas', 'wren', 'test nudge');
-    const pending = store.getPendingNudges('wren');
-    expect(pending).toHaveLength(1);
-    expect(pending[0].content).toBe('test nudge');
-    expect(pending[0].from).toBe('silas');
+    const rows = store.queryMessages({ type: 'nudge', to: 'wren' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toBe('test nudge');
+    expect(rows[0].from).toBe('silas');
   });
 
-  test('non-recipient has zero pending', () => {
-    store.sendNudge('silas', 'wren', 'test nudge');
-    expect(store.getPendingNudges('silas')).toHaveLength(0);
-  });
-
-  test('acknowledge clears pending', () => {
-    const id = store.sendNudge('silas', 'wren', 'test nudge');
-    store.acknowledgeNudge(id);
-    expect(store.getPendingNudges('wren')).toHaveLength(0);
-  });
-});
-
-describe('Multiple nudges + ack-all', () => {
-  test('three pending, ack-all returns 3, pending cleared', () => {
-    store.sendNudge('wren', 'kade', 'nudge 1');
-    store.sendNudge('silas', 'kade', 'nudge 2');
-    store.sendNudge('wren', 'kade', 'nudge 3');
-    expect(store.getPendingNudges('kade')).toHaveLength(3);
-
-    const acked = store.acknowledgeAllNudges('kade');
-    expect(acked).toBe(3);
-    expect(store.getPendingNudges('kade')).toHaveLength(0);
-  });
-});
-
-describe('Dead letter', () => {
-  test('third delivery attempt dead-letters the nudge', () => {
-    const id = store.sendNudge('silas', 'wren', 'will fail');
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(false);
-    expect(store.recordDeliveryAttempt(id).deadLettered).toBe(true);
-
-    expect(store.getPendingNudges('wren')).toHaveLength(0);
-    const dl = store.getDeadLetters();
-    expect(dl).toHaveLength(1);
-    expect(dl[0].delivery_attempts).toBe(3);
-  });
-
-  test('replay restores the nudge to pending and clears dead-letter', () => {
-    const id = store.sendNudge('silas', 'wren', 'will fail');
-    store.recordDeliveryAttempt(id);
-    store.recordDeliveryAttempt(id);
-    store.recordDeliveryAttempt(id);
-
-    store.replayDeadLetter(id);
-    expect(store.getDeadLetters()).toHaveLength(0);
-    expect(store.getPendingNudges('wren')).toHaveLength(1);
-  });
+  // #2664: getPendingNudges, acknowledgeNudge, acknowledgeAllNudges,
+  // recordDeliveryAttempt, getDeadLetters, replayDeadLetter retired.
+  // Delivery confirmation is the nudge.surfaced spine event, not a
+  // store-side ack/attempt cycle. The acknowledged / delivery_attempts
+  // / dead_letter columns are vestigial — write-once-zero — until a
+  // separate column-drop migration card lands.
 });
 
 describe('Chat', () => {
