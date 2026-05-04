@@ -18,7 +18,7 @@ Currently three roles — Wren (coordination), Silas (observation/ops), Kade (pr
 |-----------|--------|--------|-----|
 | Identity | REAL | title + principles + tone fragments → composed CLAUDE.md | None |
 | Charter | PARTIAL | `designing/claudemd/` shared + role fragments → manifest.json → `roles/{role}/CLAUDE.md` | Wren missing working-with-jeff.md; portfolio/tone duplication; no drift detection |
-| Permissions | REAL | `config/profiles/{role}.json` + base.json | None known |
+| Permissions | REAL | `~/.claude/settings.json` (allow + deny + hooks) | Single live file across all three roles; per-role override would need a sync mechanism |
 | State declaration | REAL | `/tmp/claude-team-scan/{role}-declared.json` via role-state script | Manual; decays without explicit transitions |
 | State inference | REAL | observer.rs reads tool calls → writes declared.json when divergence detected (#2120, shipped today) | Precedence rules still tuning (#2140 60s/120s override) |
 | Memory | REAL | `~/.claude/projects/.../memory/` per role | No cross-role visibility; no governance on accretion |
@@ -71,7 +71,7 @@ Source: `designing/claudemd/shared/*.md` (team-wide disciplines) + `designing/cl
 **Canonical + role overlay pattern** (per Silas, 2026-04-17): when a discipline has a shared base with role-specific variations (e.g., tone), compose shared-fragment + role-hook fragment in listed order. Declarative, no templating. This pattern should be named in the manifest design when #2150 lands.
 
 ### Permissions
-Source: `config/profiles/{role}.json` + `config/profiles/base.json`. Referenced by the hook system at PreToolUse time to block or allow tool invocations per role. Env var names only, never values (data safety).
+Source: `~/.claude/settings.json` — the live allow/deny lists + PreToolUse/PostToolUse/UserPromptSubmit hook bindings. One file, applied across all three roles. The earlier `proving/config/profiles/{base,wren,kade,silas}.json` set was aspirational — never wired to a sync mechanism — and was removed 2026-05-03 (#2704). Per-role permission overrides would need a fresh sync design. Env var names only, never values (data safety).
 
 ### State declaration
 Each role declares its state via the `role-state` script, which writes `/tmp/claude-team-scan/{role}-declared.json`. States: building, blocked, waiting, observing, idle. Updated at transitions (pull card, accept, pair start/end, idle).

@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-04-24 17:13
+# Doc coherence report — 2026-05-03 21:45
 
 content-dup-groups: 13
-basename-dup-groups: 39
-broken-hrefs: 2
+basename-dup-groups: 37
+broken-hrefs: 25
 
 ## Content-hash duplicates
 
@@ -15,14 +15,14 @@ Same content at multiple paths (real forks — #2461 coherence resolves per-dup)
   - docs/GUARDRAILS.md
   - roles/silas/guardrails-and-feedback-loops.md
 - hash `e8d874e3ac40` (2 copies):
-  - data/about/BORG_ASSIMILATION_PATTERN.html
   - roles/silas/docs/borg-assimilation-pattern.html
+  - designing/docs/BORG_ASSIMILATION_PATTERN.html
 - hash `d423c784cf0d` (2 copies):
   - roles/silas/chorus/chorus-activity-dashboard-summary.md
   - designing/docs/chorus-activity-dashboard-summary.md
 - hash `cfe721eeec38` (2 copies):
-  - data/about/AI_FOUNDATIONS.html
   - roles/wren/ai-foundations.html
+  - designing/docs/AI_FOUNDATIONS.html
 - hash `cd6de76a9371` (2 copies):
   - docs/GLOSSARY.md
   - roles/silas/glossary.md
@@ -36,8 +36,8 @@ Same content at multiple paths (real forks — #2461 coherence resolves per-dup)
   - docs/CONCEPTUAL_MODEL.md
   - roles/silas/conceptual-model.md
 - hash `654d13230291` (2 copies):
-  - data/about/MEMORY_ARCHITECTURE.html
   - roles/wren/memory-architecture.html
+  - designing/docs/MEMORY_ARCHITECTURE.html
 - hash `16b139ba4ee6` (2 copies):
   - public/gathering-docs/skill-lifecycle.html
   - docs/diagrams/skill-lifecycle.html
@@ -45,22 +45,40 @@ Same content at multiple paths (real forks — #2461 coherence resolves per-dup)
   - docs/CONTENT_INGESTION_MATRIX.md
   - roles/silas/content-ingestion-matrix.md
 - hash `045bca02c9e4` (2 copies):
-  - data/about/CONVERGENCE_ARCHITECTURE.html
   - roles/silas/docs/convergence-architecture.html
+  - designing/docs/CONVERGENCE_ARCHITECTURE.html
 
 ## Basename duplicates
 
 Same filename at multiple paths with different content. Catalog `seenHref`/`seenTitle` dedup picks one nondeterministically.
 
-- `WORDPRESS-INTEGRATION.md` (2 paths, 2 distinct hashes):
-  - docs/WORDPRESS-INTEGRATION.md (a931dc341fe4) 
-  - data/about/WORDPRESS-INTEGRATION.md (a197c5003c05)
 - `werk-process.html` (2 paths, 2 distinct hashes):
   - public/werk-process.html (e9546b619cff) 
   - public/gathering-docs/werk-process.html (10eeb0a743fe)
-- `value-stream.html` (2 paths, 2 distinct hashes):
-  - public/akasha/value-stream.html (41f01efab13b) 
-  - public/gathering-docs/value-stream.html (896af00d8bbf)
+- `system-model-thinking.html` (2 paths, 2 distinct hashes):
+  - public/gathering-docs/system-model-thinking.html (daf71e795f7a) 
+  - designing/docs/system-model-thinking.html (aa1c38f54ad4)
+- `spine-observability.html` (2 paths, 2 distinct hashes):
+  - public/gathering-docs/spine-observability.html (5fd3e8f29b21) 
+  - designing/docs/spine-observability.html (6f406f60fcd1)
+- `infrastructure-constraints.md` (2 paths, 2 distinct hashes):
+  - data/about/infrastructure-constraints.md (d6911d7579a7) 
+  - roles/silas/infrastructure-constraints.md (93200236407a)
+- `homeostasis-research.html` (2 paths, 2 distinct hashes):
+  - public/gathering-docs/homeostasis-research.html (eaa52c74fe40) 
+  - public/homeostasis-research.html (0f45971f5a8f)
+- `gate-registry.md` (2 paths, 2 distinct hashes):
+  - roles/silas/chorus/gate-registry.md (83061c789fbd) 
+  - designing/docs/gate-registry.md (916aa94133d6)
+- `chorus-overview.md` (2 paths, 2 distinct hashes):
+  - roles/wren/chorus-overview.md (b4c05b1409c6) 
+  - designing/docs/chorus-overview.md (cd87b59dc867)
+- `activity.md` (2 paths, 2 distinct hashes):
+  - platform/activity.md (636490d48757) 
+  - activity.md (5dcfde578d2c)
+- `WORDPRESS-INTEGRATION.md` (2 paths, 2 distinct hashes):
+  - docs/WORDPRESS-INTEGRATION.md (a931dc341fe4) 
+  - data/about/WORDPRESS-INTEGRATION.md (a197c5003c05)
 - `USER_CAPABILITIES.md` (2 paths, 2 distinct hashes):
   - docs/USER_CAPABILITIES.md (7761a1a0dfff) 
   - data/about/USER_CAPABILITIES.md (2f7cc1b95412)
@@ -69,25 +87,19 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
   - data/about/UNIFIED_INDEX_ARCHITECTURE.md (3d490389d9b9)
 - `TESTING.md` (2 paths, 2 distinct hashes):
   - docs/TESTING.md (580bab64dc95) 
-  - data/about/TESTING.md (44a72f592fee)
-- `system-model-thinking.html` (2 paths, 2 distinct hashes):
-  - public/gathering-docs/system-model-thinking.html (daf71e795f7a) 
-  - data/about/system-model-thinking.html (aa1c38f54ad4)
+  - designing/docs/TESTING.md (44a72f592fee)
 - `SYSTEM_ARCHITECTURE.md` (2 paths, 2 distinct hashes):
   - docs/SYSTEM_ARCHITECTURE.md (f0f4d4f2fbf7) 
   - data/about/_archived/SYSTEM_ARCHITECTURE.md (8c43b6f9fd2e)
 - `STARTUP_PROCESS.md` (2 paths, 2 distinct hashes):
   - docs/STARTUP_PROCESS.md (0b2eed6b64db) 
-  - data/about/STARTUP_PROCESS.md (be6d9f2ebe9c)
-- `spine-observability.html` (2 paths, 2 distinct hashes):
-  - public/gathering-docs/spine-observability.html (5fd3e8f29b21) 
-  - public/chorus-docs/spine-observability.html (6f406f60fcd1)
-- `SOLID-AUTHENTICATION.md` (2 paths, 2 distinct hashes):
-  - docs/SOLID-AUTHENTICATION.md (6c383790affb) 
-  - data/about/SOLID-AUTHENTICATION.md (99d7d11fad74)
+  - designing/docs/STARTUP_PROCESS.md (be6d9f2ebe9c)
 - `SOLID_PODS_RESEARCH.md` (2 paths, 2 distinct hashes):
   - docs/SOLID_PODS_RESEARCH.md (b31d08974a3d) 
   - data/about/SOLID_PODS_RESEARCH.md (4a60e259558b)
+- `SOLID-AUTHENTICATION.md` (2 paths, 2 distinct hashes):
+  - docs/SOLID-AUTHENTICATION.md (6c383790affb) 
+  - designing/docs/SOLID-AUTHENTICATION.md (99d7d11fad74)
 - `SITE_MAP.md` (2 paths, 2 distinct hashes):
   - docs/SITE_MAP.md (e70d5b6ceeeb) 
   - data/about/SITE_MAP.md (1d781348ce4d)
@@ -108,46 +120,31 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
   - data/about/ONTOLOGY_STATUS.md (27a4fed26433)
 - `INFRASTRUCTURE.md` (2 paths, 2 distinct hashes):
   - docs/INFRASTRUCTURE.md (ab13baf053ab) 
-  - data/about/INFRASTRUCTURE.md (86730c17d002)
-- `infrastructure-constraints.md` (2 paths, 2 distinct hashes):
-  - data/about/infrastructure-constraints.md (d6911d7579a7) 
-  - roles/silas/infrastructure-constraints.md (93200236407a)
+  - designing/docs/INFRASTRUCTURE.md (86730c17d002)
 - `IDEA_PROJECT_LIFECYCLE.md` (2 paths, 2 distinct hashes):
   - docs/IDEA_PROJECT_LIFECYCLE.md (3b951ca029d1) 
   - data/about/IDEA_PROJECT_LIFECYCLE.md (01936d8ac4ae)
-- `homeostasis-research.html` (2 paths, 2 distinct hashes):
-  - public/gathering-docs/homeostasis-research.html (eaa52c74fe40) 
-  - public/homeostasis-research.html (0f45971f5a8f)
 - `HEIDEGGER_GATHERING_RESEARCH.md` (2 paths, 2 distinct hashes):
   - docs/HEIDEGGER_GATHERING_RESEARCH.md (e361ac6ee1d2) 
   - data/about/HEIDEGGER_GATHERING_RESEARCH.md (3b125e5db4a2)
 - `GUARDRAILS.md` (2 paths, 2 distinct hashes):
   - docs/GUARDRAILS.md (ee28561906cf) 
-  - data/about/GUARDRAILS.md (dae1ce7eb588)
+  - designing/docs/GUARDRAILS.md (dae1ce7eb588)
 - `GLOSSARY.md` (2 paths, 2 distinct hashes):
   - docs/GLOSSARY.md (cd6de76a9371) 
   - data/about/GLOSSARY.md (8bf7d500bdfc)
 - `GATHERING_VISION.md` (2 paths, 2 distinct hashes):
   - docs/GATHERING_VISION.md (a0649371a428) 
   - data/about/GATHERING_VISION.md (b1e0e22c4ebe)
-- `gate-registry.md` (2 paths, 2 distinct hashes):
-  - roles/silas/chorus/gate-registry.md (83061c789fbd) 
-  - designing/docs/gate-registry.md (916aa94133d6)
 - `GALLERY-REFACTORING.md` (2 paths, 2 distinct hashes):
   - docs/GALLERY-REFACTORING.md (30e82e4cafc4) 
-  - data/about/GALLERY-REFACTORING.md (88e9ffb92015)
-- `DECISIONS.md` (2 paths, 2 distinct hashes):
-  - docs/DECISIONS.md (34393184de10) 
-  - data/about/DECISIONS.md (18c1b96e38d9)
+  - designing/docs/GALLERY-REFACTORING.md (88e9ffb92015)
 - `CONTENT_INGESTION_MATRIX.md` (2 paths, 2 distinct hashes):
   - docs/CONTENT_INGESTION_MATRIX.md (072b6b2da74c) 
   - data/about/CONTENT_INGESTION_MATRIX.md (39664dba34a2)
 - `CONCEPTUAL_MODEL.md` (2 paths, 2 distinct hashes):
   - docs/CONCEPTUAL_MODEL.md (6f2a87aa6f47) 
   - data/about/CONCEPTUAL_MODEL.md (03afa9784658)
-- `chorus-overview.md` (2 paths, 2 distinct hashes):
-  - roles/wren/chorus-overview.md (b4c05b1409c6) 
-  - designing/docs/chorus-overview.md (cd87b59dc867)
 - `C4-ARCHITECTURE.md` (2 paths, 2 distinct hashes):
   - docs/C4-ARCHITECTURE.md (2335bc6937ca) 
   - data/about/C4-ARCHITECTURE.md (df312a2aca51)
@@ -163,9 +160,6 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 - `API.md` (2 paths, 2 distinct hashes):
   - docs/API.md (1740f5c7db91) 
   - data/about/API.md (97de449b0062)
-- `activity.md` (2 paths, 2 distinct hashes):
-  - platform/activity.md (636490d48757) 
-  - activity.md (c2b82c229ce4)
 - `ACCESS_CONTROL_MATRIX.md` (2 paths, 2 distinct hashes):
   - docs/ACCESS_CONTROL_MATRIX.md (f9787ed1fee2) 
   - data/about/ACCESS_CONTROL_MATRIX.md (041afa768ff1)
@@ -175,6 +169,29 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 Catalog hrefs returning non-2xx / non-302:
 
 ```
-000 http://localhost:3340/loom/policies.html
-000 http://localhost:3340/loom/principles.html
+404 /diagrams/chorus-c4.html
+404 /roles/silas/docs/CONCEPTUAL_ARCHITECTURE.md
+404 /roles/wren/artifacts/ontology-migration-pattern.md
+404 /roles/silas/docs/merge-specification-photos.html
+404 /roles/silas/docs/demo-as-is.html
+404 /roles/wren/docs/gemba-as-is.md
+404 /designing/decisions/DEC-2311-hook-decomposition.md
+404 /roles/wren/artifacts/book-sequence.html
+404 /roles/silas/docs/nifi-photos-flow-spec.md
+404 /designing/docs/.mermaid-loader.html
+404 /roles/wren/decisions/board-api-verb-model.md
+404 /roles/wren/artifacts/chorus-toc.html
+404 /roles/wren/decisions/DEC-1674-tdd-discipline.md
+404 /designing/decisions/DEC-1816-repo-namespace.md
+404 /designing/decisions/DEC-2209-no-compiled-siblings.md
+404 /designing/decisions/DEC-2525-day-1-required-checks.md
+404 /designing/decisions/gathering-data-about-decisions.md
+404 /designing/decisions/backlog.md
+404 /roles/silas/docs/demo-as-is.md
+404 /roles/wren/artifacts/domain-policy.html
+404 /roles/wren/decisions/poppendieck-ch2-chorus-analysis.md
+404 /roles/wren/artifacts/roles-domain-design.html
+404 /roles/wren/docs/seed-pipeline-criteria.md
+404 /roles/wren/artifacts/book-outline.html
+404 /roles/wren/artifacts/wren-claudemd-annotated.html
 ```
