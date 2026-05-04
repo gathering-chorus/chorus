@@ -92,12 +92,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
     }
 
     // git mutating ops in team repo only — #2598 extended push/rebase/cherry-pick/reset
-    let is_git_mut = GIT_COMMIT_RE.is_match(&cmd)
-        || GIT_ADD_RE.is_match(&cmd)
-        || GIT_PUSH_RE.is_match(&cmd)
-        || GIT_REBASE_RE.is_match(&cmd)
-        || GIT_CHERRY_PICK_RE.is_match(&cmd)
-        || GIT_RESET_HARD_RE.is_match(&cmd);
+    // #2698 — match against the quote-stripped cmd. The original regexes used
+    // \b word-boundary which fired inside quoted args (cards add --desc "...git
+    // commit..." / nudge bodies / grep patterns). Stripping quoted runs scopes
+    // matches to command-position. bash -c "..." sub-shell invocations of raw
+    // git also become invisible to this guard — that's an explicit-bypass case
+    // documented like the heredoc skip.
+    let cmd_for_match = strip_quoted_runs(&cmd);
+    let is_git_mut = GIT_COMMIT_RE.is_match(&cmd_for_match)
+        || GIT_ADD_RE.is_match(&cmd_for_match)
+        || GIT_PUSH_RE.is_match(&cmd_for_match)
+        || GIT_REBASE_RE.is_match(&cmd_for_match)
+        || GIT_CHERRY_PICK_RE.is_match(&cmd_for_match)
+        || GIT_RESET_HARD_RE.is_match(&cmd_for_match);
     if is_git_mut {
         // Skip heredocs
         if HEREDOC_RE.is_match(&cmd) {
@@ -173,6 +180,45 @@ async fn log_guardrail(decision: &str, pattern: &str) {
         &[("decision", decision), ("pattern", pattern)],
     )
     .await;
+}
+
+// #2698 — Replace single- and double-quoted runs with spaces before the git-mut
+// regex check, so quoted arg content (card descriptions, nudge bodies, grep
+// patterns) doesn't false-positive trigger blocks. Single quotes don't process
+// escapes; double quotes recognize \" as an escaped delimiter. Spaces preserve
+// token boundaries — `cards add --desc 'X'` becomes `cards add --desc       `,
+// not `cards add --desc`, so adjacent tokens don't accidentally fuse.
+fn strip_quoted_runs(cmd: &str) -> String {
+    let mut out = String::with_capacity(cmd.len());
+    let mut chars = cmd.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                out.push(' ');
+                for c2 in chars.by_ref() {
+                    if c2 == '\'' {
+                        out.push(' ');
+                        break;
+                    }
+                    out.push(' ');
+                }
+            }
+            '"' => {
+                out.push(' ');
+                let mut prev_backslash = false;
+                for c2 in chars.by_ref() {
+                    if c2 == '"' && !prev_backslash {
+                        out.push(' ');
+                        break;
+                    }
+                    prev_backslash = c2 == '\\' && !prev_backslash;
+                    out.push(' ');
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -352,5 +398,58 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
+    }
+
+    // === #2698: substring-match scope-too-broad ===
+    // Hook regexes use \b word-boundary which matches inside quoted strings too.
+    // Result: card descriptions, nudge bodies, grep patterns containing literal
+    // git-mut text trigger false-positive blocks. Fix scopes matches to
+    // command-position by stripping single- and double-quoted runs before check.
+
+    #[tokio::test]
+    async fn test_allow_git_commit_in_single_quoted_arg() {
+        let input = kade_bash("cards add --desc 'X uses git commit internally'");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git inside single-quoted arg must not block; got: {:?}", r.stdout);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_push_in_double_quoted_arg() {
+        let input = kade_bash(r#"nudge wren "remote delete via git push origin --delete""#);
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git inside double-quoted arg must not block; got: {:?}", r.stdout);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_reset_hard_in_grep_pattern() {
+        let input = kade_bash("grep -e 'git reset --hard' file.txt");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git inside grep -e arg must not block; got: {:?}", r.stdout);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_cherry_pick_in_nudge_body() {
+        let input = kade_bash(r#"nudge wren "use heredoc for git cherry-pick""#);
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git in quoted nudge body must not block; got: {:?}", r.stdout);
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_deny_real_git_commit_after_quoted_substring_strip() {
+        let input = kade_bash("git commit -m 'has git push in body'");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "real git commit at command-position must still block");
+        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_real_git_push_with_quoted_arg() {
+        let input = kade_bash(r#"git push origin "main:main""#);
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "real git push at command-position must still block");
     }
 }
