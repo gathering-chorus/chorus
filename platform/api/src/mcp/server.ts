@@ -141,6 +141,15 @@ const CommitInput = z.object({
   message: z.string().min(1).describe('Commit message body. Service does not modify it; agent supplies the full text including role prefix and card reference.'),
 }).strict();
 
+// #2688 — chorus_pull (read+rebase) input schema. Sister to chorus_commit:
+// thin wrapper over git-queue.sh do_pull. branch/remote optional with sensible
+// defaults (current branch + origin). No bypasses on the wire.
+const PullInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  branch: z.string().min(1).optional().describe('Optional branch to pull. Defaults to current HEAD branch via git-queue.sh.'),
+  remote: z.string().min(1).optional().describe('Optional remote name. Defaults to origin.'),
+}).strict();
+
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
 });
@@ -497,6 +506,54 @@ const COMMIT_TOOL_DEF = {
 // in executeCommit directly.
 const CHORUS_COMMIT_COORDINATION_OBSERVED = 'chorus_commit.coordination_observed';
 
+// #2688 — chorus_pull (read+rebase) tool def. Mirrors chorus_commit shape:
+// thin wrapper over git-queue.sh do_pull, --force-branch escape, typed
+// refusal taxonomy expanded per #2689 lesson (rebase-conflict | flock-timeout
+// | dirty-tree | pull-fail) — narrow taxonomies create false-positives.
+const PULL_TOOL_DEF = {
+  name: 'chorus_pull',
+  description:
+    'Use this to pull + rebase the role\'s current branch from origin. Service runs `git pull --rebase` via the existing v2.5 substrate (git-queue.sh do_pull) under the lock. Returns fetched status on success, or a typed refusal: rebase-conflict / flock-timeout / dirty-tree / pull-fail. On rebase-conflict, do_pull aborts cleanly to pre-rebase state. Do NOT use raw `git pull` — that bypasses the lock + classification + spine attribution.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Calling role — pick one: kade (engineer), wren (PM), silas (architect/ops). Determines DEPLOY_ROLE attribution.',
+      },
+      branch: { type: 'string', minLength: 1, description: 'Optional branch to pull. Defaults to current HEAD branch.' },
+      remote: { type: 'string', minLength: 1, description: 'Optional remote name. Defaults to origin.' },
+    },
+    required: ['role'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #2688 — chorus_pull spine event names. Same extraction reason as commit
+// (sonarjs no-duplicate-string).
+const CHORUS_PULL_REFUSED = 'chorus_pull.refused';
+const CHORUS_PULL_FETCHED = 'chorus_pull.fetched';
+const CHORUS_PULL_REBASE_ATTEMPTED = 'chorus_pull.rebase.attempted';
+const CHORUS_PULL_REBASE_ABORTED = 'chorus_pull.rebase.aborted';
+const CHORUS_PULL_COORDINATION_OBSERVED = 'chorus_pull.coordination_observed';
+
+interface PullArgs {
+  role: 'kade' | 'wren' | 'silas';
+  branch?: string;
+  remote?: string;
+}
+
+// #2688 — pull-phase classifier. 4 labels per #2689 lesson (narrow taxonomy
+// reproduces classifier-collapse false-positives). Each pattern requires a
+// failure marker, not just a substring match.
+function classifyPullFailure(stderr: string): 'rebase-conflict' | 'flock-timeout' | 'dirty-tree' | 'pull-fail' {
+  if (/CONFLICT|merge conflict|could not apply/i.test(stderr)) return 'rebase-conflict';
+  if (/timeout.*lock|holding the lock/i.test(stderr)) return 'flock-timeout';
+  if (/unstaged changes|cannot pull with rebase|please commit or stash/i.test(stderr)) return 'dirty-tree';
+  return 'pull-fail';
+}
+
 interface CommitArgs {
   role: 'kade' | 'wren' | 'silas';
   paths: string[];
@@ -614,6 +671,74 @@ async function executeCommit(
         type: 'text',
         text: JSON.stringify({ role, card_id: cardId, branch, sha }, null, 2),
       },
+    ],
+  };
+}
+
+async function executePull(
+  args: PullArgs,
+  boardReader: BoardReader,
+  emit: SpineEmitter,
+  execFileAsync: ExecFileAsync,
+  gitQueuePath: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { role, branch, remote } = args;
+
+  // Best-effort board lookup for spine attribution. Same shape as executeCommit
+  // (#2687 strip): coordination state observed via chorus_pull.coordination_observed,
+  // pull proceeds regardless. Refusal taxonomy is pull-safety only.
+  const board = await boardReader(role);
+  let cardId: number | null = null;
+  if (!board.ok) {
+    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: board.reason, detail: board.detail });
+  } else if (board.cards.length === 0) {
+    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: 'no-wip-card' });
+  } else if (board.cards.length > 1) {
+    const ids = board.cards.map((c) => c.id).join(',');
+    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: 'multi-wip', card_ids: ids });
+    cardId = board.cards[0].id;
+  } else {
+    cardId = board.cards[0].id;
+  }
+
+  // Same env shape as executeCommit (#2662 + #2687 PATH leaks).
+  const path = require('path') as typeof import('path');
+  const parentNodeBinDir = path.dirname(process.execPath);
+  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
+  const env = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
+  } as NodeJS.ProcessEnv;
+  const repoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
+
+  // Emit attempted before the call so audit captures the intent even if the
+  // call throws unexpectedly. Pull-rebase is the operation; chorus_pull.fetched
+  // fires on success below.
+  emit(CHORUS_PULL_REBASE_ATTEMPTED, { role, card_id: cardId, branch, remote });
+
+  const pullArgs: string[] = ['pull', '--force-branch'];
+  if (branch) pullArgs.push('--branch', branch);
+  if (remote) pullArgs.push('--remote', remote);
+
+  try {
+    await execFileAsync(gitQueuePath, pullArgs, { env, timeout: 60_000, cwd: repoRoot });
+  } catch (err) {
+    const stderr = extractStderr(err);
+    const reason = classifyPullFailure(stderr);
+    if (reason === 'rebase-conflict') {
+      // do_pull aborts cleanly to pre-rebase state on conflict; the abort
+      // event lets observers tail recovery without parsing stderr.
+      emit(CHORUS_PULL_REBASE_ABORTED, { role, card_id: cardId, detail: stderr.slice(0, 500) });
+    }
+    emit(CHORUS_PULL_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_pull refused: ${reason} — ${stderr.split('\n')[0]}`);
+  }
+
+  emit(CHORUS_PULL_FETCHED, { role, card_id: cardId, branch, remote });
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify({ role, card_id: cardId, branch, remote, status: 'fetched' }, null, 2) },
     ],
   };
 }
@@ -1056,6 +1181,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_VIEW_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
+      PULL_TOOL_DEF,
     ],
   }));
 
@@ -1161,6 +1287,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath);
+      }
+      case 'chorus_pull': {
+        const parsed = PullInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executePull(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);

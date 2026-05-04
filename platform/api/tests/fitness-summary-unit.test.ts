@@ -27,15 +27,10 @@ function clear() {
   try { fs.unlinkSync(process.env.CHORUS_LOG_PATH!); } catch { /* ignore */ }
 }
 
+// Anchored at noon today UTC (#2543). The resolver no longer caps open
+// session windows at wall-clock now, so fixtures past noon (when the test
+// runs before noon UTC) are still claimed correctly.
 const today = new Date().toISOString().slice(0, 10);
-// ts(h, m, s) returns a timestamp `h:m:s` before today's noon UTC reference.
-// Anchoring to mid-day instead of `now` makes the helper insensitive to clock
-// time — the same h/m/s offset always produces the same intra-day spacing
-// regardless of when the test runs. The earlier #2505 approach (now-offset
-// with clamp-to-midnight when off-today) collapsed multiple "off today"
-// timestamps to the same instant, breaking cluster-detection tests that
-// require ordered separation. All callers use offsets <= 3h, comfortably
-// within noon-anchored today (#2543).
 const REFERENCE_NOON_MS = new Date(today + 'T12:00:00.000Z').getTime();
 const ts = (hours = 0, mins = 0, secs = 0) => {
   return new Date(REFERENCE_NOON_MS - (hours * 3600 + mins * 60 + secs) * 1000).toISOString();

@@ -74,13 +74,24 @@ function loadChorusEvents(): ChorusEvent[] {
   }
 }
 
+// Open-ended session windows extend until the next same-role start, or
+// forever if none exists. Using `new Date()` as a cap was incorrect: it
+// dropped events with timestamps past wall-clock now (clock skew, fixtures
+// generated relative to a fixed anchor). The session is "current" — it
+// should claim all subsequent same-role events regardless of clock.
+const OPEN_END = '9999-12-31T23:59:59.999Z';
+
+// Direction literal — extracted to const so the value-position uses (#2603
+// sonarjs no-duplicate-string threshold 5) don't trip the gate.
+const LOWER_IS_BETTER = 'lower-is-better' as const;
+
 function buildSessionWindows(events: ChorusEvent[]): SessionWindow[] {
   const starts = events.filter((e) => e.event === 'session.role.started' && (ROLES as readonly string[]).includes(e.role));
   return starts.map((s, i) => {
     const role = s.role as Role;
     const startTime = s.timestamp;
     const nextStart = starts.slice(i + 1).find((n) => n.role === role);
-    const endTime = nextStart?.timestamp || new Date().toISOString();
+    const endTime = nextStart?.timestamp || OPEN_END;
     const sessionEvents = events.filter((e) => e.role === role && e.timestamp >= startTime && e.timestamp < endTime);
     return { role, start: startTime, events: sessionEvents };
   });
@@ -92,7 +103,7 @@ function resolveUnknownRoles(events: ChorusEvent[], sessions: SessionWindow[]): 
     const ts = event.timestamp;
     const match = sessions.find((s) => {
       const nextSameRole = sessions.find((n) => n.role === s.role && n.start > s.start);
-      const endTime = nextSameRole?.start || new Date().toISOString();
+      const endTime = nextSameRole?.start || OPEN_END;
       return ts >= s.start && ts < endTime;
     });
     if (match) event.role = match.role;
@@ -186,7 +197,7 @@ function buildFunction(opts: BuildOpts): FitnessFunction {
     const rate7d = roleSessions7d.length > 0 ? roleEvents7d.length / roleSessions7d.length : 0;
     const ratePrev = roleSessionsPrev.length > 0 ? roleEventsPrev.length / roleSessionsPrev.length : 0;
 
-    const trend = direction === 'lower-is-better' ? ratePrev - rate7d : rate7d - ratePrev;
+    const trend = direction === LOWER_IS_BETTER ? ratePrev - rate7d : rate7d - ratePrev;
 
     byRole[role] = {
       sessions: roleSessions7d.length,
@@ -200,7 +211,7 @@ function buildFunction(opts: BuildOpts): FitnessFunction {
   const totalSessionsPrev = sessions.filter((s) => new Date(s.start) >= twoWeeksAgo && new Date(s.start) < weekAgo).length;
   const overallRate7d = totalSessions7d > 0 ? matched7d.length / totalSessions7d : 0;
   const overallRatePrev = totalSessionsPrev > 0 ? matchedPrev7d.length / totalSessionsPrev : 0;
-  const trend7d = direction === 'lower-is-better' ? overallRatePrev - overallRate7d : overallRate7d - overallRatePrev;
+  const trend7d = direction === LOWER_IS_BETTER ? overallRatePrev - overallRate7d : overallRate7d - overallRatePrev;
 
   return {
     id,
@@ -231,7 +242,7 @@ export function getFitnessSummary(): FitnessSummaryResponse {
       id: 'jdi-rate',
       label: 'JDI Rate',
       description: 'Permission-seeking per session — text_leak (blocked by hook) + jdi_override (Jeff typed "jdi"). Every event = a role asked when it should have executed. Trend toward zero = autonomy improving.',
-      direction: 'lower-is-better',
+      direction: LOWER_IS_BETTER,
       matchEvents: ['decision.gate.text_leak', 'decision.gate.jdi_override'],
       allEvents, sessions, weekAgo, twoWeeksAgo, todayStr,
     }),
@@ -239,7 +250,7 @@ export function getFitnessSummary(): FitnessSummaryResponse {
       id: 'decision-gate-rate',
       label: 'Decision Gate Rate',
       description: 'Questions matching known Jeff preferences — role asked something with a predictable answer. Lower = roles internalized preferences.',
-      direction: 'lower-is-better',
+      direction: LOWER_IS_BETTER,
       matchEvents: ['decision.gate.matched'],
       allEvents, sessions, weekAgo, twoWeeksAgo, todayStr,
     }),
@@ -247,7 +258,7 @@ export function getFitnessSummary(): FitnessSummaryResponse {
       id: 'search-hierarchy-rate',
       label: 'Search Hierarchy Rate',
       description: 'Exploratory filesystem searches that should have started with Chorus or codebase graph (DEC-074). Excludes legitimate code lookups (imports, specific file paths).',
-      direction: 'lower-is-better',
+      direction: LOWER_IS_BETTER,
       matchEvents: ['search.hierarchy.filesystem_used'],
       filterFn: (e) => e.code_lookup !== 'true',
       allEvents, sessions, weekAgo, twoWeeksAgo, todayStr,
@@ -256,7 +267,7 @@ export function getFitnessSummary(): FitnessSummaryResponse {
       id: 'retry-rate',
       label: 'Retry Rate',
       description: 'Trial-and-error clusters — same tool called 2+ times in <30s with different args. Each cluster = guessing at syntax, paths, or endpoints.',
-      direction: 'lower-is-better',
+      direction: LOWER_IS_BETTER,
       matchEvents: ['tool.retry_cluster'],
       allEvents: retryEvents, sessions, weekAgo, twoWeeksAgo, todayStr,
     }),
