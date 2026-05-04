@@ -137,6 +137,7 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       const calls: Array<{ args: string[]; env?: Record<string, string | undefined> }> = [];
       const exec = jest.fn(async (_file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
         calls.push({ args, env: opts.env });
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) return { stdout: 'kade/2682\n', stderr: '' };
         if (args[0] === 'commit') return { stdout: '[kade/2682-x abcd1234] kade: msg\n', stderr: '' };
         if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
         throw new Error(`unexpected args: ${args.join(' ')}`);
@@ -160,13 +161,17 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(parsed.sha).toBe('abcd1234');
       expect(parsed.card_id).toBe(2682);
       expect(parsed.branch).toBe('kade/2682');
-      expect(calls).toHaveLength(2);
-      expect(calls[0].args[0]).toBe('commit');
+      // #2699: HEAD-pin captures branch via rev-parse between commit and push.
+      // Calls now: commit → rev-parse → push.
+      expect(calls).toHaveLength(3);
+      const commitCall = calls.find((c) => c.args[0] === 'commit')!;
+      const pushCall = calls.find((c) => c.args[0] === 'push')!;
+      expect(commitCall).toBeDefined();
+      expect(pushCall).toBeDefined();
       // #2687: --force-branch passed so git-queue's branch-check doesn't surface
       // as a refusal (branch naming is observed via spine, not enforced at write).
-      expect(calls[0].args[1]).toBe('--force-branch');
-      expect(calls[0].env?.DEPLOY_ROLE).toBe('kade');
-      expect(calls[1].args[0]).toBe('push');
+      expect(commitCall.args[1]).toBe('--force-branch');
+      expect(commitCall.env?.DEPLOY_ROLE).toBe('kade');
       const invoked = events.find((e) => e.event === 'chorus_commit.invoked');
       expect(invoked?.fields.role).toBe('kade');
       expect(invoked?.fields.card_id).toBe(2682);
@@ -405,6 +410,115 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
         handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'm' } } }, {}),
       ).rejects.toThrow(/push-conflict/);
       expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('push-conflict');
+    });
+  });
+
+  describe('#2699 — HEAD-pin defensive + classifier regex tighten', () => {
+    const oneCard: BoardCard[] = [{ id: 2699, owner: 'Kade', title: 'HEAD-pin' }];
+
+    test('captures HEAD ref between commit and push, passes to push via _CHORUS_PUSH_REF env', async () => {
+      // Mode-A defensive: even if HEAD gets bumped between commit and push by
+      // a peer's checkout, we push the ref name we captured immediately after
+      // commit landed. git-queue.sh do_push reads _CHORUS_PUSH_REF and pushes
+      // that specific ref pair (origin REF:REF).
+      const calls: Array<{ args: string[]; env?: Record<string, string | undefined>; file: string }> = [];
+      const exec = jest.fn(async (file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
+        calls.push({ file, args, env: opts.env });
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2699\n', stderr: '' };
+        }
+        if (args[0] === 'commit') return { stdout: '[kade/2699 abcd1234] m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected: ${args.join(' ')}`);
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } },
+        {},
+      );
+      // rev-parse fires between commit and push
+      const revParseIdx = calls.findIndex((c) => c.args[0] === 'rev-parse');
+      const commitIdx = calls.findIndex((c) => c.args[0] === 'commit');
+      const pushIdx = calls.findIndex((c) => c.args[0] === 'push');
+      expect(revParseIdx).toBeGreaterThan(commitIdx);
+      expect(pushIdx).toBeGreaterThan(revParseIdx);
+      // push call carries the captured ref via env
+      const pushCall = calls[pushIdx];
+      expect(pushCall.env?._CHORUS_PUSH_REF).toBe('kade/2699');
+    });
+
+    test('classifier regex requires failure marker after pre-commit prefix (#2699 tighten)', async () => {
+      // Pre-#2699: regex was /^pre-commit:|^.. blocked|hook failed/i — bare
+      // 'hook failed' substring matched anywhere; any pre-commit-prefixed
+      // stderr line (incl. warnings, non-failure context) classified as
+      // hook-fail. Post-#2699: regex requires pre-commit:.*<failure-marker>
+      // on same line. Non-failure pre-commit lines now classify as commit-fail.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2699\n', stderr: '' };
+        }
+        if (args[0] === 'commit') {
+          const err = new Error('cmd failed');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          // pre-commit warning line WITHOUT a failure marker (no 🔴/❌/failed/blocked).
+          // Pre-fix would mis-classify as hook-fail; post-fix is commit-fail.
+          (err as unknown as { code: number; stderr: string }).stderr =
+            'pre-commit: ⚠ known-fails entries reference closed cards: #1234';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/commit-fail/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('commit-fail');
+    });
+
+    test('classifier regex still labels real pre-commit failure as hook-fail (regression)', async () => {
+      // Tightened regex still matches real failure markers on a pre-commit line.
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2699\n', stderr: '' };
+        }
+        if (args[0] === 'commit') {
+          const err = new Error('cmd failed');
+          (err as unknown as { code: number; stderr: string }).code = 1;
+          (err as unknown as { code: number; stderr: string }).stderr =
+            'pre-commit: 🔴 1/5 checks failed\n  - clippy-ratchet: 1 hits';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {}),
+      ).rejects.toThrow(/hook-fail/);
+      expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('hook-fail');
     });
   });
 });

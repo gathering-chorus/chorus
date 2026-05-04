@@ -446,10 +446,21 @@ do_push() {
   # #2700: don't merge stderr into stdout. MCP classifier reads err.stderr to
   # label push-conflict (rebase failure) vs push-fail; merging collapsed both
   # into push-fail by hiding the rebase/conflict signature text.
-  if [ -z "$has_upstream" ]; then
-    git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+  # #2699: if _CHORUS_PUSH_REF is set, target that branch explicitly (origin
+  # REF:REF) regardless of current HEAD. Defensive against Mode-A bumps between
+  # chorus_commit's capture and this push step.
+  if [ -n "${_CHORUS_PUSH_REF:-}" ]; then
+    if [ -z "$has_upstream" ]; then
+      git -C "$REPO_ROOT" push 9>&- origin "${_CHORUS_PUSH_REF}:${_CHORUS_PUSH_REF}" || exit_code=$?
+    else
+      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- origin "${_CHORUS_PUSH_REF}:${_CHORUS_PUSH_REF}" || exit_code=$?
+    fi
   else
-    git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+    if [ -z "$has_upstream" ]; then
+      git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+    else
+      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+    fi
   fi
 
   if $stashed; then
