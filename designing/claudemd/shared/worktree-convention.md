@@ -1,6 +1,6 @@
-# Per-Role Worktree Convention — RETIRED 2026-05-01
+# Per-Role Worktree Convention — RETIRED 2026-05-01 (`#2640`)
 
-The per-role sibling-worktree convention (`#2582` v1) is retired. Sibling worktrees `chorus-kade/`, `chorus-wren/`, `chorus-silas/`, and `chorus-2526/` were removed; all roles operate from canonical `/chorus/roles/<role>/`.
+The per-role sibling-worktree convention (`#2582` v1) was retired by `#2640` on 2026-05-01. Sibling worktrees `chorus-kade/`, `chorus-wren/`, `chorus-silas/`, and `chorus-2526/` were removed; all roles operate from canonical `/chorus/roles/<role>/`.
 
 A v2 redesign (`chorus/.worktrees/<role>-<hash>/` + mandatory SessionStart cwd enforcement) was drafted and rejected the same day. The protected primitive: **role-directory IS session-start.** Any mechanism that moves session-start away from `/chorus/roles/<role>/` is in the rejected family.
 
@@ -15,7 +15,7 @@ A v2 redesign (`chorus/.worktrees/<role>-<hash>/` + mandatory SessionStart cwd e
 
 ## Related
 
-- `commits-service-design.md` — v2.5 amendment names this retirement.
+- `version-control-service-design.html` — names this retirement (renamed from `commits-service-design.md` by `#2683`).
 - `#2640` — implementation of the retire (hook retire + this fragment).
 - `#2641` — mode (C) follow-on.
 - `#2582` — v1 convention, retired by this fragment.
