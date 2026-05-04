@@ -443,10 +443,13 @@ do_push() {
   # -tree edit was lost in a dirty-state revert before commit.
   local has_upstream
   has_upstream=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+  # #2700: don't merge stderr into stdout. MCP classifier reads err.stderr to
+  # label push-conflict (rebase failure) vs push-fail; merging collapsed both
+  # into push-fail by hiding the rebase/conflict signature text.
   if [ -z "$has_upstream" ]; then
-    git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
+    git -C "$REPO_ROOT" push 9>&- || exit_code=$?
   else
-    git -C "$REPO_ROOT" pull --rebase 9>&- 2>&1 && git -C "$REPO_ROOT" push 9>&- 2>&1 || exit_code=$?
+    git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- || exit_code=$?
   fi
 
   if $stashed; then
@@ -511,7 +514,11 @@ do_pull() {
   local pull_args=("--rebase")
   if [ -n "$remote_arg" ]; then pull_args+=("$remote_arg"); fi
   if [ -n "$branch_arg" ]; then pull_args+=("$branch_arg"); fi
-  git -C "$REPO_ROOT" pull "${pull_args[@]}" 9>&- 2>&1 || exit_code=$?
+  # #2700: don't merge stderr into stdout. The MCP classifier reads err.stderr
+  # to label refusals (rebase-conflict / dirty-tree / etc.); merging hid the
+  # signature text and collapsed everything to pull-fail. The wrapper diagnostic
+  # at line ~533 still echoes to stderr — operator readability preserved.
+  git -C "$REPO_ROOT" pull "${pull_args[@]}" 9>&- || exit_code=$?
 
   # On rebase conflict, abort cleanly so the working tree returns to pre-rebase
   # state. The MCP layer emits chorus_pull.rebase.aborted; the user retries
