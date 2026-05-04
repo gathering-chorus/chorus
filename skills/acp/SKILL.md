@@ -102,3 +102,4 @@ Accepted #<card-id> — committed and pushed (sha=<sha>).
 - **Commit before accept.** Card stays WIP through the commit so chorus_commit can derive it from board state.
 - Always emit the spine event after marking Done
 - **Use `mcp__chorus-api__chorus_commit` — never raw git from skills.** The MCP tool wraps the canonical substrate, returns typed refusals, and binds the commit to the board's WIP card. Reaching around the typed surface bypasses the refusal taxonomy and the board-derived card binding.
+- **Branch ops go through the typed adapter (#2706 #2710 #2712).** If you need to switch branches (e.g., back to main after PR merge, onto a card branch), use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` — never raw `git checkout`. The adapter serializes under the same flock as commit/push/pull, closing the shared-HEAD race. Once #2711 ships, raw `git checkout` is hook-refused.

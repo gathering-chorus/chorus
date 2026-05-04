@@ -36,6 +36,24 @@ static GIT_RESET_HARD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+reset\s+--hard\b").unwrap()
 });
 
+// #2711 — Mode-A close (Candidate A from #2706). Deny raw checkout/switch/
+// branch-create at command-position; force routing through git-queue.sh
+// do_checkout/do_switch/do_branch (#2710). Substring/heredoc scoping inherited
+// from #2698 strip_quoted_runs() — the same matching infrastructure.
+static GIT_CHECKOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+checkout\b").unwrap()
+});
+
+static GIT_SWITCH_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+switch\b").unwrap()
+});
+
+// `git branch` (no args) is read-only list — pass. `git branch <name>` is
+// create — block. Match only the create form (followed by a non-flag word).
+static GIT_BRANCH_CREATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+branch\s+[^-\s]\S*").unwrap()
+});
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -104,7 +122,10 @@ pub async fn check(input: &HookInput) -> HookResponse {
         || GIT_PUSH_RE.is_match(&cmd_for_match)
         || GIT_REBASE_RE.is_match(&cmd_for_match)
         || GIT_CHERRY_PICK_RE.is_match(&cmd_for_match)
-        || GIT_RESET_HARD_RE.is_match(&cmd_for_match);
+        || GIT_RESET_HARD_RE.is_match(&cmd_for_match)
+        || GIT_CHECKOUT_RE.is_match(&cmd_for_match)
+        || GIT_SWITCH_RE.is_match(&cmd_for_match)
+        || GIT_BRANCH_CREATE_RE.is_match(&cmd_for_match);
     if is_git_mut {
         // Skip heredocs
         if HEREDOC_RE.is_match(&cmd) {
@@ -149,6 +170,24 @@ pub async fn check(input: &HookInput) -> HookResponse {
                     log_guardrail("deny", "git-reset-hard").await;
                     return HookResponse::deny(&permission_deny_json(
                         "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598). Override with DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if intentional."
+                    ));
+                }
+                if GIT_CHECKOUT_RE.is_match(&cmd_for_match) {
+                    log_guardrail("deny", "git-checkout").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git checkout is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh checkout <branch> — or `bash git-queue.sh checkout -b <new>` for new branches, or `bash git-queue.sh checkout <SHA> -- <file>` for restore-from-ref."
+                    ));
+                }
+                if GIT_SWITCH_RE.is_match(&cmd_for_match) {
+                    log_guardrail("deny", "git-switch").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git switch is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh switch <branch>."
+                    ));
+                }
+                if GIT_BRANCH_CREATE_RE.is_match(&cmd_for_match) {
+                    log_guardrail("deny", "git-branch-create").await;
+                    return HookResponse::deny(&permission_deny_json(
+                        "BLOCKED: Direct git branch <name> (create) is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh branch <name>. (Read-only `git branch` with no args still passes.)"
                     ));
                 }
             }
@@ -451,5 +490,79 @@ mod tests {
         let input = kade_bash(r#"git push origin "main:main""#);
         let r = check(&input).await;
         assert!(r.stdout.is_some(), "real git push at command-position must still block");
+    }
+
+    // === #2711: deny raw git checkout / switch / branch (Mode-A close) ===
+    // Candidate A from #2706: roles must route working-tree mutation through
+    // git-queue.sh do_checkout/do_switch/do_branch (#2710). Deny-list bites
+    // only after #2712 migrates skills off raw checkout.
+
+    #[tokio::test]
+    async fn test_deny_git_checkout_in_team_repo() {
+        let input = kade_bash("git checkout main");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "raw git checkout must block");
+        let body = r.stdout.unwrap();
+        assert!(body.contains("git-queue.sh"), "stderr names canonical path: {body}");
+        assert!(body.contains("checkout"), "stderr names the op: {body}");
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_checkout_b_new_branch() {
+        let input = kade_bash("git checkout -b kade/2711");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "raw git checkout -b must block");
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_switch_in_team_repo() {
+        let input = kade_bash("git switch main");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "raw git switch must block");
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_branch_create() {
+        let input = kade_bash("git branch kade/feature");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "raw git branch <new> must block");
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_checkout_in_quoted_arg() {
+        // #2698 scoping: substring inside quoted args must not block.
+        let input = kade_bash("nudge wren \"use git checkout SHA -- file for recovery\"");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git checkout inside quoted arg must not block: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_checkout_in_heredoc() {
+        let input = kade_bash("cat <<'EOF'\ngit checkout main\nEOF");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git checkout inside heredoc must not block (bypass)");
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_queue_sh_checkout() {
+        // The canonical path: bash git-queue.sh checkout main passes.
+        // The literal "git-queue.sh checkout" should not match the deny regex
+        // because the regex requires `git\s+checkout` at command-position,
+        // not the substring `git-queue.sh checkout`.
+        let input = kade_bash("bash platform/scripts/git-queue.sh checkout main");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git-queue.sh checkout must pass: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_branch_list_readonly() {
+        // `git branch` with no args is a list operation (read-only).
+        // `git branch -d <name>` is delete (not the create path #2711 covers).
+        // Today the regex blocks both for safety; if it's too aggressive we
+        // can scope further. Test pins current behavior.
+        let input = kade_bash("git branch");
+        let r = check(&input).await;
+        // Read-only `git branch` list passes — only `git branch <name>` (create) blocks.
+        assert!(r.stdout.is_none(), "git branch (list, no args) must pass: {:?}", r.stdout);
     }
 }
