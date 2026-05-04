@@ -623,15 +623,137 @@ do_pull() {
   return $exit_code
 }
 
+# --- Checkout / switch / branch (#2710) ---
+# Candidate A from #2706 Mode-A close: serialize working-tree mutation through
+# the canonical adapter so concurrent peers can't bump HEAD mid-session-read.
+# Mirrors do_pull's shape: lock + check_branch (with --force-branch escape) +
+# stderr-preserving wrapper diagnostic + spine event taxonomy.
+do_checkout() {
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+  if ! check_branch "checkout" "$force_flag"; then
+    exit 1
+  fi
+  if [ $# -eq 0 ]; then
+    echo "git-queue: error — checkout requires <branch> or args" >&2
+    return 1
+  fi
+
+  # Already-on-branch no-op: if the only arg is the current branch name, skip.
+  if [ $# -eq 1 ]; then
+    local current
+    current=$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "")
+    if [ -n "$current" ] && [ "$1" = "$current" ]; then
+      return 0
+    fi
+  fi
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: checkout timeout — lock held" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.checkout.started" "args=$*"
+
+  local exit_code=0
+  git -C "$REPO_ROOT" checkout "$@" 9>&- || exit_code=$?
+
+  clear_meta
+  if [ $exit_code -eq 0 ]; then
+    log_event "build.checkout.completed" "args=$*"
+  else
+    log_event "build.checkout.failed" "exit_code=${exit_code}" "args=$*"
+    echo "git-queue: checkout failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
+do_switch() {
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+  if ! check_branch "switch" "$force_flag"; then
+    exit 1
+  fi
+  if [ $# -eq 0 ]; then
+    echo "git-queue: error — switch requires <branch>" >&2
+    return 1
+  fi
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: switch timeout — lock held" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.checkout.started" "op=switch" "args=$*"
+
+  local exit_code=0
+  git -C "$REPO_ROOT" switch "$@" 9>&- || exit_code=$?
+
+  clear_meta
+  if [ $exit_code -eq 0 ]; then
+    log_event "build.checkout.completed" "op=switch" "args=$*"
+  else
+    log_event "build.checkout.failed" "op=switch" "exit_code=${exit_code}" "args=$*"
+    echo "git-queue: switch failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
+do_branch() {
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+  if ! check_branch "branch" "$force_flag"; then
+    exit 1
+  fi
+  if [ $# -eq 0 ]; then
+    echo "git-queue: error — branch requires <name>" >&2
+    return 1
+  fi
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: branch timeout — lock held" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.checkout.started" "op=branch" "args=$*"
+
+  local exit_code=0
+  git -C "$REPO_ROOT" branch "$@" 9>&- || exit_code=$?
+
+  clear_meta
+  if [ $exit_code -eq 0 ]; then
+    log_event "build.checkout.completed" "op=branch" "args=$*"
+  else
+    log_event "build.checkout.failed" "op=branch" "exit_code=${exit_code}" "args=$*"
+    echo "git-queue: branch failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
 # --- Main ---
 
 cmd="${1:-help}"
 shift || true
 
 case "$cmd" in
-  commit)  do_commit "$@" ;;
-  push)    do_push "$@" ;;
-  pull)    do_pull "$@" ;;
+  commit)   do_commit "$@" ;;
+  push)     do_push "$@" ;;
+  pull)     do_pull "$@" ;;
+  checkout) do_checkout "$@" ;;
+  switch)   do_switch "$@" ;;
+  branch)   do_branch "$@" ;;
   add)
     echo "git-queue: 'add' is not a command — did you mean 'commit'?" >&2
     echo "  git-queue.sh commit <files...> -- -m \"message\"" >&2
