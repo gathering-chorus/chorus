@@ -898,13 +898,21 @@ async function executePrinciplesCreate(
 }
 
 interface DecisionRecord {
+  // Shape returned by GET /api/athena/subdomains/loom-decisions/decisions
+  // (handlers/loom-decisions.ts foldBindings): `id` carries rdfs:label
+  // (human title like "Substrate-Class Domain Contract"); `title` carries
+  // rdfs:comment (the ADR/DEC body). The stable agent-facing identity is
+  // the slug from `uri` (e.g. "adr-028"). (#2716 follow-on)
   id: string;
-  label?: string;
-  comment?: string;
+  title?: string;
   decisionType?: string;
   status?: string;
   relatedCard?: number | string;
   uri?: string;
+}
+
+function decisionSlug(d: { uri?: string }): string | undefined {
+  return d.uri ? d.uri.split(/[#/]/).pop() : undefined;
 }
 
 async function fetchDecisionsList(fetchImpl: FetchImpl, apiBase: string): Promise<DecisionRecord[]> {
@@ -929,8 +937,11 @@ async function executeDecisionsList(
   const lines: string[] = [`${decisions.length} decision${decisions.length === 1 ? '' : 's'}:`];
   for (const d of decisions) {
     const kind = d.decisionType ? `[${d.decisionType}] ` : '';
-    const label = d.label ? `${kind}${d.label} (${d.id})` : `${kind}${d.id}`;
-    lines.push(`- ${label}`);
+    const slug = decisionSlug(d);
+    const display = slug && slug.toLowerCase() !== d.id.toLowerCase()
+      ? `${kind}${d.id} (${slug})`
+      : `${kind}${d.id}`;
+    lines.push(`- ${display}`);
   }
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
@@ -949,17 +960,20 @@ async function executeDecisionsGet(
   // The URI slug (e.g. "adr-018" from #adr-018) is the only stable identity. (#2716)
   const target = args.id.toLowerCase();
   const found = decisions.find((d) => {
-    const slug = d.uri ? d.uri.split(/[#/]/).pop()?.toLowerCase() : undefined;
+    const slug = decisionSlug(d)?.toLowerCase();
     if (slug && slug === target) return true;
     if (d.id && d.id.toLowerCase() === target) return true;
-    if (d.label && d.label.toLowerCase() === target) return true;
     return false;
   });
   if (!found) throw new Error(`decision not found: ${args.id}`);
+  const slug = decisionSlug(found);
+  const heading = slug && slug.toLowerCase() !== found.id.toLowerCase()
+    ? `${found.id} (${slug})`
+    : found.id;
   const lines = [
-    `${found.label ?? found.id} (${found.id})`,
+    heading,
     '',
-    found.comment ?? '(no comment)',
+    found.title ?? '(no body)',
   ];
   if (found.status) lines.push('', `status: ${found.status}`);
   if (found.relatedCard !== undefined) lines.push(`relatedCard: #${found.relatedCard}`);
