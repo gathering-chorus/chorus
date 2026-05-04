@@ -943,7 +943,18 @@ async function executeDecisionsGet(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.decisions.get.invoked', tool: 'chorus_decisions_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
   const decisions = await fetchDecisionsList(fetchImpl, apiBase);
-  const found = decisions.find((d) => d.id === args.id);
+  // Match by URI slug (stable identity from the graph), then by id field, then by label —
+  // all case-insensitive. The id field in the fold is rdfs:label, which is inconsistent in
+  // the source data: some ADRs use bare ids ("ADR-018"), others use titles ("XSD Model...").
+  // The URI slug (e.g. "adr-018" from #adr-018) is the only stable identity. (#2716)
+  const target = args.id.toLowerCase();
+  const found = decisions.find((d) => {
+    const slug = d.uri ? d.uri.split(/[#/]/).pop()?.toLowerCase() : undefined;
+    if (slug && slug === target) return true;
+    if (d.id && d.id.toLowerCase() === target) return true;
+    if (d.label && d.label.toLowerCase() === target) return true;
+    return false;
+  });
   if (!found) throw new Error(`decision not found: ${args.id}`);
   const lines = [
     `${found.label ?? found.id} (${found.id})`,

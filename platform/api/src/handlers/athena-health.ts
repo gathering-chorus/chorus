@@ -34,6 +34,8 @@ const DEFAULT_QUERIES = [
   { name: 'subproducts', path: '/api/athena/subproducts', description: 'List sub-products with owner, domain count, consumes count' },
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
+  { name: 'subdomain-principles', path: '/api/athena/subdomains/:id/principles', description: 'Principles inside a SubDomain (loom-principles)' },
+  { name: 'subdomain-decisions', path: '/api/athena/subdomains/:id/decisions', description: 'Decisions (DECs + ADRs) inside a SubDomain (loom-decisions, #2716)' },
   { name: 'steps', path: '/api/athena/steps', description: 'Value stream steps with sub-domains at each step' },
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },

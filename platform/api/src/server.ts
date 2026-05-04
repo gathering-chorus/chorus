@@ -1578,6 +1578,8 @@ const ATHENA_QUERIES = [
   { name: 'subproducts', path: '/api/athena/subproducts', description: 'List sub-products with owner, domain count, consumes count' },
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
+  { name: 'subdomain-principles', path: '/api/athena/subdomains/:id/principles', description: 'Principles inside a SubDomain (loom-principles)' },
+  { name: 'subdomain-decisions', path: '/api/athena/subdomains/:id/decisions', description: 'Decisions (DECs + ADRs) inside a SubDomain (loom-decisions, #2716)' },
   { name: 'steps', path: '/api/athena/steps', description: 'Value stream steps with sub-domains at each step' },
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },
@@ -1605,6 +1607,7 @@ import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
 import { fetchLoomPrinciples } from './handlers/loom-principles';
+import { fetchLoomDecisions } from './handlers/loom-decisions';
 import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
 import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
@@ -1714,6 +1717,13 @@ app.get('/api/loom/decisions', (_req: Request, res: Response) => {
 // (parent set, sort, envelope) from handlers/loom-principles.ts.
 app.get('/api/athena/subdomains/:id/principles', async (_req: Request, res: Response) => {
   const r = await fetchLoomPrinciples({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
+  res.status(r.status).json(r.body);
+});
+
+// GET /api/athena/subdomains/:id/decisions — decisions inside a SubDomain (#2716).
+// Currently scoped to loom-decisions; mirrors the principles route shape.
+app.get('/api/athena/subdomains/:id/decisions', async (_req: Request, res: Response) => {
+  const r = await fetchLoomDecisions({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
   res.status(r.status).json(r.body);
 });
 
@@ -2284,6 +2294,10 @@ import {
   updateSubdomainPersistence,
   deleteSubdomainEntity,
 } from './handlers/subdomain-entities';
+import {
+  createSubdomainDecision,
+  updateSubdomainDecision,
+} from './handlers/subdomain-decisions-write';
 
 const subdomainWriteDeps = () => ({
   ...domainFacetDeps(),
@@ -2499,6 +2513,18 @@ app.post('/api/athena/subdomains/:id/principles', async (req: Request, res: Resp
 // PUT /api/athena/subdomains/:id/principles/:entityId — update principle (#2314)
 app.put('/api/athena/subdomains/:id/principles/:entityId', async (req: Request, res: Response) => {
   const r = await updateSubdomainPrinciple(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
+  res.status(r.status).json(r.body);
+});
+
+// POST /api/athena/subdomains/:id/decisions — create decision via Zod-validated write path (#2716)
+app.post('/api/athena/subdomains/:id/decisions', async (req: Request, res: Response) => {
+  const r = await createSubdomainDecision(subdomainWriteDeps(), req.params.id, req.body);
+  res.status(r.status).json(r.body);
+});
+
+// PUT /api/athena/subdomains/:id/decisions/:entityId — update decision via Zod-validated write path (#2716)
+app.put('/api/athena/subdomains/:id/decisions/:entityId', async (req: Request, res: Response) => {
+  const r = await updateSubdomainDecision(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
   res.status(r.status).json(r.body);
 });
 
