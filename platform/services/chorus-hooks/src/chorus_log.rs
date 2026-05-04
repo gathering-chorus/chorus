@@ -13,7 +13,7 @@ fn log_file() -> String {
     if let Ok(p) = std::env::var("CHORUS_LOG_FILE") {
         return p;
     }
-    format!("{}/platform/logs/chorus.log", crate::shared::state_paths::chorus_root())
+    crate::shared::state_paths::chorus_log_file()
 }
 fn schema_file() -> String { format!("{}/designing/schemas/spine-events.json", crate::shared::state_paths::chorus_root()) }
 

@@ -25,7 +25,7 @@ const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "
 const ROLES: &[&str] = &["wren", "silas", "kade"];
 
 fn chorus_log_path() -> String {
-    format!("{}/platform/logs/chorus.log", chorus_root())
+    crate::shared::state_paths::chorus_log_file()
 }
 
 pub fn run(args: &[String]) -> ExitCode {

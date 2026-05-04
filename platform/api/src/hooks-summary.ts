@@ -25,7 +25,7 @@ function asStr(v: unknown, fallback = ''): string {
 }
 
 const LOG_PATHS = {
-  chorus: process.env.CHORUS_LOG_PATH || `${CHORUS_ROOT}/platform/logs/chorus.log`,
+  chorus: process.env.CHORUS_LOG_PATH || `${process.env.HOME}/.chorus/chorus.log`,
   permissions: process.env.PERMISSIONS_LOG_PATH || `${CHORUS_ROOT}/platform/logs/permission-prompts.log`,
   errors: process.env.COMMAND_ERRORS_LOG_PATH || `${CHORUS_ROOT}/platform/logs/command-errors.log`,
   handoffs: process.env.HANDOFFS_LOG_PATH || `${CHORUS_ROOT}/proving/logs/handoffs.log`,

@@ -197,8 +197,7 @@ fn read_pulse_snapshot() -> Option<String> {
 /// durable append-only event stream; no HTTP round-trip needed. Each line is
 /// a JSON object with timestamp/role/event fields.
 fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
-    let log_path = format!("{}/platform/logs/chorus.log",
-        crate::shared::state_paths::repo_root());
+    let log_path = crate::shared::state_paths::chorus_log_file();
     let content = match std::fs::read_to_string(&log_path) {
         Ok(s) => s,
         Err(_) => return vec![],
