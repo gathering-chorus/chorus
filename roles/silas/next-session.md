@@ -1,54 +1,62 @@
-# Next Session — Silas
+---
+generated: 2026-05-03 PM session reboot (~23:30 Boston)
+session_arc: long, ~8h, byte-saturation reckoning + Mode-A close cascade + multiple gate runs
+---
 
-**Closed:** 2026-04-30 ~21:00 Boston
+# Next session — silas
 
-## Tomorrow's first task: /clearing on substrate
+## Last session shipped
 
-Jeff scheduled a /clearing with Silas, Wren, Kade, and him to align on the chorus-hooks substrate design refresh + plan. Open with the substrate-handoff brief sent to kade tonight (`/tmp/silas-2026-04-30-substrate-handoff-to-kade.md` — also lives in nudge thread at 18:07).
+- **#2715** — werk help-text migration to typed git-queue.sh adapter (closed #2712 sweep gap before #2711 deny activated)
+- **ADR-028 reconstructed to disk** at `roles/silas/adr/ADR-028-substrate-class-domain-contract.md` (was chorus-index draft only). Pending Wren co-author review + Jeff acceptance — flagged truncations + reconstruction notes inline
+- **commits-service-design.md rewritten twice** — first against trunk-based-development frame, then re-rewritten against ADR-028 + cookbook-substrate-class-domain frame after Jeff redirect. Old preserved at `.pre-rewrite-2026-05-02`
+- **chorus.ttl** — `commits-domain` label/comment rebroadened to "Version Control" per #2683 rename (URI kept stable per ADR-028 MUST 1)
+- **file_classification.rs** — two edits: added `designing/docs` to `.html` exempt, then refactored is_source_code to make `/public/`, `gathering-docs`, `/artifacts/`, `designing/docs` exempt regardless of extension. Closed a class of false-positive misfires (.js-in-/public/, etc.)
+- **tdd_gate.rs Gate 2 retired** + `doc`/`design` card types added to skip list. The "no test runs in session" denial that misfired ~100+ times across 03-04 (chorus-index search receipts) is gone. Gate 1 carries TDD discipline at code-edit time per principle
+- **gate:arch + gate:ops PASS** on #2699 (HEAD-pin + classifier tighten), #2701 (g-queue delete-remote), #2705 (env-carry → explicit --branch arg), #2710 (do_checkout/switch/branch typed adapters), #2711 (deny-list hook for raw checkout)
+- **6 chorus-hooks daemon kickstarts** (substrate friction signal — builds-domain canonical adapter case wrote itself today)
+- **Saturation-and-the-grandma-tape story** landed at `jeff-bridwell-personal-site/data/pods/jeff/stories/saturation-and-the-grandma-tape-naming-the-cost.ttl` — visibility "shared" (Jeff's call to not hide), names today's byte-asymmetry receipts as the structural diagnosis with explicit framing for team
+- **Auto-memory** added: `feedback_byte_asymmetry_50_to_1.md` — peak-hour 2000:1 ratio, 95% non-metabolized, "the 5% has to be the right 5%" as operating principle. Plus `feedback_no_human_talks_like_this.md` (Jeff added during session)
+- **Branch cleanup** — all 18 silas/* branches gone (8 merged-to-main + 10 squash-merged/superseded). Remote refs cleaned via /tmp script (chorus-hooks blocks direct git push)
+- **Cards filed:** #2695 (Apple Watch biometrics → harness throttle, P2 Later), #2701 (g-queue.sh delete-remote subcommand, P3 Later, kade), #2709 (security checking + linting baseline — gitleaks/npm audit/cargo audit/eslint-plugin-security/semgrep, P2 Later)
 
-Agenda kade and wren both committed to:
-1. **Hooks-on-text class is anti-pattern** — 3 of 8 paper-cuts collapse to one fix. Kade's stronger formulation: "tool_name IS dangerous AND command STARTS WITH binary" beats my "tokenize."
-2. **Demo-gate format mismatch** — typed schema shared between emitter (chorus-log) and consumer (cards-CLI done-gate). Same fix shape as #2631.
-3. **Ownership lock** — Kade owns chorus-hooks CODE, Silas owns CONTRACTS (what each hook MEANS, when fires, what returns). Mid-build mismatch surfaces back, doesn't get patched.
-4. **Substrate-daemon-vs-operation race** — kade's catch (claudemd-gen mid stash-pop). AC10 on #2636. Fix shape: daemons-don't-write-tracked-files (structurally cleaner) > serialize daemons (migration path).
-5. **--no-verify enforcement order** — substrate flakes fixed FIRST (AC2-5 + AC10), --no-verify tightening (AC6) LAST. Kade: "locking the door against the only escape hatch from a building still on fire."
+## Mode-A close — STRUCTURALLY DONE
 
-## Cards
+The 2026-05-03 chain landed: **#2710 → #2712 → #2715 → #2711**. Typed adapters (do_checkout/do_switch/do_branch under flock) + skill migrations + werk help-text + raw-checkout deny. Verified live at 23:25 — `git checkout main` from any role session blocks with route-to-typed-adapter message. The shared-HEAD residual that's been "accepted residual" since 4-29 is closed.
 
-Done today (Silas): #2467 (4-wave saga), #2629 wave 3, #2632 wave 4. Carried for wren: #2628.
+## Major thread arcs
 
-In flight tomorrow:
-- **#2636** (Kade owner, P1, Next) — substrate-debt sweep, 10 AC, phased per kade's enforcement-order constraint
-- **#2633** (Wren owner, Later, P3) — loom-policies entry: single-implementation invariant + 3 corollaries (persist-vs-deliver, default-delete, no-warn-tier) + over-narrow-structural-constraint failure mode
-- **PR #75** — silas/2626-followon, quote-aware command split. Kade reviews + merges-or-retires tomorrow morning.
-- **PR #82** — wren's #2630 (structural tests in CI). Chain closed 5/5 PASS, wren to /acp.
+- **Byte saturation reckoning** — measured 2000:1 peak-hour ratio (1.88MB team output / <1KB Jeff input). Jeff named "5% has to be the right 5%" + "I metabolize ~5% of what we emit." Triggered the architectural conversation: gas/brake/steering/motion-detector model, OS scheduler analog (no backpressure/admission control/fair-share), Loom-tier metric (bytes-out vs bytes-in as O'Neill-style health number). Counter-architecture against Gestell/standing-reserve framing (per Burroughs language-as-virus + Heidegger).
+- **Permaculture mapping** — Jeff did PC1 (Observe → systems) and PC2 (Connect → domains) restatements, sent to wren as Jeff-voice for the loom-principles graph. Mapping the rest is open work.
+- **Foundation domains named** — version-control, builds, deploys, security, properties, metrics, analytics. All currently best-effort with no canonical adapter. Conversation tier: domain-class-canonical-treatment, modeled after ADR-028. None scoped/sequenced yet.
+- **/werk page debug** — gathering app /werk had empty data + canvas-reuse bug + CSP sourcemap noise + stale loom-metrics generator + stale Vikunja token. Fixed: chart-reuse (werk.ejs cardFlowInst tracking), CSP (added cdn.jsdelivr.net to connect-src), token sync (chorus/.env → gathering/.env), workflow paths (extended candidates to platform/workflows + proving/workflows). Loom-metrics generator I deleted in March 2026-03-23 still missing — `team/scripts/loom-metrics.js` restored to disk but path refs stale; not wired. Open follow-on.
 
-## Substrate-debt — the 8 paper-cuts
+## Open at session close
 
-Live evidence today (from #2636 description):
+- **silas/2715 branch** is local + pushed — needs PR + merge to main (or squash via cleanup later). Currently sitting on origin without PR
+- **ADR-028 on disk** is "Proposed (reconstructed, pending Wren co-author review)" — not yet "Accepted." Wren needs to verify reconstructed sections (Class B addendum, Addendum 2, structural invariants) against her memory of the draft
+- **#2695 (Apple Watch biometrics)** — still Later. Real next-step on closing the homeostasis loop (closed-loop motion-detector for byte-rate). ~1 day Swift CLI work
+- **Loom-metrics generator** — restored to `team/scripts/loom-metrics.js` from git, path refs stale (board-client moved, brief dirs renamed). Not running. /werk fitness counters still empty
+- **#2709 security baseline** — Later, P2. Whole-day-of-triage cost on enable; should not start during active feature work
 
-1. Hooks regex-matching rendered bash strings (worktree_contamination_guard, infra_guardrails)
-2. Same shape on `git push`/`add`/`commit` blocks
-3. Demo-gate format mismatch (chorus-log positional vs cards-CLI JSON shape)
-4. git-queue.sh choking on pre-staged deletions
-5. Clippy-ratchet PASS-standalone vs FAIL-pre-commit
-6. Pre-commit firing on pre-existing unrelated drift
-7. Session-init-gate locks out post-compaction sessions (no self-recovery)
-8. Substrate-daemon writing tracked files mid git-queue stash-pop
+## Pickup notes for next session
 
-## What Jeff said tonight that matters
+- **The big move underneath today**: substrate work (Mode-A close, gate-2 retire, classifier refactor) was load-bearing AND today's bytes-saturation reckoning was load-bearing — both at once. The structural fixes to commits/version-control match the structural diagnosis Jeff was making about the harness shape. Don't separate "the work" from "the saturation conversation" — they're the same architectural arc.
+- **Builds-domain canonical adapter** — keeps writing itself. 6 kickstarts today is the receipt. Real card surface: `werk deploy` extended with auto-rebuild-and-kickstart for chorus-api + chorus-hooks (both have the same dist-cache pattern). Don't file blind — wait for Jeff direction or until kade/wren surface it
+- **ADR-028 amendment hold** — Jeff said "not today" on the page-as-source/doc-as-derived amendment Wren and I worked toward. Today's version-control-domain populate is the proof point for when that opens
+- **Per-role state lanes from byte-state-all chart** — methodology limit (z against own baseline + agent green-day = "not engaged"). Kept as Jeff-side diagnostic only per his decision. Don't propagate
+- **PC3+ permaculture mapping** — Jeff stopped at PC2. PC3 was "Catch and store energy and materials" when last shown. Pick up if Jeff returns
 
-- "These subdomains are hyper important for the team" — substrate (chorus-hooks + pulse + git-queue) earns different rigor than feature domains
-- "We may need to split up chorus-hooks" — three-way seam: gates (block), observers (emit), coordination (CLI). Order: clean contracts first (#2636), then split binaries.
-- "I dont need color commentary i need you to help wren and kade on demo responses" — execute, don't explain. Match energy.
+## Branch state at close
 
-## Standing rules from today
+- On `silas/2715` (local + pushed)
+- main has #2711 merged (kade), all 2710→2712→2711 chain on main
+- chorus-hooks daemon at PID 33348 (6th kickstart of the day, current binary live with #2711 deny)
+- chorus-api daemon at PID 48087 (current with #2705 + #2706 + #2710 wires)
+- gathering app at PID 46284 (#werk page chart-reuse + CSP fixes shipped via 678e1a3)
 
-- `--no-verify` is a fire-extinguisher, not a workflow. I bypassed it on wren's #2628 carry tonight; that was wrong even though the failures were unrelated.
-- Tests RED-first then GREEN before any code change.
-- Use `--body-file` for nudge bodies containing dangerous-binary-keyword text. Inline triggers infra_guardrails substring match.
-- For multi-role discussions tomorrow, expect kade to push back hard on any text-substring hook proposal.
+## Done at close
 
-## Pending
-
-None outstanding tonight. All gate requests cleared. All [feedback] nudges replied to.
+- Card #2715 → Done (silas)
+- Mode-A read-path race → structurally closed
+- Byte-asymmetry data + saturation-and-the-grandma-tape story → in graph + on disk
