@@ -146,7 +146,7 @@ fn assemble_roles() -> serde_json::Value {
 }
 
 fn assemble_recent_events() -> serde_json::Value {
-    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
+    let log_path = crate::shared::state_paths::chorus_log_file();
     let content = fs::read_to_string(&log_path).unwrap_or_default();
 
     let now = std::time::SystemTime::now()
