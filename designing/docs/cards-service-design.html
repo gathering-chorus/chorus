@@ -333,7 +333,7 @@ flowchart LR
 
 <div class="gap"><strong>Loom citation contracts (L1-L5).</strong> No citation validation, no back-reference, no propagation, no production gate, no audit. Named in Loom contracts section above; cards to file separately or fold into #2676 scope.</div>
 
-<div class="gap"><strong>Filesystem stomp at read path (Mode A).</strong> Shared <code>/chorus</code> tree; peer <code>git checkout</code> rewrites disk in place; uncommitted edits silently overwritten. Receipts: Silas's ontology + design-doc work this morning, this doc twice today. Commits-service-v3 (PR #100) addresses the commit path but does not intercept read-time stomp. <strong>Open — fix not yet designed.</strong></div>
+<div class="gap"><strong>Filesystem stomp at read path (shared-HEAD race).</strong> Shared <code>/chorus</code> tree; peer <code>git checkout</code> rewrites disk in place; uncommitted edits silently overwritten. Receipts: Silas's ontology + design-doc work this morning, this doc twice today. Commits-service-v3 (PR #100) addresses the commit path but does not intercept read-time stomp. <strong>Path-to-close in design — see <code>version-control-service-design.html</code> "Concurrent reads against shared mutable git state" + #2706.</strong></div>
 
 <h2>Implementation Plan</h2>
 <table>
@@ -343,7 +343,7 @@ flowchart LR
 <tr><td>#2672</td><td>Vikunja-write-refusal hook — PreToolUse Bash refusal of direct :3456 writes</td><td>Hook-bites-bypass gap</td><td>Wren</td></tr>
 <tr><td>#2673</td><td>cards-service subdomain Athena populate — fill 10 missing sections</td><td>Subdomain plumbing data gap</td><td>Wren</td></tr>
 <tr><td>L1-L5 (to file or fold)</td><td>Loom citation contracts — validation at write, back-reference, propagation, production gate, audit</td><td>Cards↔Loom contract gap</td><td>Wren + Silas</td></tr>
-<tr><td>(unfiled)</td><td>Read-time filesystem stomp prevention — likely a per-role staging area, fsync-during-edit lock, or active-edit detection before checkout</td><td>Filesystem stomp gap (Mode A read path)</td><td>—</td></tr>
+<tr><td>#2706 (filed)</td><td>Read-time filesystem stomp prevention — three candidates designed in version-control-service-design.html (serialize-checkout / read-side-snapshot / formal-acceptance), Jeff picks at demo</td><td>Filesystem stomp gap (read path) — shared-HEAD race</td><td>Kade</td></tr>
 <tr><td>PR #100 (Kade)</td><td>Commits-service-v3 — substrate owns the working tree at the COMMIT path</td><td>Filesystem stomp gap (commit path only — read path remains open)</td><td>Kade</td></tr>
 </table>
 
