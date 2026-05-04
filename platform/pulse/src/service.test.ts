@@ -10,6 +10,8 @@ import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp } from './service';
 
+const CHAT_START = '/api/chat/start';
+
 function fresh() {
   const store = new MessageStore(':memory:');
   const app = createApp(store);
@@ -52,40 +54,36 @@ describe('pulse service — nudges', () => {
     expect(res.body.error).toMatch(/from, to, content required/);
   });
 
-  it('GET /api/nudge/:role/pending returns stored nudges for that role', async () => {
+  // #2664: retirement assertion — GET /api/nudge/:role/pending is gone.
+  // Delivery confirmation is the nudge.surfaced spine event, not HTTP read.
+  it('GET /api/nudge/:role/pending returns 404 (retired #2664)', async () => {
     const { app } = fresh();
     await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'one' });
-    await request(app).post('/api/nudge').send({ from: 'kade', to: 'wren', content: 'two' });
     const res = await request(app).get('/api/nudge/wren/pending');
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
-    expect(res.body[0].content).toBe('one');
+    expect(res.status).toBe(404);
   });
 
   // #2435 wedge 7d — tests for /api/nudge/:id/ack, /api/nudge/:role/ack-all,
-  // /api/nudge/:id/attempt, /api/dead-letter replay retired alongside their
-  // endpoints. Kade's 0.3 audit confirmed 0 production callers. Delivery
-  // confirmation in V2 is the nudge.surfaced spine event, not an HTTP ack API.
-  // Dead-letter /attempt semantics retire with the inject-based delivery model.
+  // /api/nudge/:id/attempt retired alongside their endpoints.
 });
 
 describe('pulse service — chats', () => {
   it('POST /api/chat/start creates a chat', async () => {
     const { app } = fresh();
-    const res = await request(app).post('/api/chat/start').send({ roleA: 'k', roleB: 'w', topic: 'x' });
+    const res = await request(app).post(CHAT_START).send({ roleA: 'k', roleB: 'w', topic: 'x' });
     expect(res.status).toBe(200);
     expect(res.body.id).toBeTruthy();
   });
 
   it('POST /api/chat/start rejects missing roles with 400', async () => {
     const { app } = fresh();
-    const res = await request(app).post('/api/chat/start').send({ roleA: 'k' });
+    const res = await request(app).post(CHAT_START).send({ roleA: 'k' });
     expect(res.status).toBe(400);
   });
 
   it('message → get → end flow preserves order', async () => {
     const { app } = fresh();
-    const chat = await request(app).post('/api/chat/start').send({ roleA: 'k', roleB: 'w' });
+    const chat = await request(app).post(CHAT_START).send({ roleA: 'k', roleB: 'w' });
     const id = chat.body.id;
     await request(app).post(`/api/chat/${id}/message`).send({ from: 'k', content: 'hi' });
     await request(app).post(`/api/chat/${id}/message`).send({ from: 'w', content: 'yo' });
@@ -98,14 +96,14 @@ describe('pulse service — chats', () => {
 
   it('POST /api/chat/:id/message rejects missing fields with 400', async () => {
     const { app } = fresh();
-    const chat = await request(app).post('/api/chat/start').send({ roleA: 'k', roleB: 'w' });
+    const chat = await request(app).post(CHAT_START).send({ roleA: 'k', roleB: 'w' });
     const res = await request(app).post(`/api/chat/${chat.body.id}/message`).send({ from: 'k' });
     expect(res.status).toBe(400);
   });
 
   it('GET /api/chat/:id/messages honors since query', async () => {
     const { app } = fresh();
-    const chat = await request(app).post('/api/chat/start').send({ roleA: 'k', roleB: 'w' });
+    const chat = await request(app).post(CHAT_START).send({ roleA: 'k', roleB: 'w' });
     const id = chat.body.id;
     const m1 = await request(app).post(`/api/chat/${id}/message`).send({ from: 'k', content: '1' });
     await request(app).post(`/api/chat/${id}/message`).send({ from: 'k', content: '2' });
@@ -148,10 +146,13 @@ describe('pulse service — queries and dead letter', () => {
     expect(res.body).toHaveProperty('pending');
   });
 
-  it('GET /api/dead-letter returns array', async () => {
+  // #2664: retirement assertion — GET /api/dead-letter is gone alongside
+  // POST /api/dead-letter/:id/replay. Inject-watcher (the writer that
+  // produced dead-letter state via recordDeliveryAttempt) was retired by
+  // #2435. Zero production callers per Kade's 0.3 audit.
+  it('GET /api/dead-letter returns 404 (retired #2664)', async () => {
     const { app } = fresh();
     const res = await request(app).get('/api/dead-letter');
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.status).toBe(404);
   });
 });
