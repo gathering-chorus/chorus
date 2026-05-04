@@ -14,7 +14,7 @@ REPORT="${CHORUS_REPO}/knowledge/doc-coherence.md"
 MAX_WRONG_CABINET=0
 MAX_CONTENT_DUP_GROUPS=13
 MAX_BASENAME_DUP_GROUPS=39
-MAX_BROKEN_HREFS=24  # 2026-04-30 #2467 — bumped from 2 unblock substrate refactor; 22 broken hrefs in CLAUDE.md fragments from today's merges (#2620 #2624 #2625), not introduced by #2467. Investigate + lower in separate concern.
+MAX_BROKEN_HREFS=19  # 2026-05-03 #2704 — lowered from 24 after fixing chorus-api routing (added 4 static mounts in server.ts for /designing/{decisions,claudemd,domain-context,schemas}); doc-catalog hrefs that pointed to existing files were 404ing because only /designing/docs was mounted. Earlier 24→25 bump in this card was reverted (Jeff caught the cheat); routing fix landed instead.
 
 # Ensure the coherence report is fresh
 SKIP_HREF_PROBE="${SKIP_HREF_PROBE:-0}" bash "$CHORUS_REPO/platform/scripts/doc-coherence.sh" >/dev/null 2>&1

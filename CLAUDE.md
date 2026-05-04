@@ -25,7 +25,6 @@ Role state (CLAUDE.md, briefs/, memory files, decisions) stays in gathering-team
 chorus/
 ├── scripts/          — Operational scripts (chorus-*.sh)
 ├── config/           — Configuration
-│   └── profiles/     — Permission profiles (base.json, silas.json, kade.json, wren.json)
 ├── docs/             — Design docs, communication flows
 │   └── diagrams/     — Mermaid sources + rendered PNGs
 ├── dashboards/       — Grafana dashboard JSON (canonical source)
@@ -41,7 +40,7 @@ The SQLite index database lives at `~/.chorus/index.db` — it's runtime state, 
 ## Conventions
 
 - **Canonical source**: Dashboards live here and get synced/copied to shared-observability for deployment. Alert rules live in `shared-observability/config/grafana/provisioning/alerting/` — single source at the deploy-source boundary; chorus-api references that path directly (#2620).
-- **No secrets**: Permission profiles reference env var names, never values. The sensitive-paths hook applies here too.
+- **No secrets**: Live permissions are at `~/.claude/settings.json` (allow + deny + hooks). Never write env-var *values* into config files — reference names only. The sensitive-paths hook enforces this.
 - **Test before deploy**: Scripts should be testable locally before being symlinked into place.
 
 ## Quality layers (ADR-026)

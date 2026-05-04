@@ -56,6 +56,13 @@ app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 // (cross-repo moves from jeff-bridwell-personal-site completed in #2458)
 const chorusRepoRoot = path.resolve(__dirname, '..', '..', '..');
 app.use('/designing/docs', express.static(path.join(chorusRepoRoot, 'designing', 'docs'), { extensions: ['html'] }));
+// #2704 — doc-catalog announces hrefs under all designing/* subdirs but only
+// /designing/docs was mounted. Decisions/claudemd/domain-context/schemas
+// 404'd, polluting the doc-coherence broken-hrefs ratchet with non-bugs.
+app.use('/designing/decisions', express.static(path.join(chorusRepoRoot, 'designing', 'decisions'), { extensions: ['html', 'md'] }));
+app.use('/designing/claudemd', express.static(path.join(chorusRepoRoot, 'designing', 'claudemd'), { extensions: ['html', 'md'] }));
+app.use('/designing/domain-context', express.static(path.join(chorusRepoRoot, 'designing', 'domain-context'), { extensions: ['html', 'md'] }));
+app.use('/designing/schemas', express.static(path.join(chorusRepoRoot, 'designing', 'schemas'), { extensions: ['html', 'md', 'json'] }));
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
