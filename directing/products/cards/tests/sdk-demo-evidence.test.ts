@@ -30,13 +30,18 @@ function silence() {
 class MockClient {
   boardName = 'gathering';
   calls: Array<{ method: string; args: unknown[] }> = [];
-  async done(index: number) { this.calls.push({ method: 'done', args: [index] }); }
+  // #2707 — mock now models a working board: done() flips the status
+  // returned by subsequent view() calls. Before, view() always returned WIP,
+  // which masked the silent-done-failure bug doneCard now catches.
+  doneCalled = new Set<number>();
+  async done(index: number) { this.calls.push({ method: 'done', args: [index] }); this.doneCalled.add(index); }
   async view(index: number): Promise<BoardTask> {
     this.calls.push({ method: 'view', args: [index] });
+    const status = this.doneCalled.has(index) ? 'Done' : 'WIP';
     return {
-      index, title: `task-${index}`, description: '', status: 'WIP',
+      index, title: `task-${index}`, description: '', status,
       owner: 'Kade', priority: 'P1', domains: [], apiId: index + 1000,
-      created: '2026-04-19T10:00:00Z', updated: '2026-04-19T10:00:00Z', done: false,
+      created: '2026-04-19T10:00:00Z', updated: '2026-04-19T10:00:00Z', done: status === 'Done',
     } as unknown as BoardTask;
   }
   async comments(index: number) { this.calls.push({ method: 'comments', args: [index] }); return []; }

@@ -17,9 +17,21 @@ import { emitSpineEvent } from '../src/events';
 
 describe('events.ts — NODE_ENV=test suppresses spine emissions', () => {
   const logPath = path.resolve(__dirname, '..', '..', '..', 'platform', 'logs', 'chorus.log');
+  let savedNodeEnv: string | undefined;
+
+  beforeEach(() => {
+    // #2707 — make hermetic. Jest only auto-sets NODE_ENV='test' if it isn't
+    // already set; pre-commit invoked from chorus_commit's caller env passes
+    // NODE_ENV='production', which made this assertion brittle. Set it here.
+    savedNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+  });
+  afterEach(() => {
+    if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = savedNodeEnv;
+  });
 
   it('emitSpineEvent does not append to chorus.log under jest', () => {
-    // Jest sets NODE_ENV=test automatically.
     expect(process.env.NODE_ENV).toBe('test');
     const before = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
     emitSpineEvent('card.item.created', 'kade', { card_id: '9999999', title: 'regression fixture' });

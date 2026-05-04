@@ -57,6 +57,10 @@ class MockClient {
 
   async done(index: number): Promise<void> {
     this.record('done', [index]);
+    // #2707 — model done() effect: flip task status so doneCard's
+    // verify-after-move sees Done. Without this, mock looks like silent-fail.
+    const t = this.tasks.get(index);
+    if (t) (t as { status: string }).status = 'Done';
   }
 
   async update(index: number, fields: unknown): Promise<void> {

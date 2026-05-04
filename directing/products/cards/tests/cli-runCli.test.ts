@@ -20,6 +20,10 @@ import type { BoardTask } from '../src/types';
 class MockClient {
   calls: Array<{ method: string; args: unknown[] }> = [];
   tasks: BoardTask[] = [];
+  // #2707 — track which indexes have had done() called so view() can return
+  // status='Done' for them, modeling a working board. Without this, doneCard's
+  // verify-after-move catches the mock as a silent-failure.
+  doneCalled = new Set<number>();
 
   record(method: string, args: unknown[]): void {
     this.calls.push({ method, args });
@@ -55,6 +59,9 @@ class MockClient {
     this.record('view', [index]);
     const found = this.tasks.find((t) => t.index === index);
     if (!found) throw new Error(`Task ${index} not found`);
+    if (this.doneCalled.has(index)) {
+      return { ...found, status: 'Done', done: true } as unknown as BoardTask;
+    }
     return found;
   }
 
@@ -83,6 +90,7 @@ class MockClient {
 
   async done(index: number): Promise<void> {
     this.record('done', [index]);
+    this.doneCalled.add(index);
   }
 
   async comment(index: number, text: string): Promise<void> {

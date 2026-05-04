@@ -912,6 +912,26 @@ export async function moveCard(
   }
 }
 
+// #2707 — verify the move actually applied. client.done() returns void on
+// moveToBucket success but the board can silently leave the card in WIP
+// (transient API timeout, async race, board cache miss). Without this check,
+// "Done: #N" + card.accepted spine event fire for a card still in WIP —
+// every downstream consumer of card.accepted then lies. Retries once with a
+// short backoff so transient API hiccups don't false-fail.
+async function verifyDoneApplied(client: BoardClient, index: number): Promise<void> {
+  const readStatus = async (): Promise<string> => {
+    try { return (await client.view(index)).status; } catch { return 'unknown'; }
+  };
+  let postStatus = await readStatus();
+  if (postStatus === 'Done') return;
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  postStatus = await readStatus();
+  if (postStatus === 'Done') return;
+  throw new Error(
+    `cards done ${index}: board did not move card to Done after 2 attempts. Status remains: ${postStatus}. Retry manually or investigate board API.`,
+  );
+}
+
 export async function doneCard(client: BoardClient, index: number, provenCards?: string[]): Promise<void> {
   const role = detectRole();
   let title = '';
@@ -951,6 +971,8 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
   }
 
   await client.done(index);
+  await verifyDoneApplied(client, index);
+
   console.log(`Done: #${index}`);
   emitSpineEvent('card.item.completed', role, {
     card_id: String(index), title, board: client.boardName,

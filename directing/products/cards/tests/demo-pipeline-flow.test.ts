@@ -79,19 +79,39 @@ for (const b of mockBuckets) {
 
 function createMockClient(): BoardClient {
   const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
-  // Mock data layer (#1820)
-  (client as any).fetchAllTasks = jest.fn().mockResolvedValue(allMockTasks);
+  // #2707 — track tasks moved to the Done bucket (id=6) so subsequent
+  // view()/fetchTask reflect status='Done'. Without this, doneCard's verify
+  // catches the mock as a silent-failure and throws.
+  const movedToDone = new Set<number>();
+  const overlay = (task: any) => movedToDone.has(task.id)
+    ? { ...task, bucket_id: 6, status: 'Done', done: true, doneAt: '2026-05-03T22:00:00Z' }
+    : task;
+
+  (client as any).fetchAllTasks = jest.fn().mockImplementation(() => Promise.resolve(allMockTasks.map(overlay)));
   (client as any).fetchBuckets = jest.fn().mockResolvedValue(mockBuckets);
-  (client as any).fetchBucketMapFromDB = jest.fn().mockReturnValue(mockBucketMap);
+  (client as any).fetchBucketMapFromDB = jest.fn().mockImplementation(() => {
+    const m = new Map(mockBucketMap);
+    for (const id of movedToDone) m.set(id, 'Done');
+    return m;
+  });
   (client as any).fetchTask = jest.fn().mockImplementation((apiId: number) => {
     const task = allMockTasks.find((t: any) => t.id === apiId);
     if (!task) return Promise.reject(new Error(`Task ${apiId} not found`));
-    return Promise.resolve(task);
+    return Promise.resolve(overlay(task));
   });
-  // Mock mutation APIs
   (client as any).api = jest.fn().mockImplementation((method: string, endpoint: string, body?: any) => {
+    // moveToBucket POSTs to /projects/X/views/Y/buckets/<bucketId>/tasks
+    // with {task_id}. Capture moves to bucket 6 (Done) so subsequent
+    // view()/fetchTask reflect status='Done'.
+    const bucketAddMatch = endpoint.match(/\/buckets\/(\d+)\/tasks$/);
+    if (bucketAddMatch && method === 'POST') {
+      const bucketId = parseInt(bucketAddMatch[1]);
+      if (bucketId === 6 && body?.task_id) movedToDone.add(body.task_id);
+      return Promise.resolve({});
+    }
     if (endpoint.match(/^\/tasks\/\d+$/) && method === 'POST') {
-      return Promise.resolve({ ...body, id: parseInt(endpoint.split('/').pop()!) });
+      const taskId = parseInt(endpoint.split('/').pop()!);
+      return Promise.resolve({ ...body, id: taskId });
     }
     if (endpoint.match(/\/tasks\/\d+\/comments$/)) {
       if (method === 'GET') return Promise.resolve([]);
