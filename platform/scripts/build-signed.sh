@@ -12,6 +12,21 @@
 #              hash 9086CB9855BC4642CA03D0B6415A50BD90B86AE3 by default,
 #              override via CHORUS_SIGNING_IDENTITY env var).
 #
+# Cross-machine note: this cert lives in Library Mac's user keychain only.
+# Today only Library runs chorus-inject, so identity availability isn't a
+# concern. If a second machine ever needs to build (e.g., Bedroom doing
+# chorus-inject builds), either: (a) export the cert from Library
+# (Keychain Access → My Certificates → "Chorus Local Signing" → File →
+# Export Items, save as .p12 with password) and import to the new
+# machine's user keychain; OR (b) generate a fresh self-signed code-signing
+# cert there (`Keychain Access → Certificate Assistant → Create a
+# Certificate, type=Code Signing, Self Signed Root, set name`), grab the
+# resulting hash with `security find-identity -v -p codesigning`, and
+# override SIGNING_IDENTITY via env. Either way, the new machine also has
+# to grant Accessibility once on first chorus-inject run. Without these
+# steps build-signed.sh falls back to ad-hoc signing on the new machine
+# and re-introduces the cdhash-churn bug locally there.
+#
 # History note: prior version of this script (silas #2218) used `--sign -`
 # (ad-hoc) with a stable identifier. That fixed the identifier-suffix churn
 # but did NOT survive TCC's keychain-identity check — ad-hoc binaries get
