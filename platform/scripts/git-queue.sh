@@ -468,6 +468,70 @@ do_push() {
   return $exit_code
 }
 
+# --- Pull with explicit dirty-tree surface (#2688) ---
+# Sister to do_push but inverted on stash: do_push auto-stashes to keep push
+# succeeding; do_pull lets dirty-tree fire honestly so caller recovers.
+# On rebase conflict: abort cleanly to pre-rebase state, exit 1 with conflict
+# stderr surfaced. MCP layer (chorus_pull) classifies via stderr patterns.
+
+do_pull() {
+  # #2580: parse --force-branch escape hatch (mirror do_push)
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+
+  # Optional --branch / --remote (MCP layer passes these). Defaults: current
+  # HEAD branch + origin (git's own defaults).
+  local branch_arg="" remote_arg=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --branch) branch_arg="$2"; shift 2 ;;
+      --remote) remote_arg="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! check_branch "pull" "$force_flag"; then
+    exit 1
+  fi
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: timeout after ${LOCK_TIMEOUT}s — another commit is holding the lock" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.pull.started"
+
+  local exit_code=0
+  # No auto-stash on pull — dirty-tree is a legitimate label the MCP layer
+  # surfaces so callers know to commit/stash before retry. See #2688 AC2.
+  local pull_args=("--rebase")
+  if [ -n "$remote_arg" ]; then pull_args+=("$remote_arg"); fi
+  if [ -n "$branch_arg" ]; then pull_args+=("$branch_arg"); fi
+  git -C "$REPO_ROOT" pull "${pull_args[@]}" 9>&- 2>&1 || exit_code=$?
+
+  # On rebase conflict, abort cleanly so the working tree returns to pre-rebase
+  # state. The MCP layer emits chorus_pull.rebase.aborted; the user retries
+  # without manual `git rebase --abort`.
+  if [ $exit_code -ne 0 ]; then
+    if git -C "$REPO_ROOT" rev-parse --git-path rebase-merge 2>/dev/null | xargs -I {} test -d {} 2>/dev/null \
+       || git -C "$REPO_ROOT" rev-parse --git-path rebase-apply 2>/dev/null | xargs -I {} test -d {} 2>/dev/null; then
+      git -C "$REPO_ROOT" rebase --abort 2>/dev/null || true
+    fi
+  fi
+
+  clear_meta
+  log_event "build.pull.completed" "exit_code=${exit_code}"
+
+  if [ $exit_code -ne 0 ]; then
+    echo "git-queue: pull failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
 # --- Main ---
 
 cmd="${1:-help}"
@@ -476,6 +540,7 @@ shift || true
 case "$cmd" in
   commit)  do_commit "$@" ;;
   push)    do_push "$@" ;;
+  pull)    do_pull "$@" ;;
   add)
     echo "git-queue: 'add' is not a command — did you mean 'commit'?" >&2
     echo "  git-queue.sh commit <files...> -- -m \"message\"" >&2

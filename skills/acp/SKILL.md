@@ -29,9 +29,27 @@ If **neither** exists and **you are the building role** (not Jeff or Wren accept
 
 If **Jeff or Wren** is running /acp, they are the accepting authority — proceed (they've seen it or are overriding).
 
-## Step 1: Commit + push via chorus_commit MCP tool
+## Step 1a: Pull + rebase via chorus_pull MCP tool
 
-**The card is still in WIP at this step — that's deliberate.** `chorus_commit` derives the active card from the board (status=WIP, owner=role). Marking Done first would empty the role's WIP, and the tool would refuse with `no-wip-card`. Commit before accept; if commit refuses, the card stays in WIP and you investigate.
+**Pull before commit so the local branch is at-or-ahead-of origin.** Mode-A means a peer's checkout could have moved HEAD between your last sync and now; pulling first reduces push-side surprises. The tool handles flock + check_branch + rebase via `git-queue.sh do_pull`.
+
+```
+mcp__chorus-api__chorus_pull({
+  role: "<your-role>",
+})
+```
+
+On success: `{role, card_id, status: "fetched"}`. On refusal:
+- `rebase-conflict` → resolve manually, retry. do_pull aborted to pre-rebase state; spine emitted `chorus_pull.rebase.aborted`.
+- `flock-timeout` → another role holds the lock; wait + retry.
+- `dirty-tree` → uncommitted edits block pull-rebase. Commit or stash, then retry.
+- `pull-fail` → fallback for network / auth / unmatched. Read stderr in the error message.
+
+If pull refuses, fix the cause and retry **before** chorus_commit — committing on a stale branch produces the very push-conflict the chorus_pull step exists to prevent.
+
+## Step 1b: Commit + push via chorus_commit MCP tool
+
+**The card is still in WIP at this step — that's deliberate.** `chorus_commit` derives the active card from the board (status=WIP, owner=role). Marking Done first would empty the role's WIP. Commit before accept; if commit refuses, the card stays in WIP and you investigate.
 
 Call the MCP tool with role + paths + commit message. The service handles staging, branch validation, hooks, and push internally:
 
@@ -43,12 +61,11 @@ mcp__chorus-api__chorus_commit({
 })
 ```
 
-On success the response is `{role, card_id, branch, sha}`. On refusal you get a typed reason: `no-wip-card | multi-wip | board-unreachable | branch-mismatch | hook-fail | push-conflict`. Each refusal is a clear next-step:
-- `branch-mismatch` → checkout `<role>/<card-id>` and retry
+On success the response is `{role, card_id, branch, sha}`. On refusal you get a typed reason: `hook-fail | commit-fail | push-conflict | push-fail`. Each refusal is a clear next-step:
 - `hook-fail` → fix what pre-commit reported, retry
-- `push-conflict` → rebase has a real conflict; resolve it, retry
-- `multi-wip` → close one of the other WIP cards first
-- `no-wip-card` → the card you think you're accepting isn't actually in your WIP — verify
+- `commit-fail` → non-hook commit failure (read stderr); fix and retry
+- `push-conflict` → rebase has a real conflict; chorus_pull first to resolve, then retry
+- `push-fail` → fallback for non-conflict push failure (read stderr)
 
 If the MCP tool itself isn't reachable (chorus-api down or pre-deploy), the acceptance can't proceed — escalate to ops to bring chorus-api back up before retrying. Don't reach around the typed surface.
 
