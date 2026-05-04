@@ -14,7 +14,7 @@ REPORT="${CHORUS_REPO}/knowledge/doc-coherence.md"
 MAX_WRONG_CABINET=0
 MAX_CONTENT_DUP_GROUPS=13
 MAX_BASENAME_DUP_GROUPS=39
-MAX_BROKEN_HREFS=25  # 2026-05-03 #2704 — bumped from 24 to absorb pre-existing +1 drift; #2704 changes (delete dead profiles + fix doc paths) introduced none of the 25 broken hrefs. Real cleanup is a separate concern (live probe shows 32 actual broken paths vs ratchet limit 25).
+MAX_BROKEN_HREFS=19  # 2026-05-03 #2704 — lowered from 24 after fixing chorus-api routing (added 4 static mounts in server.ts for /designing/{decisions,claudemd,domain-context,schemas}); doc-catalog hrefs that pointed to existing files were 404ing because only /designing/docs was mounted. Earlier 24→25 bump in this card was reverted (Jeff caught the cheat); routing fix landed instead.
 
 # Ensure the coherence report is fresh
 SKIP_HREF_PROBE="${SKIP_HREF_PROBE:-0}" bash "$CHORUS_REPO/platform/scripts/doc-coherence.sh" >/dev/null 2>&1
