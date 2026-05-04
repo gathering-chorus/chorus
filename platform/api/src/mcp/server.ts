@@ -563,7 +563,12 @@ interface CommitArgs {
 // #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
 // complexity under threshold. Each returns the typed reason for its phase.
 function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fail' {
-  return /^pre-commit:|^.. blocked|hook failed/i.test(stderr) ? 'hook-fail' : 'commit-fail';
+  // #2699 — tightened from /^pre-commit:|^.. blocked|hook failed/i. Old regex
+  // matched any pre-commit-prefixed line (incl. warnings) and the bare 'hook
+  // failed' substring anywhere. New form requires a failure marker (red circle,
+  // X, 'failed', 'blocked') on the same line as the 'pre-commit:' prefix.
+  // Wren observed the over-match during #2689 acp dogfood 2026-05-03.
+  return /pre-commit:.*(?:🔴|❌|failed|blocked)/i.test(stderr) ? 'hook-fail' : 'commit-fail';
 }
 
 function classifyPushFailure(stderr: string): 'push-conflict' | 'push-fail' {
@@ -650,12 +655,29 @@ async function executeCommit(
   const shaMatch = commitStdout.match(/\[\S+\s+([a-f0-9]+)\]/);
   const sha = shaMatch ? shaMatch[1] : 'unknown';
 
+  // #2699 — Capture HEAD ref name immediately after commit lands. Defensive
+  // against Mode-A: a peer's checkout between this point and the push step
+  // would silently move HEAD; bare `git push` would then push the wrong branch
+  // (because #2689's --force-branch escape disabled do_push's check_branch).
+  // Captured ref passes through to do_push via _CHORUS_PUSH_REF env so the
+  // push targets that specific branch regardless of where HEAD currently sits.
+  let pushRef = '';
+  try {
+    const { stdout: headOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
+    pushRef = headOut.trim();
+  } catch {
+    // capture failed — fall through to bare push (current behavior, accepts Mode-A residual)
+  }
+  const pushEnv: NodeJS.ProcessEnv = pushRef ? { ...env, _CHORUS_PUSH_REF: pushRef } : env;
+
   // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
   // #2689 — pass --force-branch (mirrors #2687's commit-side fix). Without it,
   // a Mode-A bump between commit and push triggered do_push's check_branch and
   // surfaced as a false-positive push-conflict (6001a6be / b53a7fe5 / e19588b0).
+  // #2699 — _CHORUS_PUSH_REF env carries the captured branch; do_push targets
+  // origin REF:REF when set.
   try {
-    await execFileAsync(gitQueuePath, ['push', '--force-branch'], { env, timeout: 60_000, cwd: repoRoot });
+    await execFileAsync(gitQueuePath, ['push', '--force-branch'], { env: pushEnv, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
     const stderr = extractStderr(err);
     const reason = classifyPushFailure(stderr);
