@@ -414,6 +414,18 @@ do_push() {
     do_delete_remote "${1:-}"
     return $?
   fi
+  # #2705: --branch <ref> explicit push target. Replaces the _CHORUS_PUSH_REF
+  # env-carry shipped in #2699. Substrate-uniform with --force-branch shape.
+  local push_branch=""
+  if [ "${1:-}" = "--branch" ]; then
+    shift
+    push_branch="${1:-}"
+    shift || true
+    if [ -z "$push_branch" ]; then
+      echo "git-queue: error — push --branch requires <ref>" >&2
+      return 1
+    fi
+  fi
   if ! check_branch "push" "$force_flag"; then
     exit 1
   fi
@@ -455,14 +467,16 @@ do_push() {
   # #2700: don't merge stderr into stdout. MCP classifier reads err.stderr to
   # label push-conflict (rebase failure) vs push-fail; merging collapsed both
   # into push-fail by hiding the rebase/conflict signature text.
-  # #2699: if _CHORUS_PUSH_REF is set, target that branch explicitly (origin
-  # REF:REF) regardless of current HEAD. Defensive against Mode-A bumps between
-  # chorus_commit's capture and this push step.
-  if [ -n "${_CHORUS_PUSH_REF:-}" ]; then
+  # #2699: target the captured branch explicitly (origin REF:REF) regardless
+  # of current HEAD. Defensive against Mode-A bumps between chorus_commit's
+  # capture and this push step.
+  # #2705: now via --branch <ref> arg (parsed at top of do_push) instead of
+  # _CHORUS_PUSH_REF env. Substrate-uniform with --force-branch shape.
+  if [ -n "$push_branch" ]; then
     if [ -z "$has_upstream" ]; then
-      git -C "$REPO_ROOT" push 9>&- origin "${_CHORUS_PUSH_REF}:${_CHORUS_PUSH_REF}" || exit_code=$?
+      git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
     else
-      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- origin "${_CHORUS_PUSH_REF}:${_CHORUS_PUSH_REF}" || exit_code=$?
+      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
     fi
   else
     if [ -z "$has_upstream" ]; then
