@@ -12,6 +12,8 @@ pub fn is_source_code(path: &str) -> bool {
         || path.contains("gathering-docs")
         || path.contains("/artifacts/")
         || path.contains("designing/docs")
+        || path.starts_with("/tmp/")
+        || path.starts_with("/var/folders/")
     {
         return false;
     }
