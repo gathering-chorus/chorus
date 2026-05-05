@@ -35,7 +35,26 @@ chorus/
 
 ## Runtime Artifacts
 
-The SQLite index database lives at `~/.chorus/index.db` — it's runtime state, not source code. Scripts in `~/.chorus/scripts/` are symlinks to `chorus/scripts/`.
+The SQLite index database lives at `~/.chorus/index.db` — it's runtime state, not source code. Scripts in `~/.chorus/scripts/` are symlinks to `chorus/scripts/`. Signed Rust binaries (`chorus-inject`, `chorus-hook-shim`, `chorus-hooks`) deploy to `~/.chorus/bin/` (#2734) — single TCC-bound cdhash per binary, `$PATH` prepended so `target/release/` rebuilds don't cross the live deploy.
+
+## Per-role Worktrees (#2735)
+
+Each role works in its own git worktree at `/CascadeProjects/chorus-werk/<role>/`, branched from main, with its own HEAD. Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions; edits during a session land in the role's werk, not in canonical.
+
+The protected primitive `/chorus/roles/<role>/` IS session-start is preserved — that's still where every role's session anchors to read role state. Only the *write* surface moves to the werk. See `designing/docs/version-control-service-design.html` for the full Candidate D path-to-close.
+
+Substrate scripts:
+- `platform/scripts/chorus-werk` — `init / repoint / remove / status / pull <role> <card-id>`
+- `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical
+- `platform/scripts/chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
+
+Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`, **dormant unless `CHORUS_WERK_ENABLE=1`**):
+- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
+- Edits under another role's werk → blocked (cross-role)
+- `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
+- Reads of canonical → allowed (role state lives there)
+
+The feature flag is the per-role opt-in. PR #128 ships the substrate dormant; each role activates by setting `CHORUS_WERK_ENABLE=1` in their own session-start when they migrate. Mid-migration heterogeneous state (some roles in werk, some in canonical) is supported — the guard is silent for any role that hasn't flipped the flag.
 
 ## Conventions
 

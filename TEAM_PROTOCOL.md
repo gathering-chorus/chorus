@@ -159,66 +159,60 @@ CLI (`cards`) for mutations. API is read-only.
 
 See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget.
 
-# Per-Role Worktree Convention (#2582)
+# Per-Role Worktrees — chorus-werk (#2735, 2026-05-05)
 
-Each role operates from its own git worktree to isolate `.git/HEAD` and prevent cross-branch contamination across concurrent role sessions on the same machine.
+**Per-role worktrees are the substrate.** Each role works in `/CascadeProjects/chorus-werk/<role>/` — a git worktree of canonical, branched from main, with its own `HEAD` file (under `.git/worktrees/<role>/HEAD`). Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions. Edits during a session land in the role's werk; canonical refreshes only via lock-guarded `chorus-werk-sync`.
 
-## Worktree Paths (canonical)
+## Substrate scripts (`platform/scripts/`)
 
-| Role | Persistent worktree | Topic worktrees (optional) |
-|------|---------------------|---------------------------|
-| Kade | `~/CascadeProjects/chorus-kade/` | `chorus-kade-<topic>/` |
-| Wren | `~/CascadeProjects/chorus-wren/` | `chorus-wren-<topic>/` |
-| Silas | `~/CascadeProjects/chorus-silas/` | `chorus-silas-<topic>/` (e.g., existing `chorus-2526`) |
+- `chorus-werk init <role>` — create worktree at `$CHORUS_WERK_BASE/<role>/`, detached at main's tip
+- `chorus-werk repoint <role> <branch>` — switch werk to `<branch>` via `git-queue.sh checkout`
+- `chorus-werk pull <role> <card-id>` — atomic init-if-needed + repoint to `<role>/<card-id>`
+- `chorus-werk remove <role>` — `git worktree remove`
+- `chorus-werk status` — list current worktrees
+- `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit)
+- `chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 
-The shared `~/CascadeProjects/chorus/` repo is the canonical clone — worktrees branch off it via `git worktree add`. The shared tree is for read-only inspection and `git fetch`; **role-driven edits and commits happen in per-role worktrees**.
+## Edit/Write rules (chorus-hooks `canonical_write_guard`)
 
-## Why
+**Dormant unless `CHORUS_WERK_ENABLE=1`** in the role's session env. Per-role opt-in is the migration mechanism — PR #128 ships the guard in the binary but it does nothing until each role flips the flag.
 
-`.git/HEAD` is a single file. When two role sessions share a working tree, any `git checkout` in one role's session changes HEAD for all sessions that observe that `.git`. Result: kade's session looks at a file thinking it's on kade's branch, but wren just checked out wren's — kade reads stale-or-foreign content. Documented incidents 2026-04-29: two cross-branch contamination events in 30 minutes (and a third within the next hour after that).
+When active:
+- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
+- Edits under another role's werk → blocked (cross-role)
+- `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
+- Reads of canonical → allowed (role state lives there)
+- Silent when role env isn't set (bootstrap / generic shell)
 
-Per-role worktrees give each role its own `.git/HEAD` (under `.git/worktrees/<name>/HEAD`); branch state is isolated by construction. Refs and objects stay shared, so commits + branches are visible across worktrees.
+Strict flag check: only `CHORUS_WERK_ENABLE=1` activates. Empty / `0` / `true` / `yes` all leave the guard dormant — avoids accidental activation from inherited shell vars.
 
-## Setup (one-time per role)
+## Protected primitive — session-start anchor
 
-```bash
-cd ~/CascadeProjects/chorus
-git worktree add ~/CascadeProjects/chorus-<role> -b <role>/main-default origin/main
-```
+The session-start cwd remains `/chorus/roles/<role>/` in canonical. That's where role state (current-work.md, briefs/, memory pointers) reads from. Only the *write* surface moves to `/chorus-werk/<role>/`. The 2026-05-01 ruling rejected mechanisms that move session-start; chorus-werk does not.
 
-Then launch your Claude Code session from `~/CascadeProjects/chorus-<role>/roles/<role>` instead of `~/CascadeProjects/chorus/roles/<role>`. The per-role `roles/<role>/.claude/settings.json` paths to `chorus-hook-shim` etc. stay absolute — the shared daemon is unchanged. Only your shell's `cwd` and your git operations move.
+## Earlier rejected shapes — what chorus-werk is NOT
 
-## Topic worktrees
+- **Per-role sibling worktrees** (`chorus-kade/`, `chorus-wren/`, `chorus-silas/`) — RETIRED 2026-05-01 (`#2640`). Broke role-directory-is-session-start by relocating the session anchor. Specific shape rejected: sibling directories adjacent to `chorus/` serving as **both** session-start cwd **and** edit surface.
+- **Internal worktrees with cwd enforcement** (`chorus/.worktrees/<role>-<hash>/`) — REJECTED 2026-05-01. Same family.
 
-For multi-card parallel work, add scoped worktrees:
+chorus-werk preserves session-start at `/chorus/roles/<role>/` in canonical and only moves the *write* surface.
 
-```bash
-cd ~/CascadeProjects/chorus-<role>
-git worktree add ../chorus-<role>-<card-id> -b <role>/<card-id>-<slug> origin/main
-```
+## Shared-HEAD race — was accepted-residual; reopened 2026-05-05 (`#2706`)
 
-Existing `chorus-2526` (silas) is the canonical example. Topic worktrees retire automatically when removed via `git worktree remove`.
+`/chorus/.git/HEAD` is one file shared across the team. Through 2026-05-03 the team chose to absorb this race; the 2026-05-05 cross-role contamination at acp (canonical sat on `wren/2731` while Kade tried to ship `#2733`) reopened the question with incident data.
 
-## Verification
+**Mitigation 2026-05-05:** Candidate D (per-role werks, `#2735`) at the substrate layer + Candidate A (`do_checkout` flock, `#2710`) as belt-and-suspenders for canonical's HEAD during sync. The race surface narrows to canonical-sync only. See `version-control-service-design.html` for the full path-to-close.
 
-```bash
-# Two roles, two terminals, simultaneous:
-# Terminal A (kade): cd ~/CascadeProjects/chorus-kade && git checkout some-branch
-# Terminal B (wren): cd ~/CascadeProjects/chorus-wren && git checkout other-branch
-# Each session sees only its own branch state.
-cat ~/CascadeProjects/chorus-kade/.git   # → "gitdir: ..../chorus/.git/worktrees/chorus-kade"
-cat ~/CascadeProjects/chorus/.git/worktrees/chorus-kade/HEAD   # → kade's branch ref
-```
+## Cross-role commit + same-role wrong-card — defended at the gates
 
-If both roles' git operations succeed without each one's HEAD changing under the other, the convention is honored.
-
-## Backstop
-
-`#2580` (git-queue branch-check) stays in place as defense-in-depth: refuses commit if working-tree branch differs from the sender's expected branch. Catches the case where someone's session lands on the shared `/chorus` by accident despite the convention.
+- **Cross-role commit:** `git-queue` branch-check (`#2580`) + pre-push hook (`#2598` / `#2625` / `#2639`). Shipped.
+- **Same-role wrong-card:** active-card-id strict check, sequenced as `#2641`. Re-evaluate after #2735 — most of the cross-role-contamination cases the guard catches become impossible by construction once per-role werks are active.
 
 ## Related
 
-- `#2195` — "worktrees exist" (silas's `chorus-2526` is canonical evidence; closed)
-- `#2580` — git-queue branch-check (silas, P1, defense-in-depth)
-- `#2582` — this convention (kade)
-- `feedback_no_live_role_identifiers_in_tests.md` — same-axis hermeticity principle applied to test fixtures
+- `#2735` — chorus-werk per-role worktrees (Candidate D, this convention)
+- `#2734` — `~/.chorus/bin/` single deploy location for chorus-* binaries
+- `#2710` — `do_checkout` flock adapter (belt-and-suspenders for canonical sync)
+- `#2640` — sibling worktree retirement (sets the protected primitive)
+- `#2580` — git-queue branch-check (defense-in-depth at commit gate)
+- `version-control-service-design.html` — full design narrative, path-to-close, rejected family

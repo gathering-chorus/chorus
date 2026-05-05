@@ -64,3 +64,80 @@ setup() {
   resolved="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd -P)"
   [ "$CHORUS_ROOT" = "$resolved" ]
 }
+
+# --- #2735: werk + bin env vars ---
+
+@test "CHORUS_WERK_BASE has a default" {
+  unset CHORUS_WERK_BASE
+  source "$SETUP"
+  [ -n "$CHORUS_WERK_BASE" ]
+}
+
+@test "CHORUS_WERK_BASE caller-provided value is preserved" {
+  export CHORUS_WERK_BASE=/custom/werk/base
+  source "$SETUP"
+  [ "$CHORUS_WERK_BASE" = "/custom/werk/base" ]
+}
+
+@test "CHORUS_BIN points at ~/.chorus/bin" {
+  unset CHORUS_BIN
+  source "$SETUP"
+  [ "$CHORUS_BIN" = "$HOME/.chorus/bin" ]
+}
+
+@test "PATH is prepended with CHORUS_BIN exactly once on idempotent re-source" {
+  unset CHORUS_BIN
+  source "$SETUP"
+  first_path="$PATH"
+  # First source must put CHORUS_BIN ahead of everything
+  [[ "$first_path" == "$CHORUS_BIN":* ]]
+  source "$SETUP"
+  # Second source must not duplicate it
+  count=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
+  [ "$count" = "1" ]
+}
+
+@test "<ROLE>_WERK set when sourced from a role's directory" {
+  cd "$BATS_TEST_DIRNAME/../../../roles/kade"
+  unset KADE_WERK CHORUS_ROLE
+  source "$SETUP"
+  [ "$CHORUS_ROLE" = "kade" ]
+  [ "$KADE_WERK" = "$CHORUS_WERK_BASE/kade" ]
+}
+
+@test "<ROLE>_WERK uppercases the role name" {
+  cd "$BATS_TEST_DIRNAME/../../../roles/wren"
+  unset WREN_WERK CHORUS_ROLE
+  source "$SETUP"
+  [ "$WREN_WERK" = "$CHORUS_WERK_BASE/wren" ]
+}
+
+@test "no <ROLE>_WERK set when role can't be inferred" {
+  cd /tmp
+  unset CHORUS_ROLE KADE_WERK WREN_WERK SILAS_WERK
+  source "$SETUP"
+  # CHORUS_ROLE not set → no role-specific werk var
+  [ -z "${KADE_WERK:-}" ]
+  [ -z "${WREN_WERK:-}" ]
+  [ -z "${SILAS_WERK:-}" ]
+}
+
+@test "CHORUS_HOME is the canonical chorus checkout (sibling to chorus-werk)" {
+  unset CHORUS_HOME
+  source "$SETUP"
+  [ -n "$CHORUS_HOME" ]
+  # Should end with /chorus, not /chorus-werk/<role>
+  [[ "$CHORUS_HOME" == */chorus ]]
+  [[ "$CHORUS_HOME" != *chorus-werk* ]]
+}
+
+@test "CHORUS_HOME equals CHORUS_ROOT when sourced from canonical" {
+  # Sourcing from canonical's own platform/scripts/ resolves CHORUS_ROOT
+  # to canonical; CHORUS_HOME should match it.
+  source "$SETUP"
+  case "$CHORUS_ROOT" in
+    *chorus-werk/*) skip "test runs from canonical only" ;;
+    */chorus)
+      [ "$CHORUS_HOME" = "$CHORUS_ROOT" ] ;;
+  esac
+}

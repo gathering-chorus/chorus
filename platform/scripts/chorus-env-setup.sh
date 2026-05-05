@@ -37,5 +37,53 @@ case "$PWD" in
   */roles/kade*)  export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
 esac
 
+# --- werk + bin (#2735) -----------------------------------------------------
+# CHORUS_HOME is the canonical chorus checkout (the read-only-during-sessions
+# tree). When sourced from canonical, CHORUS_HOME == CHORUS_ROOT. When
+# sourced from a werk (e.g., /chorus-werk/kade), CHORUS_HOME points at the
+# sibling /chorus directory — the role's session-start anchor and read
+# surface for role state.
+__chorus_env_parent="$(cd "$CHORUS_ROOT/.." && pwd -P)"
+case "$CHORUS_ROOT" in
+  *chorus-werk/*)
+    # Werk: canonical lives at <parent of chorus-werk>/chorus
+    __chorus_env_werk_parent="$(cd "$__chorus_env_parent/.." && pwd -P)"
+    export CHORUS_HOME="$__chorus_env_werk_parent/chorus"
+    unset __chorus_env_werk_parent ;;
+  *)
+    # Canonical or unknown: CHORUS_HOME == CHORUS_ROOT
+    export CHORUS_HOME="$CHORUS_ROOT" ;;
+esac
+
+# CHORUS_WERK_BASE is where per-role git worktrees live. Default sibling to
+# CHORUS_HOME so chorus-werk and chorus stay symmetric on disk.
+# Caller-provided value is preserved (tests / CI may override).
+if [ -z "${CHORUS_WERK_BASE:-}" ]; then
+  __chorus_env_home_parent="$(cd "$CHORUS_HOME/.." && pwd -P)"
+  export CHORUS_WERK_BASE="$__chorus_env_home_parent/chorus-werk"
+  unset __chorus_env_home_parent
+fi
+unset __chorus_env_parent
+
+# Per-role werk var: <ROLE>_WERK points at this role's worktree path.
+# Only set when CHORUS_ROLE is known; downstream callers shouldn't see a
+# stale or guessed werk path otherwise.
+if [ -n "${CHORUS_ROLE:-}" ]; then
+  case "$CHORUS_ROLE" in
+    kade)  export KADE_WERK="$CHORUS_WERK_BASE/kade"   ;;
+    wren)  export WREN_WERK="$CHORUS_WERK_BASE/wren"   ;;
+    silas) export SILAS_WERK="$CHORUS_WERK_BASE/silas" ;;
+  esac
+fi
+
+# CHORUS_BIN: single deployed location for chorus-* binaries (#2734 target).
+# Prepend to PATH so signed installs override target/release builds.
+# Idempotent: re-sourcing does not duplicate the entry.
+export CHORUS_BIN="$HOME/.chorus/bin"
+case ":$PATH:" in
+  *":$CHORUS_BIN:"*) ;;  # already present, no-op
+  *) export PATH="$CHORUS_BIN:$PATH" ;;
+esac
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root

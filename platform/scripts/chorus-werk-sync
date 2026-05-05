@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# chorus-werk-sync — refresh canonical to origin/main under flock (#2735).
+#
+# Canonical (`$CHORUS_HOME`) is read-only during sessions in the chorus-werk
+# model. This script is the single mechanism that may move canonical's HEAD
+# — and only by fast-forwarding `main` to the remote tip. Acquires the
+# `.git-commit.lock` so it serializes against in-flight commits, and refuses
+# when the working tree or any worktree is in an in-progress operation.
+#
+# Refusal contract — exit non-zero with a `chorus-werk-sync: ...` message
+# on stderr:
+#   - canonical not on main
+#   - in-flight merge / rebase / cherry-pick / bisect in canonical
+#   - a worktree has index.lock (mid-commit) or a rebase/merge in flight
+#   - lockf timeout (another git-queue.sh op holds the lock)
+#   - non-fast-forward (canonical has diverged from origin/main — needs
+#     manual triage; this script never resolves divergence)
+#
+# Spine events:
+#   - canonical.synced       on success (fields: from_sha, to_sha)
+#   - canonical.sync.aborted on refusal (fields: reason)
+#
+# Card: #2735. Tests: platform/scripts/test-chorus-werk-sync.sh.
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+LOCK_FILE="$CHORUS_HOME/.git-commit.lock"
+LOCK_TIMEOUT="${CHORUS_WERK_SYNC_LOCK_TIMEOUT:-30}"
+
+emit() {
+  # Best-effort spine event. Skip silently if chorus-log isn't on PATH (test fixture).
+  local event="$1"; shift
+  if command -v chorus-log >/dev/null 2>&1; then
+    chorus-log "$event" system "$@" >/dev/null 2>&1 || true
+  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
+    "$CHORUS_HOME/platform/scripts/chorus-log" "$event" system "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+abort() {
+  local reason="$1"
+  echo "chorus-werk-sync: ABORT — $reason" >&2
+  emit "canonical.sync.aborted" "reason=$reason"
+  exit 1
+}
+
+if [ ! -d "$CHORUS_HOME/.git" ]; then
+  abort "CHORUS_HOME=$CHORUS_HOME is not a git repo"
+fi
+
+# --- pre-flock pre-flight (cheap checks before contending for lock) ----------
+
+# Canonical must be on main. Anything else means the shared-canonical state
+# is rotten — sync isn't the fix, manual triage is.
+HEAD_REF=$(git -C "$CHORUS_HOME" symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ "$HEAD_REF" != "main" ]; then
+  abort "canonical HEAD is '$HEAD_REF', not 'main' — manual triage required"
+fi
+
+# In-flight rebase / merge / cherry-pick / bisect in canonical itself
+if [ -d "$CHORUS_HOME/.git/rebase-merge" ] || [ -d "$CHORUS_HOME/.git/rebase-apply" ]; then
+  abort "in-flight rebase in canonical — finish or abort the rebase first"
+fi
+if [ -f "$CHORUS_HOME/.git/MERGE_HEAD" ]; then
+  abort "in-flight merge in canonical — finish or abort the merge first"
+fi
+if [ -f "$CHORUS_HOME/.git/CHERRY_PICK_HEAD" ]; then
+  abort "in-flight cherry-pick in canonical — finish or abort first"
+fi
+if [ -f "$CHORUS_HOME/.git/BISECT_LOG" ]; then
+  abort "in-flight bisect in canonical — git bisect reset first"
+fi
+
+# Worktrees in flight: check for index.lock or rebase/merge state per worktree.
+# .git/worktrees/<name>/index.lock indicates that worktree is mid-commit.
+if [ -d "$CHORUS_HOME/.git/worktrees" ]; then
+  for wt_dir in "$CHORUS_HOME"/.git/worktrees/*/; do
+    [ -d "$wt_dir" ] || continue
+    wt_name=$(basename "$wt_dir")
+    if [ -f "$wt_dir/index.lock" ]; then
+      abort "worktree $wt_name has index.lock — mid-commit"
+    fi
+    if [ -d "$wt_dir/rebase-merge" ] || [ -d "$wt_dir/rebase-apply" ]; then
+      abort "worktree $wt_name has in-flight rebase"
+    fi
+    if [ -f "$wt_dir/MERGE_HEAD" ]; then
+      abort "worktree $wt_name has in-flight merge"
+    fi
+  done
+fi
+
+# --- acquire flock + sync ----------------------------------------------------
+
+exec 9>"$LOCK_FILE"
+if ! lockf -t "$LOCK_TIMEOUT" 9; then
+  abort "lockf timeout after ${LOCK_TIMEOUT}s — another git op is holding $LOCK_FILE"
+fi
+
+# Re-check post-lock: state may have changed while we were waiting.
+HEAD_REF=$(git -C "$CHORUS_HOME" symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ "$HEAD_REF" != "main" ]; then
+  abort "canonical HEAD changed to '$HEAD_REF' between pre-flight and lock acquire"
+fi
+
+FROM_SHA=$(git -C "$CHORUS_HOME" rev-parse HEAD 2>/dev/null || echo "?")
+
+# Fetch + ff-only pull. ff-only means we never invent a merge commit; if the
+# remote diverged, this fails loudly.
+if ! git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null; then
+  # Allow the fetch to fail gracefully in test fixtures with no remote
+  # configured for main. Re-attempt without --quiet for diagnostics.
+  if ! git -C "$CHORUS_HOME" fetch origin main 2>/dev/null; then
+    abort "git fetch origin main failed"
+  fi
+fi
+
+if ! git -C "$CHORUS_HOME" merge --ff-only origin/main 2>/dev/null; then
+  abort "non-fast-forward — canonical has diverged from origin/main"
+fi
+
+TO_SHA=$(git -C "$CHORUS_HOME" rev-parse HEAD 2>/dev/null || echo "?")
+
+if [ "$FROM_SHA" = "$TO_SHA" ]; then
+  echo "chorus-werk-sync: already up-to-date at $FROM_SHA"
+else
+  echo "chorus-werk-sync: $FROM_SHA → $TO_SHA"
+fi
+emit "canonical.synced" "from=$FROM_SHA" "to=$TO_SHA"
+exit 0
