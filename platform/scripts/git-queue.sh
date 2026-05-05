@@ -209,6 +209,16 @@ do_commit() {
     force_flag="--force-branch"
     shift
   fi
+  # #2731: --no-add skips the `git add` step for cases where the index is
+  # already arranged exactly as the commit should look (e.g., untracking a
+  # generated artifact via `git rm --cached` — `git add <ignored-path>` would
+  # either reject or re-add from working tree, both wrong; the right move is
+  # to commit the staged deletion as-is).
+  local skip_add=false
+  if [ "${1:-}" = "--no-add" ]; then
+    skip_add=true
+    shift
+  fi
   if ! check_branch "commit" "$force_flag"; then
     exit 1
   fi
@@ -361,7 +371,11 @@ do_commit() {
   # Close fd 9 for child processes so git credential-cache-daemon
   # doesn't inherit the lockf descriptor and hold the lock forever.
   local exit_code=0
-  git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
+  if $skip_add; then
+    git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
+  else
+    git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
+  fi
 
   # #2193: emit commit.landed after successful commit. Semantic event for
   # the coherence checker to correlate role activity with real git history.
