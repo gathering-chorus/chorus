@@ -165,13 +165,14 @@ See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget
 
 ## Substrate scripts (`platform/scripts/`)
 
-- `chorus-werk init <role>` — create worktree at `$CHORUS_WERK_BASE/<role>/`, detached at main's tip
+- `chorus-werk init <role>` — create worktree at `$CHORUS_WERK_BASE/<role>/`, detached at main's tip; bakes per-werk `user.email`/`user.name` so each role's commits are correctly attributed
 - `chorus-werk repoint <role> <branch>` — switch werk to `<branch>` via `git-queue.sh checkout`
 - `chorus-werk pull <role> <card-id>` — atomic init-if-needed + repoint to `<role>/<card-id>`
 - `chorus-werk remove <role>` — `git worktree remove`
 - `chorus-werk status` — list current worktrees
 - `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit)
 - `chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
+- `chorus-bin-install` — atomic install of a built+signed binary to `~/.chorus/bin/<name>` with `binary.deployed` spine emit (#2734)
 
 ## Edit/Write rules (chorus-hooks `canonical_write_guard`)
 

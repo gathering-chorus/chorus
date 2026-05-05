@@ -101,6 +101,14 @@ cmd_init() {
     echo "chorus-werk: git worktree add failed" >&2
     exit 4
   fi
+
+  # Per-werk git identity (Wren #2735 review). Worktrees share canonical's
+  # .git/config, so commits would otherwise all use one identity. Setting
+  # user.email/name in the worktree's local config gives each role its
+  # own attribution. Worktree config wins over the shared .git/config.
+  git -C "$werk" config user.email "$role@chorus.local"
+  git -C "$werk" config user.name "$role"
+
   echo "chorus-werk: initialized $role at $werk (detached at main, repoint to start a card)"
 }
 
