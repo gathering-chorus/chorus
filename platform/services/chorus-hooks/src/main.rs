@@ -481,14 +481,66 @@ async fn post_tool_use(
                 });
             }
         }
-        "Write" | "Edit" => {
+        "Write" | "Edit" | "MultiEdit" => {
             hooks::handoff_logger::check(&input, &state).await;
             // Quality gate (#1717) — lightweight post-edit check
             hooks::quality_gate::post_edit_check(&input);
             // ICD write gate — Athena pattern: validate + reload + lint on ICD file writes
             hooks::icd_write_gate::check(&input, &state).await;
-            // Artifact creation pulse (#1907) — detect new docs in artifacts/ dirs
+            // #2731 AC3 — claudemd-gen on fragment edit. Keeps roles/*/CLAUDE.md
+            // consistent across all three roles between sessions; AC4's defensive
+            // regen handles boot, this handles within-session updates so peers see
+            // new fragment content without waiting for their next reboot. Async to
+            // not block the turn; failures surface via spine event only.
             let file_path = input.get_tool_input_str("file_path");
+            if file_path.contains("/designing/claudemd/fragments/")
+                || file_path.ends_with("/designing/claudemd/manifest.json")
+            {
+                let role_name = input.role().as_str().to_string();
+                let fragment_basename = file_path.rsplit('/').next().unwrap_or("").to_string();
+                tokio::spawn(async move {
+                    let started = std::time::Instant::now();
+                    let script = format!(
+                        "{}/platform/scripts/claudemd-gen",
+                        crate::shared::state_paths::chorus_root()
+                    );
+                    let status = tokio::process::Command::new(&script)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .await;
+                    let ms = started.elapsed().as_millis().to_string();
+                    match status {
+                        Ok(s) if s.success() => {
+                            crate::state::chorus_log(
+                                "claudemd.regen.fired", &role_name,
+                                &[("trigger", "fragment_edit"),
+                                  ("fragment", &fragment_basename),
+                                  ("duration_ms", &ms)],
+                            ).await;
+                        }
+                        Ok(s) => {
+                            let code = s.code().map(|c| c.to_string()).unwrap_or_else(|| "?".to_string());
+                            crate::state::chorus_log(
+                                "claudemd.regen.failed", &role_name,
+                                &[("trigger", "fragment_edit"),
+                                  ("fragment", &fragment_basename),
+                                  ("exit_code", &code)],
+                            ).await;
+                        }
+                        Err(e) => {
+                            let err = e.to_string();
+                            crate::state::chorus_log(
+                                "claudemd.regen.failed", &role_name,
+                                &[("trigger", "fragment_edit"),
+                                  ("fragment", &fragment_basename),
+                                  ("error", &err)],
+                            ).await;
+                        }
+                    }
+                });
+            }
+            // Artifact creation pulse (#1907) — detect new docs in artifacts/ dirs
             if file_path.contains("/artifacts/") && tool == "Write" {
                 let fname = file_path.rsplit('/').next().unwrap_or(&file_path).to_string();
                 let role_name = format!("{:?}", input.role()).to_lowercase();

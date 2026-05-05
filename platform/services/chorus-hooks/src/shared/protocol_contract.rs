@@ -37,11 +37,13 @@ pub enum Violation {
         stamp_core: String,
         live_core: String,
     },
-    Stale {
-        stamp_fragments: String,
-        live_fragments: String,
-        staleness_s: u64,
-    },
+    // #2731: Stale variant retired. Under the derived-artifact model,
+    // SessionStart regenerates roles/<role>/CLAUDE.md from fragments before
+    // running this check (commands/session.rs AC4), so a fragment-hash
+    // mismatch here cannot mean "the role's CLAUDE.md drifted." If stamp
+    // != live after regen, that is a claudemd-gen output bug (Python/Rust
+    // hash divergence), pinned by designing/claudemd/.protocol_test_vectors.json
+    // and caught in CI — not a runtime failure mode.
 }
 
 impl Violation {
@@ -49,7 +51,6 @@ impl Violation {
         match self {
             Violation::MissingStamp { .. } => "missing_stamp",
             Violation::VersionMismatch { .. } => "version_mismatch",
-            Violation::Stale { .. } => "stale",
         }
     }
 }
@@ -197,21 +198,12 @@ pub fn check(role: &str) -> Result<(), Violation> {
         });
     }
 
-    let sections = load_role_sections(role).unwrap_or_default();
-    let live_fragments = hash_fragment_set(&sections).unwrap_or_default();
-
-    if stamps.role_fragments_sha != live_fragments {
-        let staleness_s = fs::metadata(role_claudemd_path(role))
-            .and_then(|m| m.modified())
-            .and_then(|t| t.elapsed().map_err(|_| std::io::Error::other("elapsed")))
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        return Err(Violation::Stale {
-            stamp_fragments: stamps.role_fragments_sha,
-            live_fragments,
-            staleness_s,
-        });
-    }
+    // #2731: role-fragments staleness check retired. SessionStart's
+    // defensive regen (commands/session.rs AC4) guarantees the file the
+    // protocol check reads was just rewritten from the live fragment set,
+    // so a stamp-vs-live mismatch at this point would be a claudemd-gen
+    // output bug, not drift. Cross-language hash agreement is pinned by
+    // designing/claudemd/.protocol_test_vectors.json and verified in CI.
 
     Ok(())
 }
@@ -255,26 +247,7 @@ Normal boot steps below will not run until this is resolved.
             sc_short = &stamp_core.chars().take(12).collect::<String>(),
             lc_short = &live_core.chars().take(12).collect::<String>(),
         ),
-        Violation::Stale { stamp_fragments, live_fragments, staleness_s } => format!(
-"## ⚠ STALE CLAUDE.md — session boot blocked
-
-reason: role-fragments hash mismatch (role-specific fragments drifted)
-role: {role}
-stamp fragments: {sf_short}
-live fragments:  {lf_short}
-staleness: {staleness_s}s
-
-Your protocol version matches the team but your CLAUDE.md is out of date.
-fix: cd chorus && platform/scripts/claudemd-gen && git add roles/*/CLAUDE.md
-
-Normal boot steps below will not run until this is resolved.
----
-",
-            role = role,
-            sf_short = &stamp_fragments.chars().take(12).collect::<String>(),
-            lf_short = &live_fragments.chars().take(12).collect::<String>(),
-            staleness_s = staleness_s,
-        ),
+        // #2731: Stale variant retired — banner removed.
     }
 }
 
@@ -294,11 +267,7 @@ pub fn event_fields(role: &str, v: &Violation) -> Vec<(&'static str, String)> {
             f.push(("stamp_core", stamp_core.clone()));
             f.push(("live_core", live_core.clone()));
         }
-        Violation::Stale { stamp_fragments, live_fragments, staleness_s } => {
-            f.push(("stamp_fragments", stamp_fragments.clone()));
-            f.push(("live_fragments", live_fragments.clone()));
-            f.push(("staleness_s", staleness_s.to_string()));
-        }
+        // #2731: Stale variant retired — no event fields needed.
     }
     f
 }

@@ -152,10 +152,9 @@ async fn write_protocol_violation_banner(role: &str, v: &protocol_contract::Viol
 /// #2311: Emit a spine event for the protocol violation so fleet-wide drift is observable.
 fn log_protocol_violation(role: &str, v: &protocol_contract::Violation) {
     let fields = protocol_contract::event_fields(role, v);
-    let event = match v.reason() {
-        "stale" => "session.protocol.stale",
-        _ => "session.protocol.violation",
-    };
+    // #2731: "stale" reason is gone — only missing_stamp / version_mismatch
+    // can fire here under the derived-artifact model.
+    let event = "session.protocol.violation";
     let mut cmd = std::process::Command::new(
         format!("{}/platform/scripts/chorus-log", chorus_root())
     );
