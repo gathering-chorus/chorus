@@ -60,6 +60,43 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     // corrupt our hookSpecificOutput JSON envelope below.
     let _ = pulse::assemble();
 
+    // #2731 AC4: defensive regen before protocol_contract::check. Under the
+    // derived-artifact model, CLAUDE.md is rebuilt from fragments at the
+    // moment of need. Running claudemd-gen here guarantees the file the
+    // protocol check (and the harness) will read reflects the live fragment
+    // set. Failures emit a spine event but do not block boot — protocol
+    // contract is the existing safety net. Cost: ~1s per session start.
+    let regen_started = std::time::Instant::now();
+    let regen_status = std::process::Command::new(
+        format!("{}/platform/scripts/claudemd-gen", repo_root())
+    )
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    match regen_status {
+        Ok(s) if s.success() => {
+            let _ = chorus_log::run_silent(&[
+                "session.bootstrap.regen_ok".to_string(),
+                role.to_string(),
+                format!("duration_ms={}", regen_started.elapsed().as_millis()),
+            ]);
+        }
+        Ok(s) => {
+            let _ = chorus_log::run_silent(&[
+                "session.bootstrap.regen_failed".to_string(),
+                role.to_string(),
+                format!("exit_code={}", s.code().unwrap_or(-1)),
+            ]);
+        }
+        Err(e) => {
+            let _ = chorus_log::run_silent(&[
+                "session.bootstrap.regen_failed".to_string(),
+                role.to_string(),
+                format!("error={}", e),
+            ]);
+        }
+    }
+
     // #2311 rescope: run protocol contract check inline at boot. On pass,
     // write .done so PreToolUse gate allows work. On fail, keep .pending
     // armed and prepend PROTOCOL VIOLATION banner to content so the model

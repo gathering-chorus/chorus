@@ -72,3 +72,11 @@ proving/logs/*.json
 platform/api/public/book/images*
 roles/*/artifacts/book-images*
 roles/*/artifacts/book-images-v*
+
+# #2731 — CLAUDE.md is a derived artifact, not a snapshot. Generated from
+# fragments by platform/scripts/claudemd-gen at the moment of need (PostToolUse
+# on fragment edit, defensive regen at SessionStart). Tracking the file in git
+# was the source of the role-fragment-staleness deadlock that paged Jeff 12+
+# times in a week (2026-04-28 → 2026-05-04). On a fresh clone, run
+# `platform/scripts/claudemd-gen` once to materialize all three.
+roles/*/CLAUDE.md

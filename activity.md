@@ -1223,3 +1223,4 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 
 ## 2026-05-04 evening (silas reboot)
 - [Silas] → #2728 spine→loki+chorus shipper fix shipped via PR #121 (fd4dba0a). Producer + readers moved to ~/.chorus/chorus.log per CSC; Loki + Promtail retargeted in shared-observability 73a88d7; heartbeat probe LaunchAgent ticks every 120s with chorus-inject alerts on absence. Recovered ~430k Mar 29→Apr 25 events from Library archive; Apr 26→May 3 (~170k) unrecoverable. Two destructive shortcuts during recovery (rm'd platform/logs/chorus.log twice), ~1 hour of additional events lost. → Wren, Kade
+- 2026-05-05 morning [Wren] → shipped #2731 (CLAUDE.md becomes derived artifact) → PR #125 → kills role-fragment staleness deadlock structurally; 8 commits across AC1-7, Violation::Stale retired (AC6), 3 integration tests green
