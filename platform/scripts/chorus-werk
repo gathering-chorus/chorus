@@ -15,6 +15,9 @@
 #                            serialization.
 #   remove <role>          — git worktree remove + branch cleanup.
 #   status                 — list current worktrees and their branches.
+#   pull <role> <card-id>  — atomic init-if-needed + repoint to
+#                            <role>/<card-id>. The /pull skill calls this
+#                            instead of raw `git-queue.sh checkout -b`.
 #
 # Environment:
 #   CHORUS_HOME       — canonical repo path. Defaults to /Users/jeffbridwell/CascadeProjects/chorus.
@@ -189,6 +192,22 @@ cmd_status() {
   fi
 }
 
+cmd_pull() {
+  require_role "${1:-}"
+  local role="$1"
+  local card_id="${2:-}"
+
+  if [ -z "$card_id" ]; then
+    echo "chorus-werk: missing <card-id> argument" >&2
+    exit 2
+  fi
+
+  # Idempotent init — no-op if already initialized.
+  cmd_init "$role" >/dev/null
+  # Repoint to the card branch. Branch naming convention: <role>/<card-id>.
+  cmd_repoint "$role" "$role/$card_id"
+}
+
 main() {
   if [ $# -lt 1 ]; then
     usage >&2
@@ -200,6 +219,7 @@ main() {
     repoint) cmd_repoint "$@" ;;
     remove) cmd_remove "$@" ;;
     status) cmd_status "$@" ;;
+    pull) cmd_pull "$@" ;;
     -h|--help|help) usage ;;
     *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
   esac

@@ -105,6 +105,27 @@ assert "no-args exits non-zero" test "$RC" -ne 0
 RC=$?
 assert "unknown subcommand exits non-zero" test "$RC" -ne 0
 
+# --- TEST 9: pull from clean state inits + repoints in one call ---
+# Re-init for this test (previous remove tore down kade)
+"$CHORUS_WERK" pull kade 2999 > /dev/null 2>&1
+RC=$?
+assert "pull exits 0 from uninited state" test "$RC" -eq 0
+assert "pull creates werk dir" test -d "$WERK_BASE/kade"
+WT_BRANCH=$(git -C "$WERK_BASE/kade" rev-parse --abbrev-ref HEAD 2>/dev/null)
+assert "pull lands worktree on kade/<card-id>" test "$WT_BRANCH" = "kade/2999"
+
+# --- TEST 10: pull on already-inited werk repoints to a new card ---
+"$CHORUS_WERK" pull kade 3000 > /dev/null 2>&1
+RC=$?
+assert "pull exits 0 when werk already exists" test "$RC" -eq 0
+WT_BRANCH=$(git -C "$WERK_BASE/kade" rev-parse --abbrev-ref HEAD 2>/dev/null)
+assert "pull repoints existing werk to new card branch" test "$WT_BRANCH" = "kade/3000"
+
+# --- TEST 11: pull missing card-id exits non-zero ---
+"$CHORUS_WERK" pull kade > /dev/null 2>&1
+RC=$?
+assert "pull without card-id exits non-zero" test "$RC" -ne 0
+
 echo "---"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
