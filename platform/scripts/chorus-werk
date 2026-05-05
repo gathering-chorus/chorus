@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# chorus-werk — bootstrap and manage per-role git worktrees outside canonical (#2735).
+#
+# Each role works in its own worktree at $CHORUS_WERK_BASE/<role>/, branched
+# from main, with its own HEAD file. Canonical /chorus/ stays on main always
+# and is read-only during sessions. Eliminates the shared-canonical-work-area
+# anti-pattern Jeff named 2026-05-05.
+#
+# Subcommands:
+#   init <role>            — create the role's worktree at $CHORUS_WERK_BASE/<role>/
+#                            from main. Idempotent.
+#   repoint <role> <branch> — switch that worktree to <branch>. Creates the
+#                            branch off main if it doesn't exist locally.
+#                            Routes through git-queue.sh checkout for flock
+#                            serialization.
+#   remove <role>          — git worktree remove + branch cleanup.
+#   status                 — list current worktrees and their branches.
+#
+# Environment:
+#   CHORUS_HOME       — canonical repo path. Defaults to /Users/jeffbridwell/CascadeProjects/chorus.
+#   CHORUS_WERK_BASE  — where worktrees live. Defaults to /Users/jeffbridwell/CascadeProjects/chorus-werk.
+#
+# Card: #2735. Test: platform/scripts/test-chorus-werk.sh.
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}"
+
+usage() {
+  cat <<EOF
+Usage: chorus-werk <subcommand> [args]
+
+Subcommands:
+  init <role>             create worktree at \$CHORUS_WERK_BASE/<role> from main (idempotent)
+  repoint <role> <branch> switch role's worktree to <branch>
+  remove <role>           remove role's worktree + delete its branch reference
+  status                  list current worktrees
+
+Environment:
+  CHORUS_HOME       (default: /Users/jeffbridwell/CascadeProjects/chorus)
+  CHORUS_WERK_BASE  (default: /Users/jeffbridwell/CascadeProjects/chorus-werk)
+EOF
+}
+
+require_canonical() {
+  if [ ! -d "$CHORUS_HOME/.git" ]; then
+    echo "chorus-werk: \$CHORUS_HOME=$CHORUS_HOME is not a git repo" >&2
+    exit 2
+  fi
+}
+
+require_role() {
+  local role="${1:-}"
+  if [ -z "$role" ]; then
+    echo "chorus-werk: missing <role> argument" >&2
+    usage >&2
+    exit 2
+  fi
+  case "$role" in
+    kade|wren|silas) ;;
+    *) echo "chorus-werk: unknown role '$role' (expected kade, wren, or silas)" >&2; exit 2 ;;
+  esac
+}
+
+cmd_init() {
+  require_role "${1:-}"
+  local role="$1"
+  local werk="$CHORUS_WERK_BASE/$role"
+
+  require_canonical
+  mkdir -p "$CHORUS_WERK_BASE"
+
+  # Idempotent: if worktree already exists and is registered, no-op.
+  # macOS resolves /tmp and /var/folders through /private/, and git stores
+  # the resolved path in worktree list — compare resolved paths.
+  local werk_resolved=""
+  if [ -d "$werk" ]; then
+    werk_resolved="$(cd "$werk" && pwd -P)"
+  fi
+  if [ -n "$werk_resolved" ] && \
+     git -C "$CHORUS_HOME" worktree list --porcelain 2>/dev/null | grep -q "^worktree $werk_resolved$"; then
+    echo "chorus-werk: $role worktree already initialized at $werk"
+    return 0
+  fi
+
+  # If the directory exists but isn't a registered worktree, refuse rather than clobber.
+  if [ -e "$werk" ]; then
+    echo "chorus-werk: $werk exists but isn't a registered worktree — refusing to clobber" >&2
+    exit 3
+  fi
+
+  # Detached HEAD at main's tip. We can't share the `main` branch with
+  # canonical (git refuses dual-checkout), and role worktrees should never
+  # sit on main anyway — they exist to host card branches. Detached state
+  # is the "ready to receive a repoint" position.
+  if ! git -C "$CHORUS_HOME" worktree add --detach "$werk" main 2>&1; then
+    echo "chorus-werk: git worktree add failed" >&2
+    exit 4
+  fi
+  echo "chorus-werk: initialized $role at $werk (detached at main, repoint to start a card)"
+}
+
+cmd_repoint() {
+  require_role "${1:-}"
+  local role="$1"
+  local branch="${2:-}"
+  local werk="$CHORUS_WERK_BASE/$role"
+
+  if [ -z "$branch" ]; then
+    echo "chorus-werk: missing <branch> argument" >&2
+    exit 2
+  fi
+  if [ ! -d "$werk" ]; then
+    echo "chorus-werk: $role worktree not initialized — run 'chorus-werk init $role' first" >&2
+    exit 3
+  fi
+
+  # Use git-queue.sh checkout if available (production path), fall back to
+  # plain git for the test fixture (where canonical isn't a chorus repo).
+  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
+  pushd "$werk" >/dev/null
+
+  # Does the branch exist locally?
+  if git rev-parse --verify "$branch" >/dev/null 2>&1; then
+    if [ -x "$gq" ]; then
+      DEPLOY_ROLE="$role" "$gq" checkout "$branch" >/dev/null 2>&1 || git checkout "$branch" >/dev/null 2>&1
+    else
+      git checkout "$branch" >/dev/null 2>&1
+    fi
+  else
+    # New branch — create from main (or from origin/main if remote exists)
+    local base="main"
+    if git rev-parse --verify "origin/main" >/dev/null 2>&1; then
+      base="origin/main"
+    fi
+    if [ -x "$gq" ]; then
+      DEPLOY_ROLE="$role" "$gq" checkout -b "$branch" "$base" >/dev/null 2>&1 || git checkout -b "$branch" "$base" >/dev/null 2>&1
+    else
+      git checkout -b "$branch" "$base" >/dev/null 2>&1
+    fi
+  fi
+  local rc=$?
+  popd >/dev/null
+
+  if [ "$rc" -ne 0 ]; then
+    echo "chorus-werk: failed to switch $role worktree to $branch" >&2
+    exit 5
+  fi
+  echo "chorus-werk: $role now on $branch"
+}
+
+cmd_remove() {
+  require_role "${1:-}"
+  local role="$1"
+  local werk="$CHORUS_WERK_BASE/$role"
+
+  require_canonical
+  if [ ! -d "$werk" ]; then
+    echo "chorus-werk: $role worktree not present at $werk — nothing to remove"
+    return 0
+  fi
+
+  if ! git -C "$CHORUS_HOME" worktree remove --force "$werk" 2>&1; then
+    echo "chorus-werk: git worktree remove failed" >&2
+    exit 6
+  fi
+  echo "chorus-werk: removed $role worktree at $werk"
+}
+
+cmd_status() {
+  require_canonical
+  echo "Canonical: $CHORUS_HOME (HEAD=$(git -C "$CHORUS_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null))"
+  echo "Werk base: $CHORUS_WERK_BASE"
+  echo
+  echo "Role worktrees:"
+  local found=0
+  for role in kade wren silas; do
+    local werk="$CHORUS_WERK_BASE/$role"
+    if [ -d "$werk" ]; then
+      local branch
+      branch=$(git -C "$werk" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+      printf "  %-7s %s  (branch: %s)\n" "$role" "$werk" "$branch"
+      found=1
+    fi
+  done
+  if [ "$found" = "0" ]; then
+    echo "  (no role worktrees initialized)"
+  fi
+}
+
+main() {
+  if [ $# -lt 1 ]; then
+    usage >&2
+    exit 2
+  fi
+  local sub="$1"; shift
+  case "$sub" in
+    init) cmd_init "$@" ;;
+    repoint) cmd_repoint "$@" ;;
+    remove) cmd_remove "$@" ;;
+    status) cmd_status "$@" ;;
+    -h|--help|help) usage ;;
+    *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
+  esac
+}
+
+main "$@"
