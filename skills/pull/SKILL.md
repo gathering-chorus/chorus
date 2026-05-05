@@ -240,11 +240,17 @@ All gates passed. Execute the pull:
 # Move to WIP (auto-generates blast radius comment)
 bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards move ${CARD_ID} WIP
 
-# Create the card branch via the typed adapter (#2706 #2710 #2712 — never raw git checkout).
-# git-queue.sh do_checkout serializes branch ops under the same flock as commit/push/pull,
-# closing the shared-HEAD race that bit us 2026-05-03 (dangling commits, mid-demo cwd-bumps).
-# Once #2711 ships, raw `git checkout` is hook-refused; this is the canonical path now.
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout -b <role>/${CARD_ID}
+# Create the card branch via the typed adapter. Two paths, gated by CHORUS_WERK_ENABLE (#2735, #2739):
+#   - Flag ON  → `chorus-werk pull <role> <id>` lands branch in /chorus-werk/<role>/ (per-role worktree).
+#   - Flag OFF → `git-queue.sh checkout -b <role>/<id>` lands branch in canonical (current default).
+# Both serialize under the same lockf as commit/push/pull (#2706 #2710 #2712), closing the
+# shared-HEAD race that bit us 2026-05-03 (dangling commits, mid-demo cwd-bumps).
+# Once #2711 ships, raw `git checkout` is hook-refused; never call it from skills.
+if [ "${CHORUS_WERK_ENABLE:-}" = "1" ]; then
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-werk pull <role> ${CARD_ID}
+else
+  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout -b <role>/${CARD_ID}
+fi
 
 # Declare state — #2467: card belongs to the board, not role-state.
 # role-state owns session/attention only; card_type is queried from
