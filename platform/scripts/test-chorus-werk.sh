@@ -126,6 +126,16 @@ assert "pull repoints existing werk to new card branch" test "$WT_BRANCH" = "kad
 RC=$?
 assert "pull without card-id exits non-zero" test "$RC" -ne 0
 
+# --- TEST 12: init bakes per-werk git identity (Wren #2735 review) ---
+"$CHORUS_WERK" init wren > /dev/null 2>&1
+WREN_EMAIL=$(git -C "$WERK_BASE/wren" config --local user.email 2>/dev/null)
+WREN_NAME=$(git -C "$WERK_BASE/wren" config --local user.name 2>/dev/null)
+assert "wren werk has wren@chorus.local" test "$WREN_EMAIL" = "wren@chorus.local"
+assert "wren werk has wren as user.name" test "$WREN_NAME" = "wren"
+"$CHORUS_WERK" init silas > /dev/null 2>&1
+SILAS_EMAIL=$(git -C "$WERK_BASE/silas" config --local user.email 2>/dev/null)
+assert "silas werk has silas@chorus.local" test "$SILAS_EMAIL" = "silas@chorus.local"
+
 echo "---"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

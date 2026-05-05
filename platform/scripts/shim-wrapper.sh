@@ -10,7 +10,16 @@
 # chorus-init-db.
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# Resolve chorus-hook-shim via PATH (#2734) — ~/.chorus/bin/ is the canonical
+# deploy location; target/release/ is the build artifact and a fallback for
+# pre-#2734 systems where the install path hasn't run yet.
+SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
+if [ -z "$SHIM" ] || [ ! -x "$SHIM" ]; then
+  SHIM="$HOME/.chorus/bin/chorus-hook-shim"
+fi
+if [ ! -x "$SHIM" ]; then
+  SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+fi
 CMD="$(basename "$0")"
 LOGFILE="${HOME}/Library/Logs/Chorus/shim-wrapper.log"
 
