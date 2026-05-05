@@ -1,6 +1,6 @@
 {
   "wren": {
-    "input_hash": "fed6fcf8b892b446452bef3400963be05fc38e364277437731b9dfcdb8fe1279",
+    "input_hash": "189124b021858ba2e045b5ffd411e6bdb538ada8f53c5dd9cd1d4af34b9d1877",
     "var_hash": "fa8be4e2820d85c43f130a5ddad27b4150c9b840f4fccfcf4a4c8b571fa86873",
     "config_hash": "01e2d496e5602c5720d97701e7bd8672e72d5deddad6c35ec6048a7405a21764",
     "fragments": {
@@ -27,14 +27,14 @@
       "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
       "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-      "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
+      "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
     },
-    "generated_at": "2026-05-01 12:52",
+    "generated_at": "2026-05-05 07:50",
     "_build": "217"
   },
   "silas": {
-    "input_hash": "e2ccded2d7447b5113afa340861b31110707b682565160be6017fdc317597cda",
+    "input_hash": "a1968c0c8db9903f65b98588d0772b6046c9549dfb149bcaac323bcf1fe85b25",
     "var_hash": "c39808cd9be74efa19467bee3b771a61328f816af567dae76bb34562ecc2109a",
     "config_hash": "609eb14b3eb9d85e8b1adea006aaab8701d447c9c6461d2467c4c986105cf2bd",
     "fragments": {
@@ -61,14 +61,14 @@
       "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
       "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-      "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
+      "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
     },
-    "generated_at": "2026-05-01 12:52",
+    "generated_at": "2026-05-05 07:50",
     "_build": "217"
   },
   "kade": {
-    "input_hash": "2ded6f9aa66edcbee81aae218c32748349613ba5786f243a339aedade3ae9f88",
+    "input_hash": "b8f014fbe81e7a6fd1faa469076cb4f2fd87d099cc2919c57c532b616d648602",
     "var_hash": "d9407bddc1af5c38e5924ad184ba7a8322a5e2d952c3be5cfb72f756d0dc61ec",
     "config_hash": "cecd2fcf3376db12d382806a9611bf6da0c1d9e768ad67983e2a0af058045bdb",
     "fragments": {
@@ -94,10 +94,10 @@
       "shared/error-handling-discipline.md": "553cf8c2b6b4f379e68d50a466007fd186fe284ea22698ac9e3d3aa2a7842515",
       "shared/tdd-discipline.md": "a2c8e1cd626489cb3d48ae18c3af82f7102c6267b08b96e592dff9c93056cfbb",
       "shared/icd-gate.md": "4572bc57cbc660a9db33a442c5aff6bd5a0e49b9557ac0c17792f6b5516c55ea",
-      "shared/worktree-convention.md": "82265ff5e850abe3582c910e50136fa20537c194c910b6254ee0ebd0ac03bbcb",
+      "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
     },
-    "generated_at": "2026-05-01 12:52",
+    "generated_at": "2026-05-05 07:50",
     "_build": "217"
   },
   "_protocol_core_hash": "cc90714aaa623a2491346449c5d89c7b692f4e7ac44e70a7d0f5956a78302a1c",
