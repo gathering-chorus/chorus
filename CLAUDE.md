@@ -48,13 +48,13 @@ Substrate scripts:
 - `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical
 - `platform/scripts/chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 
-Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`):
+Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`, **dormant unless `CHORUS_WERK_ENABLE=1`**):
 - Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
 - Edits under another role's werk → blocked (cross-role)
 - `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
 - Reads of canonical → allowed (role state lives there)
 
-Migration day handles the cutover for in-flight branches and team activation.
+The feature flag is the per-role opt-in. PR #128 ships the substrate dormant; each role activates by setting `CHORUS_WERK_ENABLE=1` in their own session-start when they migrate. Mid-migration heterogeneous state (some roles in werk, some in canonical) is supported — the guard is silent for any role that hasn't flipped the flag.
 
 ## Conventions
 

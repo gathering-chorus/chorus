@@ -175,11 +175,16 @@ See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget
 
 ## Edit/Write rules (chorus-hooks `canonical_write_guard`)
 
+**Dormant unless `CHORUS_WERK_ENABLE=1`** in the role's session env. Per-role opt-in is the migration mechanism — PR #128 ships the guard in the binary but it does nothing until each role flips the flag.
+
+When active:
 - Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
 - Edits under another role's werk → blocked (cross-role)
 - `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
 - Reads of canonical → allowed (role state lives there)
-- Silent when role env isn't set (bootstrap / migration / generic shell)
+- Silent when role env isn't set (bootstrap / generic shell)
+
+Strict flag check: only `CHORUS_WERK_ENABLE=1` activates. Empty / `0` / `true` / `yes` all leave the guard dormant — avoids accidental activation from inherited shell vars.
 
 ## Protected primitive — session-start anchor
 
