@@ -30,7 +30,7 @@
       "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/wren/state-files.md": "db298378771fcfa6f8a805d18c039d28256f6909b30b415247bb1d0b085d28d0"
     },
-    "generated_at": "2026-05-05 07:50",
+    "generated_at": "2026-05-05 07:56",
     "_build": "217"
   },
   "silas": {
@@ -64,7 +64,7 @@
       "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/silas/state-files.md": "3013233db35095d2270d6592f34c149401f4fe1b115a365b98042539575f092f"
     },
-    "generated_at": "2026-05-05 07:50",
+    "generated_at": "2026-05-05 07:56",
     "_build": "217"
   },
   "kade": {
@@ -97,7 +97,7 @@
       "shared/worktree-convention.md": "e84a8b6f1ae34b4d7b95e133a0ce0dc495b2c7fd54b2c8180c4705f1acedc415",
       "roles/kade/state-files.md": "a2c3cb49faa0b00736be5100f09b1ac2d08f441afd7a972e3d2266b3d782731c"
     },
-    "generated_at": "2026-05-05 07:50",
+    "generated_at": "2026-05-05 07:56",
     "_build": "217"
   },
   "_protocol_core_hash": "cc90714aaa623a2491346449c5d89c7b692f4e7ac44e70a7d0f5956a78302a1c",

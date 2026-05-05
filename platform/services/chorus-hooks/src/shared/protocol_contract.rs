@@ -265,7 +265,7 @@ live fragments:  {lf_short}
 staleness: {staleness_s}s
 
 Your protocol version matches the team but your CLAUDE.md is out of date.
-fix: cd chorus && platform/scripts/claudemd-gen --role {role} && git add roles/{role}/CLAUDE.md
+fix: cd chorus && platform/scripts/claudemd-gen && git add roles/*/CLAUDE.md
 
 Normal boot steps below will not run until this is resolved.
 ---
