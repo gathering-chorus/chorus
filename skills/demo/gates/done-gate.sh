@@ -70,6 +70,14 @@ if echo "$COMMENTS" | grep -qi "Demo started"; then
   exit 0
 fi
 
+# Evidence 4: demo:preflight-pass comment per /demo skill Step 1.5 / #2090
+# (#2770 — done-gate was checking three other forms but missed the one the
+# skill explicitly prescribes for single-card demos).
+if echo "$COMMENTS" | grep -qi "demo:preflight-pass"; then
+  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="preflight-comment" 2>/dev/null || true
+  exit 0
+fi
+
 # No evidence found
 echo "Demo gate: #${CARD_ID} has no demo evidence. Run /demo ${CARD_ID} first." >&2
 "$CHORUS_LOG" demo.done_gate.failed system card="$CARD_ID" reason="no_evidence" 2>/dev/null || true
