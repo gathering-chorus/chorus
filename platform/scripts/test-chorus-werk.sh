@@ -136,6 +136,61 @@ assert "wren werk has wren as user.name" test "$WREN_NAME" = "wren"
 SILAS_EMAIL=$(git -C "$WERK_BASE/silas" config --local user.email 2>/dev/null)
 assert "silas werk has silas@chorus.local" test "$SILAS_EMAIL" = "silas@chorus.local"
 
+# --- TEST 13: close — branch closes when card closes (#2740) ---
+# Setup: kade werk repointed to a card branch, simulate post-acp state.
+"$CHORUS_WERK" pull kade 4001 > /dev/null 2>&1
+WT_BRANCH=$(git -C "$WERK_BASE/kade" rev-parse --abbrev-ref HEAD 2>/dev/null)
+assert "test-13 setup: kade werk on kade/4001" test "$WT_BRANCH" = "kade/4001"
+
+# Close — uses --no-done-check since the test fixture has no live cards CLI.
+# Production /acp wiring guarantees Done state via call order; the flag exists
+# for tests + manual cleanup paths where the caller takes responsibility.
+"$CHORUS_WERK" close --no-done-check kade 4001 > /dev/null 2>&1
+RC=$?
+assert "close exits 0 on clean werk" test "$RC" -eq 0
+
+# After close: worktree detached at main's tip, local branch deleted
+WT_HEAD_TYPE=$(git -C "$WERK_BASE/kade" rev-parse --abbrev-ref HEAD 2>/dev/null)
+assert "close detaches werk HEAD" test "$WT_HEAD_TYPE" = "HEAD"
+WT_TIP=$(git -C "$WERK_BASE/kade" rev-parse HEAD 2>/dev/null)
+MAIN_TIP=$(git -C "$CANONICAL" rev-parse main 2>/dev/null)
+assert "close lands werk at main's tip" test "$WT_TIP" = "$MAIN_TIP"
+
+# Local branch ref should be gone
+LOCAL_BRANCH_EXISTS=$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/4001 2>/dev/null)
+assert "close deletes local branch" test -z "$LOCAL_BRANCH_EXISTS"
+
+# Canonical HEAD never moved
+CANON_BRANCH=$(git -C "$CANONICAL" rev-parse --abbrev-ref HEAD 2>/dev/null)
+assert "canonical HEAD still on main after close" test "$CANON_BRANCH" = "main"
+
+# --- TEST 14: close is idempotent ---
+"$CHORUS_WERK" close --no-done-check kade 4001 > /dev/null 2>&1
+RC=$?
+assert "close on already-closed branch exits 0" test "$RC" -eq 0
+
+# --- TEST 15: close refuses on dirty werk ---
+"$CHORUS_WERK" pull kade 4002 > /dev/null 2>&1
+echo "uncommitted" > "$WERK_BASE/kade/dirty-file.txt"
+"$CHORUS_WERK" close --no-done-check kade 4002 > /dev/null 2>&1
+RC=$?
+assert "close refuses on uncommitted file" test "$RC" -ne 0
+LOCAL_BRANCH_EXISTS=$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/4002 2>/dev/null)
+assert "branch preserved when close refused" test -n "$LOCAL_BRANCH_EXISTS"
+rm -f "$WERK_BASE/kade/dirty-file.txt"
+
+# Cleanup: close 4002 properly now that werk is clean
+"$CHORUS_WERK" close --no-done-check kade 4002 > /dev/null 2>&1
+
+# --- TEST 16: close requires <role> and <card-id> ---
+"$CHORUS_WERK" close --no-done-check > /dev/null 2>&1
+RC=$?
+assert "close without role exits non-zero" test "$RC" -ne 0
+
+"$CHORUS_WERK" close --no-done-check kade > /dev/null 2>&1
+RC=$?
+assert "close without card-id exits non-zero" test "$RC" -ne 0
+
 echo "---"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

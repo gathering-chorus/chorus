@@ -168,6 +168,7 @@ See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget
 - `chorus-werk init <role>` — create worktree at `$CHORUS_WERK_BASE/<role>/`, detached at main's tip; bakes per-werk `user.email`/`user.name` so each role's commits are correctly attributed
 - `chorus-werk repoint <role> <branch>` — switch werk to `<branch>` via `git-queue.sh checkout`
 - `chorus-werk pull <role> <card-id>` — atomic init-if-needed + repoint to `<role>/<card-id>`
+- `chorus-werk close <role> <card-id>` — branch closes when card closes (#2740): verifies Done, refuses on dirty werk, detaches werk at main, deletes local branch, attempts remote cleanup, emits `card.branch.closed` spine event
 - `chorus-werk remove <role>` — `git worktree remove`
 - `chorus-werk status` — list current worktrees
 - `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit)
