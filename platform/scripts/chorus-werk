@@ -124,7 +124,19 @@ cmd_init() {
   # canonical (git refuses dual-checkout), and role worktrees should never
   # sit on main anyway — they exist to host card branches. Detached state
   # is the "ready to receive a repoint" position.
-  if ! git -C "$CHORUS_HOME" worktree add --detach "$werk" main 2>&1; then
+  #
+  # #2768: prefer origin/main over local main (mirror of #2757's close fix).
+  # Canonical's local main lags whenever a peer pushes between sessions; if
+  # init lands the werk at stale local main, the role starts the next pull
+  # behind by however many ships happened on origin since the last
+  # canonical fast-forward. Best-effort fetch + fall back to local main when
+  # origin/main doesn't exist (test fixtures without remotes).
+  git -C "$CHORUS_HOME" fetch origin main >/dev/null 2>&1 || true
+  local init_target="main"
+  if git -C "$CHORUS_HOME" rev-parse --verify origin/main >/dev/null 2>&1; then
+    init_target="origin/main"
+  fi
+  if ! git -C "$CHORUS_HOME" worktree add --detach "$werk" "$init_target" 2>&1; then
     echo "chorus-werk: git worktree add failed" >&2
     exit 4
   fi
