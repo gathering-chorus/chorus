@@ -102,4 +102,7 @@ Accepted #<card-id> — committed and pushed (sha=<sha>).
 - **Commit before accept.** Card stays WIP through the commit so chorus_commit can derive it from board state.
 - Always emit the spine event after marking Done
 - **Use `mcp__chorus-api__chorus_commit` — never raw git from skills.** The MCP tool wraps the canonical substrate, returns typed refusals, and binds the commit to the board's WIP card. Reaching around the typed surface bypasses the refusal taxonomy and the board-derived card binding.
-- **Branch ops go through the typed adapter (#2706 #2710 #2712).** If you need to switch branches (e.g., back to main after PR merge, onto a card branch), use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` — never raw `git checkout`. The adapter serializes under the same flock as commit/push/pull, closing the shared-HEAD race. Once #2711 ships, raw `git checkout` is hook-refused.
+- **Branch ops go through the typed adapter, gated by `CHORUS_WERK_ENABLE` (#2706 #2710 #2712 #2735 #2739).** If you need to switch branches (e.g., back to main after PR merge, onto a card branch):
+  - **Flag ON** (`CHORUS_WERK_ENABLE=1`): use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-werk pull <role> <card-id>` for card-branch ops in the role's werk; for other branch switches inside werk, use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` (the lock still serializes worktree HEAD ops).
+  - **Flag OFF** (default): use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` directly against canonical.
+  - Never raw `git checkout`. Once #2711 lands, raw `git checkout` is hook-refused.
