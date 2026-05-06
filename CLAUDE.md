@@ -57,9 +57,11 @@ Each role works in its own git worktree at `/CascadeProjects/chorus-werk/<role>/
 The protected primitive `/chorus/roles/<role>/` IS session-start is preserved — that's still where every role's session anchors to read role state. Only the *write* surface moves to the werk. See `designing/docs/version-control-service-design.html` for the full Candidate D path-to-close.
 
 Substrate scripts:
-- `platform/scripts/chorus-werk` — `init / repoint / remove / status / pull <role> <card-id>`
+- `platform/scripts/chorus-werk` — `init / repoint / remove / status / pull / close`
 - `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical
 - `platform/scripts/chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
+
+Branch lifecycle (#2740): `chorus-werk close <role> <card-id>` closes the role's card branch end-to-end — verifies card is Done, refuses on dirty werk, detaches werk at main's tip, deletes local branch, attempts remote-branch cleanup, emits `card.branch.closed` spine event. /acp wires it as the final step (gated by `CHORUS_WERK_ENABLE=1`). Without this, every /acp leaves a stale local + remote branch behind — exactly what bit the team 2026-05-06 (15 stale wren remotes + 3 kade remotes accumulated unnoticed before manual cleanup).
 
 Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`, **dormant unless `CHORUS_WERK_ENABLE=1`**):
 - Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`

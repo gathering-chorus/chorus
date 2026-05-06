@@ -200,6 +200,97 @@ cmd_status() {
   fi
 }
 
+cmd_close() {
+  # Parse optional --no-done-check flag (must come before positional args).
+  # When present, skip the cards CLI Done-state lookup. Production /acp
+  # wiring runs `cards done` immediately before close, so Done state is
+  # guaranteed by call order; the flag exists for tests + manual cleanup.
+  local skip_done_check=0
+  while [ "${1:-}" = "--no-done-check" ]; do
+    skip_done_check=1
+    shift
+  done
+
+  require_role "${1:-}"
+  local role="$1"
+  local card_id="${2:-}"
+  local werk="$CHORUS_WERK_BASE/$role"
+  local branch="$role/$card_id"
+
+  if [ -z "$card_id" ]; then
+    echo "chorus-werk: missing <card-id> argument" >&2
+    exit 2
+  fi
+
+  require_canonical
+
+  # Idempotent: if the local branch is already gone, close is a no-op.
+  if ! git -C "$CHORUS_HOME" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+    echo "chorus-werk: $branch already closed (no local ref)"
+    return 0
+  fi
+
+  # Refuse on dirty werk — never silently lose work.
+  if [ -d "$werk" ]; then
+    local dirty
+    dirty=$(git -C "$werk" status --porcelain 2>/dev/null)
+    if [ -n "$dirty" ]; then
+      echo "chorus-werk: $werk has uncommitted changes — refusing close (commit, stash, or abandon explicitly)" >&2
+      exit 7
+    fi
+  fi
+
+  # Verify card is Done unless caller bypassed.
+  if [ "$skip_done_check" = "0" ]; then
+    if [ -x "$CHORUS_HOME/platform/scripts/cards" ]; then
+      local card_status
+      card_status=$("$CHORUS_HOME/platform/scripts/cards" view "$card_id" 2>/dev/null \
+        | grep -E '^\s*Status:' | head -1 | awk '{print $2}')
+      if [ "$card_status" != "Done" ]; then
+        echo "chorus-werk: card #$card_id status is '$card_status' — refusing close (use --no-done-check to override)" >&2
+        exit 8
+      fi
+    fi
+  fi
+
+  # Detach the worktree at canonical's main tip BEFORE deleting the branch
+  # (can't delete a branch that's checked out in the worktree).
+  if [ -d "$werk" ]; then
+    local main_tip
+    main_tip=$(git -C "$CHORUS_HOME" rev-parse main 2>/dev/null)
+    if [ -z "$main_tip" ]; then
+      echo "chorus-werk: cannot resolve canonical main — refusing close" >&2
+      exit 9
+    fi
+    if ! (cd "$werk" && git checkout --detach "$main_tip" >/dev/null 2>&1); then
+      echo "chorus-werk: failed to detach $role werk at main's tip" >&2
+      exit 10
+    fi
+  fi
+
+  # Delete the local branch.
+  if ! git -C "$CHORUS_HOME" update-ref -d "refs/heads/$branch" 2>&1; then
+    echo "chorus-werk: failed to delete local branch $branch" >&2
+    exit 11
+  fi
+
+  # Best-effort: delete remote branch via git-queue.sh push --delete.
+  # Already-deleted-remote (the common case post-acp) is fine.
+  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
+  if [ -x "$gq" ]; then
+    DEPLOY_ROLE="$role" "$gq" push --delete "$branch" >/dev/null 2>&1 || true
+  fi
+
+  # Spine event — best-effort.
+  if command -v chorus-log >/dev/null 2>&1; then
+    chorus-log card.branch.closed "$role" "card=$card_id" "branch=$branch" >/dev/null 2>&1 || true
+  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
+    "$CHORUS_HOME/platform/scripts/chorus-log" card.branch.closed "$role" "card=$card_id" "branch=$branch" >/dev/null 2>&1 || true
+  fi
+
+  echo "chorus-werk: closed $branch (werk detached, local branch deleted, remote cleanup attempted)"
+}
+
 cmd_pull() {
   require_role "${1:-}"
   local role="$1"
@@ -228,6 +319,7 @@ main() {
     remove) cmd_remove "$@" ;;
     status) cmd_status "$@" ;;
     pull) cmd_pull "$@" ;;
+    close) cmd_close "$@" ;;
     -h|--help|help) usage ;;
     *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
   esac

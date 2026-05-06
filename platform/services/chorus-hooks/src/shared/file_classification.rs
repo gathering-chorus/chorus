@@ -52,15 +52,40 @@ pub fn is_static_asset(path: &str) -> bool {
     path.contains("/public/") && (path.ends_with(".html") || is_style_file(path))
 }
 
-/// Test files — excluded from TDD production code check
+/// Test files — excluded from TDD production code check.
+///
+/// Matches:
+/// - Path-segment markers: `/tests/`, `/test/`, prefix `tests/` or `test/`
+/// - Filename infixes / suffixes: `.test.`, `.spec.`, `_test.`, `.feature`,
+///   `_test.rs`, `_test.ts`
+/// - Filename prefixes (basename-anchored): `test-` or `test_` (#2740)
+///
+/// The basename anchoring on `test-` / `test_` prevents substring false
+/// positives — `protest_handler.ts` and `contest.rs` are NOT test files.
 pub fn is_test_file(path: &str) -> bool {
     let lower = path.to_lowercase();
-    lower.contains("/tests/") || lower.contains("/test/")
+
+    if lower.contains("/tests/") || lower.contains("/test/")
         || lower.starts_with("tests/") || lower.starts_with("test/")
-        || lower.contains(".test.") || lower.contains(".spec.")
-        || lower.contains("_test.") || lower.contains("test_")
+    {
+        return true;
+    }
+
+    if lower.contains(".test.") || lower.contains(".spec.")
+        || lower.contains("_test.") || lower.contains(".feature")
         || lower.ends_with("_test.rs") || lower.ends_with("_test.ts")
-        || lower.contains(".feature")
+    {
+        return true;
+    }
+
+    // Basename-anchored prefix match: `test-foo.sh`, `test_helper.sh`.
+    // Anchoring on the basename avoids substring matches like `protest_`.
+    let basename = lower.rsplit('/').next().unwrap_or(&lower);
+    if basename.starts_with("test-") || basename.starts_with("test_") {
+        return true;
+    }
+
+    false
 }
 
 /// Production code — source code minus test files and build artifacts.
