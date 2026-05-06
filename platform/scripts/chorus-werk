@@ -282,13 +282,25 @@ cmd_close() {
     fi
   fi
 
-  # Detach the worktree at canonical's main tip BEFORE deleting the branch
+  # Detach the worktree at main's tip BEFORE deleting the branch
   # (can't delete a branch that's checked out in the worktree).
+  #
+  # Resolution order: prefer origin/main over local main when origin/main
+  # exists. Local canonical main lags behind whenever a peer pushes between
+  # sessions; detaching to local main starts the next pull-cycle behind,
+  # producing phantom rebase warnings and diff-vs-main showing every
+  # post-stale-point file as a deletion. (#2757 — observed twice 2026-05-06
+  # while shipping #2126 + #2756 + #2758 themselves.)
   if [ -d "$werk" ]; then
+    git -C "$CHORUS_HOME" fetch origin main >/dev/null 2>&1 || true
     local main_tip
-    main_tip=$(git -C "$CHORUS_HOME" rev-parse main 2>/dev/null)
+    if git -C "$CHORUS_HOME" rev-parse --verify origin/main >/dev/null 2>&1; then
+      main_tip=$(git -C "$CHORUS_HOME" rev-parse origin/main 2>/dev/null)
+    else
+      main_tip=$(git -C "$CHORUS_HOME" rev-parse main 2>/dev/null)
+    fi
     if [ -z "$main_tip" ]; then
-      echo "chorus-werk: cannot resolve canonical main — refusing close" >&2
+      echo "chorus-werk: cannot resolve main tip (origin/main or local main) — refusing close" >&2
       exit 9
     fi
     if ! (cd "$werk" && git checkout --detach "$main_tip" >/dev/null 2>&1); then
