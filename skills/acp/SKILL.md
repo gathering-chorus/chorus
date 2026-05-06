@@ -6,103 +6,62 @@ user-invocable: true
 
 # /acp — Accept, Commit, Push
 
-One command for the full acceptance flow. Jeff says `acp <card-id>` and the card is committed, pushed, and marked Done.
+Jeff says `acp <card-id>` (or `acp` to accept the current WIP card) and the card goes from werk to merged-on-main with the card marked Done. **One MCP call. The skill does NOT execute the steps directly — `chorus_acp` does.**
 
-## Arguments
+## Argument
 
 ```
-CARD_ID=<first argument>
+CARD_ID=<optional first argument>
 ```
 
-If no card ID given, check for a card currently in demo state or the most recent demo brief.
+If omitted, `chorus_acp` derives the card from the board (`status=WIP`, `owner=role`).
 
 ## Step 0: Demo gate (DEC-048)
 
-Before accepting, verify a demo happened. Check for:
-1. A demo brief in your `briefs/` directory referencing this card (e.g., `*demo*${CARD_ID}*`)
-2. Or Jeff explicitly saying "accept" / "acp" after seeing the work live
+Before invoking `chorus_acp`, verify a demo happened:
 
-If **neither** exists and **you are the building role** (not Jeff or Wren accepting):
-- **STOP.** Do not proceed.
-- Say: `#${CARD_ID} needs a demo before acceptance. Run /demo ${CARD_ID} first.`
-- Exit the skill.
+1. Card has `demo:preflight-pass` comment AND gate-pass comments, OR
+2. Jeff or Wren explicitly said "accept" / "acp" after seeing the work
 
-If **Jeff or Wren** is running /acp, they are the accepting authority — proceed (they've seen it or are overriding).
+If neither and **you are the building role** — **STOP**. Run `/demo ${CARD_ID}` first.
 
-## Step 1a: Pull + rebase via chorus_pull MCP tool
+If Jeff or Wren is invoking, they're the accepting authority — proceed.
 
-**Pull before commit so the local branch is at-or-ahead-of origin.** Mode-A means a peer's checkout could have moved HEAD between your last sync and now; pulling first reduces push-side surprises. The tool handles flock + check_branch + rebase via `git-queue.sh do_pull`.
+## Step 1: Invoke `chorus_acp`
 
 ```
-mcp__chorus-api__chorus_pull({
-  role: "<your-role>",
-})
+mcp__chorus-api__chorus_acp({ role: "<your-role>" })
 ```
 
-On success: `{role, card_id, status: "fetched"}`. On refusal:
-- `rebase-conflict` → resolve manually, retry. do_pull aborted to pre-rebase state; spine emitted `chorus_pull.rebase.aborted`.
-- `flock-timeout` → another role holds the lock; wait + retry.
-- `dirty-tree` → uncommitted edits block pull-rebase. Commit or stash, then retry.
-- `pull-fail` → fallback for network / auth / unmatched. Read stderr in the error message.
+That's the entire skill. The MCP runs the atomic transaction:
 
-If pull refuses, fix the cause and retry **before** chorus_commit — committing on a stale branch produces the very push-conflict the chorus_pull step exists to prevent.
+- commit + push (via the existing `chorus_commit` substrate)
+- `gh pr view` (detect existing PR) → `gh pr create` (if missing)
+- `gh pr merge --squash --delete-branch`
+- `cards done <card-id>`
+- emit `card.accepted` spine event
+- `chorus-werk close <role> <card-id>` (when `CHORUS_WERK_ENABLE=1`)
 
-## Step 1b: Commit + push via chorus_commit MCP tool
+All in one call. Idempotent on re-run (PR-already-exists / branch-already-closed are detected and skipped).
 
-**The card is still in WIP at this step — that's deliberate.** `chorus_commit` derives the active card from the board (status=WIP, owner=role). Marking Done first would empty the role's WIP. Commit before accept; if commit refuses, the card stays in WIP and you investigate.
-
-Call the MCP tool with role + paths + commit message. The service handles staging, branch validation, hooks, and push internally:
-
-```
-mcp__chorus-api__chorus_commit({
-  role: "<your-role>",
-  paths: ["<your-dirs>/", ...],   // e.g., ["roles/kade/", "platform/api/src/"]
-  message: "<your-role>: acp #${CARD_ID} — <short description>"
-})
-```
-
-On success the response is `{role, card_id, branch, sha}`. On refusal you get a typed reason: `hook-fail | commit-fail | push-conflict | push-fail`. Each refusal is a clear next-step:
-- `hook-fail` → fix what pre-commit reported, retry
-- `commit-fail` → non-hook commit failure (read stderr); fix and retry
-- `push-conflict` → rebase has a real conflict; chorus_pull first to resolve, then retry
-- `push-fail` → fallback for non-conflict push failure (read stderr)
-
-If the MCP tool itself isn't reachable (chorus-api down or pre-deploy), the acceptance can't proceed — escalate to ops to bring chorus-api back up before retrying. Don't reach around the typed surface.
-
-## Step 2: Mark the card Done
-
-Now that the work is on main:
-
-```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards done ${CARD_ID}
-```
-
-## Step 3: Emit spine event
-
-```bash
-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log card.accepted <your-role> card=${CARD_ID}
-```
-
-## Step 3.5: State file sync (if Wren)
-
-If Wren is running /acp, check if `projects.md` or `backlog.md` need updating based on what just shipped. Update inline — don't defer to close-out.
-
-## Step 4: Confirm
-
-One line:
+On success: `{ role, card_id, sha, pr_url, branch_closed }`. Print one line:
 
 ```
-Accepted #<card-id> — committed and pushed (sha=<sha>).
+Accepted #<card_id> — committed, merged, branch closed (sha=<sha>).
 ```
 
-## Rules
+On refusal you get a typed reason: `hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail`. Each refusal documents which step failed and what's recoverable.
 
-- No confirmation prompt — Jeff said accept, so accept
-- If the card isn't in WIP or Demo state, warn but still proceed (Jeff overrides)
-- **Commit before accept.** Card stays WIP through the commit so chorus_commit can derive it from board state.
-- Always emit the spine event after marking Done
-- **Use `mcp__chorus-api__chorus_commit` — never raw git from skills.** The MCP tool wraps the canonical substrate, returns typed refusals, and binds the commit to the board's WIP card. Reaching around the typed surface bypasses the refusal taxonomy and the board-derived card binding.
-- **Branch ops go through the typed adapter, gated by `CHORUS_WERK_ENABLE` (#2706 #2710 #2712 #2735 #2739).** If you need to switch branches (e.g., back to main after PR merge, onto a card branch):
-  - **Flag ON** (`CHORUS_WERK_ENABLE=1`): use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-werk pull <role> <card-id>` for card-branch ops in the role's werk; for other branch switches inside werk, use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` (the lock still serializes worktree HEAD ops).
-  - **Flag OFF** (default): use `bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/git-queue.sh checkout <branch>` directly against canonical.
-  - Never raw `git checkout`. Once #2711 lands, raw `git checkout` is hook-refused.
+## Hard rules
+
+- **Use `chorus_acp` MCP — never raw git, gh, cards CLI, or chorus-log from this skill.** Those bypass the typed refusal taxonomy and the atomic transaction. The MCP is the contract.
+- **The skill's job is pre-flight + invocation.** It does NOT call `chorus_pull`, `chorus_commit`, `gh pr merge`, `cards done`, `chorus-werk close`, or emit spine events directly. Those are all owned by `chorus_acp`. No overlap. No race.
+- **MCP unreachable is the only escape hatch.** If `chorus-api` itself is down, escalate to ops to bring it back up. Do not improvise raw git — that's how today's silent stale-branch class ate 18 refs before Jeff noticed.
+- **No confirmation prompt.** Jeff said acp, so acp.
+- **No self-acp on code cards (DEC-048).** The demo gate at Step 0 enforces this — builder must have a demo brief or explicit Jeff/Wren acp word before the MCP fires.
+
+## What changed (#2750)
+
+Pre-#2750 this skill was 7 steps the model executed by reading markdown — pull, commit, push, mark done, etc. The model demonstrably shortcut, skipped, or improvised steps. Today the steps are one MCP call. The substrate runs them deterministically; the skill can't shortcut them.
+
+Migration day post-#2750: any role with `CHORUS_WERK_ENABLE=1` runs `/acp` and the entire transaction lands without any manual gh-merge or branch-cleanup. The substrate closes the loop.
