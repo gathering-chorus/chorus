@@ -566,6 +566,10 @@ const ACP_TOOL_DEF = {
 
 const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
 const CARD_ACCEPTED = 'card.accepted';
+// #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
+const FORCE_BRANCH_FLAG = '--force-branch';
+const ALREADY_MERGED = 'already-merged';
+const STEP_PUSH = 'push';
 
 interface AcpArgs {
   role: 'kade' | 'wren' | 'silas';
@@ -725,7 +729,7 @@ async function executeCommit(
   // enforced at the write surface.
   let commitStdout: string;
   try {
-    const commitArgs = ['commit', '--force-branch', ...paths, '--', '-m', message];
+    const commitArgs = ['commit', FORCE_BRANCH_FLAG, ...paths, '--', '-m', message];
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
     commitStdout = stdout;
   } catch (err) {
@@ -760,8 +764,8 @@ async function executeCommit(
   // #2705 — --branch <ref> targets origin REF:REF when set; mirrors the
   // explicit-arg shape, no env-on-the-wire.
   const pushArgs = pushRef
-    ? ['push', '--force-branch', '--branch', pushRef]
-    : ['push', '--force-branch'];
+    ? [STEP_PUSH, FORCE_BRANCH_FLAG, '--branch', pushRef]
+    : [STEP_PUSH, FORCE_BRANCH_FLAG];
   try {
     await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
@@ -827,7 +831,7 @@ async function executePull(
   // fires on success below.
   emit(CHORUS_PULL_REBASE_ATTEMPTED, { role, card_id: cardId, branch, remote });
 
-  const pullArgs: string[] = ['pull', '--force-branch'];
+  const pullArgs: string[] = ['pull', FORCE_BRANCH_FLAG];
   if (branch) pullArgs.push('--branch', branch);
   if (remote) pullArgs.push('--remote', remote);
 
@@ -856,6 +860,7 @@ async function executePull(
 // #2750 slice 2 — atomic /acp transaction. Wraps the existing executeCommit
 // path then runs PR-merge + cards-done + spine + werk-close as one
 // deterministic flow. Idempotent on re-run: gh pr view detects existing PR.
+// cog-override: orchestrates 7-step acp transaction with per-step idempotency, error classification, and werk routing; splitting obscures linear flow (#2627)
 async function executeAcp(
   args: AcpArgs,
   boardReader: BoardReader,
@@ -867,11 +872,100 @@ async function executeAcp(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role } = args;
   const repoRoot = resolveWorkingTree(role);
+  // #2752 bug-4 — step-by-step logging. Each step emits .started before the
+  // subprocess and .completed after success. Refusals already named the
+  // step. Now any failure mode shows the exact step that ran/failed without
+  // re-running with verbose flags.
+  let cardId: number | null = null;
+  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
+    emit(`chorus_acp.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
+
+  emit('chorus_acp.invoked', { role, repo_root: repoRoot });
 
   // Step 1 — board lookup for card_id (best-effort; doesn't refuse).
+  stepEmit('board-lookup', 'started');
   const board = await boardReader(role);
-  let cardId: number | null = null;
   if (board.ok && board.cards.length === 1) cardId = board.cards[0].id;
+  stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok });
+
+  // #2752 bug-5 — transaction-level idempotency. If the PR is already merged
+  // to origin/main, the commit+push+merge phase is moot — skip to cards-done
+  // + werk-close. This catches Silas's silas/2177 case: PR squash-merged on
+  // first attempt, subsequent retries kept failing on push (origin's branch
+  // ref is stale pre-merge SHA, local has post-squash history, non-ff). The
+  // right answer when work is already on main: just close the card.
+  const transactionPath = require('path') as typeof import('path');
+  const transactionEnv = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+    PATH: `${transactionPath.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
+  } as NodeJS.ProcessEnv;
+  let alreadyMerged = false;
+  try {
+    const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
+    const currentBranch = branchOut.trim();
+    if (currentBranch && currentBranch !== 'main') {
+      // Check if the branch's tip (or any of its commits) is reachable from origin/main.
+      // git merge-base --is-ancestor returns 0 if HEAD is an ancestor of origin/main.
+      await execFileAsync('git', ['fetch', '--quiet', 'origin', 'main'], { env: transactionEnv, cwd: repoRoot, timeout: 15_000 });
+      try {
+        // Strategy: check if the role's branch ref on origin (which is the stale
+        // pre-merge SHA, if PR already squashed) has been incorporated into origin/main
+        // via squash-merge detection. Simpler: if `gh pr view <branch> --json state`
+        // returns MERGED, the work is on main.
+        const { stdout: prStateOut } = await execFileAsync(
+          'gh',
+          ['pr', 'view', currentBranch, '--json', 'state', '-q', '.state'],
+          { env: transactionEnv, cwd: repoRoot, timeout: 15_000 },
+        );
+        if (prStateOut.trim() === 'MERGED') {
+          alreadyMerged = true;
+        }
+      } catch {
+        /* gh pr view failed (no PR for this branch yet) — proceed normally */
+      }
+    }
+  } catch {
+    /* fall through; normal commit+push path will handle */
+  }
+  stepEmit('already-merged-check', 'completed', { already_merged: alreadyMerged });
+
+  if (alreadyMerged) {
+    // Skip commit/push/PR-merge — jump straight to cards-done + werk-close.
+    stepEmit('skip-to-closure', 'started', { reason: 'pr-already-merged-to-main' });
+    if (cardId !== null) {
+      try {
+        await execFileAsync(cardsPath, ['done', String(cardId)], { env: transactionEnv, timeout: 15_000 });
+      } catch (err) {
+        const stderr = extractStderr(err);
+        // "already Done" is success
+        if (!/already.*Done|Card.*Done/i.test(stderr)) {
+          emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
+          throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
+        }
+      }
+    }
+    emit(CARD_ACCEPTED, { role, card: cardId });
+    let branchClosed = false;
+    if (cardId !== null) {
+      try {
+        const chorusWerkPath = transactionPath.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+        await execFileAsync(chorusWerkPath, ['close', role, String(cardId)], { env: transactionEnv, timeout: 30_000 });
+        branchClosed = true;
+      } catch {
+        /* non-fatal */
+      }
+    }
+    emit('chorus_acp.completed', { role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true });
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true }, null, 2),
+        },
+      ],
+    };
+  }
 
   // Step 2 — commit + push via existing executeCommit machinery. Reuse the
   // CommitArgs path: paths=['.'] commits everything staged in werk; the role
@@ -893,19 +987,23 @@ async function executeAcp(
   let branch = '';
 
   // Detect existing branch first (if commit already landed in a previous run)
+  stepEmit('detect-branch', 'started');
   try {
     const { stdout: refOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
     branch = refOut.trim();
+    stepEmit('detect-branch', 'completed', { branch });
   } catch {
     /* fall through; will fail at commit */
   }
 
   // Commit (skip if no staged changes — gh push will be no-op).
+  stepEmit('commit', 'started', { branch });
   try {
-    const commitArgs = ['commit', '--force-branch', '.', '--', '-m', `${role}: acp #${cardId ?? 'unknown'}`];
+    const commitArgs = ['commit', FORCE_BRANCH_FLAG, '.', '--', '-m', `${role}: acp #${cardId ?? 'unknown'}`];
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 60_000, cwd: repoRoot });
     const shaMatch = stdout.match(/\[\S+\s+([a-f0-9]+)\]/);
     if (shaMatch) sha = shaMatch[1];
+    stepEmit('commit', 'completed', { sha, idempotent: false });
   } catch (err) {
     const stderr = extractStderr(err);
     // "nothing to commit" is a successful idempotent path — already committed
@@ -914,26 +1012,35 @@ async function executeAcp(
       emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'commit', reason, detail: stderr.slice(0, 500) });
       throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
     }
+    stepEmit('commit', 'completed', { idempotent: true, reason: 'nothing-to-commit' });
   }
 
   // Push (idempotent; fast no-op if already pushed)
+  stepEmit(STEP_PUSH, 'started', { branch });
   try {
-    const pushArgs = branch ? ['push', '--force-branch', '--branch', branch] : ['push', '--force-branch'];
+    const pushArgs = branch ? [STEP_PUSH, FORCE_BRANCH_FLAG, '--branch', branch] : [STEP_PUSH, FORCE_BRANCH_FLAG];
     await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
+    stepEmit(STEP_PUSH, 'completed');
   } catch (err) {
     const stderr = extractStderr(err);
     const reason = classifyPushFailure(stderr);
-    emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'push', reason, detail: stderr.slice(0, 500) });
+    emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: STEP_PUSH, reason, detail: stderr.slice(0, 500) });
     throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
   }
 
   // Step 3 — gh pr view (detect existing) → gh pr create (if missing) → gh pr merge.
+  stepEmit('pr-view', 'started', { branch });
   let prUrl = '';
+  let prAlreadyExists = false;
   try {
     const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url', '-q', '.url'], { env, cwd: repoRoot, timeout: 15_000 });
     prUrl = stdout.trim();
+    prAlreadyExists = true;
+    stepEmit('pr-view', 'completed', { pr_url: prUrl, exists: true });
   } catch {
+    stepEmit('pr-view', 'completed', { exists: false });
     // No existing PR — create one.
+    stepEmit('pr-create', 'started', { branch });
     try {
       const { stdout } = await execFileAsync(
         'gh',
@@ -941,6 +1048,7 @@ async function executeAcp(
         { env, cwd: repoRoot, timeout: 30_000 },
       );
       prUrl = stdout.trim().split('\n').pop() ?? '';
+      stepEmit('pr-create', 'completed', { pr_url: prUrl });
     } catch (err) {
       const stderr = extractStderr(err);
       emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-create', reason: 'pr-create-fail', detail: stderr.slice(0, 500) });
@@ -948,8 +1056,14 @@ async function executeAcp(
     }
   }
 
+  stepEmit('pr-merge', 'started', { pr_url: prUrl, pr_already_exists: prAlreadyExists });
   try {
-    await execFileAsync('gh', ['pr', 'merge', branch, '--squash', '--delete-branch'], { env, cwd: repoRoot, timeout: 60_000 });
+    // #2753 — no --delete-branch flag: gh's branch deletion does an implicit
+    // `git checkout main` which collides with canonical's worktree (dual-
+    // checkout refusal). chorus-werk close (called below) handles local +
+    // remote branch cleanup correctly via update-ref-d + push --delete.
+    await execFileAsync('gh', ['pr', 'merge', branch, '--squash'], { env, cwd: repoRoot, timeout: 60_000 });
+    stepEmit('pr-merge', 'completed', { idempotent: false });
   } catch (err) {
     const stderr = extractStderr(err);
     // "already merged" is idempotent success
@@ -957,12 +1071,15 @@ async function executeAcp(
       emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-merge', reason: 'pr-merge-fail', detail: stderr.slice(0, 500) });
       throw new Error(`chorus_acp refused: pr-merge-fail — ${stderr.split('\n')[0]}`);
     }
+    stepEmit('pr-merge', 'completed', { idempotent: true, reason: ALREADY_MERGED });
   }
 
   // Step 4 — cards done.
   if (cardId !== null) {
+    stepEmit('cards-done', 'started');
     try {
       await execFileAsync(cardsPath, ['done', String(cardId)], { env, timeout: 15_000 });
+      stepEmit('cards-done', 'completed');
     } catch (err) {
       const stderr = extractStderr(err);
       emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
@@ -975,15 +1092,21 @@ async function executeAcp(
 
   // Step 6 — chorus-werk close (best-effort; doesn't fail the transaction).
   let branchClosed = false;
-  try {
-    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-    if (cardId !== null) {
+  if (cardId !== null) {
+    stepEmit('werk-close', 'started');
+    try {
+      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
       await execFileAsync(chorusWerkPath, ['close', role, String(cardId)], { env, timeout: 30_000 });
       branchClosed = true;
+      stepEmit('werk-close', 'completed', { branch_closed: true });
+    } catch (err) {
+      // Non-fatal — branch close is hygiene; the transaction is already complete.
+      const stderr = extractStderr(err);
+      stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
     }
-  } catch {
-    // Non-fatal — branch close is hygiene; the transaction is already complete.
   }
+
+  emit('chorus_acp.completed', { role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed });
 
   return {
     content: [
