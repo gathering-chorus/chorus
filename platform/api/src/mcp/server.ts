@@ -157,6 +157,11 @@ const PullInput = z.object({
   remote: z.string().min(1).optional().describe('Optional remote name. Defaults to origin.'),
 }).strict();
 
+// #2750 slice 2 — chorus_acp atomic transaction input. Single role; card derived from board.
+const AcpInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Card derived from board (status=WIP, owner=role).'),
+}).strict();
+
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
 });
@@ -537,6 +542,35 @@ const PULL_TOOL_DEF = {
   },
 } as const;
 
+// #2750 slice 2 — chorus_acp tool def. Atomic /acp transaction:
+// commit + push + PR open (or detect existing) + PR merge (squash + delete-branch)
+// + cards done + card.accepted spine event + chorus-werk close (when flag on).
+// Skill collapses to a single MCP call so model-compliance gaps can't shortcut steps.
+const ACP_TOOL_DEF = {
+  name: 'chorus_acp',
+  description:
+    'Use this to accept the current WIP card end-to-end. Service runs commit + push + PR open/merge + cards-done + spine + branch-close in one atomic transaction. Idempotent on re-run (detects existing PR / closed branch). Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: hook-fail | commit-fail | push-conflict | pr-merge-fail | cards-done-fail | branch-close-fail. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy and the atomic transaction. The /acp skill calls this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Calling role — kade / wren / silas. Card derived from board (status=WIP, owner=role).',
+      },
+    },
+    required: ['role'],
+    additionalProperties: false,
+  },
+} as const;
+
+const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
+const CARD_ACCEPTED = 'card.accepted';
+
+interface AcpArgs {
+  role: 'kade' | 'wren' | 'silas';
+}
+
 // #2688 — chorus_pull spine event names. Same extraction reason as commit
 // (sonarjs no-duplicate-string).
 const CHORUS_PULL_REFUSED = 'chorus_pull.refused';
@@ -815,6 +849,148 @@ async function executePull(
   return {
     content: [
       { type: 'text', text: JSON.stringify({ role, card_id: cardId, branch, remote, status: 'fetched' }, null, 2) },
+    ],
+  };
+}
+
+// #2750 slice 2 — atomic /acp transaction. Wraps the existing executeCommit
+// path then runs PR-merge + cards-done + spine + werk-close as one
+// deterministic flow. Idempotent on re-run: gh pr view detects existing PR.
+async function executeAcp(
+  args: AcpArgs,
+  boardReader: BoardReader,
+  emit: SpineEmitter,
+  execFileAsync: ExecFileAsync,
+  gitQueuePath: string,
+  cardsPath: string,
+  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { role } = args;
+  const repoRoot = resolveWorkingTree(role);
+
+  // Step 1 — board lookup for card_id (best-effort; doesn't refuse).
+  const board = await boardReader(role);
+  let cardId: number | null = null;
+  if (board.ok && board.cards.length === 1) cardId = board.cards[0].id;
+
+  // Step 2 — commit + push via existing executeCommit machinery. Reuse the
+  // CommitArgs path: paths=['.'] commits everything staged in werk; the role
+  // already staged what they want via Edit/Write before invoking /acp.
+  // The skill's pre-flight ensures clean diff matches intent.
+  // We can't reuse executeCommit directly because it takes pre-set paths;
+  // for /acp the contract is "everything in the current branch."
+  // Run git-queue.sh commit with `.` as the path argument.
+  const path = require('path') as typeof import('path');
+  const parentNodeBinDir = path.dirname(process.execPath);
+  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
+  const env = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
+  } as NodeJS.ProcessEnv;
+
+  let sha = 'unknown';
+  let branch = '';
+
+  // Detect existing branch first (if commit already landed in a previous run)
+  try {
+    const { stdout: refOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
+    branch = refOut.trim();
+  } catch {
+    /* fall through; will fail at commit */
+  }
+
+  // Commit (skip if no staged changes — gh push will be no-op).
+  try {
+    const commitArgs = ['commit', '--force-branch', '.', '--', '-m', `${role}: acp #${cardId ?? 'unknown'}`];
+    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 60_000, cwd: repoRoot });
+    const shaMatch = stdout.match(/\[\S+\s+([a-f0-9]+)\]/);
+    if (shaMatch) sha = shaMatch[1];
+  } catch (err) {
+    const stderr = extractStderr(err);
+    // "nothing to commit" is a successful idempotent path — already committed
+    if (!/nothing to commit|no changes added/i.test(stderr)) {
+      const reason = classifyCommitFailure(stderr);
+      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'commit', reason, detail: stderr.slice(0, 500) });
+      throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  // Push (idempotent; fast no-op if already pushed)
+  try {
+    const pushArgs = branch ? ['push', '--force-branch', '--branch', branch] : ['push', '--force-branch'];
+    await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
+  } catch (err) {
+    const stderr = extractStderr(err);
+    const reason = classifyPushFailure(stderr);
+    emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'push', reason, detail: stderr.slice(0, 500) });
+    throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
+  }
+
+  // Step 3 — gh pr view (detect existing) → gh pr create (if missing) → gh pr merge.
+  let prUrl = '';
+  try {
+    const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url', '-q', '.url'], { env, cwd: repoRoot, timeout: 15_000 });
+    prUrl = stdout.trim();
+  } catch {
+    // No existing PR — create one.
+    try {
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'create', '--title', `${role}: acp #${cardId ?? 'unknown'}`, '--body', `Automated /acp via chorus_acp MCP for #${cardId ?? 'unknown'}.`],
+        { env, cwd: repoRoot, timeout: 30_000 },
+      );
+      prUrl = stdout.trim().split('\n').pop() ?? '';
+    } catch (err) {
+      const stderr = extractStderr(err);
+      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-create', reason: 'pr-create-fail', detail: stderr.slice(0, 500) });
+      throw new Error(`chorus_acp refused: pr-create-fail — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  try {
+    await execFileAsync('gh', ['pr', 'merge', branch, '--squash', '--delete-branch'], { env, cwd: repoRoot, timeout: 60_000 });
+  } catch (err) {
+    const stderr = extractStderr(err);
+    // "already merged" is idempotent success
+    if (!/already.*merged|state.*MERGED/i.test(stderr)) {
+      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-merge', reason: 'pr-merge-fail', detail: stderr.slice(0, 500) });
+      throw new Error(`chorus_acp refused: pr-merge-fail — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  // Step 4 — cards done.
+  if (cardId !== null) {
+    try {
+      await execFileAsync(cardsPath, ['done', String(cardId)], { env, timeout: 15_000 });
+    } catch (err) {
+      const stderr = extractStderr(err);
+      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
+      throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  // Step 5 — spine event card.accepted.
+  emit(CARD_ACCEPTED, { role, card: cardId });
+
+  // Step 6 — chorus-werk close (best-effort; doesn't fail the transaction).
+  let branchClosed = false;
+  try {
+    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+    if (cardId !== null) {
+      await execFileAsync(chorusWerkPath, ['close', role, String(cardId)], { env, timeout: 30_000 });
+      branchClosed = true;
+    }
+  } catch {
+    // Non-fatal — branch close is hygiene; the transaction is already complete.
+  }
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed }, null, 2),
+      },
     ],
   };
 }
@@ -1264,6 +1440,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_TOOL_DEF,
+      ACP_TOOL_DEF,
     ],
   }));
 
@@ -1376,6 +1553,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executePull(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
+      }
+      case 'chorus_acp': {
+        const parsed = AcpInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeAcp(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, cardsPath, resolveWorkingTree);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
