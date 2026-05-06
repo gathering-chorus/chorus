@@ -72,6 +72,13 @@ export interface McpServerDeps {
   // the canonical commit+push surface. Default resolves to the repo's
   // platform/scripts/git-queue.sh; tests inject a fake path + mock execFileAsync.
   gitQueuePath?: string;
+  // #2750 — resolve the working tree (cwd) for git-queue.sh subprocs. When a
+  // role's CHORUS_WERK_ENABLE flag is on, commits and pulls must run against
+  // /chorus-werk/<role>/, not canonical (#2735). Default impl reads role's
+  // settings.json env block; tests inject a stub path. Returning the
+  // canonical repo root preserves pre-#2750 behavior exactly (#2662
+  // cwd=repo-root contract).
+  resolveWorkingTree?: (role: 'kade' | 'wren' | 'silas') => string;
 }
 
 export type BoardCard = { id: number; owner: string; title: string };
@@ -579,12 +586,53 @@ function extractStderr(err: unknown): string {
   return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
 }
 
+// #2750 — default werk-aware resolver. Reads role's settings.json env block
+// for CHORUS_WERK_ENABLE. If "1", returns the role's werk path (sibling to
+// canonical: $HOME/CascadeProjects/chorus-werk/<role>). Else returns
+// canonical. Synchronous + cached-per-process is fine — settings.json is a
+// small file, role-state changes are rare events bounded by session lifecycle.
+function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const cache = new Map<string, string>();
+
+  return (role: 'kade' | 'wren' | 'silas'): string => {
+    const cached = cache.get(role);
+    if (cached) return cached;
+
+    const settingsPath = path.join(canonicalRoot, 'roles', role, '.claude', 'settings.json');
+    let werkEnabled = false;
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf8');
+      const parsed = JSON.parse(raw) as { env?: Record<string, string> };
+      werkEnabled = parsed.env?.CHORUS_WERK_ENABLE === '1';
+    } catch {
+      // settings.json missing or unreadable — treat as flag-off, fall back to canonical
+      werkEnabled = false;
+    }
+
+    let resolved: string;
+    if (werkEnabled) {
+      // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
+      const parent = path.dirname(canonicalRoot);
+      resolved = path.join(parent, 'chorus-werk', role);
+    } else {
+      resolved = canonicalRoot;
+    }
+    cache.set(role, resolved);
+    return resolved;
+  };
+}
+
 async function executeCommit(
   args: CommitArgs,
   boardReader: BoardReader,
   emit: SpineEmitter,
   execFileAsync: ExecFileAsync,
   gitQueuePath: string,
+  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, paths, message } = args;
 
@@ -631,9 +679,11 @@ async function executeCommit(
   // #2662 — git-queue.sh stages paths via `git add <path>` which resolves
   // them relative to cwd. chorus-api runs from platform/api, so without
   // an explicit cwd, paths like "skills/acp/SKILL.md" became
-  // "platform/api/skills/acp/SKILL.md" (404). Derive repo root from the
-  // gitQueuePath = "<repo>/platform/scripts/git-queue.sh".
-  const repoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
+  // "platform/api/skills/acp/SKILL.md" (404).
+  // #2750 — werk-aware: when the role's flag is on, repoRoot is the role's
+  // werk; else canonical (#2662 contract). resolveWorkingTree owns the
+  // decision; chorus_commit just routes cwd accordingly.
+  const repoRoot = resolveWorkingTree(role as 'kade' | 'wren' | 'silas');
 
   // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
   // #2687 — pass --force-branch so git-queue's branch-check (coordination
@@ -705,6 +755,7 @@ async function executePull(
   emit: SpineEmitter,
   execFileAsync: ExecFileAsync,
   gitQueuePath: string,
+  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, branch, remote } = args;
 
@@ -734,7 +785,8 @@ async function executePull(
     DEPLOY_ROLE: role,
     PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
-  const repoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
+  // #2750 — werk-aware cwd (mirror of executeCommit's change).
+  const repoRoot = resolveWorkingTree(role as 'kade' | 'wren' | 'silas');
 
   // Emit attempted before the call so audit captures the intent even if the
   // call throws unexpectedly. Pull-rebase is the operation; chorus_pull.fetched
@@ -1176,6 +1228,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
   const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
   const gitQueuePath = deps.gitQueuePath ?? resolveGitQueuePath();
+  // #2750 — werk-aware cwd resolver. Default reads role's settings.json env
+  // for CHORUS_WERK_ENABLE; if "1", routes git-queue.sh to /chorus-werk/<role>/.
+  // Otherwise returns canonical (#2662 cwd=repo-root contract preserved).
+  const canonicalRepoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
+  const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
+    deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
   const server = new Server(
     {
       name: 'chorus-api',
@@ -1310,14 +1368,14 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath);
+        return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
       }
       case 'chorus_pull': {
         const parsed = PullInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executePull(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath);
+        return executePull(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);

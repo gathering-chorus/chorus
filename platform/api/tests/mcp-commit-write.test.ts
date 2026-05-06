@@ -497,6 +497,64 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(events.find((e) => e.event === 'chorus_commit.refused')?.fields.reason).toBe('commit-fail');
     });
 
+    test('#2750 — werk-aware: when resolveWorkingTree returns role werk, all subprocs use that cwd', async () => {
+      // Captures silas/2333 first werk-acp gap: chorus_commit ran git-queue.sh
+      // in canonical, where the role's files didn't exist (they were in
+      // /chorus-werk/<role>/). Handler must route cwd to whatever
+      // resolveWorkingTree returns. Production default reads role's
+      // settings.json env to detect CHORUS_WERK_ENABLE=1.
+      const cwds: string[] = [];
+      const exec = jest.fn(async (_file: string, args: string[], opts: { cwd: string }) => {
+        cwds.push(opts.cwd);
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2750\n', stderr: '' };
+        }
+        if (args[0] === 'commit') return { stdout: '[kade/2750 abcd5678] kade: m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        throw new Error('unexpected ' + args.join(' '));
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+        resolveWorkingTree: ((_role: 'kade') => '/fake/chorus-werk/kade') as never,
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['platform/scripts/x.sh'], message: 'm' } } }, {});
+
+      expect(cwds.length).toBeGreaterThan(0);
+      cwds.forEach((cwd) => expect(cwd).toBe('/fake/chorus-werk/kade'));
+    });
+
+    test('#2750 — flag-off (default): cwd is canonical repo root (regression guard)', async () => {
+      // Pre-#2750 callers omit resolveWorkingTree entirely. Default behavior
+      // must derive repoRoot from gitQueuePath as today (#2662 contract).
+      const cwds: string[] = [];
+      const exec = jest.fn(async (_file: string, args: string[], opts: { cwd: string }) => {
+        cwds.push(opts.cwd);
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2750\n', stderr: '' };
+        }
+        if (args[0] === 'commit') return { stdout: '[kade/2750 abcd5678] kade: m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        throw new Error('unexpected ' + args.join(' '));
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+        // resolveWorkingTree omitted — default falls back to canonical via gitQueuePath derivation
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler({ method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['x.ts'], message: 'm' } } }, {});
+
+      cwds.forEach((cwd) => expect(cwd).toBe('/fake'));
+    });
+
     test('classifier regex still labels real pre-commit failure as hook-fail (regression)', async () => {
       // Tightened regex still matches real failure markers on a pre-commit line.
       const exec = jest.fn(async (_file: string, args: string[]) => {
