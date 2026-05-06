@@ -104,6 +104,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       const result = await handler(
@@ -157,6 +158,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -172,6 +174,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -187,6 +190,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -203,6 +207,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -221,6 +226,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -239,6 +245,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await handler(
@@ -269,6 +276,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await handler(
