@@ -81,6 +81,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as { _requestHandlers: Map<string, Handler> })._requestHandlers.get('tools/call')!;
       const result = await handler(
@@ -136,6 +137,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as { _requestHandlers: Map<string, Handler> })._requestHandlers.get('tools/call')!;
       await expect(
@@ -151,6 +153,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as { _requestHandlers: Map<string, Handler> })._requestHandlers.get('tools/call')!;
       await expect(
@@ -166,6 +169,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
+        fsExists: ((_p: string) => true) as never,
       } as never);
       const handler = (server as unknown as { _requestHandlers: Map<string, Handler> })._requestHandlers.get('tools/call')!;
       await expect(

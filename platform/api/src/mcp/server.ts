@@ -79,6 +79,9 @@ export interface McpServerDeps {
   // canonical repo root preserves pre-#2750 behavior exactly (#2662
   // cwd=repo-root contract).
   resolveWorkingTree?: (role: 'kade' | 'wren' | 'silas') => string;
+  // #2760 — werk path existence check. Default uses fs.existsSync; tests
+  // inject `() => true` so refusal taxonomy tests don't need real /tmp dirs.
+  fsExists?: (p: string) => boolean;
 }
 
 export type BoardCard = { id: number; owner: string; title: string };
@@ -1195,6 +1198,7 @@ async function executePullCard(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
   resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
+  fsExists: (p: string) => boolean,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, card_id: cardId } = args;
   const repoRoot = resolveWorkingTree(role);
@@ -1244,30 +1248,39 @@ async function executePullCard(
   }
   stepEmit('validate', 'completed', { status });
 
-  // Step 2 — werk pre-flight. Refuses dirty werk and non-main branch with
-  // typed reasons + offending detail. This is the lived-experience addition
-  // from 2026-05-06: a /pull onto a dirty werk this morning smuggled
-  // unrelated edits into a commit. The MCP refuses before any move/branch
-  // op so the substrate can't be tricked.
+  // Step 2 — werk pre-flight. Refuses werk-not-initialized, werk-dirty,
+  // werk-corrupt, werk-wrong-branch with typed reasons.
+  // #2751: dirty werk refusal stops contamination at the door.
+  // #2760: existence check FIRST so a missing werk path doesn't get
+  // mis-classified as werk-dirty. Wren hit this 2026-05-06: flag flipped,
+  // init never ran. Separating exec failures from dirty-output checks
+  // also kills the recursive double-throw the old try/catch produced.
   stepEmit('werk-preflight', 'started');
-  try {
-    const { stdout: dirty } = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
-    if (dirty.trim().length > 0) {
-      refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
-    }
-  } catch (err) {
-    // git status failure is rare and non-typed; surface raw.
-    refuse('werk-preflight', 'werk-dirty', `git status failed: ${extractStderr(err)}`);
+  if (!fsExists(repoRoot)) {
+    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
   }
+  if (!fsExists(path.join(repoRoot, '.git'))) {
+    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
+  }
+  let dirty = '';
   try {
-    const { stdout: refOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
-    const currentBranch = refOut.trim();
-    // Detached HEAD ('HEAD' from --abbrev-ref) is the canonical post-acp state — accept it.
-    if (currentBranch !== 'main' && currentBranch !== 'HEAD' && currentBranch !== '') {
-      refuse('werk-preflight', 'werk-wrong-branch', `werk is on '${currentBranch}' — must be on main or detached`);
-    }
+    const r = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
+    dirty = r.stdout;
   } catch (err) {
-    refuse('werk-preflight', 'werk-wrong-branch', `git rev-parse failed: ${extractStderr(err)}`);
+    refuse('werk-preflight', 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
+  }
+  if (dirty.trim().length > 0) {
+    refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
+  }
+  let currentBranch = '';
+  try {
+    const r = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
+    currentBranch = r.stdout.trim();
+  } catch (err) {
+    refuse('werk-preflight', 'werk-corrupt', `git rev-parse failed at ${repoRoot}: ${extractStderr(err)}`);
+  }
+  if (currentBranch !== 'main' && currentBranch !== 'HEAD' && currentBranch !== '') {
+    refuse('werk-preflight', 'werk-wrong-branch', `werk is on '${currentBranch}' — must be on main or detached`);
   }
   stepEmit('werk-preflight', 'completed');
 
@@ -1327,6 +1340,7 @@ async function executeUnpullCard(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
   resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
+  fsExists: (p: string) => boolean,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, card_id: cardId } = args;
   const repoRoot = resolveWorkingTree(role);
@@ -1371,15 +1385,24 @@ async function executeUnpullCard(
   }
   stepEmit('validate', 'completed', { status, owner });
 
-  // Step 2 — werk pre-flight. Refuse on uncommitted changes; don't lose work.
+  // Step 2 — werk pre-flight. Refuse on missing werk path (#2760), exec
+  // failures (werk-corrupt), or uncommitted changes (don't lose work).
   stepEmit('werk-preflight', 'started');
+  if (!fsExists(repoRoot)) {
+    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
+  }
+  if (!fsExists(path.join(repoRoot, '.git'))) {
+    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
+  }
+  let dirty = '';
   try {
-    const { stdout: dirty } = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
-    if (dirty.trim().length > 0) {
-      refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
-    }
+    const r = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
+    dirty = r.stdout;
   } catch (err) {
-    refuse('werk-preflight', 'werk-dirty', `git status failed: ${extractStderr(err)}`);
+    refuse('werk-preflight', 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
+  }
+  if (dirty.trim().length > 0) {
+    refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
   }
   stepEmit('werk-preflight', 'completed');
 
@@ -1854,6 +1877,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const canonicalRepoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const _fs = require('fs') as typeof import('fs');
+  const fsExists: (p: string) => boolean = deps.fsExists ?? ((p: string) => _fs.existsSync(p));
   const server = new Server(
     {
       name: 'chorus-api',
@@ -2012,14 +2038,14 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree);
+        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
       }
       case 'chorus_unpull_card': {
         const parsed = UnpullCardInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeUnpullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree);
+        return executeUnpullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
