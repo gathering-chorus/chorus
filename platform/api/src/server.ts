@@ -387,6 +387,7 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 // Memory domain — join six data sources into a card timeline. #1947
 
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
+import { safeReadFile } from './lib/log-reader';
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
   const cardsScript = path.resolve(__dirname, '../../scripts/cards');
   const MESSAGING_URL = 'http://localhost:3475';
@@ -406,7 +407,7 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
           return JSON.parse(stdout) as CardMeta;
         },
         db,
-        readLog: () => fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null,
+        readLog: () => safeReadFile(logPath),
         loadNudges: async () => {
           const resp = await fetch(`${MESSAGING_URL}/api/messages?limit=100`);
           if (!resp.ok) return [];
@@ -434,7 +435,7 @@ app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
       {
         getCards: () => getBoardCards(),
         db,
-        readLog: () => fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null,
+        readLog: () => safeReadFile(logPath),
       },
       req.params.domain,
       req.query.limit as string | undefined,
@@ -1432,7 +1433,7 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
         getCards: getBoardCards,
         readDomainHtml: (d: string) => {
           const p = `${CHORUS_ROOT}/platform/roles/product-manager/artifacts/domain-${d}.html`;
-          return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null;
+          return safeReadFile(p);
         },
         fetchCompleteness: async (sdId: string) => {
           try {
@@ -1526,7 +1527,7 @@ app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
   }
   const HOOKS_LOG = path.join(os.homedir(), 'Library/Logs/Gathering/hooks.log');
   const r = fetchChorusHooksMetrics({
-    readLog: () => fs.existsSync(HOOKS_LOG) ? fs.readFileSync(HOOKS_LOG, 'utf-8') : null,
+    readLog: () => safeReadFile(HOOKS_LOG),
   });
   if (r.status === 200) hooksMetricsCache = { data: r.body, ts: Date.now() };
   res.status(r.status).json(r.body);
