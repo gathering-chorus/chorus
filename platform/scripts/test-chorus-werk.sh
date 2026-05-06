@@ -229,6 +229,10 @@ echo '{"name":"tests"}' > "$CANONICAL/platform/tests/package.json"
 echo '{"name":"empty"}' > "$CANONICAL/platform/empty-pkg/package.json"
 git -C "$CANONICAL" add -A >/dev/null 2>&1
 git -C "$CANONICAL" commit -q -m "fixture: npm projects" >/dev/null 2>&1
+# #2768 alignment: advance origin/main to match local main so init (which now
+# prefers origin/main) lands at the fixture commit, not at TEST 18's older
+# fabricated origin/main tip.
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
 # Add untracked node_modules AFTER the commit (gitignored, won't propagate
 # to werk via worktree-add — bootstrap is what gets them there).
 mkdir -p "$CANONICAL/platform/api/node_modules/some-pkg"
@@ -284,6 +288,23 @@ WERK_DETACHED_LINE=$(grep "werk.detached" "$SPINE_LOG" | head -1)
 assert "werk.detached event names role" grep -q "kade" <<< "$WERK_DETACHED_LINE"
 assert "werk.detached event names card" grep -q "card=5002" <<< "$WERK_DETACHED_LINE"
 assert "werk.detached event names prior_branch" grep -q "prior_branch=kade/5002" <<< "$WERK_DETACHED_LINE"
+
+# --- TEST 20: init lands worktree at origin/main, not stale local main (#2768) ---
+# Mirror of TEST 18's setup (origin/main ahead of local main via fabricated
+# commit). Pre-#2768 init used local main directly; now it should fetch
+# origin and prefer origin/main when the two diverge.
+"$CHORUS_WERK" remove kade > /dev/null 2>&1
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+LOCAL_MAIN_BEFORE_T20=$(git -C "$CANONICAL" rev-parse main 2>/dev/null)
+TREE_T20=$(git -C "$CANONICAL" rev-parse HEAD^{tree})
+FUTURE_T20=$(echo "future for test-20" | git -C "$CANONICAL" commit-tree "$TREE_T20" -p "$LOCAL_MAIN_BEFORE_T20" -m "future-t20")
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$FUTURE_T20"
+assert "test-20 setup: origin/main ahead of local main" test "$FUTURE_T20" != "$LOCAL_MAIN_BEFORE_T20"
+
+"$CHORUS_WERK" init kade > /dev/null 2>&1
+WT_TIP_T20=$(git -C "$WERK_BASE/kade" rev-parse HEAD 2>/dev/null)
+assert "init lands werk at origin/main tip (not stale local main)" test "$WT_TIP_T20" = "$FUTURE_T20"
+assert "init did NOT land werk at stale local main" test "$WT_TIP_T20" != "$LOCAL_MAIN_BEFORE_T20"
 
 echo "---"
 echo "Passed: $PASS"
