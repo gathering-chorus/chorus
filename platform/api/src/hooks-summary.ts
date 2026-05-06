@@ -143,6 +143,9 @@ const CLASSIFIERS: Array<{
     classify: (obj) => ({ category: 'ops-health', action: 'allow', detail: `Resolved: ${(asStr(obj.alert) || asStr(obj.detail) || '').slice(0, 120)}` }) },
 ];
 
+// Canonical owner of this pattern is `lib/log-reader.ts` (#2126). The local
+// definition below is duplication pending refactor (#2756 follow-on); do not
+// add a third copy elsewhere — import from `./lib/log-reader` instead.
 function readLogLines(filePath: string): string[] {
   try {
     if (!fs.existsSync(filePath)) return [];
