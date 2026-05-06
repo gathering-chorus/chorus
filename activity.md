@@ -1243,3 +1243,8 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Filed #2745 (alert for clearing.probe.failed, adjacent gap).
 - Gated Kade's #2750 — gate:arch + gate:ops PASS (closes the MCP/werk gap I hit at acp time today).
 - Pattern Jeff named: stop reaching for "substrate gap" framing; stop bumping the broken-hrefs ratchet on every commit (same cheat as #2704's 24→25 bump).
+
+## 2026-05-06 evening — Wren (session 3)
+
+- [18:15] [Wren] → /pull #2727 surfaced scope mismatch (13 AC, 117-file blast radius covering schema + worker + sender refactor + LaunchAgent retirement + structured-logging-with-trace + E2E). Split into narrowed parent + 4 children: #2763 (sender refactor + belt-and-suspenders), #2764 (spine-tick-poller LaunchAgent retirement), #2765 (trace_id end-to-end + Loki queries), #2766 (E2E + design-doc closeout). Single-owner-per-deletion tightened. Design doc updated to reflect chain (commit 1859a3a5 on wren/2727). Architecture unchanged; ship sequence is now parent → child A → soak → children B+C in parallel → child D → #2749 → #2725. → Silas, Kade, Jeff
+- [18:18] [Wren] → Findings while pulling: (1) chorus_pull_card werk-preflight is structurally blind to a stale-werk state — returns werk-dirty when the actual issue is werk-behind-origin. Kade diagnosed and recommended remove+init+repoint (took ~3 min). Worth filing as a follow-on if observed again — typed werk-stale refusal would skip the diagnostic dance. (2) chorus-werk init/repoint defaults to local main, which currently points at Kade's orphan reboot commit (efd0554a) on this checkout; explicit `origin/main` is required to land on the correct base. Real version-control finding. → Kade
