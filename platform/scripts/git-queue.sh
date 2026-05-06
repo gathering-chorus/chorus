@@ -370,11 +370,26 @@ do_commit() {
   # role would leak into this commit (cross-role staging collision).
   # Close fd 9 for child processes so git credential-cache-daemon
   # doesn't inherit the lockf descriptor and hold the lock forever.
+  # #2752 — capture git's stdout so it routes to stderr on failure. Git's
+  # "nothing to commit, working tree clean" message goes to stdout even when
+  # exit code is non-zero (longstanding git quirk). Without redirect,
+  # downstream consumers (chorus_acp idempotent path, future tools) inspect
+  # stderr and never see git's actual error message. Same family as #2700
+  # (drop 2>&1 from do_pull/do_push) — getting error semantics right for MCP
+  # classifiers at the wrapper layer.
   local exit_code=0
+  local _git_stdout=""
   if $skip_add; then
-    git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
+    _git_stdout=$(git commit "${git_args[@]}" -- "${files[@]}" 9>&-) || exit_code=$?
   else
-    git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&- || exit_code=$?
+    _git_stdout=$(git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&-) || exit_code=$?
+  fi
+  if [ $exit_code -eq 0 ]; then
+    # Success: pass git's stdout through unchanged
+    [ -n "$_git_stdout" ] && printf '%s\n' "$_git_stdout"
+  else
+    # Failure: send git's stdout to stderr so consumers see the real message
+    [ -n "$_git_stdout" ] && printf '%s\n' "$_git_stdout" >&2
   fi
 
   # #2193: emit commit.landed after successful commit. Semantic event for
