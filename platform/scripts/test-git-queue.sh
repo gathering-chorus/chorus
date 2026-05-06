@@ -163,6 +163,44 @@ echo "Test 8: help command"
 output=$(bash "$GIT_QUEUE" help 2>&1)
 assert_contains "help shows usage" "FIFO commit lock" "$output"
 
+# --- Test 9 (#2752): no-op commit routes git's stdout message to stderr ---
+echo ""
+echo "Test 9: no-op commit error message lands on stderr (not stdout)"
+setup_repo
+# setup_repo already commits initial file.txt — tree is clean. Re-attempting
+# commit with the same content is a no-op: git exits non-zero with 'nothing
+# to commit' on stdout (longstanding git quirk). After #2752 fix: git-queue
+# routes that message to stderr so MCP classifiers see it where errors belong.
+#
+# git-queue.sh sources branch-check.sh from $REPO_ROOT/platform/scripts/.
+# In test fixture, stub the dep so the script reaches the commit path.
+mkdir -p "$TEST_DIR/platform/scripts"
+cat > "$TEST_DIR/platform/scripts/branch-check.sh" <<'STUB'
+# test stub — accept all branches
+branch_check_match() { return 0; }
+STUB
+set +e
+stderr_only=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit file.txt -- -m "kade: noop" 2>&1 >/dev/null)
+stdout_only=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit file.txt -- -m "kade: noop" 2>/dev/null)
+set -e
+# Git's exact wording varies ("nothing to commit, working tree clean" vs
+# "nothing added to commit but untracked files present"). Both indicate the
+# no-op condition. The fix is correct as long as ONE of them is on stderr.
+if echo "$stderr_only" | grep -qE "nothing (to|added to) commit"; then
+  echo "PASS: noop commit message on stderr"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: noop commit message not on stderr (got: $stderr_only)"
+  FAIL=$((FAIL + 1))
+fi
+if echo "$stdout_only" | grep -qE "nothing (to|added to) commit"; then
+  echo "FAIL: noop commit message leaked to stdout (should be stderr-only)"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: noop commit stdout clean (no leaked error message)"
+  PASS=$((PASS + 1))
+fi
+
 # --- Summary ---
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
