@@ -80,6 +80,12 @@ service_start() {
     launchctl bootstrap "gui/$(uid)" ~/Library/LaunchAgents/${label}.plist 2>/dev/null
     launchctl kickstart "gui/$(uid)/$label" 2>/dev/null
   }
+  # #2333: post-restart shape smoke on Clearing kickstart.
+  # Bounded with `timeout 30` so a hung Clearing API can't leave the smoke lingering.
+  if [ "$label" = "com.chorus.clearing" ]; then
+    local smoke="$(dirname "${BASH_SOURCE[0]}")/clearing-post-restart-smoke.sh"
+    [ -x "$smoke" ] && (timeout 30 bash "$smoke" >/dev/null 2>&1 &)
+  fi
 }
 
 service_stop() {
