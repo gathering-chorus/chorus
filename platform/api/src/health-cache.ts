@@ -1,3 +1,5 @@
+import { MIN_EMBED_LENGTH } from './embed-floor';
+
 // Deep-health cache (extracted from server.ts for #2205 wave 13).
 //
 // Cached so /api/chorus/health/detail doesn't shell / count on every
@@ -54,9 +56,11 @@ export function createHealthCache(deps: HealthCacheDeps): HealthCache {
         state.dbRows = row.cnt;
         state.dbStatus = 'ok';
         try {
-          const uRow = db.prepare(
-            'SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= 100',
-          ).get() as { cnt: number };
+          const uStmt = db.prepare(
+            // #2754 — floor lives in embed-floor.ts; SQL parameter keeps the two in sync.
+            'SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= ?',
+          ) as unknown as { get: (n: number) => { cnt: number } };
+          const uRow = uStmt.get(MIN_EMBED_LENGTH);
           state.unembedded = uRow.cnt;
         } catch {
           /* column may not exist yet */

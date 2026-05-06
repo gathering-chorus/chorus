@@ -244,7 +244,7 @@ async function initLance(): Promise<void> {
 
 // --- Embed-at-ingest: embed new messages after indexing ---
 
-const MIN_EMBED_LENGTH = 100;
+import { MIN_EMBED_LENGTH } from './embed-floor';  // #2754 — single source of truth
 const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the rest (#1920)
 
 // embedDelta extracted to src/embed-delta.ts (#2205 wave 16).
