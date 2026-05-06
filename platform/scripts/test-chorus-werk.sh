@@ -191,6 +191,48 @@ assert "close without role exits non-zero" test "$RC" -ne 0
 RC=$?
 assert "close without card-id exits non-zero" test "$RC" -ne 0
 
+# --- TEST 17: init bootstraps node_modules from canonical (#2758) ---
+# Werks accumulate a 30s npm-install penalty per init because they're
+# created without node_modules. Symlink from canonical's matching npm
+# dirs so the werk is immediately ready for tsc/jest/pre-commit.
+# Real canonical gitignores node_modules; mirror that in the fixture so
+# `git worktree add` doesn't check them out as real dirs and shadow the
+# symlink. Commit only the package.json files + .gitignore.
+echo 'node_modules/' > "$CANONICAL/.gitignore"
+mkdir -p "$CANONICAL/platform/api" "$CANONICAL/platform/tests" "$CANONICAL/platform/empty-pkg"
+echo '{"name":"api"}' > "$CANONICAL/platform/api/package.json"
+echo '{"name":"tests"}' > "$CANONICAL/platform/tests/package.json"
+echo '{"name":"empty"}' > "$CANONICAL/platform/empty-pkg/package.json"
+git -C "$CANONICAL" add -A >/dev/null 2>&1
+git -C "$CANONICAL" commit -q -m "fixture: npm projects" >/dev/null 2>&1
+# Add untracked node_modules AFTER the commit (gitignored, won't propagate
+# to werk via worktree-add — bootstrap is what gets them there).
+mkdir -p "$CANONICAL/platform/api/node_modules/some-pkg"
+echo '{}' > "$CANONICAL/platform/api/node_modules/some-pkg/package.json"
+mkdir -p "$CANONICAL/platform/tests/node_modules/another-pkg"
+echo '{}' > "$CANONICAL/platform/tests/node_modules/another-pkg/package.json"
+
+"$CHORUS_WERK" remove kade > /dev/null 2>&1
+"$CHORUS_WERK" init kade > /dev/null 2>&1
+
+assert "init creates platform/api/node_modules in werk" test -e "$WERK_BASE/kade/platform/api/node_modules"
+assert "platform/api/node_modules is a symlink" test -L "$WERK_BASE/kade/platform/api/node_modules"
+LINK_TARGET=$(readlink "$WERK_BASE/kade/platform/api/node_modules" 2>/dev/null)
+assert "platform/api/node_modules points at canonical" test "$LINK_TARGET" = "$CANONICAL/platform/api/node_modules"
+assert "platform/api/node_modules content reachable" test -f "$WERK_BASE/kade/platform/api/node_modules/some-pkg/package.json"
+
+assert "init creates platform/tests/node_modules in werk" test -e "$WERK_BASE/kade/platform/tests/node_modules"
+assert "platform/tests/node_modules is a symlink" test -L "$WERK_BASE/kade/platform/tests/node_modules"
+
+# Skip case: canonical has package.json but no node_modules → werk has no symlink
+assert "no symlink for npm dir without canonical node_modules" test ! -e "$WERK_BASE/kade/platform/empty-pkg/node_modules"
+
+# Idempotency: re-init should not error and symlinks remain
+"$CHORUS_WERK" init kade > /dev/null 2>&1
+RC=$?
+assert "init idempotent after bootstrap" test "$RC" -eq 0
+assert "symlink still present after re-init" test -L "$WERK_BASE/kade/platform/api/node_modules"
+
 echo "---"
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
