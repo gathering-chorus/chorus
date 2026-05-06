@@ -191,6 +191,30 @@ assert "close without role exits non-zero" test "$RC" -ne 0
 RC=$?
 assert "close without card-id exits non-zero" test "$RC" -ne 0
 
+# --- TEST 18: close detaches at origin/main, not stale local main (#2757) ---
+# When a peer pushes to origin between sessions, canonical's local main
+# lags behind origin/main. Without this fix, `chorus-werk close` detaches
+# the werk to local main → next pull starts behind → spurious rebase
+# warnings + diff-vs-main shows phantom deletions. Expectation: close
+# resolves the detach target from origin/main when present.
+"$CHORUS_WERK" pull kade 5001 > /dev/null 2>&1
+LOCAL_MAIN_BEFORE=$(git -C "$CANONICAL" rev-parse main 2>/dev/null)
+# Fabricate a commit reachable only via refs/remotes/origin/main —
+# simulates a peer push that local main hasn't caught up to. commit-tree
+# creates the object without mutating HEAD.
+TREE=$(git -C "$CANONICAL" rev-parse HEAD^{tree})
+FUTURE_COMMIT=$(echo "peer push" | git -C "$CANONICAL" commit-tree "$TREE" -p "$LOCAL_MAIN_BEFORE" -m "peer push")
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$FUTURE_COMMIT"
+assert "test-18 setup: origin/main ahead of local main" test "$FUTURE_COMMIT" != "$LOCAL_MAIN_BEFORE"
+
+"$CHORUS_WERK" close --no-done-check kade 5001 > /dev/null 2>&1
+RC=$?
+assert "close exits 0 with stale local main + ahead origin/main" test "$RC" -eq 0
+
+WT_TIP=$(git -C "$WERK_BASE/kade" rev-parse HEAD 2>/dev/null)
+assert "close detaches werk at origin/main tip" test "$WT_TIP" = "$FUTURE_COMMIT"
+assert "close did NOT detach werk at stale local main" test "$WT_TIP" != "$LOCAL_MAIN_BEFORE"
+
 # --- TEST 17: init bootstraps node_modules from canonical (#2758) ---
 # Werks accumulate a 30s npm-install penalty per init because they're
 # created without node_modules. Symlink from canonical's matching npm
