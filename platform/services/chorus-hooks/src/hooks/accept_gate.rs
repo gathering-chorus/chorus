@@ -1,8 +1,12 @@
 //! Accept Gate (#1657, #1671)
 //!
 //! PreToolUse hook on Skill tool when skill="acp".
-//! Validates: demo brief exists, prevents self-accept on code cards.
+//! Validates: demo evidence exists, prevents self-accept on code cards.
 //! Jeff always overrides (DEC-048).
+//!
+//! #2177: demo evidence is the `demo:preflight-pass` card comment (written by
+//! /demo skill), not a filesystem artifact. Same retire-the-old-path pattern
+//! as #2168 and #2176.
 
 use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse, permission_deny_json, Role};
@@ -10,7 +14,12 @@ use std::process::Command;
 use tracing::{info, warn};
 
 fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
-fn briefs_dir() -> String { format!("{}/roles/wren/briefs", chorus_root()) }
+
+/// #2177: Demo evidence lives on the card as `demo:preflight-pass` comment.
+/// Pure substring check on the `cards view <id>` output string.
+pub fn demo_evidence_exists(card_view: &str) -> bool {
+    card_view.contains("demo:preflight-pass")
+}
 
 /// Check if this is an /acp invocation and validate acceptance gates
 pub async fn check(input: &HookInput) -> HookResponse {
@@ -29,16 +38,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
     info!(card = %card_id, role = role.as_str(), "accept-gate: validating");
 
-    // Gate 1: Demo brief must exist (unless Jeff is accepting)
-    if !demo_brief_exists(&card_id) {
-        // Jeff can always accept — he's seen it live
+    // Fetch card view once — reused for evidence + owner + code-card check.
+    let card_view = fetch_card_view(&card_id);
+
+    // Gate 1: Demo evidence — `demo:preflight-pass` comment on the card (#2177).
+    if !demo_evidence_exists(&card_view) {
+        // Jeff can always accept — he's seen it live.
         if role == Role::Unknown {
             // Unknown role = Jeff running from root dir, OR a misconfigured session-start.
             // Either way, safer to allow than block — this is a safety valve, not just a Jeff path.
-            info!("accept-gate: no demo brief but unknown role — allowing (may be Jeff)");
+            info!("accept-gate: no demo:preflight-pass comment but unknown role — allowing (may be Jeff)");
         } else {
             let msg = format!(
-                "Accept blocked: no demo brief found for #{}. Run /demo {} first.",
+                "Accept blocked: no demo:preflight-pass comment found on #{}. Run /demo {} first.",
                 card_id, card_id
             );
             warn!("{}", msg);
@@ -46,9 +58,7 @@ pub async fn check(input: &HookInput) -> HookResponse {
         }
     }
 
-    // Gate 2: Self-accept check on code cards
-    // Fetch card once — reuse for owner + code-card check (Kade feedback: avoid double subprocess)
-    let card_view = fetch_card_view(&card_id);
+    // Gate 2: Self-accept check on code cards (reuse card_view).
     let card_owner = parse_owner(&card_view);
     if !card_owner.is_empty() && card_owner == role.as_str() {
         // Opt-OUT model (Wren feedback): default to code card, only exempt chunk:strategy.
@@ -74,23 +84,7 @@ fn extract_card_id(args: &str) -> String {
         .to_string()
 }
 
-fn demo_brief_exists(card_id: &str) -> bool {
-    let pattern = format!("*demo*{}*", card_id);
-    let bd = briefs_dir();
-    let output = Command::new("find")
-        .args([bd.as_str(), "-name", &pattern, "-maxdepth", "1"])
-        .output();
-
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            !stdout.trim().is_empty()
-        }
-        Err(_) => true, // Don't block on find failure
-    }
-}
-
-/// Fetch card view once — reused for owner + code-card classification
+/// Fetch card view once — reused for evidence + owner + code-card classification
 fn fetch_card_view(card_id: &str) -> String {
     let bts = board_ts();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
