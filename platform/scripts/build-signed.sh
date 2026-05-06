@@ -106,4 +106,21 @@ echo "build-signed: verify"
 codesign -dvvv "$binary" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
 CDHASH=$(codesign -dvvv "$binary" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
 echo "build-signed: cdhash=$CDHASH"
+
+# Install to ~/.chorus/bin/ — the canonical deploy location (#2734).
+# target/release/ is a build artifact; ~/.chorus/bin/ is what the running
+# system calls. Splitting build from install means cdhash stays stable
+# across rebuilds-without-source-change AND the installed binary is
+# traceable to a commit via the binary.deployed spine event.
+INSTALL_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/chorus-bin-install"
+if [ -x "$INSTALL_SCRIPT" ]; then
+  "$INSTALL_SCRIPT" "$binary" "$binary_name"
+  # chorus-hooks shortcut also installs the second binary
+  if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
+    "$INSTALL_SCRIPT" "$HOOKS_BIN" "chorus-hooks"
+  fi
+else
+  echo "build-signed: WARN — chorus-bin-install not found; binary signed but not installed to ~/.chorus/bin/" >&2
+fi
+
 echo "build-signed: done"

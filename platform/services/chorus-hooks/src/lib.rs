@@ -26,6 +26,10 @@ pub use types::HookInput;
 // #2644 AC2 — narrow test-surface re-export so integration tests can verify
 // the CHORUS_FIX_CARD_OVERRIDE deterministic-smoke contract.
 pub use types::is_fix_card;
+// #2735 — canonical-write-guard test surface
+pub mod canonical_write_guard {
+    pub use crate::hooks::canonical_write_guard::check;
+}
 
 /// Remove the daemon's runtime files (socket + pid) on clean shutdown.
 ///

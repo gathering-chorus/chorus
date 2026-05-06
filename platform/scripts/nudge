@@ -48,4 +48,14 @@ if [ "$SUBSTITUTE_BODY" = "1" ]; then
   fi
 fi
 
-exec "$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim" nudge "${ARGS[@]}" --force
+# Resolve chorus-hook-shim via PATH (#2734) — ~/.chorus/bin/ is the canonical
+# deploy location; target/release/ is the build artifact and a fallback for
+# pre-#2734 systems where the install path hasn't run yet.
+SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
+if [ -z "$SHIM" ]; then
+  SHIM="$HOME/.chorus/bin/chorus-hook-shim"
+fi
+if [ ! -x "$SHIM" ]; then
+  SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+fi
+exec "$SHIM" nudge "${ARGS[@]}" --force

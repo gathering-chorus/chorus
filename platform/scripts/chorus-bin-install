@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# chorus-bin-install — atomic install of a built+signed binary to
+# ~/.chorus/bin/<name> with spine emit (#2734).
+#
+# Why split from build-signed.sh: the install location is a deploy
+# concern (where does the running system call from?), not a build
+# concern (cargo + codesign). Splitting makes install testable without
+# compiling Rust, and lets future deploy targets (cross-machine,
+# secondary keychain) reuse the same install primitive.
+#
+# Usage:
+#   chorus-bin-install <built-binary-path> <installed-name>
+#
+# Example:
+#   chorus-bin-install /path/to/target/release/chorus-hook-shim chorus-hook-shim
+#
+# Behavior:
+#   1. Verify source exists and is executable
+#   2. Create ~/.chorus/bin/ if missing (idempotent)
+#   3. Atomic install: cp to ~/.chorus/bin/<name>.tmp, mv to <name>
+#      (mv is atomic on same filesystem; never leaves the running system
+#      pointing at a half-written binary)
+#   4. Emit binary.deployed spine event with cdhash + commit
+#
+# Test override:
+#   CHORUS_BIN_SPINE_LOG  — write spine events here instead of via chorus-log
+#                           (used by test-chorus-bin-install.sh)
+#
+# Card: #2734.
+
+set -uo pipefail
+
+usage() {
+  cat <<EOF >&2
+Usage: chorus-bin-install <built-binary-path> <installed-name>
+
+Installs a built+signed binary to ~/.chorus/bin/<installed-name>.
+EOF
+}
+
+if [ $# -lt 2 ]; then
+  usage
+  exit 2
+fi
+
+SRC="$1"
+NAME="$2"
+
+if [ ! -f "$SRC" ]; then
+  echo "chorus-bin-install: source not found: $SRC" >&2
+  exit 3
+fi
+
+if [ ! -x "$SRC" ]; then
+  echo "chorus-bin-install: source not executable: $SRC" >&2
+  exit 4
+fi
+
+BIN_DIR="$HOME/.chorus/bin"
+DEST="$BIN_DIR/$NAME"
+DEST_TMP="$DEST.tmp.$$"
+
+mkdir -p "$BIN_DIR"
+
+# Atomic: cp to .tmp.$$, then mv. mv is atomic within a filesystem;
+# concurrent callers never observe a half-written binary.
+if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
+  echo "chorus-bin-install: copy to staging failed" >&2
+  rm -f "$DEST_TMP"
+  exit 5
+fi
+
+if ! mv -f "$DEST_TMP" "$DEST" 2>/dev/null; then
+  echo "chorus-bin-install: atomic move failed" >&2
+  rm -f "$DEST_TMP"
+  exit 6
+fi
+
+# Compute cdhash (best-effort — the test fixture uses fake binaries with no
+# Mach-O signature; codesign will fail silently in that case).
+CDHASH=$(codesign --display --verbose=2 "$DEST" 2>&1 | grep '^CDHash=' | head -1 | sed 's/^CDHash=//')
+CDHASH="${CDHASH:-unknown}"
+
+# Resolve commit context (best-effort — script may be invoked outside a git tree).
+COMMIT=$(git -C "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+
+# Emit spine event. Test fixture overrides via $CHORUS_BIN_SPINE_LOG so we
+# don't depend on a working chorus-log in the test temp $HOME.
+if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT" >> "$CHORUS_BIN_SPINE_LOG"
+elif command -v chorus-log >/dev/null 2>&1; then
+  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" >/dev/null 2>&1 || true
+elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
+  "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
+    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" >/dev/null 2>&1 || true
+fi
+
+echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT)"

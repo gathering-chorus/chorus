@@ -308,6 +308,15 @@ async fn pre_tool_use_inner(
             }
         }
         "Write" | "Edit" => {
+            // Canonical write guard (#2735) — refuse Edit/Write to canonical
+            // and to other roles' werks. Silent when role env isn't set
+            // (bootstrap / migration). Foundational: runs before all other
+            // gates so a write that lands in the wrong tree never reaches
+            // sensitive_paths / write_scrubber / TDD / pair gates.
+            _last_module = "canonical_write_guard".into(); let r = hooks::canonical_write_guard::check(input);
+            if r.stdout.is_some() || r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
             // Sensitive paths — block writes to .env, credentials, SSH keys
             _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
