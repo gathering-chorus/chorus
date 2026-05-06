@@ -222,7 +222,7 @@ assert "close did NOT detach werk at stale local main" test "$WT_TIP" != "$LOCAL
 # Real canonical gitignores node_modules; mirror that in the fixture so
 # `git worktree add` doesn't check them out as real dirs and shadow the
 # symlink. Commit only the package.json files + .gitignore.
-echo 'node_modules/' > "$CANONICAL/.gitignore"
+printf 'node_modules\nnode_modules/\n' > "$CANONICAL/.gitignore"
 mkdir -p "$CANONICAL/platform/api" "$CANONICAL/platform/tests" "$CANONICAL/platform/empty-pkg"
 echo '{"name":"api"}' > "$CANONICAL/platform/api/package.json"
 echo '{"name":"tests"}' > "$CANONICAL/platform/tests/package.json"
@@ -256,6 +256,34 @@ assert "no symlink for npm dir without canonical node_modules" test ! -e "$WERK_
 RC=$?
 assert "init idempotent after bootstrap" test "$RC" -eq 0
 assert "symlink still present after re-init" test -L "$WERK_BASE/kade/platform/api/node_modules"
+
+# --- TEST 19: close emits werk.detached spine event (#2751) ---
+# Missing event next session = loud signal that close didn't run cleanly.
+# Re-align origin/main with local main first (TEST 18's fabricated future
+# commit predates TEST 17's fixture commits, so a fresh branch off
+# origin/main looks dirty against local-main's checkout — production
+# always has origin/main leading, this is fixture quirk only).
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+
+# Stub chorus-log into canonical's scripts dir so close picks it up via
+# the existing $CHORUS_HOME/platform/scripts/chorus-log fallback path.
+mkdir -p "$CANONICAL/platform/scripts"
+SPINE_LOG="$TEST_ROOT/spine.log"
+cat > "$CANONICAL/platform/scripts/chorus-log" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >> "$SPINE_LOG"
+EOF
+chmod +x "$CANONICAL/platform/scripts/chorus-log"
+
+"$CHORUS_WERK" pull kade 5002 > /dev/null 2>&1
+"$CHORUS_WERK" close --no-done-check kade 5002 > /dev/null 2>&1
+RC=$?
+assert "test-19 close exits 0" test "$RC" -eq 0
+assert "close emits werk.detached spine event" grep -q "werk.detached" "$SPINE_LOG"
+WERK_DETACHED_LINE=$(grep "werk.detached" "$SPINE_LOG" | head -1)
+assert "werk.detached event names role" grep -q "kade" <<< "$WERK_DETACHED_LINE"
+assert "werk.detached event names card" grep -q "card=5002" <<< "$WERK_DETACHED_LINE"
+assert "werk.detached event names prior_branch" grep -q "prior_branch=kade/5002" <<< "$WERK_DETACHED_LINE"
 
 echo "---"
 echo "Passed: $PASS"

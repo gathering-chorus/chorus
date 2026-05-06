@@ -307,6 +307,13 @@ cmd_close() {
       echo "chorus-werk: failed to detach $role werk at main's tip" >&2
       exit 10
     fi
+    # #2751 — werk.detached spine event. Missing event next session = loud
+    # signal that close didn't run cleanly. Best-effort; doesn't fail close.
+    if command -v chorus-log >/dev/null 2>&1; then
+      chorus-log werk.detached "$role" "card=$card_id" "prior_branch=$branch" "head_at_detach=$main_tip" >/dev/null 2>&1 || true
+    elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
+      "$CHORUS_HOME/platform/scripts/chorus-log" werk.detached "$role" "card=$card_id" "prior_branch=$branch" "head_at_detach=$main_tip" >/dev/null 2>&1 || true
+    fi
   fi
 
   # Delete the local branch.

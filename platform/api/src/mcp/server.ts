@@ -162,6 +162,15 @@ const AcpInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Card derived from board (status=WIP, owner=role).'),
 }).strict();
 
+// #2751 — chorus_pull_card atomic transaction input. Role + explicit card_id;
+// the /pull skill is the caller, and Jeff or the role names which card.
+// No bypasses on the wire — werk-dirty / werk-wrong-branch are typed refusals,
+// not flags the caller can suppress.
+const PullCardInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  card_id: z.number().int().positive().describe('Card ID to pull. Must be in Next or Later status with AC + Experience populated.'),
+}).strict();
+
 const PrinciplesGetInput = z.object({
   id: z.string().min(1).describe('Principle id (e.g., hemenway-observe, principle-ship-small)'),
 });
@@ -546,6 +555,29 @@ const PULL_TOOL_DEF = {
 // commit + push + PR open (or detect existing) + PR merge (squash + delete-branch)
 // + cards done + card.accepted spine event + chorus-werk close (when flag on).
 // Skill collapses to a single MCP call so model-compliance gaps can't shortcut steps.
+const PULL_CARD_TOOL_DEF = {
+  name: 'chorus_pull_card',
+  description:
+    'Use this to pull a card to WIP and ready the role\'s werk for building. Service runs validate + werk-pre-flight (refuses werk-dirty / werk-wrong-branch) + cards move WIP + chorus-werk repoint + role-state building + card.pulled spine event in one atomic transaction. Returns { role, card_id, branch }. Refusal taxonomy: card-not-found | wrong-status | ac-missing | experience-missing | werk-dirty | werk-wrong-branch | move-fail | branch-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy. The /pull skill calls this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Calling role — kade / wren / silas. DEPLOY_ROLE attribution + spine role field.',
+      },
+      card_id: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Card ID to pull. Must be in Next or Later status with AC + Experience populated.',
+      },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
@@ -566,6 +598,8 @@ const ACP_TOOL_DEF = {
 
 const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
 const CARD_ACCEPTED = 'card.accepted';
+const CHORUS_PULL_CARD_REFUSED = 'chorus_pull_card.refused';
+const CARD_PULLED = 'card.pulled';
 // #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
 const FORCE_BRANCH_FLAG = '--force-branch';
 const ALREADY_MERGED = 'already-merged';
@@ -1118,6 +1152,138 @@ async function executeAcp(
   };
 }
 
+// #2751 — chorus_pull_card atomic transaction. Mirrors executeAcp's shape:
+// inject deps, run the steps deterministically, emit step-by-step spine
+// events, refuse with typed reasons that name the failing step and what
+// the operator must fix.
+async function executePullCard(
+  args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
+  emit: SpineEmitter,
+  execFileAsync: ExecFileAsync,
+  cardsPath: string,
+  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { role, card_id: cardId } = args;
+  const repoRoot = resolveWorkingTree(role);
+  const branch = `${role}/${cardId}`;
+
+  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
+    emit(`chorus_pull_card.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
+
+  emit('chorus_pull_card.invoked', { role, card_id: cardId, repo_root: repoRoot });
+
+  const path = require('path') as typeof import('path');
+  const parentNodeBinDir = path.dirname(process.execPath);
+  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
+  const env = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
+  } as NodeJS.ProcessEnv;
+
+  const refuse = (step: string, reason: string, detail: string): never => {
+    emit(CHORUS_PULL_CARD_REFUSED, { role, card_id: cardId, step, reason, detail: detail.slice(0, 500) });
+    throw new Error(`chorus_pull_card refused: ${reason} — ${detail.split('\n')[0]}`);
+  };
+
+  // Step 1 — validate card via cards CLI (read-only).
+  stepEmit('validate', 'started');
+  // Real `cards view --json` returns: index/title/owner/status/priority/description/domains/comments/created/updated.
+  // (Field is `description`, not `desc`. The mock in mcp-pull-card.test.ts uses `desc` for brevity; the
+  // executor accepts either to keep tests honest.)
+  let cardJson: { id?: number; index?: number; status?: string; owner?: string; desc?: string; description?: string } = {};
+  try {
+    const { stdout } = await execFileAsync(cardsPath, ['view', String(cardId), '--json'], { env, timeout: 10_000 });
+    cardJson = JSON.parse(stdout) as typeof cardJson;
+  } catch (err) {
+    refuse('validate', 'card-not-found', extractStderr(err) || `card ${cardId} not viewable`);
+  }
+  const status = cardJson.status ?? '';
+  if (status !== 'Next' && status !== 'Later') {
+    refuse('validate', 'wrong-status', `card #${cardId} is in '${status}' — must be Next or Later`);
+  }
+  const desc = cardJson.description ?? cardJson.desc ?? '';
+  if (!/^\s*-\s*\[[ x]\]/m.test(desc)) {
+    refuse('validate', 'ac-missing', `card #${cardId} description has no AC checklist (no '- [ ]' or '- [x]' line)`);
+  }
+  if (!/##\s*Experience/im.test(desc)) {
+    refuse('validate', 'experience-missing', `card #${cardId} description has no '## Experience' section`);
+  }
+  stepEmit('validate', 'completed', { status });
+
+  // Step 2 — werk pre-flight. Refuses dirty werk and non-main branch with
+  // typed reasons + offending detail. This is the lived-experience addition
+  // from 2026-05-06: a /pull onto a dirty werk this morning smuggled
+  // unrelated edits into a commit. The MCP refuses before any move/branch
+  // op so the substrate can't be tricked.
+  stepEmit('werk-preflight', 'started');
+  try {
+    const { stdout: dirty } = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
+    if (dirty.trim().length > 0) {
+      refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
+    }
+  } catch (err) {
+    // git status failure is rare and non-typed; surface raw.
+    refuse('werk-preflight', 'werk-dirty', `git status failed: ${extractStderr(err)}`);
+  }
+  try {
+    const { stdout: refOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
+    const currentBranch = refOut.trim();
+    // Detached HEAD ('HEAD' from --abbrev-ref) is the canonical post-acp state — accept it.
+    if (currentBranch !== 'main' && currentBranch !== 'HEAD' && currentBranch !== '') {
+      refuse('werk-preflight', 'werk-wrong-branch', `werk is on '${currentBranch}' — must be on main or detached`);
+    }
+  } catch (err) {
+    refuse('werk-preflight', 'werk-wrong-branch', `git rev-parse failed: ${extractStderr(err)}`);
+  }
+  stepEmit('werk-preflight', 'completed');
+
+  // Step 3 — cards move WIP. Idempotent on already-WIP via cards CLI's own check.
+  stepEmit('cards-move', 'started');
+  try {
+    await execFileAsync(cardsPath, ['move', String(cardId), 'WIP'], { env, timeout: 15_000 });
+    stepEmit('cards-move', 'completed');
+  } catch (err) {
+    const stderr = extractStderr(err);
+    if (!/already.*WIP|already in WIP/i.test(stderr)) {
+      refuse('cards-move', 'move-fail', stderr);
+    }
+    stepEmit('cards-move', 'completed', { idempotent: true });
+  }
+
+  // Step 4 — chorus-werk repoint to <role>/<card-id>. Creates the branch
+  // off origin/main if it doesn't exist; switches to it if it does.
+  stepEmit('werk-repoint', 'started', { branch });
+  try {
+    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+    await execFileAsync(chorusWerkPath, ['repoint', role, branch], { env, timeout: 30_000 });
+    stepEmit('werk-repoint', 'completed', { branch });
+  } catch (err) {
+    refuse('werk-repoint', 'branch-fail', extractStderr(err));
+  }
+
+  // Step 5 — role-state declare building.
+  stepEmit('role-state', 'started');
+  try {
+    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', 'role-state');
+    await execFileAsync(roleStatePath, [role, 'building'], { env, timeout: 10_000 });
+    stepEmit('role-state', 'completed');
+  } catch {
+    // Non-fatal — board state is already updated; role-state is a session-attention hint.
+    stepEmit('role-state', 'completed', { warning: 'role-state declare failed (non-fatal)' });
+  }
+
+  // Step 6 — spine event card.pulled.
+  emit(CARD_PULLED, { role, card_id: cardId, branch });
+  emit('chorus_pull_card.completed', { role, card_id: cardId, branch });
+
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify({ role, card_id: cardId, branch }, null, 2) },
+    ],
+  };
+}
+
 async function executeCommitStatus(
   args: { role: 'kade' | 'wren' | 'silas' },
   boardReader: BoardReader,
@@ -1563,6 +1729,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_TOOL_DEF,
+      PULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
     ],
   }));
@@ -1683,6 +1850,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeAcp(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, cardsPath, resolveWorkingTree);
+      }
+      case 'chorus_pull_card': {
+        const parsed = PullCardInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree);
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
