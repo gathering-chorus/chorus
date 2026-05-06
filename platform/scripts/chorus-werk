@@ -66,6 +66,33 @@ require_role() {
   esac
 }
 
+# Symlink node_modules from canonical into the werk for every npm-managed
+# subdirectory that exists in both. Eliminates the ~30s npm-install tax per
+# init (#2758). Skips silently when canonical has no node_modules at the
+# matching path. Idempotent: existing werk node_modules (file, dir, or
+# symlink) are left alone — bootstrap only fills empty slots.
+bootstrap_node_modules() {
+  local werk="$1"
+  local pkg_files
+  pkg_files=$(find "$CHORUS_HOME" -name node_modules -prune -o -type f -name package.json -print 2>/dev/null)
+  local pkg
+  while IFS= read -r pkg; do
+    [ -n "$pkg" ] || continue
+    local canonical_dir="${pkg%/package.json}"
+    local rel="${canonical_dir#$CHORUS_HOME/}"
+    [ "$rel" = "$canonical_dir" ] && continue
+    local canonical_nm="$canonical_dir/node_modules"
+    [ -d "$canonical_nm" ] || continue
+    local werk_dir="$werk/$rel"
+    [ -d "$werk_dir" ] || continue
+    local werk_nm="$werk_dir/node_modules"
+    if [ -e "$werk_nm" ] || [ -L "$werk_nm" ]; then
+      continue
+    fi
+    ln -s "$canonical_nm" "$werk_nm" 2>/dev/null || true
+  done <<< "$pkg_files"
+}
+
 cmd_init() {
   require_role "${1:-}"
   local role="$1"
@@ -108,6 +135,8 @@ cmd_init() {
   # own attribution. Worktree config wins over the shared .git/config.
   git -C "$werk" config user.email "$role@chorus.local"
   git -C "$werk" config user.name "$role"
+
+  bootstrap_node_modules "$werk"
 
   echo "chorus-werk: initialized $role at $werk (detached at main, repoint to start a card)"
 }
