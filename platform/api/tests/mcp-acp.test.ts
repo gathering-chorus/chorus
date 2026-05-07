@@ -165,6 +165,45 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       ).rejects.toThrow(/pr-merge-fail/);
       expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('pr-merge-fail');
     });
+
+    // #2793 — werk-on-main is the variant-recovery class. 4 hits in one
+    // day produced 4 different gh-improvisations because gh pr create
+    // --head main --base main is unrecoverable in-place. Refusal names
+    // the one recovery (chorus-werk repoint) so operators stop inventing
+    // paths. New typed refusal at a new step (pre-pr-create), built on
+    // #2782's verify-after sequenced-steps shape.
+    test('refuses werk-on-main before reaching pr-create', async () => {
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'main\n', stderr: '' };
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/werk-on-main/);
+      const refused = events.find((e) => e.event === 'chorus_acp.refused');
+      expect(refused?.fields.reason).toBe('werk-on-main');
+      expect(refused?.fields.step).toBe('pre-pr-create');
+      // Detail names the recovery command
+      expect(String(refused?.fields.detail ?? '')).toMatch(/chorus-werk repoint/);
+      // pr-create MUST NOT have run
+      const createCalls = calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create');
+      expect(createCalls.length).toBe(0);
+      // commit MUST NOT have run (refusal is pre-commit too)
+      const commitCalls = calls.filter((c) => c.args[0] === 'commit');
+      expect(commitCalls.length).toBe(0);
+    });
   });
 
   describe('AC4 — idempotent partial-failure recovery', () => {
