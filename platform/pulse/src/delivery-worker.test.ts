@@ -33,28 +33,33 @@ describe('classifyInjectResult', () => {
     expect(classifyInjectResult({ rc: 0, stderr: '' })).toEqual({ kind: 'success', reason: 'ok' });
   });
 
-  test('tcc-denied stderr is permanent', () => {
-    const r = classifyInjectResult({ rc: 1, stderr: 'TCC-denied: terminal not authorized' });
-    expect(r.kind).toBe('permanent');
-    expect(r.reason).toBe('tcc-denied');
-  });
-
-  test('no-window-found stderr is permanent', () => {
-    const r = classifyInjectResult({ rc: 1, stderr: 'no-window-found for role wren' });
+  test('no-claude-window-found stderr is permanent (only structurally-classified failure today)', () => {
+    // Per Kade gemba 2026-05-07: chorus-inject classifies exactly ONE
+    // failure structurally — "no claude window found for {role}" (lib.rs:105).
+    const r = classifyInjectResult({ rc: 1, stderr: 'no claude window found for wren (looking for wren + claude)' });
     expect(r.kind).toBe('permanent');
     expect(r.reason).toBe('no-window-found');
   });
 
-  test('window-ambiguous stderr is permanent', () => {
-    const r = classifyInjectResult({ rc: 1, stderr: 'window-ambiguous: 3 candidates' });
-    expect(r.kind).toBe('permanent');
-    expect(r.reason).toBe('window-ambiguous');
+  test('TCC failure flows through osascript stderr verbatim — treated as transient (locale-unstable)', () => {
+    // Per Kade gemba 2026-05-07: substring-grepping osascript's text for
+    // "Not authorized to send Apple events" is unstable across macOS
+    // versions and locales. More honest to retry than false-permanent.
+    const r = classifyInjectResult({ rc: 1, stderr: 'osascript: Not authorized to send Apple events' });
+    expect(r.kind).toBe('transient');
   });
 
-  test('encoding-error stderr is permanent', () => {
-    const r = classifyInjectResult({ rc: 2, stderr: 'encoding-error on input' });
-    expect(r.kind).toBe('permanent');
-    expect(r.reason).toBe('encoding-error');
+  test('window-ambiguous is invisible to caller — applescript silently picks first match', () => {
+    // Per Kade gemba 2026-05-07: lib.rs:91-104 picks the FIRST match and
+    // returns ok. Pulse can't distinguish single-match from ambiguous-match.
+    // No structured signal available; binary returns success in both cases.
+    const r = classifyInjectResult({ rc: 1, stderr: 'window-ambiguous would not appear today' });
+    expect(r.kind).toBe('transient');
+  });
+
+  test('encoding-error has no concrete signal — pass-through opaque', () => {
+    const r = classifyInjectResult({ rc: 2, stderr: 'some encoding fallthrough' });
+    expect(r.kind).toBe('transient');
   });
 
   test('unknown stderr is transient', () => {
@@ -63,12 +68,9 @@ describe('classifyInjectResult', () => {
     expect(r.reason).toContain('something flaky');
   });
 
-  test('PERMANENT_REASONS set has the expected four reasons', () => {
-    expect(PERMANENT_REASONS.has('tcc-denied')).toBe(true);
-    expect(PERMANENT_REASONS.has('no-window-found')).toBe(true);
-    expect(PERMANENT_REASONS.has('window-ambiguous')).toBe(true);
-    expect(PERMANENT_REASONS.has('encoding-error')).toBe(true);
-    expect(PERMANENT_REASONS.size).toBe(4);
+  test('PERMANENT_REASONS set has only the structurally-classified reason', () => {
+    expect(PERMANENT_REASONS.has('no claude window found')).toBe(true);
+    expect(PERMANENT_REASONS.size).toBe(1);
   });
 });
 
@@ -96,14 +98,14 @@ describe('DeliveryWorker enqueue → success path', () => {
 });
 
 describe('DeliveryWorker permanent failure path', () => {
-  test('tcc-denied on first try → markFailed + nudge.surface.failed permanent=true, no retry', async () => {
+  test('no-window-found on first try → markFailed + nudge.surface.failed permanent=true, no retry', async () => {
     expect(DeliveryWorker.prototype.enqueue).toBeDefined();
     const id = store.sendNudge('silas', 'wren', 'hello');
     let injectCalls = 0;
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
     const worker = new DeliveryWorker(
       store,
-      async () => { injectCalls++; return { rc: 1, stderr: 'tcc-denied' }; },
+      async () => { injectCalls++; return { rc: 1, stderr: 'no claude window found for wren (looking for wren + claude)' }; },
       async (event, fields) => { events.push({ event, fields }); },
       [10, 20],
       async () => { /* no real sleep */ },
@@ -112,11 +114,11 @@ describe('DeliveryWorker permanent failure path', () => {
     expect(injectCalls).toBe(1);
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('failed');
-    expect(rec.last_delivery_error).toBe('tcc-denied');
+    expect(rec.last_delivery_error).toBe('no-window-found');
     expect(events).toHaveLength(1);
     expect(events[0].event).toBe('nudge.surface.failed');
     expect(events[0].fields.permanent).toBe(true);
-    expect(events[0].fields.reason).toBe('tcc-denied');
+    expect(events[0].fields.reason).toBe('no-window-found');
   });
 });
 

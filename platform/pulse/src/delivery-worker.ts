@@ -34,24 +34,28 @@ export interface DeliveryRow {
 
 export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
 
+// Per Kade gemba review 2026-05-07: chorus-inject classifies exactly ONE
+// failure structurally — "no claude window found" (lib.rs:105). tcc-denied
+// comes from osascript's stderr verbatim (locale/version-unstable), and
+// window-ambiguous + encoding-error have no concrete signal at all. Keep
+// the contract honest: only no-window-found is reliably permanent. Everything
+// else stays transient and retries until exhausted. If chorus-inject adds
+// structured error tags later, this set expands to match.
 export const PERMANENT_REASONS = new Set([
-  'tcc-denied',
-  'no-window-found',
-  'window-ambiguous',
-  'encoding-error',
+  'no claude window found',
 ]);
 
 /**
  * Classify a chorus-inject result as 'success' | 'permanent' | 'transient'.
- * Permanent: cdhash issues, window state, encoding — retry won't help.
- * Transient: anything else with non-zero rc — retry may help.
+ * Permanent: only failures the binary structurally classifies (today: window-not-found).
+ * Transient: anything else with non-zero rc — retry until exhausted.
  */
 export function classifyInjectResult(r: InjectResult): { kind: 'success' | 'permanent' | 'transient'; reason: string } {
   if (r.rc === 0) return { kind: 'success', reason: 'ok' };
   const stderr = (r.stderr || '').toLowerCase();
   for (const reason of PERMANENT_REASONS) {
     if (stderr.includes(reason)) {
-      return { kind: 'permanent', reason };
+      return { kind: 'permanent', reason: 'no-window-found' };
     }
   }
   return { kind: 'transient', reason: stderr.split('\n')[0].slice(0, 120) || `rc=${r.rc}` };

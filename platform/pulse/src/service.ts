@@ -183,11 +183,18 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     try { await appendFile(chorusLog, line); } catch { /* best-effort spine write */ }
   };
 
+  // Per Kade gemba 2026-05-07: chorus-inject does not have --self-test today.
+  // --count-windows DOES exist (main.rs) and exercises the binary + system
+  // events permission without typing into a real terminal. Use it as the
+  // smoke probe; rc=0 means binary alive + TCC granted. Pattern is generic
+  // ("claude") since pulse boots once for the whole team, not per-role.
   const selfTest: SelfTest = () => new Promise(resolve => {
-    const proc = spawn(injectBin, ['--self-test'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const proc = spawn(injectBin, ['--count-windows', 'claude'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
     let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
     proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr }));
+    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr: stderr || stdout }));
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
   });
 
