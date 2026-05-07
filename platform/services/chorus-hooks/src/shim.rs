@@ -73,6 +73,120 @@ fn daemon_unreachable_response(endpoint: &str, reason: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// #2790 — in-process canonical_write_guard. Runs the same guard the daemon
+/// runs, but in the shim's own process. Closes the fox-in-henhouse class:
+/// when the daemon is down (e.g. kade rebuilds chorus-hooks), the shim still
+/// refuses canonical edits. The guard never sleeps.
+///
+/// Returns:
+///   - `Some(deny_json)` — guard refused; caller should emit the JSON to
+///     stdout and exit SUCCESS (Claude treats permissionDecision=deny in
+///     stdout as block).
+///   - `None` — guard allowed (or input wasn't Edit/Write/MultiEdit, or the
+///     CHORUS_WERK_ENABLE flag is dormant). Caller should continue normally
+///     (forward to daemon for the rest of the guard chain).
+///
+/// Pure function over the input JSON string + process env. No socket touch.
+fn check_canonical_in_process(input_json: &str) -> Option<String> {
+    let hook_input: chorus_hooks::HookInput = match serde_json::from_str(input_json) {
+        Ok(v) => v,
+        Err(_) => return None, // can't parse → let daemon handle (or fail-closed)
+    };
+    let response = chorus_hooks::canonical_write_guard::check(&hook_input);
+    response.stdout
+}
+
+#[cfg(test)]
+mod canonical_in_process_tests {
+    use super::*;
+
+    fn payload_with_role(tool: &str, file_path: &str, role: &str) -> String {
+        format!(
+            r#"{{"tool_name":"{}","tool_input":{{"file_path":"{}"}},"deploy_role":"{}"}}"#,
+            tool, file_path, role
+        )
+    }
+
+    /// Set the env block the canonical_write_guard reads. Tests use unique
+    /// CHORUS_HOME / CHORUS_WERK_BASE per case via /tmp paths so they don't
+    /// stomp on each other across parallel test runs.
+    fn with_werk_env<F: FnOnce()>(home: &str, werk_base: &str, role: &str, f: F) {
+        let role_upper = role.to_uppercase();
+        let werk_var = format!("{}_WERK", role_upper);
+        let werk_path = format!("{}/{}", werk_base, role);
+        let prev = (
+            std::env::var("CHORUS_WERK_ENABLE").ok(),
+            std::env::var("CHORUS_HOME").ok(),
+            std::env::var("CHORUS_WERK_BASE").ok(),
+            std::env::var("CHORUS_ROLE").ok(),
+            std::env::var(&werk_var).ok(),
+        );
+        std::env::set_var("CHORUS_WERK_ENABLE", "1");
+        std::env::set_var("CHORUS_HOME", home);
+        std::env::set_var("CHORUS_WERK_BASE", werk_base);
+        std::env::set_var("CHORUS_ROLE", role);
+        std::env::set_var(&werk_var, &werk_path);
+        f();
+        // Restore
+        match prev.0 { Some(v) => std::env::set_var("CHORUS_WERK_ENABLE", v), None => std::env::remove_var("CHORUS_WERK_ENABLE") }
+        match prev.1 { Some(v) => std::env::set_var("CHORUS_HOME", v), None => std::env::remove_var("CHORUS_HOME") }
+        match prev.2 { Some(v) => std::env::set_var("CHORUS_WERK_BASE", v), None => std::env::remove_var("CHORUS_WERK_BASE") }
+        match prev.3 { Some(v) => std::env::set_var("CHORUS_ROLE", v), None => std::env::remove_var("CHORUS_ROLE") }
+        match prev.4 { Some(v) => std::env::set_var(&werk_var, v), None => std::env::remove_var(&werk_var) }
+    }
+
+    #[test]
+    fn edit_to_canonical_returns_deny_json() {
+        with_werk_env("/scratch/test-canonical-deny", "/scratch/test-werk-deny", "kade", || {
+            let payload = payload_with_role("Edit", "/scratch/test-canonical-deny/foo.rs", "kade");
+            let result = check_canonical_in_process(&payload);
+            let deny = result.expect("Edit to canonical must return Some(deny_json)");
+            assert!(deny.contains(r#""permissionDecision":"deny""#),
+                "deny json must include permissionDecision=deny: {}", deny);
+        });
+    }
+
+    #[test]
+    fn write_to_own_werk_returns_none() {
+        with_werk_env("/scratch/test-canonical-allow", "/scratch/test-werk-allow", "kade", || {
+            let payload = payload_with_role("Write", "/scratch/test-werk-allow/kade/scratch.txt", "kade");
+            assert!(check_canonical_in_process(&payload).is_none(),
+                "Write to own werk must NOT deny");
+        });
+    }
+
+    #[test]
+    fn cross_role_write_returns_deny_json() {
+        with_werk_env("/scratch/test-canonical-cross", "/scratch/test-werk-cross", "kade", || {
+            let payload = payload_with_role("Write", "/scratch/test-werk-cross/wren/something.txt", "kade");
+            let result = check_canonical_in_process(&payload);
+            let deny = result.expect("cross-role write must return Some(deny_json)");
+            assert!(deny.contains(r#""permissionDecision":"deny""#),
+                "cross-role deny must include permissionDecision=deny: {}", deny);
+        });
+    }
+
+    #[test]
+    fn bash_tool_returns_none() {
+        with_werk_env("/scratch/test-canonical-bash", "/scratch/test-werk-bash", "kade", || {
+            // Bash command with file_path-shaped argument — guard only fires on
+            // Edit/Write/MultiEdit, not Bash.
+            let payload = r#"{"tool_name":"Bash","tool_input":{"command":"ls /scratch/test-canonical-bash"},"deploy_role":"kade"}"#;
+            assert!(check_canonical_in_process(payload).is_none(),
+                "Bash tool must not be intercepted by canonical guard");
+        });
+    }
+
+    #[test]
+    fn malformed_json_returns_none() {
+        // Unparseable input → return None; let daemon (or daemon-unreachable
+        // fail-closed) handle it. Fail-open here is correct — this is the
+        // shim's first chance to peek; deeper validation belongs downstream.
+        let result = check_canonical_in_process("not valid json {{{");
+        assert!(result.is_none(), "malformed JSON must return None, not crash");
+    }
+}
+
 #[cfg(test)]
 mod daemon_unreachable_tests {
     use super::*;
@@ -247,6 +361,22 @@ fn main() -> ExitCode {
     };
 
     log_debug(&format!("stdin={}bytes", input.len()));
+
+    // #2790 — in-process canonical_write_guard. The behavioral bug Jeff
+    // named: "i default to wherever I was last cd'd, not to my werk by
+    // intent. that is the bug i need u to fix." Linking the guard into
+    // the shim (in addition to the daemon-side guard) closes the fox-
+    // in-henhouse class — when kade rebuilds chorus-hooks and the daemon
+    // is down, the shim still refuses canonical edits. The guard never
+    // sleeps. Fires only on Edit/Write/MultiEdit during pre-tool-use;
+    // everything else continues to the socket forward.
+    if endpoint == "pre-tool-use" {
+        if let Some(deny_json) = check_canonical_in_process(&input) {
+            log_debug("DENY canonical_write_guard (in-process)");
+            println!("{}", deny_json);
+            return ExitCode::SUCCESS;
+        }
+    }
 
     // Connect to unix socket — #2790: fail closed for pre-tool-use, open elsewhere.
     let mut stream = match UnixStream::connect(SOCKET_PATH) {
