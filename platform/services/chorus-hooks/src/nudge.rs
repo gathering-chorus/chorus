@@ -256,6 +256,26 @@ pub fn run(args: &[String]) -> ExitCode {
 
     track_exchange(&sender, target);
 
+    // #2727 child A (#2763) — sender-side spine emit refactor.
+    //
+    // Canonical sender-side event is now `nudge.requested` (was `nudge.emitted`).
+    // Fires BEFORE the HTTP POST to pulse — belt-and-suspenders for pulse-down
+    // resilience (Silas review AC9): if pulse is down, the spine still has a
+    // record of the sender's intent, even though messages.db never receives
+    // the row. Pulse worker emits per-attempt `nudge.surfaced` /
+    // `nudge.surface.failed` (#2727 AC2); together with `nudge.requested` they
+    // form the full lifecycle audit. nudge.emitted retired.
+    //
+    // #2475 — origin tag (cli/mcp/http) preserved on the new event so audit
+    // can still distinguish how the nudge was sent.
+    // #2443 — no truncation: full content in payload for downstream readers.
+    let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
+    chorus_log(
+        "nudge.requested",
+        &sender,
+        &format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message),
+    );
+
     // Persist for history — NOT for delivery. Fire-and-forget, failure doesn't block inject.
     let persist_body = serde_json::json!({
         "from": sender,
@@ -272,27 +292,6 @@ pub fn run(args: &[String]) -> ExitCode {
             "--connect-timeout", "2",
         ])
         .output();
-
-    // #2435 — canonical emit event. role.nudge.sent retired in wedge 7b after
-    // bridge-subscriber + Clearing (tailer.ts, server.ts) migrated to nudge.emitted.
-    // Consumers of the poll-based read path fold nudge.emitted vs nudge.surfaced
-    // to compute the unread set. Surface-ack is named nudge.surfaced (not
-    // acknowledged) to avoid collision with role_state drain's count-payload
-    // nudge.acknowledged (Kade's 0.3 audit).
-    // #2443 — no truncation. Full message goes in `content=` so the tick-poller
-    // has the un-truncated payload to deliver. Prior `chars().take(120)` capped
-    // every cross-role nudge at 120 chars at the delivery boundary.
-    // #2475 — origin tag distinguishes how this nudge was sent. Default "cli"
-    // when invoked directly via the bash CLI; MCP server (TS) sets
-    // CHORUS_NUDGE_ORIGIN=mcp via the execFile env so audit can tell typed
-    // surface from legacy paths. Future Rust MCP client (#2477) will set
-    // origin=mcp the same way.
-    let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
-    chorus_log(
-        "nudge.emitted",
-        &sender,
-        &format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message),
-    );
 
     // #2435 atomic cutover — sender emits canonical event only. Delivery is
     // owned by the per-role spine-tick-poller LaunchAgent (2s cadence, reads

@@ -157,8 +157,8 @@ fn nudge_without_deploy_role_fails_loud() {
     );
 }
 
-/// #2435 — nudge CLI emits a canonical `nudge.emitted` spine event per invocation.
-/// Producer side of the one-canonical-path design: consumers fold nudge.emitted
+/// #2435 — nudge CLI emits a canonical `nudge.requested` spine event per invocation.
+/// Producer side of the one-canonical-path design: consumers fold nudge.requested
 /// against nudge.surfaced to compute unread sets. Parallel-run with legacy
 /// role.nudge.sent; post-flag-flip, role.nudge.sent retires.
 ///
@@ -190,9 +190,9 @@ fn nudge_cli_emits_canonical_emitted_event() {
 
     let emitted_line = our_lines
         .iter()
-        .find(|l| l.contains("\"event\":\"nudge.emitted\""))
+        .find(|l| l.contains("\"event\":\"nudge.requested\""))
         .unwrap_or_else(|| panic!(
-            "chorus.log must contain a nudge.emitted event for marker `{}`. Got: {:?}",
+            "chorus.log must contain a nudge.requested event for marker `{}`. Got: {:?}",
             marker, our_lines
         ));
 
@@ -201,18 +201,18 @@ fn nudge_cli_emits_canonical_emitted_event() {
     // target + trace id + the marker are all somewhere in the line.
     assert!(
         emitted_line.contains("\"role\":\"silas\""),
-        "nudge.emitted must carry sender as role: {}", emitted_line
+        "nudge.requested must carry sender as role: {}", emitted_line
     );
     assert!(
         emitted_line.contains("to=wren"),
-        "nudge.emitted must name target role: {}", emitted_line
+        "nudge.requested must name target role: {}", emitted_line
     );
     assert!(
         emitted_line.contains("trace=ntr-"),
-        "nudge.emitted must include trace id: {}", emitted_line
+        "nudge.requested must include trace id: {}", emitted_line
     );
     assert!(
         emitted_line.contains(&marker),
-        "nudge.emitted must include marker in content preview: {}", emitted_line
+        "nudge.requested must include marker in content preview: {}", emitted_line
     );
 }

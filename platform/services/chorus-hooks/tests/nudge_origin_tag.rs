@@ -1,4 +1,4 @@
-//! #2475 thread 3 — nudge.emitted carries origin=cli|mcp|http so audit can
+//! #2475 thread 3 — nudge.requested carries origin=cli|mcp|http so audit can
 //! distinguish how the nudge was sent. Default cli when invoked from the bash
 //! CLI; callers (MCP server, future Rust MCP client) override via the
 //! CHORUS_NUDGE_ORIGIN env var.
@@ -38,8 +38,8 @@ fn nudge_default_origin_is_cli() {
 
     let content = read_log(&log_str);
     assert!(
-        content.contains("nudge.emitted"),
-        "nudge.emitted event must be logged. Got: {}", content
+        content.contains("nudge.requested"),
+        "nudge.requested event must be logged. Got: {}", content
     );
     assert!(
         content.contains("origin=cli"),
@@ -61,7 +61,7 @@ fn nudge_origin_mcp_when_env_set() {
     assert!(out.status.success());
 
     let content = read_log(&log_str);
-    assert!(content.contains("nudge.emitted"));
+    assert!(content.contains("nudge.requested"));
     assert!(
         content.contains("origin=mcp"),
         "CHORUS_NUDGE_ORIGIN=mcp must be reflected in spine event. Got: {}", content
