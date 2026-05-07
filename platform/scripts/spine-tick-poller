@@ -44,7 +44,18 @@ fi
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 LOG_PATH="${CHORUS_ROOT}/platform/logs/chorus.log"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
-INJECT_BIN="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"
+# #2772 — prefer ~/.chorus/bin/chorus-inject (stable cdhash, TCC grant
+# survives rebuilds); fallback to target/release/ for pre-deploy systems.
+# LaunchAgent inherits minimal PATH from launchd (no ~/.chorus/bin), so
+# `command -v` won't find the deploy under launchctl — explicit absolute
+# path check first, then PATH lookup, then target/release fallback.
+if [ -x "$HOME/.chorus/bin/chorus-inject" ]; then
+  INJECT_BIN="$HOME/.chorus/bin/chorus-inject"
+elif command -v chorus-inject >/dev/null 2>&1; then
+  INJECT_BIN="$(command -v chorus-inject)"
+else
+  INJECT_BIN="${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject"
+fi
 STATE_DIR="/tmp/spine-tick-poller"
 OFFSET_FILE="${STATE_DIR}/${ROLE}.offset"
 WINDOW_EVENTS=50000
