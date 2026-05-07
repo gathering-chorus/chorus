@@ -60,7 +60,7 @@ fn daemon_unreachable_response_json(endpoint: &str, reason: &str) -> Option<Stri
         return None;
     }
     Some(format!(
-        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable ({reason}). All security guards are off when the daemon is down (#2790). Tool calls are denied until the daemon is restarted. Restart with: nohup ~/.chorus/bin/chorus-hooks > /tmp/chorus-hooks-restart.log 2>&1 &"}}}}"#
+        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable ({reason}). Restart: launchctl kickstart -k gui/$UID/com.chorus.hooks (any role can run this; unblocks the whole team). All security guards are off while daemon is down — tool calls denied until restart. See #2790."}}}}"#
     ))
 }
 
