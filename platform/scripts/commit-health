@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# commit-health — post-commit reality check.
+#
+# Compares board state ("Done") against running system state. Surfaces the
+# gap between "card declares shipped" and "canonical+daemon actually have it."
+#
+# Run manually after any commit, merge, or whenever something feels off.
+# No hook, no auto-fire — Jeff runs it, doesn't trust the agent to.
+#
+# Exits 0 if all green, 1 if any ⚠ flag fires.
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+WARN_FILE=$(mktemp)
+trap 'rm -f "$WARN_FILE"' EXIT
+
+red()    { printf '\033[31m%s\033[0m' "$1"; }
+green()  { printf '\033[32m%s\033[0m' "$1"; }
+yellow() { printf '\033[33m%s\033[0m' "$1"; }
+flag()   { echo x >> "$WARN_FILE"; yellow "⚠ $1"; }
+ok()     { green "✓ $1"; }
+
+cd "$CHORUS_HOME" || { echo "FAIL: $CHORUS_HOME not a dir" >&2; exit 2; }
+
+echo "=== COMMIT HEALTH — $(date '+%Y-%m-%d %H:%M:%S') ==="
+echo
+
+# --- canonical vs origin/main -----------------------------------------------
+git fetch --quiet origin main 2>/dev/null || true
+ORIGIN_MAIN=$(git rev-parse origin/main 2>/dev/null || echo "?")
+HEAD_REF=$(git symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "?")
+
+printf "origin/main:      %s\n" "$ORIGIN_MAIN"
+printf "canonical HEAD:   %s (%s)\n" "$HEAD_SHA" "$HEAD_REF"
+
+if [ "$HEAD_REF" = "DETACHED" ]; then
+  echo "                  $(flag "DETACHED HEAD — run \`chorus-werk-sync repair\`")"
+elif [ "$HEAD_REF" != "main" ]; then
+  echo "                  $(flag "canonical not on main, on '$HEAD_REF'")"
+fi
+
+if [ "$HEAD_SHA" != "$ORIGIN_MAIN" ] && [ "$HEAD_SHA" != "?" ]; then
+  BEHIND=$(git rev-list --count "$HEAD_SHA..$ORIGIN_MAIN" 2>/dev/null || echo "?")
+  AHEAD=$(git rev-list --count "$ORIGIN_MAIN..$HEAD_SHA" 2>/dev/null || echo "?")
+  if [ "$BEHIND" != "0" ] && [ "$BEHIND" != "?" ]; then
+    echo "                  $(flag "$BEHIND commits behind origin/main")"
+  fi
+  if [ "$AHEAD" != "0" ] && [ "$AHEAD" != "?" ]; then
+    echo "                  $(flag "$AHEAD local commits not on origin/main")"
+  fi
+else
+  echo "                  $(ok "in sync with origin")"
+fi
+
+# --- working tree vs HEAD ---------------------------------------------------
+DIRTY_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+printf "working tree:     %s dirty path(s)" "$DIRTY_COUNT"
+if [ "$DIRTY_COUNT" -gt 10 ]; then
+  echo "  $(flag "noise level high — gitignore drift?")"
+elif [ "$DIRTY_COUNT" -gt 0 ]; then
+  echo "  (untracked or modified — usually OK)"
+else
+  echo "  $(ok "clean")"
+fi
+
+# --- daemon (chorus-api) ----------------------------------------------------
+DAEMON_LINE=$(launchctl list 2>/dev/null | awk '/com\.chorus\.api/ {print $1, $2}' | head -1)
+DAEMON_PID="${DAEMON_LINE%% *}"
+if [ -z "$DAEMON_PID" ] || [ "$DAEMON_PID" = "-" ]; then
+  printf "daemon (api):     "
+  echo "$(flag "not running")"
+else
+  DAEMON_START=$(ps -p "$DAEMON_PID" -o lstart= 2>/dev/null | xargs)
+  HEAD_TIME=$(git log -1 --format=%ct HEAD 2>/dev/null)
+  DAEMON_EPOCH=$(date -j -f "%a %b %d %T %Y" "$DAEMON_START" "+%s" 2>/dev/null || echo 0)
+  printf "daemon (api):     PID %s (started %s)" "$DAEMON_PID" "$DAEMON_START"
+  if [ "$DAEMON_EPOCH" -gt 0 ] && [ "$HEAD_TIME" -gt "$DAEMON_EPOCH" ]; then
+    AGE_HOURS=$(( (HEAD_TIME - DAEMON_EPOCH) / 3600 ))
+    echo "  $(flag "predates HEAD by ${AGE_HOURS}h — kickstart needed")"
+  else
+    echo "  $(ok "current")"
+  fi
+fi
+
+# --- settings.json env keys per role ----------------------------------------
+REQUIRED_KEYS="DEPLOY_ROLE CHORUS_ROLE CHORUS_WERK_ENABLE CHORUS_HOME CHORUS_WERK_BASE CHORUS_BIN"
+for ROLE in kade wren silas; do
+  SETTINGS="$CHORUS_HOME/roles/$ROLE/.claude/settings.json"
+  if [ ! -f "$SETTINGS" ]; then
+    printf "settings/%-6s   %s\n" "$ROLE:" "$(flag "settings.json missing")"
+    continue
+  fi
+  MISSING=""
+  for KEY in $REQUIRED_KEYS; do
+    if ! jq -e ".env.$KEY" "$SETTINGS" >/dev/null 2>&1; then
+      MISSING="$MISSING $KEY"
+    fi
+  done
+  WERK_KEY="$(echo "$ROLE" | tr '[:lower:]' '[:upper:]')_WERK"
+  if ! jq -e ".env.$WERK_KEY" "$SETTINGS" >/dev/null 2>&1; then
+    MISSING="$MISSING $WERK_KEY"
+  fi
+  if [ -n "$MISSING" ]; then
+    printf "settings/%-6s   %s\n" "$ROLE:" "$(flag "missing keys:$MISSING")"
+  else
+    printf "settings/%-6s   %s\n" "$ROLE:" "$(ok "all keys present")"
+  fi
+done
+
+# --- per-role werk state ----------------------------------------------------
+WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}"
+for ROLE in kade wren silas; do
+  WERK_DIR="$WERK_BASE/$ROLE"
+  if [ ! -d "$WERK_DIR/.git" ] && [ ! -f "$WERK_DIR/.git" ]; then
+    printf "werk/%-6s       %s\n" "$ROLE:" "$(flag "werk missing at $WERK_DIR")"
+    continue
+  fi
+  WERK_HEAD=$(git -C "$WERK_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
+  WERK_DIRTY=$(git -C "$WERK_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  WERK_AHEAD=0
+  if [ "$WERK_HEAD" != "DETACHED" ]; then
+    WERK_AHEAD=$(git -C "$WERK_DIR" rev-list --count "origin/main..HEAD" 2>/dev/null || echo "0")
+  fi
+  STATE="branch=$WERK_HEAD dirty=$WERK_DIRTY ahead=$WERK_AHEAD"
+  if [ "$WERK_HEAD" = "DETACHED" ] || [ "$WERK_DIRTY" -gt 0 ] || [ "$WERK_AHEAD" -gt 0 ]; then
+    printf "werk/%-6s       %s\n" "$ROLE:" "$(flag "$STATE")"
+  else
+    printf "werk/%-6s       %s\n" "$ROLE:" "$(ok "$STATE")"
+  fi
+done
+
+# --- chorus-werk-sync repair subcommand presence ----------------------------
+if grep -q "do_repair\b" "$CHORUS_HOME/platform/scripts/chorus-werk-sync" 2>/dev/null; then
+  printf "werk-sync:        %s\n" "$(ok "repair subcommand present")"
+else
+  printf "werk-sync:        %s\n" "$(flag "repair subcommand missing (#2779 not in canonical)")"
+fi
+
+# --- recent done cards vs PRs ----------------------------------------------
+RECENT_DONE=$(curl -sf "http://localhost:3340/api/cards?status=Done&limit=5" 2>/dev/null \
+  | jq -r '.cards[]? | "\(.id) \(.title)"' 2>/dev/null | head -3)
+if [ -n "$RECENT_DONE" ]; then
+  echo "recent Done:"
+  echo "$RECENT_DONE" | sed 's/^/  /'
+fi
+
+echo
+WARN=$(wc -l < "$WARN_FILE" | tr -d ' ')
+if [ "$WARN" -eq 0 ]; then
+  echo "$(ok "all green")"
+  exit 0
+else
+  echo "$(red "$WARN flag(s) raised") — system state diverges from declared state"
+  exit 1
+fi

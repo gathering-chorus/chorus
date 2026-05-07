@@ -1,7 +1,12 @@
 {
   "env": {
     "DEPLOY_ROLE": "silas",
-    "CHORUS_ROLE": "silas"
+    "CHORUS_ROLE": "silas",
+    "CHORUS_WERK_ENABLE": "1",
+    "CHORUS_HOME": "/Users/jeffbridwell/CascadeProjects/chorus",
+    "CHORUS_WERK_BASE": "/Users/jeffbridwell/CascadeProjects/chorus-werk",
+    "CHORUS_BIN": "/Users/jeffbridwell/.chorus/bin",
+    "SILAS_WERK": "/Users/jeffbridwell/CascadeProjects/chorus-werk/silas"
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
