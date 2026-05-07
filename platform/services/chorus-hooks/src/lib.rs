@@ -23,6 +23,12 @@ mod session_cache;
 pub use hooks::session_init_gate;
 pub use state::AppState;
 pub use types::HookInput;
+// #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every
+// Edit/Write/MultiEdit BEFORE forwarding to daemon. HookResponse is the return
+// type; shim needs `.stdout` to detect deny. Re-export so the shim binary's
+// compilation unit can reach the field. Same narrow-test-surface shape as
+// #2177 / #2558 / #2735 (re-exports for binary consumers, not public API).
+pub use types::HookResponse;
 // #2644 AC2 — narrow test-surface re-export so integration tests can verify
 // the CHORUS_FIX_CARD_OVERRIDE deterministic-smoke contract.
 pub use types::is_fix_card;
