@@ -625,7 +625,7 @@ const PULL_CARD_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service runs commit + push + PR open/merge + cards-done + spine + branch-close in one atomic transaction. Idempotent on re-run (detects existing PR / closed branch). Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: hook-fail | commit-fail | push-conflict | pr-merge-fail | cards-done-fail | branch-close-fail. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy and the atomic transaction. The /acp skill calls this and nothing else.',
+    'Use this to accept the current WIP card end-to-end. Service runs verify-after sequenced steps with typed refusal at each step: derive card_id from HEAD branch (`<role>/<card-id>`), commit + push, PR open/merge, cards-done, spine event, branch-close. Idempotent on re-run (detects existing PR / closed branch / already-merged work). Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail. Each step that fails refuses by name; success means every step verified. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy. The /acp skill calls this and nothing else.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -707,20 +707,25 @@ function extractStderr(err: unknown): string {
 
 // #2750 — default werk-aware resolver. Reads role's settings.json env block
 // for CHORUS_WERK_ENABLE. If "1", returns the role's werk path (sibling to
-// canonical: $HOME/CascadeProjects/chorus-werk/<role>). Else returns
-// canonical. Synchronous + cached-per-process is fine — settings.json is a
-// small file, role-state changes are rare events bounded by session lifecycle.
-function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
+// canonical: $HOME/CascadeProjects/chorus-werk/<role>). Else returns canonical.
+//
+// #2779 / latent L1: NO caching. The cache shipped with #2750 was claimed safe
+// because "settings.json is a small file, role-state changes are rare events
+// bounded by session lifecycle." Both halves wrong: settings.json mutates
+// during a session (env-block edits, read-tree reset to main, role
+// reassignments), and "rare" is not "never" — when it happened on 2026-05-07
+// the cached resolution silently routed commits to canonical for the daemon's
+// lifetime. Cost: ~30 minutes of forensic work + a parked-branch recovery.
+// The fix is to read settings.json on every call. The file is ~1KB; JSON.parse
+// is microseconds; this is per-MCP-request, not per-spine-event. Correctness
+// is worth the read.
+export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs') as typeof import('node:fs');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const path = require('node:path') as typeof import('node:path');
-  const cache = new Map<string, string>();
 
   return (role: 'kade' | 'wren' | 'silas'): string => {
-    const cached = cache.get(role);
-    if (cached) return cached;
-
     const settingsPath = path.join(canonicalRoot, 'roles', role, '.claude', 'settings.json');
     let werkEnabled = false;
     try {
@@ -732,16 +737,12 @@ function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren
       werkEnabled = false;
     }
 
-    let resolved: string;
     if (werkEnabled) {
       // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
       const parent = path.dirname(canonicalRoot);
-      resolved = path.join(parent, 'chorus-werk', role);
-    } else {
-      resolved = canonicalRoot;
+      return path.join(parent, 'chorus-werk', role);
     }
-    cache.set(role, resolved);
-    return resolved;
+    return canonicalRoot;
   };
 }
 
@@ -969,11 +970,39 @@ async function executeAcp(
 
   emit('chorus_acp.invoked', { role, repo_root: repoRoot });
 
-  // Step 1 — board lookup for card_id (best-effort; doesn't refuse).
+  // Step 0 — derive cardId from HEAD branch FIRST (#2782). The branch name
+  // `<role>/<card-id>` is the source-of-truth for which card a commit is
+  // for; the board is a coordination view that can lag (just-merged card
+  // moves to Done before the next /acp invocation). Pre-#2782 the cardId
+  // was board-only, gated on cards.length===1, which silently dropped to
+  // null on idempotent re-runs (board has 0 WIP) AND on multi-WIP races.
+  // Result: cards-done step skipped, branch_closed=true returned, card
+  // stuck at "Later" — receipt: #2777, #2778, #2779 on 2026-05-07.
+  const acpRequire = require as NodeJS.Require;
+  const acpPathMod = acpRequire('node:path') as typeof import('node:path');
+  const _envForBranchProbe = {
+    ...process.env,
+    DEPLOY_ROLE: role,
+    PATH: `${acpPathMod.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
+  } as NodeJS.ProcessEnv;
+  let initialBranch = '';
+  try {
+    const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: _envForBranchProbe, cwd: repoRoot, timeout: 5_000 });
+    initialBranch = branchOut.trim();
+  } catch {
+    /* no branch; fall back to board */
+  }
+  const branchMatch = initialBranch.match(/^([a-z]+)\/(\d+)$/);
+  if (branchMatch && branchMatch[1] === role) {
+    cardId = parseInt(branchMatch[2], 10);
+  }
+
+  // Step 1 — board lookup. Used as a fallback only when branch didn't yield
+  // a cardId (e.g. branch is `main` or some non-canonical name). Branch wins.
   stepEmit('board-lookup', 'started');
   const board = await boardReader(role);
-  if (board.ok && board.cards.length === 1) cardId = board.cards[0].id;
-  stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok });
+  if (cardId === null && board.ok && board.cards.length === 1) cardId = board.cards[0].id;
+  stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok, source: branchMatch ? 'branch' : 'board' });
 
   // #2752 bug-5 — transaction-level idempotency. If the PR is already merged
   // to origin/main, the commit+push+merge phase is moot — skip to cards-done
