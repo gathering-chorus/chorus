@@ -4,7 +4,21 @@
 //!   chorus-hook-shim <endpoint>         — hook proxy: stdin JSON → unix socket → stdout
 //!   chorus-hook-shim nudge <role> <msg> — direct nudge delivery via osascript
 //!
-//! Falls open if the service is unavailable.
+//! Daemon-unreachable behavior (#2790):
+//!   - `pre-tool-use`: FAIL CLOSED. Daemon hosts the security guards
+//!     (canonical_write_guard, infra_guardrails, tdd_gate, memory_gate,
+//!     test_quality_gate). Without the daemon, no guard runs. Pre-#2790 the
+//!     shim returned SUCCESS on connect failure → Claude treated that as
+//!     allow → tool calls executed without inspection. Receipt: 2026-05-07
+//!     kade rebuilt chorus-hooks (stopping the daemon mid-flight) and
+//!     during the gap edited /chorus/platform/services/... directly,
+//!     bypassing canonical_write_guard. Fox-in-henhouse class.
+//!     From #2790 onward: pre-tool-use returns a typed deny when the daemon
+//!     is unreachable. Loud + actionable; a crashed daemon blocks tool
+//!     calls until restart, instead of silently bypassing security.
+//!   - All other endpoints (post-tool-use, session-start, session-end, …):
+//!     FAIL OPEN as before. Observation / notification surfaces, not
+//!     enforcement. Missing daemon = lost telemetry, not lost security.
 
 #[path = "nudge.rs"]
 mod nudge;
@@ -27,6 +41,206 @@ use std::io::Write;
 use std::process::ExitCode;
 
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+
+/// #2790 — daemon-unreachable response shape. Pure function so the inline
+/// tests below hammer it without touching the unix socket.
+///
+/// Returns:
+///   - `Some(deny_json)` for `pre-tool-use` — security gate. Daemon hosts
+///     all guards (canonical_write_guard, infra_guardrails, tdd_gate,
+///     memory_gate, test_quality_gate). Without daemon, no guard runs;
+///     pre-#2790 the shim returned success → Claude allowed → silent
+///     bypass of every security check. Receipt: 2026-05-07 fox-in-henhouse
+///     RCA. Fail closed: emit a permission_deny shaped like the daemon would.
+///   - `None` for any other endpoint — non-security surfaces (post-tool-use,
+///     session-start, session-end, …). Fail open as today; missing daemon =
+///     lost telemetry, not lost security.
+fn daemon_unreachable_response_json(endpoint: &str, reason: &str) -> Option<String> {
+    if endpoint != "pre-tool-use" {
+        return None;
+    }
+    Some(format!(
+        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable ({reason}). Restart: launchctl kickstart -k gui/$UID/com.chorus.hooks (any role can run this; unblocks the whole team). All security guards are off while daemon is down — tool calls denied until restart. See #2790."}}}}"#
+    ))
+}
+
+/// Wrapper that emits the deny JSON to stdout (so Claude sees it) and returns
+/// the exit code. For non-pre-tool-use endpoints, no output, returns SUCCESS.
+fn daemon_unreachable_response(endpoint: &str, reason: &str) -> ExitCode {
+    if let Some(deny_json) = daemon_unreachable_response_json(endpoint, reason) {
+        println!("{}", deny_json);
+    }
+    ExitCode::SUCCESS
+}
+
+/// #2790 — in-process canonical_write_guard. Runs the same guard the daemon
+/// runs, but in the shim's own process. Closes the fox-in-henhouse class:
+/// when the daemon is down (e.g. kade rebuilds chorus-hooks), the shim still
+/// refuses canonical edits. The guard never sleeps.
+///
+/// Returns:
+///   - `Some(deny_json)` — guard refused; caller should emit the JSON to
+///     stdout and exit SUCCESS (Claude treats permissionDecision=deny in
+///     stdout as block).
+///   - `None` — guard allowed (or input wasn't Edit/Write/MultiEdit, or the
+///     CHORUS_WERK_ENABLE flag is dormant). Caller should continue normally
+///     (forward to daemon for the rest of the guard chain).
+///
+/// Pure function over the input JSON string + process env. No socket touch.
+fn check_canonical_in_process(input_json: &str) -> Option<String> {
+    let hook_input: chorus_hooks::HookInput = match serde_json::from_str(input_json) {
+        Ok(v) => v,
+        Err(_) => return None, // can't parse → let daemon handle (or fail-closed)
+    };
+    let response = chorus_hooks::canonical_write_guard::check(&hook_input);
+    response.stdout
+}
+
+#[cfg(test)]
+mod canonical_in_process_tests {
+    use super::*;
+
+    fn payload_with_role(tool: &str, file_path: &str, role: &str) -> String {
+        format!(
+            r#"{{"tool_name":"{}","tool_input":{{"file_path":"{}"}},"deploy_role":"{}"}}"#,
+            tool, file_path, role
+        )
+    }
+
+    /// Set the env block the canonical_write_guard reads. Tests use unique
+    /// CHORUS_HOME / CHORUS_WERK_BASE per case via /tmp paths so they don't
+    /// stomp on each other across parallel test runs.
+    fn with_werk_env<F: FnOnce()>(home: &str, werk_base: &str, role: &str, f: F) {
+        let role_upper = role.to_uppercase();
+        let werk_var = format!("{}_WERK", role_upper);
+        let werk_path = format!("{}/{}", werk_base, role);
+        let prev = (
+            std::env::var("CHORUS_WERK_ENABLE").ok(),
+            std::env::var("CHORUS_HOME").ok(),
+            std::env::var("CHORUS_WERK_BASE").ok(),
+            std::env::var("CHORUS_ROLE").ok(),
+            std::env::var(&werk_var).ok(),
+        );
+        std::env::set_var("CHORUS_WERK_ENABLE", "1");
+        std::env::set_var("CHORUS_HOME", home);
+        std::env::set_var("CHORUS_WERK_BASE", werk_base);
+        std::env::set_var("CHORUS_ROLE", role);
+        std::env::set_var(&werk_var, &werk_path);
+        f();
+        // Restore
+        match prev.0 { Some(v) => std::env::set_var("CHORUS_WERK_ENABLE", v), None => std::env::remove_var("CHORUS_WERK_ENABLE") }
+        match prev.1 { Some(v) => std::env::set_var("CHORUS_HOME", v), None => std::env::remove_var("CHORUS_HOME") }
+        match prev.2 { Some(v) => std::env::set_var("CHORUS_WERK_BASE", v), None => std::env::remove_var("CHORUS_WERK_BASE") }
+        match prev.3 { Some(v) => std::env::set_var("CHORUS_ROLE", v), None => std::env::remove_var("CHORUS_ROLE") }
+        match prev.4 { Some(v) => std::env::set_var(&werk_var, v), None => std::env::remove_var(&werk_var) }
+    }
+
+    #[test]
+    fn edit_to_canonical_returns_deny_json() {
+        with_werk_env("/scratch/test-canonical-deny", "/scratch/test-werk-deny", "kade", || {
+            let payload = payload_with_role("Edit", "/scratch/test-canonical-deny/foo.rs", "kade");
+            let result = check_canonical_in_process(&payload);
+            let deny = result.expect("Edit to canonical must return Some(deny_json)");
+            assert!(deny.contains(r#""permissionDecision":"deny""#),
+                "deny json must include permissionDecision=deny: {}", deny);
+        });
+    }
+
+    #[test]
+    fn write_to_own_werk_returns_none() {
+        with_werk_env("/scratch/test-canonical-allow", "/scratch/test-werk-allow", "kade", || {
+            let payload = payload_with_role("Write", "/scratch/test-werk-allow/kade/scratch.txt", "kade");
+            assert!(check_canonical_in_process(&payload).is_none(),
+                "Write to own werk must NOT deny");
+        });
+    }
+
+    #[test]
+    fn cross_role_write_returns_deny_json() {
+        with_werk_env("/scratch/test-canonical-cross", "/scratch/test-werk-cross", "kade", || {
+            let payload = payload_with_role("Write", "/scratch/test-werk-cross/wren/something.txt", "kade");
+            let result = check_canonical_in_process(&payload);
+            let deny = result.expect("cross-role write must return Some(deny_json)");
+            assert!(deny.contains(r#""permissionDecision":"deny""#),
+                "cross-role deny must include permissionDecision=deny: {}", deny);
+        });
+    }
+
+    #[test]
+    fn bash_tool_returns_none() {
+        with_werk_env("/scratch/test-canonical-bash", "/scratch/test-werk-bash", "kade", || {
+            // Bash command with file_path-shaped argument — guard only fires on
+            // Edit/Write/MultiEdit, not Bash.
+            let payload = r#"{"tool_name":"Bash","tool_input":{"command":"ls /scratch/test-canonical-bash"},"deploy_role":"kade"}"#;
+            assert!(check_canonical_in_process(payload).is_none(),
+                "Bash tool must not be intercepted by canonical guard");
+        });
+    }
+
+    #[test]
+    fn malformed_json_returns_none() {
+        // Unparseable input → return None; let daemon (or daemon-unreachable
+        // fail-closed) handle it. Fail-open here is correct — this is the
+        // shim's first chance to peek; deeper validation belongs downstream.
+        let result = check_canonical_in_process("not valid json {{{");
+        assert!(result.is_none(), "malformed JSON must return None, not crash");
+    }
+}
+
+#[cfg(test)]
+mod daemon_unreachable_tests {
+    use super::*;
+
+    #[test]
+    fn pre_tool_use_fails_closed_with_typed_deny() {
+        let result = daemon_unreachable_response_json("pre-tool-use", "connect refused");
+        let deny = result.expect("pre-tool-use must return a deny JSON, not None");
+        assert!(deny.contains(r#""permissionDecision":"deny""#),
+            "pre-tool-use must emit permissionDecision=deny: {}", deny);
+        assert!(deny.contains("daemon unreachable"),
+            "deny reason must name the daemon-unreachable cause: {}", deny);
+        assert!(deny.contains("#2790"),
+            "deny reason must reference the card so operators can find the RCA: {}", deny);
+        assert!(deny.contains("connect refused"),
+            "deny reason must include the operator-facing reason detail: {}", deny);
+    }
+
+    #[test]
+    fn post_tool_use_fails_open() {
+        assert!(daemon_unreachable_response_json("post-tool-use", "connect refused").is_none(),
+            "post-tool-use must NOT emit deny (fail open); is observation, not enforcement");
+    }
+
+    #[test]
+    fn session_start_fails_open() {
+        assert!(daemon_unreachable_response_json("session-start", "connect refused").is_none(),
+            "session-start must NOT emit deny (fail open); is notification, not enforcement");
+    }
+
+    #[test]
+    fn session_end_fails_open() {
+        assert!(daemon_unreachable_response_json("session-end", "connect refused").is_none(),
+            "session-end must NOT emit deny (fail open)");
+    }
+
+    #[test]
+    fn unknown_endpoint_fails_open() {
+        // Conservative: only the explicitly-security endpoint (pre-tool-use)
+        // fails closed. Unknown endpoints fall through to fail-open until
+        // explicitly classified — a typo'd endpoint name shouldn't deny the
+        // world.
+        assert!(daemon_unreachable_response_json("typo-tool-use", "x").is_none(),
+            "unknown endpoints fail open by default");
+    }
+
+    #[test]
+    fn deny_message_includes_restart_command() {
+        let result = daemon_unreachable_response_json("pre-tool-use", "x");
+        let deny = result.unwrap();
+        assert!(deny.contains("nohup ~/.chorus/bin/chorus-hooks") || deny.contains("Restart"),
+            "deny must name the restart path: {}", deny);
+    }
+}
 
 fn log_debug(msg: &str) {
     use std::fs::OpenOptions;
@@ -148,12 +362,28 @@ fn main() -> ExitCode {
 
     log_debug(&format!("stdin={}bytes", input.len()));
 
-    // Connect to unix socket — fail open if unavailable
+    // #2790 — in-process canonical_write_guard. The behavioral bug Jeff
+    // named: "i default to wherever I was last cd'd, not to my werk by
+    // intent. that is the bug i need u to fix." Linking the guard into
+    // the shim (in addition to the daemon-side guard) closes the fox-
+    // in-henhouse class — when kade rebuilds chorus-hooks and the daemon
+    // is down, the shim still refuses canonical edits. The guard never
+    // sleeps. Fires only on Edit/Write/MultiEdit during pre-tool-use;
+    // everything else continues to the socket forward.
+    if endpoint == "pre-tool-use" {
+        if let Some(deny_json) = check_canonical_in_process(&input) {
+            log_debug("DENY canonical_write_guard (in-process)");
+            println!("{}", deny_json);
+            return ExitCode::SUCCESS;
+        }
+    }
+
+    // Connect to unix socket — #2790: fail closed for pre-tool-use, open elsewhere.
     let mut stream = match UnixStream::connect(SOCKET_PATH) {
         Ok(s) => s,
         Err(e) => {
             log_debug(&format!("FAIL connect: {}", e));
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, &format!("connect: {}", e));
         }
     };
 
@@ -177,18 +407,18 @@ fn main() -> ExitCode {
 
     if let Err(e) = stream.write_all(request.as_bytes()) {
         log_debug(&format!("FAIL write headers: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("write headers: {}", e));
     }
     if let Err(e) = stream.write_all(body) {
         log_debug(&format!("FAIL write body: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("write body: {}", e));
     }
 
     // Read response
     let mut response = Vec::new();
     if let Err(e) = stream.read_to_end(&mut response) {
         log_debug(&format!("FAIL read response: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("read response: {}", e));
     }
 
     let response_str = String::from_utf8_lossy(&response);
@@ -199,7 +429,7 @@ fn main() -> ExitCode {
         Some(pos) => &response_str[pos + 4..],
         None => {
             log_debug("FAIL no header separator");
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, "malformed response (no header separator)");
         }
     };
 
@@ -216,7 +446,7 @@ fn main() -> ExitCode {
 
     if json_str.is_empty() {
         log_debug("FAIL empty json body");
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, "empty response body");
     }
 
     // Parse JSON response
@@ -224,7 +454,7 @@ fn main() -> ExitCode {
         Ok(v) => v,
         Err(e) => {
             log_debug(&format!("FAIL json parse: {} body={}", e, &json_str[..json_str.len().min(200)]));
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, &format!("json parse: {}", e));
         }
     };
 
