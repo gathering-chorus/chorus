@@ -202,6 +202,102 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
     });
   });
 
+  describe('#2782 — fast-path cards-done must not silently skip when board returns 0 WIP', () => {
+    // Today's bug (2026-05-07, hit on #2777, #2778, #2779): /acp re-run on a
+    // card whose work is already merged returned `{ branch_closed: true,
+    // sha: "unknown" }` but the card stayed at "Later" because the previous
+    // run had already moved it to Done, so board returns 0 WIP cards on the
+    // second invocation, cardId stays null, and cards-done was gated on
+    // `cardId !== null` — silently skipping. The card-state diverges from
+    // the branch-state and the report says shipped while the board lies.
+    //
+    // Fix: when board lookup misses (cards.length !== 1) AND HEAD branch
+    // matches `<role>/<id>`, derive cardId from the branch name. The fast-
+    // path's "PR already merged" check confirms the branch's identity, so
+    // the branch-derived cardId is trustworthy for cards-done.
+
+    test('fast-path with empty WIP board derives cardId from branch and runs cards-done', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2779\n', stderr: '' };
+        }
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          return { stdout: 'MERGED\n', stderr: '' };
+        }
+        if (file.endsWith('cards') && args[0] === 'done') {
+          return { stdout: 'Done: #2779\n', stderr: '' };
+        }
+        if (file.endsWith('chorus-werk') && args[0] === 'close') {
+          return { stdout: 'closed\n', stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler(
+        { method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } },
+        {},
+      );
+
+      // cards-done MUST run with the branch-derived cardId (2779)
+      const doneCalls = calls.filter((c) => c.file.endsWith('cards') && c.args[0] === 'done');
+      expect(doneCalls.length).toBe(1);
+      expect(doneCalls[0].args[1]).toBe('2779');
+
+      // Result reports the branch-derived card_id, not null
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.card_id).toBe(2779);
+      expect(parsed.fast_path).toBe(true);
+
+      // Spine event card.accepted carries the resolved id, not null
+      const accepted = events.find((e) => e.event === 'card.accepted');
+      expect(accepted?.fields.card).toBe(2779);
+    });
+
+    test('fast-path with multi-WIP board still derives cardId from branch (single source of truth)', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse' && args.includes('HEAD')) {
+          return { stdout: 'kade/2779\n', stderr: '' };
+        }
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          return { stdout: 'MERGED\n', stderr: '' };
+        }
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        // Multi-WIP — board returns 2 cards. Branch is the disambiguator.
+        boardReader: (async () => ({ ok: true, cards: [{ id: 9999, owner: 'kade', title: 'unrelated' }, { id: 8888, owner: 'kade', title: 'also-unrelated' }] })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+      const doneCalls = calls.filter((c) => c.file.endsWith('cards') && c.args[0] === 'done');
+      expect(doneCalls.length).toBe(1);
+      // Branch (kade/2779) is the source of truth, not the multi-WIP cards (9999, 8888).
+      expect(doneCalls[0].args[1]).toBe('2779');
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.card_id).toBe(2779);
+    });
+  });
+
   describe('AC5 — werk-aware', () => {
     test('routes git-queue cwd via resolveWorkingTree (slice 1 reuse)', async () => {
       const cwds: string[] = [];
