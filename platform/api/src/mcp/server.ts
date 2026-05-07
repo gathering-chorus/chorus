@@ -149,6 +149,12 @@ const CommitInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service derives the active card from the board.'),
   paths: z.array(z.string().min(1)).min(1).describe('Paths to stage and commit, relative to repo root. Same files passed to `git add` and `git commit -- <paths>` to prevent cross-role staging collisions.'),
   message: z.string().min(1).describe('Commit message body. Service does not modify it; agent supplies the full text including role prefix and card reference.'),
+  // #2778 — passes --no-add through to git-queue.sh do_commit (#2731 substrate
+  // mechanism, previously not exposed at the MCP surface). Required when the
+  // index is already arranged exactly as the commit should look — e.g.,
+  // `git rm --cached` of newly-ignored files: `git add` would refuse the
+  // ignored paths and the staged deletion could not land.
+  no_add: z.boolean().optional().describe('Skip the `git add` step; commit the index as-staged. Use when committing staged deletes of paths that are now in .gitignore — without this, git add refuses ignored paths and the commit cannot land. Default false.'),
 }).strict();
 
 // #2688 — chorus_pull (read+rebase) input schema. Sister to chorus_commit:
@@ -524,6 +530,10 @@ const COMMIT_TOOL_DEF = {
         description: 'Paths to stage and commit, relative to repo root',
       },
       message: { type: 'string', minLength: 1, description: 'Commit message body' },
+      no_add: {
+        type: 'boolean',
+        description: 'Skip the `git add` step; commit the index as-staged (#2778). Required when committing staged deletes of paths now in .gitignore — git add would refuse the ignored paths and the staged deletion could not land. Default false.',
+      },
     },
     required: ['role', 'paths', 'message'],
     additionalProperties: false,
@@ -673,6 +683,7 @@ interface CommitArgs {
   role: 'kade' | 'wren' | 'silas';
   paths: string[];
   message: string;
+  no_add?: boolean;
 }
 
 // #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
@@ -742,7 +753,7 @@ async function executeCommit(
   gitQueuePath: string,
   resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role, paths, message } = args;
+  const { role, paths, message, no_add } = args;
 
   // #2687 — Step 1: best-effort board lookup for spine attribution. NEVER
   // refuses. Coordination state (no-wip-card / multi-wip / board-unreachable)
@@ -799,7 +810,13 @@ async function executeCommit(
   // enforced at the write surface.
   let commitStdout: string;
   try {
-    const commitArgs = ['commit', FORCE_BRANCH_FLAG, ...paths, '--', '-m', message];
+    // #2778 — --no-add (after --force-branch) routes to git-queue.sh do_commit
+    // skip-add path (#2731). Required for committing staged deletes of now-
+    // ignored paths; without it, git add refuses ignored paths and the staged
+    // deletion cannot land via the typed surface.
+    const commitArgs = no_add
+      ? ['commit', FORCE_BRANCH_FLAG, '--no-add', ...paths, '--', '-m', message]
+      : ['commit', FORCE_BRANCH_FLAG, ...paths, '--', '-m', message];
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
     commitStdout = stdout;
   } catch (err) {
