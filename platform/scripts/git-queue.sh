@@ -380,7 +380,17 @@ do_commit() {
   local exit_code=0
   local _git_stdout=""
   if $skip_add; then
-    _git_stdout=$(git commit "${git_args[@]}" -- "${files[@]}" 9>&-) || exit_code=$?
+    # #2777 — when --no-add is set, do NOT pass `-- <files>` pathspec to
+    # `git commit`. Git's pathspec filtering respects .gitignore: a path
+    # that is in .gitignore is silently dropped from the pathspec, even
+    # if the index has it staged for deletion. Since --no-add exists for
+    # exactly the staged-delete-of-now-ignored case, passing pathspec
+    # negates the entire feature (#2731 latent bug, found while shipping
+    # #2777 gitignore cleanup). The index has been arranged exactly as
+    # the commit should look; commit-without-pathspec commits it as-is.
+    # `files` is still required upstream (line 244) for log_event audit
+    # context and is intentionally not threaded into the commit args here.
+    _git_stdout=$(git commit "${git_args[@]}" 9>&-) || exit_code=$?
   else
     _git_stdout=$(git add "${files[@]}" 9>&- && git commit "${git_args[@]}" -- "${files[@]}" 9>&-) || exit_code=$?
   fi
