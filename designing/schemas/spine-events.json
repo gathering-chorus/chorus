@@ -678,6 +678,32 @@
         "title": "Decision title"
       }
     },
+    "build.artifact.hashed": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Built+signed binary hashed post-codesign — invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
+      "fields": {
+        "commit": "Source commit SHA (short)",
+        "crate": "Cargo crate name (e.g., chorus-hooks, chorus-inject)",
+        "identifier": "Binary identifier as installed (e.g., chorus-hook-shim)",
+        "cdhash": "Codesign cdhash of signed binary",
+        "sha256": "SHA-256 of signed binary file",
+        "builder_host": "Hostname of machine that built it"
+      }
+    },
+    "deploy.artifact.verified": {
+      "vertebra": "operations",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Installed artifact post-deploy verification — invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
+      "fields": {
+        "artifact_sha256": "Expected sha256 (from build.artifact.hashed)",
+        "target": "Install target name (e.g., chorus-hook-shim)",
+        "installed_cdhash": "Codesign cdhash of binary at deploy location",
+        "deployed_at": "Deploy location path (~/.chorus/bin/<name>)"
+      }
+    },
     "build.commit.created": {
       "vertebra": "building",
       "legacy_name": "commit",

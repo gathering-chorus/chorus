@@ -107,6 +107,26 @@ codesign -dvvv "$binary" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
 CDHASH=$(codesign -dvvv "$binary" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
 echo "build-signed: cdhash=$CDHASH"
 
+# Build-invariance evidence (#2775). Same source commit must produce identical
+# sha256 across machines. Hash the signed binary post-codesign and emit a
+# build.artifact.hashed spine event so test-build-invariance.sh can verify.
+SHA256=$(shasum -a 256 "$binary" | awk '{print $1}')
+COMMIT=$(git -C "$(dirname "$crate_dir")" rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+CRATE=$(basename "$crate_dir")
+BUILDER_HOST=$(hostname -s)
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+echo "build-signed: sha256=$SHA256"
+if command -v chorus-log >/dev/null 2>&1; then
+  chorus-log build.artifact.hashed "$ROLE" \
+    "commit=$COMMIT" "crate=$CRATE" "identifier=$binary_name" \
+    "cdhash=$CDHASH" "sha256=$SHA256" "builder_host=$BUILDER_HOST" >/dev/null 2>&1 || true
+elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
+  "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
+    build.artifact.hashed "$ROLE" \
+    "commit=$COMMIT" "crate=$CRATE" "identifier=$binary_name" \
+    "cdhash=$CDHASH" "sha256=$SHA256" "builder_host=$BUILDER_HOST" >/dev/null 2>&1 || true
+fi
+
 # Install to ~/.chorus/bin/ — the canonical deploy location (#2734).
 # target/release/ is a build artifact; ~/.chorus/bin/ is what the running
 # system calls. Splitting build from install means cdhash stays stable

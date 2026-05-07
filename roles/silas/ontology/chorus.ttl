@@ -800,9 +800,16 @@ chorus:version-control-domain a chorus:SubDomain ;
     chorus:primaryStep chorus:Building ;
     chorus:belongsTo chorus:observability-domain .
 
+chorus:build-domain a chorus:SubDomain ;
+    rdfs:label "Build" ;
+    rdfs:comment "Source → artifact. Build is invariant: same source commit produces the same artifact, every machine, every time. Adapter is build-signed.sh + chorus-bin-install; verification is the build-invariance contract test (test-build-invariance.sh) which builds the same target twice from a clean tree at the same commit and asserts identical sha256." ;
+    chorus:ownedBy chorus:silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:observability-domain .
+
 chorus:deploys-domain a chorus:SubDomain ;
     rdfs:label "Deploys" ;
-    rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets." ;
+    rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets. Deploy is invariant: same artifact reaches the same running state. Verified by the deploy-invariance contract test (test-deploy-invariance.sh) which installs the same artifact twice and asserts identical cdhash + on-disk sha256." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Operating ;
     chorus:belongsTo chorus:observability-domain .
