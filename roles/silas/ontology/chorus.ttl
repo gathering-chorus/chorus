@@ -805,7 +805,130 @@ chorus:build-domain a chorus:SubDomain ;
     rdfs:comment "Source → artifact. Build is invariant: same source commit produces the same artifact, every machine, every time. Adapter is build-signed.sh + chorus-bin-install; verification is the build-invariance contract test (test-build-invariance.sh) which builds the same target twice from a clean tree at the same commit and asserts identical sha256." ;
     chorus:ownedBy chorus:silas ;
     chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:observability-domain .
+    chorus:belongsTo chorus:observability-domain ;
+    chorus:consumes chorus:version-control-domain ;
+    chorus:consumes chorus:security-domain ;
+    chorus:hasActor chorus:build-actor-role,
+                    chorus:build-actor-acp,
+                    chorus:build-actor-build-surface,
+                    chorus:build-actor-git-tree,
+                    chorus:build-actor-artifact-store,
+                    chorus:build-actor-manifest,
+                    chorus:build-actor-spine,
+                    chorus:build-actor-ci,
+                    chorus:build-actor-jeff ;
+    chorus:hasScenario chorus:build-scenario-same-source-same-artifact,
+                       chorus:build-scenario-source-drift-refuses,
+                       chorus:build-scenario-artifact-already-built,
+                       chorus:build-scenario-emits-spine-event ;
+    chorus:hasPersistence chorus:build-persistence-artifact-store,
+                          chorus:build-persistence-manifest ;
+    chorus:hasPriorArt chorus:build-prior-art-vc-service-design,
+                       chorus:build-prior-art-reproducible-builds ;
+    chorus:contains chorus:build-actor-role,
+                    chorus:build-actor-acp,
+                    chorus:build-actor-build-surface,
+                    chorus:build-actor-git-tree,
+                    chorus:build-actor-artifact-store,
+                    chorus:build-actor-manifest,
+                    chorus:build-actor-spine,
+                    chorus:build-actor-ci,
+                    chorus:build-actor-jeff,
+                    chorus:build-scenario-same-source-same-artifact,
+                    chorus:build-scenario-source-drift-refuses,
+                    chorus:build-scenario-artifact-already-built,
+                    chorus:build-scenario-emits-spine-event,
+                    chorus:build-persistence-artifact-store,
+                    chorus:build-persistence-manifest,
+                    chorus:build-prior-art-vc-service-design,
+                    chorus:build-prior-art-reproducible-builds .
+
+# build-domain Actors (#2775)
+chorus:build-actor-role a chorus:Actor ;
+    rdfs:label "Role / agent" ;
+    chorus:actorRole "agent" ;
+    chorus:actorAction "Invokes /acp which calls into build-domain" .
+chorus:build-actor-acp a chorus:Actor ;
+    rdfs:label "/acp atomic step" ;
+    chorus:actorRole "orchestrator" ;
+    chorus:actorAction "Invokes build-signed.sh as part of merge → build → deploy chain" .
+chorus:build-actor-build-surface a chorus:Actor ;
+    rdfs:label "Build surface (build-signed.sh)" ;
+    chorus:actorRole "service" ;
+    chorus:actorAction "Cargo build + codesign + emit build.artifact.hashed + handoff to chorus-bin-install" .
+chorus:build-actor-git-tree a chorus:Actor ;
+    rdfs:label "Git working tree" ;
+    chorus:actorRole "data-source" ;
+    chorus:actorAction "Source of truth for the commit being built" .
+chorus:build-actor-artifact-store a chorus:Actor ;
+    rdfs:label "Artifact store (~/.chorus/bin/)" ;
+    chorus:actorRole "persistence" ;
+    chorus:actorAction "Receives the signed binary atomically via chorus-bin-install" .
+chorus:build-actor-manifest a chorus:Actor ;
+    rdfs:label "Build manifest (~/.chorus/manifest.json)" ;
+    chorus:actorRole "persistence" ;
+    chorus:actorAction "Records {commit, target, artifact_hash, build_time, machine} per build (planned, not yet implemented)" .
+chorus:build-actor-spine a chorus:Actor ;
+    rdfs:label "Spine: build.artifact.hashed" ;
+    chorus:actorRole "observability" ;
+    chorus:actorAction "Receives build.artifact.hashed event with {commit, crate, identifier, cdhash, sha256, builder_host}" .
+chorus:build-actor-ci a chorus:Actor ;
+    rdfs:label "CI workflow" ;
+    chorus:actorRole "automation" ;
+    chorus:actorAction "Invokes build-signed.sh on schedule (per-PR CI suspended via cost-stop 2026-04-29)" .
+chorus:build-actor-jeff a chorus:Actor ;
+    rdfs:label "Jeff" ;
+    chorus:actorRole "human" ;
+    chorus:actorAction "Reads manifest + spine to answer 'which commit is the live binary?'" .
+
+# build-domain Scenarios (#2775)
+chorus:build-scenario-same-source-same-artifact a chorus:Scenario ;
+    rdfs:label "Same source produces same artifact" ;
+    chorus:scenarioGiven "Commit abc123 and target chorus-hooks" ;
+    chorus:scenarioWhen "build-signed.sh runs on machine A and again on machine B" ;
+    chorus:scenarioThen "Both produce artifacts with the same cdhash; both write identical manifest entries (modulo machine and build_time)" ;
+    chorus:scenarioNotes "sha256 of the file may differ across machines due to cargo+codesign timestamp embedding; cdhash is the binding identity (#2734). test-build-invariance.sh asserts on cdhash." .
+chorus:build-scenario-source-drift-refuses a chorus:Scenario ;
+    rdfs:label "Source drift refuses build" ;
+    chorus:scenarioGiven "Working tree has uncommitted changes" ;
+    chorus:scenarioWhen "build-signed.sh chorus-hooks runs" ;
+    chorus:scenarioThen "It refuses with source-not-clean and names the dirty paths; no artifact is written; no manifest entry is recorded" ;
+    chorus:scenarioNotes "Currently NOT implemented — design target. Today, build-signed.sh accepts dirty trees silently; cdhash reflects working tree but commit field reflects HEAD only. Surfaced by Kade's #2775 demo+feedback." .
+chorus:build-scenario-artifact-already-built a chorus:Scenario ;
+    rdfs:label "Artifact already built is reused" ;
+    chorus:scenarioGiven "An artifact for commit abc123 target chorus-hooks already exists in the manifest" ;
+    chorus:scenarioWhen "build runs again for the same commit + target" ;
+    chorus:scenarioThen "Existing artifact is verified by hash; no rebuild occurs; manifest is unchanged" ;
+    chorus:scenarioNotes "Future — requires manifest writer (P1 follow-on)." .
+chorus:build-scenario-emits-spine-event a chorus:Scenario ;
+    rdfs:label "Build emits one spine event per artifact" ;
+    chorus:scenarioGiven "A successful build of commit abc123 target chorus-hooks" ;
+    chorus:scenarioWhen "the build completes" ;
+    chorus:scenarioThen "Exactly one build.artifact.hashed spine event is emitted with {commit, target, cdhash, sha256, builder_host}; the cdhash matches the codesigned binary" ;
+    chorus:scenarioNotes "Implemented in build-signed.sh as of 2026-05-07 (PR #158)." .
+
+# build-domain Persistence (#2775)
+chorus:build-persistence-artifact-store a chorus:PersistenceStore ;
+    rdfs:label "Artifact store" ;
+    chorus:storeType "filesystem" ;
+    chorus:storeNamespace "~/.chorus/bin/" ;
+    chorus:storeStatus "real" .
+chorus:build-persistence-manifest a chorus:PersistenceStore ;
+    rdfs:label "Build manifest" ;
+    chorus:storeType "filesystem" ;
+    chorus:storeNamespace "~/.chorus/manifest.json" ;
+    chorus:storeStatus "design" .
+
+# build-domain Prior Art (#2775)
+chorus:build-prior-art-vc-service-design a chorus:PriorArt ;
+    rdfs:label "Version Control Service Design" ;
+    rdfs:comment "Template followed by build + deploy service design — same section structure (Overview / Vocabulary / Sub-Domain Interaction Model / As-Is / To-Be / Path-to-close). designing/docs/version-control-service-design.html." .
+chorus:build-prior-art-reproducible-builds a chorus:PriorArt ;
+    rdfs:label "Reproducible builds (Nix, Bazel)" ;
+    rdfs:comment "OSS precedent for true source→artifact invariance with timestamp-stripped builds. cargo+codesign on macOS is not reproducible at the file-sha256 level; this design uses cdhash as the binding identity (per #2734) rather than reaching for Nix/Bazel-class tooling." .
+
+# build-domain reverse-consumes (#2775)
+chorus:deploys-domain chorus:consumes chorus:build-domain .
 
 chorus:deploys-domain a chorus:SubDomain ;
     rdfs:label "Deploys" ;
