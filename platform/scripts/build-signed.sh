@@ -102,29 +102,64 @@ if [ "${1:-}" = "chorus-hooks" ]; then
   fi
 fi
 
-echo "build-signed: verify"
-codesign -dvvv "$binary" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
-CDHASH=$(codesign -dvvv "$binary" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
-echo "build-signed: cdhash=$CDHASH"
+# Per-binary post-codesign work: hash, emit spine event, add manifest entry.
+# Refactored into a function (#2791) so chorus-hooks shortcut's two binaries
+# (chorus-hook-shim primary + chorus-hooks secondary) BOTH get spine events
+# AND manifest entries — closes the secondary-emit gap.
+#
+# Globals read: SIGNING_IDENTITY, crate_dir
+# Args:
+#   $1 — binary path (target/release/<name>)
+#   $2 — installed name (passed to chorus-bin-install)
+emit_artifact_records() {
+  local bin_path="$1" installed_name="$2"
+  echo "build-signed: verify $installed_name"
+  codesign -dvvv "$bin_path" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
+  local cdhash
+  cdhash=$(codesign -dvvv "$bin_path" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+  echo "build-signed: cdhash=$cdhash"
 
-# Build-invariance evidence (#2775). Same source commit must produce identical
-# sha256 across machines. Hash the signed binary post-codesign and emit a
-# build.artifact.hashed spine event so test-build-invariance.sh can verify.
-SHA256=$(shasum -a 256 "$binary" | awk '{print $1}')
-COMMIT=$(git -C "$(dirname "$crate_dir")" rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-CRATE=$(basename "$crate_dir")
-BUILDER_HOST=$(hostname -s)
-ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
-echo "build-signed: sha256=$SHA256"
-if command -v chorus-log >/dev/null 2>&1; then
-  chorus-log build.artifact.hashed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "identifier=$binary_name" \
-    "cdhash=$CDHASH" "sha256=$SHA256" "builder_host=$BUILDER_HOST" >/dev/null 2>&1 || true
-elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
-  "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-    build.artifact.hashed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "identifier=$binary_name" \
-    "cdhash=$CDHASH" "sha256=$SHA256" "builder_host=$BUILDER_HOST" >/dev/null 2>&1 || true
+  # Build-invariance evidence (#2775). cdhash is the binding identity (#2734);
+  # sha256 is informational and drifts per cargo+codesign timestamp behavior.
+  local sha256 commit crate builder_host role build_time
+  sha256=$(shasum -a 256 "$bin_path" | awk '{print $1}')
+  commit=$(git -C "$(dirname "$crate_dir")" rev-parse --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  crate=$(basename "$crate_dir")
+  builder_host=$(hostname -s)
+  role="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+  build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  echo "build-signed: sha256=$sha256"
+
+  # build.artifact.hashed spine event (existing — used by test-build-invariance.sh)
+  if command -v chorus-log >/dev/null 2>&1; then
+    chorus-log build.artifact.hashed "$role" \
+      "commit=$commit" "crate=$crate" "identifier=$installed_name" \
+      "cdhash=$cdhash" "sha256=$sha256" "builder_host=$builder_host" >/dev/null 2>&1 || true
+  elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
+    "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
+      build.artifact.hashed "$role" \
+      "commit=$commit" "crate=$crate" "identifier=$installed_name" \
+      "cdhash=$cdhash" "sha256=$sha256" "builder_host=$builder_host" >/dev/null 2>&1 || true
+  fi
+
+  # Manifest entry (#2791) — idempotent on {commit, crate, identifier, cdhash}.
+  # chorus-manifest emits manifest.entry.added on new entry only.
+  local manifest_script="$(dirname "${BASH_SOURCE[0]}")/chorus-manifest"
+  if [ -x "$manifest_script" ]; then
+    "$manifest_script" add \
+      "$commit" "$crate" "$installed_name" "$cdhash" "$sha256" \
+      "$build_time" "$builder_host" "$role" >/dev/null 2>&1 || \
+      echo "build-signed: WARN — chorus-manifest add failed (non-fatal)" >&2
+  fi
+}
+
+# Primary binary: emit + record
+emit_artifact_records "$binary" "$binary_name"
+
+# chorus-hooks shortcut: also emit + record for the second binary (closes the
+# secondary-binary gap that was a TODO before #2791).
+if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
+  emit_artifact_records "$HOOKS_BIN" "chorus-hooks"
 fi
 
 # Install to ~/.chorus/bin/ — the canonical deploy location (#2734).

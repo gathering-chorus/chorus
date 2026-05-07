@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jeffbridwell.com/chorus/schemas/manifest.json",
+  "title": "Build Manifest",
+  "description": "Per-machine append-only record of every signed binary produced by build-signed.sh. The cross-domain interface between build-domain (writes) and deploy-domain (reads). Fields aligned to the build.artifact.hashed spine event for cross-validation.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Manifest schema version. Bumped only on breaking field changes.",
+      "enum": ["1.0.0"]
+    },
+    "entries": {
+      "type": "array",
+      "description": "Append-only list of build records. Idempotent on {commit, crate, identifier, cdhash} — duplicate writes for the same tuple are no-ops.",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Entry": {
+      "type": "object",
+      "required": ["commit", "crate", "identifier", "cdhash", "sha256", "build_time", "builder_host", "builder_role"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string",
+          "description": "Source commit short SHA at build time. Same field as build.artifact.hashed event.",
+          "pattern": "^[a-f0-9]{7,40}$"
+        },
+        "crate": {
+          "type": "string",
+          "description": "Cargo crate name (e.g., chorus-hooks). One crate may produce multiple identifiers. Same field as build.artifact.hashed event.",
+          "minLength": 1
+        },
+        "identifier": {
+          "type": "string",
+          "description": "Installed binary name (e.g., chorus-hook-shim, chorus-hooks). Same field as build.artifact.hashed event.",
+          "minLength": 1
+        },
+        "cdhash": {
+          "type": "string",
+          "description": "Codesign cdhash. THE binding identity for idempotency, per #2734. Same field as build.artifact.hashed event. TCC AppleEvents binds to this hash.",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "sha256": {
+          "type": "string",
+          "description": "SHA-256 of the signed binary file. Informational; drifts per cargo+codesign timestamp behavior. NOT used for identity. Same field as build.artifact.hashed event.",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "build_time": {
+          "type": "string",
+          "description": "ISO 8601 UTC timestamp of the build.",
+          "format": "date-time"
+        },
+        "builder_host": {
+          "type": "string",
+          "description": "hostname -s of the building machine. Same field as build.artifact.hashed event.",
+          "minLength": 1
+        },
+        "builder_role": {
+          "type": "string",
+          "description": "Role attribution. wren/silas/kade/system. Sourced from $DEPLOY_ROLE or $CHORUS_ROLE.",
+          "enum": ["wren", "silas", "kade", "system"]
+        }
+      }
+    }
+  }
+}

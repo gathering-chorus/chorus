@@ -692,6 +692,22 @@
         "builder_host": "Hostname of machine that built it"
       }
     },
+    "manifest.entry.added": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign — the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
+      "fields": {
+        "commit": "Source commit SHA (short) — same as build.artifact.hashed",
+        "crate": "Cargo crate name — same as build.artifact.hashed",
+        "identifier": "Installed binary identifier — same as build.artifact.hashed",
+        "cdhash": "Codesign cdhash — same as build.artifact.hashed; the binding identity",
+        "sha256": "SHA-256 of signed binary — same as build.artifact.hashed; informational",
+        "build_time": "ISO 8601 UTC timestamp of the build",
+        "builder_host": "Hostname of machine that built it — same as build.artifact.hashed",
+        "builder_role": "Role attribution — wren/silas/kade/system"
+      }
+    },
     "deploy.artifact.verified": {
       "vertebra": "operations",
       "legacy_name": null,
