@@ -4,7 +4,21 @@
 //!   chorus-hook-shim <endpoint>         — hook proxy: stdin JSON → unix socket → stdout
 //!   chorus-hook-shim nudge <role> <msg> — direct nudge delivery via osascript
 //!
-//! Falls open if the service is unavailable.
+//! Daemon-unreachable behavior (#2790):
+//!   - `pre-tool-use`: FAIL CLOSED. Daemon hosts the security guards
+//!     (canonical_write_guard, infra_guardrails, tdd_gate, memory_gate,
+//!     test_quality_gate). Without the daemon, no guard runs. Pre-#2790 the
+//!     shim returned SUCCESS on connect failure → Claude treated that as
+//!     allow → tool calls executed without inspection. Receipt: 2026-05-07
+//!     kade rebuilt chorus-hooks (stopping the daemon mid-flight) and
+//!     during the gap edited /chorus/platform/services/... directly,
+//!     bypassing canonical_write_guard. Fox-in-henhouse class.
+//!     From #2790 onward: pre-tool-use returns a typed deny when the daemon
+//!     is unreachable. Loud + actionable; a crashed daemon blocks tool
+//!     calls until restart, instead of silently bypassing security.
+//!   - All other endpoints (post-tool-use, session-start, session-end, …):
+//!     FAIL OPEN as before. Observation / notification surfaces, not
+//!     enforcement. Missing daemon = lost telemetry, not lost security.
 
 #[path = "nudge.rs"]
 mod nudge;
@@ -27,6 +41,92 @@ use std::io::Write;
 use std::process::ExitCode;
 
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+
+/// #2790 — daemon-unreachable response shape. Pure function so the inline
+/// tests below hammer it without touching the unix socket.
+///
+/// Returns:
+///   - `Some(deny_json)` for `pre-tool-use` — security gate. Daemon hosts
+///     all guards (canonical_write_guard, infra_guardrails, tdd_gate,
+///     memory_gate, test_quality_gate). Without daemon, no guard runs;
+///     pre-#2790 the shim returned success → Claude allowed → silent
+///     bypass of every security check. Receipt: 2026-05-07 fox-in-henhouse
+///     RCA. Fail closed: emit a permission_deny shaped like the daemon would.
+///   - `None` for any other endpoint — non-security surfaces (post-tool-use,
+///     session-start, session-end, …). Fail open as today; missing daemon =
+///     lost telemetry, not lost security.
+fn daemon_unreachable_response_json(endpoint: &str, reason: &str) -> Option<String> {
+    if endpoint != "pre-tool-use" {
+        return None;
+    }
+    Some(format!(
+        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable ({reason}). All security guards are off when the daemon is down (#2790). Tool calls are denied until the daemon is restarted. Restart with: nohup ~/.chorus/bin/chorus-hooks > /tmp/chorus-hooks-restart.log 2>&1 &"}}}}"#
+    ))
+}
+
+/// Wrapper that emits the deny JSON to stdout (so Claude sees it) and returns
+/// the exit code. For non-pre-tool-use endpoints, no output, returns SUCCESS.
+fn daemon_unreachable_response(endpoint: &str, reason: &str) -> ExitCode {
+    if let Some(deny_json) = daemon_unreachable_response_json(endpoint, reason) {
+        println!("{}", deny_json);
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod daemon_unreachable_tests {
+    use super::*;
+
+    #[test]
+    fn pre_tool_use_fails_closed_with_typed_deny() {
+        let result = daemon_unreachable_response_json("pre-tool-use", "connect refused");
+        let deny = result.expect("pre-tool-use must return a deny JSON, not None");
+        assert!(deny.contains(r#""permissionDecision":"deny""#),
+            "pre-tool-use must emit permissionDecision=deny: {}", deny);
+        assert!(deny.contains("daemon unreachable"),
+            "deny reason must name the daemon-unreachable cause: {}", deny);
+        assert!(deny.contains("#2790"),
+            "deny reason must reference the card so operators can find the RCA: {}", deny);
+        assert!(deny.contains("connect refused"),
+            "deny reason must include the operator-facing reason detail: {}", deny);
+    }
+
+    #[test]
+    fn post_tool_use_fails_open() {
+        assert!(daemon_unreachable_response_json("post-tool-use", "connect refused").is_none(),
+            "post-tool-use must NOT emit deny (fail open); is observation, not enforcement");
+    }
+
+    #[test]
+    fn session_start_fails_open() {
+        assert!(daemon_unreachable_response_json("session-start", "connect refused").is_none(),
+            "session-start must NOT emit deny (fail open); is notification, not enforcement");
+    }
+
+    #[test]
+    fn session_end_fails_open() {
+        assert!(daemon_unreachable_response_json("session-end", "connect refused").is_none(),
+            "session-end must NOT emit deny (fail open)");
+    }
+
+    #[test]
+    fn unknown_endpoint_fails_open() {
+        // Conservative: only the explicitly-security endpoint (pre-tool-use)
+        // fails closed. Unknown endpoints fall through to fail-open until
+        // explicitly classified — a typo'd endpoint name shouldn't deny the
+        // world.
+        assert!(daemon_unreachable_response_json("typo-tool-use", "x").is_none(),
+            "unknown endpoints fail open by default");
+    }
+
+    #[test]
+    fn deny_message_includes_restart_command() {
+        let result = daemon_unreachable_response_json("pre-tool-use", "x");
+        let deny = result.unwrap();
+        assert!(deny.contains("nohup ~/.chorus/bin/chorus-hooks") || deny.contains("Restart"),
+            "deny must name the restart path: {}", deny);
+    }
+}
 
 fn log_debug(msg: &str) {
     use std::fs::OpenOptions;
@@ -148,12 +248,12 @@ fn main() -> ExitCode {
 
     log_debug(&format!("stdin={}bytes", input.len()));
 
-    // Connect to unix socket — fail open if unavailable
+    // Connect to unix socket — #2790: fail closed for pre-tool-use, open elsewhere.
     let mut stream = match UnixStream::connect(SOCKET_PATH) {
         Ok(s) => s,
         Err(e) => {
             log_debug(&format!("FAIL connect: {}", e));
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, &format!("connect: {}", e));
         }
     };
 
@@ -177,18 +277,18 @@ fn main() -> ExitCode {
 
     if let Err(e) = stream.write_all(request.as_bytes()) {
         log_debug(&format!("FAIL write headers: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("write headers: {}", e));
     }
     if let Err(e) = stream.write_all(body) {
         log_debug(&format!("FAIL write body: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("write body: {}", e));
     }
 
     // Read response
     let mut response = Vec::new();
     if let Err(e) = stream.read_to_end(&mut response) {
         log_debug(&format!("FAIL read response: {}", e));
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, &format!("read response: {}", e));
     }
 
     let response_str = String::from_utf8_lossy(&response);
@@ -199,7 +299,7 @@ fn main() -> ExitCode {
         Some(pos) => &response_str[pos + 4..],
         None => {
             log_debug("FAIL no header separator");
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, "malformed response (no header separator)");
         }
     };
 
@@ -216,7 +316,7 @@ fn main() -> ExitCode {
 
     if json_str.is_empty() {
         log_debug("FAIL empty json body");
-        return ExitCode::SUCCESS;
+        return daemon_unreachable_response(&endpoint, "empty response body");
     }
 
     // Parse JSON response
@@ -224,7 +324,7 @@ fn main() -> ExitCode {
         Ok(v) => v,
         Err(e) => {
             log_debug(&format!("FAIL json parse: {} body={}", e, &json_str[..json_str.len().min(200)]));
-            return ExitCode::SUCCESS;
+            return daemon_unreachable_response(&endpoint, &format!("json parse: {}", e));
         }
     };
 
