@@ -51,19 +51,47 @@
 <strong>Source of truth:</strong> Live actor list, BDD scenarios, contract entries, dependencies, gaps, and integrations live at:
 <ul style="margin-top: 6px;">
   <li><a href="http://localhost:3340/athena/domain-detail.html?id=build-domain"><code>/athena/domain-detail.html?id=build-domain</code></a></li>
-  <li><a href="http://localhost:3340/athena/domain-detail.html?id=deploy-domain"><code>/athena/domain-detail.html?id=deploy-domain</code></a></li>
+  <li><a href="http://localhost:3340/athena/domain-detail.html?id=deploys-domain"><code>/athena/domain-detail.html?id=deploys-domain</code></a></li>
 </ul>
 This doc narrates <em>structure and intent</em> — diagrams, rejected paths, implementation plan. It does not restate counts or content from the graph; references point at graph entities via the pages above.
 </div>
 
 <div class="promise">
-<strong>Designed target state.</strong> A version of the running system lands when, and only when, three things hold: (1) <strong>build is invariant</strong> — the same source commit produces the same artifact, every machine, every time; the artifact is named, hashed, and recorded in a manifest; (2) <strong>deploy is invariant</strong> — the same artifact reaches the same running state; schema is reloaded, cdhash is registered, kickstart fires; (3) <strong>/acp invokes both atomically</strong> — version-control merge → build → deploy is one transaction with one spine event, not three manual steps. Refusal taxonomy at each domain boundary is strict: build refuses on non-reproducible source state; deploy refuses on artifact-not-built or running-state-not-reached. Coordination state — board status, role-state, branch policy — never refuses build or deploy. <em>Today's code does not yet match this contract — see As-Is below.</em>
+<strong>Designed target state.</strong> A version of the running system lands when, and only when, three things hold: (1) <strong>build is invariant</strong> — the same source commit produces the same artifact, every machine, every time; the artifact is named, hashed, and recorded in a manifest; (2) <strong>deploy is invariant</strong> — the same artifact reaches the same running state; schema is reloaded, cdhash is registered, kickstart fires; (3) <strong>/acp invokes all three domains atomically</strong> — version-control merge → build → deploy is one transaction with one spine event, not three manual steps. Refusal taxonomy at each domain boundary is strict: build refuses on non-reproducible source state; deploy refuses on artifact-not-built or running-state-not-reached. Coordination state — board status, role-state, branch policy — never refuses build or deploy. <em>Today's code does not yet match this contract — see As-Is below.</em>
+</div>
+<div class="open-q">
+<strong>What "atomic" means today vs target.</strong> Three distinct slices — only the first is shipped:
+<ul>
+  <li><em>commit slice (shipped 2026-05-07, #2782):</em> chorus_commit / chorus_acp run verify-after sequenced steps with typed refusal at each step. Not atomic across domains — atomic within version-control only.</li>
+  <li><em>build + deploy MCPs (designed, not yet shipped):</em> chorus_build and chorus_deploy don't exist as MCPs. Today's build is <code>build-signed.sh</code> from CLI; deploy is <code>app-state.sh deploy</code> from CLI. /acp does not invoke them.</li>
+  <li><em>three-domain rollback semantics (designed, untouched):</em> if build succeeds and deploy fails, the design must say what happens to the merged commit and the new artifact. Today: nothing; partial-success states leave the system incoherent. The atomic-across-three-domains contract is structurally hard and not addressed by any current card.</li>
+</ul>
+The "atomic" claim in the Promise block is the designed target. Today's /acp is the commit slice only.
 </div>
 
-<h2>Overview</h2>
-<p><strong>Build domain</strong> — owns the path from source to artifact. Inputs: a git ref + a build target name. Outputs: a versioned, hash-stable artifact in a known location, plus a manifest entry recording <code>{commit, target, artifact_hash, build_time, machine}</code>.</p>
+<h2>Completeness Contract (ADR-028)</h2>
+<p>Build-domain and deploys-domain are <strong>governed-record domains</strong> per ADR-028. They are <strong>adapter-backed</strong> (the underlying "data" is git refs / artifact files / running processes, not graph triples) so the addendum applies.</p>
 
-<p><strong>Deploy domain</strong> — owns the path from artifact to running state. Inputs: a manifest entry. Outputs: the artifact installed at its deploy location, the running process restarted (kickstart, schema reload, cache invalidation), plus a spine event recording <code>{artifact_hash, deployed_at, role}</code>.</p>
+<table>
+<thead><tr><th>Req</th><th>Mapping for Build + Deploy</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>1. Data layer separated</td><td>Schema lives in <code>chorus.ttl</code> (the SubDomain entries); per-domain records (actors, scenarios, prior art, persistence) live in <code>urn:chorus:instances</code> via <code>chorus:contains</code> and <code>chorus:has*</code> predicates. Spec lives at this doc.</td><td>Schema OK. Records: not yet authored (deferred follow-on, see Implementation Plan).</td></tr>
+<tr><td>2. One write path</td><td>For graph records: <code>POST /api/athena/subdomains/{build-domain|deploys-domain}/{actors|scenarios|prior-art|persistence|...}</code>. For build artifacts: <code>build-signed.sh</code> CLI today; <code>chorus_build</code> MCP designed. For deploy: <code>app-state.sh deploy</code> CLI today; <code>chorus_deploy</code> MCP designed.</td><td>Graph write-path OK (existing API). MCP wrappers: not yet shipped.</td></tr>
+<tr><td>3. One read path</td><td>Graph reads via Athena domain pages. Manifest reads via <code>cat ~/.chorus/manifest.json</code> or <code>chorus-manifest</code> (planned). Spine via Loki / spine endpoint.</td><td>Manifest doesn't exist yet (P1 gap).</td></tr>
+<tr><td>4. Cite-by-ID, never paraphrase</td><td>Implementation cards cite <code>build.artifact.hashed</code>, <code>deploy.artifact.verified</code>, manifest entries, cdhash, sha256 — by name, not paraphrased contents. Role briefs cite SHAs and manifest entries.</td><td>This doc deviates: BDD scenarios named here pending move to graph (see follow-on).</td></tr>
+<tr><td>5. Hook backstops the old path</td><td>Once <code>chorus_build</code> + <code>chorus_deploy</code> MCPs ship, hooks should bite raw <code>build-signed.sh</code> / <code>app-state.sh</code> from agent sessions, redirecting to MCP. Not yet present.</td><td>Designed; not shipped.</td></tr>
+<tr><td>6. Drift test guards the contract</td><td>Build invariance contract test (<code>test-build-invariance.sh</code>) and deploy invariance contract test (<code>test-deploy-invariance.sh</code>) shipped 2026-05-07. Run on demand; cron-wiring is follow-on. Cross-machine divergence detection (Path-to-close step 2) is the design's other test surface.</td><td>Single-machine OK. Cross-machine: not started.</td></tr>
+<tr><td>7. Subdomain plumbed</td><td>Both subdomain entries exist in <code>chorus.ttl</code>; Athena pages render; MCP exposure pending the chorus_build/chorus_deploy work.</td><td>Schema OK. Pages render. MCP exposure: not yet.</td></tr>
+</tbody>
+</table>
+<p>Order discipline: this design lands first (schema + spec). Implementation cards sequence from path-to-close, one requirement at a time, not in parallel. Per ADR-028: hook backstops (req 5) earn their keep ONLY after reqs 1–4 land — shipping a hook before the typed path is the more attractive route is exactly the order-discipline violation ADR-028 names.</p>
+
+<p>Three meta-invariants the seven flow from (per ADR-028): <strong>I-1</strong> graph (or single citable spec for adapter-backed) is the source of truth, no surface caches; <strong>I-4</strong> one source, multiple call shapes (REST, MCP, SPARQL, page render all delegate to the same handler); <strong>I-10</strong> atomic per record class (build separate from deploy, both separate from version-control), not atomic across classes.</p>
+
+<h2>Overview</h2>
+<p><strong>Build domain</strong> — owns the path from source to artifact. Inputs: a git ref + a build crate name. Outputs: a versioned, hash-stable artifact in a known location, plus a manifest entry recording <code>{commit, crate, identifier, cdhash, sha256, build_time, builder_host, builder_role}</code> (fields aligned to <code>build.artifact.hashed</code> spine event).</p>
+
+<p><strong>Deploy domain</strong> — owns the path from artifact to running state. Inputs: a manifest entry. Outputs: the artifact installed at its deploy location, the running process restarted (kickstart, schema reload, cache invalidation), plus a spine event recording <code>{artifact_sha256, target, installed_cdhash, deployed_at}</code> (today's <code>deploy.artifact.verified</code>; designed <code>deploy.completed</code> with role + extended payload).</p>
 
 <p><strong>Boundary</strong> — build is a pure function of source. Deploy is a pure function of artifact. The two domains never share state; they communicate only through the manifest. This is what makes invariance possible — each domain has one input class and one output class, and both are content-addressable.</p>
 
@@ -73,70 +101,36 @@ This doc narrates <em>structure and intent</em> — diagrams, rejected paths, im
 <h3>Purpose</h3>
 <p>Source → artifact. Reproducibly.</p>
 <h3>Owner</h3>
-<p>Silas (DEC-022 derivative; build is upstream of deploy, deploy is Silas, build follows the artifact-producing concern).</p>
+<p>Silas. Reasoning: build is upstream of deploy in the path-from-source-to-running-state. Deploy ownership is Silas's per DEC-022 (operational responsibility). Build sits in the same vertical — artifact production is infrastructure, not feature work, and the boundary between build and deploy is a single owner's call to draw and enforce. Splitting build/deploy across roles introduces the same coordination overhead the design is built to refuse. (Note: DEC-022 names ops/deploy explicitly; build-as-Silas is the design's choice to keep the artifact-production-to-running-state vertical under one owner, not a literal DEC-022 clause.)</p>
 <h3>Inputs</h3>
-<p>Git commit SHA. Build target name (one of: <code>chorus-hooks</code>, <code>chorus-inject</code>, <code>chorus-hook-shim</code>, <code>chorus-api</code>, future targets).</p>
+<p>Git commit SHA. Crate name (one of: <code>chorus-hooks</code>, <code>chorus-inject</code>, <code>chorus-api</code>, future crates). One crate may produce multiple binary identifiers (e.g., <code>chorus-hooks</code> crate ships both <code>chorus-hooks</code> and <code>chorus-hook-shim</code> binaries).</p>
 <h3>Outputs</h3>
-<p>Artifact at a known path with a content-addressable name. Manifest entry. <code>build.completed</code> spine event with <code>{commit, target, artifact_hash, machine}</code>.</p>
+<p>Signed binary at a known path. Manifest entry with fields aligned to <code>build.artifact.hashed</code> spine event: <code>{commit, crate, identifier, cdhash, sha256, build_time, builder_host, builder_role}</code>. cdhash is the binding identity (per #2734); sha256 is informational and drifts with cargo+codesign timestamp behavior.</p>
 </div>
 
-<h3>Actors</h3>
+<h3>Actors (designed)</h3>
+<p style="font-size: 0.85em; color: #666;"><em>This diagram describes the designed actor model. Today's CLI-only flow is shown in the Sub-Domain Interaction Model below under "Today (current)."</em></p>
 <pre class="mermaid">
 flowchart LR
-  Role["Role / agent"] -->|"acp invokes"| AcpAtom["acp atomic step"]
-  AcpAtom -->|"build target"| BuildSurface["Build surface (build-signed.sh)"]
+  Role["Role / agent"] -->|"acp invokes"| AcpAtom["acp atomic (designed)"]
+  AcpAtom -->|"build crate"| BuildSurface["Build surface (build-signed.sh today; chorus_build MCP designed)"]
   BuildSurface -->|"reads"| GitTree["Git working tree"]
   BuildSurface -->|"writes"| ArtifactStore["Artifact store (~/.chorus/bin)"]
-  BuildSurface -->|"writes"| Manifest["Build manifest (~/.chorus/manifest.json)"]
-  BuildSurface -->|"emits"| Spine["Spine: build.completed"]
-  CI["CI workflow"] -->|"build target"| BuildSurface
-  Jeff["Jeff"] -->|"reads"| Manifest
+  BuildSurface -->|"writes"| Manifest["Build manifest (~/.chorus/manifest.json — designed, #2791)"]
+  BuildSurface -->|"emits"| Spine["Spine: build.artifact.hashed"]
+  CI["CI workflow"] -->|"build crate"| BuildSurface
+  Jeff["Jeff"] -->|"reads via chorus-manifest"| Manifest
 </pre>
 
 <h3>BDD scenarios</h3>
-
-<div class="bdd">
-<strong>Scenario: same source produces same artifact</strong>
+<p style="font-size: 0.85em; color: #666;"><em>Per ADR-028 Req 1+4 — scenarios live as <code>chorus:Scenario</code> instances in <code>urn:chorus:instances</code>, authored via <code>POST /api/athena/subdomains/build-domain/scenarios</code>. The list below names the scenarios this domain MUST have authored before completeness; the authoritative form lives at <a href="http://localhost:3340/athena/domain-detail.html?id=build-domain"><code>/athena/domain-detail.html?id=build-domain</code></a> once populated.</em></p>
 <ul>
-  <li><strong>Given</strong> commit <code>abc123</code> and target <code>chorus-hooks</code></li>
-  <li><strong>When</strong> the build runs on machine A</li>
-  <li><strong>And</strong> the build runs on machine B</li>
-  <li><strong>Then</strong> both produce artifacts with the same hash</li>
-  <li><strong>And</strong> both write identical manifest entries (modulo <code>machine</code> and <code>build_time</code>)</li>
+  <li><strong>same-source-same-cdhash</strong> — same commit + crate → identical cdhash across machines (sha256 may drift per cargo+codesign timestamp behavior; cdhash is the binding identity per #2734)</li>
+  <li><strong>source-drift-refuses-build</strong> — uncommitted changes → refuse with <code>source-not-clean</code>, no artifact written, no manifest entry</li>
+  <li><strong>artifact-already-built-reused</strong> — same commit + crate with existing manifest entry → verify by cdhash, no rebuild</li>
+  <li><strong>build-emits-one-spine-event</strong> — successful build → exactly one <code>build.artifact.hashed</code> with <code>{commit, crate, identifier, cdhash, sha256, builder_host, builder_role}</code></li>
 </ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: source drift refuses build</strong>
-<ul>
-  <li><strong>Given</strong> the working tree has uncommitted changes</li>
-  <li><strong>When</strong> <code>build-signed.sh chorus-hooks</code> runs</li>
-  <li><strong>Then</strong> it refuses with <code>source-not-clean</code> and names the dirty paths</li>
-  <li><strong>And</strong> no artifact is written</li>
-  <li><strong>And</strong> no manifest entry is recorded</li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: artifact already built is reused</strong>
-<ul>
-  <li><strong>Given</strong> an artifact for commit <code>abc123</code> target <code>chorus-hooks</code> already exists in the manifest</li>
-  <li><strong>When</strong> the build runs again for the same commit + target</li>
-  <li><strong>Then</strong> the existing artifact is verified by hash</li>
-  <li><strong>And</strong> no rebuild occurs</li>
-  <li><strong>And</strong> the manifest is unchanged</li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: build emits one spine event per artifact</strong>
-<ul>
-  <li><strong>Given</strong> a successful build of commit <code>abc123</code> target <code>chorus-hooks</code></li>
-  <li><strong>When</strong> the build completes</li>
-  <li><strong>Then</strong> exactly one <code>build.completed</code> spine event is emitted with <code>{commit, target, artifact_hash, machine}</code></li>
-  <li><strong>And</strong> the event hash matches the artifact hash</li>
-</ul>
-</div>
+<p style="font-size: 0.85em; color: #999;"><em>Authoring status: not yet populated in graph (deferred to follow-on; sequenced under build-domain).</em></p>
 
 <h2>Deploy domain</h2>
 
@@ -148,111 +142,81 @@ flowchart LR
 <h3>Inputs</h3>
 <p>A manifest entry naming the artifact to deploy. The running system's current deploy state.</p>
 <h3>Outputs</h3>
-<p>Artifact installed at deploy location. Running process restarted with new artifact in place. <code>deploy.completed</code> spine event with <code>{artifact_hash, target, deployed_at, role}</code>.</p>
+<p>Artifact installed at deploy location. Running process restarted with new artifact in place. <code>deploy.artifact.verified</code> spine event with <code>{artifact_sha256, target, installed_cdhash, deployed_at}</code> (matches the contract test event shipped 2026-05-07). Designed: <code>deploy.completed</code> with broader payload; #2780 absorbs.</p>
 </div>
 
-<h3>Actors</h3>
+<h3>Actors (designed)</h3>
+<p style="font-size: 0.85em; color: #666;"><em>This diagram describes the designed actor model. Today's CLI-only flow is shown in the Sub-Domain Interaction Model below under "Today (current)."</em></p>
 <pre class="mermaid">
 flowchart LR
-  Role["Role / agent"] -->|"acp invokes"| AcpAtom["acp atomic step"]
-  AcpAtom -->|"deploy artifact"| DeploySurface["Deploy surface (app-state.sh deploy)"]
+  Role["Role / agent"] -->|"acp invokes"| AcpAtom["acp atomic (designed)"]
+  AcpAtom -->|"deploy artifact"| DeploySurface["Deploy surface (app-state.sh deploy today; chorus_deploy MCP designed)"]
   DeploySurface -->|"reads"| Manifest["Build manifest"]
   DeploySurface -->|"reads"| ArtifactStore["Artifact store (~/.chorus/bin)"]
   DeploySurface -->|"writes"| RunPath["Run path ($PATH-resolved binary)"]
   DeploySurface -->|"kickstarts"| Process["Running process (chorus-api or launchagent)"]
   DeploySurface -->|"invalidates"| SchemaCache["MCP schema cache"]
-  DeploySurface -->|"emits"| Spine["Spine: deploy.completed"]
+  DeploySurface -->|"emits"| Spine["Spine: deploy.artifact.verified / deploy.completed"]
   TCC["macOS TCC"] -->|"grants on cdhash"| Process
-  Jeff["Jeff"] -->|"reads"| Spine
+  Jeff["Jeff"] -->|"reads via chorus-manifest"| Manifest
 </pre>
 
 <h3>BDD scenarios</h3>
-
-<div class="bdd">
-<strong>Scenario: same artifact produces same running state</strong>
+<p style="font-size: 0.85em; color: #666;"><em>Per ADR-028 Req 1+4 — scenarios live as <code>chorus:Scenario</code> instances in <code>urn:chorus:instances</code>, authored via <code>POST /api/athena/subdomains/deploys-domain/scenarios</code>. The list below names the scenarios this domain MUST have authored before completeness; the authoritative form lives at <a href="http://localhost:3340/athena/domain-detail.html?id=deploys-domain"><code>/athena/domain-detail.html?id=deploys-domain</code></a> once populated.</em></p>
 <ul>
-  <li><strong>Given</strong> artifact <code>chorus-hooks</code> with hash <code>H1</code> is in the manifest</li>
-  <li><strong>When</strong> deploy runs on machine A</li>
-  <li><strong>And</strong> deploy runs on machine B</li>
-  <li><strong>Then</strong> both run paths point to a binary with hash <code>H1</code></li>
-  <li><strong>And</strong> both emit <code>deploy.completed</code> events with the same artifact hash</li>
-  <li><strong>And</strong> the running process on both machines reports cdhash <code>H1</code></li>
+  <li><strong>same-artifact-same-running-state</strong> — same manifest entry → same cdhash on disk + same <code>deploy.artifact.verified</code> event payload across machines</li>
+  <li><strong>deploy-refuses-on-artifact-not-built</strong> — manifest has no entry for the requested <code>{crate, commit}</code> → refuse with <code>artifact-not-built</code>; no running state changes</li>
+  <li><strong>deploy-invalidates-mcp-schema-cache</strong> — deploy of <code>chorus-api</code> with new MCP schema → kickstart fires, schema cache stale, post-deploy clients see new schema</li>
+  <li><strong>deploy-preserves-cdhash-tcc-binding</strong> — deploy of signed binary → cdhash unchanged from store, TCC AppleEvents grants (#2734) survive the deploy</li>
+  <li><strong>deploy-emits-one-spine-event</strong> — successful deploy → exactly one <code>deploy.artifact.verified</code> (or designed <code>deploy.completed</code>) event per artifact</li>
+  <li><strong>rollback-uses-prior-manifest-entry</strong> — <code>app-state.sh rollback &lt;crate&gt;</code> → deploy runs against prior manifest entry, running process reports prior cdhash, event emitted with prior hash</li>
 </ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: deploy refuses on artifact-not-built</strong>
-<ul>
-  <li><strong>Given</strong> the manifest has no entry for commit <code>abc123</code> target <code>chorus-hooks</code></li>
-  <li><strong>When</strong> <code>app-state.sh deploy chorus-hooks --commit abc123</code> runs</li>
-  <li><strong>Then</strong> it refuses with <code>artifact-not-built</code></li>
-  <li><strong>And</strong> names the missing manifest entry</li>
-  <li><strong>And</strong> no running state changes</li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: deploy invalidates MCP schema cache</strong>
-<ul>
-  <li><strong>Given</strong> a deploy of <code>chorus-api</code> with a new MCP schema</li>
-  <li><strong>When</strong> deploy completes</li>
-  <li><strong>Then</strong> the running chorus-api is kickstarted</li>
-  <li><strong>And</strong> the MCP schema cache is marked stale</li>
-  <li><strong>And</strong> clients connecting after deploy see the new schema</li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: deploy preserves cdhash-to-TCC binding</strong>
-<ul>
-  <li><strong>Given</strong> a deploy of a signed binary to <code>~/.chorus/bin/</code></li>
-  <li><strong>When</strong> deploy completes</li>
-  <li><strong>Then</strong> the binary's cdhash is unchanged from the artifact in the store</li>
-  <li><strong>And</strong> TCC grants for AppleEvents (#2734) survive the deploy</li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: deploy emits one spine event per artifact</strong>
-<ul>
-  <li><strong>Given</strong> a successful deploy of artifact <code>H1</code> for target <code>chorus-hooks</code></li>
-  <li><strong>When</strong> deploy completes</li>
-  <li><strong>Then</strong> exactly one <code>deploy.completed</code> spine event is emitted with <code>{artifact_hash, target, deployed_at, role}</code></li>
-</ul>
-</div>
-
-<div class="bdd">
-<strong>Scenario: rollback uses prior manifest entry</strong>
-<ul>
-  <li><strong>Given</strong> the manifest has a prior deploy entry <code>H0</code> for target <code>chorus-hooks</code></li>
-  <li><strong>When</strong> <code>app-state.sh rollback chorus-hooks</code> runs</li>
-  <li><strong>Then</strong> deploy runs against <code>H0</code> from the manifest</li>
-  <li><strong>And</strong> the running process reports cdhash <code>H0</code></li>
-  <li><strong>And</strong> a <code>deploy.completed</code> event is emitted with <code>H0</code></li>
-</ul>
-</div>
+<p style="font-size: 0.85em; color: #999;"><em>Authoring status: not yet populated in graph (deferred to follow-on; sequenced under deploys-domain).</em></p>
 
 <h2>Sub-Domain Interaction Model</h2>
+<h3>Today (current)</h3>
+<pre class="mermaid">
+flowchart TB
+  subgraph VersionControl["Version Control domain — Kade"]
+    Commit["chorus_commit"] --> MainTip["main HEAD"]
+  end
+  subgraph Build["Build domain — Silas (CLI only)"]
+    BuildSurf["build-signed.sh (CLI)"] --> ArtifactStore["~/.chorus/bin"]
+  end
+  subgraph Deploy["Deploy domain — Silas (CLI only)"]
+    DeploySurf["app-state.sh deploy (CLI)"] --> RunPath["$PATH binary"]
+    DeploySurf --> Kickstart["launchctl kickstart"]
+  end
+  MainTip -->|"commit SHA<br/>(manual)"| BuildSurf
+  ArtifactStore -->|"content read<br/>(manual)"| DeploySurf
+  Acp["acp (today)"] -->|"merge + verify-after<br/>(commit slice only)"| Commit
+  Human["Role / human"] -->|"manual"| BuildSurf
+  Human -->|"manual"| DeploySurf
+</pre>
+<p style="font-size: 0.85em; color: #666;"><em>Today: /acp covers the commit slice (chorus_commit verify-after sequenced, #2782 shipped). Build and deploy are invoked manually from CLI; no manifest exists; no atomic cross-domain transaction.</em></p>
+
+<h3>Designed target</h3>
 <pre class="mermaid">
 flowchart TB
   subgraph VersionControl["Version Control domain — Kade"]
     Commit["chorus_commit"] --> MainTip["main HEAD"]
   end
   subgraph Build["Build domain — Silas"]
-    BuildSurf["build-signed.sh"] --> Manifest["manifest.json"]
+    BuildSurf["chorus_build (MCP)"] --> Manifest["manifest.json"]
     BuildSurf --> ArtifactStore["~/.chorus/bin"]
   end
   subgraph Deploy["Deploy domain — Silas"]
-    DeploySurf["app-state.sh deploy"] --> RunPath["$PATH binary"]
+    DeploySurf["chorus_deploy (MCP)"] --> RunPath["$PATH binary"]
     DeploySurf --> Kickstart["launchctl kickstart"]
   end
   MainTip -->|"commit SHA"| BuildSurf
   Manifest -->|"artifact ref"| DeploySurf
   ArtifactStore -->|"content-addressable read"| DeploySurf
-  Acp["acp atomic"] -->|"step 1: merge"| Commit
+  Acp["acp (atomic — DESIGNED)"] -->|"step 1: merge"| Commit
   Acp -->|"step 2: build"| BuildSurf
   Acp -->|"step 3: deploy"| DeploySurf
 </pre>
+<p style="font-size: 0.85em; color: #666;"><em>Designed: chorus_build + chorus_deploy MCPs exist; /acp invokes commit→build→deploy as one atomic transaction with rollback semantics across all three domains. Three-domain rollback is structurally hard and not addressed by any current card.</em></p>
 
 <p>Build never reads run-path state. Deploy never reads source. Each domain's input is the prior domain's named output. This is what allows invariance to be checked at each boundary independently.</p>
 
@@ -277,17 +241,18 @@ flowchart TB
 <tr><td>Build invariance</td><td><code>build-signed.sh</code> exists per binary; no manifest, no version, no cross-machine reproducibility check</td><td>No way to know whether two machines have the same artifact for the same commit</td></tr>
 <tr><td>Deploy invariance</td><td><code>app-state.sh deploy</code> exists for some services; ad-hoc kickstart for others (#2780); cdhash binding outside repo (#2734)</td><td>Running process can drift from source silently; MCP schema reload is manual; no spine event records the deploy</td></tr>
 <tr><td>/acp atomicity (#2774)</td><td>merge + build + deploy are three separate manual operations</td><td>Partial-success states (merged but not deployed) leave the system incoherent</td></tr>
-<tr><td>Working-tree precondition (#2779)</td><td>canonical chorus can sit detached HEAD, blocking <code>chorus-werk-sync</code></td><td>Build can't trust working-tree state without explicit recovery</td></tr>
+<tr><td>Working-tree recovery (#2779)</td><td><strong>SHIPPED 2026-05-07.</strong> <code>chorus-werk-sync repair</code> recovers detached canonical via plumbing.</td><td>Closed. Build can now trust canonical-on-main precondition.</td></tr>
+<tr><td>Build mutates source during build</td><td>A role rebuilding chorus-hooks edits canonical (source) without going through commit-domain — fox-in-henhouse. #2790 (in-process canonical_write_guard, shipped 2026-05-07) closes the mechanical bypass; the topology violation remains.</td><td>Build is not a pure function of source if the build process can mutate source. Design's strict separation refuses this; today's substrate allows it through the seam between version-control-domain and build-domain.</td></tr>
 </tbody>
 </table>
 
 <h2>Path to close</h2>
 <ol>
-  <li><strong>Manifest schema + writer.</strong> Define <code>~/.chorus/manifest.json</code> shape. <code>build-signed.sh</code> writes one entry per build. (Card: future, sequenced from this design.)</li>
-  <li><strong>Build invariance check.</strong> A scheduled job (or pre-deploy gate) cross-compares manifest entries by <code>{commit, target}</code> across machines; any hash mismatch is a <code>build.divergence</code> spine event. (Card: future.)</li>
-  <li><strong>Deploy spine events.</strong> <code>app-state.sh deploy</code> emits <code>deploy.completed</code> with <code>{artifact_hash, target, deployed_at, role}</code>. Same for kickstart-after-source-change (#2780) and cdhash-after-rebuild (#2734). (Card: #2780 absorbs this.)</li>
-  <li><strong>/acp atomic.</strong> <code>/acp</code> invokes <code>chorus_commit</code> → <code>chorus_build</code> → <code>chorus_deploy</code> as one MCP call with typed refusal taxonomy. (Card: #2774, re-sequenced to follow this design.)</li>
-  <li><strong>Working-tree recovery.</strong> <code>chorus-werk-sync</code> detects detached canonical and either emits a recovery hint or repairs via plumbing. (Card: #2779.)</li>
+  <li><strong>Manifest schema + writer.</strong> Define <code>~/.chorus/manifest.json</code> shape. <code>build-signed.sh</code> writes one entry per build. (Card: <strong>#2791 filed 2026-05-07</strong>, owner Silas, P1, Later.)</li>
+  <li><strong>Build invariance check.</strong> A scheduled job (or pre-deploy gate) cross-compares manifest entries by <code>{commit, target}</code> across machines; any hash mismatch is a <code>build.divergence</code> spine event. (Card: <strong>#2792 filed 2026-05-07</strong>, owner Silas, P1, Later; blocked by #2791.)</li>
+  <li><strong>Deploy spine events.</strong> <code>app-state.sh deploy</code> emits <code>deploy.completed</code> with <code>{artifact_hash, target, deployed_at, role}</code>. Same for kickstart-after-source-change (#2780) and cdhash-after-rebuild (#2734). (Card: #2780 — reassigned from Kade to Silas because the design absorbs MCP-schema-reload into the broader "deploy emits deploy.completed" contract; not chorus-api-specific.)</li>
+  <li><strong>/acp atomic across three domains. NOT YET SHIPPED.</strong> <code>/acp</code> invokes <code>chorus_commit</code> → <code>chorus_build</code> → <code>chorus_deploy</code> as one MCP call with typed refusal taxonomy. Today only the commit slice exists (#2782 shipped 2026-05-07: verify-after sequenced steps within version-control). chorus_build and chorus_deploy MCPs don't exist yet. Three-domain rollback semantics (build success + deploy fail) untouched. (Card: #2774, re-sequenced to follow this design; expect splitting into multiple cards covering each MCP + the rollback-semantics work.)</li>
+  <li><strong>Working-tree recovery. SHIPPED 2026-05-07 (#2779).</strong> <code>chorus-werk-sync repair</code> detects detached canonical and repairs via plumbing. Build's source-clean precondition is now reliable.</li>
 </ol>
 
 <h2>To-Be — designed target state</h2>
@@ -300,14 +265,15 @@ flowchart TB
   <li><em>Lockfile-asserted.</em> Repo stays small. Install reaches an external store. Network dependency at deploy time. Casual-deletability of the install target preserved.</li>
 </ul>
 Today's evidence leans toward committed binaries (Jeff 2026-05-07: "code-and-binaries-together") but the trade-off matters across cross-machine and disk-budget concerns.
+<p style="margin-top: 8px;"><strong>Decision impacts version-control vertical.</strong> Committed binaries change chorus_commit's contract (paths grow, push/pull bandwidth, hash characteristics, possible git LFS). Lockfile-asserted introduces a new artifact-store fetch protocol crossing chorus_commit's boundary. Either way: Kade in the room when this lands.</p>
 </div>
 
 <h2>Gaps to close</h2>
-<div class="gap"><strong>P1.</strong> Manifest does not exist.</div>
-<div class="gap"><strong>P1.</strong> Cross-machine artifact divergence is undetected.</div>
-<div class="gap"><strong>P1.</strong> Deploy emits no spine event (#2780).</div>
-<div class="gap"><strong>P1.</strong> /acp is not atomic (#2774).</div>
-<div class="gap"><strong>P1.</strong> Working-tree recovery has no clean tool path (#2779).</div>
+<div class="gap"><strong>P1.</strong> Manifest does not exist (#2791 filed).</div>
+<div class="gap"><strong>P1.</strong> Cross-machine artifact divergence is undetected (#2792 filed; blocked by #2791).</div>
+<div class="gap"><strong>P1.</strong> Deploy emits no spine event (#2780, owner Silas, Later).</div>
+<div class="gap"><strong>P1.</strong> /acp is not atomic across three domains (#2774; commit slice shipped via #2782 2026-05-07; build + deploy slices unstarted; rollback semantics untouched).</div>
+<div class="gap"><strong>CLOSED 2026-05-07.</strong> Working-tree recovery (#2779) — <code>chorus-werk-sync repair</code> shipped.</div>
 <div class="gap"><strong>P2.</strong> TCC cdhash binding outside repo (#2734) — design must say keep, collapse, or formalize.</div>
 
 <h2>Implementation Plan</h2>
@@ -363,10 +329,13 @@ Today's evidence leans toward committed binaries (Jeff 2026-05-07: "code-and-bin
   <li>#2779 — chorus-werk-sync detached-HEAD recovery.</li>
   <li>#2780 — chorus-api MCP schema reload.</li>
   <li>DEC-022 — ops responsibility, deploy owner = Silas.</li>
+  <li>ADR-028 — substrate-class domain contract; the seven completeness requirements this design conforms to.</li>
+  <li>#2782 — chorus_acp verify-after sequenced steps (commit slice of /acp atomicity, shipped 2026-05-07).</li>
+  <li>#2790 — in-process canonical_write_guard in chorus-hook-shim (closes the build-mutates-source bypass, shipped 2026-05-07).</li>
 </ul>
 
 <div class="footer">
-Generated 2026-05-07 — Silas (#2775). Source of truth for live data: <code>/athena/domain-detail.html?id=build-domain</code> · <code>/athena/domain-detail.html?id=deploy-domain</code>.
+Generated 2026-05-07 — Silas (#2775). Source of truth for live data: <code>/athena/domain-detail.html?id=build-domain</code> · <code>/athena/domain-detail.html?id=deploys-domain</code>.
 </div>
 
 </body>
