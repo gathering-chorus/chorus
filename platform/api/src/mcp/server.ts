@@ -1112,6 +1112,21 @@ async function executeAcp(
     /* fall through; will fail at commit */
   }
 
+  // #2793 — refuse werk-on-main with typed reason. gh pr create with
+  // --head main --base main is unrecoverable in-place; pre-#2793 the call
+  // marched on and produced 4 different ad-hoc gh-improvisations in one
+  // session (2026-05-07: gh-merge-direct, cards-done-direct, force-push,
+  // manual-PR). Refusing here gives operators one named recovery
+  // (chorus-werk repoint) instead of inventing a path. Builds on #2782's
+  // verify-after sequenced-steps shape: new typed refusal at a new step.
+  if (branch === 'main') {
+    const detail = cardId !== null
+      ? `werk is on main; run: chorus-werk repoint ${role} ${role}/${cardId}`
+      : `werk is on main and no card resolved from branch or board; pull a card first or repoint to ${role}/<card-id>`;
+    emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pre-pr-create', reason: 'werk-on-main', detail });
+    throw new Error(`chorus_acp refused: werk-on-main — ${detail}`);
+  }
+
   // Commit (skip if no staged changes — gh push will be no-op).
   stepEmit('commit', 'started', { branch });
   try {
