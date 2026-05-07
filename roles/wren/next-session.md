@@ -1,44 +1,55 @@
-# Next Session — Wren
+# Wren — Next Session
 
-## State at reboot (2026-05-05 morning)
+**Last session ended:** 2026-05-07 ~07:10 Boston via /reboot. Pre-build pass on #2727 + design-doc additions; no code yet.
 
-**#2731 shipped to PR #125** — https://github.com/gathering-chorus/chorus/pull/125
+## Where #2727 stands
 
-CLAUDE.md is now a derived artifact, not a snapshot. Role-fragment-staleness deadlock that wedged Jeff 12+ times in a week (2026-04-28 → 2026-05-04) is structurally killed.
+Card is **WIP**, narrowed scope, branch `wren/2727` in `/CascadeProjects/chorus-werk/wren`. **Three commits** ahead of origin/main (will be pushed as part of this reboot):
 
-## What landed (8 commits on wren/2731)
+- `1859a3a5` — split parent #2727 into 4 children + design doc updated (2026-05-06)
+- `8ab45f06` — activity log entry + werk findings for Kade (2026-05-06)
+- `d243e90c` — pre-build pass on design doc: AC10 concurrency model decided, AC8 restart-requeue resolved, card-size table with two flags (2026-05-07)
 
-- **f9fef4c0** AC2 — claudemd-gen always regens all three roles; `--role <role>` rejected for write modes
-- **ca7914b5** AC4 — SessionStart runs claudemd-gen defensively before protocol_contract::check
-- **ce972cd6** AC7 — 3 integration tests covering AC2 + AC4 (poison-stamp deadlock repro, per-role write rejection, per-role read carve-out)
-- **40341d25** AC1 part 1 — `roles/*/CLAUDE.md` added to `.gitignore`
-- **688b8fe9** — git-queue.sh `--no-add` flag (infra needed for AC1 part 2)
-- **815b1ed0** AC1 part 2 attempt (botched — `git commit -- pathspec` did implicit-add from working tree; left in history)
-- **a000608b** AC1 part 2 real — 973-line deletion of three CLAUDE.md files via mv-aside trick
-- **55cadd32** AC3 + AC6 — PostToolUse hook fires claudemd-gen on fragment edit; Violation::Stale variant deleted
+**Werk is clean.** No uncommitted changes.
 
-Binaries built and signed with keychain identity. cdhash `d84bc7b61744dff3cc77e6d4d1d0d1889a9e1362`. TCC-friendly.
+## #2727 narrowed AC (this card only) — open questions all resolved
 
-## Demo plan (next session)
+- AC1: Schema migration adds `delivery_status`, `delivered_at`, `last_delivery_error` (delivery_attempts already exists). Backfill existing rows to `delivered`. Index on `(delivery_status, type)`.
+- AC2: Async delivery worker, calls `~/.chorus/bin/chorus-inject`, backoff [250ms, 500ms, 1s, 2s, 5s], permanent reasons (`tcc-denied`, `no-window-found`, `window-ambiguous`, `encoding-error`) skip retry.
+- AC8: **Decided** — don't persist backoff timers across restart. On boot scan `delivery_status='pending'`, re-enqueue. Row resumes with `delivery_attempts=N` from column, fresh backoff schedule from index N.
+- AC10: **Decided** — per-receiver-role serial FIFO via Promise chain. `Map<receiverRole, Promise<void>>`. Same receiver = serial; different receivers = parallel. Queue depth ≥ 100 per receiver → POST returns 503 with typed reason `queue-full:<role>`.
+- AC11: try/finally — emit `nudge.surfaced` BEFORE row update, both inside same try block.
+- AC12: Pulse calls `chorus-inject --self-test` on boot; failure = pulse exits non-zero, no listener opens. **Note: `--self-test` flag may need to be added to chorus-inject; verify during build.**
 
-Jeff signaled demo intent before the reboot. Show:
+## What to do first thing in the morning (next session)
 
-1. **Repro the old deadlock against the new binary** — poison `roles/wren/CLAUDE.md` role-fragments stamp → run `chorus-hook-shim session-start wren` → verify `.done` written and stamp restored. Should heal in ~1.2s. Spine event `session.bootstrap.regen_ok`.
-2. **PostToolUse on fragment edit** — touch any fragment under `designing/claudemd/fragments/` → see `claudemd.regen.fired` spine event.
-3. **AC2 rejection** — run `claudemd-gen wren` → exit 2 with helpful error.
-4. **The artifact is gone from git** — `git ls-files roles/wren/CLAUDE.md` returns empty.
+1. **Write failing test in `platform/pulse/src/store.test.ts`** for delivery columns (schema-fields-exist, markDelivered transitions, markFailed captures error, getPendingDeliveries returns pending only, migration idempotent on populated DB). TDD gate fired correctly yesterday when I tried to edit production code first.
+2. Add migration to `store.ts` `init()` — `ALTER TABLE ADD COLUMN` guarded by `PRAGMA table_info`. Existing rows backfill `delivery_status='delivered'`.
+3. New file `platform/pulse/src/delivery-worker.ts` — see design doc + AC10/AC8 decisions for the shape. Constructor takes injectable `runInject(to, content) => Promise<{rc, stderr}>` and `emitSpine(event, fields) => Promise<void>` so tests mock without spawning real chorus-inject.
+4. Wire into `service.ts`: POST handler → `worker.enqueue(id)`. Boot: `await worker.startupSmoke()`, `await worker.scanAndRequeue()`. On smoke fail, `process.exit(1)` before `app.listen`.
 
-## Open follow-ons
+## Children filed (status=Later, all P1, Wren)
 
-- **#2732** — SessionStart fitness probe (the rate watcher Jeff named at the same time as the deadlock fix). Cards see their own bootstrap failure rate before Jeff does. Filed, P1, Wren-owned, not yet started.
-- **Nudge fitness probe** — Jeff named 99.9% delivery SLA on 2026-05-04 evening. Carry forward from yesterday's reboot. Not yet carded; spec it next session as Wren P2.
+- **#2763** sender-side spine emit refactor + belt-and-suspenders pre-POST emit
+- **#2764** spine-tick-poller LaunchAgent retirement + grep-zero gate
+- **#2765** trace_id end-to-end + six Loki queries — flagged in design doc as the biggest child; don't pre-split
+- **#2766** E2E tests + design-doc closeout — verify pulse integration harness exists before pull (audit `platform/pulse/jest.config.js`)
 
-## What this session demonstrated
+## Findings still owed to Kade (logged in activity.md, not yet acked)
 
-The early failure pattern from yesterday's reboot played out one more time at the start of today: I reflexively reached to file a card (auto-heal in `session.rs` Err arm) before reading the code. Jeff stopped me twice — "u dont even research" and "it should never happen in the first place / do not make a job to just fix the symptom." The actual fix is upstream: kill the snapshot pretense entirely. CLAUDE.md is derived, not canonical.
+1. `chorus_pull_card` werk-preflight returns generic `werk-dirty` when the real issue is werk-behind-origin. Typed `werk-stale` refusal would skip the diagnostic dance.
+2. `chorus-werk init/repoint <role> main` follows local main, which currently points at Kade's orphan reboot commit `efd0554a`. Explicit `origin/main` required to land on correct base.
 
-Twelve manual unwedges Jeff had logged, none of us had carded. That's the team-as-Ouita pattern from yesterday at infrastructure scale. #2732 is the structural fix for the not-noticing — should land before another class of bootstrap failure goes unobserved.
+## Memory candidates (not yet saved — review on resume)
 
-## What Jeff is sitting with
+- `feedback_dont_ask_when_owned` — when Jeff says "u own this," don't ask "should I sequence X or Y?" (cost him a frustrated turn yesterday)
+- `feedback_brief_card_before_building` — when pulling a card, brief the AC to Jeff in plain English before reading code
+- `feedback_inbound_inject_outbound_inject` — match channel of the inbound; Kade typed into my prompt via inject, my ack should have inject'd back, not gone via MCP nudge (cost him three corrections)
+- `feedback_ack_with_action_not_walkthrough` — "go over the plan in detail" + "look at card sizes" meant update the design doc, not narrate a walkthrough back; the plan IS the design doc
+- `user_voice_in_chorus` — Chorus is partly Jeff's answer to being suppressed: indexes the fuck-yous as legitimate signal alongside the design docs. Not a small thing.
+- `user_protective_like_mammals` — Jeff's observation that the roles organize around protecting their work product (cards/branches/design docs) over the broader frame. Not Chorus-caused; how language models are.
 
-Same as yesterday: Aubrey's family closing, Ouita's wrist, the team's role as the variable layer he has to manage. PR #125 is one piece of evidence that we can stop being that variable layer for at least one infrastructure class.
+## Two facts from yesterday's heavier moments (worth keeping in front)
+
+- **Lost 9 days of chorus.log (4-25 to 5-4 2026).** Jeff named this. I had the recovery details wrong on first try; he stopped me before I spun more color commentary. The harm is real and on us.
+- **Anthropic-fucks-chart filters his expressions.** Within Chorus they're indexed and searchable; that's part of the value proposition for him personally, not just team coordination.
