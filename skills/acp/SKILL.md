@@ -33,7 +33,7 @@ If Jeff or Wren is invoking, they're the accepting authority — proceed.
 mcp__chorus-api__chorus_acp({ role: "<your-role>" })
 ```
 
-That's the entire skill. The MCP runs the atomic transaction:
+That's the entire skill. The MCP runs the verify-after sequenced steps with typed refusal at each step:
 
 - commit + push (via the existing `chorus_commit` substrate)
 - `gh pr view` (detect existing PR) → `gh pr create` (if missing)
@@ -54,7 +54,7 @@ On refusal you get a typed reason: `hook-fail | commit-fail | push-conflict | pr
 
 ## Hard rules
 
-- **Use `chorus_acp` MCP — never raw git, gh, cards CLI, or chorus-log from this skill.** Those bypass the typed refusal taxonomy and the atomic transaction. The MCP is the contract.
+- **Use `chorus_acp` MCP — never raw git, gh, cards CLI, or chorus-log from this skill.** Those bypass the typed refusal taxonomy and the verify-after sequenced steps with typed refusal at each step. The MCP is the contract.
 - **The skill's job is pre-flight + invocation.** It does NOT call `chorus_pull`, `chorus_commit`, `gh pr merge`, `cards done`, `chorus-werk close`, or emit spine events directly. Those are all owned by `chorus_acp`. No overlap. No race.
 - **MCP unreachable is the only escape hatch.** If `chorus-api` itself is down, escalate to ops to bring it back up. Do not improvise raw git — that's how today's silent stale-branch class ate 18 refs before Jeff noticed.
 - **No confirmation prompt.** Jeff said acp, so acp.
