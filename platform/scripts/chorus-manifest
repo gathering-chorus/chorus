@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+# chorus-manifest — read/write/verify the build manifest at ~/.chorus/manifest.json (#2791).
+#
+# Why: build-domain has no machine-readable record of what was built when, by whom,
+# at which commit, with which cdhash. binary.deployed and build.artifact.hashed spine
+# events are emitted but require log-grepping to query. Manifest is the queryable cache.
+#
+# Manifest is the cross-domain interface for build-domain (writes) and deploy-domain
+# (reads). Per ADR-028 adapter-backed mapping, this is the canonical read surface for
+# build state.
+#
+# Usage:
+#   chorus-manifest add <commit> <crate> <identifier> <cdhash> <sha256> <build_time> <builder_host> <builder_role>
+#       Idempotent on {commit, crate, identifier, cdhash}. Emits manifest.entry.added on
+#       new entry only.
+#
+#   chorus-manifest get <crate> --commit <sha>
+#       Print entry as JSON, exit 0; exit 2 with 'not-found' to stderr if missing.
+#
+#   chorus-manifest list [--crate <X>] [--commit <Y>]
+#       Print JSON array of matching entries (empty array if none), exit 0.
+#
+#   chorus-manifest verify
+#       Cross-check every manifest entry's stored cdhash against the actual cdhash
+#       of ~/.chorus/bin/<identifier>. Exit 0 on full match, exit 1 with diff on drift.
+#
+#   chorus-manifest rebuild-from-spine <log-path>
+#       Read all manifest.entry.added events from <log-path> (newline-delimited
+#       JSON records, one per line, in chorus.log format) and reconstruct the manifest.
+#       Existing manifest preserved as <path>.before-rebuild.
+#
+# Env overrides:
+#   CHORUS_MANIFEST_PATH  — manifest file path (default: $HOME/.chorus/manifest.json)
+#   CHORUS_BIN_DIR        — install dir for verify (default: $HOME/.chorus/bin)
+#   CHORUS_TEST_SPINE_LOG — write spine events here instead of via chorus-log (test mode)
+#   CHORUS_HOME           — repo root (default: /Users/jeffbridwell/CascadeProjects/chorus)
+#
+# Concurrency: single-writer-per-machine. mkstemp+mv is atomic for whole-file
+# replace, but the read-modify-write cycle (read JSON → check idempotency →
+# append → write) is NOT atomic across parallel callers. Two simultaneous
+# `chorus-manifest add` calls can race and lose one entry (last-write-wins).
+# Build flow today is serial (build-signed.sh runs one binary at a time, even
+# in the chorus-hooks shortcut), so this constraint holds. If a future build
+# orchestrator runs parallel signs, add a flock around add OR move to a
+# row-per-line append format. Documented per Kade's #2791 review.
+#
+# Card: #2791. Service design: designing/docs/build-and-deploy-service-design.html.
+
+set -uo pipefail
+
+MANIFEST_PATH="${CHORUS_MANIFEST_PATH:-$HOME/.chorus/manifest.json}"
+BIN_DIR="${CHORUS_BIN_DIR:-$HOME/.chorus/bin}"
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+
+usage() {
+  sed -n '3,30p' "$0" | sed 's/^# \?//'
+  exit 2
+}
+
+# Initialize manifest with empty entries if missing.
+init_manifest() {
+  if [ ! -f "$MANIFEST_PATH" ]; then
+    mkdir -p "$(dirname "$MANIFEST_PATH")"
+    echo '{"version": "1.0.0", "entries": []}' > "$MANIFEST_PATH"
+  fi
+}
+
+# Atomic write: tempfile + mv. Mirrors chorus-bin-install pattern.
+atomic_write() {
+  local content="$1"
+  local tmp="$MANIFEST_PATH.tmp.$$"
+  printf '%s\n' "$content" > "$tmp"
+  mv -f "$tmp" "$MANIFEST_PATH"
+}
+
+emit_spine() {
+  # Emit manifest.entry.added event. Test mode writes to CHORUS_TEST_SPINE_LOG
+  # so tests don't depend on a working chorus-log in the test temp $HOME.
+  local commit="$1" crate="$2" identifier="$3" cdhash="$4" sha256="$5"
+  local build_time="$6" builder_host="$7" builder_role="$8"
+  if [ -n "${CHORUS_TEST_SPINE_LOG:-}" ]; then
+    cat >> "$CHORUS_TEST_SPINE_LOG" <<EOF
+manifest.entry.added | $builder_role commit=$commit crate=$crate identifier=$identifier cdhash=$cdhash sha256=$sha256 build_time=$build_time builder_host=$builder_host builder_role=$builder_role
+EOF
+  elif command -v chorus-log >/dev/null 2>&1; then
+    chorus-log manifest.entry.added "$builder_role" \
+      "commit=$commit" "crate=$crate" "identifier=$identifier" \
+      "cdhash=$cdhash" "sha256=$sha256" "build_time=$build_time" \
+      "builder_host=$builder_host" "builder_role=$builder_role" >/dev/null 2>&1 || true
+  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
+    "$CHORUS_HOME/platform/scripts/chorus-log" \
+      manifest.entry.added "$builder_role" \
+      "commit=$commit" "crate=$crate" "identifier=$identifier" \
+      "cdhash=$cdhash" "sha256=$sha256" "build_time=$build_time" \
+      "builder_host=$builder_host" "builder_role=$builder_role" >/dev/null 2>&1 || true
+  fi
+}
+
+cmd_add() {
+  if [ $# -lt 8 ]; then
+    echo "usage: chorus-manifest add <commit> <crate> <identifier> <cdhash> <sha256> <build_time> <builder_host> <builder_role>" >&2
+    exit 2
+  fi
+  local commit="$1" crate="$2" identifier="$3" cdhash="$4" sha256="$5"
+  local build_time="$6" builder_host="$7" builder_role="$8"
+  init_manifest
+
+  # Idempotency check + entry validation + append in python.
+  # Validation is hand-rolled (no jsonschema dependency); enforces the same
+  # constraints the schema declares: required fields non-empty, cdhash 40 hex,
+  # sha256 64 hex, commit 7-40 hex, builder_role in known set, ISO 8601
+  # build_time. Refusal exits non-zero with reason — per Kade's #2791 review,
+  # "validated" must mean refused-on-malformed, not aspirational.
+  local result
+  result=$(MANIFEST_PATH="$MANIFEST_PATH" \
+    COMMIT="$commit" CRATE="$crate" IDENTIFIER="$identifier" CDHASH="$cdhash" \
+    SHA256="$sha256" BUILD_TIME="$build_time" \
+    BUILDER_HOST="$builder_host" BUILDER_ROLE="$builder_role" \
+    python3 <<'PY'
+import json, os, re, sys
+
+path = os.environ['MANIFEST_PATH']
+with open(path) as f:
+    m = json.load(f)
+
+new_entry = {
+    "commit": os.environ['COMMIT'],
+    "crate": os.environ['CRATE'],
+    "identifier": os.environ['IDENTIFIER'],
+    "cdhash": os.environ['CDHASH'],
+    "sha256": os.environ['SHA256'],
+    "build_time": os.environ['BUILD_TIME'],
+    "builder_host": os.environ['BUILDER_HOST'],
+    "builder_role": os.environ['BUILDER_ROLE'],
+}
+
+# Validation per schema (designing/schemas/manifest.json).
+def fail(msg):
+    print(f"validation: {msg}", file=sys.stderr)
+    sys.exit(3)
+
+required = ["commit", "crate", "identifier", "cdhash", "sha256", "build_time", "builder_host", "builder_role"]
+for f_ in required:
+    v = new_entry[f_]
+    if not isinstance(v, str) or not v:
+        fail(f"field {f_} must be non-empty string (got {v!r})")
+if not re.fullmatch(r"[a-f0-9]{7,40}", new_entry["commit"]):
+    fail(f"commit must be 7-40 lowercase hex (got {new_entry['commit']!r})")
+if not re.fullmatch(r"[a-f0-9]{40}", new_entry["cdhash"]):
+    fail(f"cdhash must be 40 lowercase hex (got {new_entry['cdhash']!r})")
+if not re.fullmatch(r"[a-f0-9]{64}", new_entry["sha256"]):
+    fail(f"sha256 must be 64 lowercase hex (got {new_entry['sha256']!r})")
+if new_entry["builder_role"] not in ("wren", "silas", "kade", "system"):
+    fail(f"builder_role must be one of wren/silas/kade/system (got {new_entry['builder_role']!r})")
+if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", new_entry["build_time"]):
+    fail(f"build_time must be ISO 8601 UTC (YYYY-MM-DDTHH:MM:SSZ) (got {new_entry['build_time']!r})")
+
+key = (new_entry["commit"], new_entry["crate"], new_entry["identifier"], new_entry["cdhash"])
+existing_keys = {(e["commit"], e["crate"], e["identifier"], e["cdhash"]) for e in m["entries"]}
+
+if key in existing_keys:
+    print("idempotent")
+else:
+    m["entries"].append(new_entry)
+    print(json.dumps(m, indent=2))
+PY
+  )
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # python validation failed — surface its stderr by re-exiting with same code
+    return "$rc"
+  fi
+  if [ "$result" = "idempotent" ]; then
+    # No write, no spine emit
+    return 0
+  fi
+  atomic_write "$result"
+  emit_spine "$commit" "$crate" "$identifier" "$cdhash" "$sha256" "$build_time" "$builder_host" "$builder_role"
+}
+
+cmd_get() {
+  local crate="" commit=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --commit) commit="$2"; shift 2 ;;
+      *) [ -z "$crate" ] && crate="$1"; shift ;;
+    esac
+  done
+  if [ -z "$crate" ] || [ -z "$commit" ]; then
+    echo "usage: chorus-manifest get <crate> --commit <sha>" >&2
+    exit 2
+  fi
+  init_manifest
+
+  MANIFEST_PATH="$MANIFEST_PATH" CRATE="$crate" COMMIT="$commit" python3 <<'PY'
+import json, os, sys
+with open(os.environ['MANIFEST_PATH']) as f:
+    m = json.load(f)
+crate = os.environ['CRATE']
+commit = os.environ['COMMIT']
+matches = [e for e in m["entries"] if e["crate"] == crate and e["commit"] == commit]
+if not matches:
+    print(f"not-found: crate={crate} commit={commit}", file=sys.stderr)
+    sys.exit(2)
+# Return the most recent if multiple identifiers (one crate may produce many)
+print(json.dumps(matches[-1]))
+PY
+}
+
+cmd_list() {
+  local crate="" commit=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --crate)  crate="$2";  shift 2 ;;
+      --commit) commit="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  init_manifest
+
+  MANIFEST_PATH="$MANIFEST_PATH" FILTER_CRATE="$crate" FILTER_COMMIT="$commit" python3 <<'PY'
+import json, os
+with open(os.environ['MANIFEST_PATH']) as f:
+    m = json.load(f)
+fc = os.environ.get('FILTER_CRATE') or None
+fcm = os.environ.get('FILTER_COMMIT') or None
+out = m["entries"]
+if fc:
+    out = [e for e in out if e["crate"] == fc]
+if fcm:
+    out = [e for e in out if e["commit"] == fcm]
+print(json.dumps(out))
+PY
+}
+
+cmd_verify() {
+  init_manifest
+
+  # For each entry, check that BIN_DIR/<identifier>'s actual cdhash matches stored cdhash.
+  # Exit 0 if all match. Exit 1 with diff if any mismatch.
+  local mismatches=0
+  local entries
+  entries=$(MANIFEST_PATH="$MANIFEST_PATH" python3 <<'PY'
+import json, os
+with open(os.environ["MANIFEST_PATH"]) as f:
+    m = json.load(f)
+for e in m["entries"]:
+    print(f"{e['identifier']}\t{e['cdhash']}\t{e['commit']}\t{e['crate']}")
+PY
+)
+  if [ -z "$entries" ]; then
+    echo "manifest empty — nothing to verify"
+    return 0
+  fi
+  while IFS=$'\t' read -r identifier cdhash commit crate; do
+    local installed="$BIN_DIR/$identifier"
+    if [ ! -f "$installed" ]; then
+      echo "MISSING: $identifier (commit $commit, crate $crate) — manifest has cdhash $cdhash but $installed not on disk"
+      mismatches=$((mismatches + 1))
+      continue
+    fi
+    local actual_cdhash
+    actual_cdhash=$(codesign -dvvv "$installed" 2>&1 | grep '^CDHash=' | head -1 | sed 's/^CDHash=//')
+    actual_cdhash="${actual_cdhash:-unknown}"
+    if [ "$actual_cdhash" != "$cdhash" ]; then
+      echo "MISMATCH: $identifier (commit $commit, crate $crate) — manifest cdhash=$cdhash, installed cdhash=$actual_cdhash, drift detected"
+      mismatches=$((mismatches + 1))
+    fi
+  done <<< "$entries"
+  if [ "$mismatches" -gt 0 ]; then
+    echo "verify FAIL: $mismatches mismatch(es)"
+    return 1
+  fi
+  echo "verify PASS: all manifest entries match installed cdhash"
+}
+
+cmd_rebuild_from_spine() {
+  if [ $# -lt 1 ]; then
+    echo "usage: chorus-manifest rebuild-from-spine <log-path>" >&2
+    exit 2
+  fi
+  local log_path="$1"
+  if [ ! -f "$log_path" ]; then
+    echo "spine log not found: $log_path" >&2
+    exit 3
+  fi
+
+  # Preserve existing manifest before overwrite
+  if [ -f "$MANIFEST_PATH" ]; then
+    cp -p "$MANIFEST_PATH" "${MANIFEST_PATH}.before-rebuild"
+  fi
+
+  # Parse manifest.entry.added events from log. Two formats supported:
+  #   1. Pipe-style:   "manifest.entry.added | <role> commit=X crate=Y ..."
+  #   2. JSON spine:   {"event":"manifest.entry.added","commit":"X",...}
+  MANIFEST_PATH="$MANIFEST_PATH" LOG_PATH="$log_path" python3 <<'PY'
+import json, os, re, sys
+
+log_path = os.environ['LOG_PATH']
+manifest_path = os.environ['MANIFEST_PATH']
+
+entries = []
+seen = set()  # (commit, crate, identifier, cdhash) tuples
+
+def parse_kv_form(rest):
+    """Parse 'commit=X crate=Y ...' style after the pipe."""
+    fields = {}
+    for tok in rest.split():
+        if '=' in tok:
+            k, _, v = tok.partition('=')
+            fields[k] = v
+    # Strip leading role token (e.g., 'silas') if present before fields
+    return fields
+
+with open(log_path) as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        # JSON spine format
+        if line.startswith('{'):
+            try:
+                d = json.loads(line)
+                if d.get('event') != 'manifest.entry.added':
+                    continue
+                e = {k: d.get(k, '') for k in ('commit', 'crate', 'identifier', 'cdhash', 'sha256', 'build_time', 'builder_host', 'builder_role')}
+            except json.JSONDecodeError:
+                continue
+        elif 'manifest.entry.added' in line:
+            # Pipe form: "manifest.entry.added | role kv kv kv ..."
+            if '|' not in line:
+                continue
+            _, _, rest = line.partition('|')
+            fields = parse_kv_form(rest)
+            e = {k: fields.get(k, '') for k in ('commit', 'crate', 'identifier', 'cdhash', 'sha256', 'build_time', 'builder_host', 'builder_role')}
+        else:
+            continue
+
+        key = (e['commit'], e['crate'], e['identifier'], e['cdhash'])
+        if not all(key):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(e)
+
+manifest = {"version": "1.0.0", "entries": entries}
+with open(manifest_path, 'w') as f:
+    json.dump(manifest, f, indent=2)
+print(f"rebuilt {len(entries)} entries from {log_path}", file=sys.stderr)
+PY
+}
+
+case "${1:-}" in
+  add)                shift; cmd_add "$@" ;;
+  get)                shift; cmd_get "$@" ;;
+  list)               shift; cmd_list "$@" ;;
+  verify)             shift; cmd_verify "$@" ;;
+  rebuild-from-spine) shift; cmd_rebuild_from_spine "$@" ;;
+  ""|--help|-h|help)  usage ;;
+  *) echo "chorus-manifest: unknown subcommand '$1'" >&2; usage ;;
+esac
