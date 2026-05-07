@@ -1,6 +1,14 @@
 {
   "env": {
-    "DEPLOY_ROLE": "kade"
+    "DEPLOY_ROLE": "kade",
+    "CHORUS_ROLE": "kade",
+    "CHORUS_WERK_ENABLE": "1",
+    "CHORUS_HOME": "/Users/jeffbridwell/CascadeProjects/chorus",
+    "CHORUS_WERK_BASE": "/Users/jeffbridwell/CascadeProjects/chorus-werk",
+    "CHORUS_BIN": "/Users/jeffbridwell/.chorus/bin",
+    "KADE_WERK": "/Users/jeffbridwell/CascadeProjects/chorus-werk/kade",
+    "WREN_WERK": "/Users/jeffbridwell/CascadeProjects/chorus-werk/wren",
+    "SILAS_WERK": "/Users/jeffbridwell/CascadeProjects/chorus-werk/silas"
   },
   "hooks": {
     "SessionStart": [
