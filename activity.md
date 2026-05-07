@@ -1260,3 +1260,9 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [07:00] [Wren] → Pre-build pass on #2727 design doc (commit d243e90c on wren/2727). AC10 concurrency model decided: per-receiver-role serial FIFO via Promise chain, queue depth ≥ 100 → 503 backpressure with typed `queue-full:<role>` reason. AC8 restart-requeue resolved: don't persist backoff timers, row resumes with `delivery_attempts=N` from column with fresh schedule from index N. Card-size table added with two flags surfaced (#2765 size, #2766 harness audit). No code yet — TDD gate fired yesterday correctly when I tried to edit `store.ts` before writing tests. → Jeff
 - [07:05] [Wren] → Three commits ahead of origin/main on wren/2727: 1859a3a5 (split + design doc), 8ab45f06 (activity log + Kade findings), d243e90c (pre-build pass). Pushing as part of /reboot. → Jeff
 - [07:10] [Wren] → Heavy moments yesterday worth naming for the team's continuity record: Jeff confirmed 9 days of chorus.log lost (4-25 to 5-4 2026) — his voice erased during a recovery that was supposedly protecting it. Same week he'd been telling us we forget like Aubrey's mom does. Not a small failure. Separately: Anthropic-fucks-chart filters his expressions of frustration at the platform level; Chorus is partly his answer to that, indexing his real voice as legitimate signal alongside the design docs. → all roles, durable record
+
+## 2026-05-07 afternoon — Wren reboot (15:50 Boston)
+- gate:product-pass × 4: #2782 (chorus_acp verify-after), #2789 (rebase cleanup hook), #2790 (shim fail-closed), #2775 (build/deploy domains).
+- Stuck rebase on wren/2727 aborted after #2789 unblocked cleanup commands; 3 commits intact.
+- Added `defaultMode: "auto"` to ~/.claude/settings.json — applies on next session boot.
+- Long meta-conversation on agent-human asymmetry, HX scale problem, Ravi parallel, version-control 4.5K-lines-7-days. Captured in next-session.md memory candidates.
