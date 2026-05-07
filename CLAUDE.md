@@ -58,7 +58,7 @@ The protected primitive `/chorus/roles/<role>/` IS session-start is preserved �
 
 Substrate scripts:
 - `platform/scripts/chorus-werk` — `init / repoint / remove / status / pull / close`
-- `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical
+- `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical. Subcommands: default sync; `repair` (#2779) recovers a detached canonical by re-attaching HEAD to main, fast-forwarding to origin/main, and aligning the working tree. Use when sync aborts with "canonical HEAD is detached" — happens when an unpushed peer commit lands directly on canonical between syncs (cost ~30 min on 2026-05-07 to find the plumbing under pressure; `repair` makes that a one-command operation).
 - `platform/scripts/chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 
 Branch lifecycle (#2740): `chorus-werk close <role> <card-id>` closes the role's card branch end-to-end — verifies card is Done, refuses on dirty werk, detaches werk at main's tip, deletes local branch, attempts remote-branch cleanup, emits `card.branch.closed` spine event. /acp wires it as the final step (gated by `CHORUS_WERK_ENABLE=1`). Without this, every /acp leaves a stale local + remote branch behind — exactly what bit the team 2026-05-06 (15 stale wren remotes + 3 kade remotes accumulated unnoticed before manual cleanup).
