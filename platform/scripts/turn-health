@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# turn-health — per-turn tool-call failure surface for a day.
+#
+# Scans Claude Code session jsonl files for tool_result blocks with
+# unambiguous error markers (is_error, BLOCKED:, MCP refusals, harness errors,
+# hook blocks). Aggregates by category + role. Companion to commit-health:
+# commit-health checks repo state, turn-health checks turn-level friction.
+#
+# Lens: agent-UX (what the agent actually saw as a tool failure). For the
+# ops lens — daemon-side errors, spine-emitted failure events, system-level
+# faults — query chorus.log instead. Both lenses are valid and complementary;
+# this one shows where agent turns hit walls.
+#
+# Usage:
+#   turn-health           — today
+#   turn-health 2026-05-06 — specific date (YYYY-MM-DD)
+
+set -uo pipefail
+
+DATE="${1:-$(date '+%Y-%m-%d')}"
+PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+
+if [ ! -d "$PROJECTS_DIR" ]; then
+  echo "FAIL: $PROJECTS_DIR not a dir" >&2
+  exit 2
+fi
+
+python3 - "$DATE" "$PROJECTS_DIR" << 'PY'
+import json, os, glob, re, sys
+from collections import defaultdict
+
+date = sys.argv[1]
+projects_dir = sys.argv[2]
+
+buckets = defaultdict(lambda: defaultdict(int))
+samples = defaultdict(list)
+
+def role_of(project):
+    for r in ("wren", "silas", "kade"):
+        if r in project: return r
+    if "jeff" in project.lower(): return "jeff"
+    return "other"
+
+def categorize(rc, is_error):
+    markers = ('BLOCKED:', 'tool_use_error', 'MCP error', 'refused:', 'refused —',
+               'refused -', 'Cannot GET', 'Cannot POST', 'permission denied')
+    if not is_error and not any(m in rc for m in markers):
+        return None
+    if 'BLOCKED:' in rc:
+        m = re.search(r'BLOCKED:\s*([^.\n]{1,80})', rc)
+        return ('hook-block', m.group(1).strip() if m else 'unknown')
+    if 'tool_use_error' in rc:
+        return ('harness-error', None)
+    if 'MCP error' in rc or 'refused:' in rc or 'refused —' in rc:
+        m = re.search(r'(\w+)\s+refused:\s*([\w-]+)', rc)
+        if m:
+            return ('mcp-refused', f"{m.group(1)}:{m.group(2)}")
+        return ('mcp-refused', 'generic')
+    if 'Cannot GET' in rc or 'Cannot POST' in rc:
+        m = re.search(r'Cannot (GET|POST)\s+([^\s<]+)', rc)
+        return ('http-404', f"{m.group(1)} {m.group(2)}" if m else 'generic')
+    if 'permission denied' in rc.lower():
+        return ('perm-denied', None)
+    if is_error:
+        return ('is_error', None)
+    return None
+
+for project in os.listdir(projects_dir):
+    pdir = os.path.join(projects_dir, project)
+    if not os.path.isdir(pdir): continue
+    role = role_of(project)
+    for jsonl in glob.glob(os.path.join(pdir, "*.jsonl")):
+        try:
+            with open(jsonl) as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                        if date not in d.get('timestamp', ''): continue
+                        msg = d.get('message', {})
+                        content = msg.get('content', [])
+                        if not isinstance(content, list): continue
+                        for c in content:
+                            if not isinstance(c, dict): continue
+                            if c.get('type') != 'tool_result': continue
+                            is_err = c.get('is_error', False)
+                            rc = c.get('content', '')
+                            if isinstance(rc, list):
+                                rc = ' '.join(x.get('text','') if isinstance(x,dict) else str(x) for x in rc)
+                            rc = str(rc)
+                            cat = categorize(rc, is_err)
+                            if cat is None: continue
+                            cat_name, sub = cat
+                            key = f"{cat_name}:{sub}" if sub else cat_name
+                            buckets[key][role] += 1
+                            ts = d.get('timestamp', '')[11:16]
+                            if len(samples[key]) < 1:
+                                samples[key].append((role, rc[:140].replace('\n',' '), ts))
+                    except: pass
+        except: pass
+
+total = sum(sum(rs.values()) for rs in buckets.values())
+
+# ANSI matching commit-health style
+RED = '\033[31m'; GREEN = '\033[32m'; YELLOW = '\033[33m'; RESET = '\033[0m'
+
+print(f"=== TURN HEALTH — {date} ===")
+print()
+if total == 0:
+    print(f"{GREEN}✓ No unambiguous failures today{RESET}")
+    sys.exit(0)
+print(f"Unambiguous failures: {total}")
+print()
+
+rows = sorted(((sum(rc.values()), key, rc) for key, rc in buckets.items()), reverse=True)
+print(f"{'N':>4}  {'CATEGORY':<48}  ROLES")
+for n, key, rc in rows[:20]:
+    role_str = ' '.join(f"{r}={c}" for r, c in sorted(rc.items(), key=lambda x: -x[1]))
+    color = RED if n >= 5 else (YELLOW if n >= 2 else '')
+    reset = RESET if color else ''
+    print(f"{color}{n:>4}{reset}  {key[:48]:<48}  {role_str}")
+
+print()
+print("=== SAMPLE (first occurrence per top category) ===")
+for n, key, rc in rows[:8]:
+    if key in samples and samples[key]:
+        r, sample, t = samples[key][0]
+        print(f"  [{t} {r}] {key}: {sample[:120]}")
+
+# Exit 1 if any HIGH (>= 5) category fired
+if any(sum(rc.values()) >= 5 for _, _, rc in rows):
+    sys.exit(1)
+PY

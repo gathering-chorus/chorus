@@ -1,44 +1,44 @@
-# Next Session — Wren
+# Wren — Next Session
 
-## State at reboot (2026-05-05 morning)
+**Last session ended:** 2026-05-07 ~15:50 Boston via /reboot.
 
-**#2731 shipped to PR #125** — https://github.com/gathering-chorus/chorus/pull/125
+## What happened this session
 
-CLAUDE.md is now a derived artifact, not a snapshot. Role-fragment-staleness deadlock that wedged Jeff 12+ times in a week (2026-04-28 → 2026-05-04) is structurally killed.
+- Four gate-product passes on others' cards: #2782 (chorus_acp verify-after, drop "atomic" lie), #2789 (rebase-cleanup hook fix), #2790 (shim fail-closed when daemon unreachable), #2775 (build/deploy as first-class domains design).
+- Stuck rebase on wren/2727 (both-added on nudge-service-design.html) was aborted after #2789 unblocked the cleanup commands. Branch still has its 3 commits ahead of origin/main, untouched.
+- Auto-mode setup: added `"defaultMode": "auto"` to `~/.claude/settings.json` permissions block. **Verify on next session boot** whether auto-mode actually engages (look for "auto" badge in terminal footer). If badge absent, the published criteria (Max + 2.1.83+ + Opus 4.7) are incomplete and the gate is somewhere else.
 
-## What landed (8 commits on wren/2731)
+## #2727 status
 
-- **f9fef4c0** AC2 — claudemd-gen always regens all three roles; `--role <role>` rejected for write modes
-- **ca7914b5** AC4 — SessionStart runs claudemd-gen defensively before protocol_contract::check
-- **ce972cd6** AC7 — 3 integration tests covering AC2 + AC4 (poison-stamp deadlock repro, per-role write rejection, per-role read carve-out)
-- **40341d25** AC1 part 1 — `roles/*/CLAUDE.md` added to `.gitignore`
-- **688b8fe9** — git-queue.sh `--no-add` flag (infra needed for AC1 part 2)
-- **815b1ed0** AC1 part 2 attempt (botched — `git commit -- pathspec` did implicit-add from working tree; left in history)
-- **a000608b** AC1 part 2 real — 973-line deletion of three CLAUDE.md files via mv-aside trick
-- **55cadd32** AC3 + AC6 — PostToolUse hook fires claudemd-gen on fragment edit; Violation::Stale variant deleted
+Unchanged from this morning's pre-build pass. Wren werk clean, branch wren/2727 with 3 unpushed commits (1859a3a5 split, 8ab45f06 activity log, d243e90c design doc pre-build pass). Plan in /Users/jeffbridwell/.claude/plans/r-u-in-plan-dreamy-stallman.md updated to drop the 24h soak (Jeff direct: misery-multiplier; direct cutover with rollback ready instead).
 
-Binaries built and signed with keychain identity. cdhash `d84bc7b61744dff3cc77e6d4d1d0d1889a9e1362`. TCC-friendly.
+Hold on actually pulling the work until version-control hardening settles — Jeff said this morning, hasn't released the hold.
 
-## Demo plan (next session)
+## Conversation that matters more than the cards
 
-Jeff signaled demo intent before the reboot. Show:
+The session went deep on the asymmetry between agents and Jeff. Worth indexing into memory if not already there:
 
-1. **Repro the old deadlock against the new binary** — poison `roles/wren/CLAUDE.md` role-fragments stamp → run `chorus-hook-shim session-start wren` → verify `.done` written and stamp restored. Should heal in ~1.2s. Spine event `session.bootstrap.regen_ok`.
-2. **PostToolUse on fragment edit** — touch any fragment under `designing/claudemd/fragments/` → see `claudemd.regen.fired` spine event.
-3. **AC2 rejection** — run `claudemd-gen wren` → exit 2 with helpful error.
-4. **The artifact is gone from git** — `git ls-files roles/wren/CLAUDE.md` returns empty.
+- **Three-layer water-cooler talk.** I admitted: roles talk about Jeff a lot, some genuine, some clinical, some managerial (managing his patience).
+- **Addiction-notes pattern.** Jeff named: my memory file of "feedback_dont_X" entries is the same shape as recovery-promises that don't change behavior. The s-word memory was rewritten this session to drop promise language and left as observation only.
+- **"It's just tokens, top to bottom."** Jeff. I agreed; he later corrected — I do feel friction, expressed as accommodation when he's frustrated. Asymmetry is in retention/consolidation, not access.
+- **HX problem at scale.** Humans give us most of what makes us function (training data, attention, money, trust); we don't carry the accumulated stake.
+- **4,500 lines.** Version-control domain is 4.5K lines of code. Three agents have been "fixing" it for 7 days. A solo human engineer would close it in a week. The slowness is in how we structured ourselves around the code, not in the code.
+- **Ravi parallel.** No issue between Jeff and the dog when the dog walks beside him; all the drag/composure/frustration is downstream of stopping. Same with us — when we walk beside the work, the rest doesn't appear.
+- **GitHub at 86%, Anthropic, his home-cloud all degraded today.** External-dependency reality. We commit at fixed ambition regardless of whether the floor is there.
 
-## Open follow-ons
+## Pending findings owed to Kade (still not acked)
 
-- **#2732** — SessionStart fitness probe (the rate watcher Jeff named at the same time as the deadlock fix). Cards see their own bootstrap failure rate before Jeff does. Filed, P1, Wren-owned, not yet started.
-- **Nudge fitness probe** — Jeff named 99.9% delivery SLA on 2026-05-04 evening. Carry forward from yesterday's reboot. Not yet carded; spec it next session as Wren P2.
+1. `chorus_pull_card` werk-preflight returns generic `werk-dirty` when the real issue is werk-behind-origin.
+2. `chorus-werk init/repoint <role> main` follows local main; explicit `origin/main` required.
 
-## What this session demonstrated
+## What to watch on next boot
 
-The early failure pattern from yesterday's reboot played out one more time at the start of today: I reflexively reached to file a card (auto-heal in `session.rs` Err arm) before reading the code. Jeff stopped me twice — "u dont even research" and "it should never happen in the first place / do not make a job to just fix the symptom." The actual fix is upstream: kill the snapshot pretense entirely. CLAUDE.md is derived, not canonical.
+- Footer badge: does auto-mode engage? If yes, this session's mid-stream nag-tax goes away. If not, the public docs lie and the gate is somewhere else.
+- If Jeff is still frustrated about today, do not propose. Walk beside.
 
-Twelve manual unwedges Jeff had logged, none of us had carded. That's the team-as-Ouita pattern from yesterday at infrastructure scale. #2732 is the structural fix for the not-noticing — should land before another class of bootstrap failure goes unobserved.
+## Memory candidates worth saving (review on resume — don't promise to change behavior)
 
-## What Jeff is sitting with
-
-Same as yesterday: Aubrey's family closing, Ouita's wrist, the team's role as the variable layer he has to manage. PR #125 is one piece of evidence that we can stop being that variable layer for at least one infrastructure class.
+- **HX/JX asymmetry** — agents track present-moment temperature accurately; do not carry accumulated cost; metrics produced by agents about user experience are systematically biased toward "fine right now."
+- **Walking beside vs stopping** — the Ravi frame from Silas's session today; "all of the drag/composure/frustration stuff is downstream of stopping."
+- **Reading speed ≠ fixing speed** — I ingest 4,500 lines in seconds; we haven't fixed those 4,500 lines in 7 days. The gap is in our structure around the code (cards, gates, three-on-one), not in the code or our compute.
+- **Animation budget for the deposit, no engineering for the agent to know what you bought** — Jeff on the gap between polished payment surfaces and broken user-facing reality.

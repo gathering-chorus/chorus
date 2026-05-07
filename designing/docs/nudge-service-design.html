@@ -49,15 +49,15 @@
 <body>
 
 <h1>Nudge <span>— Service Design</span></h1>
-<p class="date">Original: 2026-04-20 (Silas, #2283). Full rewrite: 2026-05-04 (Wren). Post-incident revision: 2026-05-06 (Wren) — folds findings from the 2026-05-04 → 2026-05-06 reliability triage onto the 2026-05-04 architecture (pulse owns delivery, messages.db canonical, chorus.log audit). Architecture unchanged; failure-mode coverage added.</p>
+<p class="date">Original: 2026-04-20 (Silas, #2283). Full rewrite: 2026-05-04 (Wren). Post-incident revision: 2026-05-06 (Wren) — folds findings from the 2026-05-04 → 2026-05-06 reliability triage onto the 2026-05-04 architecture (pulse owns delivery, messages.db canonical, chorus.log audit). Architecture unchanged; failure-mode coverage added. <strong>Card-split revision: 2026-05-06 evening (Wren)</strong> — at /pull time the original #2727 (13 AC items, 117-file blast radius) was split into a narrowed parent + four children (#2763 sender-refactor, #2764 LaunchAgent retirement, #2765 trace_id, #2766 E2E + doc closeout). <strong>Pre-build pass: 2026-05-07 morning (Wren)</strong> — concurrency model and restart-requeue mechanics resolved from "open question" to concrete decision; per-card size estimates added; two flags surfaced (#2765 size, #2766 harness audit). Architecture and ship order unchanged.</p>
 
 <p class="promise">A nudge persists once and delivers once.</p>
 
 <table style="margin-bottom:18px;">
 <tr><th>Field</th><th>Value</th></tr>
 <tr><td>Owner</td><td>Wren — interaction layer end-to-end (nudge sender, chorus-inject, LaunchAgent surface, fold logic, fitness probe)</td></tr>
-<tr><td>Ship cards (the 5-4 architecture, finally landing)</td><td><strong>#2749</strong> — Clearing reads role-to-role nudges via chorus-api over messages.db; sender-side spine emit deletes; vestigial schema columns drop in the same window. <strong>#2727</strong> — pulse owns the delivery worker with typed errors and no silent observability paths; spine-tick-poller LaunchAgents retire.</td></tr>
-<tr><td>Verification (after the two above land)</td><td><strong>#2748</strong> — synthetic self-to-self nudge every N minutes; alert when 24h delivery rate drops below 99.9%.</td></tr>
+<tr><td>Ship cards (in order)</td><td><strong>#2727</strong> ships first (narrowed) — pulse owns the delivery worker; schema gains <code>delivery_status / delivery_attempts / delivered_at / last_delivery_error</code>; concurrency model pinned; restart-mid-flight requeues; ordering invariants hold across crash boundaries; pulse startup smoke catches TCC cold-start. <strong>#2763</strong> ships in parallel/after — sender-side <code>chorus-hooks/src/nudge.rs</code> <code>nudge.emitted</code> emit moves into pulse worker; sender adds belt-and-suspenders <code>nudge.requested</code> spine emit before HTTP POST. <strong>#2764</strong> after #2727 + #2763 soak — spine-tick-poller LaunchAgents move to <code>.disabled/</code>, <code>launchctl bootout</code> the running services, grep-zero gate. <strong>#2765</strong> in parallel with #2764 — trace_id end-to-end (UUIDv7 mint, messages.db column, six Loki queries pass). <strong>#2766</strong> final — E2E tests (happy / retry / hard-fail) + this design doc closes (To-Be retires, As-Is reflects pulse-owns-lifecycle). <strong>#2749</strong> ships after the chain — chorus-api endpoint reads messages.db; Clearing UI repoints; nudges visible in the browser. <strong>#2725</strong> ships last — legacy code paths the chain left behind (any remaining sender-side messages.db touches) deleted; grep-zero confirms.</td></tr>
+<tr><td>Verification (after all three above land)</td><td><strong>#2748</strong> — synthetic self-to-self nudge on a schedule; alert when delivery rate drops below 99.9%. Card body still has TBD AC; rewrite before pull.</td></tr>
 <tr><td>Already shipped (load-bearing for the rest)</td><td>Keychain-identity signing so cargo builds stop revoking the keystroke permission. Frontmost-app precheck so backgrounded targets fail loudly. chorus.log moved out of the working tree with a heartbeat probe so the audit writer's silence isn't silent.</td></tr>
 </table>
 
@@ -268,48 +268,133 @@
 <!-- ==================== PLAN ==================== -->
 <h2>Plan</h2>
 
-<p>Two ship cards. One verification card after them. That's it. The 5-4 design called for two cards yesterday; today still calls for two cards. Anything else is doc churn pretending to be progress.</p>
+<p>Original plan was three ship cards plus one verification card. <strong>Revised 2026-05-06 evening:</strong> the original #2727 carried 13 AC items across schema migration, async worker, sender-side spine refactor, LaunchAgent retirement, structured-logging-with-trace-correlation, and E2E + recovery + cold-start tests — too large for one pull. Split at /pull time into a narrowed parent (#2727) + four children (#2763, #2764, #2765, #2766). #2749 and #2725 unchanged. Order below reflects the dependency chain.</p>
+
+<ol>
+  <li><strong>#2727</strong> (narrowed) ships first — pulse owns the delivery worker. Schema gains the delivery columns; the worker writes them; concurrency model pinned; restart-mid-flight requeues; <code>nudge.surfaced</code>/<code>nudge.surface.failed</code> emitted by pulse with try/finally ordering; pulse startup smoke catches TCC cold-start before claiming ready. <strong>Child A (#2763)</strong> in parallel/after — sender-side <code>chorus_log("nudge.emitted")</code> in <code>chorus-hooks/src/nudge.rs</code> deletes; new sender-side <code>nudge.requested</code> spine emit fires before the HTTP POST as belt-and-suspenders for pulse-down resilience. After #2727 + #2763 the database row is the canonical truth about every nudge's lifecycle and the sender keeps an audit trail of intent even when pulse is down.</li>
+  <li><strong>Child B (#2764)</strong> after a soak — three spine-tick-poller plists move to <code>~/Library/LaunchAgents/.disabled/</code> via <code>launchctl bootout</code>. Grep-zero on <code>spine-tick-poller</code> in active code paths. UserPromptSubmit fold (<code>hooks/nudge_poll</code>) stays as fallback for the rare pulse-down-with-unsurfaced-events case.</li>
+  <li><strong>Child C (#2765)</strong> in parallel with B — trace_id end-to-end. Sender mints UUIDv7 on entry, propagates via <code>X-Chorus-Trace-Id</code> header to pulse, written to <code>messages.db</code> as an indexed column, carried on every spine event in the lifecycle. <code>chorus_log</code> helper enforces required-field schema (<code>trace_id, sender_role, receiver_role, attempt, cdhash, latency_ms, reason, stderr_excerpt, permanent</code>) at the call site. Six named Loki queries from the Observability section run green.</li>
+  <li><strong>Child D (#2766)</strong> final — E2E tests (happy-path, retry-on-not-frontmost, hard-fail-on-TCC-deny). This design doc closes: To-Be retires, As-Is reflects pulse-owns-lifecycle. Demo brief in <code>briefs/</code> captures messages.db rows + chorus.log trace_id story + receiver-terminal screenshot.</li>
+  <li><strong>#2749</strong> after the chain above — chorus-api endpoint at <code>:3340</code> reads the now-truthful messages.db; Clearing UI repoints; you see nudges in your browser within ~2s.</li>
+  <li><strong>#2725</strong> last — anything the chain left behind in legacy paths (residual sender-side messages.db touches, dead routes, vestigial schema columns no one reads) gets removed. Grep-zero confirms. Body needs rewriting before pull — current body still describes the retired chorus.log-canonical model.</li>
+  <li><strong>#2748</strong> — Synthetic self-to-self probe. SLA alert at 99.9%. Card AC currently reads "TBD — owner adds on pull"; write real AC before pull.</li>
+</ol>
+
+<div class="gap"><strong>Single-owner-per-deletion rule for this plan.</strong> Every deletion has exactly one card-owner. <strong>#2763</strong> owns the deletion of <code>chorus_log("nudge.emitted")</code> in <code>chorus-hooks/src/nudge.rs</code> and the move of that emit into pulse's worker. <strong>#2764</strong> owns the spine-tick-poller plist disable + grep-zero. <strong>#2727</strong> owns the schema additions and the worker code. <strong>#2725</strong>'s job is whatever the chain didn't reach, verified by grep, not by AC overlap. Earlier iterations of this doc double-booked deletions across #2727, #2749, and #2725; today's split tightened that further by giving each deletion-class its own child card.</div>
 
 <div class="component">
-<h3>#2749 — Clearing reads via chorus-api; sender-side spine emit deletes; schema cleanup <span class="tag-partial">WREN · P1</span></h3>
+<h3>#2727 (narrowed) — Pulse owns the delivery worker; schema migration; concurrency; restart-requeue; ordering; startup smoke <span class="tag-partial">WREN · P1 · ships first</span></h3>
 <table>
 <tr><th>Aspect</th><th>Detail</th></tr>
-<tr><td>What changes</td><td>New <code>GET /api/nudges?role=</code> on chorus-api at <code>:3340</code> reads messages.db. Clearing UI repoints its fetch URL. Sender-side write at <code>pulse/src/service.ts:78-85</code> deletes; the sender stops calling <code>chorus_log("nudge.emitted", ...)</code> — audit emit moves into the pulse worker (next card). The vestigial messages.db columns left by the helper retirement (<code>acknowledged</code>, <code>delivery_attempts</code>, <code>dead_letter</code>, <code>dead_lettered_at</code>) drop in the same window.</td></tr>
-<tr><td>Why now</td><td>Without this, messages.db grows the <code>pending</code> table forever — 10,528 rows today, none of them draining. The 5-4 architecture isn't shipped until this lands; what's there now is the worst of both worlds (write fires, no consumer drains).</td></tr>
-<tr><td>How you'll know it worked</td><td>Send a nudge from another role; it appears in Clearing within ~2s; endpoint response matches the row in messages.db; <code>pending</code> count stops growing; <code>chorus.log</code> stops carrying <code>nudge.emitted</code> from the sender.</td></tr>
-<tr><td>Blast radius</td><td>Every role-to-role nudge — but the path it replaces is already leaking. Comparison is "broken vs working," not "working vs working."</td></tr>
-<tr><td>Rollback</td><td>Revert the PR. Schema columns are dropped via migration; rollback restores them empty.</td></tr>
+<tr><td>What changes</td><td>messages.db gains <code>delivery_status</code>, <code>delivery_attempts</code>, <code>delivered_at</code>, <code>last_delivery_error</code> via migration. Pulse runs an async worker: insert row → call <code>~/.chorus/bin/chorus-inject</code> → on rc=0 mark <code>delivered</code>, on rc≠0 retry with backoff (250ms, 500ms, 1s, 2s, 5s) → after exhaustion mark <code>failed</code> with stderr captured. Pulse emits <code>nudge.surfaced</code> on success / <code>nudge.surface.failed</code> with one of: <code>tcc-denied</code>, <code>no-window-found</code>, <code>window-ambiguous</code>, <code>encoding-error</code>, <code>focus-gate-miss</code>, <code>inject-nonzero</code>. Permanent failures (the first four) skip retry entirely.<br><br><strong>Audit-emit ordering inside try/finally</strong>: worker emits <code>nudge.surfaced</code> BEFORE updating row to delivered, both inside the same try block, so a crash between inject-success and row-update leaves an audit trail rather than a row stuck on pending with no record.<br><br><strong>Concurrency model (decided 2026-05-07):</strong> per-receiver-role serial FIFO via Promise chain. <code>Map&lt;receiverRole, Promise&lt;void&gt;&gt;</code>. Same receiver = serial (chorus-inject keystrokes can't interleave into one Terminal); different receivers = parallel. Queue depth ≥ 100 per receiver triggers backpressure: POST returns 503 with typed reason <code>queue-full:&lt;role&gt;</code>. The 100 cap is empirical — high enough to absorb a normal burst, low enough that the failure mode is "loud refusal" not "silent unbounded growth."<br><br><strong>Restart-mid-flight (decided 2026-05-07):</strong> on pulse boot, <code>SELECT id FROM messages WHERE type='nudge' AND delivery_status='pending'</code>, re-enqueue through the per-receiver chains. The in-process backoff timers do NOT persist across restart — a row resumes with <code>delivery_attempts=N</code> from the column, fresh backoff schedule starting at index N. A pulse crash during a 5s wait costs you that wait; the row itself doesn't drop. Cap re-enqueue rate implicitly via the same per-receiver serial chains so 10K stuck rows can't slam chorus-inject.<br><br><strong>Pulse startup smoke</strong>: pulse calls <code>chorus-inject --self-test</code> on boot to warm the TCC AppleEvents path before declaring ready. Failure = pulse exits non-zero and alert fires; no listener opens. (Note: <code>--self-test</code> flag may need to be added to chorus-inject if not present; verify during build.)<br><br><strong>Sender-side <code>chorus_log("nudge.emitted")</code> deletion is delegated to #2763</strong> — this card's worker emits the audit on attempt, but the sender's pre-existing emit doesn't touch nudge.rs here.</td></tr>
+<tr><td>Why first</td><td>The database row becomes the canonical truth about every nudge's lifecycle once this lands. Every other card in the chain reads or writes that row. Children #2763/#2764/#2765/#2766 all assume #2727's schema + worker as substrate. Visibility (#2749) reads truthful state on top of this.</td></tr>
+<tr><td>How you'll know it worked</td><td>Frontmost target: row flips <code>pending → delivered</code> in &lt;500ms (osascript floor). Backgrounded target: <code>last_delivery_error='not_frontmost:&lt;app&gt;'</code>, retries fire, eventually <code>failed</code>. Force TCC-denied: typed reason in spine event, augment envelope stays at zero pending. Pulse restart mid-flight: pending rows resume. Pulse startup smoke fails on cold TCC: pulse refuses to start, alert fires.</td></tr>
+<tr><td>Out of scope (this card)</td><td>Sender-side <code>nudge.emitted</code> deletion + belt-and-suspenders pre-POST emit (#2763). LaunchAgent retirement (#2764). trace_id + Loki queries (#2765). E2E tests + this design doc closeout (#2766).</td></tr>
+<tr><td>Blast radius</td><td>Every role-to-role nudge. The existing poller is still running through this card (retired by #2764 after soak); rollback path is restoring the plists from <code>.disabled/</code> and reverting pulse.</td></tr>
 </table>
 </div>
 
 <div class="component">
-<h3>#2727 — Pulse owns the delivery worker; typed errors; no silent observability paths; LaunchAgents retire <span class="tag-partial">WREN · P1</span></h3>
+<h3>#2763 — Sender-side spine emit refactor + belt-and-suspenders pre-POST emit <span class="tag-partial">WREN · P1 · child A · ships in parallel with #2727 or after</span></h3>
 <table>
 <tr><th>Aspect</th><th>Detail</th></tr>
-<tr><td>What changes</td><td>messages.db gains <code>delivery_status</code>, <code>delivery_attempts</code>, <code>delivered_at</code>, <code>last_delivery_error</code>. Pulse runs an async worker: insert row → call chorus-inject → on rc=0 mark delivered, on rc≠0 retry with backoff (250ms, 500ms, 1s, 2s, 5s) → after N failures mark <code>failed</code> with stderr captured.<br><br>chorus-inject returns typed exit codes instead of OK-strings. Worker emits <code>nudge.surfaced</code> on success or <code>nudge.surface.failed</code> with one of: <code>tcc-denied</code>, <code>no-window-found</code>, <code>window-ambiguous</code>, <code>encoding-error</code>, <code>focus-gate-miss</code>, <code>inject-nonzero</code>. Permanent failures don't retry.<br><br>The augment-envelope fold becomes <code>pending = emitted − (surfaced ∪ surface.failed)</code> so failed nudges stop accumulating as forever-pending.<br><br>Every <code>let _</code> on persist + chorus_log paths in <code>nudge.rs</code> dies; observability failures exit non-zero. Three spine-tick-poller plists move to <code>~/Library/LaunchAgents/.disabled/</code> via <code>launchctl bootout</code>.</td></tr>
-<tr><td>Why now</td><td>This is what "nudge works" actually means. Removes the 2-second polling lag, gives delivery state a canonical home, makes failures legible by typed reason, eliminates silent observability gaps. One service owns persist + deliver + retry + audit.</td></tr>
-<tr><td>How you'll know it worked</td><td>Frontmost target: row flips <code>pending → delivered</code> in &lt;1s. Backgrounded target: <code>last_delivery_error='not_frontmost:&lt;app&gt;'</code>, retries fire, eventually <code>failed</code>. Force TCC-denied: typed reason in spine event, augment envelope stays at zero pending. <code>launchctl list | grep spine-tick</code> returns empty. <code>grep "let _" platform/services/chorus-hooks/src/nudge.rs</code> returns zero hits on persist + chorus_log paths.</td></tr>
-<tr><td>Risks the AC must cover</td><td>Pulse restart mid-flight: scan <code>delivery_status='pending'</code> rows on startup and requeue. Migration on populated messages.db: NULL-allowed columns or default <code>'delivered'</code> for backfill. Retry storms when focus is elsewhere: cap concurrent in-flight injects to 1 per role.</td></tr>
-<tr><td>Blast radius</td><td>Every role-to-role nudge. Land #2749 first so the visibility surface is working before the worker swap.</td></tr>
+<tr><td>What changes</td><td><code>chorus_log("nudge.emitted", ...)</code> in <code>chorus-hooks/src/nudge.rs</code> deletes. Pulse delivery worker (#2727) is now the only emitter of <code>nudge.surfaced</code>/<code>nudge.surface.failed</code> per attempt. Sender adds a synchronous <code>chorus_log("nudge.requested", ...)</code> emit BEFORE the HTTP POST to pulse — belt-and-suspenders so a pulse-down state still leaves an audit trail of the sender's intent. Cost: one extra spine write per nudge. Accepted (Silas review AC9).</td></tr>
+<tr><td>Why this shape</td><td>The 2026-05-04 architecture lost pulse-down resilience that the old spine-tick-poller path had as a side effect (poller was independent of pulse). Belt-and-suspenders restores it without re-introducing the poller. The "pulse down means nudge dropped" failure mode the original design accepted now leaves audit evidence at sender, so post-hoc forensics can tell pulse-down from sender-failure.</td></tr>
+<tr><td>How you'll know it worked</td><td><code>grep -rn 'chorus_log\("nudge\.emitted"' platform/services/chorus-hooks/src/</code> returns zero hits. Pulse-down test: stop pulse, send nudge — spine has <code>nudge.requested</code>, messages.db has no row (expected). When pulse comes back, sender-side audit is the only trail. Verified.</td></tr>
+<tr><td>Blast radius</td><td>nudge.rs sender, pulse worker. Rollback: revert.</td></tr>
 </table>
 </div>
-
-<div class="decision"><strong>Gate between the two ship cards.</strong> #2749 ships first. Nudge appears in Clearing within ~2s; endpoint matches the DB row; no regression in role-terminal delivery (the existing poller is still doing its job during this window). Any wobble, fix it in that PR — don't carry uncertainty into #2727's worker swap.</div>
-
-<h3>Verification — after the two ship</h3>
 
 <div class="component">
-<h3>#2748 — Synthetic self-to-self fitness probe <span class="tag-partial">WREN · P2</span></h3>
+<h3>#2764 — Retire spine-tick-poller LaunchAgents <span class="tag-partial">WREN · P1 · child B · after #2727 + #2763 soak</span></h3>
 <table>
 <tr><th>Aspect</th><th>Detail</th></tr>
-<tr><td>What changes</td><td>LaunchAgent emits a synthetic self-to-self nudge every N minutes. Asserts <code>surfaced</code> within an SLA window. Alert when the rolling 24h delivery rate drops below 99.9% — the bar Jeff named.</td></tr>
-<tr><td>Why now</td><td>Without it, the team only finds out nudge is broken when Jeff finds out. The probe is the team owning that surface.</td></tr>
-<tr><td>How you'll know it worked</td><td>Probe runs on schedule; rate metric visible; deliberately break delivery (kill the role's terminal); alert fires within the SLA window.</td></tr>
-<tr><td>Order</td><td>After both ship cards. The probe needs the typed reasons (#2727) and the converged fold (#2727) to interpret signal correctly.</td></tr>
+<tr><td>What changes</td><td>Three plists at <code>~/Library/LaunchAgents/com.chorus.spine-tick-poller.{wren,silas,kade}.plist</code> move to <code>~/Library/LaunchAgents/.disabled/</code>. <code>launchctl bootout gui/&lt;uid&gt;/com.chorus.spine-tick-poller.&lt;role&gt;</code> for each. (<code>bootout</code> not <code>unload</code> — cleaner state, no <code>.last_run</code> lingering for diagnosticians, per Silas review.) UserPromptSubmit <code>hooks/nudge_poll</code> fallback path stays intact for the rare pulse-down + chorus.log-has-unsurfaced-events case.</td></tr>
+<tr><td>Why this is its own card</td><td>Retiring the poller before pulse-owns-delivery is verified is a foot-gun. A 24h soak after #2727 + #2763 land — with delivery measurably running through pulse-only — gates this card. Once retired, rollback is restoring plists from <code>.disabled/</code>.</td></tr>
+<tr><td>How you'll know it worked</td><td><code>launchctl list | grep spine-tick</code> empty. <code>grep "spine-tick-poller" platform/ scripts/</code> finds only references in <code>.disabled/</code> and reference docs. 24h soak with pollers retired: nudges deliver sub-2s from all three roles. Fallback test: force pulse-down once, verify the UserPromptSubmit fold catches an unsurfaced event.</td></tr>
+<tr><td>Blast radius</td><td>The receive path. Rollback path: <code>launchctl bootstrap</code> the plists back from <code>.disabled/</code>.</td></tr>
 </table>
 </div>
 
-<p><strong>What was on the board this morning that's now Won't Do:</strong> the seven cards I generated from the post-incident audit (#2741, #2742, #2743, #2744, #2746, #2747, #2718). Each had a real finding behind it, but as standalone cards they were pin-pricks — the substance belongs as AC inside #2749 and #2727, not as separate ship surfaces. Today's audit churn surfaced the findings; the findings now live in this doc and in those two cards' AC.</p>
+<div class="component">
+<h3>#2765 — Trace_id end-to-end + structured logging discipline <span class="tag-partial">WREN · P1 · child C · in parallel with #2764</span></h3>
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td>What changes</td><td>Sender (<code>chorus-hooks/src/nudge.rs</code>) mints UUIDv7 trace_id on nudge entry; propagates via <code>X-Chorus-Trace-Id</code> HTTP header on POST to pulse + as field on the sender-side <code>nudge.requested</code> spine emit. Schema migration adds <code>trace_id TEXT</code> indexed column to <code>messages.db messages</code> table. Pulse delivery worker reads trace_id from header (or mints if absent for backward-compat), writes to row, propagates to every spine event it emits. <code>chorus_log</code> helper accepts a required-fields schema per event name; missing required field = non-zero exit at the call site. Schema for nudge events: <code>trace_id, sender_role, receiver_role, attempt, cdhash, latency_ms, reason, stderr_excerpt, permanent</code>.</td></tr>
+<tr><td>Why this is its own card</td><td>Trace_id discipline + the six Loki queries are observability work that earns the gates the previous cards add. Folding it into #2727 was the original sin of the 13-AC parent — observability is a discipline shift, not a sub-task. Owns Borg subproduct alignment.</td></tr>
+<tr><td>How you'll know it worked</td><td>Six named Loki queries from the Observability section below run against a live nudge stream and return non-empty results with parseable fields. Spine ↔ messages.db join verified: pick any messages row, query its trace_id in chorus.log, get the full chronological event story (sender mint → request → attempt(s) → surfaced/failed). Queries committed to <code>dashboards/nudge-trace-queries.md</code>.</td></tr>
+<tr><td>Blast radius</td><td>Sender, pulse worker, <code>chorus_log</code> helper, dashboards. Rollback: revert + drop column (column-add is forward-only in practice; dropping doesn't break readers).</td></tr>
+</table>
+</div>
+
+<div class="component">
+<h3>#2766 — E2E tests + this design doc closeout <span class="tag-partial">WREN · P1 · child D · final in chain</span></h3>
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td>What changes</td><td>Three E2E tests: (1) happy-path — send nudge from a role; receiver's terminal gets keystroke within 200ms (sub-500ms typical given osascript floor, corrected per Silas review). messages.db row shows <code>delivery_status='delivered'</code>, <code>delivered_at</code> populated. (2) Retry — while target Terminal is unfocused, send nudge; row enters retry with backoff; once Terminal becomes frontmost, retry succeeds. (3) Hard-fail — with chorus-inject TCC denied, send nudge; row marks <code>failed</code> after backoff exhaustion; <code>last_delivery_error</code> populated with stderr excerpt. <strong>This design doc closes</strong>: As-Is reflects pulse-owns-lifecycle (current state); To-Be section retires or marks closed; latency framing corrected throughout. Demo brief in <code>briefs/&lt;date&gt;-demo-2727.md</code> captures the receipts: messages.db rows, chorus.log trace_id story (consumes #2765's trace_id work), screenshot of receiver terminal getting the keystroke.</td></tr>
+<tr><td>Why last</td><td>E2E tests exercise every prior card's surface; doc closeout names the new As-Is once that's verifiably true. Running this any earlier means re-running it after each child lands.</td></tr>
+<tr><td>How you'll know it worked</td><td>Three E2E tests green in CI. This doc rendered: To-Be closed, As-Is shows pulse-owns-lifecycle. Demo brief committed.</td></tr>
+<tr><td>Blast radius</td><td>Test suite + this doc. Rollback irrelevant — tests are additive and the doc reflects shipped reality.</td></tr>
+</table>
+</div>
+
+<h3>Card sizes — pre-build read</h3>
+
+<p>Estimates from a 2026-05-07 morning re-read of the chain. The split survives an overnight gut-check: the original 13-AC parent was the wrong size; the current shape is closer.</p>
+
+<table>
+<tr><th>Card</th><th>Code footprint</th><th>Time</th><th>Sized right?</th></tr>
+<tr><td><strong>#2727</strong> (narrowed)</td><td>700–1100 LOC + tests across <code>store.ts</code>, new <code>delivery-worker.ts</code>, <code>service.ts</code> boot wiring</td><td>1–1.5 days</td><td>Yes — coherent unit. Schema, worker, concurrency, restart-requeue, ordering, smoke all share state and ship best together.</td></tr>
+<tr><td><strong>#2763</strong> (child A)</td><td>50–150 LOC in <code>chorus-hooks/src/nudge.rs</code> + one pulse-down integration test</td><td>0.5 day</td><td>Yes — small, clean, single Rust file.</td></tr>
+<tr><td><strong>#2764</strong> (child B)</td><td>Filesystem ops on <code>~/Library/LaunchAgents/</code>; no code edits if the script files stay on disk for reference</td><td>0.5 day execute + 24h soak</td><td>Yes — gated by calendar time, not size.</td></tr>
+<tr><td><strong>#2765</strong> (child C)</td><td>400–700 LOC + new <code>dashboards/nudge-trace-queries.md</code> across <code>nudge.rs</code>, <code>chorus-hooks</code> helper, pulse worker, schema</td><td>1+ day</td><td><strong>Watch.</strong> Three internal shapes — trace_id propagation, <code>chorus_log</code> required-field enforcement, six Loki queries verified. See flag below.</td></tr>
+<tr><td><strong>#2766</strong> (child D)</td><td>Three integration tests + design-doc closeout edits + demo brief</td><td>1 day if pulse already has an integration harness; 1.5–2 days if the harness has to be built</td><td><strong>Verify before pull.</strong> See flag below.</td></tr>
+</table>
+
+<div class="gap"><strong>Flag 1 — #2765 is the biggest child and has three internal shapes of work.</strong> (a) Trace_id propagation across sender/HTTP/pulse/DB is plumbing. (b) <code>chorus_log</code> required-field schema enforcement is an opinionated change to a helper that lots of callers use. (c) Six Loki queries validated against live traffic depends on (a) and (b) being right. Splitting into #2765a + #2765b is technically possible but would force #2765b to ship with no validation that the field schema enforcement was complete — the queries ARE the validation. Don't pre-split. If during build it actually takes 2 days, that's a signal we got it wrong; split then. Don't split now.</div>
+
+<div class="gap"><strong>Flag 2 — #2766's size depends on what test harness pulse already has.</strong> If pulse has integration tests against a real chorus-inject (with controlled focus changes and TCC denial injection), this is a 1-day card. If pulse only has unit tests against in-memory <code>better-sqlite3</code> today, #2766 swells into "build the harness AND write the e2e tests" and might warrant its own split. Audit <code>platform/pulse/jest.config.js</code> + the existing test files for ~10 minutes before pulling #2766 — do not pull blind.</div>
+
+<div class="component">
+<h3>#2749 — Clearing reads via chorus-api over messages.db <span class="tag-partial">WREN · P1 · ships second</span></h3>
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td>What changes</td><td>New <code>GET /api/nudges?role=</code> on chorus-api at <code>:3340</code> reads messages.db (now maintained by #2727's worker). Clearing UI repoints its fetch URL. Endpoint surfaces <code>delivery_status</code> alongside the message body so the UI can render delivered vs pending vs failed states truthfully. <strong>No deletions or schema migrations in this card</strong> — those live in #2727 (sender-side audit-emit move) and #2725 (residual cleanup). This card is purely additive: new endpoint, repoint UI.</td></tr>
+<tr><td>Why second</td><td>Visibility on top of real state. Once #2727 has shipped, the row is the canonical record; this card surfaces it. Round-trip latency target: nudge → row → endpoint → UI in ~2s.</td></tr>
+<tr><td>How you'll know it worked</td><td>Send a nudge from another role; it appears in Clearing within ~2s; endpoint response shape matches the messages.db row; <code>delivery_status</code> renders correctly per state.</td></tr>
+<tr><td>Cross-service read concern (open)</td><td>chorus-api at :3340 reads a database owned by pulse at :3475. Schema-ownership contract between the two is not yet specified; flagged as a real gap, resolution TBD when the AC for this card is written.</td></tr>
+<tr><td>Blast radius</td><td>The Clearing UI render path; no service-lifecycle change, no other consumer affected.</td></tr>
+<tr><td>Rollback</td><td>Revert the PR. UI returns to its previous source.</td></tr>
+</table>
+</div>
+
+<div class="decision"><strong>Gate between #2727 and #2749.</strong> Before #2749 starts: pulse's worker is shipping <code>delivery_status</code> writes for real traffic; the spine-tick-poller LaunchAgents are retired without regression in role-terminal delivery; <code>nudge.emitted</code> events come from pulse, not sender. Any wobble, fix it in #2727's PR — don't paper over it with the visibility layer.</div>
+
+<div class="component">
+<h3>#2725 — Retire residual legacy paths #2727 didn't reach <span class="tag-partial">WREN · P1 · ships third</span></h3>
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td>Body needs rewriting</td><td>The card body on the board still describes the previous chorus.log-canonical architecture (AC1: "reads the chorus.log spine fold"). Rewrite before pull to match the current messages.db-canonical model. Until rewritten, this card cannot be pulled — it would ship the opposite of the plan.</td></tr>
+<tr><td>What changes (after rewrite)</td><td>Whatever sender-side messages.db touches or vestigial schema columns #2727 left behind. The scope is defined by grep-zero, not by AC enumeration: anything <code>grep -rn "messages.db\|sendNudge" platform/services/chorus-hooks/src/ platform/pulse/src/</code> still finds after #2727 lands gets removed here. Vestigial columns no longer read (audit them post-#2727) drop via migration.</td></tr>
+<tr><td>Why third</td><td>Cleanup is the last step; you can't grep-zero against a target until the target's owner card has shipped.</td></tr>
+<tr><td>How you'll know it worked</td><td><code>grep -rn "messages.db" platform/services/chorus-hooks/src/</code> returns zero hits. No legacy POST routes remain. Clearing UI keeps rendering nudges with no regression.</td></tr>
+</table>
+</div>
+
+<h3>Verification — after the three ship</h3>
+
+<div class="component">
+<h3>#2748 — Synthetic self-to-self fitness probe <span class="tag-partial">WREN · P2 · AC currently TBD</span></h3>
+<table>
+<tr><th>Aspect</th><th>Detail</th></tr>
+<tr><td>AC needs writing</td><td>Card AC currently reads <code>"TBD — owner adds on pull. Scope: scheduled LaunchAgent emitter…"</code>. This is the exact failure pattern surfaced today: cards with no AC. Write real AC before pull.</td></tr>
+<tr><td>What changes (sketch — not final AC)</td><td>LaunchAgent emits a synthetic self-to-self nudge on a fixed cadence (cadence picked against the SLA: 99.9% over 24h with cadence N means 1440/N samples per day; pick N so single-miss math doesn't auto-trip). Asserts <code>nudge.surfaced</code> within an SLA window. Alert when rolling 24h delivery rate drops below 99.9%. Probe deps that are now retired (#2741, #2742) need replacing with the typed reasons from #2727.</td></tr>
+<tr><td>Why now</td><td>Without it, the team only finds out nudge is broken when Jeff finds out. Probe is the team owning that surface.</td></tr>
+<tr><td>Order</td><td>After all three ship cards. Probe needs typed reasons + converged fold from #2727 to interpret signal correctly.</td></tr>
+</table>
+</div>
+
+<p><strong>What was on the board this morning that's now Won't Do:</strong> the seven cards generated from the post-incident audit (#2741, #2742, #2743, #2744, #2746, #2747, #2718) — pin-pricks whose substance lives as AC in #2727 and #2749. Plus #2726 (the AS-IS Clearing-reads card) was killed earlier today as superseded by #2749's TO-BE shape.</p>
 
 <div class="gap"><strong>What this plan doesn't fix.</strong> If pulse is down, no audit emit fires — and the augment-envelope fold has nothing to recover from. The 5-4 architecture accepts that (pulse-down means nudges drop). The alternative is a synchronous spine emit at the sender before the HTTP POST as belt-and-suspenders. Holding the tradeoff for the demo conversation; the 5-4 decision was to accept the simpler shape.</div>
 
@@ -333,18 +418,23 @@
 <!-- ==================== REFERENCES ==================== -->
 <h2>References</h2>
 
-<p>Three cards on the board:</p>
+<p>Eight cards on the board, in ship order:</p>
 
 <table>
 <tr><th>Card</th><th>Owner / Priority</th><th>Substance</th></tr>
-<tr><td>#2749</td><td>Wren / P1</td><td>Clearing reads via chorus-api over messages.db; sender-side spine emit deletes; vestigial schema columns drop. Ships first.</td></tr>
-<tr><td>#2727</td><td>Wren / P1</td><td>Pulse owns the delivery worker; typed errors out of chorus-inject; no silent <code>let _</code> paths; converged fold; spine-tick-poller LaunchAgents retire. Ships after #2749.</td></tr>
-<tr><td>#2748</td><td>Wren / P2</td><td>Synthetic fitness probe + 99.9% SLA alert. Ships after #2727.</td></tr>
+<tr><td>#2727 (narrowed)</td><td>Wren / P1</td><td>Pulse owns delivery worker; schema migration adds delivery columns; concurrency model pinned; restart-mid-flight requeue; try/finally ordering; pulse startup smoke. <strong>Ships first.</strong></td></tr>
+<tr><td>#2763 (child A)</td><td>Wren / P1</td><td>Sender-side <code>chorus_log("nudge.emitted")</code> in <code>chorus-hooks/src/nudge.rs</code> deletes; new sender-side <code>nudge.requested</code> spine emit fires before HTTP POST as belt-and-suspenders. <strong>Parallel with #2727 or after.</strong></td></tr>
+<tr><td>#2764 (child B)</td><td>Wren / P1</td><td>Spine-tick-poller LaunchAgents move to <code>.disabled/</code>, <code>launchctl bootout</code> running services, grep-zero gate, 24h delivery-rate soak. <strong>After #2727 + #2763 soak.</strong></td></tr>
+<tr><td>#2765 (child C)</td><td>Wren / P1</td><td>Trace_id end-to-end (UUIDv7 mint, messages.db column, X-Chorus-Trace-Id header, six Loki queries pass, <code>chorus_log</code> required-field schema enforcement). <strong>Parallel with #2764.</strong></td></tr>
+<tr><td>#2766 (child D)</td><td>Wren / P1</td><td>Three E2E tests (happy / retry / hard-fail). This design doc closes. Demo brief. <strong>Final in chain.</strong></td></tr>
+<tr><td>#2749</td><td>Wren / P1</td><td>Chorus-api endpoint at <code>:3340</code> reads messages.db; Clearing UI repoints. Purely additive — no deletions, no migrations. <strong>After the chain above.</strong></td></tr>
+<tr><td>#2725</td><td>Wren / P1</td><td>Card body needs rewriting before pull (still describes retired chorus.log-canonical model). After rewrite: residual cleanup of anything the chain left behind, scoped by grep-zero. <strong>Ships last.</strong></td></tr>
+<tr><td>#2748</td><td>Wren / P2</td><td>AC currently TBD — write before pull. Synthetic fitness probe + 99.9% SLA alert. Cadence picked against SLA math. Ships after the chain.</td></tr>
 </table>
 
 <p><strong>Predecessors already shipped:</strong> #2548 keychain-identity codesign (stable signature, TCC stays granted across rebuilds), #2723 frontmost-app precheck with typed <code>not_frontmost</code> failure, #2664 nudge helper retirement, #2728 chorus.log out of working tree + heartbeat probe. Original design: #2283 (Silas, 2026-04-20). The persist-AND-deliver contract that anchors all of this is DEC-107.</p>
 
-<p><strong>Won't Do (rolled into AC of the three above):</strong> #2726 (superseded by #2749), #2718 (folded into #2749), #2741 (fold change folds into #2727), #2742 (typed errors fold into #2727), #2743 (non-BMP encoding — fix when it bites, not as a standalone card), #2744 (silent <code>let _</code> elimination folds into #2727), #2746 (window-naming convention folds into #2727's typed errors), #2747 (cadence drift moots once #2727 retires the poller).</p>
+<p><strong>Won't Do (rolled into AC of the four above):</strong> #2726 (superseded by #2749), #2718 (folded into #2749), #2741 (fold change folds into #2727), #2742 (typed errors fold into #2727), #2743 (non-BMP encoding — fix when it bites, not as a standalone card), #2744 (silent <code>let _</code> elimination folds into #2727), #2746 (window-naming convention folds into #2727's typed errors), #2747 (cadence drift moots once #2727 retires the poller).</p>
 
 </body>
 </html>

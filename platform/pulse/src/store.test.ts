@@ -46,6 +46,69 @@ describe('Nudge persist (canonical path — DEC-107)', () => {
   // separate column-drop migration card lands.
 });
 
+describe('Delivery columns (#2727 AC1)', () => {
+  test('sendNudge places row in pending; getPendingDeliveries returns it', () => {
+    expect(MessageStore.prototype.getPendingDeliveries).toBeDefined();
+    const id = store.sendNudge('silas', 'wren', 'test');
+    const pending = store.getPendingDeliveries();
+    expect(pending.map(r => r.id)).toContain(id);
+  });
+
+  test('markDelivered removes row from getPendingDeliveries', () => {
+    expect(MessageStore.prototype.markDelivered).toBeDefined();
+    const id = store.sendNudge('silas', 'wren', 'test');
+    store.markDelivered(id);
+    const pending = store.getPendingDeliveries();
+    expect(pending.map(r => r.id)).not.toContain(id);
+  });
+
+  test('markFailed removes row from getPendingDeliveries', () => {
+    expect(MessageStore.prototype.markFailed).toBeDefined();
+    const id = store.sendNudge('silas', 'wren', 'test');
+    store.markFailed(id, 'tcc-denied');
+    const pending = store.getPendingDeliveries();
+    expect(pending.map(r => r.id)).not.toContain(id);
+  });
+
+  test('markFailed records last_delivery_error retrievable via getDeliveryRecord', () => {
+    expect(MessageStore.prototype.getDeliveryRecord).toBeDefined();
+    const id = store.sendNudge('silas', 'wren', 'test');
+    store.markFailed(id, 'tcc-denied');
+    const rec = store.getDeliveryRecord(id);
+    expect(rec.delivery_status).toBe('failed');
+    expect(rec.last_delivery_error).toBe('tcc-denied');
+  });
+
+  test('markDelivered records delivered_at retrievable via getDeliveryRecord', () => {
+    expect(MessageStore.prototype.markDelivered).toBeDefined();
+    const id = store.sendNudge('silas', 'wren', 'test');
+    store.markDelivered(id);
+    const rec = store.getDeliveryRecord(id);
+    expect(rec.delivery_status).toBe('delivered');
+    expect(rec.delivered_at).not.toBeNull();
+  });
+
+  test('getPendingDeliveries returns oldest-first', () => {
+    expect(MessageStore.prototype.getPendingDeliveries).toBeDefined();
+    const a = store.sendNudge('silas', 'wren', 'a');
+    const b = store.sendNudge('silas', 'wren', 'b');
+    const c = store.sendNudge('silas', 'wren', 'c');
+    store.markDelivered(b);
+    const pending = store.getPendingDeliveries();
+    expect(pending.map(r => r.id)).toEqual([a, c]);
+  });
+
+  test('migration idempotent — close, reopen, queryMessages still surfaces existing nudges', () => {
+    const id = store.sendNudge('silas', 'wren', 'test');
+    store.close();
+    const reopened = new MessageStore(TEST_DB);
+    const rows = reopened.queryMessages({ type: 'nudge', to: 'wren' });
+    expect(rows.find(r => r.id === id)?.content).toBe('test');
+    reopened.close();
+    store = reopened;
+  });
+});
+
 describe('Chat', () => {
   test('chat id is namespaced by the participant pair', () => {
     const chatId = store.startChat('silas', 'kade', 'test topic');

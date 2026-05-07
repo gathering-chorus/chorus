@@ -82,6 +82,23 @@ export class MessageStore {
     } catch {
       // tolerate any DB-level oddity — retirement is best-effort
     }
+
+    // #2727 AC1: add delivery columns. Idempotent via PRAGMA table_info
+    // guard. Existing rows backfill to 'delivered' (they predate the
+    // worker and have already been surfaced via the retired path).
+    const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    const colNames = cols.map(c => c.name);
+    if (!colNames.includes('delivery_status')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK(delivery_status IN ('pending','delivered','failed'))`);
+      this.db.exec(`UPDATE messages SET delivery_status = 'delivered' WHERE id > 0`);
+    }
+    if (!colNames.includes('delivered_at')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN delivered_at TEXT`);
+    }
+    if (!colNames.includes('last_delivery_error')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN last_delivery_error TEXT`);
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)`);
   }
 
   // --- Nudges ---
@@ -91,6 +108,38 @@ export class MessageStore {
       'INSERT INTO messages (type, "from", "to", content) VALUES (\'nudge\', ?, ?, ?)'
     );
     return Number(stmt.run(from, to, content).lastInsertRowid);
+  }
+
+  // #2727 AC1: delivery state surface. Worker drives transitions via
+  // markDelivered / markFailed; pulse boot scans getPendingDeliveries
+  // for restart-requeue. getDeliveryRecord exposes failure detail.
+
+  markDelivered(id: number): void {
+    this.db.prepare(
+      `UPDATE messages SET delivery_status = 'delivered', delivered_at = datetime('now') WHERE id = ?`
+    ).run(id);
+  }
+
+  markFailed(id: number, reason: string): void {
+    this.db.prepare(
+      `UPDATE messages SET delivery_status = 'failed', last_delivery_error = ? WHERE id = ?`
+    ).run(reason, id);
+  }
+
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string }> {
+    return this.db.prepare(
+      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at FROM messages WHERE delivery_status = 'pending' AND type = 'nudge' ORDER BY id ASC`
+    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string }>;
+  }
+
+  getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number } {
+    const row = this.db.prepare(
+      `SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts FROM messages WHERE id = ?`
+    ).get(id);
+    if (!row) {
+      throw new Error(`getDeliveryRecord: no row for id=${id}`);
+    }
+    return row as { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number };
   }
 
   // #2664: getPendingNudges, recordDeliveryAttempt, getDeadLetters,

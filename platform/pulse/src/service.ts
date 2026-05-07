@@ -7,7 +7,12 @@
 
 import express, { Express } from 'express';
 import { MessageStore } from './store';
+import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
+import { spawn } from 'child_process';
+import { appendFile } from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
 
@@ -74,13 +79,17 @@ function registerHealthMetricsRoutes(app: Express, store: MessageStore, metrics:
   });
 }
 
-function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics): void {
+function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', (req, res) => {
     const { from, to, content, traceId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
     const id = store.sendNudge(from, to, content);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: content.length, traceId: traceId || undefined });
+    // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
+    if (worker) {
+      worker.enqueue({ id, from, to, content, delivery_attempts: 0 }).catch(() => { /* worker handles its own state */ });
+    }
     res.json({ ok: true, id, traceId });
   });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
@@ -141,16 +150,55 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-export function createApp(store: MessageStore): Express {
+export function createApp(store: MessageStore, worker?: DeliveryWorker): Express {
   const app = express();
   app.use(express.json());
   const metrics = buildMetrics();
   registerRequestLogging(app, metrics);
   registerHealthMetricsRoutes(app, store, metrics);
-  registerNudgeRoutes(app, store, metrics);
+  registerNudgeRoutes(app, store, metrics, worker);
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
   return app;
+}
+
+// #2727 AC2/AC12: production-side worker dependencies. Tests inject mocks
+// via DeliveryWorker constructor; this block wires the real chorus-inject
+// binary + chorus.log spine writer for the live service.
+/* istanbul ignore next */
+function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfTest: SelfTest } {
+  const injectBin = process.env.CHORUS_INJECT_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-inject');
+  const chorusLog = process.env.CHORUS_LOG || path.join(os.homedir(), '.chorus', 'chorus.log');
+
+  const runInject: RunInject = (to, content) => new Promise(resolve => {
+    const proc = spawn(injectBin, [to, content], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr }));
+    proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
+  });
+
+  const emitSpine: EmitSpine = async (event, fields) => {
+    const line = JSON.stringify({ ts: new Date().toISOString(), event, role: 'pulse', ...fields }) + '\n';
+    try { await appendFile(chorusLog, line); } catch { /* best-effort spine write */ }
+  };
+
+  // Per Kade gemba 2026-05-07: chorus-inject does not have --self-test today.
+  // --count-windows DOES exist (main.rs) and exercises the binary + system
+  // events permission without typing into a real terminal. Use it as the
+  // smoke probe; rc=0 means binary alive + TCC granted. Pattern is generic
+  // ("claude") since pulse boots once for the whole team, not per-role.
+  const selfTest: SelfTest = () => new Promise(resolve => {
+    const proc = spawn(injectBin, ['--count-windows', 'claude'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr: stderr || stdout }));
+    proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
+  });
+
+  return { runInject, emitSpine, selfTest };
 }
 
 // Run as a server only when this file is the process entrypoint. Tests import
@@ -158,10 +206,44 @@ export function createApp(store: MessageStore): Express {
 /* istanbul ignore next */
 if (require.main === module) {
   const store = new MessageStore();
-  const app = createApp(store);
+  const { runInject, emitSpine, selfTest } = buildRuntimeDeps();
+  const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
+
   process.on('SIGTERM', () => { store.close(); process.exit(0); });
   process.on('SIGINT', () => { store.close(); process.exit(0); });
-  app.listen(PORT, () => {
-    process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, ...store.getStats() }) + '\n');
-  });
+
+  // #2727 boot sequence (Silas review 2026-05-07):
+  // 1. startupSmoke — fail-fast, exit 1 if TCC cold-start probe fails
+  // 2. scanAndRequeue — OPT-IN via PULSE_REQUEUE_ON_BOOT=1. Default off
+  //    avoids stampede-on-boot (10k+ row burst at deploy moment), operator
+  //    inspect/drain pathway preserved, deploy-time spine stays quiet.
+  //    When enabled, requeue is the explicit deliberate operator action.
+  // 3. app.listen — only after smoke + (optional) scan complete
+  (async () => {
+    try {
+      await worker.startupSmoke();
+    } catch (e) {
+      process.stderr.write(JSON.stringify({ event: 'startup.smoke.failed', error: String(e) }) + '\n');
+      process.exit(1);
+    }
+
+    if (process.env.PULSE_REQUEUE_ON_BOOT === '1') {
+      try {
+        const pendingCount = store.getPendingDeliveries().length;
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.start', pending: pendingCount }) + '\n');
+        await worker.scanAndRequeue();
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.complete', enqueued: pendingCount }) + '\n');
+      } catch (e) {
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.failed', error: String(e) }) + '\n');
+        process.exit(1);
+      }
+    } else {
+      process.stderr.write(JSON.stringify({ event: 'startup.requeue.skipped', reason: 'PULSE_REQUEUE_ON_BOOT unset' }) + '\n');
+    }
+
+    const app = createApp(store, worker);
+    app.listen(PORT, () => {
+      process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, ...store.getStats() }) + '\n');
+    });
+  })();
 }
