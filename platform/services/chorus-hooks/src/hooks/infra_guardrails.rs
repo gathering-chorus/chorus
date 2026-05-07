@@ -28,6 +28,18 @@ static GIT_REBASE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+rebase\b").unwrap()
 });
 
+// #2789 — `git rebase --abort`, `--continue`, `--skip`, `--edit-todo`, `--quit`,
+// `--show-current-patch` are rebase-cleanup / rebase-inspect flags, not the
+// mutating form. They manage in-progress rebase state created earlier; blocking
+// them strands roles in stuck-rebase state with no recovery (Wren 2026-05-07
+// 17:30 — got blocked aborting her own stale rebase). The mutating form
+// `git rebase <ref>` (or bare `git rebase` defaulting to @{upstream}) stays
+// blocked. Pattern: any of these specific cleanup flags after `git rebase` is
+// allowed-through, even though GIT_REBASE_RE matches.
+static GIT_REBASE_CLEANUP_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bgit\s+rebase\s+--(abort|continue|skip|edit-todo|quit|show-current-patch)\b").unwrap()
+});
+
 static GIT_CHERRY_PICK_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+cherry-pick\b").unwrap()
 });
@@ -117,10 +129,14 @@ pub async fn check(input: &HookInput) -> HookResponse {
     // git also become invisible to this guard — that's an explicit-bypass case
     // documented like the heredoc skip.
     let cmd_for_match = strip_quoted_runs(&cmd);
+    // #2789 — rebase cleanup flags (--abort/--continue/etc) are NOT mutations
+    // of new history; they manage in-progress rebase state. Allow them through.
+    let is_rebase_mut = GIT_REBASE_RE.is_match(&cmd_for_match)
+        && !GIT_REBASE_CLEANUP_RE.is_match(&cmd_for_match);
     let is_git_mut = GIT_COMMIT_RE.is_match(&cmd_for_match)
         || GIT_ADD_RE.is_match(&cmd_for_match)
         || GIT_PUSH_RE.is_match(&cmd_for_match)
-        || GIT_REBASE_RE.is_match(&cmd_for_match)
+        || is_rebase_mut
         || GIT_CHERRY_PICK_RE.is_match(&cmd_for_match)
         || GIT_RESET_HARD_RE.is_match(&cmd_for_match)
         || GIT_CHECKOUT_RE.is_match(&cmd_for_match)
@@ -154,10 +170,10 @@ pub async fn check(input: &HookInput) -> HookResponse {
                         "BLOCKED: Direct git push is prohibited in the team repo (#2598). Use git-queue.sh push which sets the _GIT_QUEUE_PUSH marker so the pre-push hook validates branch + role."
                     ));
                 }
-                if GIT_REBASE_RE.is_match(&cmd) {
+                if GIT_REBASE_RE.is_match(&cmd) && !GIT_REBASE_CLEANUP_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-rebase").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally), or use the override env var DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if you have a real reason."
+                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally), or use the override env var DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if you have a real reason. (Cleanup flags --abort/--continue/--skip/--edit-todo/--quit/--show-current-patch are allowed and not blocked here.)"
                     ));
                 }
                 if GIT_CHERRY_PICK_RE.is_match(&cmd) {
@@ -564,5 +580,77 @@ mod tests {
         let r = check(&input).await;
         // Read-only `git branch` list passes — only `git branch <name>` (create) blocks.
         assert!(r.stdout.is_none(), "git branch (list, no args) must pass: {:?}", r.stdout);
+    }
+
+    // === #2789 — git rebase cleanup flags must NOT be blocked ===
+    // 2026-05-07: Wren got stuck mid-rebase, ran `git rebase --abort` to clean
+    // up, and was blocked. The cleanup flags don't mutate new history; they
+    // manage in-progress rebase state that already exists. Blocking them
+    // strands roles in stuck-rebase with no recovery path.
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_abort() {
+        let input = kade_bash("git rebase --abort");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --abort must NOT block (cleanup, not mutation): {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_continue() {
+        let input = kade_bash("git rebase --continue");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --continue must NOT block (resume, not new mutation): {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_skip() {
+        let input = kade_bash("git rebase --skip");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --skip must NOT block (cleanup of one commit in in-progress rebase): {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_quit() {
+        let input = kade_bash("git rebase --quit");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --quit must NOT block: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_show_current_patch() {
+        let input = kade_bash("git rebase --show-current-patch");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --show-current-patch is read-only inspection: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_allow_git_rebase_edit_todo() {
+        let input = kade_bash("git rebase --edit-todo");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "git rebase --edit-todo edits the todo file in-progress, not history: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_rebase_with_ref() {
+        // The mutating form — block stays.
+        let input = kade_bash("git rebase main");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "git rebase main must still block (mutation form)");
+        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_rebase_bare() {
+        // Bare `git rebase` defaults to @{upstream} — also a mutation, blocks.
+        let input = kade_bash("git rebase");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "bare git rebase must still block (defaults to @{{upstream}} rebase, mutation)");
+    }
+
+    #[tokio::test]
+    async fn test_deny_git_rebase_interactive_with_ref() {
+        let input = kade_bash("git rebase -i HEAD~3");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "git rebase -i must still block (interactive rebase mutation)");
     }
 }
