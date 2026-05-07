@@ -205,6 +205,13 @@ if (require.main === module) {
   process.on('SIGTERM', () => { store.close(); process.exit(0); });
   process.on('SIGINT', () => { store.close(); process.exit(0); });
 
+  // #2727 boot sequence (Silas review 2026-05-07):
+  // 1. startupSmoke — fail-fast, exit 1 if TCC cold-start probe fails
+  // 2. scanAndRequeue — OPT-IN via PULSE_REQUEUE_ON_BOOT=1. Default off
+  //    avoids stampede-on-boot (10k+ row burst at deploy moment), operator
+  //    inspect/drain pathway preserved, deploy-time spine stays quiet.
+  //    When enabled, requeue is the explicit deliberate operator action.
+  // 3. app.listen — only after smoke + (optional) scan complete
   (async () => {
     try {
       await worker.startupSmoke();
@@ -212,7 +219,20 @@ if (require.main === module) {
       process.stderr.write(JSON.stringify({ event: 'startup.smoke.failed', error: String(e) }) + '\n');
       process.exit(1);
     }
-    await worker.scanAndRequeue();
+
+    if (process.env.PULSE_REQUEUE_ON_BOOT === '1') {
+      try {
+        const pendingCount = store.getPendingDeliveries().length;
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.start', pending: pendingCount }) + '\n');
+        await worker.scanAndRequeue();
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.complete', enqueued: pendingCount }) + '\n');
+      } catch (e) {
+        process.stderr.write(JSON.stringify({ event: 'startup.requeue.failed', error: String(e) }) + '\n');
+        process.exit(1);
+      }
+    } else {
+      process.stderr.write(JSON.stringify({ event: 'startup.requeue.skipped', reason: 'PULSE_REQUEUE_ON_BOOT unset' }) + '\n');
+    }
 
     const app = createApp(store, worker);
     app.listen(PORT, () => {
