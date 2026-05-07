@@ -46,6 +46,26 @@ platform/logs/board-snapshot-*.json
 
 # Clearing transcripts (runtime, not source)
 archive/clearing/transcripts/
+directing/clearing/transcripts/
+
+# Hook-generated brief files (#2777) — written by session-close hooks on every
+# card move/done/shipped/reassigned. Pile up in canonical `git status` and
+# drown real edits in noise. Roles work from werks; canonical is shared view.
+directing/products/roles/*/briefs/*-card-*-moved-to-*.md
+directing/products/roles/*/briefs/*-card-*-done.md
+directing/products/roles/*/briefs/*-card-*-shipped.md
+directing/products/roles/*/briefs/*-card-*-reassigned-to-*.md
+
+# Runtime logs from cards/products domains
+directing/products/logs/
+
+# claudemd-gen runtime artifacts (CLAUDE.md is derived; so is its checksum
+# manifest and versioned snapshots). Source of truth lives in fragments.
+designing/claudemd/.checksums.json
+designing/claudemd/versions/*.json
+
+# Per-role scheduler lock (runtime, not source)
+roles/*/.claude/scheduled_tasks.lock
 
 # Vikunja data
 vikunja/db/
