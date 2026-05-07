@@ -30,18 +30,20 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(names).toContain('chorus_commit');
     });
 
-    test('input schema accepts only role/paths/message — strict, no smuggling', async () => {
+    test('input schema accepts role/paths/message + optional no_add — strict, no smuggling', async () => {
       const server = buildMcpServer(() => 'kade');
       // @ts-expect-error - private handler access
       const handler = (server as any)._requestHandlers.get('tools/list');
       const result = await handler({ method: 'tools/list', params: {} }, {});
       const tool = result.tools.find((t: { name: string }) => t.name === 'chorus_commit');
       expect(tool).toBeDefined();
+      // role/paths/message remain required; no_add is optional (#2778).
       expect(tool.inputSchema.required.sort()).toEqual(['message', 'paths', 'role']);
       const propKeys = Object.keys(tool.inputSchema.properties).sort();
-      expect(propKeys).toEqual(['message', 'paths', 'role']);
+      expect(propKeys).toEqual(['message', 'no_add', 'paths', 'role']);
       expect(tool.inputSchema.additionalProperties).toBe(false);
       expect(tool.inputSchema.properties.role.enum.sort()).toEqual(['kade', 'silas', 'wren']);
+      expect(tool.inputSchema.properties.no_add.type).toBe('boolean');
     });
 
     test('rejects empty paths array', async () => {
@@ -177,6 +179,70 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(invoked?.fields.card_id).toBe(2682);
       expect(invoked?.fields.paths_count).toBe(2);
       expect(invoked?.fields.sha).toBe('abcd1234');
+    });
+
+    test('#2778 — no_add:true passes --no-add to git-queue commit (staged-deletes-of-now-ignored case)', async () => {
+      // Reproducer for #2778: editing .gitignore + `git rm --cached` on the
+      // newly-ignored paths leaves the index pre-staged. Without --no-add,
+      // git-queue.sh runs `git add` and refuses the now-ignored paths,
+      // making the staged deletion impossible to commit through the typed
+      // surface. With no_add:true the MCP must thread --no-add through.
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        calls.push({ args });
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) return { stdout: 'kade/2778\n', stderr: '' };
+        if (args[0] === 'commit') return { stdout: '[kade/2778 deadbeef] kade: m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        throw new Error(`unexpected args: ${args.join(' ')}`);
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2778, owner: 'Kade', title: 'no_add' }] })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['.gitignore', 'noise.log'], message: 'kade: #2778 cleanup', no_add: true } } },
+        {},
+      );
+      const commitCall = calls.find((c) => c.args[0] === 'commit')!;
+      // #2731 contract: --no-add follows --force-branch in git-queue.sh do_commit.
+      expect(commitCall.args).toContain('--no-add');
+      // --force-branch still first per #2687.
+      expect(commitCall.args[1]).toBe('--force-branch');
+      expect(commitCall.args[2]).toBe('--no-add');
+      // Paths still passed through after the flags.
+      expect(commitCall.args).toContain('.gitignore');
+      expect(commitCall.args).toContain('noise.log');
+    });
+
+    test('#2778 — no_add omitted/false does NOT pass --no-add (preserves default git-add behavior)', async () => {
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        calls.push({ args });
+        if (args[0] === 'rev-parse' && args.includes('HEAD')) return { stdout: 'kade/2778\n', stderr: '' };
+        if (args[0] === 'commit') return { stdout: '[kade/2778 deadbeef] kade: m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        throw new Error(`unexpected args: ${args.join(' ')}`);
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2778, owner: 'Kade', title: 'default' }] })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'kade', paths: ['a.ts'], message: 'kade: m' } } },
+        {},
+      );
+      const commitCall = calls.find((c) => c.args[0] === 'commit')!;
+      expect(commitCall.args).not.toContain('--no-add');
     });
 
     test('refuses hook-fail when git-queue commit blocked by pre-commit', async () => {
