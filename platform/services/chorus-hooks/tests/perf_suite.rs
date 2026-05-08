@@ -24,31 +24,16 @@ fn skip_unless_integration(reason: &str) -> bool {
     false
 }
 
-fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 fn chat_script() -> String { format!("{}/platform/scripts/chat.sh", chorus_root()) }
 fn chorus_log() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
 fn shim_bin() -> String { format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim", chorus_root()) }
-/// Nudge dry-run budget: 500ms. Measured baseline ~150ms (#2283 post-lsof-fix).
-/// Exercises: detect_sender, persist curl, queue decision. Skips osascript.
-#[test]
-fn nudge_dry_run_under_500ms() {
-    if skip_unless_integration("invokes nudge script with real role names") { return; }
-    let t = Instant::now();
-    let out = Command::new("bash")
-        .arg(nudge_script())
-        .args(["wren", "perf-nudge-dry-run"])
-        .env("DEPLOY_ROLE", "silas")
-        .env("CHORUS_INJECT_DRY_RUN", "1")
-        .output()
-        .expect("nudge script must run");
-    let elapsed = t.elapsed().as_millis();
-
-    assert!(out.status.success(), "nudge dry-run must exit 0, stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
-    assert!(elapsed < 500,
-        "nudge dry-run took {}ms, budget 500ms — {}x regression. lsof back in hot path? (#2287)",
-        elapsed, elapsed / 500);
-}
+// Prior work: #2287 introduced this 500ms budget on the bash nudge script's
+// dry-run path; #2614 hermeticity-gated it behind RUN_INTEGRATION.
+// Current state: #2804 cut bash off the canonical send path; #2809 deletes the
+// script entirely. The budget can no longer measure what it was filed to guard.
+// Approach: drop the test outright. Pulse worker latency (the canonical
+// delivery primitive) is covered by the delivery-worker test suite — that's
+// the right place for new latency budgets if we want them.
 
 /// Persist-to-Bridge budget: 100ms. Measured baseline ~30ms.
 /// Exercises: curl POST to localhost:3475/api/nudge.
