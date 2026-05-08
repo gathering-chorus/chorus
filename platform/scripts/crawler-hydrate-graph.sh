@@ -38,6 +38,21 @@ CHORUS_NS="https://jeffbridwell.com/chorus#"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
+# §C: SQLite-side index of hydrated chorus:File records, used for the
+# end-of-run reconciliation pass. Path is the primary key; fuseki_status
+# tracks whether the corresponding Fuseki write succeeded.
+DB_PATH="${HYDRATION_DB:-$HOME/.chorus/index.db}"
+
+ensure_chorus_files_table() {
+  sqlite3 "$DB_PATH" "CREATE TABLE IF NOT EXISTS chorus_files (
+    path TEXT PRIMARY KEY,
+    sha TEXT,
+    last_modified TEXT,
+    fuseki_status TEXT NOT NULL DEFAULT 'pending',
+    last_attempt TEXT
+  );" 2>/dev/null
+}
+
 # Per-class limits: full chorus tree is too broad for chorus:File="**/*"
 # without exclusions. Always exclude .git, node_modules, target, dist.
 EXCLUDE_DIRS=(.git node_modules target dist .venv __pycache__)
@@ -152,19 +167,41 @@ hydrate_chorus_file() {
   local count=0 batch=0 batch_deletes="" batch_triples="" failures=0
   local rc
 
+  # Track which paths are in the current batch so we can mark their
+  # SQLite rows wrote/failed atomically with the Fuseki batch outcome.
+  local batch_paths=()
+
   flush_batch() {
     local body="${batch_deletes}INSERT DATA { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $batch_triples } }"
     rc=$(post_update "$body")
-    if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
+    local ts now
+    now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    if [ "$rc" = "200" ] || [ "$rc" = "204" ]; then
+      ts="wrote"
+    else
+      ts="failed"
       failures=$((failures + 1))
     fi
+    # Mark each path's fuseki_status atomically.
+    for p in "${batch_paths[@]}"; do
+      sqlite3 "$DB_PATH" "UPDATE chorus_files SET fuseki_status='$ts', last_attempt='$now' WHERE path='$(echo "$p" | sed "s/'/''/g")';" 2>/dev/null
+    done
     batch_deletes=""
     batch_triples=""
+    batch_paths=()
     batch=0
   }
 
   while IFS= read -r -d '' f; do
     local uri="<urn:chorus:file:$(echo -n "$f" | shasum -a 1 | awk '{print $1}')>"
+    # §C: SQLite write FIRST. Per AC: "writes SQLite first, Fuseki second
+    # per record". INSERT OR REPLACE is the per-record idempotent.
+    local sha_v lastmod_v
+    sha_v=$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')
+    lastmod_v=$(date -u -r "$f" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "")
+    sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO chorus_files (path, sha, last_modified, fuseki_status, last_attempt)
+      VALUES ('$(echo "$f" | sed "s/'/''/g")', '$sha_v', '$lastmod_v', 'pending', NULL);" 2>/dev/null
+    batch_paths+=("$f")
     batch_deletes="${batch_deletes}DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}filePath> ?_p } } ;
 DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileSha> ?_s } } ;
 DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileLastModified> ?_m } } ;
@@ -194,6 +231,93 @@ DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS
     echo "FAILED chorus:File: $failures batch(es) failed (count=$count, duration=${duration_ms}ms)" >&2
     return 1
   fi
+}
+
+# --- §C: per-record reconciliation across SQLite + Fuseki ---
+#
+# Walk both stores at end-of-run, find records present in one but not
+# the other. Emit hydration.partial.divergent per record. For SQLite-side
+# rows with fuseki_status=failed, retry the Fuseki write once with
+# backoff; on retry success, flip status to wrote. On retry failure,
+# leave the divergent state visible via the spine event.
+#
+# Read-side contract (documented in crawler-service-design.html):
+# consumers see eventual consistency within ~one crawl cycle;
+# partial-divergent state is observable via the hydration.partial.divergent
+# event. Reconciliation does not block the crawl run — failure on either
+# side is recorded, not raised.
+
+reconcile_consistency() {
+  # 1. Find SQLite rows with fuseki_status='failed' (Fuseki-side missing).
+  local failed_paths
+  failed_paths=$(sqlite3 "$DB_PATH" "SELECT path FROM chorus_files WHERE fuseki_status='failed';" 2>/dev/null)
+  local divergent=0 recovered=0
+
+  if [ -n "$failed_paths" ]; then
+    while IFS= read -r path; do
+      [ -z "$path" ] && continue
+      "$CHORUS_LOG" hydration.partial.divergent "$ROLE" \
+        class="chorus:File" identifier="$path" missing_side="fuseki" recovery_attempted="true" 2>/dev/null || true
+      divergent=$((divergent + 1))
+
+      # Retry Fuseki write for this single record. One attempt with brief
+      # backoff (250ms); the AC asks for retry-once, no exponential.
+      sleep 0.25
+      local uri="<urn:chorus:file:$(echo -n "$path" | shasum -a 1 | awk '{print $1}')>"
+      local triples
+      triples=$(file_triples "$path" 2>/dev/null)
+      [ -z "$triples" ] && continue
+      local body="DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}filePath> ?_p } } ;
+DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileSha> ?_s } } ;
+DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileLastModified> ?_m } } ;
+INSERT DATA { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $triples } }"
+      local rc
+      rc=$(post_update "$body")
+      if [ "$rc" = "200" ] || [ "$rc" = "204" ]; then
+        local now
+        now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        sqlite3 "$DB_PATH" "UPDATE chorus_files SET fuseki_status='wrote', last_attempt='$now' WHERE path='$(echo "$path" | sed "s/'/''/g")';" 2>/dev/null
+        recovered=$((recovered + 1))
+      fi
+    done <<< "$failed_paths"
+  fi
+
+  # 2. Find Fuseki-side instances whose path has no SQLite row (graph
+  # has it, search index doesn't). Less likely under our flow (SQLite
+  # write precedes Fuseki) but the contract requires we detect both
+  # directions.
+  local query='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?p WHERE {
+  GRAPH <'"${HYDRATION_GRAPH:-urn:chorus:instances}"'> {
+    ?f a chorus:File ; chorus:filePath ?p .
+  }
+}'
+  local resp
+  resp=$(curl -s -G -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=$query" \
+    "${FUSEKI_BASE:-http://localhost:3030/pods}/query" 2>/dev/null)
+  local sqlite_orphans=0
+  while IFS= read -r path; do
+    [ -z "$path" ] && continue
+    local row
+    row=$(sqlite3 "$DB_PATH" "SELECT 1 FROM chorus_files WHERE path='$(echo "$path" | sed "s/'/''/g")';" 2>/dev/null)
+    if [ -z "$row" ]; then
+      "$CHORUS_LOG" hydration.partial.divergent "$ROLE" \
+        class="chorus:File" identifier="$path" missing_side="sqlite" recovery_attempted="false" 2>/dev/null || true
+      sqlite_orphans=$((sqlite_orphans + 1))
+    fi
+  done < <(echo "$resp" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for b in d['results']['bindings']:
+        print(b.get('p',{}).get('value',''))
+except Exception:
+    pass
+")
+
+  echo "Consistency reconciled: $divergent fuseki-failed ($recovered recovered), $sqlite_orphans sqlite-missing"
+  return 0
 }
 
 # --- §D: deletes reconciliation ---
@@ -274,6 +398,8 @@ if ! curl -sf --max-time 3 "http://localhost:3030/\$/ping" -o /dev/null 2>/dev/n
   exit 1
 fi
 
+ensure_chorus_files_table
+
 errors=0
 while IFS=$'\t' read -r cls glob preds; do
   case "$cls" in
@@ -288,6 +414,9 @@ while IFS=$'\t' read -r cls glob preds; do
       ;;
   esac
 done < <(resolve_registry)
+
+# §C: per-record consistency reconciliation across SQLite + Fuseki
+reconcile_consistency || errors=$((errors + 1))
 
 # §D: post-hydration deletes reconciliation
 reconcile_deletes || errors=$((errors + 1))
