@@ -79,6 +79,29 @@ echo "  current state rc=$RC"
 # Under quiet repo activity it should pass through to ok or low-activity
 [ "$RC" = "0" ] && p "hydration-divergence: rc=0 when activity is fine OR low" || f "expected rc=0, got $RC"
 
+# Positive case: synthesize high git activity AND empty chorus.log
+# (zero indexed events in last 3 min) → expect rc=1.
+# Build a fake chorus repo with 12 recent commits touching distinct files,
+# then point CHORUS_ROOT at it and HOME at an empty log.
+FAKE_REPO=$(mktemp -d -t fake-chorus-divergence.XXXX)
+(
+  cd "$FAKE_REPO" && git init -q && git config user.email t@t && git config user.name t
+  for i in $(seq 1 12); do
+    echo "v1" > "f${i}.txt"
+    git add "f${i}.txt" >/dev/null
+    git commit -q -m "synth ${i}"
+  done
+) >/dev/null 2>&1
+mkdir -p /tmp/fakeshome-div/.chorus
+touch /tmp/fakeshome-div/.chorus/chorus.log
+# The yaml hardcodes CHORUS_ROOT — temporarily rewrite check via env override.
+DIV_CHECK=$(extract_check "$ALERT_DIR/hydration-divergence.yml" \
+  | sed "s|/Users/jeffbridwell/CascadeProjects/chorus|$FAKE_REPO|g")
+RC_OUT=$(HOME=/tmp/fakeshome-div bash -c "$DIV_CHECK" >/dev/null 2>&1; echo $?)
+echo "  high-activity-empty-log rc=$RC_OUT"
+[ "$RC_OUT" = "1" ] && p "hydration-divergence: rc=1 when activity high + indexing zero" || f "expected rc=1, got $RC_OUT"
+rm -rf "$FAKE_REPO" /tmp/fakeshome-div
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

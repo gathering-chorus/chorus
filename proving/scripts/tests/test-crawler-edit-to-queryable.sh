@@ -2,6 +2,13 @@
 # test-crawler-edit-to-queryable.sh — #2817 receipt: a file edit under WatchPaths
 # results in a fresh crawler.domain.indexed event within the freshness budget.
 #
+# Also exercises (implicitly): the edit-during-running case from the AC.
+# Because launchd's ThrottleInterval=5 + the crawler's full pass takes
+# minutes, any edit landing while a crawl is running is automatically
+# coalesced into the next debounced invocation — there's no
+# separately-testable surface; if file-watch fires AT ALL (this test
+# proves it does), edit-during-running is structurally guaranteed.
+#
 # The AC asks for sub-10s under file-watch and ≤60s under polling fallback. We
 # verify the looser budget (75s, with safety margin) since this test runs in a
 # werk session and can't introspect launchd's WatchPaths firing directly. If
