@@ -173,6 +173,25 @@
     "role.nudge.consumed": "role.nudge.consumed"
   },
   "events": {
+    "library.health.passed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "library-health-probe.sh",
+      "description": "Bedroom-side probe: all Library services healthy on this run (#2835)",
+      "fields": {
+        "source": "Probe source (e.g., bedroom-probe)"
+      }
+    },
+    "library.health.failed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "library-health-probe.sh",
+      "description": "Bedroom-side probe: one or more Library services unreachable/degraded (#2835)",
+      "fields": {
+        "source": "Probe source (e.g., bedroom-probe)",
+        "failures": "Count of services that failed health check"
+      }
+    },
     "card.item.created": {
       "vertebra": "capturing",
       "legacy_name": "card_created",
