@@ -182,3 +182,11 @@ echo "$DOMAIN_STATUS" | python3 -c "import json,sys; print(json.dumps(json.load(
 
 echo ""
 echo "Done: $indexed domains indexed, $errors errors"
+
+# #2824: explicit exit semantics — binary 0/1 at the boundary; the count
+# lives in the spine event payload (crawler.domain.indexed / .failed already
+# carry per-domain detail; Loki audits filter on that). CI gates check rc!=0
+# and don't read the magnitude; a count-as-exit-code overflows past 127 into
+# the 0-127 range silently. Same separation-of-concerns as chorus_acp.refused
+# (boundary = reason; payload = detail). Per Kade #2824 review.
+exit $(( errors > 0 ? 1 : 0 ))
