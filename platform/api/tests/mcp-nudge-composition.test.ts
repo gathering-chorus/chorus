@@ -87,9 +87,21 @@ describe('#2820 DEC-107 composition gate — nudge.requested + nudge.surfaced sh
 
   test('full chain MCP → pulse → worker writes nudge.requested + nudge.surfaced for same trace_id (DEC-107)', async () => {
     // Drive MCP handler against the live in-process pulse via fetchImpl.
-    // Hard safety guard: if CHORUS_PULSE_URL isn't pointing at the test's
-    // in-process port, refuse to run. Prevents firing real nudges into the
-    // live :3475 daemon → real terminals during test runs.
+    // *** LOAD-BEARING: do not remove without replacement. ***
+    //
+    // This safety guard caught a real bug during #2820 development: the test
+    // initially relied on a `pulseUrl` deps option to redirect MCP fetches at
+    // the in-process pulse fixture. `buildMcpServer` reads `CHORUS_PULSE_URL`
+    // from process.env at handler call time — the deps option was silently
+    // ignored. Without this guard, the test fired real `chorus_nudge_message`
+    // calls into the live :3475 pulse daemon, which delivered real osascript
+    // nudges to Jeff's actual terminal session. Twice. (silas gate:ops 2026-05-08)
+    //
+    // If you refactor pulse-URL plumbing, KEEP this assertion — it's the only
+    // thing preventing a test against in-process fixture from accidentally
+    // routing through the daemon if env-vs-deps semantics shift. The cost of
+    // the guard is one line; the cost of removing it is real-world side
+    // effects visible to a human.
     if (!process.env.CHORUS_PULSE_URL?.includes(`:${pulsePort}/`)) {
       throw new Error(`SAFETY: CHORUS_PULSE_URL must point to test port :${pulsePort}, got ${process.env.CHORUS_PULSE_URL}`);
     }
