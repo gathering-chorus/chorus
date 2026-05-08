@@ -58,7 +58,14 @@ if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1 \
 fi
 
 # Evidence 2: Demo spine event via Chorus search API
-if curl -sf "http://localhost:3340/api/chorus/search?q=card.demo.started+card%3D${CARD_ID}" 2>/dev/null | grep -q "card.demo.started"; then
+# #2806: DONE_GATE_SKIP_SEARCH=1 disables the spine-search path. test-skip-
+# gates.sh's demo_gate fixture sets this env so the test exercises the
+# evidence-not-found path without false positives from the live search log
+# (search logs record their own query history, so any card_id appears in
+# results once it's been queried). Pre-#2806 the env was named in the
+# test's setup but never honored here — gate always passed via spine_event.
+if [ -z "${DONE_GATE_SKIP_SEARCH:-}" ] \
+   && curl -sf "http://localhost:3340/api/chorus/search?q=card.demo.started+card%3D${CARD_ID}" 2>/dev/null | grep -q "card.demo.started"; then
   "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="spine_event" 2>/dev/null || true
   exit 0
 fi

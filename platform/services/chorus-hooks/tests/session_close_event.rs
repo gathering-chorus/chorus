@@ -3,10 +3,15 @@
 
 use std::fs;
 use std::process::Command;
-use chorus_hooks::shared::state_paths::chorus_root;
+use chorus_hooks::shared::state_paths::chorus_log_file;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
-fn chorus_log() -> String { format!("{}/platform/logs/chorus.log", chorus_root()) }
+// #2806: chorus_root()/platform/logs/chorus.log was the path before
+// state_paths::chorus_log_file() canonicalized to ~/.chorus/chorus.log.
+// Pre-#2806 the test read the old path, never finding session.role.ended
+// because the binary writes to the new path. Same drift class as the
+// bash-side fix in #2801 wave 2 (test-role-state-spine.sh).
+fn chorus_log() -> String { chorus_log_file() }
 #[allow(dead_code)]
 fn log_tail(n: usize) -> String {
     let content = fs::read_to_string(chorus_log()).unwrap_or_default();
