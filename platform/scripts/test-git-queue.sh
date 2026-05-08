@@ -68,12 +68,21 @@ setup_repo() {
 
 echo "=== AC5: Git Queue Tests ==="
 
+# Tests 1/3/4/7 exercise the commit-flow surface (file validation, message
+# validation, lock cycle, doc-drift). They use --force-branch to bypass
+# check_branch — the test setup creates a fresh tmp repo on whatever the
+# git default branch is (master/main), not on kade/<id>. check_branch was
+# strictened post-#2580 (branch-prefix) and #2641 (mode-C active-card)
+# to refuse off-pattern branches; without --force-branch these tests fail
+# at check_branch before reaching the surface they exercise. Tests 5/6
+# explicitly test branch/syntax validation and do NOT use --force-branch.
+
 # --- Test 1: lock/commit/release cycle ---
 echo ""
 echo "Test 1: lock/commit/release cycle"
 setup_repo
 echo "changed" > file.txt
-output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit file.txt -- -m "kade: test commit" 2>&1) || true
+output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit --force-branch file.txt -- -m "kade: test commit" 2>&1) || true
 # Verify commit landed
 log=$(cd "$TEST_DIR" && git log --oneline -1)
 assert_contains "commit message in log" "kade: test commit" "$log"
@@ -94,7 +103,7 @@ echo ""
 echo "Test 3: no files returns error"
 setup_repo
 set +e
-output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit -- -m "empty" 2>&1)
+output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit --force-branch -- -m "empty" 2>&1)
 exit_code=$?
 set -e
 assert_eq "exit code 1 for no files" "1" "$exit_code"
@@ -106,7 +115,7 @@ echo "Test 4: no commit message returns error"
 setup_repo
 echo "data" > newfile.txt
 set +e
-output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit newfile.txt 2>&1)
+output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit --force-branch newfile.txt 2>&1)
 exit_code=$?
 set -e
 assert_eq "exit code 1 for no message" "1" "$exit_code"
@@ -153,7 +162,7 @@ echo "changed code" > "$TEST_DIR/src/handler.ts"
 # git-queue reads doc-drift.conf relative to the script dir, not the repo
 # This test verifies the mechanism exists — the actual config is in messages/scripts/
 # For now, verify commit works without drift config in test dir
-output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit src/handler.ts -- -m "kade: code change" 2>&1) || true
+output=$(cd "$TEST_DIR" && DEPLOY_ROLE=kade bash "$GIT_QUEUE" commit --force-branch src/handler.ts -- -m "kade: code change" 2>&1) || true
 log=$(cd "$TEST_DIR" && git log --oneline -1)
 assert_contains "commit succeeds without drift config" "kade: code change" "$log"
 

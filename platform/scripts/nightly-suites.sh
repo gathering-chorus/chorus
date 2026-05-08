@@ -25,11 +25,33 @@ APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal
 # --- Discovery ---
 
 list_npm() {
-  # Every package dir that contains a .test.ts/.test.js file somewhere within.
-  # Previous version only counted packages with scripts.test in package.json —
-  # that silently missed platform/api (356 tests, 0 wired), platform/pulse,
-  # and anywhere else tests exist but nobody added the npm script.
-  # "Every test" means every test FILE, not every test script.
+  # Every package dir that has a real jest setup AND owns at least one
+  # *.test.{ts,js}/*.spec.{ts,js} via the nearest-package-json walk.
+  #
+  # "Real jest setup" = scripts.test in package.json OR a `jest` key in
+  # package.json OR a jest.config.{js,ts,cjs,mjs} file. A dir with NEITHER
+  # will silently skip its discovered specs (default jest can't transform
+  # TS without per-project tsconfig) and report nonsense like "82 skipped /
+  # 82 total" — the chorus-root pre-#2801 case, where one orphan test
+  # (roles/silas/docs/attention-architecture.test.ts) made the root the
+  # nearest-package-json owner, then 260 sub-package suites failed at
+  # parse time and only the misleading test-line bubbled up.
+  #
+  # Pre-#2142 (the original) required scripts.test — that missed
+  # platform/api (356 tests, 0 wired). Pre-#2801 dropped the gate
+  # entirely — that introduced the no-config-runs-anyway bug. Right
+  # test: "owns specs AND has the means to run them."
+  has_jest_setup() {
+    local d="$1"
+    local pj="$d/package.json"
+    [ -f "$pj" ] || return 1
+    if jq -e '.scripts.test' "$pj" >/dev/null 2>&1; then return 0; fi
+    if jq -e '.jest' "$pj" >/dev/null 2>&1; then return 0; fi
+    for f in jest.config.js jest.config.ts jest.config.cjs jest.config.mjs; do
+      [ -f "$d/$f" ] && return 0
+    done
+    return 1
+  }
   for root in "$CHORUS_ROOT" "$APP_ROOT"; do
     [ -d "$root" ] || continue
     find "$root" \( -name "*.test.ts" -o -name "*.test.js" -o -name "*.spec.ts" -o -name "*.spec.js" \) \
@@ -40,7 +62,9 @@ list_npm() {
       dir=$(dirname "$tf")
       while [ "$dir" != "/" ]; do
         if [ -f "$dir/package.json" ]; then
-          echo "$dir"
+          if has_jest_setup "$dir"; then
+            echo "$dir"
+          fi
           break
         fi
         dir=$(dirname "$dir")
