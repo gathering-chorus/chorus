@@ -25,5 +25,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "loom-principles-api-down: /api/loom/principles unreachable. SessionStart inject (#2450) is now serving STALE cache to every new role boot. Check chorus-api + Fuseki." --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "loom-principles-api-down: /api/loom/principles unreachable. SessionStart inject (#2450) is now serving STALE cache to every new role boot. Check chorus-api + Fuseki." 2>/dev/null || true

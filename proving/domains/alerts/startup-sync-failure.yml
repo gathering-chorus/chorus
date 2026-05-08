@@ -78,5 +78,5 @@ for r in d.get('data',{}).get('result',[]):
 print('sync failed — check Loki for details')
 " 2>/dev/null || echo "sync failed — could not fetch details from Loki")
 
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "startup-sync alert: Fuseki is DOWN and sync failed. Error: $ERROR_DETAIL" 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "startup-sync alert: Fuseki is DOWN and sync failed. Error: $ERROR_DETAIL" 2>/dev/null || true

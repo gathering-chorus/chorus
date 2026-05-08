@@ -7,7 +7,8 @@
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-NUDGE="$CHORUS_ROOT/platform/scripts/nudge"
+# #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
+OPS_NUDGE="$CHORUS_ROOT/platform/scripts/ops-nudge"
 STATE_DIR="$HOME/Library/Logs/Gathering/alert-state"
 mkdir -p "$STATE_DIR"
 
@@ -25,7 +26,7 @@ alert() {
   touch "$fired_file"
 
   # Nudge owning role directly — not the Bridge
-  "$NUDGE" silas "${icon} ALERT: ${component} — ${message}" --force 2>/dev/null || true
+  "$OPS_NUDGE" silas "${icon} ALERT: ${component} — ${message}" 2>/dev/null || true
 
   echo "[$(date '+%H:%M:%S')] $level: $component — $message"
 }

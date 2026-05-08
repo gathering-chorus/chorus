@@ -20,7 +20,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 
 ALERT_RUNNER="${CHORUS_ROOT}/scripts/alert-runner.sh"
 DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
-NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+# #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
+OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 BRIDGE="http://localhost:3470"
 LOG="$HOME/Library/Logs/Chorus/alert-delivery-test.log"
@@ -104,17 +105,17 @@ test_deep_health() {
     pass "deep-health: ran and reported ${failure_count} issue(s) — delivery chain exercised"
   fi
 
-  # 2b. Verify nudge binary is executable
-  if [[ -x "$NUDGE" ]]; then
-    pass "deep-health: nudge binary executable"
+  # 2b. Verify ops-nudge helper is executable
+  if [[ -x "$OPS_NUDGE" ]]; then
+    pass "deep-health: ops-nudge helper executable"
   else
-    fail "deep-health: nudge binary missing or not executable at $NUDGE"
+    fail "deep-health: ops-nudge helper missing or not executable at $OPS_NUDGE"
     return
   fi
 
   # 2c. Fire a synthetic nudge to verify terminal injection works
   # Use --force to test osascript path (DEC-107)
-  nudge_output=$("$NUDGE" silas "[synthetic] Delivery probe $PROBE_MARKER" --force 2>&1) || true
+  nudge_output=$("$OPS_NUDGE" silas "[synthetic] Delivery probe $PROBE_MARKER" 2>&1) || true
 
   if [[ $? -eq 0 ]] || echo "$nudge_output" | grep -qi "delivered\|queued\|inject"; then
     pass "deep-health: synthetic nudge sent"

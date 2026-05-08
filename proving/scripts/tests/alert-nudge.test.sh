@@ -23,28 +23,35 @@ else
   test_fail "alert-runner.sh not found or not executable"
 fi
 
-# Test 2: alert-runner.sh contains nudge --force call
-if grep -q 'nudge.*--force' "$RUNNER"; then
-  test_pass "alert-runner.sh contains nudge --force"
+# Test 2: at least one alert YAML invokes ops-nudge (post-#2808;
+# bash `nudge` was retired in #2804/#2809). Each alert's action block
+# fires the nudge inline — checked across $ALERT_DIR.
+if grep -lq 'ops-nudge' "$ALERT_DIR"/*.yml 2>/dev/null; then
+  test_pass "alert YAMLs invoke ops-nudge"
 else
-  test_fail "alert-runner.sh missing nudge --force — alerts won't reach role terminals"
+  test_fail "no alert YAML invokes ops-nudge — alerts won't reach role terminals"
 fi
 
-# Test 3: all alert rules have action blocks that post to Bridge
+# Test 3: each alert has at least one delivery surface (ops-nudge OR Bridge POST).
+# #2808 reframe: previous test asserted universal Bridge POST, but only ~7 of 19
+# alerts have it (always did, pre-#2808 baseline). Log evidence: chorus.log
+# observer-digest for ollama-down + vikunja-auth-failure shows alerts firing
+# 2026-04-21 with NO bridge.message events ever — delivered via nudge alone.
+# Bridge POST coverage is separate policy question, tracked outside this card.
 for rule in "$ALERT_DIR"/*.yml; do
   name=$(grep '^name:' "$rule" | head -1 | sed 's/name: *//')
-  if grep -q 'localhost:3470' "$rule"; then
-    test_pass "$name posts to Bridge"
+  if grep -q 'localhost:3470' "$rule" || grep -q 'ops-nudge\|/nudge' "$rule"; then
+    test_pass "$name has delivery surface"
   else
-    test_fail "$name missing Bridge POST"
+    test_fail "$name missing both ops-nudge and Bridge POST"
   fi
 done
 
-# Test 4: nudge path uses the platform nudge script
-if grep -q 'platform/scripts/nudge' "$RUNNER"; then
-  test_pass "nudge uses platform/scripts/nudge path"
+# Test 4: alert YAMLs use the canonical ops-nudge path (post-#2808)
+if grep -lq 'platform/scripts/ops-nudge' "$ALERT_DIR"/*.yml 2>/dev/null; then
+  test_pass "alert YAMLs use platform/scripts/ops-nudge path"
 else
-  test_fail "nudge path not found in alert-runner"
+  test_fail "ops-nudge path not found in any alert YAML"
 fi
 
 echo ""

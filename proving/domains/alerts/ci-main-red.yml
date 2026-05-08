@@ -64,5 +64,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "ci-main-red: quality workflow failing on main. Check: gh run list --branch main --workflow quality.yml" --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "ci-main-red: quality workflow failing on main. Check: gh run list --branch main --workflow quality.yml" 2>/dev/null || true

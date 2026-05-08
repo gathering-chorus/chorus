@@ -5,7 +5,8 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+# #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
+OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 ALERT_ROLE="silas"
 FAILURES=()
@@ -175,9 +176,9 @@ if ! [[ "$CADDY_CODE" =~ ^(200|204|301|302)$ ]]; then
   FAILURES+=("caddy-edge: localhost:3000 returned ${CADDY_CODE:-000} — edge proxy down, inbound bookmarks broken")
 fi
 
-# --- 9. Nudge delivery ---
-if [ ! -x "$NUDGE" ]; then
-  FAILURES+=("nudge: binary not found or not executable at $NUDGE")
+# --- 9. Nudge delivery (post-#2808: ops-nudge wrapper, not bash nudge) ---
+if [ ! -x "$OPS_NUDGE" ]; then
+  FAILURES+=("ops-nudge: helper not found or not executable at $OPS_NUDGE")
 fi
 
 # --- 10. Critical services: must be loaded and running ---
@@ -419,7 +420,7 @@ printf '%s' "$CURRENT" > "$STATE_FILE"
 if [ "$CURRENT" = "$LAST" ]; then
   echo "deep-health: failure set unchanged — alert suppressed (see $STATE_FILE)"
 else
-  "$NUDGE" "$ALERT_ROLE" "$MSG" --force 2>/dev/null || true
+  "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
 "$CHORUS_LOG" ops.health.deep_check_failed "$ALERT_ROLE" failures="${#FAILURES[@]}" 2>/dev/null || true
 exit 1

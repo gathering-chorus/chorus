@@ -8,7 +8,8 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 SESSIONS_DIR="$HOME/.claude/projects"
 HOOKS_LOG="$HOME/Library/Logs/Gathering/hooks.log"
-NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+# #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
+OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 
 # Defaults
@@ -151,7 +152,7 @@ if [ "$ALERT" = true ]; then
   # Suppress nudges during test runs or if already alerted this session
   if [ -z "$TEST_MODE" ] && [ ! -f "$ALERT_MARKER" ]; then
     # Route alert to own role only (#1786) — no Jeff, no other roles
-    "$NUDGE" "$ROLE" "session-health: ${ALERTS}Context pressure rising." --from system 2>/dev/null || true
+    "$OPS_NUDGE" "$ROLE" "session-health: ${ALERTS}Context pressure rising." system 2>/dev/null || true
     touch "$ALERT_MARKER"
   fi
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true

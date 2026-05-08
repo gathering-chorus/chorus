@@ -45,6 +45,6 @@ action: |
       if f >= 3:
           print(f'  {k}: {f} consecutive failures (last: {v.get(\"timestamp\",\"?\")})')
   " 2>/dev/null || echo "  (could not read details)")
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "crawler-domain-failure: domains with 3+ consecutive crawl failures:
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "crawler-domain-failure: domains with 3+ consecutive crawl failures:
 $DETAILS" 2>/dev/null || true

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NUDGE="$SCRIPT_DIR/nudge"
+OPS_NUDGE="$SCRIPT_DIR/ops-nudge"
 CHORUS_LOG="$SCRIPT_DIR/../logs/chorus.log"
 SCAN_DIR="/tmp/claude-team-scan"
 WATCHDOG_DIR="/tmp/watchdog"
@@ -126,7 +126,7 @@ else: print(0)" 2>/dev/null || echo "0")
   fi
 
   # Role is active recently — reset watchdog
-  if [ "$effective_age" -lt "$NUDGE_THRESHOLD" ]; then
+  if [ "$effective_age" -lt "$OPS_NUDGE_THRESHOLD" ]; then
     if [ "$last_action" != "none" ]; then
       echo "none" > "$WATCHDOG_STATE"
       echo "$now" >> "$WATCHDOG_STATE"
@@ -139,8 +139,8 @@ else: print(0)" 2>/dev/null || echo "0")
   inactive_count=$((inactive_count + 1))
 
   # Level 1: Nudge the role (2min)
-  if [ "$effective_age" -ge "$NUDGE_THRESHOLD" ] && [ "$last_action" = "none" ]; then
-    bash "$NUDGE" "$role" "watchdog: no activity in $((effective_age / 60))min, are you blocked?" --from system 2>/dev/null || true
+  if [ "$effective_age" -ge "$OPS_NUDGE_THRESHOLD" ] && [ "$last_action" = "none" ]; then
+    bash "$OPS_NUDGE" "$role" "watchdog: no activity in $((effective_age / 60))min, are you blocked?" system 2>/dev/null || true
     echo "nudged" > "$WATCHDOG_STATE"
     echo "$now" >> "$WATCHDOG_STATE"
     echo "role.state.changed | system watchdog.nudge.sent role=$role age=${effective_age}s" >> "$CHORUS_LOG"
@@ -149,8 +149,8 @@ else: print(0)" 2>/dev/null || echo "0")
 
   # Level 2: Escalate to Wren (3min)
   if [ "$effective_age" -ge "$ESCALATE_THRESHOLD" ] && [ "$last_action" = "nudged" ]; then
-    bash "$NUDGE" "$role" "watchdog: still no response after $((effective_age / 60))min" --from system 2>/dev/null || true
-    bash "$NUDGE" wren "watchdog: $role unresponsive $((effective_age / 60))min on #${CARD}" --from system 2>/dev/null || true
+    bash "$OPS_NUDGE" "$role" "watchdog: still no response after $((effective_age / 60))min" system 2>/dev/null || true
+    bash "$OPS_NUDGE" wren "watchdog: $role unresponsive $((effective_age / 60))min on #${CARD}" system 2>/dev/null || true
     echo "escalated" > "$WATCHDOG_STATE"
     echo "$now" >> "$WATCHDOG_STATE"
     echo "role.state.changed | system watchdog.escalated role=$role age=${effective_age}s" >> "$CHORUS_LOG"

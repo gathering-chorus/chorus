@@ -118,9 +118,9 @@ HEALTH_STATUS=$( [ "$STATUS" = "green" ] && echo "pass" || echo "fail" )
 
 
 # --- Nudge Silas on ops failures ---
-NUDGE="$SCRIPT_DIR/nudge"
+OPS_NUDGE="$SCRIPT_DIR/ops-nudge"
 if [ "$STATUS" = "red" ]; then
-  "$NUDGE" silas "[ops] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" --force >/dev/null 2>&1 || true
+  "$OPS_NUDGE" silas "[ops] $TIMESTAMP — $( echo -e "$ISSUES" | head -3 )" >/dev/null 2>&1 || true
 fi
 
 echo -e "$BODY"

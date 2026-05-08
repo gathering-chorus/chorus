@@ -14,7 +14,7 @@ REPO="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 PULSE_FILE="/tmp/pulse-latest.json"
 STATE_DIR="/tmp/claude-team-scan"
 CHORUS_LOG="$REPO/platform/scripts/chorus-log"
-NUDGE="$REPO/platform/scripts/nudge"
+OPS_NUDGE="$REPO/platform/scripts/ops-nudge"
 THRESHOLD=60
 
 mkdir -p "$STATE_DIR"
@@ -84,6 +84,6 @@ print(json.dumps({
     MSG="[drift] Your inferred state is stale for ${DURATION}s. Derive-role-state hasn't run recently — or you're not generating observable signal (commits, WIP card moves). Nudge the system by doing a git activity."
   fi
 
-  "$NUDGE" "$ROLE" "$MSG" >/dev/null 2>&1 || true
+  "$OPS_NUDGE" "$ROLE" "$MSG" >/dev/null 2>&1 || true
   echo "coherence-check: ALARM ${ROLE} kind=${KIND} duration=${DURATION}s"
 done

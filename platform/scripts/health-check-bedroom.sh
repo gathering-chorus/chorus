@@ -96,7 +96,8 @@ else
     ALL_ISSUES=""
     for f in "${FAILURES[@]}"; do ALL_ISSUES="$ALL_ISSUES FAIL:$f"; done
     for w in "${WARNINGS[@]}"; do ALL_ISSUES="$ALL_ISSUES WARN:$w"; done
-    NUDGE="$CHORUS_ROOT/platform/scripts/nudge"
-    "$NUDGE" silas "bedroom-health:$ALL_ISSUES" --force 2>/dev/null || true
+    # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
+    OPS_NUDGE="$CHORUS_ROOT/platform/scripts/ops-nudge"
+    "$OPS_NUDGE" silas "bedroom-health:$ALL_ISSUES" 2>/dev/null || true
   fi
 fi

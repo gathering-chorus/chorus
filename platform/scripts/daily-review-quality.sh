@@ -170,16 +170,16 @@ fi
 
 # --- Owner-routed nudges (#2142) ---
 # Smoke + lint go to Kade (frontend quality). Per-suite fails route by owner.
-NUDGE="$SCRIPT_DIR/nudge"
+OPS_NUDGE="$SCRIPT_DIR/ops-nudge"
 if [ "$STATUS" = "red" ] && [ "$SMOKE_FAIL" -gt 0 ] 2>/dev/null; then
-  "$NUDGE" kade "[quality] $TIMESTAMP — smoke: ${SMOKE_FAIL} fail" --force >/dev/null 2>&1 || true
+  "$OPS_NUDGE" kade "[quality] $TIMESTAMP — smoke: ${SMOKE_FAIL} fail" >/dev/null 2>&1 || true
 fi
 if [ -n "${KADE_FAILS:-}" ]; then
-  "$NUDGE" kade "[nightly-tests] $TIMESTAMP — $( echo -e "$KADE_FAILS" | head -5 )" --force >/dev/null 2>&1 || true
+  "$OPS_NUDGE" kade "[nightly-tests] $TIMESTAMP — $( echo -e "$KADE_FAILS" | head -5 )" >/dev/null 2>&1 || true
   "$CHORUS_LOG" test.nightly.failed kade detail="$(echo -e "$KADE_FAILS" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
 fi
 if [ -n "${SILAS_FAILS:-}" ]; then
-  "$NUDGE" silas "[nightly-tests] $TIMESTAMP — $( echo -e "$SILAS_FAILS" | head -5 )" --force >/dev/null 2>&1 || true
+  "$OPS_NUDGE" silas "[nightly-tests] $TIMESTAMP — $( echo -e "$SILAS_FAILS" | head -5 )" >/dev/null 2>&1 || true
   "$CHORUS_LOG" test.nightly.failed silas detail="$(echo -e "$SILAS_FAILS" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
 fi
 
