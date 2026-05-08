@@ -55,6 +55,12 @@
 
 <p class="promise">A nudge persists once and delivers once.</p>
 
+<h2>Invocation surface — MCP is the only way</h2>
+
+<p>Per #2804: agents send nudges by calling the <code>chorus_nudge_message</code> MCP tool. That is the only canonical invocation. The MCP server mints a UUIDv7 <code>trace_id</code>, emits <code>nudge.requested</code> + <code>nudge.emitted</code> to chorus.log, and POSTs to pulse with <code>X-Chorus-MCP-Caller</code> + <code>X-Chorus-Trace-Id</code> headers. Pulse rejects POSTs without the MCP-caller header. <code>chorus-inject</code> rejects shell-direct calls without the pulse-internal env. The bash <code>nudge</code> script and the <code>chorus-hook-shim nudge</code> subcommand were deleted.</p>
+
+<p>Capability removed: humans typing <code>nudge silas hi</code> at a shell. Today's pattern is agent-to-agent; if a non-agent caller surfaces, file a card with the actual use case.</p>
+
 <table style="margin-bottom:18px;">
 <tr><th>Field</th><th>Value</th></tr>
 <tr><td>Owner</td><td>Wren — interaction layer end-to-end (nudge sender, chorus-inject, LaunchAgent surface, fold logic, fitness probe)</td></tr>

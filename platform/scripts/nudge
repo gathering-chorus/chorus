@@ -1,61 +1,17 @@
 #!/usr/bin/env bash
-# nudge — thin wrapper to Rust binary. All logic is in chorus-hook-shim.
-# DEC-100: no bash APIs. This file only exists because scripts reference it by name.
-# DEC-107: --force is ALWAYS on. No background/passive path. osascript inject every time.
-# --dry-run: persist + queue + construct inject, skip osascript. For tests.
-# #2575: --body-file <path> / --body-stdin — read body from file or stdin instead of positional arg.
-#        Keeps the visible command line short for callers in shared terminals (Jeff's window).
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-# #2287: DEPLOY_ROLE contract C1 — must be set by caller. Binary fails loud if unset.
+# nudge — RETIRED 2026-05-08 via #2804.
+# MCP `chorus_nudge_message` is the canonical invocation path. This script
+# stays as a fail-loud stub so operational callers (alert-delivery-test.sh,
+# deep-health.sh, library-health-probe.sh, infra-alert.sh, session-health.sh,
+# health-check-bedroom.sh, inject-regression.sh) surface the dependency
+# instead of silently command-not-found-ing. Migration of those callers
+# tracked separately.
+#
+# Agents in Claude sessions: use the chorus_nudge_message MCP tool.
 
-# Preprocess --body-file / --body-stdin into a positional body argument.
-ARGS=()
-BODY=""
-SUBSTITUTE_BODY=0
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --body-file)
-      shift
-      [ -f "$1" ] || { echo "nudge: --body-file path not found: $1" >&2; exit 2; }
-      BODY="$(cat "$1")"
-      SUBSTITUTE_BODY=1
-      shift
-      ;;
-    --body-stdin)
-      BODY="$(cat)"
-      SUBSTITUTE_BODY=1
-      shift
-      ;;
-    *)
-      ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
-
-if [ "$SUBSTITUTE_BODY" = "1" ]; then
-  # Insert BODY at index 1 (immediately after role), not at end.
-  # chorus-hook-shim expects message at args[1]; appending broke 'nudge <role> --body-file x --from <sender>'
-  # because args[1] became '--from' and triggered the unknown-flag error path. (Silas, #2575 gate:arch.)
-  if [ "${#ARGS[@]}" -ge 1 ]; then
-    NEW_ARGS=("${ARGS[0]}" "$BODY")
-    if [ "${#ARGS[@]}" -gt 1 ]; then
-      NEW_ARGS+=("${ARGS[@]:1}")
-    fi
-    ARGS=("${NEW_ARGS[@]}")
-  else
-    ARGS=("$BODY")
-  fi
-fi
-
-# Resolve chorus-hook-shim via PATH (#2734) — ~/.chorus/bin/ is the canonical
-# deploy location; target/release/ is the build artifact and a fallback for
-# pre-#2734 systems where the install path hasn't run yet.
-SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
-if [ -z "$SHIM" ]; then
-  SHIM="$HOME/.chorus/bin/chorus-hook-shim"
-fi
-if [ ! -x "$SHIM" ]; then
-  SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-fi
-exec "$SHIM" nudge "${ARGS[@]}" --force
+cat >&2 <<EOF
+nudge: RETIRED (#2804). Use chorus_nudge_message MCP tool from a Claude session.
+This script remains as a fail-loud stub for operational callers; their
+migration is tracked in the #2804 follow-on. Caller: $0 $@
+EOF
+exit 2

@@ -53,6 +53,7 @@ export type FetchImpl = (url: string, init?: { method?: string; headers?: Record
   ok: boolean;
   status?: number;
   json: () => Promise<unknown>;
+  text?: () => Promise<string>;
 }>;
 
 export interface McpServerDeps {
@@ -1787,29 +1788,90 @@ async function executeSubdomainsGet(
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
 
+// #2804 — UUIDv7 trace_id for MCP-originated nudges. Hand-rolled (no new
+// dep) per RFC 9562 §5.7: 48-bit Unix-ms timestamp + version + 12-bit
+// random + variant + 62-bit random. Matches the format chorus-hooks/Rust
+// side mints in #2765 so trace_ids are uniform across senders.
+function mintTraceIdV7(): string {
+  const { randomBytes } = require('crypto') as typeof import('crypto');
+  const tsMs = BigInt(Date.now());
+  const randBuf = randomBytes(10);
+  const randHi = randBuf[0] & 0x0f;
+  // Set variant (RFC 4122) — top two bits of byte 2 → 10
+  randBuf[2] = (randBuf[2] & 0x3f) | 0x80;
+  const tsHex = tsMs.toString(16).padStart(12, '0');
+  const verRand = (0x7000 | (randHi << 8) | randBuf[1]).toString(16).padStart(4, '0');
+  const lowHex = Array.from(randBuf.subarray(2)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-${verRand}-${lowHex.slice(0, 4)}-${lowHex.slice(4, 16)}`;
+}
+
+// #2804 — append a chorus.log entry from the MCP server. Format matches
+// the canonical chorus.log line shape (timestamp + event + role + fields).
+async function appendChorusLog(event: string, role: string, fields: Record<string, unknown>): Promise<void> {
+  const home = process.env.HOME || '/Users/jeffbridwell';
+  const logPath = process.env.CHORUS_LOG_FILE || `${home}/.chorus/chorus.log`;
+  const line = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    role,
+    ...fields,
+  }) + '\n';
+  try {
+    const fs = await import('fs/promises');
+    await fs.appendFile(logPath, line);
+  } catch (err) {
+    // best-effort spine write; do not block delivery
+    logEvent('error', 'mcp.nudge.spine_write_failed', { error: String(err) });
+  }
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
-  execFileAsync: ExecFileAsync,
-  shimPath: string,
+  fetchImpl: FetchImpl,
+  pulseUrl: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { to, message } = args;
-  logEvent('info', 'mcp.nudge.invoked', { from, to });
+  const traceId = mintTraceIdV7();
+  logEvent('info', 'mcp.nudge.invoked', { from, to, trace_id: traceId });
+
+  // #2804 — MCP is the only canonical invocation path. Sender-side spine
+  // emits fire BEFORE the pulse POST so the audit trail survives even if
+  // pulse is unreachable (preserves AC9 belt-and-suspenders from #2727
+  // review). Dual-emit nudge.requested (new shape) + nudge.emitted
+  // (reader-migration window) — separate cleanup card retires the latter
+  // once Clearing tailer / MCP server log fold / operator greps migrate.
+  const payload = `from=${from},to=${to},chars=${message.length},trace=${traceId},origin=mcp,content=${message}`;
+  await appendChorusLog('nudge.requested', from, { payload });
+  await appendChorusLog('nudge.emitted', from, { payload });
+
+  // POST to pulse — pulse worker owns delivery (chorus-inject keystroke).
+  // X-Chorus-MCP-Caller header marks this as the canonical caller for the
+  // pulse-side caller-check (subsequent commit on this branch hardens the
+  // check; today this header is informational and load-bearing for it).
   try {
-    const env = {
-      ...process.env,
-      DEPLOY_ROLE: from,
-      // #2475 — origin tag distinguishes MCP-routed nudges from bash CLI in
-      // the spine. nudge.emitted carries origin=mcp so audit can tell typed
-      // surface adoption from legacy paths.
-      CHORUS_NUDGE_ORIGIN: 'mcp',
-    } as NodeJS.ProcessEnv;
-    const { stdout } = await execFileAsync(shimPath, ['nudge', to, message], { env, timeout: 10_000 });
-    logEvent('info', 'mcp.nudge.delivered', { from, to, stdout: stdout.slice(0, 200) });
-    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${to}` }] };
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 5000);
+    const resp = await fetchImpl(pulseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Chorus-Trace-Id': traceId,
+        'X-Chorus-MCP-Caller': '1',
+      },
+      body: JSON.stringify({ from, to, content: message, traceId }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) {
+      const errText = resp.text ? await resp.text().catch(() => '') : '';
+      throw new Error(`pulse POST returned ${resp.status}: ${errText.slice(0, 200)}`);
+    }
+    logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId });
+    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${to} (trace=${traceId})` }] };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    logEvent('error', 'mcp.nudge.failed', { from, to, error: errMsg });
+    logEvent('error', 'mcp.nudge.failed', { from, to, trace_id: traceId, error: errMsg });
     throw new Error(`nudge delivery failed: ${errMsg}`);
   }
 }
@@ -1944,7 +2006,11 @@ async function executeCardsView(
  */
 export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps = {}): Server {
   const execFileAsync: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
-  const shimPath = deps.shimPath ?? resolveShimPath();
+  // #2804 — shimPath retained in McpServerDeps for backward-compat with
+  // tests that pass it; unused now that executeNudge POSTs to pulse instead
+  // of spawning chorus-hook-shim. Will be removed when bash + shim subcommand
+  // delete in this card's later commits.
+  void (deps.shimPath ?? resolveShimPath());
   const cardsPath = deps.cardsPath ?? resolveCardsPath();
   const fetchImpl: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
   const apiBase = deps.apiBase ?? 'http://localhost:3340';
@@ -2007,7 +2073,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeNudge(parsed.data, from, execFileAsync, shimPath);
+        // #2804 — executeNudge POSTs to pulse instead of spawning shim.
+        const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+        return executeNudge(parsed.data, from, fetchImpl, pulseUrl);
       }
       case 'chorus_principles_list':
         return executePrinciplesList(fetchImpl, apiBase, from);

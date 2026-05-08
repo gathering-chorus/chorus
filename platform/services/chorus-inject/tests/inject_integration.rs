@@ -40,11 +40,72 @@ const INJECT_BIN: &str = env!("CARGO_BIN_EXE_chorus-inject");
 fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()) }
 // AC1 (source-gate) moved to inject_source_gate.rs per #2155.
 
+// #2804 — bypass-gate observability test (Kade gemba 2026-05-08). Asserts
+// that CHORUS_INJECT_BYPASS_GATE=1 invocations land a chorus_inject.bypass_invoked
+// event in chorus.log so illegitimate bypass surfaces in data, not via incident.
+#[test]
+fn bypass_gate_emits_spine_event() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let log_path = tmp.path().join("chorus.log");
+    let log_str = log_path.to_str().unwrap();
+
+    // CHORUS_INJECT_DRY_RUN keeps osascript out of the test; bypass+dry-run
+    // is the same shape build-signed.sh + test-runners use.
+    let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
+        .env("CHORUS_INJECT_DRY_RUN", "1")
+        .env("CHORUS_LOG_FILE", log_str)
+        .args(["wren", "[bypass-test] should land in spine"])
+        .output()
+        .expect("failed to run chorus-inject");
+    assert!(output.status.success(), "bypass+dry-run should succeed");
+
+    let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
+    assert!(
+        log_content.contains("chorus_inject.bypass_invoked"),
+        "bypass invocation must land chorus_inject.bypass_invoked event. Got: {}",
+        log_content,
+    );
+    assert!(
+        log_content.contains("\"role\":\"chorus-inject\""),
+        "spine event must carry role=chorus-inject. Got: {}",
+        log_content,
+    );
+}
+
+// #2804 — pulse-internal path does NOT emit bypass spine event (it's the
+// canonical caller, not a bypass). Verifies the gate distinguishes the two.
+#[test]
+fn pulse_internal_path_does_not_emit_bypass_event() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let log_path = tmp.path().join("chorus.log");
+    let log_str = log_path.to_str().unwrap();
+
+    let output = Command::new(INJECT_BIN)
+        .env("_NUDGE_PULSE_INTERNAL", "1")
+        .env("CHORUS_INJECT_DRY_RUN", "1")
+        .env("CHORUS_LOG_FILE", log_str)
+        .args(["wren", "[pulse-internal-test] should NOT emit bypass event"])
+        .output()
+        .expect("failed to run chorus-inject");
+    assert!(output.status.success(), "pulse-internal+dry-run should succeed");
+
+    let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
+    assert!(
+        !log_content.contains("chorus_inject.bypass_invoked"),
+        "pulse-internal path is canonical, not bypass — must NOT emit bypass_invoked. Got: {}",
+        log_content,
+    );
+}
+
 // --- AC3 + AC4: delivery path per role (dry-run — hermetic, no side effects) ---
 
 #[test]
 fn inject_delivers_to_silas() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["silas", "[cargo-test] AC4 silas inject"])
         .output()
@@ -59,7 +120,10 @@ fn inject_delivers_to_silas() {
 
 #[test]
 fn inject_delivers_to_wren() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["wren", "[cargo-test] AC4 wren inject"])
         .output()
@@ -74,7 +138,10 @@ fn inject_delivers_to_wren() {
 
 #[test]
 fn inject_delivers_to_kade() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["kade", "[cargo-test] AC4 kade inject"])
         .output()
@@ -115,7 +182,10 @@ fn nudge_e2e_delivers() {
 
 #[test]
 fn rejects_unknown_role() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .args(["nonexistent", "test"])
         .output()
         .expect("failed to run chorus-inject");
@@ -134,7 +204,10 @@ fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
     // Exercises the PrintOut arm in main.rs via the real binary. Uses a
     // pattern that can't appear in a Terminal window name, so stdout is "0::"
     // regardless of host state.
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .args(["--count-windows", "zzzz_no_such_window_zzzz"])
         .output()
         .expect("failed to run chorus-inject");
