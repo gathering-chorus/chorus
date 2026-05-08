@@ -158,4 +158,37 @@ describe('moveCard blast-radius paths', () => {
     const client = makeClient();
     await expect(moveCard(client, 42, 'WIP')).resolves.not.toThrow();
   });
+
+  // #2810 — zero is a valid blast-radius computation; don't refuse the pull.
+  // BEFORE FIX: enforceWipBlastRadius calls process.exit(1) when totalFiles===0
+  // on a code card. Pull MCP surfaces this as `move-fail — Blast radius: 0
+  // files on a code card`. Receipts: #2800, #2808 blocked at /pull.
+  // AFTER FIX: warn + spine event, but the move proceeds.
+  it('code card with totalFiles=0 → move proceeds, no process.exit', async () => {
+    mockGenerateBlastRadius.mockResolvedValue({ totalFiles: 0, crossDomain: [] });
+
+    // Title contains code indicator ("fix", "MCP") so isCodeCard returns true,
+    // triggering the gate path. Description is valid (Experience + AC).
+    const client = makeClient({
+      title: 'fix chorus_pull_card MCP refuse-on-zero blast-radius gate',
+      description: VALID_DESC,
+    });
+
+    const origExit = process.exit;
+    const exitCalls: number[] = [];
+    process.exit = ((code?: number) => {
+      exitCalls.push(code ?? 0);
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      await moveCard(client, 42, 'WIP');
+    } finally {
+      process.exit = origExit;
+    }
+
+    expect(exitCalls).toEqual([]);                                 // no refusal
+    expect(mockGenerateBlastRadius).toHaveBeenCalled();            // still computed
+    expect(client.move).toHaveBeenCalledWith(42, 'WIP');           // move went through
+  });
 });

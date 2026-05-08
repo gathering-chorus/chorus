@@ -778,13 +778,13 @@ async function enforceWipBlastRadius(
     const cardDomain = domainLabel ? domainLabel.replace('domain:', '') : undefined;
     const report = await generateBlastRadius(index, title, card.description || '', cardDomain);
     if (report && report.totalFiles === 0) {
-      console.error(`ERROR: Blast radius: 0 files on a code card (#${index}).`);
-      console.error('  Add explicit file paths to description (e.g. src/handlers/music.handler.ts)');
-      console.error('  or route to Wren for manual blast radius mapping.');
+      // #2810: zero is a valid computation result (yaml+html cards, pull-time
+      // before commits, cards whose AC doesn't mention specific paths).
+      // Don't refuse the pull. Compute, record, warn, proceed.
+      console.warn(`NOTE: Blast radius: 0 files computed for code card #${index} — non-blocking.`);
       emitSpineEvent('card.blast_radius.zero_code', detectRole(), {
         card_id: String(index), title, board: client.boardName,
       });
-      process.exit(1);
     }
   } catch { /* blast radius API failure = non-blocking, proceed to WIP */ }
 }
