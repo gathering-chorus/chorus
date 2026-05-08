@@ -26,8 +26,21 @@ echo "=== compound loop reboot survival tests ==="
 echo ""
 
 # --- Test 1: Hook server is running ---
+# #2801 — chorus-hooks is not a LaunchAgent (no com.chorus.hooks plist).
+# Daemon runs as a regular process; check via /tmp/chorus-hooks.pid (the
+# canonical PID file) with a process-alive verification, or fall back to
+# pgrep for the binary name.
 echo "Test 1: Hook server is running"
-pid=$(launchctl list com.chorus.hooks 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
+pid=""
+if [ -f /tmp/chorus-hooks.pid ]; then
+  pidfile=$(cat /tmp/chorus-hooks.pid 2>/dev/null)
+  if [ -n "$pidfile" ] && kill -0 "$pidfile" 2>/dev/null; then
+    pid="$pidfile"
+  fi
+fi
+if [ -z "$pid" ]; then
+  pid=$(pgrep -f 'chorus-hooks/target/release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
+fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server running (PID $pid)"
   ((PASS++))

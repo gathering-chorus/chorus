@@ -8,7 +8,12 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 PASS=0
 FAIL=0
-CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
+# #2801 — chorus-hook-shim writes the spine log to ~/.chorus/chorus.log
+# (canonical, per state_paths::chorus_log_file()), not platform/logs/chorus.log.
+# The latter is a stale path; the test read empty there before this fix and
+# reported "no role.state.changed event" while events were landing in the
+# real log. Resolve the live path the same way the binary does.
+CHORUS_LOG="${HOME}/.chorus/chorus.log"
 ROLE_STATE="${CHORUS_ROOT}/platform/scripts/role-state"
 
 echo "=== role-state spine event tests ==="
