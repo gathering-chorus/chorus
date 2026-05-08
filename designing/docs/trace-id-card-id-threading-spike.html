@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>trace_id + card_id threading spike (#2841)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 980px; margin: 2em auto; padding: 0 1in; color: #222; line-height: 1.5; }
+  h1, h2, h3 { line-height: 1.25; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: .3em; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: .2em; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #bbb; padding: .35em .6em; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  code { background: #f6f8fa; padding: .1em .3em; border-radius: 3px; }
+  pre { background: #f6f8fa; padding: .8em; border-radius: 4px; overflow-x: auto; }
+  .yes { color: #1a7f1a; font-weight: 600; }
+  .no  { color: #b00020; font-weight: 600; }
+  .mid { color: #b07a00; font-weight: 600; }
+  .meta { color: #666; font-size: .9em; }
+</style>
+</head>
+<body>
+
+<h1>trace_id + card_id threading spike (#2841)</h1>
+<p class="meta">Silas · 2026-05-08 · spike for #2839 (trace_id contract) + #2838 (card_id contract). Investigation IS the deliverable.</p>
+
+<h2>Method</h2>
+<p>Used the just-shipped <code>/acp #2835</code> as the live flow. Queried Loki across <code>{job=~".+"}</code> for any line referencing <code>2835</code> in the last 2h. For every emitted spine event in that flow, checked: did <code>trace_id</code> arrive? did <code>card_id</code> arrive? Then walked the result by hop boundary.</p>
+
+<h2>Headline finding</h2>
+<p><strong>13 distinct trace_ids touched a single /acp transaction.</strong> No single correlation_id spans the run. Reconstructing "what happened on /acp #2835" today requires joining on <code>card_id</code> plus temporal proximity — which only works because every event in this flow happened to mention 2835. The audit's claim ("0 of 4 flows fully reconstructable") is now grounded: trace_id is per-emitter, not per-transaction. card_id is the de-facto correlation key, but it's missing on ~30% of in-flow events (notably nudge.* and build.* sub-events).</p>
+
+<h2>Per-hop ledger</h2>
+<table>
+<tr><th>Hop boundary</th><th>Source</th><th>Sink</th><th>trace_id</th><th>card_id</th><th>Notes</th></tr>
+<tr><td>1. Claude /acp skill → chorus-api MCP</td><td>Claude bash invocation</td><td><code>mcp__chorus-api__chorus_acp</code></td><td class="no">absent</td><td class="yes">derived</td><td>Skill sends only <code>{role}</code>. card_id derived inside MCP from HEAD branch <code>silas/2835</code>. No upstream trace handed in.</td></tr>
+<tr><td>2. chorus_acp internal steps</td><td>chorus-api TS</td><td>spine (chorus-api job)</td><td class="no">absent</td><td class="yes">present</td><td>11 <code>chorus_acp.*.{started,completed}</code> events; all carry card=2835, none carry trace_id. The MCP doesn't mint or thread its own correlation per invocation.</td></tr>
+<tr><td>3. chorus_acp → git-queue (commit/push)</td><td>chorus-api</td><td>git-queue.sh → spine (platform-chorus)</td><td class="no">absent</td><td class="mid">present (bash side)</td><td><code>commit.landed</code> emits via bash chorus-log; card=2835 from env or argv. No trace handoff. TS-side <code>chorus_acp.commit.completed</code> separately logs with platform-logs trace_id (Pino) — but that trace is per-log-line, not per-flow.</td></tr>
+<tr><td>4. chorus_acp → gh CLI</td><td>chorus-api</td><td>GitHub (no spine emit)</td><td class="no">absent</td><td class="no">n/a</td><td>gh has no spine adapter; the entire call boundary is invisible. Only the TS-side <code>chorus_acp.pr-{view,create,merge}.{started,completed}</code> bracket markers exist.</td></tr>
+<tr><td>5. chorus_acp → cards CLI</td><td>chorus-api</td><td>cards CLI → spine (platform-logs Pino + chorus-api)</td><td class="mid">present (per-log-line)</td><td class="yes">present</td><td><code>card.accepted</code> emitted twice — once by chorus-api, once by cards CLI. Both carry card_id. Pino on the cards side mints its own trace_id; chorus-api's emission has none. Two independent traces for the same logical event.</td></tr>
+<tr><td>6. chorus_acp → werk close</td><td>chorus-api</td><td>chorus-werk close → spine (platform-chorus)</td><td class="no">absent</td><td class="mid">partial</td><td><code>werk.detached</code> has card_id; <code>build.delete.started</code> dropped card_id entirely. Inside the same sub-step.</td></tr>
+<tr><td>7. observer / nudge fan-out</td><td>chorus-api</td><td>spine (platform-chorus)</td><td class="no">absent</td><td class="no">absent</td><td><code>observer.digest</code>, <code>nudge.requested</code>, <code>nudge.emitted</code> — neither field. Fan-out work attributed to the card is uncorrelatable post-hoc.</td></tr>
+<tr><td>8. demo-phase events (pre-acp)</td><td>Claude bash via chorus-log</td><td>spine (platform-chorus)</td><td class="no">absent</td><td class="yes">present</td><td><code>demo.{validate,preflight,stakes,signal}.completed</code>, <code>card.demo.started</code> — card=2835 from <code>card=N</code> argv flag. No trace_id; bash chorus-log shim doesn't generate or accept one.</td></tr>
+<tr><td>9. AC tick / card update</td><td>Vikunja → cards CLI</td><td>spine (platform-logs)</td><td class="yes">present</td><td class="yes">present</td><td><code>ac.ticked</code>, <code>card.item.{updated,set,commented,completed}</code> all emit via Pino with trace_id (per-line) + card_id. Most consistent surface, but trace_id is per-API-call, not per-flow.</td></tr>
+</table>
+
+<h2>The two distinct trace_id concepts</h2>
+<p>The data shows two senses of "trace_id" already coexisting, neither matching what #2839 needs:</p>
+<ol>
+<li><strong>Pino per-log-line trace_id</strong> (TS / platform-logs): minted at log time, never threaded between calls. Useful for finding lines from a single HTTP request; useless for "show me everything that happened on /acp #2835."</li>
+<li><strong>state transition correlation_id</strong> (role-state via shim-wrapper.sh, see <code>traces</code> table): minted per role-state call as <code>state-${ROLE}-${CARD}-${epoch}</code>. Closer to a flow id, but scoped to one transition.</li>
+</ol>
+<p>What's missing — and what #2839 must define — is a <strong>transaction trace_id</strong> minted at the entry point (the /acp call, the /pull call, the /demo call) that propagates through every downstream emission until the transaction completes.</p>
+
+<h2>Contract questions for #2839 and #2838</h2>
+<p>These are the questions the design cards have to answer. They surfaced from the threading exercise; without them the contract is guesswork.</p>
+
+<h3>For #2839 (trace_id propagation)</h3>
+<ol>
+<li><strong>Who mints, who carries.</strong> Does the entry-point skill mint trace_id and pass it to the MCP, or does the MCP mint and return? Recommendation from this spike: MCP mints on entry and returns it to the skill so subsequent observer queries can use it.</li>
+<li><strong>Carrier shape across the bash/TS/Rust boundary.</strong> trace_id flows over which channel: argv (<code>--trace-id=X</code>), env (<code>CHORUS_TRACE_ID</code>), or process state? bash chorus-log accepts neither today. Pick one, retrofit chorus-log to forward it.</li>
+<li><strong>Reconciling with Pino's per-line trace_id.</strong> Pino mints its own; if we add a flow trace_id, do we rename one (<code>flow_id</code> vs <code>trace_id</code>) or treat Pino's as the request-scope and ours as the flow-scope? Both have legitimate uses; the contract has to name them differently.</li>
+<li><strong>What about gh / git / npm subprocess calls.</strong> External tools have no trace awareness. The contract has to say "the MCP brackets the call with <code>chorus_acp.gh-merge.{started,completed}</code> and the trace_id rides on the bracket events; the inside is opaque." Document that gap explicitly.</li>
+<li><strong>Transaction boundaries.</strong> When does a trace_id stop being valid? After /acp returns? After werk-close? After the nudge fan-out? Right now there's no termination event; the contract needs <code>flow.completed</code> with trace_id as the close marker.</li>
+</ol>
+
+<h3>For #2838 (card_id propagation)</h3>
+<ol>
+<li><strong>Derived vs carried.</strong> chorus_acp derives card_id from HEAD branch. Other entry points (cards CLI, demo skill) carry it as argv. The contract has to specify: card_id is always passed through, but in <em>some</em> contexts it can be derived if absent (and the derivation must be logged).</li>
+<li><strong>Why nudge / observer events drop card_id.</strong> nudge.* and observer.digest fire from chorus-api but emit without card_id even when the trigger was card-bound. The contract has to require: if the originating event had a card_id, every spawned event in the same flow inherits it.</li>
+<li><strong>Multi-card transactions.</strong> /demo accepts multiple card IDs. Today it would emit 1 demo per card with each card_id field set. But what about a "batch /acp"? The contract has to say card_id is always singular per event; batch operations fan out into N events.</li>
+</ol>
+
+<h2>Implications for #2840 (MCP-Loki-query)</h2>
+<p>Until #2839 lands, the agent surface for "show me everything that happened on /acp #2835" must be <strong>card_id-keyed, not trace_id-keyed</strong>. trace_id is too noisy (13 distinct ids per flow). #2840 should expose:</p>
+<ul>
+<li><code>flow_by_card(card_id, time_window)</code> — the primary query, joins on card + temporal locality.</li>
+<li><code>flow_by_trace(trace_id)</code> — secondary, only useful once #2839 ships and trace_id is per-flow.</li>
+<li><code>events_missing_card_id(time_window)</code> — visibility into the gap (nudge/observer/build sub-events) so #2838's contract can be enforced over time.</li>
+</ul>
+
+<h2>What to NOT do based on this spike</h2>
+<ul>
+<li>Don't ship #2839 + #2838 as one card. They share a problem space but have different contracts (trace = transaction-scope, card = work-binding) and different propagation rules. Keep them sequenced.</li>
+<li>Don't treat Pino's per-line trace_id as the answer. Renaming it to flow_id would silently break per-request trace correlation that already works.</li>
+<li>Don't try to retrofit gh / git CLI to carry trace_id. Bracket them with started/completed events on the MCP side and accept the opaque interior.</li>
+</ul>
+
+<h2>Next</h2>
+<p>This doc is the spike deliverable. The contract design (#2839) starts from the five questions above, with the per-hop ledger as test fixtures. After #2839 lands, #2838 is mostly a tighter version of the same contract scoped to card_id; then #2840 consumes both.</p>
+
+</body>
+</html>
