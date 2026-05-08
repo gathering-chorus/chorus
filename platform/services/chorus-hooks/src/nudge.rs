@@ -264,17 +264,25 @@ pub fn run(args: &[String]) -> ExitCode {
     // record of the sender's intent, even though messages.db never receives
     // the row. Pulse worker emits per-attempt `nudge.surfaced` /
     // `nudge.surface.failed` (#2727 AC2); together with `nudge.requested` they
-    // form the full lifecycle audit. nudge.emitted retired.
+    // form the full lifecycle audit.
     //
-    // #2475 — origin tag (cli/mcp/http) preserved on the new event so audit
+    // MIGRATION WINDOW (Silas ops review 2026-05-07): we dual-emit
+    // `nudge.requested` AND `nudge.emitted` during the read-side migration.
+    // Readers (Clearing tailer.ts, MCP server.ts, pulse service.ts, Loki/
+    // Grafana, any operator log greps) still reference the old name and
+    // would see ZERO events without the dual-emit — the worst observability
+    // mode (looks fine, isn't). After read-side cards land for each
+    // consumer, the nudge.emitted line below drops in a final cleanup card.
+    // Cost: one extra spine line per nudge during the window.
+    //
+    // #2475 — origin tag (cli/mcp/http) preserved on both events so audit
     // can still distinguish how the nudge was sent.
     // #2443 — no truncation: full content in payload for downstream readers.
     let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
-    chorus_log(
-        "nudge.requested",
-        &sender,
-        &format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message),
-    );
+    let payload = format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message);
+    chorus_log("nudge.requested", &sender, &payload);
+    // Migration-window dual-emit — drop in cleanup card after readers migrate.
+    chorus_log("nudge.emitted", &sender, &payload);
 
     // Persist for history — NOT for delivery. Fire-and-forget, failure doesn't block inject.
     let persist_body = serde_json::json!({

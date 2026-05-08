@@ -41,6 +41,13 @@ fn nudge_default_origin_is_cli() {
         content.contains("nudge.requested"),
         "nudge.requested event must be logged. Got: {}", content
     );
+    // Migration-window dual-emit (Silas ops review 2026-05-07): both events
+    // fire while readers still reference nudge.emitted. Drop nudge.emitted
+    // assertion when the cleanup card retires the dual-emit.
+    assert!(
+        content.contains("nudge.emitted"),
+        "nudge.emitted event must also be logged during migration window. Got: {}", content
+    );
     assert!(
         content.contains("origin=cli"),
         "default origin must be 'cli' (no env override). Got: {}", content
