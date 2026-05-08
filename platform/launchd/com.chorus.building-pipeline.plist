@@ -45,7 +45,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>CHORUS_ROOT</key>
     <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>DEPLOY_ROLE</key>
