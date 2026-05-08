@@ -139,6 +139,30 @@ describe('pulse service — nudges', () => {
 
   // #2435 wedge 7d — tests for /api/nudge/:id/ack, /api/nudge/:role/ack-all,
   // /api/nudge/:id/attempt retired alongside their endpoints.
+
+  // #2814 (kade gemba) — pin contracts at multi-call layer.
+  it('pulse accepts duplicate POSTs (idempotency contract: pulse stores, trace_id is the dedup hook)', async () => {
+    const { app } = fresh();
+    const payload = { from: 'kade', to: 'wren', content: 'same-twice', traceId: 'dup-trace-1' };
+    const r1 = await request(app).post('/api/nudge').send(payload);
+    const r2 = await request(app).post('/api/nudge').send(payload);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    // Both stored — pulse does not dedup. Receiver-side / trace_id correlation
+    // is the affordance for "this is the retry of an earlier nudge."
+    expect(r1.body.id).not.toBe(r2.body.id);
+  });
+
+  it('pulse accepts unknown recipient (validation lives at MCP layer, not pulse)', async () => {
+    const { app } = fresh();
+    // MCP enum is silas/wren/kade/jeff — pulse does NOT enforce that.
+    // Pin the contract so a future "tighten pulse" change is conscious.
+    const res = await request(app)
+      .post('/api/nudge')
+      .send({ from: 'kade', to: 'foobar', content: 'unknown role' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
 });
 
 describe('pulse service — chats', () => {

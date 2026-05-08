@@ -152,6 +152,54 @@ describe('#2472 buildMcpServer', () => {
     expect(result.content[0].text).toMatch(/silas → jeff/);
   });
 
+  // #2814 (kade gemba) — multi-call shape pins.
+  test('#2814 100 nudges produce 100 distinct trace_ids (collision = correlation breakage)', async () => {
+    const traces: string[] = [];
+    const mockFetch = async (_url: string, init?: { headers?: Record<string, string> }) => {
+      traces.push(init?.headers?.['X-Chorus-Trace-Id'] ?? '');
+      return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '' };
+    };
+    const server = buildMcpServer(() => 'silas', { fetchImpl: mockFetch as never });
+    // @ts-expect-error - private handler access for unit test
+    const handler = (server as any)._requestHandlers.get('tools/call');
+    for (let i = 0; i < 100; i++) {
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_nudge_message', arguments: { to: 'wren', message: `m${i}` } } },
+        {},
+      );
+    }
+    expect(traces).toHaveLength(100);
+    expect(new Set(traces).size).toBe(100);
+    // All UUIDv7 shape
+    for (const t of traces) {
+      expect(t).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    }
+  });
+
+  test('#2814 sequential calls: trace_id and message stay paired (no cross-talk under tight loop)', async () => {
+    const calls: Array<{ trace: string; msg: string }> = [];
+    const mockFetch = async (_url: string, init?: { headers?: Record<string, string>; body?: string }) => {
+      const body = JSON.parse(init?.body || '{}');
+      calls.push({ trace: init?.headers?.['X-Chorus-Trace-Id'] ?? '', msg: body.content });
+      return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '' };
+    };
+    const server = buildMcpServer(() => 'silas', { fetchImpl: mockFetch as never });
+    // @ts-expect-error - private handler access for unit test
+    const handler = (server as any)._requestHandlers.get('tools/call');
+    for (let i = 0; i < 10; i++) {
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_nudge_message', arguments: { to: 'wren', message: `m${i}` } } },
+        {},
+      );
+    }
+    expect(calls).toHaveLength(10);
+    for (let i = 0; i < 10; i++) {
+      expect(calls[i].msg).toBe(`m${i}`);
+      // Each unique trace
+      expect(calls.filter(c => c.trace === calls[i].trace)).toHaveLength(1);
+    }
+  });
+
   test('#2804 catch-branch: pulse POST non-2xx → mcp.nudge.failed + thrown error', async () => {
     const stderrLines: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);
