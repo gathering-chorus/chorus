@@ -77,6 +77,36 @@ describe('#2804 pulse caller-check', () => {
       process.env.PULSE_ALLOW_DIRECT_POST = '1';
     }
   });
+
+  // #2814 — gate is presence-only (header value not inspected). Documented
+  // intent: marker is honest, not authorization. Test pins this contract.
+  it('X-Chorus-MCP-Caller: 0 is accepted (gate is presence-only by design)', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    try {
+      const res = await request(app)
+        .post('/api/nudge')
+        .set('X-Chorus-MCP-Caller', '0')
+        .send({ from: 'k', to: 'w', content: 'hi' });
+      expect(res.status).toBe(200);
+    } finally {
+      process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    }
+  });
+
+  // #2814 — PULSE_ALLOW_DIRECT_POST=1 bypass works without the header.
+  // Used by tests + ops-nudge wrapper migration window.
+  it('PULSE_ALLOW_DIRECT_POST=1 bypasses caller-check (no header required)', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    const res = await request(app)
+      .post('/api/nudge')
+      .send({ from: 'k', to: 'w', content: 'hi' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
 });
 
 describe('pulse service — nudges', () => {
@@ -109,6 +139,30 @@ describe('pulse service — nudges', () => {
 
   // #2435 wedge 7d — tests for /api/nudge/:id/ack, /api/nudge/:role/ack-all,
   // /api/nudge/:id/attempt retired alongside their endpoints.
+
+  // #2814 (kade gemba) — pin contracts at multi-call layer.
+  it('pulse accepts duplicate POSTs (idempotency contract: pulse stores, trace_id is the dedup hook)', async () => {
+    const { app } = fresh();
+    const payload = { from: 'kade', to: 'wren', content: 'same-twice', traceId: 'dup-trace-1' };
+    const r1 = await request(app).post('/api/nudge').send(payload);
+    const r2 = await request(app).post('/api/nudge').send(payload);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    // Both stored — pulse does not dedup. Receiver-side / trace_id correlation
+    // is the affordance for "this is the retry of an earlier nudge."
+    expect(r1.body.id).not.toBe(r2.body.id);
+  });
+
+  it('pulse accepts unknown recipient (validation lives at MCP layer, not pulse)', async () => {
+    const { app } = fresh();
+    // MCP enum is silas/wren/kade/jeff — pulse does NOT enforce that.
+    // Pin the contract so a future "tighten pulse" change is conscious.
+    const res = await request(app)
+      .post('/api/nudge')
+      .send({ from: 'kade', to: 'foobar', content: 'unknown role' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
 });
 
 describe('pulse service — chats', () => {

@@ -140,13 +140,20 @@ describe('DeliveryWorker transient failure → retry → success', () => {
       [10, 20, 40],
       async () => { /* no real sleep */ },
     );
-    await worker.enqueue(rowFor(id));
+    // #2814 (kade gemba) — pass trace_id through the row so we can assert
+    // stability across the retry sequence below.
+    await worker.enqueue({ ...rowFor(id), trace_id: '018f-stable-trace' });
     expect(injectCalls).toBe(3);
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('delivered');
     const eventTypes = events.map(e => e.event);
     expect(eventTypes).toEqual(['nudge.surface.failed', 'nudge.surface.failed', 'nudge.surfaced']);
     expect(events[2].fields.attempt).toBe(3);
+
+    // trace_id must be STABLE across retries — operator joining "this nudge
+    // that took 4 attempts" sees one thread, not three.
+    const traces = events.map(e => e.fields.trace_id);
+    expect(traces).toEqual(['018f-stable-trace', '018f-stable-trace', '018f-stable-trace']);
   });
 });
 

@@ -132,6 +132,39 @@ fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
     );
 }
 
+// --- AC #2814: payload permutations (long message, special chars) ---
+
+#[test]
+fn handles_long_message() {
+    // 4KB message — typical-large nudge body. Verifies argv-length path
+    // doesn't truncate or fail under realistic upper bound.
+    let long = "x".repeat(4096);
+    let output = Command::new(INJECT_BIN)
+        .env("_NUDGE_PULSE_INTERNAL", "1")
+        .env("CHORUS_INJECT_DRY_RUN", "1")
+        .args(["wren", &long])
+        .output()
+        .expect("failed to run chorus-inject");
+    assert!(output.status.success(), "long message dry-run should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("DRY-RUN inject role=wren"), "should accept long body: {}", stdout);
+}
+
+#[test]
+fn handles_osascript_special_chars() {
+    // Quotes + backslashes are the historical escape-fragile path
+    // (osascript double-quote string with `\"` and `\\`).
+    let tricky = r#"with "quotes" and \backslash and 'apostrophe'"#;
+    let output = Command::new(INJECT_BIN)
+        .env("_NUDGE_PULSE_INTERNAL", "1")
+        .env("CHORUS_INJECT_DRY_RUN", "1")
+        .args(["wren", tricky])
+        .output()
+        .expect("failed to run chorus-inject");
+    assert!(output.status.success(), "special-char dry-run should succeed: stderr={}",
+        String::from_utf8_lossy(&output.stderr));
+}
+
 // --- Binary exists ---
 
 #[test]
