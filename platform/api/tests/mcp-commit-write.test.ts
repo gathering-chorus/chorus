@@ -366,6 +366,42 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       expect(pushCall?.args).toContain('--force-branch');
     });
 
+    // #2799 — push step must include --force-with-lease so the post-rebase
+    // non-fast-forward case (do_push's pull --rebase moved local SHAs ahead
+    // of origin's pre-rebase ref) lands cleanly via the typed surface
+    // instead of falling back to /tmp/wren-N-push.sh raw-git scripts.
+    // Force-with-lease is the safe variant: refuses on concurrent peer
+    // push, pushes our rebased history otherwise.
+    test('#2799 — push subprocess receives --force-with-lease for safe post-rebase push', async () => {
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (_file: string, args: string[]) => {
+        calls.push({ args });
+        if (args[0] === 'commit') return { stdout: '[wren/2799 abcd1234] m\n', stderr: '' };
+        if (args[0] === 'push') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected: ${args.join(' ')}`);
+      });
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_commit', arguments: { role: 'wren', paths: ['x.html'], message: 'wren: doc' } } },
+        {},
+      );
+      const pushCall = calls.find((c) => c.args[0] === 'push');
+      expect(pushCall).toBeDefined();
+      expect(pushCall?.args).toContain('--force-with-lease');
+      // Order requirement: --force-branch precedes --force-with-lease
+      // per git-queue.sh do_push parser order.
+      const fbIdx = pushCall!.args.indexOf('--force-branch');
+      const fwlIdx = pushCall!.args.indexOf('--force-with-lease');
+      expect(fbIdx).toBeLessThan(fwlIdx);
+    });
+
     test('#2697 — commit-fail (not hook-fail) when commit stderr does not match pre-commit signature', async () => {
       // Classifier split: hook-fail reserved for stderr matching pre-commit
       // hook output. Other commit-phase failures (nothing-to-commit, malformed

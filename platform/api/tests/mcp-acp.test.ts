@@ -206,6 +206,50 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
     });
   });
 
+  // #2799 — push step must pass --force-with-lease so the post-rebase
+  // non-fast-forward case (chorus_acp's internal pull --rebase moved local
+  // SHAs ahead of origin's pre-rebase ref) lands cleanly via the typed
+  // surface instead of falling back to /tmp/wren-N-push.sh raw-git scripts.
+  // 3 receipts today (Wren #2727, Kade #2790, Wren #2763); each manually
+  // recovered with `_GIT_QUEUE_PUSH=1 git push --force-with-lease` outside
+  // chorus_acp's typed taxonomy. This card brings the recovery in-house.
+  describe('#2799 — push step uses --force-with-lease', () => {
+    test('chorus_acp push args include --force-with-lease', async () => {
+      const calls: Array<{ args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ args });
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2799 abcd] kade: m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2799\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') return { stdout: 'https://github.com/x/y/pull/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      const pushCalls = calls.filter((c) => c.args[0] === 'push');
+      expect(pushCalls.length).toBeGreaterThan(0);
+      // Every push call from chorus_acp must include --force-with-lease.
+      // Order requirement: --force-branch precedes --force-with-lease per
+      // git-queue.sh do_push parser order. --branch <ref> may follow.
+      for (const c of pushCalls) {
+        expect(c.args).toContain('--force-with-lease');
+        const fbIdx = c.args.indexOf('--force-branch');
+        const fwlIdx = c.args.indexOf('--force-with-lease');
+        expect(fbIdx).toBeLessThan(fwlIdx);
+      }
+    });
+  });
+
   describe('AC4 — idempotent partial-failure recovery', () => {
     test('skips PR create when PR already exists (idempotent re-run)', async () => {
       const calls: Array<{ args: string[] }> = [];

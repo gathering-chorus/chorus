@@ -453,6 +453,20 @@ do_push() {
     do_delete_remote "${1:-}"
     return $?
   fi
+  # #2799: parse --force-with-lease passthrough. After do_push runs
+  # pull --rebase, local SHAs differ from origin and a regular push hits
+  # non-fast-forward. Force-with-lease is the safe variant: it refuses if
+  # the remote ref changed since our last fetch (concurrent peer push
+  # detected) and pushes our rebased history otherwise. Receipts: today's
+  # /tmp/wren-{2727,2763}-push.sh scripts ran exactly this fallback
+  # outside the typed surface; #2799 closes the variant-recovery class
+  # by exposing the flag through the canonical wrapper. Caller (chorus_
+  # commit, chorus_acp) opts in; raw operator callers may opt in too.
+  local force_with_lease=""
+  if [ "${1:-}" = "--force-with-lease" ]; then
+    force_with_lease="--force-with-lease"
+    shift
+  fi
   # #2705: --branch <ref> explicit push target. Replaces the _CHORUS_PUSH_REF
   # env-carry shipped in #2699. Substrate-uniform with --force-branch shape.
   local push_branch=""
@@ -511,17 +525,25 @@ do_push() {
   # capture and this push step.
   # #2705: now via --branch <ref> arg (parsed at top of do_push) instead of
   # _CHORUS_PUSH_REF env. Substrate-uniform with --force-branch shape.
+  # #2799: assemble push args with optional --force-with-lease. Force-with-lease
+  # only applies on the rebase-then-push paths (has_upstream); fresh-branch
+  # first push doesn't need it (no remote ref to overwrite). Argument
+  # placement matters for git: flag before refspec.
+  local _fwl_args=()
+  if [ -n "$force_with_lease" ]; then
+    _fwl_args+=("--force-with-lease")
+  fi
   if [ -n "$push_branch" ]; then
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
     else
-      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
+      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" origin "${push_branch}:${push_branch}" || exit_code=$?
     fi
   else
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- || exit_code=$?
     else
-      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" || exit_code=$?
     fi
   fi
 
