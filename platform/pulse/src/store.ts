@@ -98,12 +98,25 @@ export class MessageStore {
     if (!colNames.includes('last_delivery_error')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN last_delivery_error TEXT`);
     }
+    // #2765 AC2: trace_id correlation column. UUIDv7 minted at sender,
+    // propagated via X-Chorus-Trace-Id header → row → every spine event.
+    // Indexed for efficient join from chorus.log → messages.db row.
+    if (!colNames.includes('trace_id')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN trace_id TEXT`);
+    }
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL`);
   }
 
   // --- Nudges ---
 
-  sendNudge(from: string, to: string, content: string): number {
+  sendNudge(from: string, to: string, content: string, traceId?: string): number {
+    if (traceId) {
+      const stmt = this.db.prepare(
+        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'nudge\', ?, ?, ?, ?)'
+      );
+      return Number(stmt.run(from, to, content, traceId).lastInsertRowid);
+    }
     const stmt = this.db.prepare(
       'INSERT INTO messages (type, "from", "to", content) VALUES (\'nudge\', ?, ?, ?)'
     );
@@ -126,20 +139,20 @@ export class MessageStore {
     ).run(reason, id);
   }
 
-  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string }> {
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null }> {
     return this.db.prepare(
-      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at FROM messages WHERE delivery_status = 'pending' AND type = 'nudge' ORDER BY id ASC`
-    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string }>;
+      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id FROM messages WHERE delivery_status = 'pending' AND type = 'nudge' ORDER BY id ASC`
+    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null }>;
   }
 
-  getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number } {
+  getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null } {
     const row = this.db.prepare(
-      `SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts FROM messages WHERE id = ?`
+      `SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id FROM messages WHERE id = ?`
     ).get(id);
     if (!row) {
       throw new Error(`getDeliveryRecord: no row for id=${id}`);
     }
-    return row as { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number };
+    return row as { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null };
   }
 
   // #2664: getPendingNudges, recordDeliveryAttempt, getDeadLetters,

@@ -30,6 +30,10 @@ export interface DeliveryRow {
   to: string;
   content: string;
   delivery_attempts: number;
+  // #2765: trace_id correlation key. UUIDv7 minted at sender. Null for
+  // legacy rows or sender that didn't propagate the header (worker mints
+  // a fallback when absent so every event still carries one).
+  trace_id?: string | null;
 }
 
 export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
@@ -126,9 +130,13 @@ export class DeliveryWorker {
       const result = await this.runInject(row.to, row.content);
       const classified = classifyInjectResult(result);
 
+      // #2765 — trace_id propagated to every spine event in lifecycle
+      const traceFields = row.trace_id ? { trace_id: row.trace_id } : {};
+
       if (classified.kind === 'success') {
         try {
           await this.emitSpine('nudge.surfaced', {
+            ...traceFields,
             id: row.id,
             from: row.from,
             to: row.to,
@@ -143,6 +151,7 @@ export class DeliveryWorker {
 
       if (classified.kind === 'permanent') {
         await this.emitSpine('nudge.surface.failed', {
+          ...traceFields,
           id: row.id,
           from: row.from,
           to: row.to,
@@ -156,6 +165,7 @@ export class DeliveryWorker {
 
       // transient — emit per-attempt failure event, retry if attempts left
       await this.emitSpine('nudge.surface.failed', {
+        ...traceFields,
         id: row.id,
         from: row.from,
         to: row.to,

@@ -38,6 +38,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = { version = "2", features = ["json"] }
 libc = "0.2"
 sha2 = "0.10"
+# #2765 — UUIDv7 for nudge trace_id (sortable, time-ordered correlation key)
+uuid = { version = "1", features = ["v7"] }
 
 [[bin]]
 name = "chorus-hooks"

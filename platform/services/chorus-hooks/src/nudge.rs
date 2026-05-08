@@ -7,15 +7,15 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::process;
 
-/// Generate a short trace ID: timestamp_ms + 4 random hex chars
+/// #2765 — UUIDv7 trace ID for nudge correlation. Sortable + time-ordered
+/// (millisecond-precision timestamp prefix), 36-char canonical UUID format.
+/// Replaces the old `ntr-<ms>-<4hex>` format which was 24 chars and
+/// non-standard. Propagates via `X-Chorus-Trace-Id` HTTP header on the
+/// pulse POST and on every spine event in the nudge lifecycle.
 fn trace_id() -> String {
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-    let rand: u16 = (std::process::id() as u16).wrapping_mul(31).wrapping_add(ts as u16);
-    format!("ntr-{}-{:04x}", ts, rand)
+    uuid::Uuid::now_v7().to_string()
 }
 
 const INBOX_DIR: &str = "/tmp/voice-inbox";
@@ -93,16 +93,115 @@ fn needs_reply(msg: &str) -> bool {
         || lower.ends_with('?')
 }
 
+/// #2765 AC4: required-field schema for nudge.* spine events. Returns the
+/// list of substring tokens (each `<field>=`) that MUST appear in the
+/// `extra` payload. Empty list = no enforcement (event isn't in the nudge
+/// schema). Validation runs before chorus-log invocation; missing field is
+/// logged to stderr and the event is dropped (non-zero exit semantics).
+fn required_fields_for(event: &str) -> &'static [&'static str] {
+    match event {
+        "nudge.requested" => &["from=", "to=", "trace=", "origin="],
+        "nudge.surfaced" => &["from=", "to=", "trace=", "attempt="],
+        "nudge.surface.failed" => &["from=", "to=", "trace=", "attempt=", "reason=", "permanent="],
+        _ => &[],
+    }
+}
+
+/// Validate that `extra` contains all required field tokens for the given
+/// event. Returns a Vec of missing tokens (empty = pass). Used by chorus_log
+/// to refuse-at-call-site for nudge.* events with incomplete payloads.
+///
+/// Substring match is intentional: validator is dev-aid for forgotten fields,
+/// not adversarial-input parser. Rust callers (nudge.rs) write payloads in
+/// fixed order — `from=,to=,chars=,trace=,origin=,content=` — so the
+/// false-positive class (content containing the literal "trace=" token)
+/// requires the caller to BOTH forget the real field AND content to contain
+/// that token. Bounded failure mode, acceptable for the dev-aid threat model
+/// (Kade gemba 2026-05-08). Upgrade to comma-split key=value parser if a
+/// production miss surfaces; until observed, the simpler check earns its keep.
+///
+/// Scope note: this validator runs on the Rust chorus_log path only. The
+/// pulse worker emits via TypeScript appendFile (structured JSON, no
+/// substring concat) — equivalent TS-side validation would be a separate
+/// concern; not in this card.
+fn missing_required_fields(event: &str, extra: &str) -> Vec<&'static str> {
+    required_fields_for(event)
+        .iter()
+        .filter(|tok| !extra.contains(*tok))
+        .copied()
+        .collect()
+}
+
 /// Emit spine event via chorus-log. Public within the crate so the nudge
 /// read path (hooks::nudge_poll::mark_surfaced) can emit nudge.surfaced events
 /// through the same path as nudge.emitted — one canonical emission route per
 /// #2435 (no parallel chorus-log helpers across hooks).
+///
+/// #2765 AC4: nudge.* events validated against required-field schema before
+/// emission. Missing field = stderr warning + event dropped (non-zero exit
+/// semantics enforced at call site by skipping the chorus-log invocation).
 pub(crate) fn chorus_log(event: &str, role: &str, extra: &str) {
+    let missing = missing_required_fields(event, extra);
+    if !missing.is_empty() {
+        eprintln!(
+            "chorus_log REFUSED — event {} missing required fields: {:?} (extra={})",
+            event, missing, extra
+        );
+        return;
+    }
     let log_script = chorus_log_path();
     if Path::new(&log_script).exists() {
         let _ = Command::new(&log_script)
             .args([event, role, extra])
             .output();
+    }
+}
+
+#[cfg(test)]
+mod chorus_log_validation_tests {
+    use super::*;
+
+    #[test]
+    fn nudge_requested_with_all_fields_passes() {
+        let missing = missing_required_fields(
+            "nudge.requested",
+            "from=silas,to=wren,chars=10,trace=018f-uuid,origin=cli,content=hi",
+        );
+        assert!(missing.is_empty(), "expected pass, got missing: {:?}", missing);
+    }
+
+    #[test]
+    fn nudge_requested_missing_trace_fails() {
+        let missing = missing_required_fields(
+            "nudge.requested",
+            "from=silas,to=wren,origin=cli,content=hi",
+        );
+        assert!(missing.contains(&"trace="), "expected trace= in missing, got: {:?}", missing);
+    }
+
+    #[test]
+    fn nudge_surfaced_requires_attempt() {
+        let missing = missing_required_fields(
+            "nudge.surfaced",
+            "from=silas,to=wren,trace=018f",
+        );
+        assert!(missing.contains(&"attempt="), "expected attempt= in missing, got: {:?}", missing);
+    }
+
+    #[test]
+    fn nudge_surface_failed_requires_reason_and_permanent() {
+        let missing = missing_required_fields(
+            "nudge.surface.failed",
+            "from=silas,to=wren,trace=018f,attempt=1",
+        );
+        assert!(missing.contains(&"reason="));
+        assert!(missing.contains(&"permanent="));
+    }
+
+    #[test]
+    fn unknown_event_passes_through() {
+        let missing = missing_required_fields("session.bootstrap", "anything goes here");
+        assert!(missing.is_empty(), "non-nudge events bypass validation");
     }
 }
 
@@ -299,11 +398,13 @@ pub fn run(args: &[String]) -> ExitCode {
         "traceId": tid,
     });
     let pulse_url = std::env::var("CHORUS_PULSE_URL").unwrap_or_else(|_| "http://localhost:3475/api/nudge".to_string());
+    let trace_header = format!("X-Chorus-Trace-Id: {}", tid);
     let _ = Command::new("curl")
         .args([
             "-s", "-X", "POST",
             &pulse_url,
             "-H", "Content-Type: application/json",
+            "-H", &trace_header,
             "-d", &persist_body.to_string(),
             "--connect-timeout", "2",
         ])

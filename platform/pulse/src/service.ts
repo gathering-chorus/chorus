@@ -81,14 +81,18 @@ function registerHealthMetricsRoutes(app: Express, store: MessageStore, metrics:
 
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', (req, res) => {
-    const { from, to, content, traceId } = req.body;
+    const { from, to, content, traceId: bodyTraceId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
-    const id = store.sendNudge(from, to, content);
+    // #2765 AC3: prefer X-Chorus-Trace-Id header (canonical UUIDv7); fall back
+    // to body.traceId for backward-compat with senders that haven't migrated.
+    const headerTrace = req.headers['x-chorus-trace-id'];
+    const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
+    const id = store.sendNudge(from, to, content, traceId);
     metrics.nudgesReceived.labels(from, to).inc();
-    log('info', 'nudge.stored', { id, from, to, chars: content.length, traceId: traceId || undefined });
+    log('info', 'nudge.stored', { id, from, to, chars: content.length, trace_id: traceId || undefined });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
-      worker.enqueue({ id, from, to, content, delivery_attempts: 0 }).catch(() => { /* worker handles its own state */ });
+      worker.enqueue({ id, from, to, content, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
     }
     res.json({ ok: true, id, traceId });
   });
