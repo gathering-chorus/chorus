@@ -77,12 +77,20 @@ write_declared silas "$NOW" building 2031
 write_declared kade "$NOW" building 9999
 write_observation kade "$(iso_now)"
 SCAN=$(scan_fixture silas)
-if echo "$SCAN" | grep -q "STALE"; then
-  echo "  FAIL: fresh state shows STALE — scan:"
+# #2806: grep for the literal `[STALE]` flag on a role line, not the
+# substring "STALE" anywhere. werk-init.sh shells out to the cards CLI
+# which queries real board state and emits `card.stale.detected` events
+# for any cards aged past threshold (real-world wren/silas/kade work,
+# not fixture data). Those events are NOT what this test is asserting —
+# the test asserts the role-line staleness flag (OTHER_STALE in
+# werk-init.sh:229, formatted as `[STALE]`). Substring "STALE" was too
+# loose; bracketed flag is the actual contract.
+if echo "$SCAN" | grep -q "\[STALE\]"; then
+  echo "  FAIL: fresh state shows [STALE] flag — scan:"
   echo "$SCAN" | sed 's/^/    /'
   ((FAIL++))
 else
-  echo "  PASS: no STALE on fresh state"
+  echo "  PASS: no [STALE] flag on fresh state"
   ((PASS++))
 fi
 
@@ -96,27 +104,30 @@ write_declared silas "$NOW" building 2031
 write_declared kade "$STALE_EPOCH" building 9999
 write_observation kade "$(iso_hours_ago 1)"
 SCAN=$(scan_fixture silas)
-if echo "$SCAN" | grep -q "STALE"; then
-  echo "  PASS: stale state shows STALE"
+# #2806: same `[STALE]` flag (bracketed) — that's werk-init.sh's literal
+# OTHER_STALE marker on the role line, distinct from card.stale.detected
+# events emitted by the cards CLI for real-world card aging.
+if echo "$SCAN" | grep -q "\[STALE\]"; then
+  echo "  PASS: stale state shows [STALE]"
   ((PASS++))
 else
-  echo "  FAIL: stale state missing STALE flag — scan:"
+  echo "  FAIL: stale state missing [STALE] flag — scan:"
   echo "$SCAN" | sed 's/^/    /'
   ((FAIL++))
 fi
 
-# Test 3: STALE flag appears specifically on the stale role's line.
-echo "Test 3: STALE appears on role's line"
+# Test 3: [STALE] flag appears specifically on the stale role's line.
+echo "Test 3: [STALE] appears on role's line"
 new_fixture
 write_declared silas "$NOW" building 2031
 write_declared kade "$STALE_EPOCH" building 9999
 write_observation kade "$(iso_hours_ago 1)"
 SCAN=$(scan_fixture silas)
-if echo "$SCAN" | grep "kade" | grep -q "STALE"; then
-  echo "  PASS: STALE on kade's line"
+if echo "$SCAN" | grep "kade" | grep -q "\[STALE\]"; then
+  echo "  PASS: [STALE] on kade's line"
   ((PASS++))
 else
-  echo "  FAIL: STALE not on kade's line — scan:"
+  echo "  FAIL: [STALE] not on kade's line — scan:"
   echo "$SCAN" | sed 's/^/    /'
   ((FAIL++))
 fi

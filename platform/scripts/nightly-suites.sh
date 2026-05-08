@@ -83,6 +83,42 @@ list_shell() {
   find "$CHORUS_ROOT/platform/scripts" -maxdepth 1 -name "test-*.sh" -type f 2>/dev/null | sort
 }
 
+# #2806: bats discovery — find every *.bats file under chorus that isn't in
+# node_modules / target / dist. Pre-#2806 the runner had no bats tier; ~95
+# of 97 bats files sat dormant despite being real test surfaces. The two
+# that did run got there because individual test-*.sh scripts happened to
+# invoke them; the rest were silently dark. List pattern mirrors list_npm's
+# scope-and-exclude shape.
+list_bats() {
+  find "$CHORUS_ROOT" -name "*.bats" \
+       -not -path "*/node_modules/*" \
+       -not -path "*/target/*" \
+       -not -path "*/dist/*" 2>/dev/null | sort
+}
+
+# #2806: cucumber discovery — find package dirs with cucumber-js as the
+# test runner. Pre-#2806 the runner walked .test.ts only; cucumber's
+# .feature files never matched, so platform/tests (with 23+ feature files
+# and scripts.test=cucumber-js) was silently dropped from the nightly.
+# Heuristic: any package.json whose scripts.test mentions cucumber-js AND
+# has a features/ subdirectory.
+list_cucumber() {
+  for root in "$CHORUS_ROOT"; do
+    [ -d "$root" ] || continue
+    find "$root" -name "package.json" \
+         -not -path "*/node_modules/*" \
+         -not -path "*/dist/*" 2>/dev/null | while IFS= read -r pj; do
+      local d
+      d=$(dirname "$pj")
+      if jq -re '.scripts.test // ""' "$pj" 2>/dev/null | grep -q "cucumber-js"; then
+        if [ -d "$d/features" ] || find "$d" -maxdepth 4 -name "*.feature" -not -path "*/node_modules/*" 2>/dev/null | grep -q .; then
+          echo "$d"
+        fi
+      fi
+    done | sort -u
+  done
+}
+
 # --- Execution ---
 
 # Run a single suite with one retry on failure — absorbs concurrent-run flakes
@@ -104,8 +140,15 @@ run_one_attempt() {
   local status="pass" summary=""
   case "$kind" in
     npm)
+      # #2806: --runInBand mirrors the cargo --test-threads=1 isolation
+      # goal already documented below. Without it, jest's default
+      # parallel-worker mode flakes platform/api server-unit's
+      # "POST /api/chorus/embed" (in-process server tests race on
+      # ephemeral ports / beforeAll timing under load). Test passes in
+      # isolation; serial nightly runs match the determinism contract.
+      # Cost: a few seconds per package; gain: signal you can trust.
       local out rc
-      out=$(cd "$path" && npx jest --passWithNoTests --silent 2>&1); rc=$?
+      out=$(cd "$path" && npx jest --passWithNoTests --silent --runInBand 2>&1); rc=$?
       out=$(echo "$out" | tail -3)
       summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
       [ "$rc" -ne 0 ] && status="fail"
@@ -127,6 +170,27 @@ run_one_attempt() {
       local out rc
       out=$(bash "$path" 2>&1); rc=$?
       summary=$(echo "$out" | tail -1)
+      [ "$rc" -ne 0 ] && status="fail"
+      ;;
+    bats)
+      # bats reports `ok N <desc>` per test, `not ok N <desc>` per fail,
+      # and a 1..N plan line. Last line of TAP output is the final test
+      # result. Summary extracts pass/fail counts via grep.
+      local out rc passed failed
+      out=$(bats "$path" 2>&1); rc=$?
+      passed=$(echo "$out" | grep -cE '^ok ' || true)
+      failed=$(echo "$out" | grep -cE '^not ok ' || true)
+      summary="bats: $passed passed, $failed failed"
+      [ "$rc" -ne 0 ] && status="fail"
+      ;;
+    cucumber)
+      # cucumber-js's `npm test` exits non-zero on any failed scenario.
+      # Summary line is typically `N scenarios (M passed, K failed)` near
+      # the end of stdout.
+      local out rc
+      out=$(cd "$path" && npm test --silent 2>&1); rc=$?
+      summary=$(echo "$out" | grep -E "scenarios? \(" | tail -1 | tr -d '\n')
+      [ -z "$summary" ] && summary=$(echo "$out" | tail -1)
       [ "$rc" -ne 0 ] && status="fail"
       ;;
   esac
@@ -172,21 +236,39 @@ run_all() {
     [ -z "$s" ] && continue
     run_one shell "$s" "silas"
   done < <(list_shell)
+
+  # #2806: bats + cucumber tiers were silently dormant pre-#2806. ~95 of
+  # 97 bats files and all 23 cucumber features sat dark while only
+  # whichever bats happened to be invoked from a test-*.sh wrapper got
+  # exercised. These two loops light them up.
+  while IFS= read -r b; do
+    [ -z "$b" ] && continue
+    run_one bats "$b" "silas"
+  done < <(list_bats)
+
+  while IFS= read -r d; do
+    [ -z "$d" ] && continue
+    run_one cucumber "$d" "silas"
+  done < <(list_cucumber)
 }
 
 # --- Dispatch ---
 case "${1:-}" in
-  --list-npm)   list_npm   ;;
-  --list-cargo) list_cargo ;;
-  --list-shell) list_shell ;;
+  --list-npm)      list_npm      ;;
+  --list-cargo)    list_cargo    ;;
+  --list-shell)    list_shell    ;;
+  --list-bats)     list_bats     ;;
+  --list-cucumber) list_cucumber ;;
   --list-all)
-    echo "# npm";   list_npm
-    echo "# cargo"; list_cargo
-    echo "# shell"; list_shell
+    echo "# npm";       list_npm
+    echo "# cargo";     list_cargo
+    echo "# shell";     list_shell
+    echo "# bats";      list_bats
+    echo "# cucumber";  list_cucumber
     ;;
   --run-all)    run_all ;;
   *)
-    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-all|--run-all}" >&2
+    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all}" >&2
     exit 2
     ;;
 esac
