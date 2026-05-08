@@ -9,7 +9,11 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 export PATH="/opt/homebrew/bin:/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 REPO="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
-CHORUS="${CHORUS_ROOT}/chorus"
+# #2824: was "${CHORUS_ROOT}/chorus" — double-chorus path resolved to a
+# nonexistent dir, making $CARDS / $CHORUS_LOG / $DECISIONS_MD all bogus.
+# launchd-spawned runs hit `command not found` (exit 127) on the first $CARDS
+# invocation. CHORUS_ROOT already IS the chorus root.
+CHORUS="${CHORUS_ROOT}"
 CARDS="$CHORUS/platform/scripts/cards"
 CHORUS_LOG="$CHORUS/platform/scripts/chorus-log"
 DECISIONS_MD="$CHORUS/roles/wren/decisions.md"
