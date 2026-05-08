@@ -179,7 +179,12 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   });
 
   const emitSpine: EmitSpine = async (event, fields) => {
-    const line = JSON.stringify({ ts: new Date().toISOString(), event, role: 'pulse', ...fields }) + '\n';
+    // Field name is `timestamp` (not `ts`) to match the canonical chorus.log
+    // convention used by the readers (Loki processors, observer.rs, audit
+    // tooling). Found during #2764 cutover verification: nudge.surfaced was
+    // firing but readers couldn't parse the timestamp because the field was
+    // named `ts`. pulse's own messaging.log uses `ts` — that stays.
+    const line = JSON.stringify({ timestamp: new Date().toISOString(), event, role: 'pulse', ...fields }) + '\n';
     try { await appendFile(chorusLog, line); } catch { /* best-effort spine write */ }
   };
 

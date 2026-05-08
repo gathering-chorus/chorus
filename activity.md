@@ -1266,3 +1266,11 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Stuck rebase on wren/2727 aborted after #2789 unblocked cleanup commands; 3 commits intact.
 - Added `defaultMode: "auto"` to ~/.claude/settings.json — applies on next session boot.
 - Long meta-conversation on agent-human asymmetry, HX scale problem, Ravi parallel, version-control 4.5K-lines-7-days. Captured in next-session.md memory candidates.
+
+## 2026-05-08 morning — Wren #2764 cutover
+
+- Pulse rebuilt + kickstarted (`com.gathering.messaging`, PID 11687) running #2727+#2763 code.
+- spine-tick-poller LaunchAgents bootout for wren/silas/kade; plists moved to `~/Library/LaunchAgents/.disabled/`.
+- AC4 cutover verified live: marker nudges delivered as keystrokes via pulse worker → chorus-inject; spine events (`nudge.requested`, `nudge.emitted`, `nudge.surfaced`) all fire.
+- AC5 fallback: `chorus-hook-shim user-prompt-submit` invokes nudge_poll cleanly (rc=0).
+- Audit gap found + fixed during verification: pulse `emitSpine` was writing `ts:` field; canonical chorus.log uses `timestamp:`. One-line fix to platform/pulse/src/service.ts; rebuilt + dist hot-patched into canonical (pulse dist/ is gitignored); verified post-fix nudge.surfaced has proper timestamp.
