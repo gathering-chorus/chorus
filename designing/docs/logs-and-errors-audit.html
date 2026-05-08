@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logs + Errors + Execution-Flow Instrumentation Audit</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.4em; color: #065f46; }
+  h4 { font-size: 0.92em; margin-top: 1em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .good { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .good strong { color: #065f46; }
+  .warn { background: #fef9c3; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; border-left: 3px solid #ca8a04; }
+  .warn strong { color: #854d0e; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pillar { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Logs + Errors + Execution-Flow Instrumentation <span>— Audit</span></h1>
+<p class="date">2026-05-08 — Silas (#2832). Audit-only card. Output: this doc + target shape + migration risks per emitter class. Implementation is downstream cards.</p>
+
+<div class="promise">
+<strong>Premise.</strong> The proposed MCP-Loki-query agent surface (typed log/error access for agents) only earns its keep if upstream emit data is structured, consistent, severity-correct, and instrumented for end-to-end execution flow. Today none of those hold uniformly. This audit enumerates the gap, proposes a target shape, and names migration risks per emitter class.
+</div>
+
+<h2>Headline numbers</h2>
+
+<table>
+<tr><th>Surface</th><th>Sites audited</th><th>Good citizen %</th><th>trace_id %</th><th>Typed errors %</th></tr>
+<tr><td>Bash (platform/scripts, proving/scripts, alert YAMLs)</td><td class="num">~135 scripts</td><td class="num">11%</td><td class="num">0%</td><td class="num">~5%</td></tr>
+<tr><td>TypeScript (api, pulse, cards, workflow-engine)</td><td class="num">87 files / 234 emits</td><td class="num">~18%</td><td class="num">~11%</td><td class="num">~18%</td></tr>
+<tr><td>Rust (chorus-hooks, chorus-inject)</td><td class="num">56 files</td><td class="num">~25%</td><td class="num">0%</td><td class="num">~70%</td></tr>
+<tr><td>Flow reconstruction (4 named flows)</td><td>4</td><td colspan="3">0 of 4 fully reconstructable</td></tr>
+</table>
+
+<p><em>"Good citizen" = structured emit via canonical helper (chorus-log / logEvent / structured tracing macro) with role attribution and severity classification.</em></p>
+
+<h2>Audit by surface</h2>
+
+<h3>Bash (135 scripts)</h3>
+
+<p>Stats: 39 scripts use <code>chorus-log</code>, 285 stderr writes, 89 with <code>set -euo pipefail</code>, 131 with <code>2&gt;/dev/null</code> swallowing, 0 instances of trace_id propagation.</p>
+
+<table>
+<tr><th>Class</th><th>Count</th><th>Pattern</th><th>Representative</th></tr>
+<tr><td>Good citizens</td><td class="num">15 (11%)</td><td>chorus-log + role + structured fields</td><td><code>alert-delivery-test.sh:160</code></td></tr>
+<tr><td>Stringly stderr</td><td class="num">94 (70%)</td><td>echo "ERROR: foo" + exit 1</td><td><code>post-cargo-build.sh:15</code></td></tr>
+<tr><td>Silent swallowers</td><td class="num">73 (54% overlap)</td><td><code>2&gt;/dev/null || true</code></td><td><code>chorus-query.sh:39</code></td></tr>
+<tr><td>Mixed within file</td><td class="num">28 (21%)</td><td>chorus-log + echo + curl in same script</td><td><code>nudge-health-check.sh</code></td></tr>
+<tr><td>Bridge-direct</td><td class="num">8 (6%)</td><td>Hand-built JSON to /api/message</td><td><code>tunnel-down.yml:52</code></td></tr>
+<tr><td>YAML alert action blocks</td><td class="num">5 (100% incorrect)</td><td>Severity declared in YAML lost in bash emit</td><td><code>tunnel-down.yml</code></td></tr>
+</table>
+
+<div class="gap"><strong>Critical:</strong> 0% trace_id coverage in bash. No script threads UUIDv7 from caller context. Cross-flow correlation is impossible at the bash layer.</div>
+<div class="gap"><strong>Critical:</strong> 73 scripts use <code>2&gt;/dev/null || true</code> on operations that include curl timeouts, permission errors, git failures. Errors vanish silently.</div>
+<div class="gap"><strong>Severity miscategorization:</strong> Alert YAMLs declare <code>severity: critical</code> at top but action: bash blocks emit via the same ops-nudge path as warning-severity alerts. Recipient cannot distinguish urgency from emit shape.</div>
+
+<h3>TypeScript (87 files / 234 console emits / 337 try-catch)</h3>
+
+<table>
+<tr><th>Class</th><th>Count</th><th>Pattern</th><th>Representative</th></tr>
+<tr><td>Good citizens (typed taxonomy)</td><td class="num">44 sites</td><td>{ ok, reason, detail } pattern</td><td><code>mcp/server.ts:837</code> (chorus_commit refused)</td></tr>
+<tr><td>console.log/warn/error stringly</td><td class="num">142 sites</td><td>Plain text with [prefix]</td><td><code>server.ts:193</code> (request log)</td></tr>
+<tr><td>Thrown errors without taxonomy</td><td class="num">79 sites</td><td>throw new Error("string"), reason in message</td><td><code>workflow-engine/engine.ts:60</code></td></tr>
+<tr><td>Swallowed (.catch(() =&gt; null))</td><td class="num">~12 sites</td><td>Silent failure on async path</td><td><code>handlers/chorus-domain.ts:277</code></td></tr>
+<tr><td>Catch at wrong boundary</td><td class="num">~60 sites</td><td>try/catch in library function vs API boundary</td><td><code>discover-code.ts</code> (multiple per file)</td></tr>
+</table>
+
+<div class="good"><strong>Best pattern in tree:</strong> MCP handler logEvent + Pulse delivery-worker classifyInjectResult. Structured fields, trace_id (post-#2765), typed reason taxonomy with permanent/transient classification. The shape every other handler should follow.</div>
+<div class="gap"><strong>Severity mismatches in TS:</strong> <code>server.ts:257</code> uses console.error for embed-delta failures (async, non-blocking — should be info or warn). <code>server.ts:268</code> uses console.log for "FATAL uncaughtException" (should be error). Console.warn is essentially unused — every error level collapses to console.error.</div>
+<div class="gap"><strong>Trace_id only in MCP + Pulse:</strong> 25 sites total (~11% of TS emits). Express HTTP handlers, workflow-engine, cards SDK don't thread trace_id at all. Cross-flow correlation impossible above the MCP layer.</div>
+
+<h3>Rust (56 files / 135 println / 63 chorus_log / 17 tracing)</h3>
+
+<table>
+<tr><th>Class</th><th>Count</th><th>Pattern</th><th>Representative</th></tr>
+<tr><td>Good citizens (structured)</td><td class="num">3 modules</td><td>tracing + chorus_log + spine emit</td><td><code>infra_guardrails.rs</code></td></tr>
+<tr><td>Println diagnostic (justified)</td><td class="num">12 files / 135 calls</td><td>CLI startup/error to stdout|stderr</td><td><code>shim.rs:68</code></td></tr>
+<tr><td>chorus_log() spine emits</td><td class="num">63+ calls / 13 files</td><td>Structured event but no trace_id</td><td><code>infra_guardrails.rs:232</code></td></tr>
+<tr><td>tracing crate (sparse)</td><td class="num">17 calls / 13 files</td><td>info!/warn! mostly diagnostic</td><td><code>log_first_gate.rs:172</code></td></tr>
+<tr><td>Silent gates (zero emit)</td><td class="num">5 modules</td><td>HookResponse only — no spine</td><td><code>tdd_gate.rs</code>, <code>test_quality_gate.rs</code>, <code>demo_gate.rs</code>, <code>memory_gate.rs</code>, <code>canonical_write_guard.rs</code></td></tr>
+<tr><td>unwrap() in production</td><td class="num">5 unjustified</td><td>Could panic on env failure</td><td><code>session_cache.rs:57-67</code></td></tr>
+</table>
+
+<div class="gap"><strong>Critical:</strong> 5 gates make load-bearing security decisions and emit ZERO spine events: <code>tdd_gate</code>, <code>test_quality_gate</code>, <code>demo_gate</code>, <code>memory_gate</code>, <code>canonical_write_guard</code>. ~100+ silent passes per sprint — invisible to Loki audits.</div>
+<div class="gap"><strong>Severity miscategorization in Rust:</strong> <code>log_first_gate.rs:172-207</code> uses <code>info!()</code> for both allow AND deny decisions. Loki severity filters can't distinguish gate outcomes.</div>
+<div class="gap"><strong>Zero trace_id threading:</strong> chorus_log emits include timestamp/level/event/role but no <code>trace_id</code> or <code>session_id</code> field. session_id IS available on HookInput but not propagated to spine events. Every gate decision lacks correlation back to the triggering session.</div>
+<div class="good"><strong>HookResponse return shapes:</strong> 50+ gates use typed permission_deny_json with structured reason. Decision-grade output to Claude is structured. The gap is the spine event side, not the response side.</div>
+
+<h2>Flow map — execution-flow gaps</h2>
+
+<p>Walked four named end-to-end flows. None are fully reconstructable from spine events alone.</p>
+
+<h3>/acp end-to-end (11 hops)</h3>
+
+<p>chorus_acp emits at 4 of 11 hops: invoked, board-lookup, card.accepted, completed. Push, PR-create, PR-merge, cards-done are silent on success. Error path emits <code>chorus_acp.refused</code> with stringly reason. <strong>No trace_id threaded</strong> from skill invocation through completion.</p>
+
+<h3>Building-pipeline (8 hops)</h3>
+
+<p>launchd → act → workflow steps → CLIs. Per-crate <code>build.completed</code> + <code>deploy.completed</code> emit, but launchd trigger and act invocation are completely silent. <code>build.artifact.hashed</code> and <code>binary.deployed</code> are designed in #2774 but NOT emitted in current code. <strong>No entry event when pipeline starts; no trace_id correlating crate-by-crate steps.</strong></p>
+
+<h3>Gate chain (8 hops)</h3>
+
+<p>Gates emit via <strong>card comments</strong> (gate:product-pass, gate:code-pass, etc.), NOT spine events. SKILL.md mentions <code>gate.X.passed</code> spine events but the gate skills don't emit them. <strong>Two parallel audit trails (comments vs spine)</strong>; Loki can't see gate outcomes from spine alone.</p>
+
+<h3>Demo flow (10 hops)</h3>
+
+<p><code>demo.validate.completed</code>, <code>demo.preflight.completed</code>, <code>demo.stakes.completed</code>, <code>demo.signal.completed</code>, <code>card.demo.started</code> all emit. But: smoke-check.sh runs without spine event from /demo wrapper. Bridge POST is completely dark. Nudge events have UUIDv7 trace_id (post-#2804) but it's <strong>not threaded back to the rest of the demo flow</strong> — two trace_id regimes coexist.</p>
+
+<h3>Cross-flow correlation</h3>
+
+<div class="gap"><strong>Today, you cannot trace a single trace_id across flows.</strong> /acp doesn't share trace_id with the building-pipeline it triggers. The gate chain that precedes /acp doesn't share trace_id with /acp itself. "Show me everything that happened for card #2832" requires manual log archaeology + timestamp correlation, not a single trace query.</div>
+
+<h2>Pattern classes (cross-language)</h2>
+
+<div class="pillar">
+<h4>Good citizens (replicate this pattern)</h4>
+<ul>
+  <li><strong>Bash:</strong> chorus-log calls with role + structured fields (<code>alert-delivery-test.sh</code>, <code>deep-health.sh</code>)</li>
+  <li><strong>TypeScript:</strong> MCP handler logEvent + typed refusal (<code>mcp/server.ts:435-502</code>); Pulse delivery-worker classifyInjectResult (<code>delivery-worker.ts:57-185</code>)</li>
+  <li><strong>Rust:</strong> infra_guardrails (<code>infra_guardrails.rs:91,224-237</code>) — tracing + chorus_log dual emit with decision + pattern fields</li>
+</ul>
+<p>Common shape: structured event name following <code>domain.noun.verb_past</code>; role attribution; structured fields; typed reason on failure; severity matches action-required reality.</p>
+</div>
+
+<div class="pillar">
+<h4>Stringly stderr (largest class)</h4>
+<p>Plain text echo/console.log/println without structure. ~94 bash + 142 TS + 12 Rust files. Each emits a string the consumer must parse to extract role, event type, severity. Loki can index but not query semantically. Migration cost: per-call rewrite, but mechanical (echo → chorus-log call with structured fields).</p>
+</div>
+
+<div class="pillar">
+<h4>Silent failures / swallowers</h4>
+<p>Bash: <code>2&gt;/dev/null || true</code> on critical operations (73 scripts). TS: <code>.catch(() =&gt; null)</code> in async chains (~12 sites). Rust: <code>let _ = result</code> for best-effort operations. <strong>The hardest class to migrate</strong> — each site needs case-by-case judgment on whether the failure is genuinely OK to drop or was hiding a real problem. Some are correct (kickstart of non-launchd service warns and continues). Some hide bugs (curl timeouts to chorus-api swallowed during MCP investigation today).</p>
+</div>
+
+<div class="pillar">
+<h4>Thrown without taxonomy</h4>
+<p>79 TS sites + most Rust gates. <code>throw new Error("reason in string")</code> or <code>HookResponse::deny(&reason_string)</code>. The reason is structured information packed into a stringly field. Callers must regex-parse to extract the reason class. Migration: introduce <code>{ ok: false, reason: "code", detail: "human" }</code> Result-like patterns; existing typed taxonomies (chorus_acp, chorus_commit) are the precedent.</p>
+</div>
+
+<div class="pillar">
+<h4>Severity miscategorized</h4>
+<ul>
+  <li>Alert YAMLs declare critical/warning at top, lose distinction in bash emit (5 of 5 alert YAMLs affected)</li>
+  <li>TS: console.error for non-blocking async failures (~6 sites in api/server.ts)</li>
+  <li>TS: console.log for FATAL uncaught exception</li>
+  <li>Rust: log_first_gate uses info! for deny decisions</li>
+</ul>
+<p>Effect: Loki severity filters and alert-routing rules see noise where there should be signal, and silence where there should be action.</p>
+</div>
+
+<h2>Target shape (proposed)</h2>
+
+<p>Every emit (log or error) must satisfy <strong>eight invariants</strong>:</p>
+
+<ol>
+  <li><strong>Routed via canonical helper</strong> — chorus-log (bash), logEvent / structured logger (TS), chorus_log + tracing (Rust). No direct stderr or stringly stdout for production paths.</li>
+  <li><strong>Schema-compliant</strong> — event name matches <code>spine-events.json</code>; required fields present; no field-name drift (commit not sha; cdhash not codesign_hash).</li>
+  <li><strong>trace_id threaded</strong> — UUIDv7 minted at flow entry; propagated through every hop; emitted on every event. No flow runs without one.</li>
+  <li><strong>card_id as first-class field</strong> (when applicable) — every emit happening in a card-scoped flow carries the card_id. Closes the gate-chain-via-card-comments gap structurally: today gates emit comments because spine doesn't bind to card; with card_id on every event, spine and board state join cleanly. Per Wren #2832 PM feedback — the highest-leverage addition.</li>
+  <li><strong>Role attributed</strong> — every emit names the role (or <code>system</code> for system actions). No anonymous events.</li>
+  <li><strong>Severity classified per action-required reality</strong> — INFO (state transition), WARN (degradation, retry-able), ERROR (action required). Mapping documented; not aspirational.</li>
+  <li><strong>Flow-step named</strong> — event name encodes which step in which flow (e.g., <code>building.deploy.kickstart_completed</code> not just <code>deploy.completed</code>).</li>
+  <li><strong>Errors typed at boundaries</strong> — <code>{ ok: false, reason: "code", detail: "msg", recoverable: bool }</code>. Stringly errors only inside library internals; never crossing API/CLI/MCP boundaries.</li>
+</ol>
+
+<h3>Tier-2 additions (advanced agent UX)</h3>
+
+<p>Beyond the eight, two further fields make agent navigation across chains clean (per Wren #2832 PM feedback):</p>
+
+<ol start="9">
+  <li><strong>subdomain binding</strong> — events carry their subdomain identifier (<code>chorus:version-control-domain</code>, etc.). Closes the "Logs (0) DERIVED" empty-section problem on Athena domain pages — pages can join directly to subdomain-tagged events instead of deriving from naming conventions.</li>
+  <li><strong>caused_by / parent_event_id</strong> — events declare which prior event caused them. Agents navigate causation chains explicitly rather than inferring from temporal proximity (lossy in both directions: missed events look unrelated; concurrent unrelated events look caused).</li>
+</ol>
+
+<p>This is the contract MCP-Loki-query needs as input. With the eight, "show me what happened for card X" is a single card_id+trace_id query. With the tier-2 additions, agents can walk causation graphs and join to Athena pages without inference layers.</p>
+
+<h2>Migration risks per emitter class</h2>
+
+<table>
+<tr><th>Class</th><th>Migration cost</th><th>Risk</th></tr>
+<tr><td>Bash stringly stderr → chorus-log</td><td>Easy / mechanical</td><td>Low — call-site rewrite, no behavior change. ~94 sites; can be batched.</td></tr>
+<tr><td>Bash silent swallowers</td><td>Hard / case-by-case</td><td>High — each site needs judgment on whether failure is OK to drop or hiding a bug. Cannot mechanize.</td></tr>
+<tr><td>Bash YAML alert actions</td><td>Easy / mechanical</td><td>Low — 5 alert YAMLs, replace embedded bash with chorus-log helper that preserves severity from YAML metadata.</td></tr>
+<tr><td>TS console.log/warn/error → logEvent</td><td>Easy / mechanical</td><td>Low — 142 sites, mostly find-replace. Severity audit during migration is the value-add.</td></tr>
+<tr><td>TS thrown errors → typed taxonomy</td><td>Medium</td><td>Medium — chorus_acp pattern is the precedent; per-handler reason set has to be authored. Not mechanical.</td></tr>
+<tr><td>TS scattered try/catch consolidation</td><td>Medium</td><td>Medium — moving catch blocks to API boundary changes error propagation; needs care to not regress on swallow vs re-throw decisions.</td></tr>
+<tr><td>Rust silent gates → chorus_log emits</td><td>Easy / mechanical</td><td>Low — 5 gates; add 2-3 chorus_log calls each (pass/fail with reason). Closes ~100+ silent passes per sprint.</td></tr>
+<tr><td>Rust trace_id threading</td><td>Hard</td><td>High — touches HookInput, every chorus_log call site, schema. Architectural change. Should be its own substrate card.</td></tr>
+<tr><td>Cross-flow trace_id propagation</td><td>Hard</td><td>High — requires every flow boundary (skill → MCP → CLI → daemon → CLI) to pass trace_id explicitly. Same family as the bash trace_id work; both substrate-level.</td></tr>
+</table>
+
+<h2>Recommended migration plan (priority order)</h2>
+
+<ol>
+  <li><strong>Easy wins first</strong> — bash stringly → chorus-log, alert YAML severity preservation, Rust silent gates → chorus_log. Cost: low. Value: ~50% of audit-flagged sites become structured. Recommend: one card per surface (bash, alerts, Rust gates).</li>
+  <li><strong>Severity audit + correction</strong> — go through console.log/warn/error in TS and info!/warn!/error! in Rust; classify each per action-required reality; fix miscategorizations. Cost: per-call review. Value: alert-routing becomes reliable.</li>
+  <li><strong>TS thrown → typed taxonomy</strong> — extend chorus_acp pattern to other MCP handlers and HTTP route handlers. Author reason taxonomies per surface. Cost: medium. Value: typed errors at API boundaries unblock structured client error handling.</li>
+  <li><strong>trace_id threading (cross-cutting)</strong> — substrate work. Each flow boundary passes trace_id explicitly. This is a card-class of its own (probably 3-5 follow-on cards). Without it, MCP-Loki-query can index but not correlate.</li>
+  <li><strong>Silent swallower review</strong> — last because hardest. Each site needs case-by-case judgment. Likely a recurring quarterly audit rather than one card.</li>
+</ol>
+
+<h2>Out of scope (named honestly)</h2>
+
+<ul>
+  <li>This card is audit-only. None of the migrations above are scoped here. Each becomes its own card.</li>
+  <li>The MCP-Loki-query agent surface itself is downstream — this audit is its prerequisite.</li>
+  <li>Standardizing on <code>tracing</code> vs <code>log</code> crate in Rust, or picking a TS structured logger library, are framework decisions out of scope.</li>
+  <li>Backfill of trace_id in historical data is not addressed.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li>#2832 — this card</li>
+  <li>#2765 — UUIDv7 trace_id for nudge flow (the precedent for trace_id threading)</li>
+  <li>#2804 — MCP-only nudge gate (typed refusal pattern)</li>
+  <li>#2824 — log forwarding audit (operational layer; this audit is the in-code complement)</li>
+  <li>chorus_acp / chorus_commit / chorus_pull MCP handlers — the typed-taxonomy precedent</li>
+  <li>spine-events.json — canonical schema for structured emits</li>
+</ul>
+
+<div class="footer">
+Generated 2026-05-08 — Silas (#2832). Audit-only. Migration is downstream cards.
+</div>
+
+</body>
+</html>
