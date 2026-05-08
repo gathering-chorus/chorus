@@ -111,6 +111,47 @@ describe('#2472 buildMcpServer', () => {
     expect(result.content[0].text).toMatch(/silas.*wren.*trace=/);
   });
 
+  // #2814 — permutations: network error, recipient=jeff, dual-emit verification.
+  test('#2814 fetch throws (pulse unreachable) → mcp.nudge.failed + thrown error', async () => {
+    const stderrLines: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((line: string) => { stderrLines.push(line); return true; }) as typeof process.stderr.write;
+    try {
+      const mockFetch = async () => { throw new Error('ECONNREFUSED'); };
+      const server = buildMcpServer(() => 'silas', { fetchImpl: mockFetch as never });
+      // @ts-expect-error - private handler access for unit test
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler(
+          { method: 'tools/call', params: { name: 'chorus_nudge_message', arguments: { to: 'wren', message: 'hi' } } },
+          {},
+        ),
+      ).rejects.toThrow(/nudge delivery failed.*ECONNREFUSED/);
+      expect(stderrLines.some((l) => l.includes('mcp.nudge.failed'))).toBe(true);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
+
+  test('#2814 recipient=jeff is accepted (schema enum includes jeff)', async () => {
+    const calls: Array<{ url: string; init?: { body?: string } }> = [];
+    const mockFetch = async (url: string, init?: { body?: string }) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => ({ ok: true, id: 1 }), text: async () => '' };
+    };
+    const server = buildMcpServer(() => 'silas', { fetchImpl: mockFetch as never });
+    // @ts-expect-error - private handler access for unit test
+    const handler = (server as any)._requestHandlers.get('tools/call');
+    const result = await handler(
+      { method: 'tools/call', params: { name: 'chorus_nudge_message', arguments: { to: 'jeff', message: 'human in the loop' } } },
+      {},
+    );
+    expect(calls).toHaveLength(1);
+    const body = JSON.parse(calls[0].init?.body || '{}');
+    expect(body.to).toBe('jeff');
+    expect(result.content[0].text).toMatch(/silas → jeff/);
+  });
+
   test('#2804 catch-branch: pulse POST non-2xx → mcp.nudge.failed + thrown error', async () => {
     const stderrLines: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);

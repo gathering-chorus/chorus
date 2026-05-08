@@ -77,6 +77,36 @@ describe('#2804 pulse caller-check', () => {
       process.env.PULSE_ALLOW_DIRECT_POST = '1';
     }
   });
+
+  // #2814 — gate is presence-only (header value not inspected). Documented
+  // intent: marker is honest, not authorization. Test pins this contract.
+  it('X-Chorus-MCP-Caller: 0 is accepted (gate is presence-only by design)', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    try {
+      const res = await request(app)
+        .post('/api/nudge')
+        .set('X-Chorus-MCP-Caller', '0')
+        .send({ from: 'k', to: 'w', content: 'hi' });
+      expect(res.status).toBe(200);
+    } finally {
+      process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    }
+  });
+
+  // #2814 — PULSE_ALLOW_DIRECT_POST=1 bypass works without the header.
+  // Used by tests + ops-nudge wrapper migration window.
+  it('PULSE_ALLOW_DIRECT_POST=1 bypasses caller-check (no header required)', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    const res = await request(app)
+      .post('/api/nudge')
+      .send({ from: 'k', to: 'w', content: 'hi' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
 });
 
 describe('pulse service — nudges', () => {
