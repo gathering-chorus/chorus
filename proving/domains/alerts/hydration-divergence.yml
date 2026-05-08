@@ -1,0 +1,51 @@
+# hydration-divergence.yml — Alert when high filesystem activity but no crawler indexing
+# Card #2817
+#
+# Watch-path-misconfigured signal: chorus tree had >10 file changes via
+# git in the last 5 minutes but crawler.domain.indexed shows 0 new/updated
+# in 3 consecutive runs. Means crawler is RUNNING (no crawler-stale fire)
+# but isn't seeing the changes — WatchPaths doesn't cover the right dirs
+# OR file events are coalescing OR script's filter is too narrow.
+#
+# Lower-priority than crawler-stale (which catches "not running at all")
+# and crawler-error (which catches "running but failing API"). This one
+# catches the silent-mismatch class — running, looks fine, isn't covering.
+
+name: hydration-divergence
+description: chorus crawler running but not picking up filesystem changes
+severity: warning
+owner: kade
+schedule: "*/10 * * * *"  # every 10 minutes
+
+check: |
+  CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
+  # Count file changes in last 5 min via git
+  CHANGES=$(cd "$CHORUS_ROOT" && git log --since='5 minutes ago' --name-only --pretty=format: 2>/dev/null | grep -v '^$' | sort -u | wc -l | tr -d ' ')
+  if [ "$CHANGES" -lt 10 ]; then
+    echo "low-activity:$CHANGES<10"
+    exit 0  # quiet period, not divergent
+  fi
+  # Activity is high — did crawler index anything in the last 3 runs?
+  # Check for any crawler.domain.indexed in the last 3 minutes (3x ~60s polling cadence).
+  LAST_3MIN=$(tail -2000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.indexed" | python3 -c "
+import json, sys, datetime
+cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=3)
+hits = 0
+for line in sys.stdin:
+    try:
+        d = json.loads(line)
+        ts = datetime.datetime.fromisoformat(d.get('timestamp','').replace('Z','+00:00'))
+        if ts >= cutoff: hits += 1
+    except: pass
+print(hits)
+" 2>/dev/null || echo 0)
+  if [ "$LAST_3MIN" -eq 0 ]; then
+    echo "divergent:high-activity=${CHANGES}-no-indexing-in-3min"
+    exit 1
+  fi
+  echo "ok:activity=${CHANGES}-indexed=${LAST_3MIN}"
+  exit 0
+
+action: |
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" kade "hydration-divergence: filesystem activity high but crawler not indexing. WatchPaths misconfigured OR filter too narrow OR launchd event coalescing. Check com.chorus.crawler-index plist WatchPaths block + index-crawler-snapshots.sh." 2>/dev/null || true

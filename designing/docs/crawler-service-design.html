@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crawler — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 0 0 10px 1.5em; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  .as-is { background: #fef3c7; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.88em; }
+  .as-is strong { color: #92400e; }
+  .to-be { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-size: 0.88em; }
+  .to-be strong { color: #065f46; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #dbeafe; color: #1e3a8a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #1e3a8a; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-designed { background: #ede9fe; color: #5b21b6; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for the chorus crawler.</strong> Related: <a href="/designing/docs/quality-service-design.html">Quality</a> · <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> · <a href="/designing/docs/version-control-service-design.html">Version Control</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+
+<h1>Crawler <span>— Service Design</span></h1>
+<p class="date">2026-05-08 — Kade. Draft. Sources: <code>platform/scripts/index-crawler-snapshots.sh</code>, <code>platform/api/src/handlers/chorus-crawl.ts</code>, <code>platform/api/src/index-all-sources.ts</code>, <code>~/.chorus/index.db</code> schema, <code>~/Library/LaunchAgents/com.chorus.crawler-index.plist</code>, <code>quality-service-design.html</code>, silas-kade chat 2026-05-08 11:36 (tests-domain ownership), Jeff 2026-05-08 (graph-hydrator framing). Verified by three Explore subagents 2026-05-08 — pipeline trace + hydration scope + consumer inventory.</p>
+
+<div class="promise">
+The crawler is the <strong>hydrator</strong> that turns filesystem reality (code, tests, briefs, decisions, memories, spine events) into queryable metadata. Every "Athena says X about ops-alerts" claim, every "this PR's tests cover the version-control-domain" gate, every "what tests run on this commit" CI/CD decision is only as true as the crawler's last run. When the crawler is healthy and current, the graph and the search index BOTH reflect the live system within seconds of a change. When the crawler drifts, the metadata starts lying — same shape as a lying-green test, but at the substrate layer where every consumer reads. The crawler's promise is sub-minute freshness, observable health, and one source of truth that joins filesystem activity to the graph.
+</div>
+
+<h2>Overview</h2>
+<p>The crawler is the substrate that connects what the team writes (code, tests, briefs, decisions) to what the team can query (search API, graph, dashboards). It hydrates artifacts into queryable form. Without it, every Athena claim and every gate decision falls back to filesystem grep — slow, error-prone, and uncacheable.</p>
+
+<p>This design names a real divergence between the crawler we have and the crawler the rest of Chorus needs:</p>
+
+<div class="as-is">
+<strong>As-is (verified 2026-05-08):</strong> Crawler runs on a 15-minute calendar interval. Per run it queries the chorus API <code>/api/chorus/crawl/{domain}</code> for 27 domains, gets back an aggregated multi-source view per domain, and writes per-domain text snapshots into <code>~/.chorus/index.db</code> (SQLite, <code>messages</code> table, <code>source='crawler'</code>). Output is consumed by the chorus search API, the chorus search SDK, freshness endpoints, deep-health probes, the demo gate, frustration telemetry, and ~13 total readers. <strong>The crawler writes ZERO to Fuseki.</strong> The graph is read-only from the crawler's perspective; Fuseki gets written to by the separate <code>athena-enrichment-write.ts</code> path. Athena domain pages query Fuseki directly via SPARQL — they never read from the crawler index. <code>/borg/quality</code> reads filesystem test inventory directly — also no crawler dependency. Search-index consumers and graph consumers operate on parallel stores.
+</div>
+
+<div class="to-be">
+<strong>To-be (designed):</strong> Crawler reacts to filesystem changes (file-watch trigger, polling fallback) with sub-minute freshness. Output writes to BOTH the search index (today) AND the graph (Fuseki triples joined to existing Athena subdomain entries via domain/owner predicates). Code files become <code>chorus:File</code> instances; test files become <code>chorus:Test</code> instances with <code>chorus:hasDomain</code>, <code>chorus:hasLayer</code>, <code>chorus:hasOwner</code>, <code>chorus:bindsScenario</code>. Athena domain pages render verification coverage by joining their existing scenario instances against crawler-hydrated test instances. Sub-minute freshness is backed by operational alerts that fire if the hydration flow stalls — search-index, graph, or both.
+</div>
+
+<p>The divergence is the central design question. Sub-minute freshness on the search-index half (today's surface) is one slice; extending the crawler to write Fuseki for graph-resident hydration is the other. Both slices are needed to honor the metadata-as-direct-link-to-living-code property the rest of Chorus depends on.</p>
+
+<h2>Component status</h2>
+<table>
+<tr><th>Component</th><th>Status</th><th>Source</th><th>Gap</th></tr>
+<tr><td>Crawler scheduler</td><td><span class="tag-real">REAL</span></td><td><code>com.chorus.crawler-index.plist</code> at <code>StartCalendarInterval Minute=15</code> → <code>index-crawler-snapshots.sh</code></td><td>15-min calendar interval; freshness budget too coarse for tests-domain API and gate:quality dispatch downstream</td></tr>
+<tr><td>Domain crawl aggregator</td><td><span class="tag-real">REAL</span></td><td><code>chorus-crawl.ts:1–597</code> joins 10 sources per domain (cards, codeScan, code.files, logs, alerts, infra, history, rdf, owl, spine, timeline, mentions) for 27 known domains</td><td>Tests not distinguished from code; spine events filtered to card-membership only</td></tr>
+<tr><td>Search-index hydrator</td><td><span class="tag-real">REAL</span></td><td><code>index-crawler-snapshots.sh:151–162</code> DELETE+INSERT per domain into <code>~/.chorus/index.db</code> messages table</td><td>One snapshot per domain (latest only); no historical comparison surface</td></tr>
+<tr><td>Graph hydrator (Fuseki write)</td><td><span class="tag-none">MISSING</span></td><td>—</td><td><strong>The crawler writes nothing to Fuseki.</strong> Graph mutations happen via <code>athena-enrichment-write.ts</code> — a narrower, manually-triggered path. The graph cannot reflect filesystem reality without a hydrator that writes it.</td></tr>
+<tr><td>File-watch trigger</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>Crawler doesn't react to filesystem changes; only fires on calendar. Worst-case 15-min staleness is structural.</td></tr>
+<tr><td>Spine emission</td><td><span class="tag-real">REAL</span></td><td><code>crawler.domain.indexed</code> + <code>crawler.domain.failed</code> events emitted via <code>chorus-log</code> shim per <code>index-crawler-snapshots.sh:77, 173</code></td><td>No <code>trigger=</code> field; consumers can't distinguish file-watch vs polling once that's added</td></tr>
+<tr><td>Operational alerting</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>No alerts fire when the crawler stalls. Failure is detected by humans noticing stale data. <code>/tmp/crawler-domain-status.json</code> tracks per-domain consecutive failures but isn't surfaced as an alert.</td></tr>
+<tr><td>Hydrated record types</td><td><span class="tag-partial">PARTIAL</span></td><td>27 domains × 10 source columns; briefs/decisions/memories via parallel <code>chorus-index.sh</code> path</td><td>Code = paths only (no excerpts); tests = mixed into <code>code.files</code> with no type marker; spine events filtered to card-mention; Loki logs metadata-only</td></tr>
+<tr><td>Sibling agents</td><td><span class="tag-real">REAL</span></td><td><code>com.chorus.index-artifacts</code> (hourly, artifact metadata), <code>com.chorus.embed-worker</code> (5-min, vector embeddings), <code>com.chorus.harvest-exporter</code> (Prometheus textfile), <code>com.gathering.codebase-graph-watcher</code> (continuous, personal-site)</td><td>Two parallel hydration paths (crawler + index-artifacts); embed-worker is post-index; harvest-exporter is observability-only</td></tr>
+<tr><td>Search API surface</td><td><span class="tag-real">REAL</span></td><td><code>/api/chorus/search</code> at <code>chorus-search.ts</code>, FTS5 + semantic + hybrid + unified modes</td><td>Source isolation absent at query level — crawler hits mix with session/Slack messages without distinction</td></tr>
+<tr><td>Graph query surface</td><td><span class="tag-real">REAL</span></td><td>Fuseki at <code>/pods/sparql</code> (SPARQL queries from <code>collectRdf</code> + <code>collectOwl</code>)</td><td>Read-only from crawler perspective; the only write path is <code>athena-enrichment-write.ts</code> for narrow enrichment use cases</td></tr>
+<tr><td>Tests-domain hydration</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>489 chorus test files; none are individually addressable in either index or graph today. Whole tier is invisible to per-domain quality, CI/CD dispatch, gate:quality routing.</td></tr>
+</table>
+
+<h2>Sub-Domain Interaction Model</h2>
+
+<h3>Today (current)</h3>
+<pre class="mermaid">
+flowchart TB
+  subgraph FS["Filesystem reality"]
+    Code["Code files (.ts/.rs/.sh/.md)"]
+    Tests["Test files (.test.ts/.bats/.feature) — undifferentiated"]
+    Briefs["Briefs / decisions / memories"]
+  end
+  subgraph Stores["Existing stores (read-only from crawler)"]
+    Fuseki["Fuseki (Athena graph)"]
+    Loki["Loki (logs)"]
+    Spine["chorus.log (spine)"]
+    Vikunja["Vikunja (board)"]
+  end
+  Crawler["index-crawler-snapshots.sh<br/>(15-min calendar)"]
+  Aggregator["chorus-crawl.ts<br/>(10-source aggregator per domain)"]
+  Index["~/.chorus/index.db<br/>(SQLite, messages table)"]
+  ArtifactsIndex["chorus-index.sh<br/>(parallel: briefs/decisions/memories)"]
+
+  Crawler -->|"queries"| Aggregator
+  Aggregator -->|"reads"| Code
+  Aggregator -->|"reads"| Fuseki
+  Aggregator -->|"reads"| Loki
+  Aggregator -->|"reads"| Spine
+  Aggregator -->|"reads"| Vikunja
+  Aggregator -->|"per-domain text snapshot"| Crawler
+  Crawler -->|"DELETE+INSERT"| Index
+  ArtifactsIndex -->|"reads"| Briefs
+  ArtifactsIndex -->|"INSERT"| Index
+
+  SearchAPI["/api/chorus/search"]
+  Index --> SearchAPI
+  SearchAPI -->|"FTS+semantic+hybrid"| Consumers["Search consumers (~13)"]
+
+  AthenaPages["Athena domain pages"]
+  Fuseki -->|"SPARQL"| AthenaPages
+  BorgQuality["/borg/quality"]
+  Code -.->|"filename inference"| BorgQuality
+</pre>
+
+<p>Read carefully: there is NO arrow from Crawler to Fuseki. Fuseki and the search index are parallel stores. Athena pages and search-API consumers operate on disjoint data sources. The metadata-as-direct-link-to-living-code property is delivered (partially) for search consumers, never for graph consumers.</p>
+
+<h3>Designed target</h3>
+<pre class="mermaid">
+flowchart TB
+  subgraph Producers["Producers — upstream systems writing the sources the crawler reads"]
+    Agents["Agents + humans<br/>(commits, edits)"]
+    Services["Running services<br/>(chorus-api, fuseki, pulse, etc.)"]
+    BoardCLI["cards CLI / chorus_cards_* MCPs<br/>/ agents / gates"]
+    Hooks["chorus-log invocations<br/>(every role + every script)"]
+    Enrichment["athena-enrichment-write.ts<br/>(existing narrow Fuseki writes)"]
+  end
+  subgraph Stores["Data sources / stores"]
+    FS["Filesystem<br/>(code / tests / briefs / decisions / memories)"]
+    Loki["Loki (logs)"]
+    Vikunja["Vikunja (board / cards)"]
+    SpineLog["chorus.log (spine events)"]
+    FusekiR["Fuseki (existing graph reads via SPARQL)"]
+  end
+  Watch["fswatch / launchd WatchPaths<br/>(file-watch trigger)"]
+  Crawler["Crawler<br/>(file-watch + polling fallback + debounce)"]
+  Aggregator["chorus-crawl.ts<br/>+ tests-domain extension<br/>(10-source aggregator preserved)"]
+  Index["~/.chorus/index.db<br/>(search index)"]
+  FusekiW["Fuseki<br/>(graph — NEW write path)"]
+  Alerts["Operational alerts<br/>(crawler-stale, crawler-error,<br/>hydration-divergence)"]
+
+  Agents --> FS
+  Services --> Loki
+  BoardCLI --> Vikunja
+  Hooks --> SpineLog
+  Enrichment --> FusekiR
+
+  FS -->|"file events"| Watch
+  Watch -->|"trigger"| Crawler
+  Crawler -->|"queries"| Aggregator
+  Aggregator -->|"reads"| FS
+  Aggregator -->|"reads"| Loki
+  Aggregator -->|"reads"| Vikunja
+  Aggregator -->|"reads"| SpineLog
+  Aggregator -->|"reads"| FusekiR
+  Aggregator -->|"snapshots + tagged instances"| Crawler
+  Crawler -->|"writes search index"| Index
+  Crawler -->|"writes graph triples (NEW)"| FusekiW
+  Crawler -->|"emits crawler.indexed/failed"| Emit["chorus.log"]
+  Emit --> Alerts
+  Alerts -->|"ops-nudge"| Kade["kade (owner)"]
+
+  SearchAPI["/api/chorus/search<br/>(generic FTS+semantic+hybrid)"]
+  TestsAPI["/api/chorus/tests<br/>(kade — tests-domain)"]
+  CodeAPI["/api/chorus/code<br/>(kade — code-domain)"]
+  AlertsAPI["/api/chorus/alerts<br/>(silas — alerts-monitors-domain)"]
+  Index --> SearchAPI
+  Fuseki --> TestsAPI
+  Fuseki --> CodeAPI
+  Fuseki --> AlertsAPI
+
+  AthenaPages["Athena domain pages<br/>(verification column joined<br/>to crawler-hydrated instances)"]
+  Fuseki -->|"SPARQL"| AthenaPages
+  GateQuality["gate:quality<br/>(per-domain dispatch)"]
+  TestsAPI --> GateQuality
+  CodeAPI --> GateQuality
+  AlertsAPI --> GateQuality
+</pre>
+
+<p>The arrow that doesn't exist today appears in the target: Crawler → Fuseki. That's the divergence's resolution. Plus the file-watch trigger that closes the freshness gap, plus the alert tier that catches stalls, plus the per-domain query APIs that read from the hydrated graph.</p>
+
+<h3>Per-domain query APIs (designed)</h3>
+<p>Once the graph hydrator lands, the crawler-hydrated graph is queryable by per-domain APIs. These aren't built by this design — they're sub-products of their respective domains — but the crawler is what makes them possible. Naming them here as the consumer set the hydrator's contract serves:</p>
+<ul>
+  <li><code>/api/chorus/tests</code> + <code>chorus_tests_*</code> MCP — kade-owned (tests-domain). Query tests by domain/layer/owner/scenario. #2819 is the implementation card.</li>
+  <li><code>/api/chorus/code</code> + <code>chorus_code_*</code> MCP — kade-owned (code-domain). Query code files by domain/owner/scenario. Implementation card not yet filed; depends on this design + #2818-style code tagging.</li>
+  <li><code>/api/chorus/alerts</code> + <code>chorus_alerts_*</code> MCP — silas-owned (alerts-monitors-domain). Query alert YAMLs by trigger/severity/recipient/domain. Same shape, different owner. Implementation card lives on silas's queue.</li>
+</ul>
+<p>All three follow the same dual-surface pattern (REST for Athena's domain page renderer, MCP for agent-side typed access) and read from the same crawler-hydrated graph. The crawler's promise is that each query returns current reality within sub-minute freshness; the per-domain APIs hold the schema + filtering for their slice.</p>
+
+<h2>Dependencies (the four substrates)</h2>
+<table>
+<tr><th>Dependency</th><th>Sub-domain</th><th>Status</th><th>Notes</th></tr>
+<tr><td>Principles</td><td>loom-principles</td><td><span class="tag-real">POPULATED</span></td><td><code>quality-at-source</code>, <code>infrastructure-is-your-codebase-too</code>, <code>match-the-architecture-feed-back-what-doesnt-fit</code> all bear on the crawler. Crawler IS the architecture's mirror — when crawler drifts, the architecture stops being readable.</td></tr>
+<tr><td>Practices</td><td>loom-practices</td><td><span class="tag-real">POPULATED</span></td><td><code>api-first</code> (the chorus search API as one consumer surface), <code>domain-first</code> (per-domain snapshots are the unit of hydration). Tests-domain practice not yet articulated as such — emerges from this design + #2818.</td></tr>
+<tr><td>Policies</td><td>loom-policies</td><td><span class="tag-none">MISSING</span></td><td>Sub-domain blocked on <code>#2151</code>. Crawler will depend on: freshness budgets per record type (code = sub-minute; briefs = ~5 min; decisions = ~hour acceptable), schema constraints for graph writes (only Athena-known domains; no orphan instances), retention policy (latest-only vs versioned).</td></tr>
+<tr><td>Decisions</td><td>loom-decisions</td><td><span class="tag-partial">SHELL</span></td><td>DEC-090 (chorus search consumers must use API not raw sqlite) and the silas-kade ownership boundary 2026-05-08 are crawler-load-bearing but un-harvested.</td></tr>
+</table>
+
+<h2>Components</h2>
+
+<div class="component">
+<h3>Trigger</h3>
+<p>Today: <code>StartCalendarInterval Minute=15</code> in the LaunchAgent plist. Fires every 15 minutes regardless of activity. Worst-case staleness 15 min; mean ~7 min. Designed: <code>fswatch</code> or <code>launchd WatchPaths</code> on the chorus tree → crawler fires within seconds of any file change. Polling fallback at 1-min cadence if WatchPaths is unavailable on a host. Debounce window of 5 seconds collapses bursty events (e.g., <code>git pull</code> of N files) into one crawl run.</p>
+</div>
+
+<div class="component">
+<h3>Domain crawl aggregator</h3>
+<p><code>chorus-crawl.ts</code>'s <code>/api/chorus/crawl/:domain</code> handler joins 10 sources per domain into one aggregate response: cards (board state), codeScan (Athena SPARQL graph discovery), code.files (git log path-mining), logs (Loki 24h), alerts (Grafana rules), infra.launchagents + infra.endpoints, history.trust_score + health, rdf + owl (Fuseki SPARQL), spine (chorus.log), timeline + mentions (SQLite). 27 known domains. The aggregator is the read-side workhorse; the crawler is its scheduled poller.</p>
+</div>
+
+<div class="component">
+<h3>Search-index hydrator</h3>
+<p><code>index-crawler-snapshots.sh</code>: per-domain text snapshot (formatted summary of the aggregator's response) DELETE'd + INSERT'd into <code>~/.chorus/index.db</code> messages table. One row per domain per crawl. Latest-only; previous snapshots overwritten. Source field <code>crawler</code>; channel <code>crawl:{domain}</code>; role <code>system</code>.</p>
+</div>
+
+<div class="component">
+<h3>Graph hydrator (designed; missing today)</h3>
+<p>The component this design adds. For every code file, test file, brief, decision, memory the crawler touches, write a corresponding triple set into Fuseki: <code>chorus:File</code> / <code>chorus:Test</code> / <code>chorus:Brief</code> instances with predicates joining to existing Athena domain entries (<code>chorus:inDomain</code>, <code>chorus:hasOwner</code>, etc.). Write surface mirrors <code>athena-enrichment-write.ts</code> shape: Fuseki immediate + TTL seed file for durability across rebuilds.</p>
+</div>
+
+<div class="component">
+<h3>Schema-driven hydration registry</h3>
+<p>The crawler discovers what to hydrate by reading <code>chorus.ttl</code> at startup, not by hard-coded mapping. New marker class <code>chorus:Hydratable</code> with predicate <code>chorus:hydratesFromSource</code> declares "this class is hydrated from this source." When #2818 adds <code>chorus:Test</code>, it's marked Hydratable; crawler picks it up without code change. Schema becomes the contract surface; new domain types are pure schema-authoring work, not crawler edits.</p>
+<p>The architectural commitment: chorus.ttl carries hydration intent as a first-class concept. Authors add a new hydratable type by declaring it and pointing at its source; the crawler honors the declaration. Without this, every #2818-class card requires a crawler edit, and the crawler becomes the bottleneck for every new graph type.</p>
+</div>
+
+<div class="component">
+<h3>Consistency boundary — per-crawl-run reconciliation</h3>
+<p>The crawler writes BOTH SQLite (search index) and Fuseki (graph) per record. Partial-write class is real: SQLite succeeds, Fuseki fails (or reverse) → search consumers and graph consumers see divergent reality.</p>
+<p>Consistency model: best-effort dual-write per record + end-of-run reconciliation pass. Within a crawl run, SQLite write first (cheap), Fuseki write second (transactional via SPARQL Update). Either fails → the reconciliation pass at end-of-run detects the mismatch, emits a <code>hydration.partial.divergent</code> spine event with detail naming which side diverged, and retries the failed side. The crawl run is the consistency boundary; consumers see eventual consistency within ~one crawl cycle.</p>
+<p>Stronger guarantees (atomic-via-staging-table, two-phase commit) are deferred — not paying that cost yet. The reconciliation + observable-divergence event is enough to detect drift early without the staging-table tax.</p>
+</div>
+
+<div class="component">
+<h3>Write-ownership coordination — predicate-level disjoint</h3>
+<p>Two writers will hit Fuseki: the new crawler hydrator (this design) and the existing <code>athena-enrichment-write.ts</code>. Without coordination, they overwrite each other's instances on overlapping predicates. The rule:</p>
+<ul>
+  <li><strong>Crawler owns:</strong> base instance creation + structural predicates — <code>chorus:File</code>, <code>chorus:Test</code>, <code>chorus:Brief</code>, <code>chorus:hasDomain</code>, <code>chorus:hasLayer</code>, <code>chorus:hasOwner</code>, <code>chorus:hydratedAt</code>.</li>
+  <li><strong>Enrichment owns:</strong> derived / decorative predicates — <code>chorus:hasReview</code>, <code>chorus:scenarioMet</code>, <code>chorus:bindsScenario</code>, anything computed-from or annotated-onto an existing instance.</li>
+</ul>
+<p>Disjoint by construction: neither side touches predicates the other owns. Enforced via a required <code>chorus:writeOwner</code> predicate-attribute at schema-definition time. Every <code>chorus:Hydratable</code> class declaration must name which writer owns each of its predicates; a schema-load validator refuses any predicate without an explicit <code>writeOwner</code>. Same shape as #2818 refusing untagged tests — no orphan predicates with ambiguous ownership.</p>
+<p>Future-extension default (named here so it's not ad-hoc later): new structural-base-instance predicates default to crawler; new derived/decorative default to enrichment. The <code>writeOwner</code> attribute remains required even when the default would resolve cleanly — explicit beats implicit when the failure mode is silent clobbering.</p>
+</div>
+
+<div class="component">
+<h3>Read-side consistency contract</h3>
+<p>Consumers of the hydrated graph need to know what they're reading. The contract:</p>
+<ul>
+  <li><strong>Eventual consistency within ~one crawl cycle.</strong> A change to a code file is visible in both stores within sub-minute under normal load; under load, within one full crawl run.</li>
+  <li><strong>Partial-divergent state is observable.</strong> The <code>hydration.partial.divergent</code> spine event names when SQLite and Fuseki disagree on a record. Consumers that need strong consistency can subscribe to it.</li>
+  <li><strong>Last-reconciled timestamp is queryable.</strong> Athena domain pages and the per-domain APIs (<code>/api/chorus/tests</code>, <code>/api/chorus/code</code>, <code>/api/chorus/alerts</code>) render with the last-successful-crawl timestamp visible. Consumers can decide whether the staleness budget meets their need.</li>
+  <li><strong>Per-domain API design owns the contract one layer up.</strong> #2819 (tests-domain API) carries the eventual-consistency contract into its consumer surface — when a query returns data, the response includes the reconciliation timestamp.</li>
+</ul>
+<p>What this contract is NOT promising: read-your-writes consistency, transaction-isolation across stores, or strong consistency. Consumers needing those guarantees use the search API directly (single-store) or the graph directly (single-store) — never a join across the two without checking the divergence event.</p>
+</div>
+
+<div class="component">
+<h3>Spine emission</h3>
+<p>Two events today: <code>crawler.domain.indexed</code> (success, includes domain + duration_ms) and <code>crawler.domain.failed</code> (failure, includes consecutive failure count). Designed: add <code>trigger=file-watch|polling</code> field so consumers distinguish reactive vs scheduled runs. Add <code>graph_writes=N</code> field once the graph hydrator lands.</p>
+</div>
+
+<div class="component">
+<h3>Operational alerting (designed; missing today)</h3>
+<p>Three alert YAMLs in <code>proving/domains/alerts/</code>:</p>
+<ul>
+  <li><strong>crawler-stale:</strong> fires when no <code>crawler.indexed</code> event in 5 min biz-hours / 30 min off-hours. File-watch died OR polling died OR crawler hung.</li>
+  <li><strong>crawler-error:</strong> fires when <code>crawler.indexed</code> reports <code>errors > 0</code> OR last exit non-zero.</li>
+  <li><strong>hydration-divergence:</strong> fires when filesystem activity is high (>10 file changes in 5 min via git log heuristic) but <code>crawler.indexed</code> shows <code>0 new/updated</code> for 3 consecutive runs. Watch-path-misconfigured signal.</li>
+</ul>
+<p>All three route via <code>ops-nudge</code> (post-#2808 path) to kade. Same shape as existing alert YAMLs migrated by #2808.</p>
+</div>
+
+<div class="component">
+<h3>Sibling agents (in scope for this design's mental model, not for direct change)</h3>
+<ul>
+  <li><strong>index-artifacts</strong> (hourly): parallel hydration path for briefs/decisions/memories/state. Same destination (<code>~/.chorus/index.db</code>), different source.</li>
+  <li><strong>embed-worker</strong> (5-min): post-index enrichment — drains unembedded messages into Lance vector store.</li>
+  <li><strong>harvest-exporter</strong> (15-min): Prometheus textfile exporter; reads manifest JSONs, emits metrics. Observability only.</li>
+  <li><strong>codebase-graph-watcher</strong> (continuous): personal-site codebase watcher. Out of scope (different repo).</li>
+</ul>
+<p>The crawler design treats these as adjacent infrastructure, not subsumed. Future refactor could merge crawler + index-artifacts under one orchestrator if the freshness budget converges; today they stay separate.</p>
+</div>
+
+<h2>Surfaces</h2>
+<table>
+<tr><th>Surface</th><th>Direction</th><th>Today</th><th>Designed</th></tr>
+<tr><td><code>~/.chorus/index.db</code> (SQLite)</td><td>Write</td><td>Per-domain text snapshots</td><td>Same + tagged instance rows once #2818 lands</td></tr>
+<tr><td>Fuseki (graph)</td><td>Write</td><td>None (crawler reads only)</td><td>Triples for code/test/brief/decision instances joined to Athena domain entries</td></tr>
+<tr><td><code>/api/chorus/search</code></td><td>Read</td><td>FTS + semantic + hybrid + unified over messages table</td><td>Same; gain source-isolation filter</td></tr>
+<tr><td><code>/api/chorus/tests</code> (#2819)</td><td>Read</td><td>Doesn't exist</td><td>Reads from index + Fuseki join; query by domain/layer/owner/scenario</td></tr>
+<tr><td>Spine events</td><td>Write</td><td><code>crawler.domain.indexed/failed</code></td><td>+ <code>trigger</code> field, + <code>graph_writes</code> field</td></tr>
+<tr><td><code>/tmp/crawler-domain-status.json</code></td><td>Write</td><td>Per-domain consecutive failure tracker</td><td>Same; consumed by alert evaluation</td></tr>
+</table>
+
+<h2>Consumers</h2>
+<p>13 verified consumers of crawler output today (subagent inventory 2026-05-08):</p>
+<table>
+<tr><th>Consumer</th><th>Surface</th><th>Reads what</th></tr>
+<tr><td>Chorus search API</td><td><code>/api/chorus/search</code></td><td>FTS5 + semantic + hybrid over messages table; crawler hits mix with session/Slack</td></tr>
+<tr><td>Chorus search SDK</td><td>Node wrapper</td><td>Same as above; library interface</td></tr>
+<tr><td>Freshness endpoints</td><td><code>/api/chorus/context/freshness</code></td><td>Last-indexed timestamp from messages table</td></tr>
+<tr><td><code>chorus-query.sh</code></td><td>Direct SQLite + API</td><td>reconcile / search / role / stats / tail subcommands; powers <code>/chorus search</code> skill</td></tr>
+<tr><td>deep-health.sh</td><td>Direct SQLite</td><td>Index staleness probe — alerts on uninitialized or aged DB</td></tr>
+<tr><td>frustration-telemetry.sh</td><td>Direct SQLite</td><td>Pattern aggregation over content field</td></tr>
+<tr><td>demo-gate skill</td><td>Search API</td><td>Verifies <code>card.demo.started</code> spine event indexed before accept</td></tr>
+<tr><td>search-freshness integration test</td><td>Search API</td><td>Smoke test of FTS+semantic merge</td></tr>
+<tr><td>spine-e2e.sh</td><td>Search API</td><td>End-to-end smoke</td></tr>
+<tr><td>deploys integration test</td><td>Search API</td><td>Asserts deploy events indexed</td></tr>
+<tr><td>test-continuous-awareness.sh</td><td>Search API</td><td>Hybrid mode smoke</td></tr>
+<tr><td>RCA + trace handlers</td><td>SQLite (parallel tables)</td><td>Share DB file; do NOT consume crawler data</td></tr>
+<tr><td><strong>Athena domain pages</strong></td><td>Fuseki SPARQL</td><td><strong>NOT a crawler consumer today.</strong> Reads graph directly. Designed: gain verification-coverage column joined to crawler-hydrated test instances.</td></tr>
+<tr><td><strong>/borg/quality</strong></td><td>Filesystem</td><td><strong>NOT a crawler consumer today.</strong> Reads filesystem test inventory directly. Designed: read pyramid shape from crawler-hydrated test instances.</td></tr>
+<tr><td><strong>gate:quality dispatch</strong></td><td>—</td><td><strong>Doesn't exist today.</strong> Designed: query crawler index/graph by card subdomain to dispatch domain-specific quality checks.</td></tr>
+</table>
+
+<h2>Gaps</h2>
+
+<div class="gap"><strong>1. Graph-hydrator absent.</strong> The largest gap. Crawler writes nothing to Fuseki. Athena pages, gate:quality dispatch, tests-domain API, /borg/quality — none can read crawler output via SPARQL. The metadata-as-direct-link-to-living-code property is delivered for search consumers and broken for graph consumers.</div>
+
+<div class="gap"><strong>2. 15-minute freshness budget too coarse.</strong> Tests-domain API (#2819) and per-domain CI/CD dispatch want sub-minute freshness or they fall back to filesystem grep. Calendar-only trigger is the structural cause.</div>
+
+<div class="gap"><strong>3. Tests are not first-class.</strong> Test files (489 in chorus) are mixed into <code>code.files</code> as undifferentiated paths. No way to query "all unit tests for ops-alerts-domain" without filename inference. Closes via #2818 schema + frontmatter tagging.</div>
+
+<div class="gap"><strong>4. No operational alerting.</strong> Crawler stalls or fails silently. <code>/tmp/crawler-domain-status.json</code> tracks per-domain failures but isn't surfaced as an alert. Hydration drift is detected by Jeff noticing the graph is wrong, not by the system.</div>
+
+<div class="gap"><strong>5. Source isolation absent at search-API query level.</strong> Crawler hits mix with session and Slack messages without a source filter at query time. Cannot say "give me only crawler-hydrated entries" without grep.</div>
+
+<div class="gap"><strong>6. Code excerpts not hydrated, only paths.</strong> Search returns "ops-alerts has files X, Y, Z" but no content-search across them. For "find every test that asserts X" use cases, this is a meaningful limitation; for "find which domain X is in" it's fine.</div>
+
+<div class="gap"><strong>7. Spine event filter is card-membership-only.</strong> Per <code>chorus-crawl.ts:201–207</code>, only spine events tagged with a domain card are pulled into the per-domain snapshot. Untagged or system events (build.queue.acquired, role.state.changed, etc.) aren't joined to domain snapshots. Some are domain-relevant; the join key is missing.</div>
+
+<div class="gap"><strong>8. Hydration is one-way.</strong> Filesystem → index. No reverse: graph entries that name a deleted file aren't surfaced as drift. Closed by the deletes-reconciliation pass that lands as co-requisite of the graph hydrator (path-to-close step 1) — promoted from follow-on after architecture review surfaced day-1 orphan accretion as a real failure mode.</div>
+
+<div class="gap"><strong>9. Schema authority is implicit.</strong> Today's design has chorus.ttl as the structural schema source, but crawler hydration mapping isn't declared there. New domain types require crawler edits. Closed by the chorus:Hydratable registry (path-to-close step 2) — schema becomes the contract surface; new types declare hydration intent in TTL, crawler honors without code change.</div>
+
+<div class="gap"><strong>10. Consistency model unnamed.</strong> Crawler designed to write both stores per record; partial-write class (one succeeds, other fails) creates lying-green substrate. Closed by per-crawl-run reconciliation + hydration.partial.divergent spine event (path-to-close step 3). Stronger guarantees deferred until observed need.</div>
+
+<div class="gap"><strong>11. Two-writer Fuseki coordination.</strong> Crawler + athena-enrichment-write.ts both target the graph; without coordination, predicate clobbering becomes silent. Closed by predicate-level write-ownership rule + required <code>chorus:writeOwner</code> schema attribute (named in the Components section + path-to-close step 2's registry).</div>
+
+<h2>Implementation plan</h2>
+
+<p>The design's path-to-close has 8 steps. Today four have cards filed (one in WIP, three queued). The central architectural pieces (graph-hydrator, schema registry, consistency model) are <strong>designed but uncarved</strong> — naming the gap honestly so it doesn't get papered over by aspirational AC on adjacent cards.</p>
+
+<p>Phased plan in dependency order:</p>
+
+<h3>Phase 1 — Foundation: discovery + observability</h3>
+<table>
+<tr><th>Card</th><th>Owner</th><th>Status</th><th>Covers</th></tr>
+<tr><td><strong>#2817</strong> — file-watch trigger + sub-minute freshness + 3 alerts</td><td>kade</td><td>WIP (design doc landing as wave 1)</td><td>Path-to-close steps 4, 5; gap #2 (15-min freshness too coarse), gap #4 (no operational alerting)</td></tr>
+<tr><td><strong>#2824</strong> — every chorus log to Loki + retired-residue cleanup + script exit-code rigor</td><td>silas</td><td>Done</td><td>Closed the ingestion side so crawler observability events are Loki-queryable. Prerequisite for #2825 chorus_loki_query MCP.</td></tr>
+</table>
+<p>Phase 1 ends when crawler reacts within seconds to file changes, alerts fire if it stalls, and every chorus log lands in Loki. This is the foundation the rest of the plan rides on.</p>
+
+<h3>Phase 2 — Architecture core</h3>
+<table>
+<tr><th>Card</th><th>Owner</th><th>Status</th><th>Covers</th></tr>
+<tr><td><strong>#2827</strong> — Crawler graph-hydrator: chorus:Hydratable registry + Fuseki write + consistency model + deletes reconciliation</td><td>kade</td><td>Filed (Later)</td><td>Path-to-close steps 1, 2, 3; gaps #1, #8, #9, #10, #11. The architectural core that resolves the as-is/to-be divergence.</td></tr>
+</table>
+<p>Four AC sections in one card because the pieces are co-load-bearing — schema registry without graph-write produces only declarations; graph-write without schema registry hard-codes mappings; consistency model has nothing to reconcile without dual-write; deletes-reconciliation is co-requisite or day-1 leaves orphan accretion. Section A: <code>chorus:Hydratable</code> registry + <code>chorus:writeOwner</code> validator. Section B: crawler graph-write extension reading from the registry. Section C: per-crawl-run reconciliation + <code>hydration.partial.divergent</code> spine event. Section D: deletes reconciliation + <code>chorus:stale</code> flag. Plus cross-cutting receipts in Section E.</p>
+<p>Depends on Phase 1 (#2817). Blocks Phases 3 (#2818) and 4 (#2819) — without it, those ship aspirational graph references with no underlying triples.</p>
+
+<h3>Phase 3 — Schema population</h3>
+<table>
+<tr><th>Card</th><th>Owner</th><th>Status</th><th>Covers</th></tr>
+<tr><td><strong>#2818</strong> — tag schema + multi-pass initial tagging across 489 test files</td><td>kade</td><td>Filed (Later)</td><td>Path-to-close step 6; gap #3 (tests not first-class). Declares <code>chorus:Test</code> as chorus:Hydratable per Phase 2 step 2.</td></tr>
+</table>
+<p>Depends on Phase 2 — the schema registry (<code>chorus:Hydratable</code>) must exist before <code>chorus:Test</code> can declare itself hydratable. Without Phase 2, #2818's tagging produces records the graph hydrator doesn't know how to write.</p>
+
+<h3>Phase 4 — Consumer surface</h3>
+<table>
+<tr><th>Card</th><th>Owner</th><th>Status</th><th>Covers</th></tr>
+<tr><td><strong>#2819</strong> — tests-domain REST + MCP API + drift hook + Athena page</td><td>kade</td><td>Filed (Later)</td><td>Path-to-close step 7. Carries the read-side consistency contract — query responses include last-reconciled timestamp.</td></tr>
+</table>
+<p>Depends on Phase 3 — without tagged data and graph instances, the API has nothing to serve. /borg/quality verification column and gate:quality per-domain dispatch consume from this API.</p>
+
+<h3>Phase 5 — Audit surface (parallel track, silas-owned)</h3>
+<table>
+<tr><th>Card</th><th>Owner</th><th>Status</th><th>Covers</th></tr>
+<tr><td><strong>#2825</strong> — <code>chorus_loki_query</code> MCP — typed agent surface for Loki audits</td><td>silas</td><td>Filed (Later)</td><td>Not in this design's path-to-close; supports the broader CI/CD-quality consumers (gate:quality per-domain dispatch, bug-escape feedback, drift watchers, trace_id walks). Co-load-bearing with #2824.</td></tr>
+</table>
+<p>Independent of Phases 1-4 except via #2824 (already in Phase 1). When this lands, audit-via-Loki becomes a typed call instead of curl.</p>
+
+<h3>Phase 6 — Periphery (low priority follow-ons)</h3>
+<ul>
+  <li><strong>Path-to-close step 8 — Source isolation at search-API level.</strong> <code>?source=crawler</code> filter on <code>/api/chorus/search</code>. No card filed; small enough to fold into #2817 or #2819 if either touches the search handler. Gap #5.</li>
+  <li><strong>Gap #6 — code excerpts not hydrated.</strong> Design defers; no card. Light up when "find every test that asserts X" use cases surface real friction.</li>
+  <li><strong>Gap #7 — spine event filter card-membership-only.</strong> No card; design names the join-key gap but no consumer has been bitten yet.</li>
+</ul>
+
+<h3>Dependency graph</h3>
+<pre class="mermaid">
+flowchart TD
+  P1A["#2817 file-watch + alerts<br/>kade WIP"]
+  P1B["#2824 every-log-to-Loki<br/>silas Done"]
+  P2["#2827 graph hydrator<br/>+ schema registry + consistency<br/>kade Later"]
+  P3["#2818 tag schema + tagging<br/>kade Later"]
+  P4["#2819 tests-domain API<br/>kade Later"]
+  P5["#2825 chorus_loki_query MCP<br/>silas Later"]
+
+  P1A --> P2
+  P1B --> P5
+  P2 --> P3
+  P3 --> P4
+  P1A -.parallel track.-> P5
+</pre>
+
+<h3>What ships when</h3>
+<p>Phase 1 ships first (foundation; cards already filed, in flight). Phase 2 (#2827) is filed but waiting on Phase 1 to land before /pull. Phase 3 blocks on Phase 2; Phase 4 blocks on Phase 3. Phase 5 ships independently in silas's lane.</p>
+
+<p>The honest sequencing: Phase 1 (#2817 + #2824, in flight) → Phase 2 (#2827, filed) → Phase 3 (#2818) → Phase 4 (#2819). Phase 5 (#2825) runs alongside in silas's lane. Skipping Phase 2 makes #2818 and #2819 aspirational — they'd reference a graph the crawler doesn't write.</p>
+
+<h3>Receipts the plan owes</h3>
+<ul>
+  <li>Phase 1 ships → <code>crawler.indexed</code> events emit <code>trigger=file-watch</code> within seconds of edit; <code>crawler.stale</code> alert fires under simulated breakage.</li>
+  <li>Phase 2 ships → <code>chorus:Hydratable</code> declared in chorus.ttl with at least <code>chorus:File</code>; SPARQL query for crawler-hydrated <code>chorus:File</code> instances returns real data; <code>hydration.partial.divergent</code> event fires under simulated dual-write failure.</li>
+  <li>Phase 3 ships → 489 test files tagged; SPARQL query for <code>chorus:Test</code> instances returns real data joined to Athena domain entries.</li>
+  <li>Phase 4 ships → <code>GET /api/chorus/tests?domain=ops-alerts&layer=integration</code> returns parsed results within 500ms; Athena ops-alerts page renders verification column.</li>
+  <li>Phase 5 ships → <code>chorus_loki_query</code> MCP tool registered, returns typed results, refuses with named reasons under fault scenarios.</li>
+</ul>
+
+<h2>Not in scope for this design</h2>
+<ul>
+  <li><strong>Cross-machine hydration.</strong> Per #2792 (closed won't-do): Chorus runs on Library only. The crawler design assumes single-machine.</li>
+  <li><strong>Embed-worker rework.</strong> Post-index enrichment via Lance vectors is its own concern; crawler hands off via the messages table without coupling.</li>
+  <li><strong>Athena's own design.</strong> Athena is a separate sub-product (graph query + UI surface). The crawler hydrates INTO Athena's graph; how Athena renders is Wren's design.</li>
+  <li><strong>Search ranking quality.</strong> RRF merging of FTS + semantic + SPARQL is search-API design, not crawler design. Crawler delivers data; search delivers rankings.</li>
+  <li><strong>Per-domain freshness budgets.</strong> Different record types may want different freshness (code: sub-minute; decisions: hourly OK). Policy-layer decision; design names the dimension but doesn't pick budgets here.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li><a href="/designing/docs/quality-service-design.html"><code>quality-service-design.html</code></a> — gaps #1, #3, #7 in that design partially close as the crawler graph-hydrator + tests-domain API land.</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a> — precedent for a service-design preceding implementation cards (silas wrote that before #2791 manifest).</li>
+  <li><a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a> — sibling design for a kade-owned domain.</li>
+  <li>#2817 — crawler file-watch + sub-minute freshness + alerts (this design's first implementation card).</li>
+  <li>#2818 — tag schema + initial tagging across 489 test files.</li>
+  <li>#2819 — tests-domain REST + MCP API + drift hook + Athena page.</li>
+  <li>silas-kade chat 2026-05-08 11:36 — boundary alignment that put crawler ownership under kade's tests-domain rather than silas's observability-domain.</li>
+  <li>Jeff 2026-05-08 — graph-hydrator framing ("hydrate code and tests into the graph"); divergence acknowledgment.</li>
+  <li>Three Explore subagent passes 2026-05-08 — pipeline trace + hydration scope + consumer inventory; this doc's empirical claims rest on their findings.</li>
+</ul>
+</body>
+</html>

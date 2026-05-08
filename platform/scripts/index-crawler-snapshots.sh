@@ -17,6 +17,26 @@ STATUS_FILE="/tmp/crawler-domain-status.json"
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
+# #2817 — trigger detection. The plist has both WatchPaths (file events)
+# and StartInterval=60 (polling fallback); both invocation paths run this
+# script identically. Distinguish them via filesystem heuristic so spine
+# events carry trigger=file-watch | polling for downstream consumers
+# (hydration-divergence alert, gate:quality dispatch, freshness diagnostics).
+#
+# Heuristic: if any file under the watched dirs is newer than the last-run
+# timestamp file, this invocation was file-event-driven; otherwise it's
+# the 60s polling tick. Written once per run; read at start of next run.
+LAST_RUN_FILE="/tmp/crawler-last-run-ts"
+TRIGGER="polling"
+if [ -f "$LAST_RUN_FILE" ]; then
+  for watched in "$CHORUS_ROOT/designing" "$CHORUS_ROOT/platform" "$CHORUS_ROOT/roles" "$CHORUS_ROOT/skills" "$CHORUS_ROOT/directing" "$CHORUS_ROOT/proving"; do
+    [ -d "$watched" ] || continue
+    newest=$(find "$watched" -type f -newer "$LAST_RUN_FILE" -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/dist/*" 2>/dev/null | head -1)
+    if [ -n "$newest" ]; then TRIGGER="file-watch"; break; fi
+  done
+fi
+touch "$LAST_RUN_FILE"
+
 # Load existing status file or start fresh (#1885)
 if [ -f "$STATUS_FILE" ]; then
   DOMAIN_STATUS=$(cat "$STATUS_FILE")
@@ -74,7 +94,7 @@ d['$domain']={'status':'error','duration_ms':$duration_ms,'timestamp':'$TIMESTAM
 print(json.dumps(d))
 " 2>/dev/null)
     echo "WARN: Crawl failed for $domain (${duration_ms}ms, ${new_failures} consecutive)" >&2
-    "$CHORUS_LOG" crawler.domain.failed system domain="$domain" duration_ms="$duration_ms" consecutive="$new_failures" 2>/dev/null || true
+    "$CHORUS_LOG" crawler.domain.failed system domain="$domain" duration_ms="$duration_ms" consecutive="$new_failures" trigger="$TRIGGER" 2>/dev/null || true
     ((errors++))
     continue
   }
@@ -170,7 +190,7 @@ d=json.load(sys.stdin)
 d['$domain']={'status':'ok','duration_ms':$duration_ms,'timestamp':'$TIMESTAMP','consecutive_failures':0}
 print(json.dumps(d))
 " 2>/dev/null)
-  "$CHORUS_LOG" crawler.domain.indexed system domain="$domain" duration_ms="$duration_ms" 2>/dev/null || true
+  "$CHORUS_LOG" crawler.domain.indexed system domain="$domain" duration_ms="$duration_ms" trigger="$TRIGGER" 2>/dev/null || true
 
   trace_hop "$TRACE_ID" 4 "sqlite-index" "crawl-complete" "$domain" "$duration_ms"
   ((indexed++))
