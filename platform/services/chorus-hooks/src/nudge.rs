@@ -110,6 +110,20 @@ fn required_fields_for(event: &str) -> &'static [&'static str] {
 /// Validate that `extra` contains all required field tokens for the given
 /// event. Returns a Vec of missing tokens (empty = pass). Used by chorus_log
 /// to refuse-at-call-site for nudge.* events with incomplete payloads.
+///
+/// Substring match is intentional: validator is dev-aid for forgotten fields,
+/// not adversarial-input parser. Rust callers (nudge.rs) write payloads in
+/// fixed order — `from=,to=,chars=,trace=,origin=,content=` — so the
+/// false-positive class (content containing the literal "trace=" token)
+/// requires the caller to BOTH forget the real field AND content to contain
+/// that token. Bounded failure mode, acceptable for the dev-aid threat model
+/// (Kade gemba 2026-05-08). Upgrade to comma-split key=value parser if a
+/// production miss surfaces; until observed, the simpler check earns its keep.
+///
+/// Scope note: this validator runs on the Rust chorus_log path only. The
+/// pulse worker emits via TypeScript appendFile (structured JSON, no
+/// substring concat) — equivalent TS-side validation would be a separate
+/// concern; not in this card.
 fn missing_required_fields(event: &str, extra: &str) -> Vec<&'static str> {
     required_fields_for(event)
         .iter()
