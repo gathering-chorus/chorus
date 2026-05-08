@@ -259,6 +259,19 @@ jobs:
           REPO_ROOT: ${{ github.workspace }}
         run: cat /tmp/changed.txt | bash platform/scripts/check-principle-direct-edit.sh
 
+  chorus-inject-spawn-sites:
+    name: chorus-inject single drain (#2820, replaces #2283)
+    runs-on: ubuntu-latest
+    # Replacement for retired tests/nudge_single_drain.rs source-gate.
+    # Asserts the canonical chorus-inject spawn site is unique
+    # (platform/pulse/src/service.ts). Adding new spawn sites silently
+    # re-introduces the duplicate-delivery class; this gate fails the
+    # build with a message naming #2283 + the offending file.
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run grep-gate
+        run: bash platform/scripts/test-chorus-inject-spawn-sites.sh
+
   cargo-test:
     name: cargo test — ${{ matrix.crate }}
     runs-on: ubuntu-latest
