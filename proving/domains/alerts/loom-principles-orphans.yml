@@ -18,9 +18,16 @@ schedule: "7,22,37,52 * * * *"
 check: |
   Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
   SELECT (COUNT(?p) AS ?orphans) WHERE {
     GRAPH <urn:chorus:instances> {
       ?p a chorus:Principle .
+      # Parent edges the data actually uses: skos:broader (chorus principles
+      # specializing permaculture parents — see permaculture-principles.rq),
+      # chorus:dependsOn, chorus:derivedFrom. Pre-fix the alert only checked
+      # the chorus: predicates and missed skos:broader, producing 12 false
+      # positives every cycle.
+      FILTER NOT EXISTS { ?p skos:broader ?_ }
       FILTER NOT EXISTS { ?p chorus:dependsOn ?_ }
       FILTER NOT EXISTS { ?p chorus:derivedFrom ?_ }
       FILTER NOT EXISTS { ?p chorus:isPermacultureParent true }
