@@ -222,15 +222,18 @@ DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS
   end_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
   duration_ms=$((end_ts - start_ts))
 
-  if [ "$failures" -eq 0 ]; then
-    "$CHORUS_LOG" crawler.graph.hydrated "$ROLE" class="chorus:File" count="$count" duration_ms="$duration_ms" 2>/dev/null || true
-    echo "Hydrated chorus:File: $count files, ${duration_ms}ms"
-    return 0
-  else
+  # Always emit crawler.graph.hydrated per AC §B (one event per Hydratable
+  # type per crawl run). count = total files seen; failure detail goes in
+  # crawler.graph.failed when any batch failed. §C reconciliation handles
+  # per-record recovery and emits hydration.partial.divergent.
+  "$CHORUS_LOG" crawler.graph.hydrated "$ROLE" class="chorus:File" count="$count" duration_ms="$duration_ms" failures="$failures" 2>/dev/null || true
+  if [ "$failures" -gt 0 ]; then
     "$CHORUS_LOG" crawler.graph.failed "$ROLE" class="chorus:File" reason="batch-insert-fail-count-$failures" duration_ms="$duration_ms" 2>/dev/null || true
-    echo "FAILED chorus:File: $failures batch(es) failed (count=$count, duration=${duration_ms}ms)" >&2
+    echo "Hydrated chorus:File: $count files (${failures} batch failure(s), ${duration_ms}ms)" >&2
     return 1
   fi
+  echo "Hydrated chorus:File: $count files, ${duration_ms}ms"
+  return 0
 }
 
 # --- §C: per-record reconciliation across SQLite + Fuseki ---

@@ -65,7 +65,7 @@ echo "=== #2827 §C: consistency under simulated Fuseki failure ==="
 # while leaving the BASE/query at the real port (so the script's startup
 # ping still passes — we want UPDATE to fail mid-run, not refuse to
 # start).
-SPINE_PRE=$(tail -300 ~/.chorus/chorus.log 2>/dev/null | grep -c 'hydration.partial.divergent' | tr -d '[:space:]')
+SPINE_PRE=$(tail -5000 ~/.chorus/chorus.log 2>/dev/null | grep -c 'hydration.partial.divergent' | tr -d '[:space:]')
 SPINE_PRE="${SPINE_PRE:-0}"
 
 run_with_fuseki "http://localhost:9999/bogus/update"
@@ -79,7 +79,7 @@ else
 fi
 
 # 2. hydration.partial.divergent emitted.
-SPINE_AFTER_FAIL=$(tail -300 ~/.chorus/chorus.log 2>/dev/null | grep -c 'hydration.partial.divergent' | tr -d '[:space:]')
+SPINE_AFTER_FAIL=$(tail -5000 ~/.chorus/chorus.log 2>/dev/null | grep -c 'hydration.partial.divergent' | tr -d '[:space:]')
 SPINE_AFTER_FAIL="${SPINE_AFTER_FAIL:-0}"
 DELTA=$((SPINE_AFTER_FAIL - SPINE_PRE))
 if [ "$DELTA" -ge 1 ] 2>/dev/null; then
