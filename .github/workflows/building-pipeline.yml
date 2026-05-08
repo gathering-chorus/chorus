@@ -1,0 +1,57 @@
+name: building-pipeline
+
+# #2774: building-pipeline — fires on canonical main update via launchd plist
+# (com.chorus.building-pipeline). Sequences build → deploy through the chorus-build
+# and chorus-deploy CLIs. Per-step spine events (build.completed, deploy.completed)
+# carry the crate-level signal; per-binary events (build.artifact.hashed,
+# binary.deployed) carry the artifact detail.
+#
+# Tool: act (per ADR-030). Runs locally on Library via host-native macOS execution
+# (-P macos-latest=-self-hosted), so codesign + TCC + AppleEvents work natively.
+# act execution is fired by the launchd plist; this workflow is also valid GHA
+# YAML and could run on hosted/self-hosted GHA runners unchanged.
+
+on: [push]
+
+jobs:
+  # Sequential-fail-fast is the implicit policy: steps run in order, the job
+  # stops on the first non-zero exit (GHA default). So chorus-hooks deploy
+  # failure halts the workflow before chorus-inject runs. This matches today's
+  # ops preference (investigate before continuing to deploy more). Per-crate
+  # independence (one crate failure doesn't block other crates) is NOT
+  # expressed here — to get that, split into separate jobs with no `needs:`
+  # between them so they run in parallel and one's failure doesn't fail the
+  # others. Filed as follow-on if the cross-crate-independence semantics
+  # become useful (today: fail-fast is correct).
+  build-and-deploy:
+    runs-on: macos-latest
+    steps:
+      - name: identity
+        run: |
+          echo "host=$(hostname)"
+          echo "user=$(whoami)"
+          echo "commit=$(git -C /Users/jeffbridwell/CascadeProjects/chorus rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+      - name: chorus-build chorus-hooks
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-build chorus-hooks
+
+      - name: chorus-deploy chorus-hooks
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-hooks
+
+      - name: chorus-build chorus-inject
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-build chorus-inject
+
+      - name: chorus-deploy chorus-inject
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-inject
