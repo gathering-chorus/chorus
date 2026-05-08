@@ -648,6 +648,15 @@ const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
 const CARD_UNPULLED = 'card.unpulled';
 // #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
 const FORCE_BRANCH_FLAG = '--force-branch';
+// #2799 — force-with-lease passthrough for the post-rebase push step.
+// chorus_commit / chorus_acp do an internal `pull --rebase` before push;
+// when the local branch already had commits on origin, the rebase changes
+// local SHAs and a regular push hits non-fast-forward. Force-with-lease
+// is the safe variant — refuses on concurrent peer push, pushes our
+// rebased history otherwise. Closes the variant-recovery class today
+// papered over by /tmp/wren-N-push.sh scripts running raw git outside
+// the typed surface.
+const FORCE_WITH_LEASE_FLAG = '--force-with-lease';
 const ALREADY_MERGED = 'already-merged';
 const STEP_PUSH = 'push';
 
@@ -851,9 +860,13 @@ async function executeCommit(
   // surfaced as a false-positive push-conflict (6001a6be / b53a7fe5 / e19588b0).
   // #2705 — --branch <ref> targets origin REF:REF when set; mirrors the
   // explicit-arg shape, no env-on-the-wire.
+  // #2799 — pass --force-with-lease so the rebase-then-push path
+  // (do_push: pull --rebase && push) survives the rebased-local-vs-origin
+  // case without falling back to a /tmp script. Order matches git-queue.sh
+  // parser: --force-branch, --force-with-lease, --branch <ref>.
   const pushArgs = pushRef
-    ? [STEP_PUSH, FORCE_BRANCH_FLAG, '--branch', pushRef]
-    : [STEP_PUSH, FORCE_BRANCH_FLAG];
+    ? [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG, '--branch', pushRef]
+    : [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG];
   try {
     await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
   } catch (err) {
@@ -1147,9 +1160,15 @@ async function executeAcp(
   }
 
   // Push (idempotent; fast no-op if already pushed)
+  // #2799 — pass --force-with-lease for the post-rebase push step.
+  // chorus_acp's pre-push internal rebase moves local SHAs forward of
+  // origin's pre-rebase ref; force-with-lease is safe (refuses on
+  // concurrent peer push). Same flag chorus_commit passes (line ~858).
   stepEmit(STEP_PUSH, 'started', { branch });
   try {
-    const pushArgs = branch ? [STEP_PUSH, FORCE_BRANCH_FLAG, '--branch', branch] : [STEP_PUSH, FORCE_BRANCH_FLAG];
+    const pushArgs = branch
+      ? [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG, '--branch', branch]
+      : [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG];
     await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
     stepEmit(STEP_PUSH, 'completed');
   } catch (err) {
