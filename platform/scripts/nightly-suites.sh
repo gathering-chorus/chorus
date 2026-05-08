@@ -140,15 +140,17 @@ run_one_attempt() {
   local status="pass" summary=""
   case "$kind" in
     npm)
-      # #2806: --runInBand mirrors the cargo --test-threads=1 isolation
-      # goal already documented below. Without it, jest's default
-      # parallel-worker mode flakes platform/api server-unit's
-      # "POST /api/chorus/embed" (in-process server tests race on
-      # ephemeral ports / beforeAll timing under load). Test passes in
-      # isolation; serial nightly runs match the determinism contract.
-      # Cost: a few seconds per package; gain: signal you can trust.
+      # #2806 attempted --runInBand for determinism; reverted because
+      # serial mode triggers a hang in platform/api's open-handle tier
+      # (some test holds a server/socket and serialization changes
+      # close-order such that jest never exits — observed 50+ min hang
+      # on a single package run, vs ~30s parallel). Parallel default
+      # has a rare flake on server-unit's POST /api/chorus/embed
+      # (passes alone). Trade-off: rare flake > deterministic hang.
+      # The hang class needs root-cause investigation in platform/api's
+      # test setup before --runInBand is safe to enable.
       local out rc
-      out=$(cd "$path" && npx jest --passWithNoTests --silent --runInBand 2>&1); rc=$?
+      out=$(cd "$path" && npx jest --passWithNoTests --silent 2>&1); rc=$?
       out=$(echo "$out" | tail -3)
       summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
       [ "$rc" -ne 0 ] && status="fail"
