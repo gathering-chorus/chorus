@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<!-- saved from url=(0089)file:///Users/jeffbridwell/CascadeProjects/chorus/docs/diagrams/skills-hooks-mapping.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Skills + Hooks → Product Mapping</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f8f9fa; color: #1a1a1a; margin: 0; padding: 24px 40px; max-width: 1500px; margin: 0 auto; line-height: 1.5; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 18px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 6px; margin: 32px 0 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; background: #fff; border: 1px solid #e0e0d8; border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+  th { text-align: left; padding: 8px 12px; background: #eef2f7; color: #1a1a1a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; border-bottom: 1px solid #d4dbe5; position: sticky; top: 0; }
+  td { padding: 7px 12px; border-bottom: 1px solid #f0eee8; vertical-align: top; }
+  tr:hover td { background: #fafbfc; }
+  td.name { font-family: 'JetBrains Mono', Menlo, monospace; font-size: 12px; color: #1a1a1a; font-weight: 500; }
+  td.desc { color: #444; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10.5px; font-weight: 600; text-transform: lowercase; letter-spacing: 0.3px; }
+  .p-werk { background: #fce4ec; color: #9b1b46; }
+  .p-borg { background: #e8f5e9; color: #1b5e20; }
+  .p-clearing { background: #e3f2fd; color: #0d47a1; }
+  .p-athena { background: #fff8e1; color: #6d4c00; }
+  .p-convergence { background: #ede7f6; color: #4527a0; }
+  .p-loom { background: #f3e5f5; color: #6a1b9a; }
+  .p-gathering { background: #ececec; color: #4a4a4a; }
+  .o-wren { background: #d1e9ff; color: #0a4480; }
+  .o-silas { background: #d4f1d4; color: #1f5d1f; }
+  .o-kade { background: #ffe0c8; color: #8a4a00; }
+  .ev-pre { background: #fff3e0; color: #855700; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .ev-post { background: #e0f7fa; color: #006064; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .ev-prompt { background: #f3e5f5; color: #4a148c; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .t-gate { background: #ffebee; color: #b71c1c; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .t-guard { background: #fff8e1; color: #6d4c00; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .t-observer { background: #e8f5e9; color: #1b5e20; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e0e0d8; border-radius: 6px; padding: 14px 18px; }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin: 0 0 10px; }
+  .card table { border: none; box-shadow: none; }
+  .card td, .card th { border: none; padding: 4px 8px; font-size: 12px; }
+  .openq { background: #fffaf0; border-left: 3px solid #d4a017; padding: 12px 18px; margin: 14px 0; border-radius: 4px; }
+  .openq h3 { margin: 0 0 8px; font-size: 13px; color: #6d4c00; }
+  .openq ul { margin: 4px 0 0 18px; padding: 0; font-size: 13px; color: #4a3a1a; }
+  .openq li { margin-bottom: 4px; }
+  .footnote { color: #888; font-size: 11px; margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; }
+  code { font-family: 'JetBrains Mono', Menlo, monospace; font-size: 11.5px; background: #f4f2ec; padding: 1px 5px; border-radius: 3px; color: #5a3a00; }
+</style>
+</head>
+<body>
+
+<h1>Skills + Hooks → Product Mapping</h1>
+<p class="subtitle">Generated 2026-05-05 by Wren. Establishes ownership for the chorus-hooks taxonomy reorg and downstream crate splits. First-pass classification — to be reviewed.</p>
+
+<div class="summary">
+  <div class="card">
+    <h3>By Owner (initial inference)</h3>
+    <table>
+      <tbody><tr><th>Owner</th><th>Skills</th><th>Hooks</th><th>Total</th></tr>
+      <tr><td><span class="pill o-wren">wren</span></td><td>26</td><td>21</td><td>47</td></tr>
+      <tr><td><span class="pill o-silas">silas</span></td><td>8</td><td>13</td><td>21</td></tr>
+      <tr><td><span class="pill o-kade">kade</span></td><td>5</td><td>6</td><td>11</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h3>By Subproduct</h3>
+    <table>
+      <tbody><tr><th>Subproduct</th><th>Skills</th><th>Hooks</th></tr>
+      <tr><td><span class="pill p-werk">werk</span></td><td>24</td><td>26</td></tr>
+      <tr><td><span class="pill p-borg">borg</span></td><td>8</td><td>9</td></tr>
+      <tr><td><span class="pill p-clearing">clearing</span></td><td>4</td><td>2</td></tr>
+      <tr><td><span class="pill p-athena">athena</span></td><td>0</td><td>4</td></tr>
+      <tr><td><span class="pill p-convergence">convergence</span></td><td>0</td><td>2</td></tr>
+      <tr><td><span class="pill p-loom">loom</span></td><td>0</td><td>0</td></tr>
+      <tr><td><span class="pill p-gathering">gathering</span></td><td>4</td><td>0</td></tr>
+    </tbody></table>
+  </div>
+</div>
+
+<h2>Skills (39)</h2>
+<table>
+<thead><tr>
+  <th style="width:130px">Name</th>
+  <th>What it does</th>
+  <th style="width:100px">Subproduct</th>
+  <th style="width:140px">Domain / Subdomain</th>
+  <th style="width:80px">Owner</th>
+</tr></thead>
+<tbody>
+<tr><td class="name">ab</td><td class="desc">Analyze board — shape and flow of work</td><td><span class="pill p-werk">werk</span></td><td>cards / board-analysis</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">acp</td><td class="desc">Accept card + commit + push</td><td><span class="pill p-werk">werk</span></td><td>version-control / accept-flow</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">board-sweep</td><td class="desc">Find/fix untagged, duplicate, stale cards</td><td><span class="pill p-werk">werk</span></td><td>cards / board-hygiene</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">chat</td><td class="desc">Two-role direct terminal chat</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / role-chat</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">chat-tick</td><td class="desc">Cron tick for chat polling</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / role-chat</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">chorus</td><td class="desc">Query shared memory index</td><td><span class="pill p-borg">borg</span></td><td>search / memory-query</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">close</td><td class="desc">Session close-out (Hard 5)</td><td><span class="pill p-werk">werk</span></td><td>session / lifecycle</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">cs</td><td class="desc">Check seeds — read what Jeff sent</td><td><span class="pill p-werk">werk</span></td><td>seeds / intake</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">demo</td><td class="desc">Proving gate — smoke + prep + signal</td><td><span class="pill p-werk">werk</span></td><td>demo / demo-flow</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">flow</td><td class="desc">Board sweep + work proposal</td><td><span class="pill p-werk">werk</span></td><td>cards / flow-proposal</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">gate-arch</td><td class="desc">Architecture gate</td><td><span class="pill p-werk">werk</span></td><td>gates / gate-arch</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">gate-code</td><td class="desc">Code gate</td><td><span class="pill p-werk">werk</span></td><td>gates / gate-code</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">gate-ops</td><td class="desc">Ops gate</td><td><span class="pill p-werk">werk</span></td><td>gates / gate-ops</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">gate-product</td><td class="desc">Product gate</td><td><span class="pill p-werk">werk</span></td><td>gates / gate-product</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">gate-quality</td><td class="desc">Quality gate</td><td><span class="pill p-werk">werk</span></td><td>gates / gate-quality</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">gemba</td><td class="desc">Live observation of a role working</td><td><span class="pill p-borg">borg</span></td><td>observation / gemba</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">gemba-tick</td><td class="desc">Cron tick for gemba loop</td><td><span class="pill p-borg">borg</span></td><td>observation / gemba</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">golfball</td><td class="desc">Pre-sequence domain safety scan</td><td><span class="pill p-werk">werk</span></td><td>cards / golfball-check</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">interrupt</td><td class="desc">Break into a role's session</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / interrupt</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">jdi</td><td class="desc">Just do it — execute, no discussion</td><td><span class="pill p-werk">werk</span></td><td>cards / execution-mode</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">lc</td><td class="desc">Look at Chrome — screenshot frontmost tab</td><td><span class="pill p-gathering">gathering</span></td><td>attention / look</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">listen</td><td class="desc">Voice input</td><td><span class="pill p-gathering">gathering</span></td><td>attention / input</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">lk</td><td class="desc">Look at Kade's terminal</td><td><span class="pill p-borg">borg</span></td><td>observation / look</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">lm</td><td class="desc">Look at me — posture/sentiment</td><td><span class="pill p-gathering">gathering</span></td><td>attention / look</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">look</td><td class="desc">Capture Jeff's screen</td><td><span class="pill p-borg">borg</span></td><td>observation / look</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">ls</td><td class="desc">Look at Silas's terminal</td><td><span class="pill p-borg">borg</span></td><td>observation / look</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">lw</td><td class="desc">Look at Wren's terminal</td><td><span class="pill p-borg">borg</span></td><td>observation / look</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">nudge</td><td class="desc">Send message to another role's session</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / nudge-delivery</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">ot</td><td class="desc">Open URL/file in role's Chrome window</td><td><span class="pill p-gathering">gathering</span></td><td>attention / tab-open</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">pair</td><td class="desc">Strong-style pair session</td><td><span class="pill p-werk">werk</span></td><td>pairing / pair-session</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">pipeline</td><td class="desc">Multi-card pipeline orchestration</td><td><span class="pill p-werk">werk</span></td><td>cards / pipeline</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">pull</td><td class="desc">Pull card to WIP — gates + state</td><td><span class="pill p-werk">werk</span></td><td>cards / pull-flow</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">reboot</td><td class="desc">Save memory, write next-session, exit</td><td><span class="pill p-werk">werk</span></td><td>session / lifecycle</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">retro</td><td class="desc">Team retrospective</td><td><span class="pill p-werk">werk</span></td><td>session / retro</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">sb</td><td class="desc">Scan board — quick state summary</td><td><span class="pill p-werk">werk</span></td><td>cards / board-scan</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">share</td><td class="desc">Export localhost page as PDF + PNG</td><td><span class="pill p-gathering">gathering</span></td><td>artifacts / share-export</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">simplify</td><td class="desc">Review changed code for reuse/quality</td><td><span class="pill p-werk">werk</span></td><td>code-quality / simplify</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">werk</td><td class="desc">Work state dashboard</td><td><span class="pill p-werk">werk</span></td><td>cards / dashboard</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">wtf</td><td class="desc">Drowning-in-cards triage</td><td><span class="pill p-werk">werk</span></td><td>cards / triage</td><td><span class="pill o-wren">wren</span></td></tr>
+</tbody>
+</table>
+
+<h2>Hooks (40)</h2>
+<p class="subtitle">All in <code>platform/services/chorus-hooks/src/hooks/</code>. Wired at three harness events via <code>chorus-hook-shim</code>.</p>
+<table>
+<thead><tr>
+  <th style="width:170px">Name</th>
+  <th style="width:100px">Event</th>
+  <th style="width:80px">Type</th>
+  <th>What it does</th>
+  <th style="width:100px">Subproduct</th>
+  <th style="width:160px">Domain / Subdomain</th>
+  <th style="width:80px">Owner</th>
+</tr></thead>
+<tbody>
+<tr><td class="name">accept_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">DEC-048 — builder cannot self-accept</td><td><span class="pill p-werk">werk</span></td><td>gates / accept</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">autonomy_guard</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">DEC-091 — autonomy region enforcement</td><td><span class="pill p-werk">werk</span></td><td>autonomy / autonomy-region</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">batch_progress</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">Tracks progress for batched tools</td><td><span class="pill p-borg">borg</span></td><td>observability / tool-progress</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">bedroom_nfs_guard</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">DEC-089 — SSH for bulk warns</td><td><span class="pill p-convergence">convergence</span></td><td>infrastructure / nfs-vs-ssh</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">chrome_tab_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Restricts Chrome tab ops to role window</td><td><span class="pill p-borg">borg</span></td><td>runtime / chrome-windows</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">clock_sync</td><td><span class="ev-pre">pre</span></td><td><span class="t-observer">observer</span></td><td class="desc">Wall-clock freshness check</td><td><span class="pill p-borg">borg</span></td><td>runtime / clock</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">context_inject</td><td><span class="ev-prompt">prompt</span></td><td><span class="t-observer">observer</span></td><td class="desc">Injects session context envelope</td><td><span class="pill p-werk">werk</span></td><td>session / bootstrap</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">csc_guard</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Cross-session contamination guard</td><td><span class="pill p-werk">werk</span></td><td>session / cross-session</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">demo_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Demo flow gate (acp blocks without demo)</td><td><span class="pill p-werk">werk</span></td><td>demo / demo-flow</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">demo_preflight</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">AC preflight before gate chain (#2068)</td><td><span class="pill p-werk">werk</span></td><td>demo / preflight</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">demo_provenance</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">Records demo brief provenance</td><td><span class="pill p-werk">werk</span></td><td>demo / provenance</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">e2e_responder</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">E2E test response handler</td><td><span class="pill p-werk">werk</span></td><td>testing / e2e</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">handoff_logger</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">Logs Edit/Write for brief tracking</td><td><span class="pill p-werk">werk</span></td><td>briefs / handoff</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">icd_pre_read</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">ICD pre-read enforcement</td><td><span class="pill p-athena">athena</span></td><td>ICD / pre-read</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">icd_write_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">DEC-095 — no harvester without ICD provider</td><td><span class="pill p-athena">athena</span></td><td>ICD / write-gate</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">infra_guardrails</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Refuse raw git checkout/switch/branch (#2711)</td><td><span class="pill p-werk">werk</span></td><td>version-control / guardrails</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">input_classifier</td><td><span class="ev-prompt">prompt</span></td><td><span class="t-observer">observer</span></td><td class="desc">Classifies input intent</td><td><span class="pill p-werk">werk</span></td><td>interaction-patterns / classify</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">interaction_pattern</td><td><span class="ev-prompt">prompt</span></td><td><span class="t-observer">observer</span></td><td class="desc">Detects 9 interaction patterns</td><td><span class="pill p-werk">werk</span></td><td>interaction-patterns / detection</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">jdi_detector</td><td><span class="ev-prompt">prompt</span></td><td><span class="t-observer">observer</span></td><td class="desc">Detects "jdi" intent</td><td><span class="pill p-werk">werk</span></td><td>interaction-patterns / jdi</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">log_first_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Loki check before filing bug cards</td><td><span class="pill p-borg">borg</span></td><td>observability / log-first</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">memory_first</td><td><span class="ev-prompt">prompt</span></td><td><span class="t-observer">observer</span></td><td class="desc">Check memory before answering</td><td><span class="pill p-werk">werk</span></td><td>memory / check-first</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">memory_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Gates memory-related writes</td><td><span class="pill p-werk">werk</span></td><td>memory / write-gate</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">nifi_discipline</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">NiFi op discipline</td><td><span class="pill p-convergence">convergence</span></td><td>nifi / discipline</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">nudge_blast_radius</td><td><span class="ev-pre">pre</span></td><td><span class="t-observer">observer</span></td><td class="desc">Annotate nudges with blast radius</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / blast-radius</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">nudge_poll</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">Poll for nudge replies</td><td><span class="pill p-clearing">clearing</span></td><td>nudge / poll</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">observer</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">General tool-call observer</td><td><span class="pill p-borg">borg</span></td><td>observability / tool-observer</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">ops_awareness</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Warns on ops-impacting actions</td><td><span class="pill p-borg">borg</span></td><td>infrastructure / ops-aware</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">pair_enforcement</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Enforce pair driver/navigator state</td><td><span class="pill p-werk">werk</span></td><td>pairing / enforcement</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">pair_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Gate pair-only actions</td><td><span class="pill p-werk">werk</span></td><td>pairing / gate</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">quality_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Quality gate checks</td><td><span class="pill p-werk">werk</span></td><td>gates / quality</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">search_hierarchy</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">DEC-074 — search Chorus before grep</td><td><span class="pill p-athena">athena</span></td><td>search / hierarchy</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">sensitive_paths</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Block writes to credential/secret paths</td><td><span class="pill p-borg">borg</span></td><td>security / sensitive-paths</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">session_init_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Session bootstrap completion check</td><td><span class="pill p-werk">werk</span></td><td>session / bootstrap</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">sparql_guard</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">SPARQL query shape enforcement</td><td><span class="pill p-athena">athena</span></td><td>search / sparql</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">stop_on_error</td><td><span class="ev-post">post</span></td><td><span class="t-guard">guard</span></td><td class="desc">DEC-025 — stop on error, don't bypass</td><td><span class="pill p-werk">werk</span></td><td>error-handling / stop-on-error</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">story_write_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Routes story writes to stories.md</td><td><span class="pill p-werk">werk</span></td><td>stories / write-gate</td><td><span class="pill o-wren">wren</span></td></tr>
+<tr><td class="name">tdd_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">DEC-1674 — block Edit/Write without test</td><td><span class="pill p-werk">werk</span></td><td>testing / tdd</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">test_quality_gate</td><td><span class="ev-pre">pre</span></td><td><span class="t-gate">gate</span></td><td class="desc">Test quality enforcement</td><td><span class="pill p-werk">werk</span></td><td>testing / test-quality</td><td><span class="pill o-kade">kade</span></td></tr>
+<tr><td class="name">tool_telemetry</td><td><span class="ev-post">post</span></td><td><span class="t-observer">observer</span></td><td class="desc">Tool-call telemetry</td><td><span class="pill p-borg">borg</span></td><td>observability / telemetry</td><td><span class="pill o-silas">silas</span></td></tr>
+<tr><td class="name">write_scrubber</td><td><span class="ev-pre">pre</span></td><td><span class="t-guard">guard</span></td><td class="desc">Scrub credentials from staged writes</td><td><span class="pill p-borg">borg</span></td><td>security / scrubber</td><td><span class="pill o-silas">silas</span></td></tr>
+</tbody>
+</table>
+
+<h2>Proposed Restructure (Option A — by subproduct/owner)</h2>
+<pre style="background:#fff; border:1px solid #e0e0d8; border-radius:6px; padding:14px 18px; font-family:&#39;JetBrains Mono&#39;,Menlo,monospace; font-size:12px; line-height:1.55; overflow-x:auto;">hooks/werk/        — 19 hooks (Wren/Kade-owned: gates, demo, pair, session,
+                     memory, TDD, interaction-patterns, infra_guardrails)
+hooks/borg/        — 9 hooks (Silas: observability + security + runtime)
+hooks/athena/      — 4 hooks (Silas: ICD + search + SPARQL)
+hooks/convergence/ — 2 hooks (Silas: bedroom_nfs_guard, nifi_discipline)
+hooks/clearing/    — 2 hooks (Wren: nudge_blast_radius, nudge_poll)
+</pre>
+
+<div class="openq">
+<h3>Open questions surfaced by the mapping</h3>
+<ul>
+  <li><strong>Wren-heavy ownership.</strong> 26/39 skills + 21/40 hooks land on Wren as PM/orchestration owner. Matches "interaction layer" but concentrates substrate on one role.</li>
+  <li><strong>Loom has zero skills/hooks.</strong> Principles/decisions live in graph + UI; no executable enforcement layer yet. Possibly a gap.</li>
+  <li><strong>Athena has no skills, only ICD/SPARQL hooks.</strong> Athena pages are read via web, not via slash command. Confirm intentional.</li>
+  <li><strong>Look/share/listen/lc/lm/ot</strong> classified as Gathering (Jeff-attention tools), not Borg. Push back if they belong in Borg observability instead.</li>
+  <li><strong>infra_guardrails</strong> — file lives in chorus-hooks (Silas crate) but enforces #2711 which Kade owned. Code-vs-author-vs-owner mismatch.</li>
+  <li><strong>39 vs 40 skill drift.</strong> skill-lifecycle.html says 40, directory has 39. Reconcile.</li>
+  <li><strong>chorus-hooks monolith cost.</strong> 40 hooks in one crate, one shim binary, three event registrations. One rebuild churns cdhash for all 40. Cross-role coupling invisible. Restructure (Option A above) is step zero; future crate split per subproduct decouples cdhash blast radius and ownership.</li>
+</ul>
+</div>
+
+<div class="footnote">
+Source markdown: <code>roles/wren/skills-hooks-mapping.md</code>. First-pass classifications by Wren — to be reviewed against actual ownership graph in Athena. Type/event labels for non-DEC-tagged hooks are inferences from filename; verify against source before relying on them. Generated 2026-05-05.
+</div>
+
+
+
+</body></html>
