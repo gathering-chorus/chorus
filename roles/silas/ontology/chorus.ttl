@@ -3417,10 +3417,9 @@ chorus:Hydratable a owl:Class ;
     rdfs:label "Hydratable" ;
     rdfs:comment "Marker class for any chorus class whose instances are populated from the filesystem by the crawler. Subclasses of chorus:Hydratable carry chorus:hydratesFromSource (where to read from) and have all their predicates declare chorus:writeOwner (which writer is responsible)." .
 
-chorus:hydratesFromSource a owl:DatatypeProperty ;
+chorus:hydratesFromSource a owl:AnnotationProperty ;
     rdfs:label "hydrates from source" ;
-    rdfs:comment "Path glob (relative to CHORUS_ROOT) the crawler walks to populate instances of this class. Example: 'platform/scripts/*.sh' for chorus:Script." ;
-    rdfs:domain chorus:Hydratable ;
+    rdfs:comment "Path glob (relative to CHORUS_ROOT) the crawler walks to populate instances of this class. Example: 'platform/scripts/*.sh' for chorus:Script. Annotation property on the class itself (not on instances), so the hydration validator does not require chorus:writeOwner here." ;
     rdfs:range xsd:string .
 
 chorus:writeOwner a owl:ObjectProperty ;

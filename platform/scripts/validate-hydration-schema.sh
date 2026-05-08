@@ -52,10 +52,12 @@ hydratable_classes() {
   python3 - "$TTL" <<'PYEOF'
 import sys, re
 ttl = open(sys.argv[1]).read()
-# Find blocks: "chorus:X a owl:Class ; ... rdfs:subClassOf chorus:Y ; ..."
-# Greedy-match per-class block separated by terminal "."
+# Strip quoted string contents so embedded periods don't break block matching.
+# (rdfs:comment values often contain "." which terminates a turtle statement
+# only when outside quotes.)
+ttl_stripped = re.sub(r'"[^"]*"', '""', ttl, flags=re.DOTALL)
 classes = {}
-for m in re.finditer(r'(chorus:\w+)\s+a\s+owl:Class\s*;([^.]+)\.', ttl, re.DOTALL):
+for m in re.finditer(r'(chorus:\w+)\s+a\s+owl:Class\s*;([^.]+)\.', ttl_stripped, re.DOTALL):
     cls, body = m.group(1), m.group(2)
     parents = re.findall(r'rdfs:subClassOf\s+(chorus:\w+)', body)
     classes[cls] = parents
@@ -87,6 +89,7 @@ set +e
 python3 - "$TTL" "$violation_log" <<PYEOF
 import sys, re
 ttl = open(sys.argv[1]).read()
+ttl = re.sub(r'"[^"]*"', '""', ttl, flags=re.DOTALL)
 log = open(sys.argv[2], "w")
 hydratable = set("""$HYDRATABLE_CLASSES""".split())
 allowed_writers = {"chorus:crawler", "chorus:enrichment"}
