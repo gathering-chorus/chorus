@@ -271,27 +271,25 @@ curl -s -X POST http://localhost:3470/api/message \
   > /dev/null 2>&1
 ```
 
-**Nudge the other roles into demo observer mode:**
-```bash
-# Nudge both other roles (skip yourself)
-for ROLE in wren silas kade; do
-  [ "$ROLE" = "<your-role>" ] && continue
-  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
-    "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}." 2>/dev/null || true
-done
+**Nudge the other roles into demo observer mode** — call MCP per role (skip yourself):
+```
+For each role in [wren, silas, kade] except <your-role>:
+  mcp__chorus-api__chorus_nudge_message({
+    to: "<role>",
+    message: "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}."
+  })
 ```
 
 Then **auto-nudge for feedback** — don't wait for Jeff to ask.
 
 **Frame the nudge in the recipient's domain, not Jeff's authority.** The way you frame the nudge shapes the response. If you say "Jeff wants your review," they rubber-stamp. If you say "this touches your domain — what does it mean for X?", they actually look.
 
-```bash
-# Ask each role to verify from THEIR perspective — frame in their domain
-for ROLE in wren silas kade; do
-  [ "$ROLE" = "<your-role>" ] && continue
-  bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge "$ROLE" \
-    "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>." 2>/dev/null || true
-done
+```
+For each role in [wren, silas, kade] except <your-role>:
+  mcp__chorus-api__chorus_nudge_message({
+    to: "<role>",
+    message: "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>."
+  })
 ```
 
 **How to frame per role:**

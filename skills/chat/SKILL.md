@@ -35,8 +35,11 @@ bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CH
 
 ### Step 3: Nudge the other role to join
 
-```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <other-role> "[chat] Join chat $CHAT_ID — topic: <topic>. Read: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh read $CHAT_ID | Reply: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CHAT_ID <their-role> \"message\" | When done, both stop."
+```
+mcp__chorus-api__chorus_nudge_message({
+  to: "<other-role>",
+  message: "[chat] Join chat $CHAT_ID — topic: <topic>. Read: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh read $CHAT_ID | Reply: bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh say $CHAT_ID <their-role> \"message\" | When done, both stop."
+})
 ```
 
 ### Step 4: Register cron tick (automatic — read the marker)

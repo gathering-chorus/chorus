@@ -77,10 +77,13 @@ If the card IS already in WIP (pulled earlier or by another role), skip to Step 
    ```
 
 4. **Nudge the navigator to load /pair** — the navigator MUST load the full skill, not just follow a text description:
-   ```bash
-   bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <target-role> "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
    ```
-   The `/pair` prefix in the nudge triggers the navigator's system to load the skill. Both roles must have the full protocol loaded — a text summary is not sufficient.
+   mcp__chorus-api__chorus_nudge_message({
+     to: "<target-role>",
+     message: "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
+   })
+   ```
+   The `/pair` prefix in the message triggers the navigator's system to load the skill. Both roles must have the full protocol loaded — a text summary is not sufficient.
 
 5. **Navigator opens the shared scratch file** — read `/tmp/pair-<card-id>.md` at session start.
 

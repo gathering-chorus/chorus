@@ -19,30 +19,23 @@ Inject a message directly into another role's terminal session. The message appe
 
 ## How to Execute
 
-### Step 1: Detect your role
+Call the MCP tool. One call. The substrate handles the rest.
 
-Use your working directory to determine your role name (wren, silas, kade).
-
-### Step 2: Send the nudge
-
-```bash
-bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge <target-role> "<your-role-name>: <message>"
+```
+mcp__chorus-api__chorus_nudge_message({ to: "<role>", message: "<your-role-name>: <message>" })
 ```
 
-The script will:
-- Find the target role's active terminal TTY
-- Inject the message via clipboard paste
-- If the role is busy, queue it for delivery after their current turn
-- If no active session found, queue to `/tmp/voice-inbox/<role>/pending.txt` for next session
+The MCP server:
+- Persists the nudge to pulse (`/api/nudge`)
+- Pulse's DeliveryWorker injects via `chorus-inject` to the recipient's active Terminal window
+- If the role is busy, the injection is delivered after their current turn
+- If no active window, the nudge is still persisted — recipient sees it on next session via pulse drain
 
-### Step 3: Confirm delivery
+Returns `nudge sent: <from> → <to>` on success, or a typed refusal (e.g. `recipient-not-found`).
 
-The script outputs one of:
-- `Injected to <role>` — delivered immediately
-- `Injected to <role> (busy — will appear after current turn)` — queued for end of turn
-- `Queued for <role> (no active session)` — saved for when they come online
+## What changed (#2804/#2808/#2809)
 
-Report the delivery status to Jeff.
+Pre-#2804 this skill called `bash platform/scripts/nudge`. That path is gone — bash script deleted, `chorus-hook-shim nudge` retired, direct `chorus-inject` invocation refused without `_NUDGE_PULSE_INTERNAL=1`. **MCP `chorus_nudge_message` is the only path from a Claude session.** Operational scripts (alerts, health checks) use `platform/scripts/ops-nudge` which POSTs to the same pulse endpoint.
 
 ## When to use /nudge vs other tools
 
@@ -58,6 +51,6 @@ Report the delivery status to Jeff.
 
 - **Prefix your message with your role name** so the recipient knows who's talking
 - **Keep it short** — 1-3 sentences. If you need more, write a brief
-- **DEC-079**: Max 2 nudge exchanges per role pair per 30 min. If you need more back-and-forth, escalate to `/chat` or `/clearing`
+- **DEC-079**: Max 2 nudge exchanges per role pair per 30 min. If more back-and-forth, escalate to `/chat` or `/clearing`
 - **Don't nudge for things that can wait** — if next session is fine, use a brief
 - **Don't nudge yourself** — that's not how this works
