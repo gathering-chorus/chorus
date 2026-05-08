@@ -150,5 +150,11 @@ INSERT DATA {
 
     chorus:principle-interrogate-the-data
       skos:broader chorus:principle-observe-and-interact .
+
+    # Added 2026-05-08: principle-no-competing-implementations was the lone
+    # orphan flagged by loom-principles-orphans alert. Semantic fit under
+    # use-small-and-slow-solutions (one canonical implementation, not parallel).
+    chorus:principle-no-competing-implementations
+      skos:broader chorus:principle-use-small-and-slow-solutions .
   }
 }
