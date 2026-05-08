@@ -48,5 +48,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "loom-principles-orphans: principles in graph have no parent and aren't flagged abstract. Likely a mid-write or rename drift. Investigate via /loom/principles.html or SPARQL." --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "loom-principles-orphans: principles in graph have no parent and aren't flagged abstract. Likely a mid-write or rename drift. Investigate via /loom/principles.html or SPARQL." 2>/dev/null || true

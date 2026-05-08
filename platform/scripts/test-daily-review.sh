@@ -94,9 +94,9 @@ echo "Test 7: summary posts to Bridge; ops + quality nudge roles directly (DEC-2
 # Per #2243: only the summary posts to Bridge. Ops nudges Silas, quality nudges Kade.
 # Old fixture required all three to source bridge-post — stale after DEC-2243.
 assert_contains "summary sources bridge-post" "bridge-post.sh" "$SUMMARY_SCRIPT"
-# Single-line regex for the nudge call: $NUDGE silas ... (DEC-2243 routing).
-assert_contains "ops nudges silas" '\$NUDGE" silas' "$OPS_SCRIPT"
-assert_contains "quality nudges kade" '\$NUDGE" kade' "$QUALITY_SCRIPT"
+# Single-line regex for the nudge call: $OPS_NUDGE silas ... (DEC-2243 routing).
+assert_contains "ops nudges silas" '\$OPS_NUDGE" silas' "$OPS_SCRIPT"
+assert_contains "quality nudges kade" '\$OPS_NUDGE" kade' "$QUALITY_SCRIPT"
 
 # --- AC3: ops.health.checked event with pass/fail status ---
 echo ""

@@ -42,5 +42,5 @@ action: |
   fi
   touch "$COOLDOWN"
   # Nudge Silas only (ops owner), not Jeff — warning severity, not critical
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "ollama-down: Bedroom Ollama unreachable after 3 consecutive checks. Semantic search degraded. Check: ssh bedroom 'curl http://localhost:11434/api/tags'" 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "ollama-down: Bedroom Ollama unreachable after 3 consecutive checks. Semantic search degraded. Check: ssh bedroom 'curl http://localhost:11434/api/tags'" 2>/dev/null || true

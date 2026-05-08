@@ -32,5 +32,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "chorus-mcp-down: /mcp endpoint not responding to initialize. All MCP tool calls (chorus_nudge_message, etc.) are now failing for every role. Check chorus-api status." --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "chorus-mcp-down: /mcp endpoint not responding to initialize. All MCP tool calls (chorus_nudge_message, etc.) are now failing for every role. Check chorus-api status." 2>/dev/null || true

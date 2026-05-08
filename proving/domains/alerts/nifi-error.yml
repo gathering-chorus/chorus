@@ -33,8 +33,8 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN_FILE"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "nifi-error: $COUNT ERROR entries in Bedroom NiFi logs (last 5 min). Check: Loki query {job=\"nifi\",component=\"app\",machine=\"bedroom\"} |~ \"ERROR\"" --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "nifi-error: $COUNT ERROR entries in Bedroom NiFi logs (last 5 min). Check: Loki query {job=\"nifi\",component=\"app\",machine=\"bedroom\"} |~ \"ERROR\"" 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] NiFi pipeline errors on Bedroom' --arg from 'system' '{from: $from, text: $text}')" \

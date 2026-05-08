@@ -50,5 +50,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "loom-principles-hash-drift: principle-set hashes differ across roles. At least one role booted before a graph change. Coordinate /reboot to realign." --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "loom-principles-hash-drift: principle-set hashes differ across roles. At least one role booted before a graph change. Coordinate /reboot to realign." 2>/dev/null || true

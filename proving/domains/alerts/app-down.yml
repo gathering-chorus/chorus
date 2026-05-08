@@ -22,8 +22,8 @@ check: |
 
 action: |
   # Nudge Silas — alerts go to roles, not the Clearing
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "gathering-app: DOWN — seeds, pods, API all unreachable. Fix: app-state.sh restart jeff-bridwell-personal-site, check ~/Library/Logs/gathering-app.log" --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "gathering-app: DOWN — seeds, pods, API all unreachable. Fix: app-state.sh restart jeff-bridwell-personal-site, check ~/Library/Logs/gathering-app.log" 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] gathering-app DOWN' --arg from 'system' '{from: $from, text: $text}')" \

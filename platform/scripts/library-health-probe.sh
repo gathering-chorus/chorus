@@ -41,8 +41,8 @@ check_http "Vikunja" 3456 "/" || ((FAILURES++))
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "ALERT: ${FAILURES} service(s) down on Library"
-  # SSH back to Library to emit critical nudge to Jeff
-  ssh "${LIBRARY}" "bash ${CHORUS_ROOT}/platform/scripts/nudge jeff '[critical] Bedroom probe: ${FAILURES} service(s) down on Library' --from system" 2>/dev/null || true
+  # SSH back to Library to emit critical nudge to Jeff (#2808: ops-nudge post #2804/#2809)
+  ssh "${LIBRARY}" "bash ${CHORUS_ROOT}/platform/scripts/ops-nudge jeff '[critical] Bedroom probe: ${FAILURES} service(s) down on Library' system" 2>/dev/null || true
 else
   echo "All services healthy"
 fi

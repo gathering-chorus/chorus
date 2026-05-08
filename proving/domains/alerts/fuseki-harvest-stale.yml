@@ -23,5 +23,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "fuseki-harvest-stale: No photo data in Fuseki harvest graphs. Pipeline may be broken. Check NiFi process groups on Bedroom." --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "fuseki-harvest-stale: No photo data in Fuseki harvest graphs. Pipeline may be broken. Check NiFi process groups on Bedroom." 2>/dev/null || true

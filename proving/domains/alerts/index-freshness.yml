@@ -39,6 +39,6 @@ for s in d['sources']:
     if s['level'] in ('critical','dead'):
         print(f\"  {s['source']}: {s['level']} ({s['staleness_ratio']}x cadence, {s['age_seconds']//3600}h old)\")
 " 2>/dev/null || echo "  (could not fetch details)")
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "index-freshness: stale sources detected. Semantic search degraded.
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "index-freshness: stale sources detected. Semantic search degraded.
 $STALE" 2>/dev/null || true

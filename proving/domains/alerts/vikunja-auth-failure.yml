@@ -31,5 +31,5 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-  "$NUDGE" silas "vikunja-auth: 401 errors in Vikunja logs — token likely expired. Fix: regenerate long-lived token, update chorus/.env" --force 2>/dev/null || true
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "vikunja-auth: 401 errors in Vikunja logs — token likely expired. Fix: regenerate long-lived token, update chorus/.env" 2>/dev/null || true
