@@ -79,6 +79,37 @@ fn nudge_origin_mcp_when_env_set() {
     );
 }
 
+/// AC3 — pulse-down resilience. Sender-side spine emit fires BEFORE the
+/// HTTP POST to pulse, so even when pulse is unreachable the audit trail
+/// captures the nudge attempt. Verified by pointing CHORUS_PULSE_URL at
+/// an unreachable host (127.0.0.1:1) and asserting both events still
+/// land in chorus.log. Per Kade gemba 2026-05-07 — closes the
+/// reasoning-not-test gap on the explicit AC3 promise.
+#[test]
+fn nudge_emits_when_pulse_post_fails() {
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("chorus.log");
+    let log_str = log.to_str().unwrap().to_string();
+
+    // 127.0.0.1:1 is reserved/unbound — curl will fail-fast within the
+    // --connect-timeout 2 window. The point: chorus_log MUST fire regardless.
+    let out = run_nudge(&[
+        ("CHORUS_LOG_FILE", &log_str),
+        ("CHORUS_PULSE_URL", "http://127.0.0.1:1/api/nudge"),
+    ]);
+    assert!(out.status.success(), "shim must succeed even when pulse unreachable: {}", String::from_utf8_lossy(&out.stderr));
+
+    let content = read_log(&log_str);
+    assert!(
+        content.contains("nudge.requested"),
+        "nudge.requested must fire BEFORE the pulse POST — pulse-down audit trail. Got: {}", content
+    );
+    assert!(
+        content.contains("nudge.emitted"),
+        "nudge.emitted must also fire (migration-window dual-emit). Got: {}", content
+    );
+}
+
 /// Unknown origin values still pass through (validation happens at consumer).
 #[test]
 fn nudge_origin_passes_through_unknown_value() {
