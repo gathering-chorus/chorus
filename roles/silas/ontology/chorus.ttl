@@ -3390,3 +3390,104 @@ chorus:practice-tdd
 chorus:practice-production-ready
     chorus:hasGate chorus:gate-demo, chorus:gate-product, chorus:gate-ops .
 
+# =============================================================================
+# 12. HYDRATION REGISTRY (#2827) — Phase 2 of crawler-service-design
+# =============================================================================
+#
+# The crawler hydrates filesystem reality (code, tests, briefs, decisions,
+# memories) into graph instances. The schema declares its own hydration
+# intent: which classes are crawler-hydratable, where they hydrate from,
+# and which writer (crawler vs enrichment) owns each predicate. This
+# registry is read by the crawler at startup to build the in-memory
+# class → source → predicates → writeOwner map; without it, hydration
+# logic would be hard-coded and every new type would require a code edit.
+#
+# Default-rule for future predicates:
+#   - Structural-base-instance predicates (the ones the file IS, like its
+#     path, sha, last-modified, lineCount) → chorus:writeOwner chorus:crawler
+#   - Derived/decorative predicates (those produced by analysis,
+#     enrichment, computed cross-references) → chorus:writeOwner chorus:enrichment
+#
+# chorus:writeOwner remains REQUIRED on every predicate of a Hydratable
+# class even when the default would resolve cleanly — explicit-over-implicit,
+# and the validator (`validate-hydration-schema.sh`) refuses any predicate
+# that omits it. Same shape as #2818 refusing untagged tests.
+
+chorus:Hydratable a owl:Class ;
+    rdfs:label "Hydratable" ;
+    rdfs:comment "Marker class for any chorus class whose instances are populated from the filesystem by the crawler. Subclasses of chorus:Hydratable carry chorus:hydratesFromSource (where to read from) and have all their predicates declare chorus:writeOwner (which writer is responsible)." .
+
+chorus:hydratesFromSource a owl:DatatypeProperty ;
+    rdfs:label "hydrates from source" ;
+    rdfs:comment "Path glob (relative to CHORUS_ROOT) the crawler walks to populate instances of this class. Example: 'platform/scripts/*.sh' for chorus:Script." ;
+    rdfs:domain chorus:Hydratable ;
+    rdfs:range xsd:string .
+
+chorus:writeOwner a owl:ObjectProperty ;
+    rdfs:label "write owner" ;
+    rdfs:comment "Required attribute on every predicate of a Hydratable class. Names which writer is responsible for this predicate's triples. Allowed values: chorus:crawler (predicate is structural-base, written from filesystem facts) or chorus:enrichment (predicate is derived, written by analysis/decoration). Two writers must never touch the same predicate." ;
+    rdfs:range chorus:Writer .
+
+chorus:Writer a owl:Class ;
+    rdfs:label "Writer" ;
+    rdfs:comment "Discriminator for chorus:writeOwner. Closed enum at this card; if a third writer ever lands (e.g. inference engine, human-curated overlay), it gets its own instance here and the validator's allow-list grows." .
+
+chorus:crawler a chorus:Writer ;
+    rdfs:label "crawler" ;
+    rdfs:comment "Structural-base writer. Owns predicates derived directly from filesystem state (path, sha, mtime, frontmatter values). Replaces-on-write per (class, identifier) tuple every crawl run." .
+
+chorus:enrichment a chorus:Writer ;
+    rdfs:label "enrichment" ;
+    rdfs:comment "Derived/decorative writer. Owns predicates produced by analysis, cross-references, computed metadata. Runs after the crawler; reads the crawler's structural-base, writes its own predicates without overlap." .
+
+# Concrete Hydratable: chorus:File — minimum at this card per #2827 AC §B.
+# chorus:Test (Hydratable) follows in #2818 once test-tag schema lands.
+
+chorus:File a owl:Class ;
+    rdfs:subClassOf chorus:Hydratable ;
+    rdfs:label "File" ;
+    rdfs:comment "A file on disk in the chorus tree. Hydrated by the crawler from CHORUS_ROOT walk. The chorus:File class is the first concrete Hydratable; its predicates demonstrate the writeOwner contract." ;
+    chorus:hydratesFromSource "**/*" .
+
+chorus:filePath a owl:DatatypeProperty ;
+    rdfs:label "file path" ;
+    rdfs:comment "Absolute path of the file under CHORUS_ROOT. Identity predicate for chorus:File." ;
+    rdfs:domain chorus:File ;
+    rdfs:range xsd:string ;
+    chorus:writeOwner chorus:crawler .
+
+chorus:fileSha a owl:DatatypeProperty ;
+    rdfs:label "file sha" ;
+    rdfs:comment "Content hash (sha256) of the file at last crawl. Changes when the file changes." ;
+    rdfs:domain chorus:File ;
+    rdfs:range xsd:string ;
+    chorus:writeOwner chorus:crawler .
+
+chorus:fileLastModified a owl:DatatypeProperty ;
+    rdfs:label "last modified" ;
+    rdfs:comment "Filesystem mtime at last crawl, ISO 8601." ;
+    rdfs:domain chorus:File ;
+    rdfs:range xsd:dateTime ;
+    chorus:writeOwner chorus:crawler .
+
+chorus:fileInDomain a owl:ObjectProperty ;
+    rdfs:label "in domain" ;
+    rdfs:comment "Athena subdomain this file belongs to. Derived: enrichment maps the path against the subdomain registry." ;
+    rdfs:domain chorus:File ;
+    rdfs:range chorus:SubDomain ;
+    chorus:writeOwner chorus:enrichment .
+
+chorus:fileHasOwner a owl:ObjectProperty ;
+    rdfs:label "file has owner" ;
+    rdfs:comment "Role responsible for the file. Derived: enrichment reads frontmatter / falls back to subdomain owner." ;
+    rdfs:domain chorus:File ;
+    rdfs:range chorus:Role ;
+    chorus:writeOwner chorus:enrichment .
+
+chorus:stale a owl:DatatypeProperty ;
+    rdfs:label "stale" ;
+    rdfs:comment "Set true by deletes-reconciliation when the file's filesystem path no longer exists. NOT a remove from the graph — visibility-not-removal so consumers choose how to treat. Cleared if the file reappears." ;
+    rdfs:domain chorus:Hydratable ;
+    rdfs:range xsd:boolean ;
+    chorus:writeOwner chorus:crawler .
+
