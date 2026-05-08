@@ -720,6 +720,57 @@
         "deployed_at": "Deploy location path (~/.chorus/bin/<name>)"
       }
     },
+    "build.completed": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Building-pipeline build step finished for one crate (#2774). Emitted by chorus-build CLI after all binaries in the crate are signed and recorded in the manifest. Per-binary detail lives in build.artifact.hashed; this event is the crate-level signal the act workflow sequences on. duration_ms enables Loki histogram for build-cache rot detection.",
+      "fields": {
+        "commit": "Source commit SHA (short) at build time",
+        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
+        "duration_ms": "End-to-end build slice duration in milliseconds",
+        "builder_host": "Hostname of machine that built it"
+      }
+    },
+    "build.failed": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases — never to absence of build.completed.",
+      "fields": {
+        "commit": "Source commit SHA (short) at build time",
+        "crate": "Cargo crate name",
+        "exit_code": "Numeric exit code from build-signed.sh",
+        "duration_ms": "Time elapsed before failure (ms)",
+        "reason": "Coarse failure class (build-signed-fail today; finer classes added as named)",
+        "builder_host": "Hostname of machine that built it"
+      }
+    },
+    "deploy.completed": {
+      "vertebra": "operations",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on.",
+      "fields": {
+        "commit": "Source commit SHA (short) at deploy time",
+        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
+        "cdhash": "Codesign cdhash of installed binary (last in crate's binary set)",
+        "target": "Primary install path (~/.chorus/bin/<name>)",
+        "duration_ms": "End-to-end deploy slice duration in milliseconds"
+      }
+    },
+    "deploy.failed": {
+      "vertebra": "operations",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures — never to absence of deploy.completed.",
+      "fields": {
+        "commit": "Source commit SHA (short)",
+        "crate": "Cargo crate name",
+        "duration_ms": "Time elapsed before failure (ms)",
+        "reason": "Failure class — install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
+      }
+    },
     "build.commit.created": {
       "vertebra": "building",
       "legacy_name": "commit",

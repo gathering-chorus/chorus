@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# chorus-deploy — building-pipeline deploy step (#2774).
+#
+# Wraps chorus-bin-install to install signed binaries from target/release/
+# into ~/.chorus/bin/, then kickstarts launchd-managed services that depend
+# on the deployed binary. Emits one deploy.completed spine event per crate
+# with the canonical {commit, crate, cdhash, target} payload.
+#
+# chorus-build (the pair) produces the artifacts in target/release/ and
+# emits build.completed. chorus-deploy picks them up and activates them.
+# Both run in the building-pipeline workflow.
+#
+# Usage:
+#   chorus-deploy <chorus-hooks|chorus-inject>
+#
+# Behavior:
+#   1. Resolve crate → binary paths (mirrors build-signed.sh resolve_crate).
+#   2. For each binary: chorus-bin-install (atomic mv to ~/.chorus/bin/),
+#      which emits binary.deployed.
+#   3. Kickstart relevant services (chorus-hooks → com.chorus.hooks).
+#   4. Emit deploy.completed per crate.
+#
+# Exit codes:
+#   0   success — installed + kickstarted + emitted.
+#   1   deploy-fail (binary missing, install failed, kickstart failed).
+#   2   usage error.
+#
+# Requires: chorus-bin-install, chorus-log (this dir).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL="$SCRIPT_DIR/chorus-bin-install"
+CHORUS_LOG="$SCRIPT_DIR/chorus-log"
+ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+
+if [ $# -ne 1 ]; then
+  echo "Usage: chorus-deploy <chorus-hooks|chorus-inject>" >&2
+  exit 2
+fi
+
+CRATE="$1"
+
+case "$CRATE" in
+  chorus-hooks)
+    CRATE_DIR="$ROOT/platform/services/chorus-hooks"
+    BINARIES=("chorus-hook-shim" "chorus-hooks")
+    KICKSTART_SERVICE="com.chorus.hooks"
+    ;;
+  chorus-inject)
+    CRATE_DIR="$ROOT/platform/services/chorus-inject"
+    BINARIES=("chorus-inject")
+    KICKSTART_SERVICE=""  # invoked on demand by pulse worker; no daemon
+    ;;
+  *)
+    echo "chorus-deploy: unknown crate '$CRATE' (known: chorus-hooks, chorus-inject)" >&2
+    exit 2
+    ;;
+esac
+
+COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+START_TS=$(date +%s)
+
+# Helper: emit deploy.failed with reason (#2774 review — typed outcome events).
+emit_deploy_failed() {
+  local reason="$1"
+  local end_ts=$(date +%s)
+  local duration_ms=$(( (end_ts - START_TS) * 1000 ))
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" deploy.failed "$ROLE" \
+      "commit=$COMMIT" "crate=$CRATE" "duration_ms=$duration_ms" \
+      "reason=$reason" >/dev/null 2>&1 || true
+  fi
+}
+
+if [ ! -x "$INSTALL" ]; then
+  echo "chorus-deploy: chorus-bin-install not executable at $INSTALL" >&2
+  emit_deploy_failed "install-script-missing"
+  exit 1
+fi
+
+# Install each binary. chorus-bin-install emits binary.deployed per binary.
+INSTALLED_CDHASH=""
+for bin in "${BINARIES[@]}"; do
+  src="$CRATE_DIR/target/release/$bin"
+  if [ ! -f "$src" ]; then
+    echo "chorus-deploy: binary missing — run chorus-build $CRATE first ($src)" >&2
+    emit_deploy_failed "binary-missing"
+    exit 1
+  fi
+  if ! "$INSTALL" "$src" "$bin"; then
+    echo "chorus-deploy: install failed for $bin" >&2
+    emit_deploy_failed "install-fail"
+    exit 1
+  fi
+  # Capture cdhash from the deployed binary (last one wins; primary recorded
+  # for the spine event payload).
+  if command -v codesign >/dev/null 2>&1; then
+    INSTALLED_CDHASH=$(codesign -dvvv "$HOME/.chorus/bin/$bin" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+  fi
+done
+
+# Kickstart launchd-managed service if applicable. Kickstart failure is
+# advisory, not fatal — many services aren't launchd-managed (e.g. chorus-hooks
+# runs nohup). If kickstart fails for a service that SHOULD restart, ops sees
+# the WARN in the logs.
+if [ -n "$KICKSTART_SERVICE" ]; then
+  if ! launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
+    echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE failed (service may not be loaded)" >&2
+  else
+    echo "chorus-deploy: kickstarted $KICKSTART_SERVICE"
+  fi
+fi
+
+# deploy.completed spine event per crate.
+END_TS=$(date +%s)
+DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+TARGET="$HOME/.chorus/bin/${BINARIES[0]}"
+
+if [ -x "$CHORUS_LOG" ]; then
+  "$CHORUS_LOG" deploy.completed "$ROLE" \
+    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "duration_ms=$DURATION_MS" \
+    >/dev/null 2>&1 || echo "chorus-deploy: WARN — deploy.completed emit failed (non-fatal)" >&2
+fi
+
+echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT cdhash=$INSTALLED_CDHASH)"

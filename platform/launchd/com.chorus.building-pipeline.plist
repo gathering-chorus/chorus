@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.chorus.building-pipeline — fires building-pipeline.yml on canonical main update.
+
+  #2774. Per ADR-030: tool is act, DSL is GHA YAML, trigger is launchd WatchPaths
+  on the canonical's main ref file. When canonical's main moves (any push or merge),
+  launchd fires this plist which invokes `act push -P macos-latest=-self-hosted`
+  from the chorus repo root.
+
+  WatchPaths fires on file modification — main moves are .git/refs/heads/main writes.
+  StandardOutPath / StandardErrorPath capture act's output to ~/Library/Logs/Chorus/
+  for diagnostics; the workflow's spine emits land in chorus.log via chorus-log.
+
+  Install:
+    cp platform/launchd/com.chorus.building-pipeline.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.chorus.building-pipeline.plist
+
+  Stop:
+    launchctl unload -w ~/Library/LaunchAgents/com.chorus.building-pipeline.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.building-pipeline</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/jeffbridwell/CascadeProjects/chorus &amp;&amp; /opt/homebrew/bin/act push -P macos-latest=-self-hosted -W .github/workflows/building-pipeline.yml</string>
+  </array>
+
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/.git/refs/heads/main</string>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/building-pipeline.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/building-pipeline.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>DEPLOY_ROLE</key>
+    <string>system</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

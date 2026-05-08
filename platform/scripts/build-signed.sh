@@ -167,15 +167,23 @@ fi
 # system calls. Splitting build from install means cdhash stays stable
 # across rebuilds-without-source-change AND the installed binary is
 # traceable to a commit via the binary.deployed spine event.
-INSTALL_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/chorus-bin-install"
-if [ -x "$INSTALL_SCRIPT" ]; then
-  "$INSTALL_SCRIPT" "$binary" "$binary_name"
-  # chorus-hooks shortcut also installs the second binary
-  if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
-    "$INSTALL_SCRIPT" "$HOOKS_BIN" "chorus-hooks"
-  fi
+#
+# #2774: BUILD_SKIP_INSTALL=1 splits build from deploy in the building-pipeline.
+# chorus-build (build-only) sets this; chorus-deploy invokes chorus-bin-install
+# separately. Default unset → install runs (preserves existing call sites).
+if [ -n "${BUILD_SKIP_INSTALL:-}" ]; then
+  echo "build-signed: BUILD_SKIP_INSTALL set — skipping install to ~/.chorus/bin/"
 else
-  echo "build-signed: WARN — chorus-bin-install not found; binary signed but not installed to ~/.chorus/bin/" >&2
+  INSTALL_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/chorus-bin-install"
+  if [ -x "$INSTALL_SCRIPT" ]; then
+    "$INSTALL_SCRIPT" "$binary" "$binary_name"
+    # chorus-hooks shortcut also installs the second binary
+    if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
+      "$INSTALL_SCRIPT" "$HOOKS_BIN" "chorus-hooks"
+    fi
+  else
+    echo "build-signed: WARN — chorus-bin-install not found; binary signed but not installed to ~/.chorus/bin/" >&2
+  fi
 fi
 
 echo "build-signed: done"
