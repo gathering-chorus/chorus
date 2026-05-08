@@ -211,9 +211,13 @@ cmd_orphans() {
     done < <(lsof -ti :"$port" 2>/dev/null)
   done
 
-  # Socket-based services (not on TCP ports) — scan by binary path
+  # Socket-based services (not on TCP ports) — scan by binary path.
+  # #2823: also check ~/.chorus/bin/chorus-hooks (canonical deploy location per
+  # #2734); pre-#2823 only the build-cache path was checked, missing orphans
+  # launched from the deploy location.
   local SOCKET_MAP=(
     "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hooks:hooks"
+    "/Users/jeffbridwell/.chorus/bin/chorus-hooks:hooks"
   )
   local bin name
   for entry in "${SOCKET_MAP[@]}"; do

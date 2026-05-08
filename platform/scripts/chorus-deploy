@@ -51,7 +51,7 @@ case "$CRATE" in
   chorus-inject)
     CRATE_DIR="$ROOT/platform/services/chorus-inject"
     BINARIES=("chorus-inject")
-    KICKSTART_SERVICE=""  # invoked on demand by pulse worker; no daemon
+    KICKSTART_SERVICE=""  # spawn-on-demand by pulse worker; no daemon
     ;;
   *)
     echo "chorus-deploy: unknown crate '$CRATE' (known: chorus-hooks, chorus-inject)" >&2
@@ -101,15 +101,17 @@ for bin in "${BINARIES[@]}"; do
   fi
 done
 
-# Kickstart launchd-managed service if applicable. Kickstart failure is
-# advisory, not fatal — many services aren't launchd-managed (e.g. chorus-hooks
-# runs nohup). If kickstart fails for a service that SHOULD restart, ops sees
-# the WARN in the logs.
+# #2823: kickstart the launchd-managed service after atomic mv. WatchPaths-
+# only-restart doesn't work with KeepAlive=true (launchd no-ops WatchPaths
+# events when the job is already running); we need explicit kickstart.
+# chorus-hooks: kickstart com.chorus.hooks (now a real plist post-#2823;
+# pre-#2823 this WARNed because no plist was loaded).
+# chorus-inject: spawn-on-demand by pulse worker — no kickstart.
 if [ -n "$KICKSTART_SERVICE" ]; then
-  if ! launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
-    echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE failed (service may not be loaded)" >&2
-  else
+  if launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
     echo "chorus-deploy: kickstarted $KICKSTART_SERVICE"
+  else
+    echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE failed (service may not be loaded)" >&2
   fi
 fi
 
