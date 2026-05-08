@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>trace_id propagation contract (#2839)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 980px; margin: 2em auto; padding: 0 1in; color: #222; line-height: 1.5; }
+  h1, h2, h3 { line-height: 1.25; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: .3em; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: .2em; }
+  h3 { margin-top: 1.5em; }
+  table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: .35em .6em; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  code { background: #f6f8fa; padding: .1em .3em; border-radius: 3px; }
+  pre { background: #f6f8fa; padding: .8em; border-radius: 4px; overflow-x: auto; line-height: 1.4; }
+  .meta { color: #666; font-size: .9em; }
+  .rule { background: #fffbe6; border-left: 4px solid #d4a017; padding: .6em 1em; margin: 1em 0; }
+  .yes { color: #1a7f1a; font-weight: 600; }
+  .no  { color: #b00020; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>trace_id propagation contract (#2839)</h1>
+<p class="meta">Silas · 2026-05-08 · substrate design. Implementation lands per-surface in follow-on cards. Sources: spike #2841, Kade's MCP-mint feedback, Wren's rename direction.</p>
+
+<h2>Headline</h2>
+<p>Every transaction-shaped flow (a /pull, /acp, /demo, gate invocation, building-pipeline trigger) is one trace. <strong>One trace = one trace_id minted at the entry point and carried through every downstream emission until the flow terminates.</strong> Today there's no transaction-scope id; the spike found 13 distinct ids per /acp run. This contract collapses that to one.</p>
+
+<h2>Vocabulary</h2>
+<p>Two concepts already coexist; the contract names them distinctly so they stop being confused (per Wren #2841 PM call: rename over qualify, OTel-aligned).</p>
+<table>
+<tr><th>Name</th><th>Scope</th><th>Mints</th><th>Lifetime</th><th>Existing surface</th></tr>
+<tr><td><code>trace_id</code> (new, contract-defined)</td><td>One transaction (a flow from entry to terminal event)</td><td>MCP entry handler, or top-of-CLI for bash entry points</td><td>Lives across N service hops + N emissions; ends with the flow's terminal event</td><td>Today: only <code>chorus_nudge_message</code> mints (line 1835, <code>mintTraceIdV7</code>). All other transactional MCPs unset.</td></tr>
+<tr><td><code>span_id</code> (rename of Pino's current <code>trace_id</code>)</td><td>One log line / one HTTP request</td><td>Pino logger or per-request middleware</td><td>Lives for the duration of the request</td><td>Today (mis-named): <code>trace_id</code> in <code>platform-logs</code> Pino output. To be renamed.</td></tr>
+</table>
+<p>OpenTelemetry alignment: trace_id is the cross-service flow id; span_id is one operation within it. Chorus is taking the same shape without going full OTel. The vocabulary alignment earns its keep when (not if) Chorus emits to OTel collectors.</p>
+
+<h2>Format</h2>
+<p><code>trace_id</code> is a <strong>UUIDv7 string</strong> (already what <code>mintTraceIdV7</code> emits at <code>platform/api/src/server.ts:1835</code>). 36-char canonical form, lowercase, hyphenated. UUIDv7 is time-ordered so traces can be range-scanned by approximate time without a separate timestamp index.</p>
+<pre><code>trace_id format:
+  ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+  example: 019e09a5-2f3a-7c3c-91c1-500190aa2e5e
+</code></pre>
+
+<h2>Mint rule (the load-bearing primitive)</h2>
+<div class="rule">
+<strong>Mint at the MCP entry handler. Pass to SpineEmitter. Every emit() inside the call inherits it automatically.</strong> This mirrors the existing <code>chorus_nudge_message</code> path — proven shape, no new substrate. Per-call wiring is forbidden because it drifts; the SpineEmitter constructor is the seam.
+</div>
+<p>Failure mode if not enforced: the spike found chorus_acp emits 11 internal step events (<code>chorus_acp.*.{started,completed}</code>) all carrying <code>card_id</code> but no <code>trace_id</code> — exactly because the emitter is per-call wired. Fold the mint into the emitter constructor, and 11 events get the field for free.</p>
+
+<h2>Per-surface handoff</h2>
+
+<h3>MCP entry handlers (TS, chorus-api)</h3>
+<p>The primary surface. Six handlers in scope today (<code>chorus_acp</code>, <code>chorus_commit</code>, <code>chorus_pull_card</code>, <code>chorus_unpull_card</code>, <code>chorus_cards_done</code>, <code>chorus_cards_set</code>); <code>chorus_nudge_message</code> already conformant.</p>
+<p>Today's shape (<code>platform/api/src/server.ts:93</code>): <code>SpineEmitter</code> is a function type <code>(event, fields) => void</code>; <code>defaultSpineEmitter</code> at line 499 is already a factory returning a closure. The contract grows that into <code>createSpineEmitter(traceId): SpineEmitter</code> — closure captures trace_id, every emit() inside automatically attaches it. No type-system fight, no API break for handlers that don't pass trace_id (the field is omitted when undefined).</p>
+<p><strong>Recommended (a) — emitter construction inside each handler:</strong></p>
+<pre><code>// at handler entry (executeAcp / executeCommit / executePullCard):
+const trace_id = mintTraceIdV7();
+const emit = createSpineEmitter(trace_id);
+// every emit(event, fields) inside this call carries trace_id
+return await runFlow(args, emit);
+</code></pre>
+<p>This is the right long-term shape: each handler owns its trace lifecycle, no shared mutable state.</p>
+<p><strong>Acceptable migration shortcut (b) — wrap the existing singleton:</strong></p>
+<pre><code>// at handler entry:
+const trace_id = mintTraceIdV7();
+const tracedEmit = (e, f) => emitSpineEvent(e, { ...f, trace_id });
+// pass tracedEmit instead of emitSpineEvent
+</code></pre>
+<p>Smaller diff, gets to first-green faster, but leaves the singleton emitter as a coupling point. Use (b) if step 3 (the six MCPs) needs to ship before step 1's full refactor lands. Otherwise (a). Both produce identical wire-level behavior; the difference is how cleanly future handlers compose.</p>
+<p>Returned to caller in the response shape so the calling skill can store it and run follow-on queries: <code>{ role, card_id, sha, pr_url, trace_id }</code>.</p>
+
+<h3>Bash CLIs (chorus-log, cards, git-queue, chorus-werk, chorus-build, chorus-deploy)</h3>
+<p>Two cases:</p>
+<ul>
+<li><strong>Bash invoked by an MCP handler</strong>: trace_id rides on env (<code>CHORUS_TRACE_ID</code>) set by the MCP's <code>execFile</code> options. chorus-log reads <code>$CHORUS_TRACE_ID</code> and adds it to every emit. No argv pollution.</li>
+<li><strong>Bash invoked from a top-level skill</strong> (Claude bash, cron, launchd): the bash entry point mints (UUIDv7 via <code>uuidgen | tr A-Z a-z</code> for now; or call <code>chorus-log mint-trace</code> if we add a subcommand) and exports <code>CHORUS_TRACE_ID</code> for child processes.</li>
+</ul>
+<p><strong>chorus-log change</strong>: today it accepts <code>event role kv...</code> argv. Add: if <code>$CHORUS_TRACE_ID</code> is set, prepend <code>trace_id=$CHORUS_TRACE_ID</code> to the kv list before forwarding to the shim binary. One-line change in the wrapper.</p>
+
+<h3>Rust hooks (chorus-hook-shim, chorus-hooks daemon)</h3>
+<p>The shim reads stdin (PreToolUse JSON) which already carries session id but not trace_id. Two cases:</p>
+<ul>
+<li><strong>Hook fired during a known transaction</strong>: trace_id is in the env (set by the calling skill's bash). Shim reads <code>$CHORUS_TRACE_ID</code> and includes it in every event it emits.</li>
+<li><strong>Hook fired outside a transaction</strong> (file save, ad-hoc tool call): mint a per-hook trace_id. These hooks aren't part of a flow; their trace stands alone. Tag them <code>flow_kind=hook-standalone</code> so query surfaces can distinguish.</li>
+</ul>
+
+<h3>TS handlers outside MCP (chorus-api routes, pulse worker, observer)</h3>
+<p>HTTP requests carry <code>X-Chorus-Trace-Id</code> header. Middleware reads or mints, attaches to <code>req.locals.trace_id</code>, and any SpineEmitter constructed in the handler reads from there. Pulse worker mints per-cycle (one trace per pulse run); observer fan-out inherits the trace_id from the triggering event when known, mints when not.</p>
+
+<h3>External boundaries (gh, git, npm, launchctl)</h3>
+<p>External tools have no trace awareness. The MCP brackets the call:</p>
+<pre><code>emitter.emit('chorus_acp.gh-merge.started', { pr_number });
+const result = await execFile('gh', ['pr', 'merge', ...]);
+emitter.emit('chorus_acp.gh-merge.completed', { pr_number, exit_code: result.code });
+</code></pre>
+<p>The interior of the call is opaque to spine. Documented gap: gh/git/npm log lines won't carry trace_id; the bracket events are the correlation surface.</p>
+
+<h2>spine-events.json schema change</h2>
+<p>Add <code>trace_id</code> to the global event envelope (not per-event). Today the schema declares per-event fields; trace_id is universal.</p>
+<pre><code>// designing/schemas/spine-events.json — top-level addition
+"envelope": {
+  "trace_id": {
+    "type": "string",
+    "format": "uuid",
+    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    "required": true,
+    "description": "Transaction-scope correlation id, UUIDv7. Minted at flow entry, propagated through every emission until terminal event. Distinct from span_id (per-log-line)."
+  },
+  "span_id": {
+    "type": "string",
+    "format": "uuid",
+    "required": false,
+    "description": "Per-log-line / per-request id. Pino's current 'trace_id' field renamed to span_id when this contract lands."
+  }
+}
+</code></pre>
+<p>Validator (existing <code>scripts/validate-spine-event.sh</code> if present, or new) refuses any emission whose envelope lacks trace_id once the migration completes. During migration, validator emits a warning, not an error, until every surface conforms.</p>
+
+<h2>Termination</h2>
+<p>A flow ends with one of three terminal markers:</p>
+<ul>
+<li><code>flow.completed</code> — happy path, MCP returned success</li>
+<li><code>flow.failed</code> — typed refusal returned to caller</li>
+<li><code>flow.aborted</code> — handler crashed, no clean exit</li>
+</ul>
+<p>The terminal event carries <code>trace_id</code> + <code>flow_kind</code> (<code>acp</code>, <code>pull</code>, <code>demo</code>, <code>gate</code>, <code>build</code>, etc) + <code>duration_ms</code>. Without a terminal event, query surfaces can't tell whether a trace is in-flight or orphaned. <strong>Adding terminal events to the existing 6 transactional MCPs is a sub-deliverable of this contract.</strong></p>
+
+<h2>Migration sequence</h2>
+<p>Order matters because each surface's value depends on the surfaces below it.</p>
+<table>
+<tr><th>#</th><th>Surface</th><th>Card</th><th>Why this order</th></tr>
+<tr><td>1</td><td>SpineEmitter (TS) — accept trace_id in constructor, attach to every emit</td><td>follow-on (P1)</td><td>Foundation. Without this, MCPs can't propagate even if they mint. Shipping this first means downstream cards just turn on existing capacity.</td></tr>
+<tr><td>2</td><td>Pino rename trace_id → span_id</td><td>follow-on (P2)</td><td>Avoids field collision. Done before MCPs start emitting trace_id so we don't have two trace_id semantics in flight at once. Grep-and-replace inside chorus-api.</td></tr>
+<tr><td>3</td><td>chorus_acp / chorus_commit / chorus_pull_card / chorus_cards_done — mint at entry, attach to emitter</td><td>follow-on (P1)</td><td>Six MCPs in one card; mechanical after step 1 lands. Includes terminal events.</td></tr>
+<tr><td>4</td><td>chorus-log bash wrapper — read CHORUS_TRACE_ID, prepend to kv args</td><td>follow-on (P1)</td><td>Lights up trace_id on every bash spine emit. Earns its keep against ~70% of audit-flagged emit sites.</td></tr>
+<tr><td>5</td><td>cards / git-queue / chorus-werk — set CHORUS_TRACE_ID for child processes</td><td>follow-on (P2)</td><td>Threads the env through bash subprocess chains. Step 4 alone gets bash emits trace_id'd; step 5 makes child invocations inherit.</td></tr>
+<tr><td>6</td><td>chorus-hook-shim (Rust) — read CHORUS_TRACE_ID + flow_kind tagging</td><td>follow-on (P2)</td><td>Closes the Rust gap. Standalone hooks tagged distinctly.</td></tr>
+<tr><td>7</td><td>spine-events.json envelope schema + validator</td><td>follow-on (P1, after 1)</td><td>Enforce-on-write. Without 1-6 first, this just blocks emits. Lands as soft-warn, then hardens.</td></tr>
+<tr><td>8</td><td>Bridge / Bridge bridge / Pulse / Observer / Building-pipeline</td><td>follow-ons (P3)</td><td>Long tail. Lower volume, less critical. After steps 1-7 the substrate is in place; these surfaces just call <code>new SpineEmitter({ trace_id })</code>.</td></tr>
+</table>
+
+<h2>Cross-cycle stitching (/acp → building-pipeline)</h2>
+<p>One trace_id per MCP call gives "all events for one /acp" but not "all events for one building cycle" — the building-pipeline triggered by the merged commit runs as its own flow, minted by launchd's wakeup, not by /acp.</p>
+<p><strong>Resolution: commit-trailer carries trace_id across the cycle.</strong> /acp's commit step writes <code>Chorus-Trace-Id: &lt;trace_id&gt;</code> into the commit message trailer (alongside existing trailers like Co-Authored-By). Building-pipeline reads <code>git log -1 --format='%(trailers:key=Chorus-Trace-Id,valueonly)'</code> on the commit it's about to build. If present, it reuses the trace_id; if not (commits made outside /acp), it mints fresh.</p>
+<p>This makes <strong>one /acp + the building-pipeline it triggers + the deploy events the pipeline emits</strong> all share one trace_id. Loki query <code>{job=~".+"} |~ "&lt;trace_id&gt;"</code> returns the full cycle.</p>
+<p>Channels for cycle stitching, in priority order:</p>
+<ol>
+<li><strong>Commit trailer</strong> — primary, persists with the commit, durable across re-fetches and replays.</li>
+<li><strong>launchd plist environment</strong> — when launchd is the trigger (e.g., scheduled crawler runs), the plist <code>EnvironmentVariables</code> dict can carry a fresh trace per scheduled invocation; the script reads <code>$CHORUS_TRACE_ID</code> as documented above.</li>
+<li><strong>Webhook header X-Chorus-Trace-Id</strong> — for any future GitHub-Actions / external-CI handoff.</li>
+</ol>
+
+<h2>What this contract does NOT do</h2>
+<ul>
+<li><strong>Does not retrofit gh/git/npm/launchctl logs.</strong> External tool interiors stay opaque; MCP brackets are the correlation surface.</li>
+<li><strong>Does not backfill historical events.</strong> trace_id arrives forward-only. Audit queries against pre-contract events will continue to use card_id + temporal joins.</li>
+<li><strong>Does not standardize trace_id across machines.</strong> Library and Bedroom mint independently; cross-machine flows (library-health-probe SSH'ing to Library) carry trace_id over SSH env. UUIDv7 collision probability is zero in practice.</li>
+<li><strong>Does not define card_id propagation.</strong> That's #2838, sequenced after this. card_id rides the same envelope but has different mint/derivation rules.</li>
+</ul>
+
+<h2>Test fixtures</h2>
+<p>The spike's per-hop ledger (designing/docs/trace-id-card-id-threading-spike.html) doubles as the acceptance test for this contract. Re-run /acp on a card after migration steps 1+3+4 land; assert one trace_id across all 40+ events. The spike's "13 trace_ids per flow" finding becomes "1 trace_id per flow" — that's the headline metric.</p>
+
+<h2>Reference</h2>
+<ul>
+<li>#2841 spike — per-hop ledger, contract questions, lived evidence (13 trace_ids per /acp).</li>
+<li><code>platform/api/src/server.ts:1835</code> — <code>mintTraceIdV7</code> existing implementation. Reuse, don't redefine.</li>
+<li><code>chorus_nudge_message</code> handler (same file, ~line 1830) — the existing-conformant pattern this contract generalizes.</li>
+<li>#2832 audit doc — the eight invariants this contract delivers on (trace_id is invariant 3 of 8).</li>
+</ul>
+
+</body>
+</html>
