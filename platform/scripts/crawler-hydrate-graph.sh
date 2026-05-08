@@ -32,7 +32,8 @@ set -uo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 TTL="${TTL:-$CHORUS_ROOT/roles/silas/ontology/chorus.ttl}"
-FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
+FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
+FUSEKI_UPDATE="${FUSEKI_UPDATE:-$FUSEKI_BASE/update}"
 CHORUS_NS="https://jeffbridwell.com/chorus#"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
@@ -139,41 +140,46 @@ hydrate_chorus_file() {
   local start_ts end_ts duration_ms
   start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
 
-  # Walk filesystem with exclusions; cap large batches at 200 files per UPDATE
-  # to keep payload sizes reasonable for Fuseki.
-  local count=0 batch=0 batch_triples="" failures=0
-  local DELETE_PREFIX="DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { ?s a <${CHORUS_NS}File> ; <${CHORUS_NS}filePath> ?p } } ;"
-  # Issue a single bulk DELETE before any inserts (idempotent replace-on-write):
-  # next run wipes the chorus:File class instances, then re-inserts current state.
+  # Per-URI replace-on-write: for each file the crawler still sees on
+  # disk, DELETE the crawler-owned predicates for its URI then INSERT the
+  # fresh values. Keeps enrichment-owned predicates (fileInDomain,
+  # fileHasOwner) and the §D chorus:stale flag intact across runs. Does
+  # NOT wipe class-wide — orphans (instances whose path no longer exists)
+  # remain in the graph for §D's deletes-reconciliation pass to flag.
+  #
+  # Batches use a multi-statement UPDATE: DELETE-WHERE per URI then one
+  # INSERT DATA for the batch's triples. 200 URIs per batch.
+  local count=0 batch=0 batch_deletes="" batch_triples="" failures=0
   local rc
-  rc=$(post_update "$DELETE_PREFIX")
-  if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
-    "$CHORUS_LOG" crawler.graph.failed "$ROLE" class="chorus:File" reason="delete-prefix-fail-http-$rc" 2>/dev/null || true
-    return 1
-  fi
 
-  # Use process substitution + null-delimited paths
+  flush_batch() {
+    local body="${batch_deletes}INSERT DATA { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $batch_triples } }"
+    rc=$(post_update "$body")
+    if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
+      failures=$((failures + 1))
+    fi
+    batch_deletes=""
+    batch_triples=""
+    batch=0
+  }
+
   while IFS= read -r -d '' f; do
+    local uri="<urn:chorus:file:$(echo -n "$f" | shasum -a 1 | awk '{print $1}')>"
+    batch_deletes="${batch_deletes}DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}filePath> ?_p } } ;
+DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileSha> ?_s } } ;
+DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $uri <${CHORUS_NS}fileLastModified> ?_m } } ;
+"
     batch_triples="$batch_triples$(file_triples "$f")
 "
     count=$((count + 1))
     batch=$((batch + 1))
     if [ "$batch" -ge 200 ]; then
-      rc=$(post_update "INSERT DATA { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $batch_triples } }")
-      if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
-        failures=$((failures + 1))
-      fi
-      batch_triples=""
-      batch=0
+      flush_batch
     fi
   done < <(eval "find \"$CHORUS_ROOT\" $FIND_PRUNE -type f -print0" 2>/dev/null)
 
-  # Final batch
   if [ "$batch" -gt 0 ]; then
-    rc=$(post_update "INSERT DATA { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { $batch_triples } }")
-    if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
-      failures=$((failures + 1))
-    fi
+    flush_batch
   fi
 
   end_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
@@ -188,6 +194,76 @@ hydrate_chorus_file() {
     echo "FAILED chorus:File: $failures batch(es) failed (count=$count, duration=${duration_ms}ms)" >&2
     return 1
   fi
+}
+
+# --- §D: deletes reconciliation ---
+#
+# After hydration, query the graph for every chorus:File instance, check
+# whether its filePath still exists on disk. For paths that don't:
+#   1. SET chorus:stale true (visibility-not-removal — consumer chooses)
+#   2. emit crawler.graph.orphan.detected {class, identifier, last_seen_at,
+#      deleted_path}
+# For paths that DO exist: clear chorus:stale (file came back).
+
+reconcile_deletes() {
+  local query='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?f ?p ?stale WHERE {
+  GRAPH <'"${HYDRATION_GRAPH:-urn:chorus:instances}"'> {
+    ?f a chorus:File ; chorus:filePath ?p .
+    OPTIONAL { ?f chorus:stale ?stale }
+  }
+}'
+  local resp
+  resp=$(curl -s -G -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=$query" \
+    "${FUSEKI_BASE:-http://localhost:3030/pods}/query" 2>/dev/null)
+
+  local orphan_count=0 cleared_count=0 stale_updates=""
+  while IFS=$'\t' read -r uri filepath stale_now; do
+    [ -z "$uri" ] && continue
+    if [ ! -e "$filepath" ]; then
+      # Orphan — flag it stale (idempotent: only emit event if not already stale)
+      if [ "$stale_now" != "true" ]; then
+        local now
+        now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        "$CHORUS_LOG" crawler.graph.orphan.detected "$ROLE" \
+          class="chorus:File" identifier="$filepath" last_seen_at="$now" deleted_path="$filepath" 2>/dev/null || true
+        orphan_count=$((orphan_count + 1))
+      fi
+      stale_updates="${stale_updates}DELETE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { <$uri> chorus:stale ?old } } INSERT { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { <$uri> chorus:stale true } } WHERE { OPTIONAL { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { <$uri> chorus:stale ?old } } } ;
+"
+    elif [ "$stale_now" = "true" ]; then
+      # Was stale, now back — clear the flag
+      stale_updates="${stale_updates}DELETE WHERE { GRAPH <${HYDRATION_GRAPH:-urn:chorus:instances}> { <$uri> chorus:stale ?_ } } ;
+"
+      cleared_count=$((cleared_count + 1))
+    fi
+  done < <(echo "$resp" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for b in d['results']['bindings']:
+        uri = b.get('f',{}).get('value','')
+        path = b.get('p',{}).get('value','')
+        stale = b.get('stale',{}).get('value','')
+        print(f'{uri}\t{path}\t{stale}')
+except Exception:
+    pass
+")
+
+  if [ -n "$stale_updates" ]; then
+    local update_body="PREFIX chorus: <https://jeffbridwell.com/chorus#>
+$stale_updates"
+    local rc
+    rc=$(post_update "$update_body")
+    if [ "$rc" != "200" ] && [ "$rc" != "204" ]; then
+      "$CHORUS_LOG" crawler.graph.failed "$ROLE" class="chorus:File" reason="stale-update-fail-http-$rc" 2>/dev/null || true
+      return 1
+    fi
+  fi
+
+  echo "Deletes reconciled: $orphan_count new orphan(s), $cleared_count cleared"
+  return 0
 }
 
 # --- main ---
@@ -212,5 +288,8 @@ while IFS=$'\t' read -r cls glob preds; do
       ;;
   esac
 done < <(resolve_registry)
+
+# §D: post-hydration deletes reconciliation
+reconcile_deletes || errors=$((errors + 1))
 
 exit $(( errors > 0 ? 1 : 0 ))
