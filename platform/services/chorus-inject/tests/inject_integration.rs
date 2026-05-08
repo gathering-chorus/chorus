@@ -44,7 +44,10 @@ fn nudge_script() -> String { format!("{}/platform/scripts/nudge", chorus_root()
 
 #[test]
 fn inject_delivers_to_silas() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["silas", "[cargo-test] AC4 silas inject"])
         .output()
@@ -59,7 +62,10 @@ fn inject_delivers_to_silas() {
 
 #[test]
 fn inject_delivers_to_wren() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["wren", "[cargo-test] AC4 wren inject"])
         .output()
@@ -74,7 +80,10 @@ fn inject_delivers_to_wren() {
 
 #[test]
 fn inject_delivers_to_kade() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .env("CHORUS_INJECT_DRY_RUN", "1")
         .args(["kade", "[cargo-test] AC4 kade inject"])
         .output()
@@ -115,7 +124,10 @@ fn nudge_e2e_delivers() {
 
 #[test]
 fn rejects_unknown_role() {
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .args(["nonexistent", "test"])
         .output()
         .expect("failed to run chorus-inject");
@@ -134,7 +146,10 @@ fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
     // Exercises the PrintOut arm in main.rs via the real binary. Uses a
     // pattern that can't appear in a Terminal window name, so stdout is "0::"
     // regardless of host state.
+    // #2804 — chorus-inject rejects shell-direct calls without the
+    // pulse-internal env. Tests use CHORUS_INJECT_BYPASS_GATE to bypass.
     let output = Command::new(INJECT_BIN)
+        .env("CHORUS_INJECT_BYPASS_GATE", "1")
         .args(["--count-windows", "zzzz_no_such_window_zzzz"])
         .output()
         .expect("failed to run chorus-inject");

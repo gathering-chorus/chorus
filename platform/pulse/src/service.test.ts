@@ -12,6 +12,16 @@ import { createApp } from './service';
 
 const CHAT_START = '/api/chat/start';
 
+// #2804 — pulse rejects POST /api/nudge without X-Chorus-MCP-Caller header.
+// Tests bypass via PULSE_ALLOW_DIRECT_POST=1 set in beforeAll. One explicit
+// test below verifies the gate (rejection on missing header).
+beforeAll(() => {
+  process.env.PULSE_ALLOW_DIRECT_POST = '1';
+});
+afterAll(() => {
+  delete process.env.PULSE_ALLOW_DIRECT_POST;
+});
+
 function fresh() {
   const store = new MessageStore(':memory:');
   const app = createApp(store);
@@ -32,6 +42,40 @@ describe('pulse service — health and metrics', () => {
     const res = await request(app).get('/metrics');
     expect(res.status).toBe(200);
     expect(res.text).toContain('messaging_');
+  });
+});
+
+describe('#2804 pulse caller-check', () => {
+  it('POST /api/nudge without X-Chorus-MCP-Caller header is rejected with 403 + typed error', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    try {
+      const res = await request(app)
+        .post('/api/nudge')
+        .send({ from: 'k', to: 'w', content: 'hi' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('not-canonical-caller');
+      expect(res.body.message).toMatch(/chorus_nudge_message MCP/);
+    } finally {
+      process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    }
+  });
+
+  it('POST /api/nudge with X-Chorus-MCP-Caller header is accepted', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    try {
+      const res = await request(app)
+        .post('/api/nudge')
+        .set('X-Chorus-MCP-Caller', '1')
+        .send({ from: 'k', to: 'w', content: 'hi' });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    } finally {
+      process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    }
   });
 });
 

@@ -45,7 +45,7 @@ Signed Rust binaries (`chorus-inject`, `chorus-hook-shim`, `chorus-hooks`) deplo
 
 - `build-signed.sh chorus-hooks` (or `chorus-inject`) builds, signs, then calls `chorus-bin-install` to atomically place the binary in `~/.chorus/bin/<name>` and emit a `binary.deployed` spine event with `{binary, cdhash, commit, role}`.
 - `chorus-env-setup.sh` prepends `$HOME/.chorus/bin` to `$PATH` so resolution prefers the installed binary over any `target/release/` build.
-- Operational scripts (`nudge`, `shim-wrapper.sh`, etc.) resolve via `command -v chorus-hook-shim`; `target/release/` remains a fallback for pre-deploy systems.
+- Operational scripts (`shim-wrapper.sh`, etc.) resolve via `command -v chorus-hook-shim`; `target/release/` remains a fallback for pre-deploy systems. The bash `nudge` script was retired in #2804 (kept as a fail-loud stub for operational callers); agents send nudges via the `chorus_nudge_message` MCP tool.
 - `test-hardcoded-bin-paths.sh` is a regression guard — fails if a non-test file adds a new hardcoded `target/release/chorus-*` path.
 
 To answer "which commit is the live binary?" — query the spine for the latest `binary.deployed` event for the binary in question. The cdhash and commit fields tell you exactly what's running.

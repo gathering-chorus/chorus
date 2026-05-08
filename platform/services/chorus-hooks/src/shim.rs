@@ -20,8 +20,7 @@
 //!     FAIL OPEN as before. Observation / notification surfaces, not
 //!     enforcement. Missing daemon = lost telemetry, not lost security.
 
-#[path = "nudge.rs"]
-mod nudge;
+// #2804 — nudge subcommand retired; mod nudge dropped + nudge.rs deleted.
 #[path = "role_state.rs"]
 mod role_state;
 #[path = "chorus_log.rs"]
@@ -279,7 +278,16 @@ fn main() -> ExitCode {
         // --- Core signal path ---
         "chorus-log" | "log" => return chorus_log::run(&args),
         "role-state" => return role_state::run(&args),
-        "nudge" => return nudge::run(&args),
+        // #2804 — nudge subcommand retired. MCP chorus_nudge_message is the
+        // canonical invocation path; bash wrapper deleted; shim no longer
+        // dispatches nudge. Anyone hitting this path gets a clear redirect.
+        "nudge" => {
+            eprintln!(
+                "chorus-hook-shim: nudge subcommand retired (#2804). \
+                 Use the chorus_nudge_message MCP tool from a Claude session."
+            );
+            return std::process::ExitCode::from(2);
+        }
         "wall-clock" => return wall_clock_cmd(),
         "heartbeat" => return heartbeat_cmd(),
 

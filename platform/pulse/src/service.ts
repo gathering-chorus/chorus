@@ -81,6 +81,16 @@ function registerHealthMetricsRoutes(app: Express, store: MessageStore, metrics:
 
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', (req, res) => {
+    // #2804 — only the MCP server is the canonical caller. Reject others.
+    // Tests and migration callers can opt out via PULSE_ALLOW_DIRECT_POST=1.
+    const mcpHeader = req.headers['x-chorus-mcp-caller'];
+    const allowDirect = process.env.PULSE_ALLOW_DIRECT_POST === '1';
+    if (!mcpHeader && !allowDirect) {
+      return res.status(403).json({
+        error: 'not-canonical-caller',
+        message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus_nudge_message MCP tool from a Claude session.',
+      });
+    }
     const { from, to, content, traceId: bodyTraceId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
     // #2765 AC3: prefer X-Chorus-Trace-Id header (canonical UUIDv7); fall back
@@ -175,7 +185,12 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   const chorusLog = process.env.CHORUS_LOG || path.join(os.homedir(), '.chorus', 'chorus.log');
 
   const runInject: RunInject = (to, content) => new Promise(resolve => {
-    const proc = spawn(injectBin, [to, content], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const proc = spawn(injectBin, [to, content], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      // #2804 — _NUDGE_PULSE_INTERNAL marks this as the canonical caller;
+      // chorus-inject rejects shell-direct calls that lack this env.
+      env: { ...process.env, _NUDGE_PULSE_INTERNAL: '1' },
+    });
     let stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
     proc.on('close', rc => resolve({ rc: rc ?? 1, stderr }));
@@ -198,7 +213,12 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   // smoke probe; rc=0 means binary alive + TCC granted. Pattern is generic
   // ("claude") since pulse boots once for the whole team, not per-role.
   const selfTest: SelfTest = () => new Promise(resolve => {
-    const proc = spawn(injectBin, ['--count-windows', 'claude'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(injectBin, ['--count-windows', 'claude'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // #2804 — same canonical-caller env as runInject above; smoke probe
+      // counts as pulse-internal.
+      env: { ...process.env, _NUDGE_PULSE_INTERNAL: '1' },
+    });
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', d => { stdout += d.toString(); });
