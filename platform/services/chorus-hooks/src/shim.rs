@@ -1,8 +1,7 @@
-//! chorus-hook-shim — compiled CLI for Claude Code hooks + nudge.
+//! chorus-hook-shim — compiled CLI for Claude Code hooks.
 //!
 //! Modes:
 //!   chorus-hook-shim <endpoint>         — hook proxy: stdin JSON → unix socket → stdout
-//!   chorus-hook-shim nudge <role> <msg> — direct nudge delivery via osascript
 //!
 //! Daemon-unreachable behavior (#2790):
 //!   - `pre-tool-use`: FAIL CLOSED. Daemon hosts the security guards
@@ -20,7 +19,6 @@
 //!     FAIL OPEN as before. Observation / notification surfaces, not
 //!     enforcement. Missing daemon = lost telemetry, not lost security.
 
-// #2804 — nudge subcommand retired; mod nudge dropped + nudge.rs deleted.
 #[path = "role_state.rs"]
 mod role_state;
 #[path = "chorus_log.rs"]
@@ -268,7 +266,7 @@ fn main() -> ExitCode {
         // Subcommand dispatch (e.g., `chorus-hook-shim log event role`)
         (subcmd.clone(), 2usize)
     } else {
-        eprintln!("Usage: chorus-hook-shim <endpoint|nudge>");
+        eprintln!("Usage: chorus-hook-shim <endpoint>");
         return ExitCode::from(1);
     };
 
@@ -278,16 +276,6 @@ fn main() -> ExitCode {
         // --- Core signal path ---
         "chorus-log" | "log" => return chorus_log::run(&args),
         "role-state" => return role_state::run(&args),
-        // #2804 — nudge subcommand retired. MCP chorus_nudge_message is the
-        // canonical invocation path; bash wrapper deleted; shim no longer
-        // dispatches nudge. Anyone hitting this path gets a clear redirect.
-        "nudge" => {
-            eprintln!(
-                "chorus-hook-shim: nudge subcommand retired (#2804). \
-                 Use the chorus_nudge_message MCP tool from a Claude session."
-            );
-            return std::process::ExitCode::from(2);
-        }
         "wall-clock" => return wall_clock_cmd(),
         "heartbeat" => return heartbeat_cmd(),
 
