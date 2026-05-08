@@ -796,7 +796,7 @@ chorus:infrastructure-domain a chorus:SubDomain ;
 chorus:version-control-domain a chorus:SubDomain ;
     rdfs:label "Version Control" ;
     rdfs:comment "How code is versioned across its full lifecycle: branch creation, commit, push, pull, rebase, merge, tag. Adapter is git + git-queue.sh; gates run via pre-commit and pre-push hooks; agents commit through chorus_commit. 'Commits' is one verb in this surface, not the whole." ;
-    chorus:ownedBy chorus:silas ;
+    chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building ;
     chorus:belongsTo chorus:observability-domain .
 

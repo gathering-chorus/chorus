@@ -12,7 +12,11 @@ Same rationale as `chorus-hooks/BUILD.md` — `cargo build --release` produces a
 
 ## Verification
 
+After `build-signed.sh` completes, the deployed binary lives at `~/.chorus/bin/chorus-inject` (per #2734 — split build artifact from deploy artifact so cdhash + TCC grants survive rebuilds). Verify the installed binary's signing identity:
+
 ```
-codesign -dvvv target/release/chorus-inject | grep Identifier
+codesign -dvvv ~/.chorus/bin/chorus-inject | grep Identifier
 # → Identifier=com.chorus.inject
 ```
+
+`target/release/chorus-inject` is the build artifact and is intentionally NOT referenced in operational paths — `test-hardcoded-bin-paths.sh` is a regression guard that fails if any non-test file adds a `target/release/chorus-*` reference.

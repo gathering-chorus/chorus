@@ -96,8 +96,19 @@ else
 fi
 
 # --- Test 7: Hook server running ---
+# #2801 — chorus-hooks is not a LaunchAgent. Detect via PID file + process
+# liveness, fall back to pgrep on the binary path.
 echo "Test 7: Hook server running"
-pid=$(launchctl list com.chorus.hooks 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
+pid=""
+if [ -f /tmp/chorus-hooks.pid ]; then
+  pidfile=$(cat /tmp/chorus-hooks.pid 2>/dev/null)
+  if [ -n "$pidfile" ] && kill -0 "$pidfile" 2>/dev/null; then
+    pid="$pidfile"
+  fi
+fi
+if [ -z "$pid" ]; then
+  pid=$(pgrep -f 'chorus-hooks/target/release/chorus-hooks$|/.chorus/bin/chorus-hooks$' 2>/dev/null | head -1)
+fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server PID $pid"
   ((PASS++))
