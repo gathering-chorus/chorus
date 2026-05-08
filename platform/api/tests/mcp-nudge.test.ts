@@ -73,17 +73,18 @@ describe('#2472 buildMcpServer', () => {
     ).rejects.toThrow(/Invalid arguments/);
   });
 
-  // #2474 — happy-path delegation coverage
-  test('spawns shim with DEPLOY_ROLE=from + [nudge, to, msg] and returns success text', async () => {
-    const calls: Array<{ file: string; args: string[]; env?: Record<string, string | undefined> }> = [];
-    const mockExec = async (file: string, args: string[], opts: { env?: Record<string, string | undefined> }) => {
-      calls.push({ file, args, env: opts.env });
-      return { stdout: 'nudge queued for wren\n', stderr: '' };
+  // #2804 — MCP is the canonical invocation path. executeNudge no longer
+  // spawns chorus-hook-shim; it POSTs to pulse. Old test (shim-spawn) retired
+  // with the bash + shim path; new tests verify POST shape + headers.
+  test('#2804 happy-path: POST to pulse with X-Chorus-MCP-Caller + X-Chorus-Trace-Id headers', async () => {
+    const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = [];
+    const mockFetch = async (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => ({ ok: true, id: 1 }), text: async () => '' };
     };
 
     const server = buildMcpServer(() => 'silas', {
-      execFileAsync: mockExec,
-      shimPath: '/test/shim/path',
+      fetchImpl: mockFetch as never,
     });
     // @ts-expect-error - private handler access for unit test
     const handler = (server as any)._requestHandlers.get('tools/call');
@@ -92,30 +93,35 @@ describe('#2472 buildMcpServer', () => {
         method: 'tools/call',
         params: {
           name: 'chorus_nudge_message',
-          arguments: { to: 'wren', message: 'hi from #2474' },
+          arguments: { to: 'wren', message: 'hi from #2804' },
         },
       },
       {},
     );
     expect(calls).toHaveLength(1);
-    expect(calls[0].file).toBe('/test/shim/path');
-    expect(calls[0].args).toEqual(['nudge', 'wren', 'hi from #2474']);
-    expect(calls[0].env?.DEPLOY_ROLE).toBe('silas');
-    expect(result.content[0].text).toMatch(/silas.*wren/);
+    expect(calls[0].url).toMatch(/\/api\/nudge$/);
+    expect(calls[0].init?.method).toBe('POST');
+    expect(calls[0].init?.headers?.['X-Chorus-MCP-Caller']).toBe('1');
+    expect(calls[0].init?.headers?.['X-Chorus-Trace-Id']).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    const body = JSON.parse(calls[0].init?.body || '{}');
+    expect(body.from).toBe('silas');
+    expect(body.to).toBe('wren');
+    expect(body.content).toBe('hi from #2804');
+    expect(body.traceId).toMatch(/^[0-9a-f]{8}-/);
+    expect(result.content[0].text).toMatch(/silas.*wren.*trace=/);
   });
 
-  test('catch-branch fires mcp.nudge.failed when shim exits non-zero', async () => {
+  test('#2804 catch-branch: pulse POST non-2xx → mcp.nudge.failed + thrown error', async () => {
     const stderrLines: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((line: string) => { stderrLines.push(line); return true; }) as typeof process.stderr.write;
     try {
-      const mockExec = async (): Promise<{ stdout: string; stderr: string }> => {
-        throw new Error('shim binary missing');
+      const mockFetch = async () => {
+        return { ok: false, status: 503, json: async () => ({}), text: async () => 'pulse offline' };
       };
 
       const server = buildMcpServer(() => 'silas', {
-        execFileAsync: mockExec,
-        shimPath: '/does/not/exist',
+        fetchImpl: mockFetch as never,
       });
       // @ts-expect-error - private handler access for unit test
       const handler = (server as any)._requestHandlers.get('tools/call');
