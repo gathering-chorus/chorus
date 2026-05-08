@@ -256,50 +256,64 @@ pub fn run(args: &[String]) -> ExitCode {
 
     track_exchange(&sender, target);
 
-    // Persist for history — NOT for delivery. Fire-and-forget, failure doesn't block inject.
+    // #2727 child A (#2763) — sender-side spine emit refactor.
+    //
+    // Canonical sender-side event is now `nudge.requested` (was `nudge.emitted`).
+    // Fires BEFORE the HTTP POST to pulse — belt-and-suspenders for pulse-down
+    // resilience (Silas review AC9): if pulse is down, the spine still has a
+    // record of the sender's intent, even though messages.db never receives
+    // the row. Pulse worker emits per-attempt `nudge.surfaced` /
+    // `nudge.surface.failed` (#2727 AC2); together with `nudge.requested` they
+    // form the full lifecycle audit.
+    //
+    // MIGRATION WINDOW (Silas ops review 2026-05-07): we dual-emit
+    // `nudge.requested` AND `nudge.emitted` during the read-side migration.
+    // Readers (Clearing tailer.ts, MCP server.ts, pulse service.ts, Loki/
+    // Grafana, any operator log greps) still reference the old name and
+    // would see ZERO events without the dual-emit — the worst observability
+    // mode (looks fine, isn't). After read-side cards land for each
+    // consumer, the nudge.emitted line below drops in a final cleanup card.
+    // Cost: one extra spine line per nudge during the window.
+    //
+    // #2475 — origin tag (cli/mcp/http) preserved on both events so audit
+    // can still distinguish how the nudge was sent.
+    // #2443 — no truncation: full content in payload for downstream readers.
+    let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
+    let payload = format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message);
+    chorus_log("nudge.requested", &sender, &payload);
+    // Migration-window dual-emit — drop in cleanup card after readers migrate.
+    chorus_log("nudge.emitted", &sender, &payload);
+
+    // Persist for history — NOT for delivery. Fire-and-forget, failure doesn't
+    // block inject. Per #2727 + #2763: the chorus_log calls above already
+    // fired regardless of pulse health — the spine has the audit trail even
+    // when pulse is down (Silas review AC9 belt-and-suspenders).
+    //
+    // CHORUS_PULSE_URL env override added 2026-05-07 for hermetic testing
+    // (#2763 AC3 explicit-test gap from Kade gemba). Production default stays
+    // localhost:3475.
     let persist_body = serde_json::json!({
         "from": sender,
         "to": target,
         "content": message,
         "traceId": tid,
     });
+    let pulse_url = std::env::var("CHORUS_PULSE_URL").unwrap_or_else(|_| "http://localhost:3475/api/nudge".to_string());
     let _ = Command::new("curl")
         .args([
             "-s", "-X", "POST",
-            "http://localhost:3475/api/nudge",
+            &pulse_url,
             "-H", "Content-Type: application/json",
             "-d", &persist_body.to_string(),
             "--connect-timeout", "2",
         ])
         .output();
 
-    // #2435 — canonical emit event. role.nudge.sent retired in wedge 7b after
-    // bridge-subscriber + Clearing (tailer.ts, server.ts) migrated to nudge.emitted.
-    // Consumers of the poll-based read path fold nudge.emitted vs nudge.surfaced
-    // to compute the unread set. Surface-ack is named nudge.surfaced (not
-    // acknowledged) to avoid collision with role_state drain's count-payload
-    // nudge.acknowledged (Kade's 0.3 audit).
-    // #2443 — no truncation. Full message goes in `content=` so the tick-poller
-    // has the un-truncated payload to deliver. Prior `chars().take(120)` capped
-    // every cross-role nudge at 120 chars at the delivery boundary.
-    // #2475 — origin tag distinguishes how this nudge was sent. Default "cli"
-    // when invoked directly via the bash CLI; MCP server (TS) sets
-    // CHORUS_NUDGE_ORIGIN=mcp via the execFile env so audit can tell typed
-    // surface from legacy paths. Future Rust MCP client (#2477) will set
-    // origin=mcp the same way.
-    let origin = std::env::var("CHORUS_NUDGE_ORIGIN").unwrap_or_else(|_| "cli".to_string());
-    chorus_log(
-        "nudge.emitted",
-        &sender,
-        &format!("from={},to={},chars={},trace={},origin={},content={}", sender, target, message.len(), tid, origin, message),
-    );
-
-    // #2435 atomic cutover — sender emits canonical event only. Delivery is
-    // owned by the per-role spine-tick-poller LaunchAgent (2s cadence, reads
-    // chorus.log for nudge.emitted targeting the role, delivers via
-    // chorus-inject with focus-gate, emits nudge.surfaced). No sender-side
-    // inject, no queue file, no dedup event here — the fold lives entirely
-    // on the receiver side now.
+    // Delivery owned by pulse worker (#2727) which emits nudge.surfaced /
+    // nudge.surface.failed per attempt, plus the per-role spine-tick-poller
+    // LaunchAgent (2s cadence, reads chorus.log for nudge.requested or
+    // nudge.emitted targeting the role) during the migration window.
+    // No sender-side inject, no queue file, no dedup event here.
     //
     // Retired with this commit: inject_by_tab_name call, queue_message fallback,
     // role.nudge.inject_failed event, role.nudge.delivered event, /tmp/voice-inbox

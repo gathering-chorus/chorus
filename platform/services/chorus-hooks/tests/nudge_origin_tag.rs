@@ -1,4 +1,4 @@
-//! #2475 thread 3 — nudge.emitted carries origin=cli|mcp|http so audit can
+//! #2475 thread 3 — nudge.requested carries origin=cli|mcp|http so audit can
 //! distinguish how the nudge was sent. Default cli when invoked from the bash
 //! CLI; callers (MCP server, future Rust MCP client) override via the
 //! CHORUS_NUDGE_ORIGIN env var.
@@ -38,8 +38,15 @@ fn nudge_default_origin_is_cli() {
 
     let content = read_log(&log_str);
     assert!(
+        content.contains("nudge.requested"),
+        "nudge.requested event must be logged. Got: {}", content
+    );
+    // Migration-window dual-emit (Silas ops review 2026-05-07): both events
+    // fire while readers still reference nudge.emitted. Drop nudge.emitted
+    // assertion when the cleanup card retires the dual-emit.
+    assert!(
         content.contains("nudge.emitted"),
-        "nudge.emitted event must be logged. Got: {}", content
+        "nudge.emitted event must also be logged during migration window. Got: {}", content
     );
     assert!(
         content.contains("origin=cli"),
@@ -61,7 +68,7 @@ fn nudge_origin_mcp_when_env_set() {
     assert!(out.status.success());
 
     let content = read_log(&log_str);
-    assert!(content.contains("nudge.emitted"));
+    assert!(content.contains("nudge.requested"));
     assert!(
         content.contains("origin=mcp"),
         "CHORUS_NUDGE_ORIGIN=mcp must be reflected in spine event. Got: {}", content
@@ -69,6 +76,37 @@ fn nudge_origin_mcp_when_env_set() {
     assert!(
         !content.contains("origin=cli"),
         "must not also tag origin=cli when MCP override is set"
+    );
+}
+
+/// AC3 — pulse-down resilience. Sender-side spine emit fires BEFORE the
+/// HTTP POST to pulse, so even when pulse is unreachable the audit trail
+/// captures the nudge attempt. Verified by pointing CHORUS_PULSE_URL at
+/// an unreachable host (127.0.0.1:1) and asserting both events still
+/// land in chorus.log. Per Kade gemba 2026-05-07 — closes the
+/// reasoning-not-test gap on the explicit AC3 promise.
+#[test]
+fn nudge_emits_when_pulse_post_fails() {
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("chorus.log");
+    let log_str = log.to_str().unwrap().to_string();
+
+    // 127.0.0.1:1 is reserved/unbound — curl will fail-fast within the
+    // --connect-timeout 2 window. The point: chorus_log MUST fire regardless.
+    let out = run_nudge(&[
+        ("CHORUS_LOG_FILE", &log_str),
+        ("CHORUS_PULSE_URL", "http://127.0.0.1:1/api/nudge"),
+    ]);
+    assert!(out.status.success(), "shim must succeed even when pulse unreachable: {}", String::from_utf8_lossy(&out.stderr));
+
+    let content = read_log(&log_str);
+    assert!(
+        content.contains("nudge.requested"),
+        "nudge.requested must fire BEFORE the pulse POST — pulse-down audit trail. Got: {}", content
+    );
+    assert!(
+        content.contains("nudge.emitted"),
+        "nudge.emitted must also fire (migration-window dual-emit). Got: {}", content
     );
 }
 
