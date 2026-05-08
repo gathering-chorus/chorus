@@ -35,12 +35,55 @@ CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
+# #2831 review (Kade): single constant for known crates so Usage line + case
+# default don't drift. Add new targets here once.
+KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api"
+
 if [ $# -ne 1 ]; then
-  echo "Usage: chorus-deploy <chorus-hooks|chorus-inject>" >&2
+  echo "Usage: chorus-deploy <${KNOWN_CRATES}>" >&2
   exit 2
 fi
 
 CRATE="$1"
+
+# #2831: chorus-api is TS, not a Rust crate. Different deploy mechanic — build
+# dist via npm + kickstart launchd service. Branched early because the rest of
+# the script is structured around target/release/ binaries and chorus-bin-install.
+if [ "$CRATE" = "chorus-api" ]; then
+  COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  START_TS=$(date +%s)
+  API_DIR="$ROOT/platform/api"
+  if [ ! -d "$API_DIR" ]; then
+    echo "chorus-deploy: chorus-api dir not found at $API_DIR" >&2
+    exit 1
+  fi
+  echo "chorus-deploy: npm run build in $API_DIR"
+  if ! (cd "$API_DIR" && npm run build); then
+    echo "chorus-deploy: npm run build failed" >&2
+    if [ -x "$CHORUS_LOG" ]; then
+      END_TS=$(date +%s)
+      DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+      "$CHORUS_LOG" deploy.failed "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        "reason=npm-build-fail" >/dev/null 2>&1 || true
+    fi
+    exit 1
+  fi
+  if ! launchctl kickstart -k "gui/$(id -u)/com.chorus.api" 2>/dev/null; then
+    echo "chorus-deploy: WARN — launchctl kickstart com.chorus.api failed" >&2
+  else
+    echo "chorus-deploy: kickstarted com.chorus.api"
+  fi
+  END_TS=$(date +%s)
+  DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" deploy.completed "$ROLE" \
+      "commit=$COMMIT" "crate=$CRATE" "target=$API_DIR/dist/server.js" "duration_ms=$DURATION_MS" \
+      >/dev/null 2>&1 || true
+  fi
+  echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT)"
+  exit 0
+fi
 
 case "$CRATE" in
   chorus-hooks)
@@ -54,7 +97,7 @@ case "$CRATE" in
     KICKSTART_SERVICE=""  # spawn-on-demand by pulse worker; no daemon
     ;;
   *)
-    echo "chorus-deploy: unknown crate '$CRATE' (known: chorus-hooks, chorus-inject)" >&2
+    echo "chorus-deploy: unknown crate '$CRATE' (known: ${KNOWN_CRATES})" >&2
     exit 2
     ;;
 esac

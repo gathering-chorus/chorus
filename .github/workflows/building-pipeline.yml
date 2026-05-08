@@ -55,3 +55,31 @@ jobs:
           export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
           export DEPLOY_ROLE=system
           /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-inject
+
+      # #2831: chorus-api is TS. chorus-deploy chorus-api runs npm run build
+      # then kickstarts com.chorus.api. Closes the manual-kickstart-after-merge
+      # loop for TS-touching commits.
+      #
+      # #2831 review (Wren): unconditional kickstart on every merge causes
+      # avoidable API downtime when the merge didn't touch TS — chorus-api is
+      # foundational (pulse/MCP/Athena/search/gates depend on it), so a 1-2s
+      # restart cascades. Path-filter: only deploy if HEAD~1..HEAD touched
+      # platform/api/src/**.
+      - name: detect chorus-api source changes
+        id: api_check
+        run: |
+          cd /Users/jeffbridwell/CascadeProjects/chorus
+          if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q '^platform/api/src/'; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "chorus-api source changed in last merge — will deploy"
+          else
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "no chorus-api source changes in last merge — skipping deploy"
+          fi
+
+      - name: chorus-deploy chorus-api
+        if: steps.api_check.outputs.should_deploy == 'true'
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-api
