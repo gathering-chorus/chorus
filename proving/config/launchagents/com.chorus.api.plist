@@ -15,6 +15,10 @@
   <key>WorkingDirectory</key>
   <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/api</string>
 
+  <!-- No WatchPaths: launchd ignores WatchPaths events when KeepAlive=true,
+       so it doesn't deliver auto-restart on dist rebuild. chorus-deploy
+       (or whatever rebuilds dist) kickstarts com.chorus.api explicitly. -->
+
   <key>RunAtLoad</key>
   <true/>
 

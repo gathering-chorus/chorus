@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.chorus.hooks — chorus-hooks daemon, launchd-managed with WatchPaths.
+
+  #2823. Replaces the prior nohup-launched chorus-hooks with a launchd service
+  that auto-restarts when the deployed binary changes. Per ADR-030 + #2774
+  building-pipeline architecture: deploy = atomic mv to ~/.chorus/bin/;
+  activation = launchd's job via WatchPaths.
+
+  Binary path: ~/.chorus/bin/chorus-hooks (the canonical deploy location per
+  #2734, NOT target/release which is the build-cache location).
+
+  WatchPaths: launchd restarts the service when the binary file modifies. The
+  deploy step (chorus-bin-install) does an atomic mv, so launchd sees one
+  clean file replace event per deploy.
+
+  Install:
+    cp platform/launchd/com.chorus.hooks.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.chorus.hooks.plist
+
+  Stop:
+    launchctl unload -w ~/Library/LaunchAgents/com.chorus.hooks.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.hooks</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/.chorus/bin/chorus-hooks</string>
+  </array>
+
+  <!-- No WatchPaths: launchd ignores WatchPaths events when KeepAlive=true and
+       the job is already running, so it doesn't deliver auto-restart-on-deploy.
+       chorus-deploy explicitly kickstarts this service after atomic-mv (#2823).
+       KeepAlive gives crash recovery; kickstart gives deploy-time restart. -->
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-hooks.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-hooks.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RUST_LOG</key>
+    <string>chorus_hooks=info</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
