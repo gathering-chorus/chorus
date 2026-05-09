@@ -93,7 +93,12 @@ describe('chorus_logs_for_trace (#2840)', () => {
     };
     await logsForTrace({ trace_id: '019e0d76-3109-74f8-8404-f2e5af337901' }, deps);
     expect(captured).toContain('019e0d76-3109-74f8-8404-f2e5af337901');
-    expect(decodeURIComponent(captured)).toContain('|~');
+    // #2860 — query is anchored on the JSON envelope shape (\"trace_id\":\"<uuid>\"),
+    // not a bare UUID substring. This was the behavior before #2860; pure
+    // substring matching pulled in nudge bodies + tool_call telemetry that
+    // happen to quote the UUID, distorting per-trace counts (Wren verify
+    // on #2840 found 23 vs 13 — the gap was substring leakage).
+    expect(decodeURIComponent(captured)).toContain('trace_id\\":\\"019e0d76');
   });
 
   it('returns events sorted with terminal-event detection if present', async () => {
