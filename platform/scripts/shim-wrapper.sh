@@ -54,4 +54,32 @@ if [ "$CMD" = "role-state" ] && [ -n "$1" ] && [ -n "$2" ]; then
     --max-time 3 > /dev/null 2>&1 &
 fi
 
+# #2857 — trace_id + card_id env-bridge for chorus-log. When invoked as
+# chorus-log AND CHORUS_TRACE_ID / CHORUS_CARD_ID are set in env, prepend
+# them to argv as kv pairs so the Rust shim emits them on the spine event.
+# card_id is conditional on the event prefix per #2838 MUST-carry list:
+# card.*, gate.*, demo.*, build.*, deploy.*, chorus_*, flow.*. Other events
+# (library.health.*, canonical.sync.*, nudge.*, etc.) leave card_id unset
+# even if env present — MUST-NOT contract enforced structurally at injection.
+if [ "$CMD" = "chorus-log" ] && [ -n "${1:-}" ]; then
+  EVENT_NAME="$1"; shift
+  ROLE_ARG="${1:-}"; [ -n "$ROLE_ARG" ] && shift
+  EXTRA_KV=()
+  if [ -n "${CHORUS_TRACE_ID:-}" ]; then
+    EXTRA_KV+=("trace_id=${CHORUS_TRACE_ID}")
+  fi
+  if [ -n "${CHORUS_CARD_ID:-}" ]; then
+    case "$EVENT_NAME" in
+      card.*|gate.*|demo.*|build.*|deploy.*|chorus_*|flow.*)
+        EXTRA_KV+=("card_id=${CHORUS_CARD_ID}")
+        ;;
+    esac
+  fi
+  if [ -n "$ROLE_ARG" ]; then
+    exec "$SHIM" "$CMD" "$EVENT_NAME" "$ROLE_ARG" "${EXTRA_KV[@]}" "$@"
+  else
+    exec "$SHIM" "$CMD" "$EVENT_NAME" "${EXTRA_KV[@]}" "$@"
+  fi
+fi
+
 exec "$SHIM" "$CMD" "$@"

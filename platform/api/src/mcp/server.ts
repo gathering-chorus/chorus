@@ -502,14 +502,25 @@ function defaultSpineEmitter(): SpineEmitter {
   };
 }
 
-// #2845 — trace-scoped emitter factory. When traceId is provided, every emit
-// from the returned closure carries trace_id in fields; when omitted, returns
-// the base emitter unchanged so no trace_id key appears in the JSON. Foundation
-// for #2839 migration cohort: handlers mint a trace_id at flow entry and
-// construct an emitter once, then propagate it through called helpers.
-export function createSpineEmitter(traceId?: string, base: SpineEmitter = defaultSpineEmitter()): SpineEmitter {
-  if (!traceId) return base;
-  return (event, fields) => base(event, { ...fields, trace_id: traceId });
+// #2845 + #2857 — trace + card scoped emitter factory. When traceId is provided,
+// every emit from the returned closure carries trace_id in fields. When cardId
+// is provided, every emit also carries card_id (per #2838 MUST-carry contract;
+// callers omit cardId for system-event emitters so the field is structurally
+// absent, not "card_id: null"). When both are omitted, returns the base emitter
+// unchanged. Foundation for #2839/#2838 migration cohort: handlers mint at flow
+// entry, construct an emitter once, propagate through called helpers.
+export function createSpineEmitter(
+  traceId?: string,
+  base: SpineEmitter = defaultSpineEmitter(),
+  cardId?: number,
+): SpineEmitter {
+  if (!traceId && !cardId) return base;
+  return (event, fields) => {
+    const merged: Record<string, unknown> = { ...fields };
+    if (traceId) merged.trace_id = traceId;
+    if (cardId) merged.card_id = cardId;
+    return base(event, merged);
+  };
 }
 
 // #2682 — spine event names. Extracted as consts because sonarjs flags
@@ -776,6 +787,12 @@ async function executeCommit(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, paths, message, no_add } = args;
 
+  // #2857 — flow trace. Mint trace_id at entry, wrap emit so every event
+  // carries it. card_id resolves via board lookup below; re-wrap once known.
+  const baseEmit = emit;
+  const trace_id = mintTraceIdV7();
+  emit = createSpineEmitter(trace_id, baseEmit);
+
   // #2687 — Step 1: best-effort board lookup for spine attribution. NEVER
   // refuses. Coordination state (no-wip-card / multi-wip / board-unreachable)
   // is observed via chorus_commit.coordination_observed event; the commit
@@ -794,6 +811,7 @@ async function executeCommit(
   } else {
     cardId = board.cards[0].id;
   }
+  if (cardId !== null) emit = createSpineEmitter(trace_id, baseEmit, cardId);
   const branch = cardId ? `${role}/${cardId}` : `${role}/uncoordinated`;
 
   // #2662 — chorus-api's launchctl PATH puts /opt/homebrew/bin first, which
@@ -813,6 +831,8 @@ async function executeCommit(
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
+    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
     PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
 
@@ -984,11 +1004,18 @@ async function executeAcp(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role } = args;
   const repoRoot = resolveWorkingTree(role);
+  // #2857 — flow trace. Mint trace_id at handler entry, wrap emit so every
+  // event in this flow carries it. Re-wrap with card_id once derived. Bash
+  // subprocesses (git-queue, gh, cards CLI) inherit via CHORUS_TRACE_ID +
+  // CHORUS_CARD_ID env vars set on the env objects below.
+  const baseEmit = emit;
+  const trace_id = mintTraceIdV7();
   // #2752 bug-4 — step-by-step logging. Each step emits .started before the
   // subprocess and .completed after success. Refusals already named the
   // step. Now any failure mode shows the exact step that ran/failed without
   // re-running with verbose flags.
   let cardId: number | null = null;
+  emit = createSpineEmitter(trace_id, baseEmit);
   const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
     emit(`chorus_acp.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
 
@@ -1007,6 +1034,7 @@ async function executeAcp(
   const _envForBranchProbe = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
     PATH: `${acpPathMod.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
   let initialBranch = '';
@@ -1026,6 +1054,9 @@ async function executeAcp(
   stepEmit('board-lookup', 'started');
   const board = await boardReader(role);
   if (cardId === null && board.ok && board.cards.length === 1) cardId = board.cards[0].id;
+  // #2857 — re-wrap emit with cardId now that it's resolved, so every
+  // downstream emit carries both trace_id and card_id automatically.
+  if (cardId !== null) emit = createSpineEmitter(trace_id, baseEmit, cardId);
   stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok, source: branchMatch ? 'branch' : 'board' });
 
   // #2752 bug-5 — transaction-level idempotency. If the PR is already merged
@@ -1038,6 +1069,8 @@ async function executeAcp(
   const transactionEnv = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
+    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
     PATH: `${transactionPath.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
   let alreadyMerged = false;
@@ -1120,6 +1153,8 @@ async function executeAcp(
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
+    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
     PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
 
@@ -1295,6 +1330,11 @@ async function executePullCard(
   const repoRoot = resolveWorkingTree(role);
   const branch = `${role}/${cardId}`;
 
+  // #2857 — flow trace. card_id is known at entry (from args), so wrap once.
+  const baseEmit = emit;
+  const trace_id = mintTraceIdV7();
+  emit = createSpineEmitter(trace_id, baseEmit, cardId);
+
   const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
     emit(`chorus_pull_card.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
 
@@ -1306,6 +1346,8 @@ async function executePullCard(
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
+    CHORUS_CARD_ID: String(cardId),
     PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
 
@@ -1437,6 +1479,11 @@ async function executeUnpullCard(
   const repoRoot = resolveWorkingTree(role);
   const branch = `${role}/${cardId}`;
 
+  // #2857 — flow trace. card_id is known at entry (from args), so wrap once.
+  const baseEmit = emit;
+  const trace_id = mintTraceIdV7();
+  emit = createSpineEmitter(trace_id, baseEmit, cardId);
+
   const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
     emit(`chorus_unpull_card.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
 
@@ -1448,6 +1495,8 @@ async function executeUnpullCard(
   const env = {
     ...process.env,
     DEPLOY_ROLE: role,
+    CHORUS_TRACE_ID: trace_id,
+    CHORUS_CARD_ID: String(cardId),
     PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
   } as NodeJS.ProcessEnv;
 
