@@ -145,7 +145,12 @@ export async function logsForTrace(
   deps: LogsQueryDeps,
 ): Promise<LogsQueryResult> {
   const window = args.time_window ?? '1h';
-  const query = `{job=~".+"} |~ "${args.trace_id}"`;
+  // #2860 — JSON-field anchor (mirrors logsForCard) so matches are structural,
+  // not pure substring. Without this, nudge bodies and tool_call telemetry
+  // that literally quote the UUID get pulled in, distorting the per-trace
+  // count. The envelope contract in #2839 places trace_id as a top-level
+  // field; this query reads against that shape.
+  const query = `{job=~".+"} |~ "\\"trace_id\\":\\"${args.trace_id}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
   if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
