@@ -182,6 +182,53 @@
         "trigger": "What invoked the auto-repair (e.g., auto-repair)"
       }
     },
+    "crawler.graph.hydrated": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator emitted one event per Hydratable class after the batch insert pass; reports counts and failures for that class (#2827).",
+      "fields": {
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "count": "Number of records hydrated in this batch",
+        "duration_ms": "Batch duration in milliseconds",
+        "failures": "Count of failed inserts in this batch"
+      }
+    },
+    "crawler.graph.failed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator failed to write to Fuseki — batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
+      "fields": {
+        "class": "Hydratable class identifier; '*' when Fuseki itself is unreachable",
+        "reason": "Failure reason (e.g., batch-insert-fail-count-N, stale-update-fail-http-N, fuseki-unreachable)",
+        "duration_ms": "Duration when known; absent on Fuseki-unreachable case"
+      }
+    },
+    "crawler.graph.orphan.detected": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator detected a graph record whose source file no longer exists on disk; flagged stale in Fuseki (#2827).",
+      "fields": {
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "identifier": "Record identifier (filesystem path)",
+        "last_seen_at": "ISO 8601 UTC timestamp when the orphan was detected",
+        "deleted_path": "Filesystem path of the deleted source"
+      }
+    },
+    "hydration.partial.divergent": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler reconciliation found a record present on one side (SQLite or Fuseki) but missing on the other; emitted per divergent record (#2827).",
+      "fields": {
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "identifier": "Record identifier (filesystem path)",
+        "missing_side": "Which store is missing the record (fuseki or sqlite)",
+        "recovery_attempted": "Whether single-record retry was attempted (true/false)"
+      }
+    },
     "library.health.passed": {
       "vertebra": "operating",
       "legacy_name": null,
