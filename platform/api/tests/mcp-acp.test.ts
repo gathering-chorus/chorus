@@ -68,6 +68,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         }
         if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
         if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        // #2863 — release trigger: kickstarts building-pipeline post-merge.
+        if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
         throw new Error(`unexpected: ${file} ${args.join(' ')}`);
       });
       return { fn, calls };
@@ -100,6 +102,16 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
 
       // Spine event emitted on success
       expect(events.find((e) => e.event === 'card.accepted')).toBeDefined();
+
+      // #2863 release-trigger: post-merge step kickstarts building-pipeline.
+      // Distinct from prior step hardening (#2782 verify-after, #2793
+      // werk-on-main, #2799 force-with-lease) — this is a new step that
+      // makes /acp the release event for the deploy chain.
+      const launchctlCall = calls.find((c) => c.file === 'launchctl' && c.args[0] === 'kickstart');
+      expect(launchctlCall).toBeDefined();
+      expect(launchctlCall!.args[1]).toMatch(/^gui\/\d+\/com\.chorus\.building-pipeline$/);
+      expect(events.find((e) => e.event === 'chorus_acp.release-trigger.started')).toBeDefined();
+      expect(events.find((e) => e.event === 'chorus_acp.release-trigger.completed')).toBeDefined();
 
       // Result shape
       const text = result.content[0].text;

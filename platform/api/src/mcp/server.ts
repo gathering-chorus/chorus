@@ -1222,6 +1222,11 @@ async function executeAcp(
         /* non-fatal */
       }
     }
+    // #2863 — release event on the already-merged fast-path. Same as the
+    // main path: kick building-pipeline; best-effort.
+    try {
+      await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env: transactionEnv, timeout: 5_000 });
+    } catch { /* best-effort */ }
     emit('chorus_acp.completed', { role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true });
     return {
       content: [
@@ -1393,6 +1398,20 @@ async function executeAcp(
       const stderr = extractStderr(err);
       stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
     }
+  }
+
+  // #2863 — release event: kick building-pipeline so /build runs immediately
+  // against origin/main (whose first step fast-forwards canonical). Replaces
+  // the chorus-werk-sync 10-min poll. Best-effort: kickstart failure does
+  // not fail /acp because the merge already landed; flag in step event so
+  // an operator can recover manually.
+  stepEmit('release-trigger', 'started');
+  try {
+    await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env, timeout: 5_000 });
+    stepEmit('release-trigger', 'completed');
+  } catch (err) {
+    const stderr = extractStderr(err);
+    stepEmit('release-trigger', 'completed', { ok: false, error: stderr.slice(0, 200) });
   }
 
   emit('chorus_acp.completed', { role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed });
