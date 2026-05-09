@@ -502,6 +502,16 @@ function defaultSpineEmitter(): SpineEmitter {
   };
 }
 
+// #2845 — trace-scoped emitter factory. When traceId is provided, every emit
+// from the returned closure carries trace_id in fields; when omitted, returns
+// the base emitter unchanged so no trace_id key appears in the JSON. Foundation
+// for #2839 migration cohort: handlers mint a trace_id at flow entry and
+// construct an emitter once, then propagate it through called helpers.
+export function createSpineEmitter(traceId?: string, base: SpineEmitter = defaultSpineEmitter()): SpineEmitter {
+  if (!traceId) return base;
+  return (event, fields) => base(event, { ...fields, trace_id: traceId });
+}
+
 // #2682 — spine event names. Extracted as consts because sonarjs flags
 // duplicated string literals (>5 occurrences across emit + throw paths).
 const CHORUS_COMMIT_REFUSED = 'chorus_commit.refused';
