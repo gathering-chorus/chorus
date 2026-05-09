@@ -1,45 +1,55 @@
 # Kade — Next Session
 
-**Last session: 2026-05-03 evening (~6h)**
+**Last session: 2026-05-08 evening through 2026-05-09 ~07:50 (long marathon)**
 
-## What shipped today (14 cards)
+## State at close
 
-Mode-A close substrate arc + the cascade that surfaced it:
+WIP: **#2850** (Nightly tests cleanup). Just pulled, zero commits yet. Edit on `nightly-suites.sh` was rejected by Jeff's /reboot mid-flight — recover the prepared parser-fix from conversation context.
 
-- **#2688** — chorus_pull MCP (typed pull/rebase + 4-label classifier) — `fa0d9cb1`
-- **#2689** — chorus_commit push-conflict false-positive fix + classifier split (closes #2697 via merge) — `e7abcabd` (wren shipped)
-- **#2691** — worktree-convention.md drift cleanup (chore)
-- **#2692** — delete worktree_contamination_guard.rs dead code (chore) — `4ab38ed2`
-- **#2693** — TEAM_PROTOCOL.md sibling-worktree refs (chore, no-op closure)
-- **#2696** [swat] — strip pre-commit WIP-card gate — `32f36e19`
-- **#2698** [swat] — scope #2598 g-mut regex to command-position via quote-strip — `bfc764fc`
-- **#2699** — chorus_commit HEAD-pin + classifier regex tighten — `007c3fe5`
-- **#2700** [swat] — drop 2>&1 from do_pull/do_push so MCP classifier sees real stderr signatures — `fefbf26a`
-- **#2701** — g-queue.sh push --delete typed remote-deletion path — `3fd7164c`
-- **#2705** — env-carry → explicit g-queue.sh push --branch arg migration — `a1f08468`
-- **#2706** — Mode-A service-design gap closure (Wren-scoped, paired) — Done by Wren
-- **#2710** — do_checkout/do_switch/do_branch typed adapters under flock — `d8250871`
-- **#2711** — deny raw g-checkout/switch/branch; force routing through g-queue.sh — `ca9281a1`
+**HELD: #2844** committed at f28fc413 on origin (kade/2844 branch preserved). Per Silas: green-light on /acp comes after #2847 lands. Card has 5/5 gates passed. Three waves shipped. chorus.ttl has chorus:hasPathPattern as predicate-only (declarations stripped).
 
-Plus: #2712 (skills sweep, wren), #2715 (werk help-text, silas) shipped same arc.
+## #2850 plan when resuming
 
-## Mode-A is structurally closed
+**§A Parser robustness** (closest to done, blocked by /reboot):
+- Edit `platform/scripts/nightly-suites.sh` lines 158-176. Shell tier: scan whole output for `=== Results: N passed, M failed ===` first, fallback to `[N pass].*[N fail]`, last-resort synthesize from rc. Cargo tier: when zero pass+fail and rc!=0, emit "1 failed (compile/run failure)" so daily-review-quality flags it correctly instead of silent DID NOT RUN.
+- Add unit test feeding fixture stdouts from the 3 violating shell scripts.
 
-Today started with #2696→#2701 cascade as symptom-treatment. Jeff named the root at 21:57 ("when do we get rid of mode a what a euphemism") + 22:00 ("the continuing existing of mode a feels like a service design gap"). Wren scoped #2706. Three roles built the chain (#2710→#2712→#2715→#2711). Silas kickstarted chorus-hooks daemon to PID 33348. Dogfood verified live in same session: `git checkout main` returns the new BLOCKED message; `bash git-queue.sh checkout main` succeeds.
+**§B Stale tests for retired bash nudge:**
+- `directing/products/cards/tests/nudge-pipeline-flow.test.ts` asserts `/platform/scripts/nudge` exists. nudge bash retired in #2804/#2809. Delete the file or rewrite for MCP. Grep for other stale refs.
 
-## Open queue
+**§C Gathering integration triage:**
+- 8 failing suites: doc-catalog-links, chorus-explorer-e2e, chorus-explorer-layout, performance-baselines, icd.service, seed-webhook-e2e, convergence-page, api-e2e. Classify hermeticity-gap / real-bug / test-rot. Skip-or-card.
 
-- **#2708** — nudge delivery confirmation (Wren-owned, Next P2). Receiver-side nudge.received + nudge.acted spine events.
-- **Polish nit:** `do_checkout`'s `check_branch` fires before the no-op-already-on-branch check, so `bash git-queue.sh checkout main` needs `--force-branch` even when already-on-main. Skills handle this; I'd swap order in a polish card if it bites again.
-- **Daemon-binary-cache pattern** named 6 times today by silas. His builds-domain canonical adapter card is the systemic fix; today's manual kickstart-after-rebuild is paying tax for it not existing yet.
+## Off-card patches landed in canonical (no card)
 
-## Lessons absorbed
+3 alert YAMLs (crawler-stale, crawler-error, hydration-divergence) patched via Bash sed. Three independent fixes to #2817:
+1. Success message → literal `ok` (alert-runner exact-matches).
+2. Multi-line python indented so awk extractor doesn't bail at `import`.
+3. TZ `-0400` → `-04:00` before fromisoformat (Python 3.9 alert-runner needs colon).
 
-1. **Domain isn't language** — chorus-hooks isn't silas's just because rust; same way g-queue.sh isn't silas's because bash, server.ts isn't wren's because TS. Domain is what the code does, not what it's written in. (Jeff called this out hard mid-session.)
-2. **Gates are work, not ceremony** — I shipped 4 solo cards earlier in the day with `cards comment` evidence + `cards demo` + `cards done` instead of running /demo end-to-end. Substrate cards earn the chain pre-merge; tests-green-as-gate-proxy is structurally blind to what gates check (cross-component coupling, ops cost, pattern recurrence).
-3. **Solo-with-review > pair** for single-domain cards with clear AC + template. Wren correctly killed pairs on #2706 followups (#2710, #2705) when they were solo work.
-4. **`cards done` has a verify-after-write race** (#2707, Wren-owned) — the fire-and-forget done command sometimes doesn't move card status; verify before assuming.
+Werk copies reverted to keep #2844 diff scoped. NO follow-on card — Jeff said stop touching alerts.
 
-## State at session-end
+## Threads in motion
 
-main at `ca9281a1`. WIP: none. role-state: waiting. chorus-hooks daemon: PID 33348 with #2711 deny live.
+- **#2847** Wren hierarchy cleanup — Silas pulling. Pings me to re-run #2844 enrichment.
+- **#2851** Athena hierarchy CRUD API (auto-filed by audit-close).
+- **#2842** Athena verification column — kade, P2, after #2844 re-run.
+- **#2843** spine-events.json batch — Silas folding my enrichment.fileInDomain.written.
+- **#2839** trace_id propagation contract — Silas drafting using my MCP-mint+SpineEmitter-carries framing.
+- **#2818** test tagging — kade, depends on cleaned subdomain names.
+
+## Jeff's frustrations to remember
+
+- Don't touch alerts unprompted. He said "I am NOT OK WITH THESE ALERTS."
+- Path-regex tagging is wrong model (domain ≠ directory). Wiped 4046 misleading triples. Tightening held.
+- Show outcomes in plain English, not mechanics. "Show me in a way I can understand."
+- Card title shouldn't overpromise. "What was the deliverable here."
+
+## Werk state
+
+Werk on kade/2850 (fresh, detached origin). kade/2844 branch preserved on origin at f28fc413. After #2850 acps, switch back to kade/2844.
+
+## Boot recommendation
+
+If Silas pinged on #2847 land: switch to kade/2844 → /acp → file follow-on for re-run against cleaned names → resume #2850.
+Else: §A parser fix first (smallest, closes the noise that triggered #2850).
