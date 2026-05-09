@@ -23,6 +23,7 @@ import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from '../shim-path';
 import { resolveCardsPath } from '../cards-path';
+import { queryLogs, recentErrors, logsForCard, logsForTrace, type LogsQueryDeps } from '../handlers/logs-query';
 import { resolveGitQueuePath } from '../git-queue-path';
 
 const NudgeInput = z.object({
@@ -666,6 +667,98 @@ const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
 const CARD_ACCEPTED = 'card.accepted';
 const CHORUS_PULL_CARD_REFUSED = 'chorus_pull_card.refused';
 const CARD_PULLED = 'card.pulled';
+
+// #2840 — typed agent surface for log + error investigation. Earns its keep
+// on top of #2857's trace_id + card_id propagation: agents query by id and
+// the substrate returns the full flow as structured rows, not blobs.
+const TimeWindowEnum = z.enum(['5m', '15m', '1h', '6h', '1d']);
+
+const LogsQueryInput = z.object({
+  query: z.string().min(1).describe('LogQL query, e.g. {job="chorus-api"} |~ "chorus_acp"'),
+  start: z.string().optional().describe('ISO 8601 timestamp; default: 1h ago'),
+  end: z.string().optional().describe('ISO 8601 timestamp; default: now'),
+  time_window: TimeWindowEnum.optional().describe('Convenience window (overrides start/end if both unset). Default 1h.'),
+  limit: z.number().int().min(1).max(1000).optional().describe('Max events. Default 100, max 1000.'),
+});
+
+const LogsRecentErrorsInput = z.object({
+  role: z.string().optional().describe('Filter to events from one role. Omit for all roles.'),
+  time_window: TimeWindowEnum.optional().describe('Window. Default 1h.'),
+});
+
+const LogsForCardInput = z.object({
+  card_id: z.number().int().min(1).describe('Card id to query. Returns every event whose payload contains this card_id (#2838).'),
+  time_window: TimeWindowEnum.optional().describe('Window. Default 1d.'),
+});
+
+const LogsForTraceInput = z.object({
+  trace_id: z.string().min(1).describe('Transaction-scope trace_id (UUIDv7). Returns every event of that flow (#2839).'),
+  time_window: TimeWindowEnum.optional().describe('Window. Default 1h.'),
+});
+
+const TIME_WINDOW_DESC = 'Time range for the query — pick one: 5m=five minutes, 15m=fifteen minutes, 1h=one hour, 6h=six hours, 1d=one day. Larger windows scan more Loki data.';
+
+const LOGS_QUERY_TOOL_DEF = {
+  name: 'chorus_logs_query',
+  description:
+    'Use this to run a custom LogQL query against Chorus logs in Loki when none of the convenience tools fit. Returns structured rows ({ events, count, truncated }) instead of blobs. Refusal taxonomy: loki-unreachable | query-syntax-error | time-range-invalid | result-too-large | rate-limited. Do NOT use for the common cases — chorus_logs_for_trace / chorus_logs_for_card / chorus_logs_recent_errors are tighter typed wrappers; reach for this only when you need a custom LogQL filter.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'LogQL string, e.g. {job="chorus-api"} |~ "card.demo.started"' },
+      start: { type: 'string', description: 'ISO 8601 timestamp; default 1h ago' },
+      end: { type: 'string', description: 'ISO 8601 timestamp; default now' },
+      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
+      limit: { type: 'integer', minimum: 1, maximum: 1000, description: 'Max events. Default 100.' },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+} as const;
+
+const LOGS_RECENT_ERRORS_TOOL_DEF = {
+  name: 'chorus_logs_recent_errors',
+  description:
+    'Use this to answer "what broke recently?" — returns recent error-level events across the spine, optionally filtered to one role. Default window 1h. Do NOT use to investigate a known card or trace_id (use chorus_logs_for_card or chorus_logs_for_trace) or to grep for specific event names (use chorus_logs_query). Same refusal taxonomy as chorus_logs_query.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', description: 'Filter to one role (kade / wren / silas / system). Omit for all.' },
+      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
+    },
+    additionalProperties: false,
+  },
+} as const;
+
+const LOGS_FOR_CARD_TOOL_DEF = {
+  name: 'chorus_logs_for_card',
+  description:
+    'Use this to retrieve every event bound to one card_id — gate emits, demo events, /acp step events, hook bites, anything that happened during work on card #N. Backed by #2838 card_id propagation. Default window 1d. Do NOT use for system events (heartbeats, health probes, canonical sync) — those are not card-bound and won t appear; for those use chorus_logs_query or chorus_logs_recent_errors.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      card_id: { type: 'integer', minimum: 1, description: 'Card id' },
+      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1d.' },
+    },
+    required: ['card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const LOGS_FOR_TRACE_TOOL_DEF = {
+  name: 'chorus_logs_for_trace',
+  description:
+    'Use this to retrieve every event of one transaction end-to-end (one /acp, one chorus_pull_card, one build cycle) by trace_id. Returns the full causal chain as structured rows. Backed by #2839 trace_id propagation. Default window 1h. Do NOT use to find work-bound events (use chorus_logs_for_card) or to grep recent errors broadly (use chorus_logs_recent_errors).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      trace_id: { type: 'string', description: 'UUIDv7 trace_id (from MCP response or chorus_logs_query result)' },
+      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
+    },
+    required: ['trace_id'],
+    additionalProperties: false,
+  },
+} as const;
 const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
 const CARD_UNPULLED = 'card.unpulled';
 // #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
@@ -2118,6 +2211,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PULL_CARD_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
+      LOGS_QUERY_TOOL_DEF,
+      LOGS_RECENT_ERRORS_TOOL_DEF,
+      LOGS_FOR_CARD_TOOL_DEF,
+      LOGS_FOR_TRACE_TOOL_DEF,
     ],
   }));
 
@@ -2253,6 +2350,45 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeUnpullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
+      }
+      // #2840 — typed agent surface for log + error investigation. Each
+      // handler emits a chorus_logs.queried event so investigation paths
+      // are auditable, then returns structured rows or a typed refusal.
+      case 'chorus_logs_query':
+      case 'chorus_logs_recent_errors':
+      case 'chorus_logs_for_card':
+      case 'chorus_logs_for_trace': {
+        const lokiDeps: LogsQueryDeps = {
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+          lokiUrl: process.env.CHORUS_LOKI_URL || 'http://localhost:3102',
+          now: () => Date.now(),
+        };
+        const tool = req.params.name;
+        let result;
+        if (tool === 'chorus_logs_query') {
+          const parsed = LogsQueryInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          result = await queryLogs(parsed.data, lokiDeps);
+        } else if (tool === 'chorus_logs_recent_errors') {
+          const parsed = LogsRecentErrorsInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          result = await recentErrors(parsed.data, lokiDeps);
+        } else if (tool === 'chorus_logs_for_card') {
+          const parsed = LogsForCardInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          result = await logsForCard(parsed.data, lokiDeps);
+        } else {
+          const parsed = LogsForTraceInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          result = await logsForTrace(parsed.data, lokiDeps);
+        }
+        emitSpineEvent('chorus_logs.queried', {
+          tool,
+          from,
+          ok: result.ok,
+          ...(result.ok ? { count: result.count, truncated: result.truncated } : { reason: result.reason }),
+        });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
