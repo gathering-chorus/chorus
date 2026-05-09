@@ -35,4 +35,30 @@ describe('createSpineEmitter (#2845)', () => {
     // Documented contract: emitter-bound trace_id is canonical for the flow.
     expect(calls[0].fields.trace_id).toBe('outer-trace');
   });
+
+  // #2857 — card_id closure capture per #2838 contract. Same closure shape as
+  // trace_id; falsy card_id keeps field absent (MUST-NOT contract).
+  it('attaches card_id to every emit when constructed with one', () => {
+    const { emit, calls } = captureEmitter();
+    const traced = createSpineEmitter('trace-x', emit, 2857);
+    traced('card.demo.started', { step: 'one' });
+    traced('gate.arch.passed', { step: 'two' });
+    expect(calls[0].fields).toEqual({ step: 'one', trace_id: 'trace-x', card_id: 2857 });
+    expect(calls[1].fields).toEqual({ step: 'two', trace_id: 'trace-x', card_id: 2857 });
+  });
+
+  it('omits card_id when constructed without one (MUST-NOT contract for system events)', () => {
+    const { emit, calls } = captureEmitter();
+    const traced = createSpineEmitter('trace-x', emit);
+    traced('library.health.passed', { source: 'probe' });
+    expect(calls[0].fields).toEqual({ source: 'probe', trace_id: 'trace-x' });
+    expect('card_id' in calls[0].fields).toBe(false);
+  });
+
+  it('omits card_id when constructed with falsy card_id (0, null, undefined)', () => {
+    const { emit, calls } = captureEmitter();
+    const traced = createSpineEmitter('trace-x', emit, undefined);
+    traced('canonical.sync.repaired', { trigger: 'auto' });
+    expect('card_id' in calls[0].fields).toBe(false);
+  });
 });
