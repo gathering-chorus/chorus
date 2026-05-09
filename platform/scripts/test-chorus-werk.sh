@@ -306,7 +306,5 @@ WT_TIP_T20=$(git -C "$WERK_BASE/kade" rev-parse HEAD 2>/dev/null)
 assert "init lands werk at origin/main tip (not stale local main)" test "$WT_TIP_T20" = "$FUTURE_T20"
 assert "init did NOT land werk at stale local main" test "$WT_TIP_T20" != "$LOCAL_MAIN_BEFORE_T20"
 
-echo "---"
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

@@ -58,5 +58,5 @@ contains "$SHELL_T" "${CHORUS_ROOT}/platform/scripts/test-skip-gates.sh"  && p "
 contains "$SHELL_T" "${CHORUS_ROOT}/platform/scripts/test-daily-review.sh" && p "finds test-daily-review" || f "shell missing test-daily-review"
 
 echo ""
-echo "=== $PASS pass / $FAIL fail ==="
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

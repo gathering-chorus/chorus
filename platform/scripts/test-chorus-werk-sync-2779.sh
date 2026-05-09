@@ -85,7 +85,5 @@ assert "repair fast-forwards local main to origin/main" test "$LOCAL_MAIN" = "$O
 RC=$?
 assert "repair is idempotent on attached canonical" test "$RC" -eq 0
 
-echo "---"
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

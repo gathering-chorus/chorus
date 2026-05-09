@@ -78,5 +78,5 @@ echo "$regress" | grep -qiE "floor.*90|90.*floor|floor: 90" && p "shows floor=90
 echo "$regress" | grep -qiE "79|79\.0" && p "shows current 79%" || f "missing current percentage (79)"
 
 echo ""
-echo "=== $PASS pass / $FAIL fail ==="
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
