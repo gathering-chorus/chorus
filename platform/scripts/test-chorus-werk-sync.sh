@@ -123,7 +123,5 @@ assert "sync exits 0 when already up-to-date" test "$RC" -eq 0
 
 rm -f /tmp/cw-sync-*.$$ 2>/dev/null
 
-echo "---"
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

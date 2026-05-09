@@ -136,7 +136,5 @@ assert "wren branch unaffected by kade's repoint" test "$WREN_BRANCH" = "wren/90
 CANON_FINAL_BRANCH=$(git -C "$CANONICAL" symbolic-ref --short HEAD 2>/dev/null || echo "?")
 assert "canonical still on main after parallel work" test "$CANON_FINAL_BRANCH" = "main"
 
-echo "---"
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

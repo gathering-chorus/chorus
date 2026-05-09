@@ -108,7 +108,5 @@ assert "install refuses no args" test "$RC" -ne 0
 RC=$?
 assert "install refuses missing binary name" test "$RC" -ne 0
 
-echo "---"
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
+echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

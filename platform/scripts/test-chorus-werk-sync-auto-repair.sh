@@ -113,5 +113,5 @@ else
 fi
 
 echo
-echo "=== auto-repair tests: $PASS pass / $FAIL fail ==="
+echo "=== Results: $PASS passed, $FAIL failed ==="
 exit $((FAIL > 0 ? 1 : 0))

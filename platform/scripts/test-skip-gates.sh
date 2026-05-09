@@ -123,6 +123,6 @@ R=$(echo '{"tool_name":"Bash","tool_input":{"command":"false"},"exit_code":1}' |
 [ -n "$R" ] && p "stop_on_error: responds to error state" || f "stop_on_error: empty"
 
 echo ""
-echo "=== $PASS pass, $FAIL fail ==="
+echo "=== Results: $PASS passed, $FAIL failed ==="
 
 exit $((FAIL > 0 ? 1 : 0))
