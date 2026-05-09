@@ -60,20 +60,11 @@ result=$("$INJECT" "nonexistent" "test" 2>&1) && {
   PASS=$((PASS + 1))
 }
 
-# Test 6: Nudge command delivers (end-to-end)
-NUDGE="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/nudge"
-result=$("$NUDGE" silas "[regression-test] nudge e2e" --force 2>&1) && {
-  if echo "$result" | grep -q "DELIVERED"; then
-    echo "PASS: nudge e2e delivered"
-    PASS=$((PASS + 1))
-  else
-    echo "FAIL: nudge e2e no DELIVERED: $result"
-    FAIL=$((FAIL + 1))
-  fi
-} || {
-  echo "FAIL: nudge e2e failed: $result"
-  FAIL=$((FAIL + 1))
-}
+# Test 6 retired: bash nudge was retired in #2804/#2809; agents send nudges
+# via the chorus_nudge_message MCP tool. The osascript injection path that
+# this test was guarding is exercised end-to-end by the MCP layer's own
+# delivery tests; chorus-inject's regression surface here covers binary
+# resolution, role validation, and refusal taxonomy only.
 
 echo "---"
 echo "Results: $PASS passed, $FAIL failed"
