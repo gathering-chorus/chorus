@@ -313,6 +313,8 @@ run_all() {
 }
 
 # --- Dispatch ---
+# Below = dispatch-only (CLI entry, exits on unknown arg).
+# Above = sourceable (function definitions safe for unit tests to import).
 # Guard so `source` from a unit test gets the function definitions only,
 # without tripping the unknown-arg `exit 2` branch.
 if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
