@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.chorus.werk-sync — scheduled canonical sync (#2846).
+
+  Canonical's local main ref only updates when chorus-werk-sync runs; it's the
+  trigger that lets the building-pipeline launchd plist see new commits. Pre-
+  #2846 sync was operator-invoked, so canonical drifted silently between
+  manual runs (today, 2026-05-08, hit 8 commits behind with a 2h-stale
+  chorus-api as the downstream symptom).
+
+  StartInterval=600 (10 min). Not WatchPaths — sync isn't triggered by file
+  changes, it's triggered by the passage of time + remote moving. KeepAlive
+  false.
+
+  CHORUS_WERK_SYNC_AUTO_REPAIR=1 — scheduled invocation auto-recovers detached
+  HEAD via the repair plumbing. Manual runs still abort loudly so operators
+  see surprises explicitly.
+
+  Install:
+    cp platform/launchd/com.chorus.werk-sync.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chorus.werk-sync.plist
+    launchctl kickstart gui/$(id -u)/com.chorus.werk-sync   # first run on demand
+
+  Uninstall:
+    launchctl bootout gui/$(id -u)/com.chorus.werk-sync
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.werk-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-werk-sync</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>600</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/werk-sync.log</string>
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/werk-sync.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/jeffbridwell</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_HOME</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_WERK_SYNC_AUTO_REPAIR</key>
+    <string>1</string>
+  </dict>
+</dict>
+</plist>

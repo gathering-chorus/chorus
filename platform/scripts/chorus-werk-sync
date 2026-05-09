@@ -122,6 +122,26 @@ do_repair() {
   exit 0
 }
 
+# --- #2846: --auto-repair flag (and CHORUS_WERK_SYNC_AUTO_REPAIR=1 env) ------
+# When set, recoverable abort cases (detached HEAD today; potentially more
+# later) call do_repair internally instead of refusing. Designed for the
+# launchd-scheduled invocation: a 10-min cron without auto-repair would
+# accumulate aborts every time canonical detaches. Manual sync still aborts
+# loudly so the operator sees what's wrong without surprise mutations.
+AUTO_REPAIR=0
+if [ "${CHORUS_WERK_SYNC_AUTO_REPAIR:-0}" = "1" ]; then
+  AUTO_REPAIR=1
+fi
+ARGS=()
+for a in "$@"; do
+  if [ "$a" = "--auto-repair" ]; then
+    AUTO_REPAIR=1
+  else
+    ARGS+=("$a")
+  fi
+done
+set -- "${ARGS[@]:-}"
+
 # Subcommand dispatch (#2779). Default (no args) preserves #2735 behavior.
 case "${1:-}" in
   repair)
@@ -150,6 +170,15 @@ fi
 HEAD_REF=$(git -C "$CHORUS_HOME" symbolic-ref --short HEAD 2>/dev/null || echo "")
 if [ "$HEAD_REF" != "main" ]; then
   if [ -z "$HEAD_REF" ]; then
+    if [ "$AUTO_REPAIR" = "1" ]; then
+      # #2846: scheduled invocations auto-recover detached HEAD via repair.
+      # Emit canonical.sync.repaired before do_repair (which exits 0 internally
+      # after emitting canonical.repaired). Both events let consumers tell the
+      # auto-repair path apart from the manual one.
+      echo "chorus-werk-sync: detached HEAD — auto-repair invoked (#2846)" >&2
+      emit "canonical.sync.repaired" "trigger=auto-repair"
+      do_repair
+    fi
     abort "canonical HEAD is detached — run \`chorus-werk-sync repair\` to re-attach HEAD to main and fast-forward to origin/main"
   else
     abort "canonical HEAD is '$HEAD_REF', not 'main' — manual triage required (or \`chorus-werk-sync repair\` if HEAD should be reset to main)"

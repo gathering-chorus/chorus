@@ -173,6 +173,15 @@
     "role.nudge.consumed": "role.nudge.consumed"
   },
   "events": {
+    "canonical.sync.repaired": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "chorus-werk-sync",
+      "description": "chorus-werk-sync auto-repaired a recoverable abort case (e.g., detached HEAD) when run with --auto-repair / CHORUS_WERK_SYNC_AUTO_REPAIR=1 (#2846). Distinguishes scheduled-recovery from operator-invoked `repair` (which emits canonical.repaired).",
+      "fields": {
+        "trigger": "What invoked the auto-repair (e.g., auto-repair)"
+      }
+    },
     "library.health.passed": {
       "vertebra": "operating",
       "legacy_name": null,
