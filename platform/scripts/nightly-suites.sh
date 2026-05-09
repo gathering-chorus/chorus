@@ -134,6 +134,55 @@ run_one() {
   echo "$line2"
 }
 
+# Extract a parseable pass/fail summary from a shell test script's full stdout.
+#
+# Downstream consumer (daily-review-quality.sh) requires the summary to match
+# `[0-9]+ (pass|ok)` AND `[0-9]+ fail` to count the suite as run. Three forms
+# are tried in priority order; the last is a synthesis from rc so a script
+# that ran but didn't print a recognizable line is never silently bucketed
+# as DID NOT RUN.
+#
+#   1. canonical:  === Results: N passed, M failed ===     (most test-*.sh)
+#   2. fallback:   Passed: N + Failed: M on adjacent lines (bin-install style)
+#   3. last-line:  the script's tail -1, IF it already matches the consumer
+#                  regex (back-compat for any legacy shape).
+#   4. synthesize: 1 ok / 0 fail on rc=0, 0 pass / 1 fail otherwise.
+_extract_shell_summary() {
+  local out="$1" rc="$2"
+  local p f line
+
+  # 1. canonical
+  line=$(echo "$out" | grep -oE '=== Results: [0-9]+ passed, [0-9]+ failed ===' | tail -1)
+  if [ -n "$line" ]; then
+    p=$(echo "$line" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+')
+    f=$(echo "$line" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+')
+    echo "$p pass, $f fail"
+    return
+  fi
+
+  # 2. Passed: N / Failed: M (need both, anywhere in output)
+  p=$(echo "$out" | grep -oE '^Passed: [0-9]+' | tail -1 | grep -oE '[0-9]+' || true)
+  f=$(echo "$out" | grep -oE '^Failed: [0-9]+' | tail -1 | grep -oE '[0-9]+' || true)
+  if [ -n "$p" ] && [ -n "$f" ]; then
+    echo "$p pass, $f fail"
+    return
+  fi
+
+  # 3. last-line, only if it already matches the consumer's expected shape
+  line=$(echo "$out" | tail -1)
+  if echo "$line" | grep -qE '[0-9]+ (pass|ok)' && echo "$line" | grep -qE '[0-9]+ fail'; then
+    echo "$line"
+    return
+  fi
+
+  # 4. synthesize from rc
+  if [ "$rc" -eq 0 ]; then
+    echo "1 ok, 0 fail (synthesized, no parseable line)"
+  else
+    echo "0 pass, 1 fail (synthesized rc=$rc, no parseable line)"
+  fi
+}
+
 # Single attempt — the original run_one body.
 run_one_attempt() {
   local kind="$1" path="$2" owner="$3"
@@ -160,18 +209,27 @@ run_one_attempt() {
       # (role-state files, hook env vars) and flake under parallel runs.
       # Serial execution matches the nightly's isolation goal; under the
       # budget-set workload it adds a few seconds total.
-      local out
-      out=$(cd "$path" && cargo test --release -- --test-threads=1 2>&1 || true)
+      local out rc
+      out=$(cd "$path" && cargo test --release -- --test-threads=1 2>&1); rc=$?
       local passed failed
       passed=$(echo "$out" | grep -cE '^test result: ok\.' || true)
       failed=$(echo "$out" | grep -cE '^test result: FAILED\.' || true)
-      summary="suites: $passed ok, $failed failed"
-      [ "$failed" -gt 0 ] && status="fail"
+      if [ "$passed" -eq 0 ] && [ "$failed" -eq 0 ] && [ "$rc" -ne 0 ]; then
+        # cargo did not print test-result lines (compile error, panic, run
+        # interrupted). Surface as a real failure rather than letting the
+        # downstream parser treat a 0/0 summary as "no parseable output"
+        # and silently bucket it as DID NOT RUN.
+        summary="suites: 0 ok, 1 failed (compile/run failure rc=$rc)"
+        status="fail"
+      else
+        summary="suites: $passed ok, $failed failed"
+        [ "$failed" -gt 0 ] && status="fail"
+      fi
       ;;
     shell)
       local out rc
       out=$(bash "$path" 2>&1); rc=$?
-      summary=$(echo "$out" | tail -1)
+      summary=$(_extract_shell_summary "$out" "$rc")
       [ "$rc" -ne 0 ] && status="fail"
       ;;
     bats)
@@ -255,6 +313,14 @@ run_all() {
 }
 
 # --- Dispatch ---
+# Below = dispatch-only (CLI entry, exits on unknown arg).
+# Above = sourceable (function definitions safe for unit tests to import).
+# Guard so `source` from a unit test gets the function definitions only,
+# without tripping the unknown-arg `exit 2` branch.
+if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+  return 0 2>/dev/null || true
+fi
+
 case "${1:-}" in
   --list-npm)      list_npm      ;;
   --list-cargo)    list_cargo    ;;
