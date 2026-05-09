@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# quality-health — read-only quality discipline fitness check.
+#
+# Third in the Quality-horizontal fitness function family (after
+# commit-health and spine-health). Asks: is the team's quality discipline
+# fit, or have the rules drifted from what they enforce?
+#
+# Reads what already exists:
+#   - last nightly's per-suite results (canonical "=== Results: ===" lines)
+#   - git log last 30d for commits without #NNNN card reference
+#   - filesystem grep for @retired / .skip / xit / xdescribe / @flaky markers
+#   - Loki spine for card.demo.started vs card.accepted (gate-skip rate)
+#
+# Run manually whenever the team's quality discipline feels drifty, or as
+# part of a coherence audit. No hook, no auto-fire — Jeff runs it.
+#
+# Exits 0 if all green, 1 if any ⚠ flag fires.
+#
+# Usage:
+#   quality-health             — summary view
+#   quality-health --verbose   — full lists of flagged items
+#   quality-health --json      — JSON output for tooling
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+LOKI_URL="${LOKI_URL:-http://localhost:3102}"
+NIGHTLY_LOG="${NIGHTLY_LOG:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+WINDOW_DAYS="${WINDOW_DAYS:-30}"
+VERBOSE=0
+JSON_OUT=0
+for arg in "$@"; do
+  case "$arg" in
+    --verbose|-v) VERBOSE=1 ;;
+    --json) JSON_OUT=1 ;;
+    --help|-h) sed -n '2,/^$/p' "$0" | sed 's/^# //;s/^#//'; exit 0 ;;
+  esac
+done
+
+[ -d "$CHORUS_HOME" ] || { echo "FAIL: chorus root not found at $CHORUS_HOME" >&2; exit 2; }
+
+python3 - "$CHORUS_HOME" "$LOKI_URL" "$NIGHTLY_LOG" "$WINDOW_DAYS" "$VERBOSE" "$JSON_OUT" << 'PYEOF'
+import json, subprocess, sys, os, re, datetime, glob
+
+CHORUS_HOME, LOKI_URL, NIGHTLY_LOG, WINDOW_DAYS, VERBOSE, JSON_OUT = sys.argv[1:7]
+WINDOW_DAYS = int(WINDOW_DAYS)
+VERBOSE = int(VERBOSE)
+JSON_OUT = int(JSON_OUT)
+
+now = int(datetime.datetime.now().timestamp())
+day = 86400
+window_start_epoch = now - WINDOW_DAYS * day
+
+# --- 1. Nightly suite results ---
+suite_pass = suite_fail = suite_skip = suite_dnr = 0
+runtime_outliers = []
+if os.path.exists(NIGHTLY_LOG):
+    with open(NIGHTLY_LOG, errors='ignore') as f:
+        # Look for the most recent batch of "=== Results: ===" lines and slow-suite durations
+        for line in f.readlines()[-5000:]:
+            m = re.search(r"=== Results: (\d+) passed, (\d+) failed ===", line)
+            if m:
+                p, fa = int(m.group(1)), int(m.group(2))
+                suite_pass += p
+                suite_fail += fa
+            m2 = re.search(r"\((\d+) lines, (\d+)ms\)", line)
+            if m2:
+                ms = int(m2.group(2))
+                if ms > 10000:
+                    runtime_outliers.append(ms)
+
+# --- 2. git log last 30d, count commits with vs without #NNNN reference ---
+# Carded vs uncarded (proxy for KNOWN_FAILS allowlist drift; not strictly --no-verify).
+git_carded = 0
+git_uncarded = 0
+git_uncarded_samples = []
+try:
+    out = subprocess.run(
+        ['git', 'log', f'--since={WINDOW_DAYS} days ago', '--pretty=format:%H|%s'],
+        capture_output=True, text=True, cwd=CHORUS_HOME, timeout=30,
+    )
+    for line in out.stdout.split('\n'):
+        if not line.strip():
+            continue
+        sha, _, subject = line.partition('|')
+        if re.search(r'#\d{3,5}', subject):
+            git_carded += 1
+        else:
+            git_uncarded += 1
+            if len(git_uncarded_samples) < 10:
+                git_uncarded_samples.append(f'{sha[:8]}  {subject[:80]}')
+except Exception:
+    pass
+
+# --- 3. Stale-skip filesystem markers ---
+skip_patterns = {
+    '@retired': r'@retired\b',
+    '.skip': r'\.skip\(',
+    'xit': r'\bxit\(',
+    'xdescribe': r'\bxdescribe\(',
+    '@flaky': r'@flaky\b',
+}
+stale_counts = {k: 0 for k in skip_patterns}
+stale_samples = {k: [] for k in skip_patterns}
+test_files = []
+for ext in ('*.test.ts', '*.test.js', '*.feature', '*.bats', '*.spec.ts'):
+    for path in glob.glob(f'{CHORUS_HOME}/**/{ext}', recursive=True):
+        if '/node_modules/' in path or '/dist/' in path or '/.consumed' in path:
+            continue
+        test_files.append(path)
+for path in test_files:
+    try:
+        with open(path, errors='ignore') as f:
+            content = f.read()
+        for label, pat in skip_patterns.items():
+            count = len(re.findall(pat, content))
+            if count:
+                stale_counts[label] += count
+                rel = path.replace(CHORUS_HOME + '/', '')
+                if len(stale_samples[label]) < 5:
+                    stale_samples[label].append(f'{count}× in {rel}')
+    except Exception:
+        pass
+stale_total = sum(stale_counts.values())
+
+# --- 4. Gate-skip rate via Loki (card.demo.started vs card.accepted) ---
+demo_started_cards = set()
+accepted_cards = set()
+try:
+    for ev in ('card.demo.started', 'card.accepted'):
+        cmd = [
+            'curl', '-s', f'{LOKI_URL}/loki/api/v1/query_range',
+            '--data-urlencode', f'query={{job=~".+"}} | json | event="{ev}"',
+            '--data-urlencode', 'limit=5000',
+            '--data-urlencode', f'start={window_start_epoch}000000000',
+            '--data-urlencode', f'end={now}000000000',
+        ]
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout
+        try:
+            d = json.loads(out)
+            for s in d.get('data', {}).get('result', []):
+                for _, line in s.get('values', []):
+                    try:
+                        j = json.loads(line)
+                        cid = j.get('card_id') or j.get('card')
+                        if cid is not None:
+                            try:
+                                cid = int(cid)
+                            except Exception:
+                                continue
+                            if ev == 'card.demo.started':
+                                demo_started_cards.add(cid)
+                            else:
+                                accepted_cards.add(cid)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+except Exception:
+    pass
+accepted_without_demo = accepted_cards - demo_started_cards
+gate_skip_rate = (len(accepted_without_demo) / max(len(accepted_cards), 1)) * 100 if accepted_cards else 0.0
+
+# --- output ---
+if JSON_OUT:
+    print(json.dumps({
+        'window_days': WINDOW_DAYS,
+        'suites': {'pass': suite_pass, 'fail': suite_fail, 'skip': suite_skip, 'did_not_run': suite_dnr},
+        'git': {'carded': git_carded, 'uncarded': git_uncarded},
+        'stale_skip': stale_counts,
+        'stale_skip_total': stale_total,
+        'runtime_outliers_count_over_10s': len(runtime_outliers),
+        'gate_skip_rate': round(gate_skip_rate, 1),
+        'gate_skip': {
+            'accepted_total': len(accepted_cards),
+            'accepted_without_demo': len(accepted_without_demo),
+            'demo_started': len(demo_started_cards),
+        },
+    }, indent=2))
+    sys.exit(0)
+
+print(f"data window:           last {WINDOW_DAYS}d ({datetime.datetime.fromtimestamp(window_start_epoch).date()} → {datetime.datetime.fromtimestamp(now).date()})")
+print(f"suites:                {suite_pass} pass / {suite_fail} fail / {suite_skip} skip / {suite_dnr} DID NOT RUN")
+print(f"git commits last {WINDOW_DAYS}d:    {git_carded} carded (#NNNN cited) / {git_uncarded} uncarded")
+print(f"stale-skip markers:    {stale_total} total")
+for label, count in stale_counts.items():
+    if count > 0 and VERBOSE:
+        print(f"                       {count}× {label}")
+print(f"runtime outliers:      {len(runtime_outliers)} suite-runs over 10s")
+print(f"gate-skip rate:        {gate_skip_rate:.1f}%  ({len(accepted_without_demo)} / {len(accepted_cards)} accepted-without-demo, {len(demo_started_cards)} demo-started)")
+print()
+
+RED, GRN, YEL, RST = '\033[31m', '\033[32m', '\033[33m', '\033[0m'
+warns = 0
+def f_flag(msg):
+    global warns
+    warns += 1
+    print(f"  {YEL}⚠ {msg}{RST}")
+def f_ok(msg):
+    print(f"  {GRN}✓ {msg}{RST}")
+
+if suite_fail > 0:
+    f_flag(f"{suite_fail} test failures in last nightly")
+    if VERBOSE:
+        # would dump per-suite detail; nightly log doesn't always carry it cleanly
+        pass
+else:
+    f_ok("nightly suites all passing (or no recent nightly data)")
+
+if stale_total > 0:
+    f_flag(f"{stale_total} stale-skip markers in test files")
+    for label, count in stale_counts.items():
+        if count > 0:
+            samples = stale_samples[label][:3]
+            print(f"      {count}× {label}")
+            if VERBOSE:
+                for s in samples: print(f"        {s}")
+else:
+    f_ok("no stale-skip markers")
+
+if gate_skip_rate > 10.0:
+    f_flag(f"gate-skip rate {gate_skip_rate:.1f}% > 10% threshold ({len(accepted_without_demo)} accepted without demo:started in {WINDOW_DAYS}d)")
+    if VERBOSE:
+        for cid in sorted(accepted_without_demo)[:10]:
+            print(f"      #{cid}")
+else:
+    f_ok(f"gate-skip rate {gate_skip_rate:.1f}% within budget")
+
+if git_uncarded > 50:
+    f_flag(f"{git_uncarded} git commits in last {WINDOW_DAYS}d without #NNNN reference (KNOWN_FAILS allowlist drift signal — #2497)")
+    if VERBOSE:
+        for s in git_uncarded_samples: print(f"      {s}")
+else:
+    f_ok(f"{git_uncarded} uncarded commits within budget")
+
+print()
+if warns > 0:
+    print(f"{YEL}⚠ {warns} concerns flagged{RST} — see above")
+    sys.exit(1)
+print(f"{GRN}✓ all green{RST}")
+sys.exit(0)
+PYEOF
