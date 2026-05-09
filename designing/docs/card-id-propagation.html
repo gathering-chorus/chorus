@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>card_id propagation contract (#2838)</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 980px; margin: 2em auto; padding: 0 1in; color: #222; line-height: 1.5; }
+  h1, h2, h3 { line-height: 1.25; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: .3em; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: .2em; }
+  h3 { margin-top: 1.5em; }
+  table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: .35em .6em; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  code { background: #f6f8fa; padding: .1em .3em; border-radius: 3px; }
+  pre { background: #f6f8fa; padding: .8em; border-radius: 4px; overflow-x: auto; line-height: 1.4; }
+  .meta { color: #666; font-size: .9em; }
+  .rule { background: #fffbe6; border-left: 4px solid #d4a017; padding: .6em 1em; margin: 1em 0; }
+  .yes { color: #1a7f1a; font-weight: 600; }
+  .no  { color: #b00020; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>card_id propagation contract (#2838)</h1>
+<p class="meta">Silas · 2026-05-09 · substrate design. Companion to <a href="trace-id-propagation.html">trace_id (#2839)</a>; rides the same envelope, different mint/inheritance rules. Implementation lands per-surface in follow-on cards.</p>
+
+<h2>Headline</h2>
+<p>card_id is the <strong>work-binding</strong> field. It travels with card-scoped flows (a /pull, /acp, /demo, gate run, build triggered by a card commit) and is silent on system events (daemon heartbeats, health probes, canonical-sync, alert-fires not bound to a card). <strong>Card-scoped events MUST carry it; system events MUST NOT.</strong> The split is what closes the gate-chain-via-card-comments gap structurally — gates emit comments today because spine doesn't bind to card. With card_id on every event of a card-scoped flow, spine and board state join cleanly without a comment-as-channel workaround.</p>
+
+<h2>Scope rule (the load-bearing primitive)</h2>
+<div class="rule">
+<strong>card_id is optional in the envelope and required on a closed list of event-type prefixes.</strong> Adding it everywhere is wrong (heartbeat / health / sync / alert events have no card to bind to). Adding it only ad hoc is wrong (today's failure mode — gate emits drop the field, board state diverges from spine). The contract names the closed list; spine-events.json declares per-event-type whether card_id is required.
+</div>
+
+<h3>MUST carry card_id (card-scoped events)</h3>
+<ul>
+<li><code>card.*</code> — card.pulled, card.demo.started, card.accepted, card.rejected, card.unpulled</li>
+<li><code>gate.*</code> — gate.product.passed, gate.code.passed, gate.quality.passed, gate.arch.passed, gate.ops.passed (and *.failed counterparts)</li>
+<li><code>demo.*</code> — demo.validate.completed, demo.preflight.completed, demo.stakes.completed, demo.signal.completed</li>
+<li><code>chorus_acp.*</code>, <code>chorus_commit.*</code>, <code>chorus_pull_card.*</code>, <code>chorus_unpull_card.*</code>, <code>chorus_cards_done.*</code> — every transactional MCP that derives a card from the board</li>
+<li><code>build.*</code>, <code>deploy.*</code> — only when the build/deploy is triggered by a card-scoped commit (see cycle stitching)</li>
+<li><code>flow.*</code> terminal events — when flow_kind ∈ {acp, pull, demo, gate, build}</li>
+</ul>
+
+<h3>MUST NOT carry card_id (system events)</h3>
+<ul>
+<li><code>library.health.*</code>, <code>canonical.sync.*</code>, <code>canonical.synced</code>, <code>canonical.repaired</code> — infrastructure</li>
+<li><code>alert.*</code> when not bound to a card-scoped flow</li>
+<li><code>nudge.*</code>, <code>mcp.nudge.*</code> — nudges aren't card-scoped (they're role-to-role)</li>
+<li><code>pulse.*</code>, <code>observer.*</code> heartbeats and fan-outs not in a card flow</li>
+<li><code>chorus-hooks-supervisor.*</code> daemon lifecycle events</li>
+<li><code>tool_call</code> events from agent sessions outside an active card</li>
+</ul>
+
+<h3>MAY carry card_id (context-dependent)</h3>
+<ul>
+<li><code>guard.scrub.blocked</code>, <code>icd.gate.refused</code>, <code>doc.coherence.warned</code> — hook events: carry card_id when the triggering tool call originated inside a card-scoped session, omit otherwise</li>
+<li><code>commit.landed</code>, <code>binary.deployed</code> — carry card_id when derivable from the commit trailer (see cycle stitching), omit when the commit had no card</li>
+<li><code>crawler.graph.*</code>, <code>hydration.partial.divergent</code> — substrate-data events: usually no card, but if a card-scoped command triggered the crawl, propagate via env</li>
+</ul>
+
+<h2>Mint and inheritance rules</h2>
+
+<h3>Card-scoped flow entries (the mint sites)</h3>
+<table>
+<tr><th>Entry</th><th>Source of card_id</th><th>Already conformant?</th></tr>
+<tr><td><code>chorus_pull_card</code></td><td>argv (caller specifies)</td><td><span class="yes">Yes</span> — emits <code>card.pulled</code> with card_id today</td></tr>
+<tr><td><code>chorus_acp</code></td><td>derived from board (status=WIP, owner=role)</td><td>Partial — derives but doesn't propagate to all internal step emits</td></tr>
+<tr><td><code>chorus_commit</code></td><td>derived from board (same)</td><td>Partial</td></tr>
+<tr><td><code>chorus_unpull_card</code> / <code>chorus_cards_done</code></td><td>argv</td><td>Partial</td></tr>
+<tr><td>building-pipeline (launchd-triggered)</td><td>commit trailer <code>Chorus-Card-Id:</code></td><td><span class="no">No</span> — trailer not yet written by /acp</td></tr>
+<tr><td>/demo, /gate-* (Claude bash entry)</td><td>argv (CARD_ID)</td><td>Partial — emits with card_id but not all step events</td></tr>
+</table>
+
+<h3>The propagation primitive — same shape as trace_id</h3>
+<p>card_id rides through the same envelope/closure/env mechanism as trace_id (<a href="trace-id-propagation.html">#2839</a>). The difference is in <em>where it originates</em>: trace_id is minted at flow entry; card_id is <em>bound</em> at flow entry if the flow is card-scoped, otherwise <em>absent</em>.</p>
+<pre><code>// MCP entry handler (TS):
+const trace_id = mintTraceIdV7();
+const card_id = await deriveCardIdFromBoard(role); // or args.card_id
+const emit = createSpineEmitter(trace_id, defaultSpineEmitter(), card_id);
+// every emit() inside this call carries trace_id + card_id (when present)
+</code></pre>
+<p><strong>SpineEmitter extension (#2845 follow-on):</strong> grow <code>createSpineEmitter</code> from <code>(traceId)</code> to <code>(traceId, base, cardId?)</code>. Same closure pattern: when card_id is set, every emit attaches it to fields; when absent, no card_id key in the JSON. Falsy-card_id early-return preserves the system-event MUST NOT contract — system handlers construct an emitter with no card_id and the field is structurally absent, not "card_id: null".</p>
+
+<h2>Per-surface handoff</h2>
+
+<h3>MCP entry handlers (TS)</h3>
+<p>Card-scoped MCPs derive card_id at entry (board lookup or argv) and pass to <code>createSpineEmitter</code>. System-scope MCPs (<code>chorus_nudge_message</code>) construct emitter without card_id; field stays absent in their step events. <strong>This is the structural enforcement of the MUST/MUST NOT split.</strong></p>
+
+<h3>Bash CLIs</h3>
+<p>card_id rides on env (<code>CHORUS_CARD_ID</code>) set by the MCP's <code>execFile</code> options when the MCP is card-scoped. chorus-log reads <code>$CHORUS_CARD_ID</code> and adds it to every emit IF the event-type is in the MUST-carry list (chorus-log subcommand or wrapper logic). For top-level bash entry (skill bash, cron), the entry script exports <code>CHORUS_CARD_ID</code> when invoked from a card-scoped skill (/demo, /gate-*); otherwise leaves unset.</p>
+<p><strong>chorus-log change</strong>: dual to the trace_id change in #2839 — if <code>$CHORUS_CARD_ID</code> set AND the event-type prefix is in the MUST-carry list (<code>card.*</code>, <code>gate.*</code>, <code>demo.*</code>, <code>build.*</code>, <code>deploy.*</code>, <code>chorus_*</code>), prepend <code>card_id=$CHORUS_CARD_ID</code>. Otherwise leave unset. The classifier table is small and stable; ship as a const list in the bash wrapper.</p>
+
+<h3>Rust hooks</h3>
+<p>Shim reads <code>$CHORUS_CARD_ID</code> from the invoking shell's env. Hook events follow the MAY-carry rule: include card_id when the env is set (active card-scoped session), omit when absent (file save outside a card, ad-hoc tool call). Tag <code>flow_kind=hook-standalone</code> when card_id absent so query surfaces can distinguish.</p>
+
+<h3>External boundaries</h3>
+<p>Same as trace_id: the MCP brackets external calls (gh, git, npm) with start/completed events that carry card_id. The interior is opaque.</p>
+
+<h2>spine-events.json schema change</h2>
+<p>card_id is <strong>optional in the envelope</strong> (envelope = global per-event default), but per-event-type schema declares it required for the closed list above.</p>
+<pre><code>// designing/schemas/spine-events.json
+
+// envelope (global)
+"envelope": {
+  "card_id": {
+    "type": "integer",
+    "minimum": 1,
+    "required": false,
+    "description": "Work-binding id. Required on card-scoped events (card.*, gate.*, demo.*, build.*, deploy.*, chorus_*); MUST NOT appear on system events (library.*, canonical.*, nudge.*, pulse.*, daemon lifecycle)."
+  }
+}
+
+// per-event-type override (for events in the MUST-carry list)
+"events": {
+  "card.pulled": {
+    "fields": {
+      "card_id": { "required": true, "type": "integer", "minimum": 1 }
+    }
+  },
+  "gate.product.passed": { "fields": { "card_id": { "required": true } } },
+  // ...
+}
+</code></pre>
+<p>Validator: refuses an event in the MUST-carry list whose payload lacks card_id; refuses an event in the MUST-NOT list whose payload contains card_id. Soft-warn during migration, hardens once every surface conforms.</p>
+
+<h2>Multi-card flows</h2>
+<p>A /clearing session, a building-pipeline batch, or a card_done that closes N cards at once produces N events — one per card_id. <strong>Never a card_id list field.</strong> If the flow naturally fans out, the spine reflects that fan-out. Query surfaces filter by card_id and find every event for that card; a list-field would force every consumer to handle two shapes.</p>
+<p>The flow itself stays one trace_id (one transaction); card_id varies per emitted event within it.</p>
+
+<h2>Cross-cycle stitching (/acp → building-pipeline)</h2>
+<p>Same channels as trace_id, dual trailer:</p>
+<ol>
+<li><strong>Commit trailer</strong>: /acp writes <code>Chorus-Card-Id: &lt;card_id&gt;</code> alongside <code>Chorus-Trace-Id:</code>. Building-pipeline reads <code>git log -1 --format='%(trailers:key=Chorus-Card-Id,valueonly)'</code> on the commit it's about to build. If present, it sets <code>CHORUS_CARD_ID</code> for the build's child processes; build/deploy events inherit. If absent (commits made outside /acp), build/deploy events emit without card_id — that's correct behavior for non-card-scoped commits.</li>
+<li><strong>launchd plist environment</strong>: scheduled crawler runs are not card-scoped; their trace exists, their card_id is absent. Don't fabricate one.</li>
+<li><strong>Webhook X-Chorus-Card-Id header</strong>: future GitHub-Actions / external-CI handoff, dual to X-Chorus-Trace-Id.</li>
+</ol>
+<p>The headline outcome: <strong>one /acp + the building-pipeline it triggers + the deploy events it produces</strong> all share one card_id (and one trace_id). Loki query <code>{job=~".+"} |~ "&quot;card_id&quot;:&lt;N&gt;"</code> returns the full cycle for that card.</p>
+
+<h2>Migration sequence</h2>
+<p>Card_id rides the trace_id substrate; sequence after #2839's foundation lands.</p>
+<table>
+<tr><th>#</th><th>Surface</th><th>Card</th><th>Why this order</th></tr>
+<tr><td>1</td><td>SpineEmitter accepts card_id (#2845 extension)</td><td>follow-on (P1)</td><td>Foundation extension. <code>createSpineEmitter(traceId, base, cardId?)</code>. Same shape as trace_id; ten-line addition once #2845 ships.</td></tr>
+<tr><td>2</td><td>Six transactional MCPs derive + propagate card_id at entry</td><td>follow-on (P1)</td><td>chorus_acp / chorus_commit / chorus_pull_card / chorus_unpull_card / chorus_cards_done / chorus_cards_set. Mechanical after step 1.</td></tr>
+<tr><td>3</td><td>chorus-log bash wrapper — read CHORUS_CARD_ID, prepend on MUST-carry events</td><td>follow-on (P1)</td><td>Lights up bash emit sites. Includes the MUST/MUST NOT classifier table.</td></tr>
+<tr><td>4</td><td>cards / git-queue / chorus-werk — set CHORUS_CARD_ID for child processes</td><td>follow-on (P2)</td><td>Threads env through bash subprocess chains.</td></tr>
+<tr><td>5</td><td>chorus-hook-shim (Rust) — read CHORUS_CARD_ID, MAY-carry events</td><td>follow-on (P2)</td><td>Closes Rust gap. Standalone hooks emit without card_id.</td></tr>
+<tr><td>6</td><td>spine-events.json per-event-type schema + validator</td><td>follow-on (P1, after 1)</td><td>Encodes MUST-carry list. Soft-warn first; hardens after step 2 lands.</td></tr>
+<tr><td>7</td><td>Commit trailer Chorus-Card-Id + building-pipeline reader</td><td>follow-on (P2)</td><td>Cross-cycle stitching. After step 2 + #2839's commit-trailer step.</td></tr>
+<tr><td>8</td><td>Demo / gate-* skills — set CHORUS_CARD_ID for chorus-log child invocations</td><td>follow-on (P3)</td><td>Skill-side env export. Lower priority because handlers (step 2) already emit with card_id; this just closes the bash-emit gap inside skill steps.</td></tr>
+</table>
+
+<h2>What this contract does NOT do</h2>
+<ul>
+<li><strong>Does not require card_id on every emit.</strong> The MUST-NOT list is load-bearing — system events stay clean.</li>
+<li><strong>Does not introduce a card_id list field.</strong> Multi-card flows fan out into N events.</li>
+<li><strong>Does not retrofit historical events.</strong> Forward-only; pre-contract events stay un-bound and queryable only via temporal joins.</li>
+<li><strong>Does not subsume subdomain or caused_by binding.</strong> Tier-2 per #2832 audit; separate later contracts.</li>
+<li><strong>Does not redefine trace_id.</strong> trace_id (#2839) is the transaction-scope id; card_id is the work-binding id. Different mint rules, same envelope plumbing.</li>
+</ul>
+
+<h2>Receipts (proposed end-to-end trace)</h2>
+<p>The proposed contract, walked through a /acp on card #N:</p>
+<table>
+<tr><th>Hop</th><th>Event</th><th>card_id</th><th>Source</th></tr>
+<tr><td>1</td><td>chorus_acp.invoked</td><td>N</td><td>derived from board (status=WIP, owner=role)</td></tr>
+<tr><td>2</td><td>chorus_acp.commit.started</td><td>N</td><td>emitter closure (step 2 migration)</td></tr>
+<tr><td>3</td><td>chorus_commit.invoked → bash git-queue.sh</td><td>N</td><td>CHORUS_CARD_ID env (step 4 migration)</td></tr>
+<tr><td>4</td><td>guard.scrub.allowed (PreToolUse hook)</td><td>N</td><td>shim reads $CHORUS_CARD_ID (step 5 migration)</td></tr>
+<tr><td>5</td><td>git commit landed → commit trailer Chorus-Card-Id: N</td><td>N</td><td>/acp writes trailer (step 7 migration)</td></tr>
+<tr><td>6</td><td>chorus_acp.gh-merge.started / completed</td><td>N</td><td>emitter closure</td></tr>
+<tr><td>7</td><td>cards done → card.accepted</td><td>N</td><td>argv to chorus_cards_done</td></tr>
+<tr><td>8</td><td>chorus_acp.flow.completed (terminal)</td><td>N</td><td>emitter closure</td></tr>
+<tr><td>9</td><td>building-pipeline launchd wakeup → reads commit trailer</td><td>N</td><td>git log trailer (step 7 migration)</td></tr>
+<tr><td>10</td><td>build.started / build.completed</td><td>N</td><td>CHORUS_CARD_ID env</td></tr>
+<tr><td>11</td><td>deploy.started / deploy.completed / binary.deployed</td><td>N</td><td>same env</td></tr>
+</table>
+<p>Then: <code>{job=~".+"} |~ "&quot;card_id&quot;:N"</code> returns every event of the /acp + its build cycle. Without this contract, ~70% of those events drop card_id today.</p>
+
+<h2>Reference</h2>
+<ul>
+<li>#2839 — trace_id propagation contract; this card mirrors its substrate.</li>
+<li>#2845 — SpineEmitter trace_id constructor (foundation; this contract extends to card_id).</li>
+<li>#2832 audit — eight invariants; card_id is invariant 2 of 8.</li>
+<li><a href="logs-service-design.html">#2848 logs-service-design</a> — names card_id as the work-binding field, defers full contract to this card.</li>
+<li>#2841 spike — per-hop ledger evidence; card_id appears on ~30% of /acp events today.</li>
+</ul>
+
+</body>
+</html>
