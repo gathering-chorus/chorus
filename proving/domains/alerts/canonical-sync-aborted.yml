@@ -15,32 +15,24 @@ schedule: "*/15 * * * *"
 
 check: |
   # Loki query: canonical.sync.aborted events in last 30 min.
-  # Threshold is 2 — single abort can be transient (lockf contention,
-  # mid-commit window). Sustained aborts mean the auto-repair didn't
-  # cover the case and operator triage is needed.
+  # Pre-fix this used python3 -c heredoc inline; nested quotes broke when
+  # alert-runner passed the block to `bash -c`, syntax-erroring every cycle
+  # and the runner treated that as a fire. Result: the alert generated all-
+  # night noise on a healthy substrate. Now: grep on the raw JSON, no
+  # embedded interpreter, no quote-stacking.
   NOW=$(date +%s)
   START=$(( NOW - 1800 ))
-  COUNT=$(curl -sf --max-time 8 -G "http://localhost:3102/loki/api/v1/query_range" \
+  RESP=$(curl -sf --max-time 8 -G "http://localhost:3102/loki/api/v1/query_range" \
     --data-urlencode 'query={job=~".+"} |~ "canonical.sync.aborted"' \
     --data-urlencode "start=${START}000000000" \
     --data-urlencode "end=${NOW}000000000" \
-    --data-urlencode "limit=100" 2>/dev/null \
-    | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-n=0
-for r in d.get('data',{}).get('result',[]):
-  for v in r.get('values',[]):
-    try: o=json.loads(v[1])
-    except: continue
-    if o.get('event','') == 'canonical.sync.aborted': n+=1
-print(n)
-" 2>/dev/null || echo "")
-  if [ -z "$COUNT" ]; then
-    echo "ok"  # Loki unreachable — covered by loki-down alerts, not this one
+    --data-urlencode "limit=100" 2>/dev/null)
+  if [ -z "$RESP" ]; then
+    echo "ok"
     exit 0
   fi
-  if [ "$COUNT" -lt 2 ]; then
+  COUNT=$(echo "$RESP" | grep -o '"event":"canonical.sync.aborted"' | wc -l | tr -d ' ')
+  if [ "${COUNT:-0}" -lt 2 ]; then
     echo "ok"
     exit 0
   fi

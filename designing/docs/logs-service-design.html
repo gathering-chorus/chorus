@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logs — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  h4 { font-size: 0.92em; margin-top: 1em; color: #065f46; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .source-note { background: #eff6ff; border-left: 4px solid #2563eb; padding: 10px 14px; margin: 16px 0; border-radius: 4px; font-size: 0.85em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 14px; margin: 10px 0; overflow-x: auto; font-size: 0.82em; line-height: 1.4; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #065f46; }
+  .open-q { background: #fef9c3; border-left: 4px solid #ca8a04; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.86em; }
+  .open-q strong { color: #854d0e; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; font-size: 0.82em; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for Logs.</strong> Related: <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> · <a href="/designing/docs/version-control-service-design.html">Version Control</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+
+<h1>Logs <span>— Service Design</span></h1>
+<p class="date">2026-05-08 — Silas (#2848). Names logs as a first-class Chorus domain. Origin: Jeff (2026-05-08): <em>"we are trying to normalize our interaction with logs."</em> That's the through-line of this blueprint — one emit shape, one query surface, one trace_id concept, used the same way by every actor (agent, dashboard, alert, human, MCP). Today's substrate matches at ~80%; the remaining 20% is the normalization gap, named in Path-to-close.</p>
+
+<div class="source-note">
+<strong>Source of truth:</strong> Live actor list, BDD scenarios, contract entries, dependencies, gaps, and integrations live at:
+<ul style="margin-top: 6px;">
+  <li><a href="http://localhost:3340/athena/domain-detail.html?id=logs-domain"><code>/athena/domain-detail.html?id=logs-domain</code></a> — pending creation; this doc is the spec until the subdomain entry lands.</li>
+  <li><code>designing/schemas/spine-events.json</code> — canonical event type registry.</li>
+  <li><code>shared-observability/config/promtail/promtail-native.yaml</code> — scrape configuration.</li>
+</ul>
+This doc narrates <em>structure, contracts, and intent</em>. Field-level event schema lives in <code>spine-events.json</code>; promtail scrape definitions live in the YAML. Both are referenced by name, not duplicated here.
+</div>
+
+<div class="promise">
+<strong>Designed target state — normalized interaction.</strong> Every actor (agent, dashboard, alert, human, MCP) interacts with logs the same way. Four guarantees hold: (1) <strong>one emit shape</strong> — every script, daemon, and handler uses its language's canonical adapter (chorus-log / SpineEmitter / chorus-hooks); raw <code>echo &gt;&amp;2</code> / <code>println!</code> / <code>console.log</code> for operational events is forbidden; the envelope is identical across languages; (2) <strong>one schema</strong> — every emission carries the seven required envelope fields; spine-events.json declares the type and payload; emits whose shape doesn't match are refused at write time; (3) <strong>one trace_id concept</strong> — transaction-scope, UUIDv7, minted at flow entry, propagated through every emit until the terminal event; one Loki filter returns the entire causal chain; (4) <strong>one query surface</strong> — agents call typed MCP tools with refusal taxonomy; dashboards and alerts query Loki directly; both shapes return the same events because emit is normalized upstream. Substrate ~80% built today; the remaining 20% is the normalization gap.
+</div>
+
+<div class="open-q">
+<strong>What "logs" is, distinct from neighbors.</strong> The blueprint claims this domain owns three things and explicitly disclaims four:
+<ul>
+  <li><strong>Owns:</strong> emit shape (envelope + payload), transport pipeline (Promtail → Loki), query/trace surface (Loki API + MCP-Loki-query).</li>
+  <li><strong>Does NOT own:</strong> spine event type ontology (a separate concern with its own schema), metrics derivation (numerical time series, separate domain), Loki operational health (infrastructure), retention policy of derived artifacts (separate concern).</li>
+</ul>
+The boundary matters because every "should logs do X?" question reduces to one of these: if X touches emit/transport/query, it's logs; otherwise it's another domain consuming logs.
+</div>
+
+<h2>Architecture</h2>
+<pre class="mermaid">
+flowchart LR
+  subgraph emit ["Emit (per language)"]
+    bash["bash<br/>chorus-log"]
+    ts["TypeScript<br/>SpineEmitter (Pino)"]
+    rust["Rust<br/>chorus-hooks daemon"]
+  end
+  subgraph stage ["Staging"]
+    files["~/Library/Logs/Chorus/*.log<br/>JSON lines"]
+  end
+  subgraph transport ["Transport"]
+    promtail["Promtail<br/>(scrape jobs)"]
+    loki["Loki<br/>(3-day retention)"]
+  end
+  subgraph consume ["Consume"]
+    grafana["Grafana<br/>dashboards"]
+    mcpquery["MCP<br/>chorus_logs_query"]
+    alerts["Alert YAMLs<br/>proving/domains/alerts/"]
+  end
+  bash --> files
+  ts --> files
+  rust --> files
+  files --> promtail
+  promtail --> loki
+  loki --> grafana
+  loki --> mcpquery
+  loki --> alerts
+</pre>
+
+<h2>Contracts</h2>
+
+<h3>Emit envelope (required on every emission)</h3>
+<pre><code>{
+  "event":     "&lt;domain&gt;.&lt;noun&gt;.&lt;verb_past&gt;",   // declared in spine-events.json
+  "trace_id":  "&lt;uuid-v7&gt;",                       // transaction-scope correlation
+  "role":      "silas|kade|wren|system",          // who emitted
+  "ts":        "&lt;ISO 8601 with timezone&gt;",        // emit time
+  "level":     "info|warn|error",                  // severity per outcome
+  "source":    "&lt;script | service | binary name&gt;", // where it came from
+  "payload":   { ... }                            // event-type-specific fields
+}</code></pre>
+<p>Optional fields: <code>card_id</code> (when emit is card-scoped), <code>span_id</code> (per-log-line correlation, Pino's internal), <code>parent_trace_id</code> (when one flow spawns another), <code>caused_by</code> (reference to triggering event_id).</p>
+
+<h3>Event type contract</h3>
+<p>Every <code>event</code> name must appear in <code>designing/schemas/spine-events.json</code>. Schema entries declare:</p>
+<pre><code>{
+  "vertebra":    "capturing|directing|operating|...",
+  "legacy_name": "&lt;old name or null&gt;",
+  "source":      "&lt;canonical emit site&gt;",
+  "description": "&lt;one-line semantic&gt;",
+  "fields":      { "&lt;field-name&gt;": "&lt;description&gt;", ... }
+}</code></pre>
+<p>Naming convention: <code>&lt;domain&gt;.&lt;noun&gt;.&lt;verb_past&gt;</code> (e.g., <code>card.accepted</code>, <code>build.completed</code>, <code>canonical.synced</code>). Validator (Path-to-close item) refuses unknown event names at emit time.</p>
+
+<h3>Trace_id lifecycle</h3>
+<ul>
+  <li><strong>Mint</strong> at flow entry: MCP entry handler calls <code>mintTraceIdV7()</code> (UUIDv7); top-of-CLI bash mints via <code>uuidgen | tr A-Z a-z</code>.</li>
+  <li><strong>Propagate</strong> via SpineEmitter closure (TS), <code>$CHORUS_TRACE_ID</code> env (bash and Rust subprocesses), <code>X-Chorus-Trace-Id</code> HTTP header (cross-service), <code>Chorus-Trace-Id:</code> commit trailer (cross-cycle: /acp → building-pipeline).</li>
+  <li><strong>Terminate</strong> with one of three terminal events: <code>flow.completed</code>, <code>flow.failed</code>, <code>flow.aborted</code>. Each carries trace_id + flow_kind + duration_ms.</li>
+</ul>
+<p>Full design: <code>designing/docs/trace-id-propagation.html</code> (#2839).</p>
+
+<h3>Card_id propagation</h3>
+<p>card_id is the work-binding field. Carried through the same envelope as trace_id. When the originating event has a card_id, every spawned event in the same flow inherits it. Multi-card flows fan out into N events, each with one card_id. (Full contract: #2838 design pending.)</p>
+
+<h2>Surfaces — adapter contracts</h2>
+
+<div class="component">
+<h3>Bash — <code>chorus-log</code></h3>
+<p><strong>Caller shape:</strong> <code>chorus-log &lt;event&gt; &lt;role&gt; key=val key=val</code></p>
+<p><strong>Mechanism:</strong> shim wrapper at <code>platform/scripts/chorus-log</code> dispatches via <code>chorus-hook-shim</code> binary (Rust). Reads <code>$CHORUS_TRACE_ID</code> from env if set; mints fresh otherwise. Writes JSON line to a daemon log file promtail scrapes.</p>
+<p><strong>Boundary:</strong> bash scripts that emit operational events MUST use <code>chorus-log</code>. Bash scripts that produce CLI output for human readers (validators, linters, query tools) emit via <code>echo</code> as before — those are user interfaces, not operational telemetry. The hook backstop (Path-to-close) enforces this distinction.</p>
+<p><strong>Refusal:</strong> shim refuses on missing event-name or unknown event (post-validator). Caller sees stderr with refusal reason; non-zero exit.</p>
+</div>
+
+<div class="component">
+<h3>TypeScript — <code>SpineEmitter</code> + Pino</h3>
+<p><strong>Caller shape:</strong> <code>const emit = createSpineEmitter(traceId); emit('event.name', { card_id, ...fields });</code></p>
+<p><strong>Mechanism:</strong> closure constructed at MCP handler entry captures trace_id; every <code>emit</code> attaches it. Underlying Pino logger writes JSON to chorus-api stdout; daemon log file promtail scrapes.</p>
+<p><strong>Boundary:</strong> TypeScript handlers in chorus-api MUST construct a SpineEmitter at flow entry. Handlers do NOT call Pino directly for spine events. Pino's per-line trace_id renames to <code>span_id</code> to disambiguate.</p>
+<p><strong>Refusal:</strong> emit() rejects if event-name absent or trace_id type-invalid. Validator middleware (Path-to-close) refuses unknown events.</p>
+</div>
+
+<div class="component">
+<h3>Rust — chorus-hooks daemon</h3>
+<p><strong>Caller shape:</strong> <code>emit_spine!("event.name", role=ROLE, trace_id=TRACE, payload)</code></p>
+<p><strong>Mechanism:</strong> daemon writes JSON via the standard <code>log</code> crate to its log file. chorus-hook-shim invocations write inline JSON for hook events. Reads <code>$CHORUS_TRACE_ID</code> from invoking shell's env.</p>
+<p><strong>Boundary:</strong> Rust binaries in chorus-hooks emit only via the daemon's logger or shim's inline path. No stderr/stdout side-channels for operational events.</p>
+<p><strong>Refusal:</strong> hook shim refuses if envelope incomplete; PreToolUse hooks refuse the tool call with the refusal reason in their response.</p>
+</div>
+
+<h2>Aggregation — Promtail + Loki</h2>
+<p><strong>Promtail</strong> scrapes JSON lines from <code>~/Library/Logs/Chorus/*.log</code>. Scrape jobs in <code>shared-observability/config/promtail/promtail-native.yaml</code>:</p>
+<table>
+<thead><tr><th>Job label</th><th>Source files</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>job=daemon-logs</code></td><td>chorus-hooks.log, chorus-hooks-supervisor.log</td><td>Hook daemon stdout/stderr + heartbeat</td></tr>
+<tr><td><code>job=chorus-api</code></td><td>chorus-api.log</td><td>TS daemon emissions (Pino + SpineEmitter)</td></tr>
+<tr><td><code>job=chorus-hooks</code></td><td>(alias of daemon-logs in current config)</td><td>Filtered view for hook-specific events</td></tr>
+<tr><td><code>job=platform-logs</code></td><td>cards-cli.log, generic bash via chorus-log</td><td>Bash chorus-log emissions</td></tr>
+<tr><td><code>job=platform-chorus</code></td><td>pulse.log, observer.log, nudge.log</td><td>Pulse worker + observer fan-out</td></tr>
+<tr><td><code>job=platform-permission-prompts</code></td><td>tcc-prompts.log</td><td>TCC / sandbox prompt telemetry</td></tr>
+</tbody>
+</table>
+<p><strong>Loki</strong> at <code>localhost:3102</code>. Retention 3 days. Indexed on labels (<code>job</code>, <code>level</code>) plus full-text on the line body. No structured field index — a deliberate tradeoff: query is regex over the line, which is fast enough at current volume and avoids the cardinality explosion that fielded indexes hit on trace_ids.</p>
+<p><strong>Operational guarantees:</strong></p>
+<ul>
+  <li>At-most-once delivery from emit to Loki (Promtail can drop on backpressure; not a queue).</li>
+  <li>Eventual consistency: emit-to-queryable lag ≤ 5s under normal load.</li>
+  <li>No emit-side persistence: log files are tail-and-rotate; the durable store is Loki + the source-of-truth (cards, git, files).</li>
+  <li>Retention 3 days (Loki). Queries against older events fail; "what happened a week ago" is answered from cards/git/spine-events.json, not from logs.</li>
+</ul>
+
+<h2>Query surface</h2>
+
+<h3>Tier 1 — Loki HTTP API (canonical)</h3>
+<pre><code>curl -G http://localhost:3102/loki/api/v1/query_range \
+  --data-urlencode 'query={job=~".+"} |~ "&lt;trace_id&gt;"' \
+  --data-urlencode 'start=&lt;ns&gt;' --data-urlencode 'end=&lt;ns&gt;' \
+  --data-urlencode 'limit=1000'</code></pre>
+<p>Used by Grafana, alert YAMLs, and ad-hoc operator queries. Stable surface; never wrapped or hidden.</p>
+
+<h3>Tier 2 — MCP-Loki-query (typed agent surface, #2840)</h3>
+<pre><code>chorus_logs_query({
+  by: "trace_id" | "card_id" | "event_pattern",
+  value: "&lt;id-or-pattern&gt;",
+  time_window: "5m" | "1h" | "1d",
+  limit: 1000
+})
+// → { events: [...], truncated: bool, cursor: string|null }
+
+chorus_logs_flow({ trace_id })
+// → { events: [...], terminal_event: "...", duration_ms, status }
+
+chorus_logs_missing_field({ field: "card_id" | "trace_id", time_window })
+// → { count, sample: [...] }   // visibility into adapter-coverage gaps</code></pre>
+<p>Refusal taxonomy: <code>loki-unreachable | invalid-time-window | id-not-found | result-too-large</code>.</p>
+
+<h3>Tier 3 — Grafana dashboards</h3>
+<p>At <code>localhost:3100</code>. Canonical panels: trace timeline, error rate by service, alert-fired-today, gate-pass rate. Dashboard JSON checked into <code>dashboards/</code>; Grafana provisions from there.</p>
+
+<h2>Failure modes + recovery</h2>
+<table>
+<thead><tr><th>Failure</th><th>Detection</th><th>Recovery</th></tr></thead>
+<tbody>
+<tr><td>Promtail crashed / not scraping</td><td>Loki receives no entries from a job for &gt;5min</td><td>Alert YAML fires; <code>launchctl kickstart</code> Promtail; investigate log volume vs Promtail throughput</td></tr>
+<tr><td>Loki down</td><td>Health endpoint <code>/ready</code> non-200</td><td>Alert + <code>app-state.sh</code> restart; queries fail loudly until back; emit continues (writes still hit local files)</td></tr>
+<tr><td>Disk full at <code>~/Library/Logs/Chorus/</code></td><td>Disk-health alert at 90% / 95%</td><td>Log rotation cron; emergency truncation; Promtail catches up after rotation</td></tr>
+<tr><td>Adapter outage (chorus-log shim broken)</td><td>Bash emits go to fallback echo; missing-event-types in Loki query</td><td>Hook backstop catches; rebuild + redeploy chorus-hooks; events emitted during outage are lost (at-most-once)</td></tr>
+<tr><td>Schema drift (event emitted without registry entry)</td><td>Validator refuses at emit (Path-to-close); manual Loki audit otherwise</td><td>Add registry entry (#2843 batch class)</td></tr>
+<tr><td>Trace_id collision</td><td>UUIDv7 birthday-bound; effectively zero in practice</td><td>Mint fresh; report as anomaly</td></tr>
+</tbody>
+</table>
+
+<h2>Completeness Contract (ADR-028)</h2>
+<p>Logs-domain is a <strong>governed-record domain</strong> per ADR-028. It is <strong>adapter-backed</strong> — the underlying "data" is JSON lines on disk and Loki time-series storage, not graph triples — so the addendum applies.</p>
+
+<table>
+<thead><tr><th>Req</th><th>Mapping for Logs</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>1. Data layer separated</td><td>Schema in <code>spine-events.json</code>. Records in Loki (transient) + log files (source). Spec at this doc.</td><td>OK.</td></tr>
+<tr><td>2. One write path</td><td>Per language: bash chorus-log, TS SpineEmitter, Rust chorus-hooks. No raw stderr for operational events.</td><td>Three adapters in place. Bash adapter at ~30% adoption (#2835 narrowed the gap).</td></tr>
+<tr><td>3. One read path</td><td>Loki HTTP API canonical; MCP-Loki-query typed surface; Grafana renders.</td><td>Loki + Grafana OK. MCP surface (#2840) not yet shipped.</td></tr>
+<tr><td>4. Cite-by-ID, never paraphrase</td><td>Cards cite event names + field names + trace_ids by exact identifier.</td><td>OK. Schema-drift class (#2843) is the named exception.</td></tr>
+<tr><td>5. Hook backstops the old path</td><td>Hook bites raw <code>echo &gt;&amp;2</code> in agent sessions; redirects to chorus-log.</td><td>Designed; not shipped. Premature today.</td></tr>
+<tr><td>6. Drift test guards the contract</td><td>Validator at emit time refuses unknown events / malformed envelopes.</td><td>Not shipped. Gap.</td></tr>
+<tr><td>7. Subdomain plumbed</td><td><code>chorus:logs-domain</code> SubDomain entry; Athena page renders.</td><td>Not yet. Falls out of #2847.</td></tr>
+</tbody>
+</table>
+<p>Order discipline: the blueprint lands first (this doc + spec). Implementation cards sequence from Path-to-close, one requirement at a time. Per ADR-028: hooks (req 5) earn their keep ONLY after reqs 1–4 are clean.</p>
+
+<p>Three meta-invariants per ADR-028: <strong>I-1</strong> spine-events.json is the single source of event-type truth, no surface caches; <strong>I-4</strong> one source, multiple call shapes (bash + TS + Rust adapters all emit the same envelope); <strong>I-10</strong> atomic per emission (each emit is independent; aggregation correlates after the fact, never as a synchronous fan-in).</p>
+
+<h2>As-Is — 2026-05-08</h2>
+<p>Substrate ~80% built. What works: three adapters, Promtail → Loki pipeline, Grafana dashboards, card_id-as-de-facto-correlation, alert YAMLs reading Loki. What doesn't:</p>
+<ol>
+  <li><strong>Trace_id contract not implemented.</strong> Spike found 13 trace_ids per /acp transaction. Contract designed (#2839); foundation card filed (#2845, SpineEmitter constructor); migration cohort pending. <em>This is the biggest gap.</em></li>
+  <li><strong>4–5 emitted events not in spine-events.json.</strong> Schema-drift class. Mechanical fix (#2843).</li>
+  <li><strong>No emit-time validator.</strong> ADR-028 req 6 unmet. Drift goes silent until manual audit.</li>
+  <li><strong>~70% of bash scripts still echo to stderr</strong> for what would be operational events. Most are correct human-facing CLI output (#2835 honest re-scope); ~5 are real gaps that need migration case-by-case.</li>
+  <li><strong>chorus:logs-domain subdomain entry missing.</strong> ADR-028 req 7. Athena page doesn't render.</li>
+  <li><strong>MCP-Loki-query (typed agent surface) not shipped.</strong> Today agents use ad-hoc curl. #2840.</li>
+</ol>
+
+<h2>Path to close</h2>
+<p>Six items above; six cards close them. Sequence respects dependency order:</p>
+<ol>
+  <li><strong>#2843</strong> (Silas, P3) — register #2827 + #2844 spine events. Mechanical, ~30 min. Closes drift class for current bites.</li>
+  <li><strong>#2845</strong> (Silas, P1) — SpineEmitter accepts trace_id in constructor. Foundation for #2839's migration cohort. 7-day soft commit per Wren's #2839 review.</li>
+  <li><strong>#2838</strong> (Silas, P1) — card_id propagation contract. Inherits #2839's envelope; tighter version.</li>
+  <li><strong>#2839 migration cohort</strong> (filed after #2838 acp) — Pino rename → span_id, six MCP mint sites, chorus-log env carrier, hook env read, schema validator.</li>
+  <li><strong>#2840</strong> (Silas, P1) — MCP-Loki-query agent surface. Earns its keep once the cohort lands and trace_id is queryable.</li>
+  <li><strong>chorus:logs-domain entry</strong> — small follow-on, slots opportunistically (likely after #2847 hierarchy cleanup).</li>
+</ol>
+<p>Bash adapter coverage tightens case-by-case as operational gaps surface (the #2835 pattern). Hook backstop (req 5) files when adapter coverage approaches 100% on operational paths — premature today.</p>
+
+<h2>To-Be — designed target state</h2>
+<p>The substrate doesn't change shape — it tightens to the contract. Target outcomes:</p>
+<ul>
+  <li><strong>One Loki query returns the full transaction</strong>: <code>{job=~".+"} |~ "&lt;trace_id&gt;"</code> covers /acp + the building-pipeline it triggers + the chorus-deploy kickstart + chorus-hooks emits in the post-merge window. Verified by spike #2841's per-hop ledger as test fixture (target: 1 trace_id; today: 13).</li>
+  <li><strong>Validator refuses unknown events at emit time.</strong> Schema-drift class closed structurally, not by manual audit.</li>
+  <li><strong>MCP-Loki-query is the agent's primary investigation tool.</strong> Typed refusal taxonomy. Replaces curl + jq.</li>
+  <li><strong>Logs-domain Athena page renders.</strong> chorus:logs-domain SubDomain entry, owner=silas, primaryStep=Operating, contains=spine-events.json + Loki + Promtail config.</li>
+  <li><strong>Hook backstop bites raw <code>echo &gt;&amp;2</code></strong> in agent sessions for operational events (after adapter coverage approaches 100%).</li>
+</ul>
+
+<h2>Gaps to close</h2>
+<table>
+<thead><tr><th>Gap</th><th>Class</th><th>Card</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>13 trace_ids per /acp transaction (no transaction-scope correlation)</td><td>Tracing substrate</td><td>#2839 contract (shipped) + #2845 foundation + 7-card migration cohort</td><td>P1</td></tr>
+<tr><td>4–5 emitted events not in spine-events.json</td><td>Schema drift</td><td>#2843</td><td>P3</td></tr>
+<tr><td>No schema-validation gate at emit time</td><td>ADR-028 req 6</td><td>Not filed; file when drift recurs</td><td>P3</td></tr>
+<tr><td>chorus:logs-domain subdomain entry missing</td><td>ADR-028 req 7</td><td>Falls out of #2847 hierarchy cleanup</td><td>P3</td></tr>
+<tr><td>Bash adapter coverage below 100% on operational paths</td><td>Adapter discipline</td><td>Per-script when bites; #2835 closed library-health-probe</td><td>P3 case-by-case</td></tr>
+<tr><td>Hook backstops on raw <code>echo &gt;&amp;2</code> not in place</td><td>ADR-028 req 5</td><td>Not filed; deferred until adapter coverage approaches 100%</td><td>P4 (premature)</td></tr>
+<tr><td>MCP-Loki-query (typed agent surface) not shipped</td><td>Query surface</td><td>#2840</td><td>P1 (after migration cohort)</td></tr>
+</tbody>
+</table>
+
+<h2>Implementation Plan</h2>
+<p>This card (<strong>#2848</strong>) lands the blueprint. Then, in dependency order:</p>
+<ol>
+  <li><strong>#2843</strong> — schema entry batch (Silas, P3 chore).</li>
+  <li><strong>#2845</strong> — SpineEmitter trace_id constructor (Silas, P1).</li>
+  <li><strong>#2838</strong> — card_id propagation contract (Silas, P1).</li>
+  <li><strong>#2839 migration cohort</strong> — filed as a batch after #2838 acp per Wren's plan; Pino rename, MCP mint sites, chorus-log env, hook env, validator.</li>
+  <li><strong>#2840</strong> — MCP-Loki-query (Silas, P1).</li>
+  <li><strong>chorus:logs-domain entry</strong> — small follow-on, slots after #2847.</li>
+</ol>
+
+<h2>Not in scope</h2>
+<ul>
+  <li>Metrics derivation (separate concern; today emerges informally from log queries).</li>
+  <li>Loki operational health (infrastructure, owned by ops layer).</li>
+  <li>Cross-machine log shipping (Bedroom ↔ Library) — won't-do until needed.</li>
+  <li>Spine event ontology design (separate concern; this domain consumes the schema, doesn't define it).</li>
+  <li>Replacing Loki with another backend — not a real question today.</li>
+  <li>Long-term log archival beyond Loki's 3-day retention — covered by source-of-truth artifacts (cards, git, spine-events.json).</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li>#2832 — logs+errors+execution-flow audit (eight invariants source).</li>
+  <li>#2835 — bash stringly stderr → chorus-log migration (honest re-scope).</li>
+  <li>#2841 — trace_id + card_id threading spike (13-trace_ids-per-flow finding).</li>
+  <li>#2839 — trace_id propagation contract (substrate design).</li>
+  <li>#2843 — register #2827 + #2844 spine events (batch).</li>
+  <li>#2845 — SpineEmitter constructor accepts trace_id (foundation).</li>
+  <li>#2838 — card_id propagation contract.</li>
+  <li>#2840 — MCP-Loki-query agent surface.</li>
+  <li>#2846 — chorus-werk-sync auto-repair (named the "0 canonical.synced events in 24h" generalization that drives the alert pattern in this domain).</li>
+  <li>ADR-028 — completeness contract for governed-record domains (the framework this design honors).</li>
+  <li>ADR-026 — quality layers (logs as the Loki-side audit surface).</li>
+  <li><code>designing/schemas/spine-events.json</code> — canonical event-type registry (138 entries).</li>
+  <li><code>shared-observability/config/promtail/promtail-native.yaml</code> — scrape config.</li>
+  <li><code>designing/docs/trace-id-propagation.html</code> — companion doc, full trace_id contract (#2839).</li>
+</ul>
+
+<p class="footer">Blueprint. The architecture the system commits to, the contracts every emit honors, the query surface every consumer reads from. Today's implementation matches at ~80%; the remaining 20% is named.</p>
+</body>
+</html>
