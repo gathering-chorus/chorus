@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  com.chorus.building-pipeline — fires building-pipeline.yml on canonical main update.
+  com.chorus.building-pipeline — fires building-pipeline.yml on release events.
 
-  #2774. Per ADR-030: tool is act, DSL is GHA YAML, trigger is launchd WatchPaths
-  on the canonical's main ref file. When canonical's main moves (any push or merge),
-  launchd fires this plist which invokes `act push -P macos-latest=-self-hosted`
-  from the chorus repo root.
+  #2863: trigger is launchctl kickstart from chorus_acp's release-trigger
+  step. /acp is the release event; this plist runs building-pipeline.yml
+  whose first step (/build) fast-forwards canonical from origin/main, then
+  builds and deploys. No WatchPaths, no scheduled poll — fires only on
+  release.
 
-  WatchPaths fires on file modification — main moves are .git/refs/heads/main writes.
-  StandardOutPath / StandardErrorPath capture act's output to ~/Library/Logs/Chorus/
-  for diagnostics; the workflow's spine emits land in chorus.log via chorus-log.
+  Pre-#2863 used WatchPaths on canonical's .git/refs/heads/main, paired
+  with a chorus-werk-sync 10-min poll that kept canonical current. That
+  introduced up to a 10-min staleness window after every peer commit and
+  a separate failure surface (canonical-sync-aborted alert). Both retired
+  by #2863. Sync now lives inside /build as an invariant first step.
 
   Install:
     cp platform/launchd/com.chorus.building-pipeline.plist ~/Library/LaunchAgents/
-    launchctl load -w ~/Library/LaunchAgents/com.chorus.building-pipeline.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chorus.building-pipeline.plist
 
   Stop:
-    launchctl unload -w ~/Library/LaunchAgents/com.chorus.building-pipeline.plist
+    launchctl bootout gui/$(id -u)/com.chorus.building-pipeline
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -29,11 +32,6 @@
     <string>/bin/bash</string>
     <string>-c</string>
     <string>cd /Users/jeffbridwell/CascadeProjects/chorus &amp;&amp; /opt/homebrew/bin/act push -P macos-latest=-self-hosted -W .github/workflows/building-pipeline.yml</string>
-  </array>
-
-  <key>WatchPaths</key>
-  <array>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/.git/refs/heads/main</string>
   </array>
 
   <key>StandardOutPath</key>

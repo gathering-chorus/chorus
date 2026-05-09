@@ -1,33 +1,29 @@
 #!/usr/bin/env bash
-# chorus-werk-sync — refresh canonical to origin/main under flock (#2735).
+# chorus-werk-sync — manual canonical recovery tool (#2863).
 #
-# Canonical (`$CHORUS_HOME`) is read-only during sessions in the chorus-werk
-# model. This script is the single mechanism that may move canonical's HEAD
-# — and only by fast-forwarding `main` to the remote tip. Acquires the
-# `.git-commit.lock` so it serializes against in-flight commits, and refuses
-# when the working tree or any worktree is in an in-progress operation.
+# History: pre-#2863 this was a 10-min-poll auto-sync that kept canonical's
+# main ref current with origin. That polling substrate is retired. Sync now
+# happens inside /build as an invariant first step (chorus-build does
+# `git fetch + merge --ff-only origin/main` before any work).
 #
-# Refusal contract — exit non-zero with a `chorus-werk-sync: ...` message
-# on stderr:
-#   - canonical not on main
-#   - in-flight merge / rebase / cherry-pick / bisect in canonical
-#   - a worktree has index.lock (mid-commit) or a rebase/merge in flight
-#   - lockf timeout (another git-queue.sh op holds the lock)
-#   - non-fast-forward (canonical has diverged from origin/main — needs
-#     manual triage; this script never resolves divergence)
+# This file remains as a manual recovery primitive for the rare cases where
+# /build aborts because canonical can't fast-forward (detached HEAD, prior
+# commits on local main not on origin, dirty tree blocking the merge).
 #
-# Spine events:
-#   - canonical.synced       on success (fields: from_sha, to_sha)
-#   - canonical.sync.aborted on refusal (fields: reason)
+# Subcommands:
+#   chorus-werk-sync repair
+#     Re-attach HEAD to refs/heads/main, fetch origin/main, align local main
+#     to origin/main, and reset the working tree. Uses git plumbing
+#     (symbolic-ref / update-ref / read-tree) to bypass blocked porcelain
+#     (checkout / switch / branch).
 #
-# Subcommands (#2779):
-#   chorus-werk-sync          — default sync to origin/main (this contract)
-#   chorus-werk-sync repair   — recover detached canonical: re-attach HEAD
-#                                to refs/heads/main, fetch, fast-forward main
-#                                to origin/main, align working tree. Emits
-#                                canonical.repaired with from_sha/to_sha.
+# Usage:
+#   chorus-werk-sync repair
 #
-# Card: #2735, #2779. Tests: platform/scripts/test-chorus-werk-sync*.sh.
+# Exit codes:
+#   0  success
+#   1  repair failed (printed reason)
+#   2  usage error
 
 set -uo pipefail
 
@@ -36,7 +32,6 @@ LOCK_FILE="$CHORUS_HOME/.git-commit.lock"
 LOCK_TIMEOUT="${CHORUS_WERK_SYNC_LOCK_TIMEOUT:-30}"
 
 emit() {
-  # Best-effort spine event. Skip silently if chorus-log isn't on PATH (test fixture).
   local event="$1"; shift
   if command -v chorus-log >/dev/null 2>&1; then
     chorus-log "$event" system "$@" >/dev/null 2>&1 || true
@@ -46,23 +41,10 @@ emit() {
 }
 
 abort() {
-  local reason="$1"
-  echo "chorus-werk-sync: ABORT — $reason" >&2
-  emit "canonical.sync.aborted" "reason=$reason"
+  echo "chorus-werk-sync: ABORT — $1" >&2
   exit 1
 }
 
-# --- #2779: repair subcommand ------------------------------------------------
-# Recovers canonical from detached HEAD by re-attaching to refs/heads/main,
-# fetching origin, fast-forwarding local main to origin/main, and aligning
-# the working tree. Atomic in the user-visible sense (single subcommand);
-# uses git plumbing (symbolic-ref, update-ref, read-tree) rather than the
-# blocked porcelain (checkout/switch). On already-attached canonical, the
-# repair is idempotent — it converges on (HEAD=main, main=origin/main).
-#
-# Pre-existing local commits that aren't on origin/main are preserved by
-# git's reflog (90-day retention by default); the repair logs the prior
-# SHA so the operator can recover them by SHA if needed.
 do_repair() {
   if [ ! -d "$CHORUS_HOME/.git" ]; then
     abort "CHORUS_HOME=$CHORUS_HOME is not a git repo"
@@ -71,29 +53,21 @@ do_repair() {
   local from_sha
   from_sha=$(git -C "$CHORUS_HOME" rev-parse HEAD 2>/dev/null || echo "?")
 
-  # Acquire the same flock as sync so repair serializes against in-flight
-  # commits and other sync runs.
   exec 9>"$LOCK_FILE"
   if ! lockf -t "$LOCK_TIMEOUT" 9; then
     abort "lockf timeout after ${LOCK_TIMEOUT}s — another git op is holding $LOCK_FILE"
   fi
 
-  # Step 1: attach HEAD to refs/heads/main (plumbing — bypasses checkout
-  # hook which refuses detached HEAD recovery).
+  # Step 1: attach HEAD to refs/heads/main via plumbing.
   if ! git -C "$CHORUS_HOME" symbolic-ref HEAD refs/heads/main 2>/dev/null; then
     abort "repair failed: could not set HEAD → refs/heads/main"
   fi
 
-  # Step 2: fetch origin/main so update-ref has a current target. Tolerate
-  # fetch failure for test fixtures with no real network — we'll still try
-  # update-ref against whatever origin/main currently points at locally.
+  # Step 2: fetch origin/main.
   git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || \
     git -C "$CHORUS_HOME" fetch origin main 2>/dev/null || true
 
-  # Step 3: fast-forward local main to origin/main if origin/main exists
-  # and is descendant of (or equal to) the prior detached commit. If the
-  # detached commit had local-only history, those commits live in reflog;
-  # update-ref discards the local main pointer to that history.
+  # Step 3: fast-forward local main to origin/main.
   local origin_main
   origin_main=$(git -C "$CHORUS_HOME" rev-parse origin/main 2>/dev/null || echo "")
   if [ -n "$origin_main" ]; then
@@ -102,10 +76,7 @@ do_repair() {
     fi
   fi
 
-  # Step 4: align working tree to (now-attached, possibly-moved) HEAD.
-  # `read-tree -u --reset HEAD` is the plumbing form of `git checkout-index
-  # -fa` for the current HEAD — updates working tree without going through
-  # the blocked checkout porcelain.
+  # Step 4: align working tree to HEAD via plumbing.
   if ! git -C "$CHORUS_HOME" read-tree -u --reset HEAD 2>/dev/null; then
     abort "repair failed: could not align working tree to HEAD"
   fi
@@ -122,136 +93,11 @@ do_repair() {
   exit 0
 }
 
-# --- #2846: --auto-repair flag (and CHORUS_WERK_SYNC_AUTO_REPAIR=1 env) ------
-# When set, recoverable abort cases (detached HEAD today; potentially more
-# later) call do_repair internally instead of refusing. Designed for the
-# launchd-scheduled invocation: a 10-min cron without auto-repair would
-# accumulate aborts every time canonical detaches. Manual sync still aborts
-# loudly so the operator sees what's wrong without surprise mutations.
-AUTO_REPAIR=0
-if [ "${CHORUS_WERK_SYNC_AUTO_REPAIR:-0}" = "1" ]; then
-  AUTO_REPAIR=1
-fi
-ARGS=()
-for a in "$@"; do
-  if [ "$a" = "--auto-repair" ]; then
-    AUTO_REPAIR=1
-  else
-    ARGS+=("$a")
-  fi
-done
-set -- "${ARGS[@]:-}"
-
-# Subcommand dispatch (#2779). Default (no args) preserves #2735 behavior.
 case "${1:-}" in
-  repair)
-    do_repair
-    ;;
-  ""|sync)
-    : # fall through to sync (default)
-    ;;
+  repair) do_repair ;;
   *)
-    echo "chorus-werk-sync: unknown subcommand '$1' (try: sync | repair)" >&2
+    echo "Usage: chorus-werk-sync repair" >&2
+    echo "  Manual canonical recovery primitive. Sync is automatic inside /build (#2863)." >&2
     exit 2
     ;;
 esac
-
-if [ ! -d "$CHORUS_HOME/.git" ]; then
-  abort "CHORUS_HOME=$CHORUS_HOME is not a git repo"
-fi
-
-# --- pre-flock pre-flight (cheap checks before contending for lock) ----------
-
-# Canonical must be on main. Anything else means the shared-canonical state
-# is rotten — sync isn't the fix. #2779: detached HEAD is the most common
-# rot mode (e.g. unpushed peer commit between sync runs). Surface the
-# recovery path explicitly so the next person doesn't have to find the
-# plumbing under pressure.
-HEAD_REF=$(git -C "$CHORUS_HOME" symbolic-ref --short HEAD 2>/dev/null || echo "")
-if [ "$HEAD_REF" != "main" ]; then
-  if [ -z "$HEAD_REF" ]; then
-    if [ "$AUTO_REPAIR" = "1" ]; then
-      # #2846: scheduled invocations auto-recover detached HEAD via repair.
-      # Emit canonical.sync.repaired before do_repair (which exits 0 internally
-      # after emitting canonical.repaired). Both events let consumers tell the
-      # auto-repair path apart from the manual one.
-      echo "chorus-werk-sync: detached HEAD — auto-repair invoked (#2846)" >&2
-      emit "canonical.sync.repaired" "trigger=auto-repair"
-      do_repair
-    fi
-    abort "canonical HEAD is detached — run \`chorus-werk-sync repair\` to re-attach HEAD to main and fast-forward to origin/main"
-  else
-    abort "canonical HEAD is '$HEAD_REF', not 'main' — manual triage required (or \`chorus-werk-sync repair\` if HEAD should be reset to main)"
-  fi
-fi
-
-# In-flight rebase / merge / cherry-pick / bisect in canonical itself
-if [ -d "$CHORUS_HOME/.git/rebase-merge" ] || [ -d "$CHORUS_HOME/.git/rebase-apply" ]; then
-  abort "in-flight rebase in canonical — finish or abort the rebase first"
-fi
-if [ -f "$CHORUS_HOME/.git/MERGE_HEAD" ]; then
-  abort "in-flight merge in canonical — finish or abort the merge first"
-fi
-if [ -f "$CHORUS_HOME/.git/CHERRY_PICK_HEAD" ]; then
-  abort "in-flight cherry-pick in canonical — finish or abort first"
-fi
-if [ -f "$CHORUS_HOME/.git/BISECT_LOG" ]; then
-  abort "in-flight bisect in canonical — git bisect reset first"
-fi
-
-# Worktrees in flight: check for index.lock or rebase/merge state per worktree.
-# .git/worktrees/<name>/index.lock indicates that worktree is mid-commit.
-if [ -d "$CHORUS_HOME/.git/worktrees" ]; then
-  for wt_dir in "$CHORUS_HOME"/.git/worktrees/*/; do
-    [ -d "$wt_dir" ] || continue
-    wt_name=$(basename "$wt_dir")
-    if [ -f "$wt_dir/index.lock" ]; then
-      abort "worktree $wt_name has index.lock — mid-commit"
-    fi
-    if [ -d "$wt_dir/rebase-merge" ] || [ -d "$wt_dir/rebase-apply" ]; then
-      abort "worktree $wt_name has in-flight rebase"
-    fi
-    if [ -f "$wt_dir/MERGE_HEAD" ]; then
-      abort "worktree $wt_name has in-flight merge"
-    fi
-  done
-fi
-
-# --- acquire flock + sync ----------------------------------------------------
-
-exec 9>"$LOCK_FILE"
-if ! lockf -t "$LOCK_TIMEOUT" 9; then
-  abort "lockf timeout after ${LOCK_TIMEOUT}s — another git op is holding $LOCK_FILE"
-fi
-
-# Re-check post-lock: state may have changed while we were waiting.
-HEAD_REF=$(git -C "$CHORUS_HOME" symbolic-ref --short HEAD 2>/dev/null || echo "")
-if [ "$HEAD_REF" != "main" ]; then
-  abort "canonical HEAD changed to '$HEAD_REF' between pre-flight and lock acquire"
-fi
-
-FROM_SHA=$(git -C "$CHORUS_HOME" rev-parse HEAD 2>/dev/null || echo "?")
-
-# Fetch + ff-only pull. ff-only means we never invent a merge commit; if the
-# remote diverged, this fails loudly.
-if ! git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null; then
-  # Allow the fetch to fail gracefully in test fixtures with no remote
-  # configured for main. Re-attempt without --quiet for diagnostics.
-  if ! git -C "$CHORUS_HOME" fetch origin main 2>/dev/null; then
-    abort "git fetch origin main failed"
-  fi
-fi
-
-if ! git -C "$CHORUS_HOME" merge --ff-only origin/main 2>/dev/null; then
-  abort "non-fast-forward — canonical has diverged from origin/main"
-fi
-
-TO_SHA=$(git -C "$CHORUS_HOME" rev-parse HEAD 2>/dev/null || echo "?")
-
-if [ "$FROM_SHA" = "$TO_SHA" ]; then
-  echo "chorus-werk-sync: already up-to-date at $FROM_SHA"
-else
-  echo "chorus-werk-sync: $FROM_SHA → $TO_SHA"
-fi
-emit "canonical.synced" "from=$FROM_SHA" "to=$TO_SHA"
-exit 0

@@ -41,6 +41,30 @@ if [ ! -x "$BUILD_SIGNED" ]; then
   exit 1
 fi
 
+# #2863 — INVARIANT: every build starts by syncing canonical from origin.
+# /build is the only path that advances canonical's main ref. No skip
+# conditions, no fallbacks; if fetch or fast-forward fails, abort loudly so
+# we never build on stale canonical. Replaces the chorus-werk-sync poll
+# substrate (10-min interval was the gap that let canonical lag behind
+# origin during team activity, leaving the daemon running old code).
+CHORUS_HOME_BUILD="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+echo "chorus-build: sync canonical from origin (invariant — first step of every build)"
+if ! git -C "$CHORUS_HOME_BUILD" fetch --quiet origin main 2>&1; then
+  echo "chorus-build: ABORT — git fetch origin main failed" >&2
+  exit 1
+fi
+if ! git -C "$CHORUS_HOME_BUILD" merge --ff-only origin/main >/dev/null 2>&1; then
+  HEAD_BEFORE=$(git -C "$CHORUS_HOME_BUILD" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  ORIGIN_TIP=$(git -C "$CHORUS_HOME_BUILD" rev-parse --short origin/main 2>/dev/null || echo unknown)
+  echo "chorus-build: ABORT — canonical not fast-forwardable to origin/main" >&2
+  echo "  canonical HEAD: $HEAD_BEFORE" >&2
+  echo "  origin/main:    $ORIGIN_TIP" >&2
+  echo "  Likely cause: detached HEAD, divergent local commits, or dirty tree blocking the merge" >&2
+  echo "  Recover: chorus-werk-sync repair, then re-run /build" >&2
+  exit 1
+fi
+echo "chorus-build: canonical at $(git -C "$CHORUS_HOME_BUILD" rev-parse --short HEAD)"
+
 CRATE="${1}"
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILDER_HOST=$(hostname -s)
