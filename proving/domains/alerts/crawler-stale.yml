@@ -1,53 +1,44 @@
 # crawler-stale.yml — Alert when chorus crawler hasn't indexed recently
-# Card #2817
+# Card #2817 (#2861 — bash-only check; python moved to sibling)
 #
-# The crawler hydrates filesystem reality (code, tests, briefs, decisions,
-# memories) into the chorus index + graph. If it stops running — file-watch
-# trigger died, polling fallback died, hung process — every consumer that
-# reads downstream sees stale data without knowing it.
+# Worst-case staleness budget post-#2817: 60 seconds. 5-min biz-hours threshold
+# gives 5x buffer; 30-min off-hours threshold tolerates host sleep.
 #
-# Worst-case staleness budget post-#2817: 60 seconds (StartInterval=60
-# polling fallback). 5-minute biz-hours threshold gives 5x buffer for
-# transient hiccups before alerting. 30-min off-hours threshold tolerates
-# host sleep + low activity periods.
+# alert-runner contract: stdout must equal literal "ok" for success.
 
 name: crawler-stale
 description: chorus crawler has not emitted crawler.domain.indexed in expected window
 severity: warning
 owner: kade
-schedule: "*/5 * * * *"  # every 5 minutes
+schedule: "*/5 * * * *"
 
 check: |
-  # Look for the most recent crawler.domain.indexed event in chorus.log.
-  # If none in the last 5 minutes (biz hours) or 30 minutes (off-hours),
-  # the hydration loop is stalled.
+  SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-stale-check.py"
   HOUR=$(date +%H)
   if [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 22 ]; then
-    THRESHOLD_SEC=300  # 5 min biz hours
+    THRESHOLD_SEC=300
   else
-    THRESHOLD_SEC=1800  # 30 min off-hours
+    THRESHOLD_SEC=1800
   fi
   LAST=$(grep "crawler.domain.indexed" "$HOME/.chorus/chorus.log" 2>/dev/null | tail -1)
   if [ -z "$LAST" ]; then
     echo "no-indexed-events-in-log"
     exit 1
   fi
-  LAST_TS=$(echo "$LAST" | python3 -c "import json,sys; d=json.loads(sys.stdin.readline()); ts=d['timestamp']; print(ts)" 2>/dev/null)
-  if [ -z "$LAST_TS" ]; then
-    echo "parse-fail:$LAST"
+  LAST_EPOCH=$(echo "$LAST" | python3 "$SIBLING" 2>/dev/null)
+  if [ -z "$LAST_EPOCH" ] || ! [[ "$LAST_EPOCH" =~ ^[0-9]+$ ]]; then
+    echo "parse-fail:could-not-extract-timestamp"
     exit 1
   fi
-  LAST_EPOCH=$(python3 -c "from datetime import datetime; print(int(datetime.fromisoformat('$LAST_TS'.replace('Z','+00:00')).timestamp()))" 2>/dev/null || echo 0)
   NOW=$(date +%s)
   AGE=$((NOW - LAST_EPOCH))
   if [ "$AGE" -gt "$THRESHOLD_SEC" ]; then
     echo "stale:${AGE}s>threshold:${THRESHOLD_SEC}s"
     exit 1
   fi
-  echo "fresh:${AGE}s"
+  echo "ok"
   exit 0
 
 action: |
-  # Nudge kade — crawler is owner per silas-kade chat 2026-05-08 11:36
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" kade "crawler-stale: no crawler.domain.indexed in expected window. Hydration loop stalled. Check launchctl list com.chorus.crawler-index + tail ~/Library/Logs/Chorus/crawler-index.log" 2>/dev/null || true

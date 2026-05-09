@@ -1,35 +1,28 @@
 # crawler-error.yml — Alert when chorus crawler reports per-domain failures
-# Card #2817
+# Card #2817 (#2861 — bash-only check; python moved to sibling script)
 #
 # index-crawler-snapshots.sh emits crawler.domain.failed when a domain's
 # /api/chorus/crawl/:domain call returns non-200. Tracks consecutive
 # failures in /tmp/crawler-domain-status.json. Sustained failure on any
 # domain means the crawl-API or the domain's source is broken; the
 # graph for that domain falls behind silently.
+#
+# alert-runner contract (proving/scripts/alert-runner.sh:39-41):
+# stdout must equal literal "ok" for success; anything else fires.
 
 name: crawler-error
 description: chorus crawler has reported domain failures recently
 severity: warning
 owner: kade
-schedule: "*/5 * * * *"  # every 5 minutes
+schedule: "*/5 * * * *"
 
 check: |
-  # Look for crawler.domain.failed events in the last 10 minutes.
+  CHECK_DIR="$(dirname "$0" 2>/dev/null || echo /Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts)"
+  SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-error-check.py"
   CUTOFF=$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)
-  RECENT=$(tail -2000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.failed" | python3 -c "
-import json, sys, datetime
-cutoff = datetime.datetime.fromisoformat('$CUTOFF'.replace('Z','+00:00'))
-hits = 0
-for line in sys.stdin:
-    try:
-        d = json.loads(line)
-        ts_s = d.get('timestamp','').replace('Z','+00:00')
-        ts = datetime.datetime.fromisoformat(ts_s)
-        if ts >= cutoff: hits += 1
-    except: pass
-print(hits)
-" 2>/dev/null || echo 0)
-  if [ "$RECENT" -gt 0 ]; then
+  export CUTOFF
+  RECENT=$(tail -2000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.failed" | python3 "$SIBLING" 2>/dev/null || echo 0)
+  if [ "$RECENT" -gt 0 ] 2>/dev/null; then
     echo "recent-failures:$RECENT"
     exit 1
   fi
