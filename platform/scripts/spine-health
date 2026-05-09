@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# spine-health — schema vs reality reality check for the chorus spine.
+#
+# Compares declared event types in spine-events.json against what Loki
+# actually has fire records for. Surfaces three gaps:
+#   - declared but silent (in the schema, no evidence of life)
+#   - fired but not declared (orphan emissions — schema doesn't know they exist)
+#   - top firers all instrumentation (volume dominated by heartbeats/probes,
+#     not state-change events anyone is downstream of)
+#
+# Run manually whenever the spine feels noisy, before adding new event types,
+# or as part of a coherence audit. No hook, no auto-fire — Jeff runs it,
+# doesn't trust the agent to.
+#
+# Exits 0 if all green, 1 if any ⚠ flag fires.
+#
+# Usage:
+#   spine-health             — summary view
+#   spine-health --verbose   — full lists of silent + orphan events
+#   spine-health --json      — JSON output for tooling
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+LOKI_URL="${LOKI_URL:-http://localhost:3102}"
+SCHEMA="${SCHEMA:-${CHORUS_HOME}/designing/schemas/spine-events.json}"
+VERBOSE=0
+JSON_OUT=0
+for arg in "$@"; do
+  case "$arg" in
+    --verbose|-v) VERBOSE=1 ;;
+    --json) JSON_OUT=1 ;;
+    --help|-h)
+      sed -n '2,/^$/p' "$0" | sed 's/^# //;s/^#//'
+      exit 0 ;;
+  esac
+done
+
+WARN_FILE=$(mktemp)
+trap 'rm -f "$WARN_FILE"' EXIT
+
+red()    { printf '\033[31m%s\033[0m' "$1"; }
+green()  { printf '\033[32m%s\033[0m' "$1"; }
+yellow() { printf '\033[33m%s\033[0m' "$1"; }
+flag()   { echo x >> "$WARN_FILE"; yellow "⚠ $1"; }
+ok()     { green "✓ $1"; }
+
+[ -f "$SCHEMA" ] || { echo "FAIL: schema not found at $SCHEMA" >&2; exit 2; }
+
+# Run the heavy lifting in python — it owns Loki paging, set diff, and
+# field-shape drift detection. spine-health-impl.py reads SCHEMA + queries
+# Loki, prints structured findings on stdout that this script formats.
+python3 - "$SCHEMA" "$LOKI_URL" "$VERBOSE" "$JSON_OUT" << 'PYEOF'
+import json, subprocess, datetime, sys, os
+from collections import Counter
+
+SCHEMA, LOKI_URL, VERBOSE, JSON_OUT = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+
+# --- declared
+schema = json.load(open(SCHEMA))
+declared = set(schema.get('events', {}).keys())
+
+# --- fired (walk Loki in 7-day chunks across the data window; chunking
+#     avoids the 5000-row limit collapsing high-volume windows). Stops
+#     early when a chunk returns 0 — that's the data floor.
+now = int(datetime.datetime.now().timestamp())
+day = 86400
+fired = Counter()
+chunk_max = 90  # chunks of 7 days, up to ~17 months back
+window_start = now
+window_end = now
+empty_streak = 0
+for i in range(chunk_max):
+    end = now - i*7*day
+    start = now - (i+1)*7*day
+    cmd = ['curl', '-s', f'{LOKI_URL}/loki/api/v1/query_range',
+           '--data-urlencode', 'query={job=~".+"} | json | event=~".+"',
+           '--data-urlencode', 'limit=5000',
+           '--data-urlencode', f'start={start}000000000',
+           '--data-urlencode', f'end={end}000000000']
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    chunk_count = 0
+    try:
+        d = json.loads(out)
+        for s in d.get('data', {}).get('result', []):
+            for _, line in s.get('values', []):
+                try:
+                    j = json.loads(line)
+                    ev = j.get('event')
+                    if ev:
+                        fired[ev] += 1
+                        chunk_count += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    if chunk_count == 0:
+        empty_streak += 1
+        if empty_streak >= 3:
+            break
+    else:
+        empty_streak = 0
+        window_start = start
+
+declared_fired = declared & set(fired.keys())
+silent = declared - set(fired.keys())
+orphan = set(fired.keys()) - declared
+
+# --- weather index: top-10 firers — count how many are instrumentation
+top10 = fired.most_common(10)
+WEATHER_PATTERNS = ('heartbeat', 'probe', 'tool_call', 'observer.digest',
+                    'session.context', 'http.request', 'mcp.session',
+                    'crawler.domain.indexed', 'card.stale.detected',
+                    'nudge.emitted', 'nudge.requested', 'nudge.surfaced')
+weather_top10 = sum(1 for ev, _ in top10 if any(p in ev for p in WEATHER_PATTERNS))
+
+# --- output
+window_days = (now - window_start) // day if window_start < now else 0
+
+if JSON_OUT:
+    print(json.dumps({
+        'declared': len(declared),
+        'fired': len(fired),
+        'overlap': len(declared_fired),
+        'silent': sorted(silent),
+        'orphan': sorted(orphan),
+        'window_days': window_days,
+        'top10': [(ev, n) for ev, n in top10],
+        'weather_top10': weather_top10,
+    }, indent=2))
+    sys.exit(0)
+
+print(f"data window:      ~{window_days}d back to {datetime.datetime.fromtimestamp(window_start).date()}")
+print(f"declared:         {len(declared)}  (entries in spine-events.json)")
+print(f"fired:            {len(fired)}     (distinct event types in Loki over window)")
+print(f"overlap:          {len(declared_fired)}     (declared AND seen firing)")
+print()
+
+def emit(label, count, threshold, body=None):
+    if count > threshold:
+        sys.stdout.write(f"  ⚠ {label}: {count}\n")
+        os.system(f"echo x >> {os.environ.get('WARN_FILE','/dev/null')}")
+        if body and VERBOSE:
+            for line in body[:50]:
+                sys.stdout.write(f"      {line}\n")
+            if len(body) > 50:
+                sys.stdout.write(f"      ... and {len(body)-50} more\n")
+    else:
+        sys.stdout.write(f"  ✓ {label}: {count}\n")
+
+# can't easily call back into bash flag()/ok() from python; emit ANSI directly
+RED, GRN, YEL, RST = '\033[31m', '\033[32m', '\033[33m', '\033[0m'
+warn_count = 0
+def f_flag(msg):
+    global warn_count
+    warn_count += 1
+    print(f"  {YEL}⚠ {msg}{RST}")
+def f_ok(msg):
+    print(f"  {GRN}✓ {msg}{RST}")
+
+# --- declared but silent
+print("schema vs reality:")
+if silent:
+    f_flag(f"{len(silent)} declared event types have no evidence of firing in the window")
+    if VERBOSE:
+        for ev in sorted(silent):
+            print(f"      {ev}")
+    else:
+        for ev in sorted(silent)[:8]:
+            print(f"      {ev}")
+        if len(silent) > 8:
+            print(f"      ... and {len(silent)-8} more (--verbose for full list)")
+else:
+    f_ok("every declared event has evidence of firing")
+
+# --- fired but not declared
+if orphan:
+    f_flag(f"{len(orphan)} event types fire but aren't declared in the schema")
+    if VERBOSE:
+        for ev in sorted(orphan):
+            print(f"      {ev}")
+    else:
+        for ev in sorted(orphan)[:8]:
+            print(f"      {ev}")
+        if len(orphan) > 8:
+            print(f"      ... and {len(orphan)-8} more (--verbose for full list)")
+else:
+    f_ok("every fired event is registered in the schema")
+print()
+
+# --- weather index
+print("emission character (top 10 by volume):")
+for ev, n in top10:
+    is_weather = any(p in ev for p in WEATHER_PATTERNS)
+    tag = 'weather' if is_weather else 'state-change'
+    print(f"  {n:>7}  {ev}  ({tag})")
+print()
+if weather_top10 >= 7:
+    f_flag(f"top 10 firers are {weather_top10}/10 instrumentation/heartbeat/probe — emission is dominated by weather, not state changes consumers can act on")
+elif weather_top10 >= 4:
+    f_flag(f"{weather_top10}/10 top firers are instrumentation (mixed signal)")
+else:
+    f_ok(f"top 10 includes {10-weather_top10}/10 state-change events")
+
+# write warn count back so the bash trap can read it
+with open(os.environ.get('WARN_FILE', '/dev/null'), 'a') as fh:
+    for _ in range(warn_count):
+        fh.write('x\n')
+PYEOF
+
+echo
+WARN_COUNT=$(wc -l < "$WARN_FILE" | tr -d ' ')
+if [ "$WARN_COUNT" -gt 0 ]; then
+  echo "$(yellow "⚠ $WARN_COUNT concerns flagged") — see above"
+  exit 1
+fi
+echo "$(green "✓ all green")"
+exit 0
