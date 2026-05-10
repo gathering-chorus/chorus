@@ -575,13 +575,13 @@ do_push() {
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
     else
-      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" origin "${push_branch}:${push_branch}" || exit_code=$?
+      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- ${_fwl_args[@]+"${_fwl_args[@]}"} origin "${push_branch}:${push_branch}" || exit_code=$?
     fi
   else
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- || exit_code=$?
     else
-      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" || exit_code=$?
+      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- ${_fwl_args[@]+"${_fwl_args[@]}"} || exit_code=$?
     fi
   fi
 
