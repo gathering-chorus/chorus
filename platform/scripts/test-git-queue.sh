@@ -210,6 +210,10 @@ else
   PASS=$((PASS + 1))
 fi
 
+# Note: --force-with-lease + --branch arg-parsing tests live in the canonical
+# location proving/scripts/tests/test-git-queue-force-with-lease.sh (#2877).
+# That file covers AC1 (engagement) + AC2 (lease semantics with peer divergence).
+
 # --- Summary ---
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
