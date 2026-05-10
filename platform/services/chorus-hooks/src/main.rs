@@ -586,6 +586,11 @@ async fn post_tool_use(
         }
     }
 
+    // Demo show (#2864) — REMOVED as PostToolUse on /demo skill: PostToolUse
+    // fires before Step 5 emits card.demo.started, so the chain check is too
+    // early. Logic moved into accept_gate.rs (PreToolUse on chorus_acp), which
+    // invokes skills/demo/gates/show-gate.sh at the correct moment.
+
     // Persistent observer — digest every meaningful tool call
     let state_clone = state.clone();
     let input_clone = input.clone();

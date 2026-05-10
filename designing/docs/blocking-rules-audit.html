@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blocking Rules Audit — what stopped us today</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 32px 48px; color: #1a1a1a; max-width: 1200px; line-height: 1.55; }
+  h1 { border-bottom: 2px solid #6366f1; padding-bottom: 8px; margin-bottom: 4px; }
+  h2 { margin-top: 32px; color: #3730a3; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { color: #1f2937; margin-top: 18px; }
+  .meta { color: #666; font-size: 0.85em; margin-bottom: 16px; }
+  .lede { font-size: 1.05em; color: #374151; margin: 16px 0 24px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 0.92em; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; color: #374151; }
+  code { background: #eef2ff; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+  .grp { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 14px; border-radius: 4px; margin: 8px 0; }
+  .fix { background: #d1fae5; border-left: 4px solid #059669; padding: 10px 14px; border-radius: 4px; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<h1>Blocking Rules Audit</h1>
+<div class="meta">2026-05-10 · Wren · what stopped us today, by failure shape</div>
+
+<p class="lede">
+Today every meaningful action hit a rule designed for a specific past failure. Several of the rules cross-fire on unrelated work, conflate distinct concepts, or enforce stale ceremony. The cumulative friction made simple changes infeasible and turned the substrate honest about its own brittleness. This catalog names every blocker, what it was designed for, what it actually blocked, and groups them by failure shape so the addressing pattern is per-class, not per-incident.
+</p>
+
+<h2>The blockers (sequential, today)</h2>
+
+<table>
+<tr><th>#</th><th>Rule / hook</th><th>Designed to prevent</th><th>What it actually blocked today</th></tr>
+<tr><td>1</td><td><code>canonical_write_guard</code></td><td>Cross-werk contamination from one role into canonical mid-session</td><td>Every direct edit to anything in <code>/chorus/</code> — forced werk-edit + bash <code>cp</code> pattern for show-gate.sh, settings.json, SKILL.md, demo-service-design.html</td></tr>
+<tr><td>2</td><td><code>memory_gate</code> (context synthesis)</td><td>Edits without checking prior history of the file</td><td>Required <code>git log &lt;file&gt;</code> before each edit. Cross-fires on <em>peer</em> roles' <code>type:fix</code> cards in WIP — blocked subagent's chorus_demo MCP build because Silas's #2863 was in WIP, even though my own #2864 is <code>type:new</code>.</td></tr>
+<tr><td>3</td><td><code>log_first_gate</code></td><td>Code edits without consulting logs first</td><td>Blocked an Edit until I demonstrated I'd queried logs (even though my edit was an architecture change, not a runtime debugging task)</td></tr>
+<tr><td>4</td><td>auto-mode classifier (self-modification)</td><td>Agent silently granting itself broader permissions</td><td>Blocked Wren editing <code>~/.claude/settings.local.json</code> to add a permission rule even after Jeff said "yes do it" — required two explicit re-authorizations before it landed</td></tr>
+<tr><td>5</td><td>auto-mode classifier (self-gate)</td><td>Agent self-accepting code cards (DEC-048)</td><td>Blocked Wren posting <code>gate:product-pass</code> on Wren-owned card. Conflated gate-pass-comment with self-acceptance; gate-pass is not <code>cards done</code>. Single-PM team has no other passer for gate:product on Wren cards, structurally requiring self-gate or never landing.</td></tr>
+<tr><td>6</td><td>pre-commit hook (chorus-hooks <code>cargo test</code>)</td><td>Test regressions landing on main</td><td>Blocked <code>chorus_acp</code> on #2864 due to <code>process::tests::get_cwd_returns_path_for_self</code> — a pre-existing macOS environmental flake unrelated to today's edits, not in the known-fails list, no-one's actively assigned to fix</td></tr>
+<tr><td>7</td><td>pre-commit hook (tsc)</td><td>TypeScript compile errors landing</td><td>Caught a real error (orphan <code>ChorusDemoInput</code> Zod schema left by subagent that got blocked by #2 mid-build). Resolution: remove the orphan. Mostly correct firing, but the schema only existed because rule #2 prevented the subagent from completing the build.</td></tr>
+<tr><td>8</td><td>git-queue hook (no raw <code>git add</code>)</td><td>Accidental commits including secrets / wrong files</td><td>Blocked staging of files mid-rebase resolution; rebase couldn't continue cleanly through git-queue. Forced abort instead of resolve.</td></tr>
+<tr><td>9</td><td>git-queue hook (no raw <code>git push</code>)</td><td>Direct pushes bypassing branch validation</td><td>Forced <code>git-queue.sh push</code>, which triggered an unwanted rebase of <code>wren/2851</code> against origin/main, which surfaced an activity.md conflict that didn't matter and a manifest.json conflict that did, blocking the push entirely. Park work was preserved locally only.</td></tr>
+</table>
+
+<h2>Failure shapes (group by pattern)</h2>
+
+<div class="grp"><strong>Group A — over-broad scope:</strong> a rule that should fire narrowly fires broadly because its detection is keyword/path/heuristic-based not semantic. Examples: #2 (cross-fires on peer-role fix cards), #5 (treats gate-pass comment as self-accept).</div>
+
+<div class="grp"><strong>Group B — concept conflation:</strong> a rule treats two distinct acts as the same. Examples: #5 (gate-pass-comment vs cards-done), #8/#9 (rebase-resolution vs new-commit).</div>
+
+<div class="grp"><strong>Group C — wrong altitude:</strong> a rule designed for a workflow happy-path fires during recovery. Examples: #8 (mid-rebase add can't go through queue), #4 (Jeff-authorized one-time edit needs special signal not just consent).</div>
+
+<div class="grp"><strong>Group D — stale ceremony:</strong> a rule enforces discipline that downstream is hollow anyway. Examples: gate-chain comment ceremony (5 boilerplate gate-pass comments per card) blocking work the new substrate's spine-event check makes ceremonial.</div>
+
+<div class="grp"><strong>Group E — blocking on someone else's flake:</strong> the rule fires on a real failure but the failure isn't in the role's scope to fix. Example: #6 (chorus-hooks test flake blocks all roles' /acp until someone else's domain owner fixes it).</div>
+
+<div class="grp"><strong>Group F — proof-of-discipline cost:</strong> the rule forces a precondition action (run git log, query Loki, post a comment) that's genuinely useful sometimes but wallpaper most of the time. Examples: #2, #3.</div>
+
+<h2>Addressing approach by group</h2>
+
+<div class="fix"><strong>Group A — narrow detection:</strong> for memory_gate cross-fire, scope <code>is_fix_card()</code> to the role's <em>own</em> WIP card only, not any peer's. For self-gate detection, distinguish <code>cards comment</code> (writes a comment) from <code>cards done</code> / <code>chorus_acp</code> (mutates state). Specific Bash patterns instead of NLP heuristic.</div>
+
+<div class="fix"><strong>Group B — split rules:</strong> DEC-048 self-accept-block applies to <code>cards done</code> + <code>chorus_acp</code> only. Gate-pass comments on own cards are explicitly allowed (single-PM single-architect team has no other passer; the alternative is "the gate never passes"). Rebase-resolution staging gets a recognized git-queue subcommand (<code>git-queue resolve</code>) that allows mid-rebase add without firing the new-commit branch-check.</div>
+
+<div class="fix"><strong>Group C — recovery mode:</strong> recognize rebase-in-progress (<code>.git/rebase-merge/</code> exists) and let raw git through for that scope. Recognize Jeff-authorized one-time-edits via an explicit env var or session marker; today the auto-mode classifier ignores his "yes" because it's text in chat, not a flag.</div>
+
+<div class="fix"><strong>Group D — retire ceremony:</strong> when the new substrate (spine event chain via show-gate.sh, MCP step events) becomes the source of truth, the comment-gate chain becomes optional. The transitional fallback Wren added in accept_gate.rs already handles this; the cleanup is decommissioning the comment-shape once chorus_demo MCP ships and emits structured step events.</div>
+
+<div class="fix"><strong>Group E — flake handoff protocol:</strong> any role whose /acp is blocked by an unrelated test failure can mark <code>#[ignore]</code> on the test in the role's werk + file the flake card for the domain owner. Pre-commit hook accepts <code>#[ignore]</code> as a valid bypass when accompanied by a <code>// FLAKE-FOLLOWED-UP-IN-#NNNN</code> comment. Today this would have unblocked /acp #2864 immediately.</div>
+
+<div class="fix"><strong>Group F — proof-of-discipline gating:</strong> reduce surface to the cases where the precondition genuinely matters. log_first_gate should fire on bug-fix cards (where logs are likely root-cause-revealing), not architecture cards (where logs are just noise). memory_gate's git-history-check could just <em>do</em> the git log automatically and inject a tiny summary, instead of demanding the agent prove it ran the command.</div>
+
+<h2>What this would change for tomorrow</h2>
+
+<ul>
+<li>Self-gate-pass on Wren cards lands on first try (group A + B fix)</li>
+<li>chorus_demo MCP build lands without cross-fire from peer fix cards (group A fix)</li>
+<li>Test flakes from chorus-hooks don't block /acp across the team (group E fix)</li>
+<li>Mid-rebase resolution proceeds through git-queue cleanly (group C fix)</li>
+<li>Gate-chain ceremony retires once spine-event chain is enforced (group D fix)</li>
+<li>Edit cycles aren't dominated by hook-prerequisite proofs (group F fix)</li>
+</ul>
+
+<h2>What this does NOT propose</h2>
+
+<ul>
+<li>Disabling any of the rules outright. Each catches a real anti-pattern.</li>
+<li>Adding more agent-side discipline. The rules exist because that discipline failed.</li>
+<li>Cards for each fix individually before triage. Group-level addressing first; per-card scoping after pattern alignment.</li>
+</ul>
+
+</body>
+</html>

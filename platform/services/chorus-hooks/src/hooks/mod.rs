@@ -14,6 +14,7 @@ pub mod story_write_gate;
 pub mod write_scrubber;
 pub mod icd_write_gate;
 pub mod demo_preflight;
+pub mod demo_show;
 pub mod accept_gate;
 pub mod batch_progress;
 pub mod demo_provenance;

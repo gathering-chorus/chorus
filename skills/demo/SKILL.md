@@ -282,26 +282,27 @@ For each role in [wren, silas, kade] except <your-role>:
 
 Then **auto-nudge for feedback** — don't wait for Jeff to ask.
 
-**Frame the nudge in the recipient's domain, not Jeff's authority.** The way you frame the nudge shapes the response. If you say "Jeff wants your review," they rubber-stamp. If you say "this touches your domain — what does it mean for X?", they actually look.
+**Frame the nudge as concrete consumer-impact questions, not agent-curiosity edge cases.** Edge-case questions ("is this a Quality-horizontal-family-fit?", "is the sibling-script pattern worth naming as a convention?") get edge-case engagement — agents climb into the frame and produce structured 1-2-3 answers that feel substantive but never ask whether the work matters. Concrete consumer questions force the recipient to ground their answer in real users and real impact.
 
 ```
 For each role in [wren, silas, kade] except <your-role>:
   mcp__chorus-api__chorus_nudge_message({
     to: "<role>",
-    message: "[feedback] #${CARD_ID} — <1-line what changed>. <specific question for this role's domain>."
+    message: "[feedback] #${CARD_ID} — <1-line what changed>.
+              (1) How does this impact your products?
+              (2) How does it impact your users?
+              (3) Am I over-building or under-planning?"
   })
 ```
 
-**How to frame per role:**
-- **To Wren (PM):** Frame as product impact — "How does this change the user experience? Does the AC match what Jeff described?"
-- **To Silas (Architect):** Frame as infrastructure/ops — "Any deployment concerns? Does this interact with health checks or gates you own?"
-- **To Kade (Engineer):** Frame as code quality — "Does the implementation approach make sense? Any test gaps you see?"
+**The three questions are the only ones to send.** Don't tailor per-role with cleverness; don't substitute agent-curiosity edge cases. The same three force every role to ground in their own consumers, name the value-or-cost, and call out scope mistakes.
 
 **Nudge framing anti-patterns (NEVER use these):**
 - "Jeff wants your review" — invokes authority, produces rubber stamps
 - "ready for acceptance" — pre-frames the expected outcome
 - "review and accept" — tells them the answer before they look
 - "Jeff is waiting" — creates urgency that shortcuts thinking
+- "Is the X pattern worth naming?" / "Does this read as Y-family-fit?" / "Is the AC framing the template for future Z?" — agent-curiosity edge cases. Recipient climbs into the frame and produces 1-2-3 structure that displaces the substantive consumer question.
 
 ### Demo Observer Mode (for nudge recipients)
 
