@@ -168,9 +168,13 @@ const PullInput = z.object({
   remote: z.string().min(1).optional().describe('Optional remote name. Defaults to origin.'),
 }).strict();
 
-// #2750 slice 2 — chorus_acp atomic transaction input. Single role; card derived from board.
+// #2750 slice 2 — chorus_acp atomic transaction input.
+// #2868 — card_id is now an optional intent-assertion. When present, the
+// MCP refuses with `card-mismatch` if the branch-derived card_id differs.
+// When absent, derivation is identical to today (branch first, board fallback).
 const AcpInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Card derived from board (status=WIP, owner=role).'),
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Card derived from branch then board if card_id absent.'),
+  card_id: z.number().int().min(1).optional().describe('Optional intent assertion (#2868). When present, MCP refuses if branch-derived card_id differs.'),
 }).strict();
 
 // #2751 — chorus_pull_card atomic transaction input. Role + explicit card_id;
@@ -648,14 +652,19 @@ const PULL_CARD_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service runs verify-after sequenced steps with typed refusal at each step: derive card_id from HEAD branch (`<role>/<card-id>`), commit + push, PR open/merge, cards-done, spine event, branch-close. Idempotent on re-run (detects existing PR / closed branch / already-merged work). Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail. Each step that fails refuses by name; success means every step verified. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy. The /acp skill calls this and nothing else.',
+    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
   inputSchema: {
     type: 'object',
     properties: {
       role: {
         type: 'string',
         enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — kade / wren / silas. Card derived from board (status=WIP, owner=role).',
+        description: 'Calling role — kade / wren / silas. Card derived from HEAD branch then board fallback if card_id absent.',
+      },
+      card_id: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Optional intent assertion (#2868). When present, MCP refuses with card-mismatch if branch-derived id differs. When absent, derivation is purely from branch / board.',
       },
     },
     required: ['role'],
@@ -777,6 +786,7 @@ const STEP_PUSH = 'push';
 
 interface AcpArgs {
   role: 'kade' | 'wren' | 'silas';
+  card_id?: number; // #2868 — optional intent assertion
 }
 
 // #2688 — chorus_pull spine event names. Same extraction reason as commit
@@ -1151,6 +1161,22 @@ async function executeAcp(
   // downstream emit carries both trace_id and card_id automatically.
   if (cardId !== null) emit = createSpineEmitter(trace_id, baseEmit, cardId);
   stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok, source: branchMatch ? 'branch' : 'board' });
+
+  // #2868 — intent-assertion guard. If the caller passed args.card_id, it
+  // must match the derived cardId. Silent substitution is the failure
+  // mode this card closes (today: wren werk on wren/2851, /acp 2847 ran
+  // against 2851 with no signal). Refuse loudly with both ids named.
+  if (args.card_id !== undefined && cardId !== null && args.card_id !== cardId) {
+    emit('chorus_acp.refused', {
+      role,
+      step: 'intent-check',
+      reason: 'card-mismatch',
+      requested_card_id: args.card_id,
+      branch_card_id: cardId,
+      detail: `Caller asked for card ${args.card_id} but werk branch ${initialBranch} derives card ${cardId}. Repoint werk to ${role}/${args.card_id} or omit card_id to accept current branch.`,
+    });
+    throw new Error(`chorus_acp refused: card-mismatch — requested=${args.card_id} branch=${cardId}`);
+  }
 
   // #2752 bug-5 — transaction-level idempotency. If the PR is already merged
   // to origin/main, the commit+push+merge phase is moot — skip to cards-done
