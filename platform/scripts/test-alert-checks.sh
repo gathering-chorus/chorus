@@ -41,6 +41,14 @@ EOF
 mkdir -p "$TMPDIR/.chorus"
 mv "$TMPDIR/chorus.log" "$TMPDIR/.chorus/chorus.log"
 
+# #2871: healthy crawler status fixture (all domains consecutive=0 → max=0 → 'ok')
+cat > "$TMPDIR/crawler-status-healthy.json" <<'STATUSJSON'
+{
+  "alpha": {"status": "ok", "consecutive_failures": 0},
+  "beta":  {"status": "ok", "consecutive_failures": 0}
+}
+STATUSJSON
+
 run_alert_check() {
   local rule_file="$1"
   local name
@@ -52,7 +60,9 @@ run_alert_check() {
     return 2
   fi
   # Run with HOME pointing at our fixture; PATH preserved so python3 + scripts found.
-  HOME="$TMPDIR" CHORUS_ROOT="$CHORUS_ROOT" bash -c "$check_script" 2>&1
+  # #2871: also pass CRAWLER_STATUS_FILE so crawler-error.yml reads a healthy
+  # fixture (max consecutive=0) and returns 'ok' as expected.
+  HOME="$TMPDIR" CHORUS_ROOT="$CHORUS_ROOT" CRAWLER_STATUS_FILE="$TMPDIR/crawler-status-healthy.json" bash -c "$check_script" 2>&1
 }
 
 assert_check_returns_ok() {
@@ -103,7 +113,18 @@ for sibling in crawler-error-check.py hydration-divergence-check.py; do
   fi
   case "$sibling" in
     crawler-error-check.py)
-      result=$(echo "$PY_FIXTURE" | CUTOFF=$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ') python3 "$ALERT_DIR/$sibling" 2>&1)
+      # #2871: crawler-error-check now reads /tmp/crawler-domain-status.json
+      # (or CRAWLER_STATUS_FILE override) and prints max consecutive_failures
+      # across domains. Fixture: a synthetic status file with one stuck domain.
+      _crawler_fixture=$(mktemp -d)
+      cat > "$_crawler_fixture/status.json" <<'STATUSJSON'
+{
+  "stuck_d": {"status": "error", "consecutive_failures": 2},
+  "ok_d":    {"status": "ok",    "consecutive_failures": 0}
+}
+STATUSJSON
+      result=$(CRAWLER_STATUS_FILE="$_crawler_fixture/status.json" python3 "$ALERT_DIR/$sibling" 2>&1)
+      rm -rf "$_crawler_fixture"
       ;;
     hydration-divergence-check.py)
       PY_FIXTURE_OK='{"timestamp":"'"$NOW_PY_ISO"'","event":"crawler.domain.indexed","domain":"chorus"}'

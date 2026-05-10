@@ -1,29 +1,35 @@
-# crawler-error.yml — Alert when chorus crawler reports per-domain failures
-# Card #2817 (#2861 — bash-only check; python moved to sibling script)
+# crawler-error.yml — Alert when chorus crawler reports persistent failures
+# Card #2817 (#2861 — bash-only check; #2871 — tune to consecutive>=2)
 #
 # index-crawler-snapshots.sh emits crawler.domain.failed when a domain's
 # /api/chorus/crawl/:domain call returns non-200. Tracks consecutive
-# failures in /tmp/crawler-domain-status.json. Sustained failure on any
-# domain means the crawl-API or the domain's source is broken; the
-# graph for that domain falls behind silently.
+# failures per domain in /tmp/crawler-domain-status.json. Sustained
+# failure on any domain (consecutive >= 2) means the crawl-API or the
+# domain's source is broken; the graph for that domain falls behind
+# silently.
+#
+# Why consecutive>=2 (not raw event count): a chorus-api kickstart causes
+# 5-10 events in one second across multiple domains, all consecutive=1.
+# The next polling pass clears those (consecutive resets to 0). Firing
+# on raw event count makes a single transient kickstart cycle look like
+# ongoing failure for the next 10 min. The consecutive>=2 threshold fires
+# only when the same domain fails twice in a row — actual persistence,
+# not transient burst.
 #
 # alert-runner contract (proving/scripts/alert-runner.sh:39-41):
 # stdout must equal literal "ok" for success; anything else fires.
 
 name: crawler-error
-description: chorus crawler has reported domain failures recently
+description: chorus crawler has reported persistent (consecutive>=2) domain failures
 severity: warning
 owner: kade
 schedule: "*/5 * * * *"
 
 check: |
-  CHECK_DIR="$(dirname "$0" 2>/dev/null || echo /Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts)"
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-error-check.py"
-  CUTOFF=$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)
-  export CUTOFF
-  RECENT=$(tail -2000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.failed" | python3 "$SIBLING" 2>/dev/null || echo 0)
-  if [ "$RECENT" -gt 0 ] 2>/dev/null; then
-    echo "recent-failures:$RECENT"
+  MAX_CONSEC=$(python3 "$SIBLING" 2>/dev/null || echo 0)
+  if [ "$MAX_CONSEC" -ge 2 ] 2>/dev/null; then
+    echo "persistent-failures:max_consecutive=$MAX_CONSEC"
     exit 1
   fi
   echo "ok"
@@ -31,4 +37,4 @@ check: |
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" kade "crawler-error: domain crawl failures in last 10 min. Check /tmp/crawler-domain-status.json + tail ~/Library/Logs/Chorus/crawler-index.log for the failing domain(s)." 2>/dev/null || true
+  "$OPS_NUDGE" kade "crawler-error: domain crawl failing persistently (consecutive>=2). Check /tmp/crawler-domain-status.json for failing domain(s)." 2>/dev/null || true
