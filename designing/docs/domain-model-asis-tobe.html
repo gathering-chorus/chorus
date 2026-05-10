@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain Model — As-Is vs To-Be (OWL + SHACL)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 32px 48px; color: #1a1a1a; max-width: 1400px; }
+  h1 { border-bottom: 2px solid #6366f1; padding-bottom: 8px; margin-bottom: 4px; }
+  h2 { margin-top: 40px; color: #3730a3; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { color: #1f2937; margin-top: 24px; }
+  .meta { color: #666; font-size: 0.85em; margin-bottom: 24px; }
+  .lede { font-size: 1.05em; color: #374151; margin: 16px 0 24px 0; line-height: 1.55; }
+  .lede strong { color: #111827; }
+  .split { display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 12px; }
+  .panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; background: #fafafa; }
+  .panel.asis { border-left: 4px solid #dc2626; background: #fef2f2; }
+  .panel.tobe { border-left: 4px solid #059669; background: #f0fdf4; }
+  .panel h3 { margin-top: 0; }
+  .badge { display: inline-block; font-size: 0.7em; font-weight: 600; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 12px; margin-left: 8px; vertical-align: middle; }
+  .badge.asis { background: #fee2e2; color: #991b1b; }
+  .badge.tobe { background: #d1fae5; color: #065f46; }
+  pre { background: #1f2937; color: #f9fafb; padding: 14px 16px; border-radius: 6px; overflow-x: auto; font-size: 0.82em; line-height: 1.45; }
+  pre code { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+  .comment-line { color: #94a3b8; font-style: italic; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9em; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; color: #374151; }
+  .delta-add { background: #d1fae5; color: #065f46; padding: 1px 6px; border-radius: 3px; font-size: 0.85em; font-weight: 500; }
+  .delta-remove { background: #fee2e2; color: #991b1b; padding: 1px 6px; border-radius: 3px; font-size: 0.85em; font-weight: 500; text-decoration: line-through; }
+  .delta-rename { background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 3px; font-size: 0.85em; font-weight: 500; }
+  .footnote { font-size: 0.85em; color: #6b7280; margin-top: 8px; }
+  ul.findings li { margin: 6px 0; }
+  .ascii-tree { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.9em; line-height: 1.5; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 18px; white-space: pre; }
+</style>
+</head>
+<body>
+
+<h1>Domain Model — As-Is vs To-Be</h1>
+<div class="meta">2026-05-09 · Wren · OWL + SHACL · context: #2851 / #2847 hierarchy cleanup</div>
+
+<p class="lede">
+The current model has <strong>three peer subclasses of Domain</strong> (SubProduct, SubDomain, CollectionDomain) plus an overloaded <code>chorus:hasDomain</code> predicate that conflates containment and dependency. The proposed model collapses Domain to <strong>one recursive class</strong>, separates dependency from containment, and reduces SHACL surface to a single shape. SubProduct stays as a distinct type because product offerings aren't domains — they depend on them.
+</p>
+
+<p class="lede" style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:4px;">
+<strong>Layer note:</strong> <code>chorus:CollectionDomain</code> is removed entirely from Chorus. Photos, Music, Stories, Books, People, Property, etc. are <strong>Gathering's data domains, not Chorus's concern.</strong> They're modeled in Gathering's own ontology. Chorus only models how the team works (SubProducts depending on Domains); the Gathering data layer is downstream and doesn't need a Chorus-side type.
+</p>
+
+<h2>Shape — at a glance</h2>
+
+<div class="split">
+  <div class="panel asis">
+    <h3>As-Is <span class="badge asis">today</span></h3>
+    <div class="ascii-tree">Domain (abstract)
+├── SubProduct       — Loom, Werk, Athena, Borg, Clearing, Quality
+├── CollectionDomain — Photos, Music, Stories, Books (Gathering, wrong layer)
+└── SubDomain        — loom-principles, spine-service, cards-service, nudge, ...
+
+Edges:
+  SubProduct  --hasDomain--> SubDomain   (used as containment in data)
+  SubProduct  --hasDomain--> Domain      (per Document SHACL)
+  Product     --hasDomain--> Domain
+  Product     --hasSubProduct--> SubProduct</div>
+  </div>
+
+  <div class="panel tobe">
+    <h3>To-Be <span class="badge tobe">proposed</span></h3>
+    <div class="ascii-tree">Domain (concrete, recursive)
+└── may contain other Domains (skill → nudge, ...)
+
+SubProduct (separate class)
+└── dependsOn → Domain  (one-to-many; not containment)
+
+Product → SubProduct → Domain → Domain → ...
+
+CollectionDomain removed — Gathering's concern, not Chorus's.
+SubDomain goes away as a class.
+"Has children?" becomes a query, not a type.</div>
+  </div>
+</div>
+
+<h2>OWL — As-Is</h2>
+
+<p>From <code>roles/silas/ontology/chorus.ttl</code> lines 226–243.</p>
+
+<pre><code><span class="comment-line"># Three subclasses under abstract Domain.</span>
+chorus:Domain a owl:Class ;
+    rdfs:label "Domain" ;
+    rdfs:comment "A bounded context with its own data, handlers, ontology, and routes. Three subtypes separate concerns." .
+
+chorus:CollectionDomain a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Collection Domain" ;
+    rdfs:comment "A Gathering data domain — Photos, Music, Stories, Books, People, Property, Seeds, Sexuality." .
+
+chorus:SubProduct a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Sub-Product" ;
+    rdfs:comment "A named product within Chorus — Cards, Loom, The Clearing, Werk, Observability." .
+
+chorus:SubDomain a owl:Class ;
+    rdfs:subClassOf chorus:Domain ;
+    rdfs:label "Sub-Domain" ;
+    rdfs:comment "A sub-domain within a sub-product. Matches the Sub Domain column in Jeff's spreadsheet." .
+
+<span class="comment-line"># Containment edge — used as both containment AND dependency in data.</span>
+chorus:hasDomain a owl:ObjectProperty ;
+    rdfs:label "has domain" ;
+    rdfs:comment "True containment — a product has this domain as a constituent part. Loom hasDomain Principles." .
+
+<span class="comment-line"># SubDomain-only attachments (49 instances rely on this):</span>
+chorus:hasService, chorus:hasPage, chorus:hasPersistence, chorus:hasIntegration,
+chorus:hasPipeline, chorus:hasLogSource, chorus:hasGap, chorus:hasActor,
+chorus:hasScenario, chorus:hasContract, chorus:hasCodeFile
+    <span class="comment-line"># All have rdfs:domain chorus:SubDomain — would need to widen to chorus:Domain.</span>
+</code></pre>
+
+<h2>OWL — To-Be</h2>
+
+<pre><code><span class="comment-line"># One recursive concrete class. SubProduct stays separate.
+# CollectionDomain removed — Gathering's data domains are not Chorus's concern;
+# they live in Gathering's ontology, not chorus.ttl.</span>
+chorus:Domain a owl:Class ;
+    rdfs:label "Domain" ;
+    rdfs:comment "A bounded context with its own data, handlers, ontology, and routes. May contain other Domains. May be depended upon by SubProducts." .
+
+chorus:SubProduct a owl:Class ;
+    rdfs:label "Sub-Product" ;
+    rdfs:comment "A named product offering — Loom, Werk, Athena, Borg, The Clearing, Quality. Depends on Domains; does not contain them." .
+
+<span class="comment-line"># Containment is on Domain — recursive. (Renamed from hasDomain to disambiguate.)</span>
+chorus:hasChild a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range  chorus:Domain ;
+    rdfs:label "has child" ;
+    rdfs:comment "Parent Domain holds this child Domain. Recursive. Used when a Domain is a collection (skill→nudge, photos→tag)." .
+
+chorus:partOf a owl:ObjectProperty ;
+    owl:inverseOf chorus:hasChild ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range  chorus:Domain ;
+    rdfs:label "part of" ;
+    rdfs:comment "Inverse of hasChild for query convenience." .
+
+<span class="comment-line"># Dependency edge from SubProduct → Domain. New predicate to replace hasDomain in this slot.</span>
+chorus:dependsOn a owl:ObjectProperty ;
+    rdfs:domain chorus:SubProduct ;
+    rdfs:range  chorus:Domain ;
+    rdfs:label "depends on" ;
+    rdfs:comment "SubProduct relies on this Domain at runtime or by data. Many-to-many — multiple SubProducts may depend on the same Domain." .
+
+<span class="comment-line"># All facet predicates widen from SubDomain → Domain.</span>
+chorus:hasService a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range  chorus:Service .
+<span class="comment-line"># (...same widening for hasPage, hasPersistence, hasIntegration, hasPipeline,
+#  hasLogSource, hasGap, hasActor, hasScenario, hasContract, hasCodeFile.)</span>
+</code></pre>
+
+<h2>SHACL — As-Is</h2>
+
+<p>Searched the entire ttl for shapes targeting the Domain hierarchy. <strong>There are none.</strong> The only SHACL references to <code>SubDomain</code> are <code>sh:class</code> constraints inside other shapes (Document, AuthBoundary) — they constrain the <em>target</em> of a property to be a SubDomain, not the SubDomain itself.</p>
+
+<table>
+  <tr><th>Shape</th><th>Touches Domain hierarchy?</th><th>How</th></tr>
+  <tr><td><code>chorus:DocumentShape</code></td><td>indirectly</td><td><code>sh:path chorus:hasDomain ; sh:class chorus:SubDomain</code> — Document must tag a SubDomain</td></tr>
+  <tr><td><code>chorus:AuthBoundaryShape</code></td><td>indirectly</td><td>Two <code>sh:class chorus:SubDomain</code> constraints on edges</td></tr>
+  <tr><td>(no shape targets Domain / SubDomain / SubProduct / CollectionDomain itself)</td><td>—</td><td>49 SubDomain instances are unvalidated structurally — owner, label, parent are all best-effort.</td></tr>
+</table>
+
+<p class="footnote">This is a finding on its own: the Domain hierarchy is the core of the model and has no SHACL well-formedness constraint. The to-be should add one.</p>
+
+<h2>SHACL — To-Be</h2>
+
+<pre><code><span class="comment-line"># One shape on the recursive Domain class. Replaces all the would-have-been
+# per-subtype shapes.</span>
+chorus:DomainShape a sh:NodeShape ;
+    sh:targetClass chorus:Domain ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class chorus:Role ;
+    ] ;
+    sh:property [
+        sh:path chorus:hasChild ;
+        sh:class chorus:Domain ;
+        <span class="comment-line"># sh:minCount intentionally omitted — leaf Domains are valid.</span>
+    ] ;
+    sh:property [
+        sh:path rdfs:comment ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+    ] .
+
+<span class="comment-line"># SubProduct gets its own shape — different attribute set, different role.</span>
+chorus:SubProductShape a sh:NodeShape ;
+    sh:targetClass chorus:SubProduct ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class chorus:Role ;
+    ] ;
+    sh:property [
+        sh:path chorus:dependsOn ;
+        sh:minCount 1 ;
+        sh:class chorus:Domain ;
+    ] ;
+    sh:property [
+        sh:path rdfs:comment ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+    ] .
+
+<span class="comment-line"># Existing referents update from chorus:SubDomain → chorus:Domain</span>
+chorus:DocumentShape a sh:NodeShape ;
+    sh:targetClass chorus:Document ;
+    sh:property [
+        sh:path chorus:hasDomain ;
+        sh:minCount 1 ;
+        <span class="delta-rename">sh:class chorus:Domain</span>  <span class="comment-line"># was: chorus:SubDomain</span>
+    ] ;
+    sh:property [
+        sh:path chorus:docTitle ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+</code></pre>
+
+<h2>Instance — before / after (skill domain example)</h2>
+
+<div class="split">
+  <div class="panel asis">
+    <h3>As-Is</h3>
+<pre><code>chorus:loom a chorus:SubProduct ;
+    chorus:hasDomain
+        chorus:loom-principles,
+        chorus:loom-decisions,
+        chorus:loom-skills,    <span class="comment-line"># overloaded</span>
+        chorus:loom-roles .
+
+chorus:loom-skills a chorus:SubDomain ;
+    rdfs:label "Skills" ;
+    chorus:ownedBy chorus:wren .
+
+<span class="comment-line"># nudge has no parent edge — only inferred by name.</span>
+chorus:nudge a chorus:SubDomain ;
+    rdfs:label "Nudge" ;
+    chorus:ownedBy chorus:silas .</code></pre>
+  </div>
+
+  <div class="panel tobe">
+    <h3>To-Be</h3>
+<pre><code>chorus:loom a chorus:SubProduct ;
+    chorus:dependsOn
+        chorus:principles,
+        chorus:decisions,
+        chorus:skill,
+        chorus:roles .
+
+chorus:skill a chorus:Domain ;
+    rdfs:label "Skill" ;
+    chorus:ownedBy chorus:wren ;
+    chorus:hasChild chorus:nudge, chorus:gemba, chorus:pull .
+
+chorus:nudge a chorus:Domain ;
+    rdfs:label "Nudge" ;
+    chorus:ownedBy chorus:silas ;
+    chorus:partOf chorus:skill .   <span class="comment-line"># inverse, optional</span></code></pre>
+  </div>
+</div>
+
+<h2>Delta summary</h2>
+
+<table>
+  <tr><th>Layer</th><th>As-Is</th><th>To-Be</th><th>Change</th></tr>
+  <tr><td>Class</td><td>chorus:Domain (abstract)</td><td>chorus:Domain (concrete)</td><td><span class="delta-rename">re-typed</span></td></tr>
+  <tr><td>Class</td><td>chorus:SubDomain</td><td>—</td><td><span class="delta-remove">removed</span> (instances re-typed to Domain)</td></tr>
+  <tr><td>Class</td><td>chorus:CollectionDomain</td><td>—</td><td><span class="delta-remove">removed</span> (Gathering's concern; modeled there, not in chorus.ttl)</td></tr>
+  <tr><td>Class</td><td>chorus:SubProduct</td><td>chorus:SubProduct</td><td>unchanged (kept)</td></tr>
+  <tr><td>Predicate</td><td>chorus:hasDomain (overloaded)</td><td>chorus:hasChild + chorus:dependsOn</td><td><span class="delta-rename">split</span> by meaning</td></tr>
+  <tr><td>Predicate</td><td>—</td><td>chorus:partOf</td><td><span class="delta-add">added</span> (inverse of hasChild)</td></tr>
+  <tr><td>Predicate domain</td><td>hasService/hasPage/etc. → SubDomain</td><td>same → Domain</td><td><span class="delta-rename">widened</span> ×11 facet predicates</td></tr>
+  <tr><td>SHACL</td><td>0 shapes target Domain hierarchy</td><td>chorus:DomainShape + chorus:SubProductShape</td><td><span class="delta-add">added</span> first structural validation</td></tr>
+  <tr><td>SHACL refs</td><td>sh:class chorus:SubDomain (×3)</td><td>sh:class chorus:Domain</td><td><span class="delta-rename">retargeted</span></td></tr>
+</table>
+
+<h2>Implications worth naming</h2>
+<ul class="findings">
+  <li><strong>Migration touches all 49 SubDomain instances.</strong> Re-type to Domain, optionally add hasChild/partOf where containment exists.</li>
+  <li><strong>Migration touches all chorus:hasDomain edges from SubProducts.</strong> Each becomes either chorus:dependsOn (most) or chorus:hasChild (none, since SubProduct has no Domain children in this model).</li>
+  <li><strong>11 facet predicates widen from SubDomain to Domain.</strong> Existing data on SubDomain instances stays valid because every SubDomain becomes a Domain.</li>
+  <li><strong>CollectionDomain class disappears from chorus.ttl entirely.</strong> Gathering's data domains (Photos, Music, etc.) move to Gathering's ontology — Chorus stops trying to know about them. Reduces chorus.ttl scope to "how the team works," not "what the team manages."</li>
+  <li><strong>SHACL gains structural validation for the first time.</strong> Currently no shape constrains Domain instances — owner/label/comment are best-effort.</li>
+  <li><strong>Document and AuthBoundary shapes need their <code>sh:class</code> retargeted.</strong> Three references in total — small surface.</li>
+</ul>
+
+<h2>Open questions</h2>
+<ul class="findings">
+  <li>Keep <code>chorus:hasDomain</code> as the predicate name (just narrow its meaning to containment) <em>or</em> rename to <code>chorus:hasChild</code>? Rename is honest; keep is cheaper migration.</li>
+  <li>Is <code>chorus:dependsOn</code> typed (data dep / runtime dep / ontology dep) or one flat predicate? Recommend flat for v1, type later if needed.</li>
+  <li>Where does Product fit in the to-be? <code>Product hasSubProduct SubProduct</code> stays unchanged — but <code>Product hasDomain Domain</code> exists today and would also become <code>Product dependsOn Domain</code>? Or does Product not depend on Domains directly, only through its SubProducts?</li>
+</ul>
+
+</body>
+</html>

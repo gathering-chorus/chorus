@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+# graph-health — canonical-graph reality check.
+#
+# Surfaces the basics of the chorus knowledge graph (Products / SubProducts /
+# Domains / SubDomains, Vertebrae, OWL + SHACL state, naming drift) so
+# substrate work doesn't pay the rediscovery tax every time.
+#
+# Same shape as commit-health: run manually, prints red/yellow/green flags,
+# exits 0 if all green, 1 if any RED warning fires.
+#
+# No hook, no auto-fire — Wren/Silas/Kade run it before substrate-touching
+# cards (cleanup, hydrator changes, schema migrations).
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+SPARQL_ENDPOINT="${SPARQL_ENDPOINT:-http://localhost:3030/pods/query}"
+ONTOLOGY_GRAPH="urn:chorus:ontology"
+INSTANCES_GRAPH="urn:chorus:instances"
+
+WARN_FILE=$(mktemp)
+trap 'rm -f "$WARN_FILE"' EXIT
+
+red()    { printf '\033[31m%s\033[0m' "$1"; }
+green()  { printf '\033[32m%s\033[0m' "$1"; }
+yellow() { printf '\033[33m%s\033[0m' "$1"; }
+flag()   { echo x >> "$WARN_FILE"; printf '%s\n' "$(red "⚠ $1")"; }
+warn()   { printf '%s\n' "$(yellow "⚠ $1")"; }
+ok()     { printf '%s\n' "$(green "✓ $1")"; }
+
+# --- SPARQL helper -----------------------------------------------------------
+
+sparql() {
+  local query="$1"
+  # SPARQL CSV results carry \r\n line endings; strip the \r so values parse cleanly.
+  curl -sf -H "Accept: text/csv" --data-urlencode "query=$query" "$SPARQL_ENDPOINT" 2>/dev/null | tr -d '\r'
+}
+
+# --- Header ------------------------------------------------------------------
+
+echo "=== GRAPH HEALTH — $(date '+%Y-%m-%d %H:%M:%S') ==="
+echo "Endpoint: $SPARQL_ENDPOINT"
+echo "Ontology: $ONTOLOGY_GRAPH"
+echo "Instances: $INSTANCES_GRAPH"
+echo
+
+# Endpoint reachability
+if ! sparql "ASK { ?s ?p ?o }" >/dev/null 2>&1; then
+  flag "SPARQL endpoint unreachable at $SPARQL_ENDPOINT — cannot proceed"
+  exit 2
+fi
+ok "SPARQL endpoint reachable"
+echo
+
+# --- Products + SubProducts --------------------------------------------------
+
+echo "--- PRODUCTS ---"
+PRODUCTS=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?p a chorus:Product ; rdfs:label ?label .
+  }
+} ORDER BY ?label" | tail -n +2)
+PRODUCT_COUNT=$(echo "$PRODUCTS" | grep -c .)
+if [ -z "$PRODUCTS" ] || [ "$PRODUCT_COUNT" = 0 ]; then
+  warn "No chorus:Product instances found — Product class may not be used yet"
+else
+  echo "Count: $PRODUCT_COUNT"
+  echo "$PRODUCTS" | sed 's/^/  /'
+fi
+echo
+
+echo "--- SUBPRODUCTS ---"
+SP_OUT=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label ?owner WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sp a chorus:SubProduct ; rdfs:label ?label .
+    OPTIONAL { ?sp chorus:ownedBy ?o . ?o rdfs:label ?owner }
+  }
+} ORDER BY ?label")
+SP_COUNT=$(echo "$SP_OUT" | tail -n +2 | grep -c .)
+echo "Count: $SP_COUNT"
+echo "$SP_OUT" | tail -n +2 | awk -F, '{printf "  %-20s owner=%s\n", $1, $2}'
+echo
+
+# --- Domains ----------------------------------------------------------------
+
+echo "--- DOMAINS ---"
+D_OUT=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label ?owner WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?d a chorus:Domain ; rdfs:label ?label .
+    FILTER NOT EXISTS { ?d a chorus:SubDomain }
+    FILTER NOT EXISTS { ?d a chorus:SubProduct }
+    FILTER NOT EXISTS { ?d a chorus:CollectionDomain }
+    OPTIONAL { ?d chorus:ownedBy ?o . ?o rdfs:label ?owner }
+  }
+} ORDER BY ?label")
+D_COUNT=$(echo "$D_OUT" | tail -n +2 | grep -c .)
+if [ "$D_COUNT" = 0 ]; then
+  flag "No chorus:Domain instances (excluding subclasses) — the Domain layer isn't surfaced; SubProducts → SubDomains directly"
+else
+  echo "Count: $D_COUNT"
+  echo "$D_OUT" | tail -n +2 | awk -F, '{printf "  %-20s owner=%s\n", $1, $2}'
+fi
+echo
+
+# --- SubDomains grouped by parent SubProduct via hasDomain ------------------
+
+echo "--- SUBDOMAINS (by SubProduct via chorus:hasDomain) ---"
+SD_TOTAL=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT (COUNT(DISTINCT ?sd) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sd a chorus:SubDomain .
+  }
+}" | tail -n +2)
+echo "Total SubDomain instances: $SD_TOTAL"
+echo
+
+PARENTED=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?spLabel ?sdLabel WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sp a chorus:SubProduct ; rdfs:label ?spLabel ; chorus:hasDomain ?sd .
+    ?sd a chorus:SubDomain ; rdfs:label ?sdLabel .
+  }
+} ORDER BY ?spLabel ?sdLabel")
+PARENT_COUNT=$(echo "$PARENTED" | tail -n +2 | grep -c .)
+echo "SubDomains with SubProduct parent edge: $PARENT_COUNT"
+echo "$PARENTED" | tail -n +2 | awk -F, '{printf "  %-15s → %s\n", $1, $2}' | head -50
+echo
+
+ORPHAN_SD=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sd a chorus:SubDomain ; rdfs:label ?label .
+    FILTER NOT EXISTS { ?sp a chorus:SubProduct ; chorus:hasDomain ?sd }
+  }
+} ORDER BY ?label" | tail -n +2)
+ORPHAN_COUNT=$(echo "$ORPHAN_SD" | grep -c .)
+if [ "$ORPHAN_COUNT" -gt 0 ] 2>/dev/null; then
+  flag "Orphan SubDomains (no SubProduct parent edge): $ORPHAN_COUNT"
+  echo "$ORPHAN_SD" | sed 's/^/    /' | head -20
+else
+  ok "All SubDomains have a SubProduct parent"
+fi
+echo
+
+# --- CollectionDomains ------------------------------------------------------
+
+echo "--- COLLECTION DOMAINS (Gathering data) ---"
+CD_OUT=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?cd a chorus:CollectionDomain ; rdfs:label ?label .
+  }
+} ORDER BY ?label")
+CD_COUNT=$(echo "$CD_OUT" | tail -n +2 | grep -c .)
+echo "Count: $CD_COUNT"
+echo "$CD_OUT" | tail -n +2 | sed 's/^/  /'
+echo
+
+# --- Vertebrae --------------------------------------------------------------
+
+echo "--- CHORUS VALUE STREAM (Vertebrae) ---"
+V_OUT=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label ?order WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?v a chorus:Vertebra ; rdfs:label ?label ; chorus:stageOrder ?order ;
+       chorus:belongsTo chorus:chorusStream .
+  }
+} ORDER BY ?order")
+V_COUNT=$(echo "$V_OUT" | tail -n +2 | grep -c .)
+echo "Count: $V_COUNT"
+echo "$V_OUT" | tail -n +2 | awk -F, '{printf "  %2s. %s\n", $2, $1}'
+
+# Check for duplicate Vertebra labels (same name with different stageOrder)
+DUP_LABELS=$(echo "$V_OUT" | tail -n +2 | awk -F, '{print $1}' | sort | uniq -d | head -3)
+if [ -n "$DUP_LABELS" ]; then
+  flag "Duplicate Vertebra labels in chorusStream:"
+  echo "$DUP_LABELS" | sed 's/^/    /'
+fi
+# Check for stageOrder duplicates
+DUP_ORDERS=$(echo "$V_OUT" | tail -n +2 | awk -F, '{print $2}' | sort | uniq -d | grep -c .)
+if [ "$DUP_ORDERS" -gt 0 ] 2>/dev/null; then
+  flag "Duplicate stageOrder values in chorusStream Vertebrae"
+fi
+echo
+
+# --- Naming drift -----------------------------------------------------------
+
+echo "--- NAMING DRIFT ---"
+LOOM_PREFIX=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sd a chorus:SubDomain ; rdfs:label ?label .
+    FILTER(strstarts(str(?sd), 'https://jeffbridwell.com/chorus#loom-'))
+  }
+}" | tail -n +2)
+LOOM_COUNT=$(echo "$LOOM_PREFIX" | grep -c .)
+if [ "$LOOM_COUNT" -gt 0 ] 2>/dev/null; then
+  flag "$LOOM_COUNT SubDomain instances with loom-* URI prefix (rename per #2847)"
+  echo "$LOOM_PREFIX" | sed 's/^/    /'
+else
+  ok "No loom-* prefixed SubDomain URIs"
+fi
+
+JEFF_DATA_AS_SD=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?label WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?sd a chorus:SubDomain ; rdfs:label ?label .
+    FILTER(?label IN ('Photos', 'Music', 'Stories', 'Books', 'People', 'Property', 'Seeds', 'Sexuality', 'Notes', 'Documents', 'Blog', 'Video', 'Social'))
+  }
+}" | tail -n +2)
+JD_COUNT=$(echo "$JEFF_DATA_AS_SD" | grep -c .)
+if [ "$JD_COUNT" -gt 0 ] 2>/dev/null; then
+  flag "$JD_COUNT Jeff data domains classified as SubDomain instead of CollectionDomain (per schema comment)"
+  echo "$JEFF_DATA_AS_SD" | sed 's/^/    /'
+else
+  ok "Jeff data domains correctly classified as CollectionDomain"
+fi
+echo
+
+# --- OWL state --------------------------------------------------------------
+
+echo "--- OWL STATE ---"
+PRED_NO_DOMAIN=$(sparql "PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT (COUNT(?p) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?p a owl:ObjectProperty .
+    FILTER NOT EXISTS { ?p rdfs:domain ?d }
+  }
+}" | tail -n +2)
+PRED_NO_RANGE=$(sparql "PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT (COUNT(?p) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?p a owl:ObjectProperty .
+    FILTER NOT EXISTS { ?p rdfs:range ?r }
+  }
+}" | tail -n +2)
+echo "ObjectProperties without rdfs:domain: $PRED_NO_DOMAIN"
+echo "ObjectProperties without rdfs:range:  $PRED_NO_RANGE"
+[ "${PRED_NO_DOMAIN:-0}" -gt 0 ] 2>/dev/null && warn "$PRED_NO_DOMAIN ObjectProperties missing rdfs:domain"
+[ "${PRED_NO_RANGE:-0}" -gt 0 ] 2>/dev/null && warn "$PRED_NO_RANGE ObjectProperties missing rdfs:range"
+
+HYDRATABLE_NO_OWNER=$(sparql "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT (COUNT(?p) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?p a chorus:Hydratable .
+    FILTER NOT EXISTS { ?p chorus:writeOwner ?wo }
+  }
+}" | tail -n +2)
+echo "Hydratable predicates without chorus:writeOwner: ${HYDRATABLE_NO_OWNER:-?}"
+[ "${HYDRATABLE_NO_OWNER:-0}" -gt 0 ] 2>/dev/null && flag "$HYDRATABLE_NO_OWNER Hydratable predicates missing chorus:writeOwner (per #2827 contract)"
+
+DEPRECATED_USAGE=$(sparql "PREFIX owl: <http://www.w3.org/2002/07/owl#>
+SELECT (COUNT(*) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?dep owl:deprecated true .
+    ?s ?p ?dep .
+    FILTER (?p != owl:deprecated)
+  }
+}" | tail -n +2)
+echo "Edges referencing owl:deprecated subjects: ${DEPRECATED_USAGE:-?}"
+[ "${DEPRECATED_USAGE:-0}" -gt 0 ] 2>/dev/null && warn "$DEPRECATED_USAGE active edges point at deprecated URIs"
+echo
+
+# --- SHACL state ------------------------------------------------------------
+
+echo "--- SHACL STATE ---"
+SHAPE_COUNT=$(sparql "PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT (COUNT(?s) AS ?n) WHERE {
+  GRAPH <$ONTOLOGY_GRAPH> {
+    ?s a sh:NodeShape .
+  }
+}" | tail -n +2)
+echo "SHACL NodeShapes declared: ${SHAPE_COUNT:-?}"
+
+SHAPE_COUNT_NUM=$(echo "${SHAPE_COUNT:-0}" | tr -d '"' | tr -d ' ')
+if [ "${SHAPE_COUNT_NUM:-0}" -gt 0 ] 2>/dev/null; then
+  ok "SHACL NodeShapes present (${SHAPE_COUNT_NUM})"
+  if command -v pyshacl >/dev/null 2>&1; then
+    echo "(pyshacl available — TODO: invoke validation pass)"
+  else
+    warn "pyshacl not installed — cannot run validation pass"
+  fi
+else
+  warn "No SHACL NodeShapes declared in ontology graph"
+fi
+echo
+
+# --- Summary ----------------------------------------------------------------
+
+echo "=== SUMMARY ==="
+WARN_COUNT=$(wc -l < "$WARN_FILE" | tr -d ' ')
+if [ "$WARN_COUNT" = 0 ]; then
+  ok "Graph health: all green"
+  exit 0
+else
+  flag "Graph health: $WARN_COUNT RED warning(s) — see above"
+  exit 1
+fi
