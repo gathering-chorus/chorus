@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# building-pipeline-health — read-only deploy chain reliability check (#2870).
+#
+# Fourth in the Quality-horizontal fitness function family (after
+# commit-health, spine-health, quality-health). Asks: is the deploy chain
+# fit, or are /acp completions silently failing to trigger /build?
+#
+# Reads what already exists:
+#   - Loki: chorus_acp.completed events in window
+#   - Loki: chorus_acp.release-trigger.* events (the kickstart that fires /build)
+#   - building-pipeline.log: pipeline run timestamps
+#
+# Pairs them: every chorus_acp.completed should have a release-trigger.completed
+# AND a downstream pipeline run within ${PAIR_WINDOW_S} seconds. Misses are
+# the failure mode this card closes (#2870 §1: release-trigger never firing).
+#
+# Run manually whenever the deploy chain feels off, or as part of an audit.
+# No hook, no auto-fire — operator runs it.
+#
+# Exits 0 if all pairs match; 1 if any acp lacks a paired trigger or pipeline run.
+#
+# Usage:
+#   building-pipeline-health             — summary view
+#   building-pipeline-health --verbose   — full per-acp pairing table
+#   building-pipeline-health --json      — JSON output for tooling
+
+set -uo pipefail
+
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+LOKI_URL="${LOKI_URL:-http://localhost:3102}"
+PIPELINE_LOG="${PIPELINE_LOG:-$HOME/Library/Logs/Chorus/building-pipeline.log}"
+WINDOW_HOURS="${WINDOW_HOURS:-24}"
+PAIR_WINDOW_S="${PAIR_WINDOW_S:-300}"
+VERBOSE=0
+JSON_OUT=0
+for arg in "$@"; do
+  case "$arg" in
+    --verbose|-v) VERBOSE=1 ;;
+    --json) JSON_OUT=1 ;;
+    --help|-h) sed -n '2,/^$/p' "$0" | sed 's/^# //;s/^#//'; exit 0 ;;
+  esac
+done
+
+[ -d "$CHORUS_HOME" ] || { echo "FAIL: chorus root not found at $CHORUS_HOME" >&2; exit 2; }
+
+python3 - "$LOKI_URL" "$PIPELINE_LOG" "$WINDOW_HOURS" "$PAIR_WINDOW_S" "$VERBOSE" "$JSON_OUT" << 'PYEOF'
+import json, sys, os, re, datetime, urllib.parse, urllib.request, urllib.error
+
+LOKI_URL, PIPELINE_LOG, WINDOW_HOURS, PAIR_WINDOW_S, VERBOSE, JSON_OUT = sys.argv[1:7]
+WINDOW_HOURS = int(WINDOW_HOURS)
+PAIR_WINDOW_S = int(PAIR_WINDOW_S)
+VERBOSE = int(VERBOSE)
+JSON_OUT = int(JSON_OUT)
+
+now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+start = now - WINDOW_HOURS * 3600
+
+def loki_query(q):
+    params = urllib.parse.urlencode({
+        'query': q,
+        'start': f'{start}000000000',
+        'end': f'{now}000000000',
+        'limit': '1000',
+    })
+    url = f'{LOKI_URL}/loki/api/v1/query_range?{params}'
+    try:
+        with urllib.request.urlopen(url, timeout=8) as r:
+            return json.load(r)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+def parse_iso(ts):
+    try:
+        return int(datetime.datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp())
+    except (ValueError, AttributeError):
+        return None
+
+# 1. chorus_acp.completed events
+acps = []
+resp = loki_query('{job="chorus-api"} |~ "chorus_acp.completed"')
+if resp:
+    for s in resp.get('data', {}).get('result', []):
+        for _ts, line in s.get('values', []):
+            try:
+                e = json.loads(line)
+                if e.get('event') == 'chorus_acp.completed':
+                    t = parse_iso(e.get('ts', ''))
+                    if t and t >= start:
+                        acps.append({'ts': t, 'card_id': e.get('card_id'), 'role': e.get('role'), 'trace_id': e.get('trace_id')})
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+# 2. chorus_acp.release-trigger.completed events
+triggers = []
+resp = loki_query('{job="chorus-api"} |~ "chorus_acp.release-trigger.completed"')
+if resp:
+    for s in resp.get('data', {}).get('result', []):
+        for _ts, line in s.get('values', []):
+            try:
+                e = json.loads(line)
+                if e.get('event') == 'chorus_acp.release-trigger.completed':
+                    t = parse_iso(e.get('ts', ''))
+                    if t and t >= start:
+                        triggers.append({'ts': t, 'trace_id': e.get('trace_id')})
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+# 3. pipeline runs from spine (deploy.completed events from chorus-deploy).
+# Events land under job=platform-chorus (chorus-log emits via chorus-events
+# appName) — query across all jobs to catch them regardless of label drift.
+pipeline_runs = []
+resp = loki_query('{job=~".+"} |~ "\\"event\\":\\"deploy.completed\\""')
+if resp:
+    seen = set()
+    for s in resp.get('data', {}).get('result', []):
+        for _ts, line in s.get('values', []):
+            try:
+                e = json.loads(line)
+                if e.get('event') == 'deploy.completed':
+                    t = parse_iso(e.get('ts', '') or e.get('timestamp', ''))
+                    if t and t >= start and t not in seen:
+                        seen.add(t)
+                        pipeline_runs.append(t)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+# Pair each acp against (a) a release-trigger within PAIR_WINDOW_S and
+# (b) a pipeline run within the same window.
+pairs = []
+for a in acps:
+    trig = next((t for t in triggers if t.get('trace_id') == a.get('trace_id')
+                 and abs(t['ts'] - a['ts']) <= PAIR_WINDOW_S), None)
+    pipe = next((p for p in pipeline_runs if 0 <= (p - a['ts']) <= PAIR_WINDOW_S), None)
+    pairs.append({'acp': a, 'trigger': trig, 'pipeline': pipe})
+
+unpaired_trigger = sum(1 for p in pairs if p['trigger'] is None)
+unpaired_pipeline = sum(1 for p in pairs if p['pipeline'] is None)
+total = len(pairs)
+flag = unpaired_trigger > 0 or unpaired_pipeline > 0
+
+if JSON_OUT:
+    print(json.dumps({
+        'window_hours': WINDOW_HOURS,
+        'pair_window_seconds': PAIR_WINDOW_S,
+        'acp_count': total,
+        'unpaired_release_trigger': unpaired_trigger,
+        'unpaired_pipeline_run': unpaired_pipeline,
+        'pipeline_run_count': len(pipeline_runs),
+        'flag': bool(flag),
+    }, indent=2))
+    sys.exit(1 if flag else 0)
+
+print(f'building-pipeline-health — {WINDOW_HOURS}h window, {PAIR_WINDOW_S}s pair tolerance')
+print()
+if total == 0:
+    print(f'  -- no chorus_acp.completed events in window (idle); skipping')
+    sys.exit(0)
+
+ok = '\033[32m✓\033[0m'
+warn = '\033[33m⚠\033[0m'
+fail = '\033[31m⚠\033[0m'
+
+if unpaired_trigger == 0:
+    print(f'  {ok} release-trigger pairing: {total}/{total} chorus_acp.completed events have a release-trigger within {PAIR_WINDOW_S}s')
+else:
+    print(f'  {fail} release-trigger pairing: {total - unpaired_trigger}/{total} chorus_acp.completed events have a release-trigger; {unpaired_trigger} missing')
+
+if unpaired_pipeline == 0:
+    print(f'  {ok} pipeline-run pairing: {total}/{total} chorus_acp.completed events have a pipeline run within {PAIR_WINDOW_S}s')
+else:
+    print(f'  {fail} pipeline-run pairing: {total - unpaired_pipeline}/{total} chorus_acp.completed events have a pipeline run; {unpaired_pipeline} missing')
+
+if VERBOSE:
+    print()
+    print('  per-/acp pairing:')
+    for p in pairs:
+        a = p['acp']
+        when = datetime.datetime.fromtimestamp(a['ts']).strftime('%H:%M:%S')
+        t_mark = ok if p['trigger'] else fail
+        p_mark = ok if p['pipeline'] else fail
+        print(f'    {when}  card={a["card_id"]}  role={a["role"]}  trigger:{t_mark}  pipeline:{p_mark}')
+
+print()
+sys.exit(1 if flag else 0)
+PYEOF
