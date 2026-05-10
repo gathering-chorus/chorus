@@ -30,6 +30,15 @@ directing/products/cards/src/**/*.d.ts
 *.db-wal
 *.db-shm
 
+# #2881 — Python bytecode (never tracked)
+__pycache__/
+
+# #2881 — auto-generated session screenshots accumulating untracked. The 200
+# screenshots already committed in proving/screenshots/ (Silas March-April
+# instrumentation runs) stay tracked — gitignore only affects new untracked
+# files. Cleanup of the historical set is intentionally out of scope here.
+proving/screenshots/*.png
+
 # OS
 .DS_Store
 
