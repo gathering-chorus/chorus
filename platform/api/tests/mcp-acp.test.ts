@@ -28,7 +28,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(names).toContain('chorus_acp');
     });
 
-    test('input schema accepts only role — strict, card_id derived from board', async () => {
+    test('input schema requires role; card_id is optional intent-assertion (#2868)', async () => {
       const server = buildMcpServer(() => 'kade');
       // @ts-expect-error - private handler access
       const handler = (server as any)._requestHandlers.get('tools/list');
@@ -38,6 +38,10 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(tool.inputSchema.required).toEqual(['role']);
       expect(tool.inputSchema.additionalProperties).toBe(false);
       expect(tool.inputSchema.properties.role.enum.sort()).toEqual(['kade', 'silas', 'wren']);
+      // #2868: card_id property exists on schema and is integer (not in required).
+      expect(tool.inputSchema.properties.card_id).toBeDefined();
+      expect(tool.inputSchema.properties.card_id.type).toBe('integer');
+      expect(tool.inputSchema.required).not.toContain('card_id');
     });
   });
 
@@ -421,6 +425,122 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
 
       cwds.forEach((cwd) => expect(cwd).toBe('/fake/chorus-werk/kade'));
+    });
+  });
+
+  // #2868 — card_id intent-assertion. The skill UI accepts /acp <card-id>;
+  // pre-#2868 the MCP signature dropped the arg and derived from branch
+  // silently, so a werk on wren/2851 with a typed `/acp 2847` ran against
+  // 2851 with no signal. This block asserts: when caller passes card_id,
+  // MCP refuses with `card-mismatch` if branch-derived id differs; runs
+  // normally if they match; preserves backward-compat when no card_id passed.
+  describe('#2868 — card_id intent-assertion + mismatch refusal', () => {
+    test('refuses card-mismatch when args.card_id differs from branch-derived', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+          return { stdout: 'wren/2851\n', stderr: '' };
+        }
+        throw new Error(`unexpected: ${file} ${args.join(' ')}`);
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2851, owner: 'wren', title: 'x' }] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler(
+          { method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'wren', card_id: 2847 } } },
+          {},
+        ),
+      ).rejects.toThrow(/card-mismatch/);
+      // No commit / push / merge happened — refused at preflight.
+      const commits = exec.mock.calls.filter((c: unknown[]) => {
+        const file = c[0] as string;
+        const a = c[1] as string[];
+        return file.endsWith('git-queue.sh') && a[0] === 'commit';
+      });
+      expect(commits.length).toBe(0);
+      // Refusal event names the mismatch.
+      const refused = events.find((e) => e.event === 'chorus_acp.refused' && e.fields.reason === 'card-mismatch');
+      expect(refused).toBeDefined();
+      expect(refused!.fields.requested_card_id).toBe(2847);
+      expect(refused!.fields.branch_card_id).toBe(2851);
+    });
+
+    test('runs normally when args.card_id matches branch-derived', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') {
+          return { stdout: '[kade/2750 abcd5678] m\n', stderr: '' };
+        }
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          const err = new Error('no PR'); (err as { code?: number }).code = 1; throw err;
+        }
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'create') {
+          return { stdout: 'https://github.com/x/y/pull/999\n', stderr: '' };
+        }
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected: ${file} ${args.join(' ')}`);
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => undefined) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler(
+        { method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade', card_id: 2750 } } },
+        {},
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.card_id).toBe(2750);
+    });
+
+    test('backward-compat: no card_id arg = derive from branch as today', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') {
+          return { stdout: '[kade/2750 abcd5678] m\n', stderr: '' };
+        }
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          const err = new Error('no PR'); (err as { code?: number }).code = 1; throw err;
+        }
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'create') return { stdout: 'https://x/y/pull/9\n', stderr: '' };
+        if (file === 'gh' && args[0] === 'pr' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
+        throw new Error(`unexpected: ${file} ${args.join(' ')}`);
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => undefined) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/git-queue.sh',
+      } as never);
+      // @ts-expect-error
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler(
+        { method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } },
+        {},
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.card_id).toBe(2750);
     });
   });
 });
