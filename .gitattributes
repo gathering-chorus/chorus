@@ -1,0 +1,5 @@
+# activity.md is an append-only team journal. Roles append on close-out;
+# every role's branch ends with a different latest line, so push always
+# conflicts on this file mechanically. merge=union takes lines from both
+# sides on conflict — each role's append survives, none get dropped.
+activity.md merge=union
