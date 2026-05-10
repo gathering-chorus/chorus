@@ -1,12 +1,15 @@
-//! Accept Gate (#1657, #1671)
+//! Accept Gate (#1657, #1671, #2864)
 //!
 //! PreToolUse hook on Skill tool when skill="acp".
 //! Validates: demo evidence exists, prevents self-accept on code cards.
 //! Jeff always overrides (DEC-048).
 //!
-//! #2177: demo evidence is the `demo:preflight-pass` card comment (written by
-//! /demo skill), not a filesystem artifact. Same retire-the-old-path pattern
-//! as #2168 and #2176.
+//! Evolution of demo evidence:
+//! - Original: brief-file artifact (retired by #2177)
+//! - #2177: `demo:preflight-pass` card comment substring
+//! - #2864: `demo.show.completed` spine event for the card_id (proves Jeff
+//!   watched, not just that the agent posted a comment). Comment retained
+//!   as transitional fallback until comment-shape decommission.
 
 use crate::shared::state_paths::chorus_root;
 use crate::types::{HookInput, HookResponse, permission_deny_json, Role};
@@ -15,8 +18,31 @@ use tracing::{info, warn};
 
 fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
 
-/// #2177: Demo evidence lives on the card as `demo:preflight-pass` comment.
-/// Pure substring check on the `cards view <id>` output string.
+/// #2864: Show-gate dispatch — runs skills/demo/gates/show-gate.sh which
+/// queries Loki for the demo chain (card.demo.started + jeff.input.delivered
+/// window + demo.preflight.passed) and emits demo.show.completed/failed.
+/// Returns true if the gate script exits 0 (all preconditions present).
+pub fn demo_show_passes(card_id: &str, role: &str) -> bool {
+    let script = format!("{}/skills/demo/gates/show-gate.sh", chorus_root());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    let output = Command::new("bash")
+        .args(["-l", &script, card_id, role])
+        .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!(
+                "{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                home
+            ),
+        )
+        .output();
+
+    matches!(output, Ok(o) if o.status.success())
+}
+
+/// #2177: Demo evidence comment on card. Retained as transitional fallback
+/// per #2864 until comment-shape is decommissioned.
 pub fn demo_evidence_exists(card_view: &str) -> bool {
     card_view.contains("demo:preflight-pass")
 }
@@ -41,21 +67,29 @@ pub async fn check(input: &HookInput) -> HookResponse {
     // Fetch card view once — reused for evidence + owner + code-card check.
     let card_view = fetch_card_view(&card_id);
 
-    // Gate 1: Demo evidence — `demo:preflight-pass` comment on the card (#2177).
-    if !demo_evidence_exists(&card_view) {
-        // Jeff can always accept — he's seen it live.
+    // Gate 1: Demo evidence (#2864).
+    // Primary: show-gate.sh queries spine for the demo chain (card.demo.started +
+    // jeff.input.delivered window + demo.preflight.passed). Exit 0 = chain present.
+    // Fallback: `demo:preflight-pass` card comment (transitional until decommission).
+    let has_show_pass = demo_show_passes(&card_id, role.as_str());
+    let has_comment = demo_evidence_exists(&card_view);
+    if !has_show_pass && !has_comment {
         if role == Role::Unknown {
             // Unknown role = Jeff running from root dir, OR a misconfigured session-start.
-            // Either way, safer to allow than block — this is a safety valve, not just a Jeff path.
-            info!("accept-gate: no demo:preflight-pass comment but unknown role — allowing (may be Jeff)");
+            // Safety valve: allow rather than block.
+            info!("accept-gate: show-gate failed AND no demo:preflight-pass comment — but unknown role, allowing (may be Jeff)");
         } else {
             let msg = format!(
-                "Accept blocked: no demo:preflight-pass comment found on #{}. Run /demo {} first.",
+                "Accept blocked: no demo evidence for #{}. show-gate.sh did not pass (no card.demo.started + jeff.input.delivered window + demo.preflight.passed for this card) AND no demo:preflight-pass comment. Run /demo {} first.",
                 card_id, card_id
             );
             warn!("{}", msg);
             return HookResponse::deny(&permission_deny_json(&msg));
         }
+    } else if has_show_pass {
+        info!(card = %card_id, "accept-gate: show-gate passed (full demo chain on spine, Jeff watched)");
+    } else {
+        info!(card = %card_id, "accept-gate: only comment evidence — show chain incomplete (transitional fallback)");
     }
 
     // Gate 2: Self-accept check on code cards (reuse card_view).

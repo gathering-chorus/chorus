@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Demo Service Design — unskippable hooks, structural enforcement</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 32px 48px; color: #1a1a1a; max-width: 1200px; line-height: 1.55; }
+  h1 { border-bottom: 2px solid #6366f1; padding-bottom: 8px; margin-bottom: 4px; }
+  h2 { margin-top: 36px; color: #3730a3; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { color: #1f2937; margin-top: 24px; }
+  h4 { color: #374151; margin-top: 18px; margin-bottom: 6px; }
+  .meta { color: #666; font-size: 0.85em; margin-bottom: 16px; }
+  .lede { font-size: 1.05em; color: #374151; margin: 16px 0 24px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9em; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; color: #374151; }
+  code { background: #eef2ff; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #1f2937; color: #f9fafb; padding: 14px 16px; border-radius: 6px; overflow-x: auto; font-size: 0.82em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  .panel { border-left: 4px solid #6366f1; background: #eef2ff; padding: 12px 18px; border-radius: 4px; margin: 12px 0; }
+  .panel.warn { border-left-color: #f59e0b; background: #fef3c7; }
+  .panel.danger { border-left-color: #dc2626; background: #fef2f2; }
+  ul.findings li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<h1>Demo Service Design — unskippable hooks</h1>
+<div class="meta">2026-05-09 · Wren · #2864 · status: draft (post-reconciliation; SKILL.md + sequence-demo.html align; skill-lifecycle.html is stale)</div>
+
+<p class="lede">
+The /demo skill is a 7-step proving gate (DEC-048). Today the skill is honored aspirationally — agents skip steps, post <code>demo:preflight-pass</code> comments without showing Jeff, and the comment-trail substitutes for the actual moment of shared attention. This design names each step as a structural hook (Rust in chorus-hooks or settings.json) that fires unskippably — including in auto-mode. If a hook should fire and didn't, the next transition refuses with a typed reason. Self-attestation in card comments is not a substitute path.
+</p>
+
+<div class="panel">
+<strong>Design principle.</strong> The MCP / skill / hooks form a triangle. The MCP is the typed-refusal contract. The skill is the orchestrator the human invokes. The hooks are the structural enforcement that fires regardless of which surface the agent reaches for. <strong>Demo correctness lives in the hooks</strong>, not in the skill body or the MCP refusal taxonomy alone.
+</div>
+
+<h2>Reconciled source of truth</h2>
+
+<p>Three drifted sources today: <code>SKILL.md</code> (the executable), <code>sequence-demo.html</code> (the diagram), <code>skill-lifecycle.html</code> (the index). Reconciliation choice: <strong>SKILL.md is the truth</strong> (Jeff: "sequence-demo.html is pretty close to actual" — sequence-demo agrees on shape, skill-lifecycle drifted with its 6-step renaming). All three docs update to match the 7-step shape below; this doc is the canonical reference.</p>
+
+<table>
+<tr><th>#</th><th>Step</th><th>Hard gate?</th><th>Owner</th><th>Trigger</th></tr>
+<tr><td>1</td><td>Validate</td><td>YES</td><td>caller role</td><td>/demo invoked</td></tr>
+<tr><td>1.5</td><td>AC Pre-flight</td><td>YES</td><td>caller role</td><td>after Step 1 pass</td></tr>
+<tr><td>2</td><td>Gate chain (5 gates)</td><td>YES</td><td>5 roles</td><td>after Step 1.5 pass</td></tr>
+<tr><td>3</td><td>Smoke check</td><td>YES</td><td>caller role</td><td>after Step 2 pass</td></tr>
+<tr><td>4</td><td>Stakes brief</td><td>YES</td><td>caller role</td><td>after Step 3 pass</td></tr>
+<tr><td>5</td><td>Signal</td><td>YES</td><td>caller role</td><td>after Step 4 pass</td></tr>
+<tr><td>6</td><td>Show, don't tell — then wait</td><td>YES</td><td>caller role + Jeff</td><td>after Step 5 pass</td></tr>
+<tr><td>7</td><td>Accept or reject</td><td>—</td><td>Wren or Jeff</td><td>after Step 6, on Jeff's signal</td></tr>
+</table>
+
+<h2>Hook decomposition</h2>
+
+<p>Five hooks, not one-per-step. The pattern in chorus-hooks today is "one hook per logical gate, multi-step preconditions bundled in the gate script." Smoke check, stakes brief, and signal are orchestration details — they're proof-of-side-effects, not gates with independent preconditions. They fold into <code>demo_show</code>'s precondition set rather than firing as separate hooks. This collapses 8 → 5 with no loss of safety and a tighter cognitive surface (one fewer thing to hold in your head when something refuses).</p>
+
+<p>Hooks fire as PreToolUse on the transition that depends on them — the validator <em>blocks the next move</em>, not the current one. Refusal taxonomy is shared across hook + MCP + skill so the failure surface is consistent.</p>
+
+<table>
+<tr><th>Hook</th><th>What it gates</th><th>Reads</th><th>Refusal reasons</th><th>Spine event on pass</th></tr>
+<tr>
+  <td><code>demo_validate</code></td>
+  <td>blocks Step 1.5 entry</td>
+  <td>card status, AC presence in card desc</td>
+  <td>card-not-found, wrong-status, ac-missing</td>
+  <td><code>demo.validate.completed</code></td>
+</tr>
+<tr>
+  <td><code>demo_preflight</code> (exists; refactor)</td>
+  <td>blocks Step 2 entry</td>
+  <td>AC items checked count, demo evidence comment posted</td>
+  <td>ac-incomplete, evidence-missing</td>
+  <td><code>demo.preflight.completed</code></td>
+</tr>
+<tr>
+  <td><code>demo_gates</code></td>
+  <td>blocks Step 3 entry</td>
+  <td>5 gate-pass comments on card (product/code/quality/arch/ops)</td>
+  <td>gate-product-missing, gate-code-missing, gate-quality-missing, gate-arch-missing, gate-ops-missing, gate-failed</td>
+  <td><code>demo.gates.completed</code></td>
+</tr>
+<tr>
+  <td><code>demo_show</code> (load-bearing — today's biggest skip)</td>
+  <td>blocks Step 7 (acceptance)</td>
+  <td>(a) smoke-check.sh exit 0 since last commit; (b) stakes brief lead-with-stakes regex (anti-pattern check); (c) board demo logged + card.demo.started spine event + observer/feedback nudges fired; (d) <code>demo.show.opened</code> event (URL hit / endpoint called / cmd run during demo); (e) <strong>Jeff-attention-signal</strong> — see "demo_show signal" section below</td>
+  <td>smoke-fail, smoke-stale, stakes-missing, mechanics-led, board-not-logged, spine-not-emitted, observer-nudge-missing, feedback-nudge-missing, show-not-fired, jeff-not-watching, jeff-stale-input</td>
+  <td><code>demo.show.completed</code></td>
+</tr>
+<tr>
+  <td><code>demo_accept</code> (exists as <code>accept_gate.rs</code>; extend)</td>
+  <td>blocks <code>cards done</code> / <code>chorus_acp</code> on cards without the demo.{validate,preflight,gates,show}.completed chain</td>
+  <td>spine: 4 demo.*.completed events for this card_id</td>
+  <td>demo-incomplete (lists which step is missing)</td>
+  <td><code>card.accepted</code> (existing)</td>
+</tr>
+</table>
+
+<h3>demo_show signal — the load-bearing detail</h3>
+
+<p>What evidence proves Jeff actually watched? Three options surveyed:</p>
+
+<table>
+<tr><th>Option</th><th>Instrumentable today?</th><th>Source</th></tr>
+<tr><td>(a) peer role's gemba tail event during demo window</td><td>No — gemba is human-initiated, doesn't emit spine events; would require new <code>observation.gemba.tail</code> event</td><td>—</td></tr>
+<tr><td>(b) Bridge-side <code>jeff.input.delivered</code> spine event during demo window</td><td>Yes — fires today from Clearing/server.ts on every Jeff message</td><td><code>jeff.input.delivered</code></td></tr>
+<tr><td>(c) Explicit accept keystroke</td><td>No — no infrastructure captures keystrokes/focus/session input</td><td>—</td></tr>
+</table>
+
+<p><strong>Recommendation:</strong> use (b) as primary signal. Pass condition: <code>jeff.input.delivered</code> with timestamp within a window of <code>card.demo.started</code> (e.g. 30s–10min). Reject (a) — passive observability is the trap that produced today's hollow shape.</p>
+
+<p><strong>Concrete failure mode:</strong> Jeff starts a demo, role emits <code>card.demo.started</code>, Jeff steps away. Stale <code>jeff.input.delivered</code> events from earlier in the Clearing buffer get matched, demo_show passes, Jeff never watched. <strong>Mitigation:</strong> require timestamp within a tight window AFTER <code>card.demo.started</code> (not before), AND require at least one input matching the card_id or demo brief content. If even tighter trust is needed, fall back to (c) as a P2 add — capture explicit "accept" keystroke once Bridge supports it.</p>
+
+<h2>Auto-mode behavior</h2>
+
+<div class="panel danger">
+<strong>Hooks fire and enforce identically in auto-mode.</strong> Auto-mode is the default substrate today and amplifies the skip-rate because velocity is the default. The hooks must not branch on auto-mode — they fire, they refuse, they log spine events the same way regardless of harness mode. Refusal output is the same shape; the only difference is whether the agent has a chance to course-correct mid-loop or fails the transition outright. Both produce identical spine evidence for downstream readers.
+</div>
+
+<p>Concretely:</p>
+<ul class="findings">
+<li>No <code>if (auto_mode) { skip }</code> branches anywhere in the hook code.</li>
+<li>Refusal in auto-mode = transition aborted + typed-refusal logged + agent receives the refusal string (per existing hook contract).</li>
+<li>Refusal in interactive mode = same.</li>
+<li>The spine record of the refusal is identical in both modes; observers can't distinguish.</li>
+</ul>
+
+<h2>Bypass-path coverage</h2>
+
+<p>Hooks gate the <em>transition</em>, not just the <code>/demo</code> skill body. Multiple surfaces can move a card to "demo'd" or "accepted" today; each needs hook coverage:</p>
+
+<p>Audited surfaces — 8 total, 5 unblocked today:</p>
+
+<table>
+<tr><th>Surface</th><th>Status today</th><th>Hook attaches to</th></tr>
+<tr><td><code>/demo</code> skill (PreToolUse on Skill matcher)</td><td>partial — only <code>demo_preflight.rs</code> + <code>demo_gate.rs</code> attached</td><td>demo_validate + demo_preflight + demo_gates + demo_show (cascading)</td></tr>
+<tr><td><code>chorus_acp</code> MCP (PreToolUse on Tool matcher)</td><td>partial — <code>accept_gate.rs</code> reads <code>demo:preflight-pass</code> comment only, not spine events</td><td>demo_accept (full-chain check on spine)</td></tr>
+<tr><td><code>cards done</code> CLI (bare invocation, PreToolUse on Bash matching the verb)</td><td><strong>UNBLOCKED</strong> — no hook; sdk.ts:980 emits <code>card.accepted</code> unconditionally</td><td>demo_accept</td></tr>
+<tr><td><code>cards move &lt;id&gt; Done</code> CLI</td><td><strong>UNBLOCKED</strong> — same path as <code>cards done</code></td><td>demo_accept (gate any transition to status=Done)</td></tr>
+<tr><td><code>POST /api/cards/done</code> HTTP</td><td><strong>UNBLOCKED</strong> — server.ts:1011 spawns <code>cards done</code> subprocess, no hook</td><td>demo_accept on HTTP-matched context (or rely on the bash-matcher hook for the spawned subprocess)</td></tr>
+<tr><td><code>POST /api/cards/move</code> HTTP (status=Done)</td><td><strong>UNBLOCKED</strong> — same shape</td><td>demo_accept</td></tr>
+<tr><td>Vikunja API direct (browser / curl, no chorus path)</td><td><strong>INVISIBLE</strong> — no spine event, no hook on path</td><td>post-hoc reconciler: spine subscriber reads Vikunja Done bucket periodically; emits <code>demo.bypass.detected</code> for any card.id without preceding <code>card.accepted</code></td></tr>
+<tr><td>Future: Vikunja webhook receiver</td><td>does not exist; no chorus listener catches Vikunja task.done</td><td>add receiver if Vikunja supports webhooks; gate at receive time</td></tr>
+</table>
+
+<p><strong>Net:</strong> 5 of 8 surfaces are unblocked today. The bare CLI / HTTP paths are the largest leak — agents can flip a card to Done without invoking <code>/demo</code> or <code>chorus_acp</code> at all, which means the hooks attached to those two surfaces don't fire.</p>
+
+<h2>Comment-shape decommission</h2>
+
+<p>Today <code>demo:preflight-pass ac=N/N</code> comments are the de-facto evidence anyone reads. Tomorrow they keep being written (Step 1.5 still posts one) but they are <strong>no longer trust-relevant</strong>:</p>
+
+<ul class="findings">
+<li><code>accept_gate.rs</code> stops reading <code>demo:preflight-pass</code> comments as evidence; reads <code>demo.*.completed</code> spine events for the card_id.</li>
+<li><code>quality-health</code> fitness function (#2862) updates its 28.7% gate-skip metric to read spine events instead of comment grep — the metric becomes structural, the number gets honest.</li>
+<li>The card comment continues to post for human-readable card history. It documents what happened; it doesn't authorize transitions.</li>
+</ul>
+
+<h2>Reconciliation tasks (precede implementation)</h2>
+
+<p>Cannot ship hooks against drifted docs. Pre-implementation reconciliation:</p>
+
+<ol>
+<li><strong>skill-lifecycle.html</strong> — update demo section from 6 steps to 7. Match the table above.</li>
+<li><strong>sequence-demo.html</strong> — already close per Jeff's read; verify Step 1.5 (AC pre-flight) is in the diagram or add it. Confirm step-numbering matches.</li>
+<li><strong>SKILL.md</strong> — already canonical for content; add cross-reference to this doc as the design source.</li>
+<li><strong>demo-protocol.mmd</strong> (orphaned) — link from this doc to make the human-cadence guidance discoverable.</li>
+</ol>
+
+<h2>Implementation order</h2>
+
+<ol>
+<li>Reconcile docs (above 4 tasks).</li>
+<li>Refactor existing <code>demo_preflight.rs</code> to fire <code>demo.validate.completed</code> + <code>demo.preflight.completed</code> spine events with structured payloads (today's preflight emits, but not against the canonical event-name set).</li>
+<li>Add <code>demo_gates</code> hook. Reads 5 gate-pass comments, refuses on any missing.</li>
+<li>Add <code>demo_show</code> hook — the load-bearing one. Bundles smoke + stakes + signal as preconditions. Consumes <code>jeff.input.delivered</code> spine event with timestamp-after-<code>card.demo.started</code> window.</li>
+<li>Add bash-matcher hooks for <code>cards done</code> and <code>cards move &lt;id&gt; Done</code> bare invocations (today's bypass surfaces). Same demo_accept precondition.</li>
+<li>Extend <code>accept_gate.rs</code> to read demo.{validate,preflight,gates,show}.completed chain instead of demo:preflight-pass comment.</li>
+<li>Update quality-health (#2862) metric source from comment-grep to spine-event-read.</li>
+<li>Add post-hoc Vikunja-direct reconciler — emits <code>demo.bypass.detected</code> for any Done-bucket card without preceding <code>card.accepted</code> spine event.</li>
+<li>Decommission demo:preflight-pass-as-evidence in done-gate.sh.</li>
+</ol>
+
+<h2>Open questions</h2>
+
+<ul class="findings">
+<li><strong>demo_show timestamp window</strong> — recommended 30s–10min after <code>card.demo.started</code>. Tight enough to prevent stale buffer matches, loose enough that Jeff has room to actually watch. Tune from observation once shipped.</li>
+<li><strong>demo_show input-match</strong> — should the <code>jeff.input.delivered</code> match contain the card_id or some content from the demo brief, to prevent unrelated buffered messages from passing? Recommend yes for v1; relax if too strict in practice.</li>
+<li><strong>Smoke staleness window</strong> — how long after smoke-check.sh runs is the "passed" state honored? Recommend until-next-commit so re-running for unchanged code doesn't double-tax.</li>
+<li><strong>Multi-card demos</strong> — SKILL.md handles them with consolidated brief. Each card needs its own demo.*.completed chain, OR the chain fires once with multiple card_ids. Recommend per-card chain so the spine binding is clean.</li>
+</ul>
+
+</body>
+</html>
