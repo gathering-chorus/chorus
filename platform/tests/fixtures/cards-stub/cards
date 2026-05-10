@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# cards stub — hermetic fixture for #2879 BDD tests.
+#
+# Mirrors the gh-stub shape (#2879). Recognizes the cards subcommands the
+# /acp execution path shells out to:
+#
+#   cards done <id>                      — succeed unless $CARDS_STUB_FAIL contains "done"
+#   cards view <id> [--json]             — return canned card view text or JSON
+#   cards comments <id>                  — return canned comment list (one per line)
+#
+# Required because the real `cards` CLI mutates the production board over
+# HTTP — calling it in tests would corrupt live state. This stub IS the
+# implementation for the fixture, not a mock at the test-code layer. The
+# chorus_acp service shells out to `cards`; this binary is what production's
+# `cards` does in the fixture environment.
+#
+# Dispatcher shape: `cards <subcommand> [args]` (single subcommand word, no
+# action word like gh's `pr <verb>`).
+#
+# State / configuration env:
+#   CARDS_STUB_STATE     — path to JSON state file. Default: $TMPDIR/cards-stub-state.json
+#   CARDS_STUB_FAIL      — comma-separated subcommands to inject failure into
+#                          (done, view, comments, or all)
+#   CARDS_STUB_COMMENTS  — line-separated comment payload for `cards comments`
+#                          (default: empty list, useful for demo-evidence scenarios)
+#   CARDS_STUB_VIEW      — full card-view text for `cards view <id>` (default: minimal
+#                          canned text including "Owner: wren" — override for
+#                          role-specific scenarios)
+
+set -uo pipefail
+
+STATE_FILE="${CARDS_STUB_STATE:-${TMPDIR:-/tmp}/cards-stub-state.json}"
+FAIL_LIST="${CARDS_STUB_FAIL:-}"
+
+if [ ! -f "$STATE_FILE" ]; then
+  echo '{"cards":{}}' > "$STATE_FILE"
+fi
+
+want_fail() {
+  local cmd="$1"
+  case ",${FAIL_LIST}," in
+    *,all,*) return 0 ;;
+    *,${cmd},*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_done() {
+  if want_fail done; then
+    echo "cards stub: done injected failure for card ${1:-?}" >&2
+    exit 1
+  fi
+  local id="${1:-}"
+  if [ -z "$id" ]; then
+    echo "cards stub: done requires <id>" >&2
+    exit 2
+  fi
+  echo "Card #${id} marked Done (stub)"
+}
+
+cmd_view() {
+  if want_fail view; then
+    echo "cards stub: view injected failure" >&2
+    exit 1
+  fi
+  local id="${1:-}" json_mode=0
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json_mode=1 ;;
+      *) ;;
+    esac
+    shift
+  done
+  if [ -z "$id" ]; then
+    echo "cards stub: view requires <id>" >&2
+    exit 2
+  fi
+  if [ "$json_mode" = "1" ]; then
+    # Minimal JSON shape the chorus_acp executePullCard / executeUnpull paths
+    # consume. Owner defaults to wren; override via CARDS_STUB_VIEW_OWNER.
+    local owner="${CARDS_STUB_VIEW_OWNER:-wren}"
+    local status="${CARDS_STUB_VIEW_STATUS:-WIP}"
+    printf '{"index":%s,"title":"fixture card","status":"%s","owner":"%s","description":"## Experience\\n\\n## AC\\n\\n- [x] item"}\n' \
+      "$id" "$status" "$owner"
+  else
+    # Text format — Owner line is what accept_gate.rs reads to detect builder role.
+    local owner="${CARDS_STUB_VIEW_OWNER:-wren}"
+    local status="${CARDS_STUB_VIEW_STATUS:-WIP}"
+    printf '#%s fixture card\n  Status:   %s\n  Owner:    %s\n  Priority: P2\n%s\n' \
+      "$id" "$status" "$owner" "${CARDS_STUB_VIEW:-}"
+  fi
+}
+
+cmd_comments() {
+  if want_fail comments; then
+    echo "cards stub: comments injected failure" >&2
+    exit 1
+  fi
+  local id="${1:-}"
+  if [ -z "$id" ]; then
+    echo "cards stub: comments requires <id>" >&2
+    exit 2
+  fi
+  # If CARDS_STUB_COMMENTS is set, emit it verbatim (newline-separated). Else empty.
+  if [ -n "${CARDS_STUB_COMMENTS:-}" ]; then
+    printf '%s\n' "$CARDS_STUB_COMMENTS"
+  fi
+}
+
+# Main dispatcher.
+[ $# -lt 1 ] && { echo "cards stub: usage: cards <subcommand> [args]" >&2; exit 2; }
+
+sub="$1"; shift
+case "$sub" in
+  done)     cmd_done "$@" ;;
+  view)     cmd_view "$@" ;;
+  comments) cmd_comments "$@" ;;
+  *)
+    echo "cards stub: unsupported subcommand '${sub}'" >&2
+    exit 2
+    ;;
+esac
