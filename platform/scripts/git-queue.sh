@@ -474,6 +474,13 @@ do_push() {
         # fetch (concurrent peer push detected) and pushes our rebased history
         # otherwise. Caller (chorus_commit, chorus_acp) opts in; raw operator
         # callers may opt in too. (#2799)
+        #
+        # WHEN to use --force-with-lease: post-rebase-recovery only — when local
+        # history was rewritten (rebase, squash, fixup) and origin diverges as
+        # a result. NOT a generic "my push is stuck" fix; if a plain push is
+        # rejected for any other reason, force-with-lease will mask the real
+        # cause. Wren feedback on #2877 — same discipline shape as the rebase-
+        # cleanup comment in #2789.
         force_with_lease="--force-with-lease"
         shift
         ;;
