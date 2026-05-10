@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# gh stub — hermetic fixture for #2879 BDD tests.
+#
+# Recognizes the gh forms chorus_acp service path actually invokes
+# (verified against platform/api/src/mcp/server.ts L1356-1385):
+#
+#   gh pr view <branch> --json url -q .url
+#   gh pr view <branch> --json state
+#   gh pr create --title <t> --body <b>           # head derived from current branch
+#   gh pr merge <branch> --squash
+#   gh pr list --head <branch> --json number,state
+#
+# State persisted in $GH_STUB_STATE (default tmp file).
+# Failure injection via $GH_STUB_FAIL — comma-separated list of
+# "create", "merge", "view", "list", or "all".
+#
+# This is the actual implementation for the fixture, not a mock at the
+# test-code layer. chorus_acp shells out to `gh`; under the test harness
+# PATH this binary IS what gets executed. Same shape as real chorus-log
+# writing to ~/.chorus/chorus.log in #2875.
+
+set -uo pipefail
+
+STATE_FILE="${GH_STUB_STATE:-${TMPDIR:-/tmp}/gh-stub-state.json}"
+FAIL_LIST="${GH_STUB_FAIL:-}"
+
+if [ ! -f "$STATE_FILE" ]; then
+  echo '{"prs":{},"next_pr":1}' > "$STATE_FILE"
+fi
+
+want_fail() {
+  case ",${FAIL_LIST}," in
+    *,all,*) return 0 ;;
+    *,$1,*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_state() { cat "$STATE_FILE"; }
+write_state() { printf '%s\n' "$1" > "$STATE_FILE"; }
+
+# Derive current branch when --head is omitted (chorus_acp's `gh pr create`
+# does this — gh normally infers from git symbolic-ref).
+current_branch() {
+  git -C "${PWD}" symbolic-ref --short HEAD 2>/dev/null || echo "unknown-branch"
+}
+
+# Look up a PR record by head branch. Echoes "<num>\t<state>" or empty.
+lookup_pr_by_head() {
+  local head="$1"
+  read_state | jq -r --arg h "$head" '
+    .prs | to_entries[]
+    | select(.value.head == $h)
+    | "\(.key)\t\(.value.state)\t\(.value.merged_at // "")"
+  ' | head -1
+}
+
+# Apply optional --json/-q filtering. JSON_FIELDS is a comma list.
+emit_json_view() {
+  local pr_num="$1" json_fields="$2" jq_query="$3"
+  local row state merged_at url
+  row=$(read_state | jq -r --arg p "$pr_num" '.prs[$p] | "\(.head)\t\(.state)\t\(.merged_at // "")"')
+  IFS=$'\t' read -r head state merged_at <<<"$row"
+  url="https://github.com/fixture/repo/pull/${pr_num}"
+  # Build the requested JSON fields object.
+  local out_json
+  out_json=$(jq -n \
+    --arg url "$url" --arg state "$state" --arg merged "$merged_at" \
+    --arg head "$head" --argjson num "$pr_num" \
+    --arg fields "$json_fields" '
+      ($fields | split(",")) as $f
+      | reduce $f[] as $k ({};
+          if   $k == "url"      then .url      = $url
+          elif $k == "state"    then .state    = $state
+          elif $k == "mergedAt" then .mergedAt = (if $merged == "" then null else $merged end)
+          elif $k == "head"     then .head     = $head
+          elif $k == "number"   then .number   = $num
+          else . end)
+    ')
+  if [ -n "$jq_query" ]; then
+    printf '%s' "$out_json" | jq -r "$jq_query"
+  else
+    printf '%s\n' "$out_json"
+  fi
+}
+
+cmd_pr_view() {
+  if want_fail view; then
+    echo "gh stub: pr view injected failure" >&2
+    exit 1
+  fi
+  local branch_or_pr="$1"; shift
+  local json_fields="state" jq_query=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json_fields="$2"; shift 2 ;;
+      -q)     jq_query="$2"; shift 2 ;;
+      *)      shift ;;
+    esac
+  done
+  local pr_num
+  if [[ "$branch_or_pr" =~ ^[0-9]+$ ]]; then
+    pr_num="$branch_or_pr"
+  else
+    pr_num=$(lookup_pr_by_head "$branch_or_pr" | cut -f1)
+  fi
+  if [ -z "$pr_num" ]; then
+    # gh's actual error shape — chorus_acp catches this and proceeds to create.
+    echo "no pull requests found for branch \"$branch_or_pr\"" >&2
+    exit 1
+  fi
+  local exists
+  exists=$(read_state | jq --arg p "$pr_num" '.prs | has($p)')
+  if [ "$exists" != "true" ]; then
+    echo "no pull requests found for #$pr_num" >&2
+    exit 1
+  fi
+  emit_json_view "$pr_num" "$json_fields" "$jq_query"
+}
+
+cmd_pr_create() {
+  if want_fail create; then
+    echo "gh stub: pr create injected failure" >&2
+    exit 1
+  fi
+  local title="" body="" base="main" head=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title)     title="$2"; shift 2 ;;
+      --body)      body="$2"; shift 2 ;;
+      --body-file) shift 2 ;;
+      --base)      base="$2"; shift 2 ;;
+      --head)      head="$2"; shift 2 ;;
+      *)           shift ;;
+    esac
+  done
+  [ -z "$head" ] && head=$(current_branch)
+  # Idempotent: if an OPEN PR for head exists, return its url.
+  local existing
+  existing=$(lookup_pr_by_head "$head" | awk -F'\t' '$2=="OPEN"{print $1}')
+  if [ -n "$existing" ]; then
+    echo "https://github.com/fixture/repo/pull/$existing"
+    return 0
+  fi
+  local state next
+  state=$(read_state)
+  next=$(printf '%s' "$state" | jq -r '.next_pr')
+  state=$(printf '%s' "$state" | jq \
+    --arg h "$head" --arg b "$base" --arg t "$title" --argjson n "$next" '
+      .prs[($n|tostring)] = {head:$h, base:$b, title:$t, state:"OPEN", merged_at:null}
+      | .next_pr = ($n + 1)
+    ')
+  write_state "$state"
+  echo "https://github.com/fixture/repo/pull/$next"
+}
+
+cmd_pr_merge() {
+  if want_fail merge; then
+    echo "gh stub: pr merge injected failure" >&2
+    exit 1
+  fi
+  local branch_or_pr="$1"; shift
+  # Drop merge-strategy + flag args.
+  local pr_num
+  if [[ "$branch_or_pr" =~ ^[0-9]+$ ]]; then
+    pr_num="$branch_or_pr"
+  else
+    pr_num=$(lookup_pr_by_head "$branch_or_pr" | cut -f1)
+  fi
+  if [ -z "$pr_num" ]; then
+    echo "no pull requests found for branch \"$branch_or_pr\"" >&2
+    exit 1
+  fi
+  local row pr_state
+  row=$(read_state | jq -r --arg p "$pr_num" '.prs[$p] | "\(.state)\t\(.merged_at // "")"')
+  IFS=$'\t' read -r pr_state _merged <<<"$row"
+  if [ "$pr_state" = "MERGED" ]; then
+    # chorus_acp's idempotent path looks for this signature.
+    echo "Pull request #$pr_num is already merged (state: MERGED)" >&2
+    exit 1
+  fi
+  local state
+  state=$(read_state | jq --arg p "$pr_num" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    .prs[$p].state = "MERGED" | .prs[$p].merged_at = $t
+  ')
+  write_state "$state"
+  echo "✓ Merged pull request #$pr_num (stub)"
+}
+
+cmd_pr_list() {
+  if want_fail list; then
+    echo "gh stub: pr list injected failure" >&2
+    exit 1
+  fi
+  local head=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --head) head="$2"; shift 2 ;;
+      --json) shift 2 ;;
+      *)      shift ;;
+    esac
+  done
+  local state
+  state=$(read_state)
+  if [ -n "$head" ]; then
+    printf '%s' "$state" | jq --arg h "$head" '
+      [.prs | to_entries[] | select(.value.head == $h)
+       | {number:(.key|tonumber), state:.value.state, head:.value.head}]'
+  else
+    printf '%s' "$state" | jq '
+      [.prs | to_entries[]
+       | {number:(.key|tonumber), state:.value.state, head:.value.head}]'
+  fi
+}
+
+# Top-level dispatch.
+# Stub recognizes only the `gh <subcommand> <action> [args]` shape
+# (e.g. `gh pr view`, `gh pr create`). Bare forms like `gh --version` /
+# `gh auth status` deliberately fail with usage — chorus_acp doesn't
+# invoke them per server.ts grep. If a future caller adds a sanity
+# check via `gh --version`, extend the dispatcher then.
+[ $# -lt 2 ] && { echo "gh stub: usage: gh <subcommand> <action> [args]" >&2; exit 2; }
+
+case "$1 $2" in
+  "pr view")   shift 2; cmd_pr_view "$@" ;;
+  "pr create") shift 2; cmd_pr_create "$@" ;;
+  "pr merge")  shift 2; cmd_pr_merge "$@" ;;
+  "pr list")   shift 2; cmd_pr_list "$@" ;;
+  *)
+    echo "gh stub: unsupported command '$1 $2'" >&2
+    exit 2
+    ;;
+esac
