@@ -101,8 +101,23 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
             // chars would otherwise break log-line integrity. Prior `.replace('"', ...)`
             // only handled quotes; multi-line content (Kade's #2280 feedback) produced
             // invalid JSON that the poller silently skipped.
-            let escaped_value = serde_json::to_string(&val).unwrap_or_else(|_| "\"\"".to_string());
-            extras.push_str(&format!(r#","{}":{}"#, key, escaped_value));
+            //
+            // #2876: keys with canonical-integer types emit unquoted when the
+            // value parses cleanly as i64. logs-query regex `"card_id":NNN\b`
+            // requires unquoted form; without this, env-bridge build.* / card.*
+            // events drop out of chorus_logs_for_card joins. Coerce here for
+            // the same reason events.ts coerces on the TS side.
+            let is_numeric_key = matches!(key, "card_id" | "hop" | "latencyMs" | "exit_code" | "file_count");
+            let value_repr = if is_numeric_key {
+                if let Ok(n) = val.parse::<i64>() {
+                    n.to_string()
+                } else {
+                    serde_json::to_string(&val).unwrap_or_else(|_| "\"\"".to_string())
+                }
+            } else {
+                serde_json::to_string(&val).unwrap_or_else(|_| "\"\"".to_string())
+            };
+            extras.push_str(&format!(r#","{}":{}"#, key, value_repr));
             display.push_str(&format!(" {}={}", key, val));
         }
     }
@@ -239,6 +254,83 @@ mod tests {
         assert_eq!(parsed["card"], "1718");
         assert_eq!(parsed["mode"], "inject");
         assert_eq!(parsed["target"], "silas");
+    }
+
+    // --- #2876: numeric-key coercion ---
+
+    #[test]
+    fn card_id_emitted_as_unquoted_integer() {
+        run(&[
+            "test.card.id.numeric".into(),
+            "silas".into(),
+            "card_id=2876".into(),
+        ]);
+        let line = find_event_line("test.card.id.numeric").expect("event in log");
+        let json_str = extract_json_object(&line, "test.card.id.numeric")
+            .expect("should find JSON object");
+        // Direct substring check: unquoted integer form
+        assert!(
+            json_str.contains("\"card_id\":2876"),
+            "card_id should be unquoted integer for chorus_logs_for_card regex match: {}",
+            json_str,
+        );
+        assert!(
+            !json_str.contains("\"card_id\":\"2876\""),
+            "card_id must not be string-quoted: {}",
+            json_str,
+        );
+        // Also assert via JSON parse — typed read-back
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed["card_id"].is_number());
+        assert_eq!(parsed["card_id"].as_i64(), Some(2876));
+    }
+
+    #[test]
+    fn non_numeric_card_id_falls_back_to_quoted_string() {
+        // Defensive: junk input doesn't crash the emitter, just stays quoted.
+        run(&[
+            "test.card.id.junk".into(),
+            "silas".into(),
+            "card_id=not-a-number".into(),
+        ]);
+        let line = find_event_line("test.card.id.junk").expect("event in log");
+        assert!(
+            line.contains("\"card_id\":\"not-a-number\""),
+            "non-numeric card_id should remain quoted: {}",
+            line,
+        );
+    }
+
+    #[test]
+    fn hop_emitted_as_unquoted_integer() {
+        run(&[
+            "test.hop.numeric".into(),
+            "silas".into(),
+            "hop=3".into(),
+        ]);
+        let line = find_event_line("test.hop.numeric").expect("event in log");
+        let json_str = extract_json_object(&line, "test.hop.numeric")
+            .expect("should find JSON object");
+        assert!(json_str.contains("\"hop\":3"));
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["hop"].as_i64(), Some(3));
+    }
+
+    #[test]
+    fn non_numeric_keys_remain_string_quoted() {
+        // title, board, branch, etc. must stay quoted strings even when value
+        // happens to be all-digits — the coercion list is closed.
+        run(&[
+            "test.title.numeric".into(),
+            "silas".into(),
+            "title=12345".into(),
+        ]);
+        let line = find_event_line("test.title.numeric").expect("event in log");
+        assert!(
+            line.contains("\"title\":\"12345\""),
+            "non-numeric-key 'title' must remain string even with digit value: {}",
+            line,
+        );
     }
 
     // --- AC3: alias resolution ---

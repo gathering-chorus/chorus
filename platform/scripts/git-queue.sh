@@ -141,6 +141,18 @@ log_event() {
   "$CHORUS_LOG" "$event" "$ROLE" "$@" >/dev/null 2>/dev/null || true
 }
 
+# #2876: derive card_id from current branch (ROLE/CARD_ID convention) so the
+# chorus-log env-bridge stamps build.* / commit.* events with card_id. Without
+# this, build events drop out of chorus_logs_for_card joins and the pipeline-
+# health report (#2874) cannot stitch demo->build->deploy stages together.
+export_card_id_from_branch() {
+  local _branch
+  _branch=$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "")
+  if [[ "$_branch" =~ ^[a-z]+/([0-9]+)$ ]]; then
+    export CHORUS_CARD_ID="${BASH_REMATCH[1]}"
+  fi
+}
+
 write_meta() {
   printf '%s|%s|%s\n' "$ROLE" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$META_FILE"
 }
@@ -222,6 +234,9 @@ do_commit() {
   if ! check_branch "commit" "$force_flag"; then
     exit 1
   fi
+
+  # #2876: stamp card_id on subsequent build.* events
+  export_card_id_from_branch
 
   ensure_hooks_installed
   # Split args at -- into files and git-commit flags
@@ -482,6 +497,9 @@ do_push() {
   if ! check_branch "push" "$force_flag"; then
     exit 1
   fi
+
+  # #2876: stamp card_id on build.push.* / build.delete.* events
+  export_card_id_from_branch
 
   exec 9>"$LOCK_FILE"
   if ! lockf -t "$LOCK_TIMEOUT" 9; then

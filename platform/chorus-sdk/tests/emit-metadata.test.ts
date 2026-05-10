@@ -237,7 +237,7 @@ describe('spine event metadata enrichment (#1817)', () => {
       const event = emit('test.trace', 'kade', {}, { logFile: tmpFile, context: ctx });
       expect(event.trace_id).toBeDefined();
       expect(typeof event.trace_id).toBe('string');
-      expect(event.trace_id!.length).toBeGreaterThan(0);
+      expect(String(event.trace_id).length).toBeGreaterThan(0);
     });
 
     it('each emit gets a unique trace_id', () => {

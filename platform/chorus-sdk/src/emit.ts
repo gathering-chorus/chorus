@@ -53,7 +53,9 @@ export interface SpineEvent {
   component: string;
   event: string;
   role: string;
-  [key: string]: string | null;
+  // #2876: card_id is a number when present (canonical match with MCP-side
+  // emitters). Other dynamic keys remain string|null.
+  [key: string]: string | number | null;
 }
 
 export interface SpineContext {
@@ -138,23 +140,25 @@ function contextFields(ctx: SpineContext | undefined, stage: string | null) {
   };
 }
 
-function errorFields(level: string, extra: Partial<Record<string, string>>) {
+function errorFields(level: string, extra: Partial<Record<string, string | number>>) {
   const isError = level === 'error';
+  const errStr = typeof extra.error === 'string' ? extra.error : null;
+  const stackStr = typeof extra.stack === 'string' ? extra.stack : null;
   return {
-    error: isError ? (extra.error ?? null) : null,
-    stack: isError ? (extra.stack ?? null) : null,
+    error: isError ? errStr : null,
+    stack: isError ? stackStr : null,
   };
 }
 
 function buildSpineEntry(
   event: string,
   role: string,
-  extra: Partial<Record<string, string>>,
+  extra: Partial<Record<string, string | number>>,
   options: EmitOptions,
 ): SpineEvent {
   const ctx = options.context;
   const caller = extractCallerInfo();
-  const level = extra.level ?? 'info';
+  const level = typeof extra.level === 'string' ? extra.level : 'info';
   const stage = STREAM_NAME[getEventVertebra(event) ?? ''] ?? null;
 
   return {
@@ -165,7 +169,7 @@ function buildSpineEntry(
     event,
     role,
     ...contextFields(ctx, stage),
-    trace_id: extra.trace_id ?? crypto.randomUUID(),
+    trace_id: typeof extra.trace_id === 'string' ? extra.trace_id : crypto.randomUUID(),
     file: null,
     function: caller.function,
     line: caller.line,
@@ -174,7 +178,7 @@ function buildSpineEntry(
   };
 }
 
-function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, string>>, hopNum: number) {
+function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, string | number>>, hopNum: number) {
   return {
     correlationId: entry.trace_id,
     hop: hopNum,
@@ -189,7 +193,7 @@ function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, stri
       service: extra.dest_service,
       instance: extra.dest_instance || null,
     } : undefined,
-    latencyMs: extra.latencyMs ? parseInt(extra.latencyMs, 10) : undefined,
+    latencyMs: extra.latencyMs ? parseInt(String(extra.latencyMs), 10) : undefined,
     error: extra.error_class ? {
       classification: extra.error_class,
       message: extra.error_message || '',
@@ -198,8 +202,8 @@ function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, stri
   };
 }
 
-function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string>>): void {
-  const hopNum = extra.hop ? parseInt(extra.hop, 10) : NaN;
+function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string | number>>): void {
+  const hopNum = extra.hop ? parseInt(String(extra.hop), 10) : NaN;
   if (isNaN(hopNum)) return;
   fetch('http://localhost:3340/api/chorus/trace', {
     method: 'POST',
@@ -212,7 +216,7 @@ function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string>
 export function emit(
   event: string,
   role: string,
-  extra: Partial<Record<string, string>> = {},
+  extra: Partial<Record<string, string | number>> = {},
   options: EmitOptions = {},
 ): SpineEvent {
   const entry = buildSpineEntry(event, role, extra, options);
