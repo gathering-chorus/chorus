@@ -571,7 +571,13 @@ do_push() {
   # lease's safety promise: refuse if origin moved since we last looked.
   local _lease_pin=""
   if [ -n "$force_with_lease" ] && [ -n "$push_branch" ]; then
-    _lease_pin=$(git -C "$REPO_ROOT" rev-parse "refs/remotes/origin/${push_branch}" 2>/dev/null || echo "")
+    # #2881 — must use --verify --quiet. Plain `rev-parse <ref>` on a missing
+    # ref writes the literal ref name to stdout AND exits 128; `2>/dev/null
+    # || echo ""` masks stderr+exit but the literal already flowed to stdout,
+    # corrupting _lease_pin into a non-empty string and producing the malformed
+    # flag `--force-with-lease=<branch>:refs/remotes/origin/<branch>`. With
+    # --verify --quiet, missing refs return empty stdout cleanly (exit 1).
+    _lease_pin=$(git -C "$REPO_ROOT" rev-parse --verify --quiet "refs/remotes/origin/${push_branch}" 2>/dev/null || echo "")
   fi
   # #2799: assemble push args with optional --force-with-lease. Force-with-lease
   # only applies on the rebase-then-push paths (has_upstream); fresh-branch

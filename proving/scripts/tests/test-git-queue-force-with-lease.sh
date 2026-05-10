@@ -125,5 +125,49 @@ else
 fi
 rm -rf "$ORIGIN_2" "$CLONE_A" "$CLONE_B"
 
+# --- Test 3 (#2881 regression on #2877): fresh-branch + --force-with-lease ---
+# The 80% case #2877's original tests missed: every new card's first commit
+# happens on a branch where origin/<branch> does not yet exist. Pre-fix the
+# lease-pin capture used `git rev-parse` without --verify, so rev-parse output
+# the literal ref name to stdout (exit 128) and the buggy capture flowed it
+# into _lease_pin, producing the malformed flag
+# `--force-with-lease=<branch>:refs/remotes/origin/<branch>`. Post-fix the
+# capture uses --verify --quiet so missing refs return empty cleanly, the
+# code takes the plain --force-with-lease path, and first push lands.
+echo ""
+echo "Test 3: fresh-branch first push with --force-with-lease (origin ref missing)"
+ORIGIN_3=$(mktemp -d)
+CLONE_3=$(mktemp -d)
+setup_origin_clone "$ORIGIN_3" "$CLONE_3"
+# Branch off main, ONE commit, never push. Branch tracks origin/main
+# (chorus-werk repoint convention), so has_upstream is set and the rebase-
+# then-push path runs with --force-with-lease engaged. refs/remotes/origin/
+# kade/9999 does NOT exist locally — the regression precondition.
+git -C "$CLONE_3" checkout -q -b kade/9999
+git -C "$CLONE_3" branch --set-upstream-to=origin/main kade/9999
+echo "fresh" > "$CLONE_3/fresh.txt"
+git -C "$CLONE_3" add fresh.txt
+git -C "$CLONE_3" commit -q -m "fresh branch first commit"
+LOCAL_TIP_3=$(git -C "$CLONE_3" rev-parse HEAD)
+if git -C "$CLONE_3" rev-parse --verify --quiet refs/remotes/origin/kade/9999 >/dev/null 2>&1; then
+  echo "  FAIL: precondition not met — origin/kade/9999 ref already exists; test invalid"
+  FAIL=$((FAIL+1))
+else
+  set +e
+  push_out_3=$(cd "$CLONE_3" && DEPLOY_ROLE=kade _GIT_QUEUE_PUSH=1 bash "$GIT_QUEUE" push --force-branch --branch kade/9999 --force-with-lease 2>&1)
+  push_code_3=$?
+  set -e
+  ORIGIN_TIP_3=$(git -C "$ORIGIN_3" rev-parse refs/heads/kade/9999 2>/dev/null || echo "missing")
+  if [ "$push_code_3" = "0" ] && [ "$ORIGIN_TIP_3" = "$LOCAL_TIP_3" ]; then
+    echo "  PASS: fresh-branch first push landed cleanly (no malformed lease arg)"
+    PASS=$((PASS+1))
+  else
+    echo "  FAIL: fresh-branch first push failed (exit=$push_code_3, origin=$ORIGIN_TIP_3, local=$LOCAL_TIP_3)"
+    echo "  output: $push_out_3"
+    FAIL=$((FAIL+1))
+  fi
+fi
+rm -rf "$ORIGIN_3" "$CLONE_3"
+
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
 exit 0
