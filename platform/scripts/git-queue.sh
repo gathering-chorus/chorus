@@ -453,46 +453,65 @@ do_commit() {
 # The lock prevents concurrent push/commit. Stash always pops immediately.
 
 do_push() {
-  # #2580: parse --force-branch escape hatch
+  # #2877: position-independent flag parsing. Pre-#2877 each flag (--force-branch,
+  # --force-with-lease, --branch, --delete) was checked only at $1 and consumed
+  # in fixed order. With the documented `push --branch X --force-with-lease`
+  # usage, --force-with-lease silently never engaged because $1 was --branch.
+  # Receipts: kade/2844 squash 2026-05-10 — non-FF rejection despite passing
+  # --force-with-lease, forced fall-back to DEPLOY_ROLE_PREPUSH_OVERRIDE bypass.
   local force_flag=""
-  if [ "${1:-}" = "--force-branch" ]; then
-    force_flag="--force-branch"
-    shift
-  fi
-  # #2701: --delete <branch> is a remote-only deletion path. No commit lands,
-  # no role-attribution semantics, no working-tree interaction. Bypass
-  # check_branch (delete-remote isn't a role push) and dispatch to
-  # do_delete_remote which sets the pre-push marker and emits branch.deleted.
-  if [ "${1:-}" = "--delete" ]; then
-    shift
-    do_delete_remote "${1:-}"
-    return $?
-  fi
-  # #2799: parse --force-with-lease passthrough. After do_push runs
-  # pull --rebase, local SHAs differ from origin and a regular push hits
-  # non-fast-forward. Force-with-lease is the safe variant: it refuses if
-  # the remote ref changed since our last fetch (concurrent peer push
-  # detected) and pushes our rebased history otherwise. Receipts: today's
-  # /tmp/wren-{2727,2763}-push.sh scripts ran exactly this fallback
-  # outside the typed surface; #2799 closes the variant-recovery class
-  # by exposing the flag through the canonical wrapper. Caller (chorus_
-  # commit, chorus_acp) opts in; raw operator callers may opt in too.
   local force_with_lease=""
-  if [ "${1:-}" = "--force-with-lease" ]; then
-    force_with_lease="--force-with-lease"
-    shift
-  fi
-  # #2705: --branch <ref> explicit push target. Replaces the _CHORUS_PUSH_REF
-  # env-carry shipped in #2699. Substrate-uniform with --force-branch shape.
   local push_branch=""
-  if [ "${1:-}" = "--branch" ]; then
-    shift
-    push_branch="${1:-}"
-    shift || true
-    if [ -z "$push_branch" ]; then
-      echo "git-queue: error — push --branch requires <ref>" >&2
-      return 1
-    fi
+  local delete_branch=""
+  while [ $# -gt 0 ]; do
+    case "${1:-}" in
+      --force-branch)
+        force_flag="--force-branch"
+        shift
+        ;;
+      --force-with-lease)
+        # The safe force variant: refuses if remote ref changed since last
+        # fetch (concurrent peer push detected) and pushes our rebased history
+        # otherwise. Caller (chorus_commit, chorus_acp) opts in; raw operator
+        # callers may opt in too. (#2799)
+        #
+        # WHEN to use --force-with-lease: post-rebase-recovery only — when local
+        # history was rewritten (rebase, squash, fixup) and origin diverges as
+        # a result. NOT a generic "my push is stuck" fix; if a plain push is
+        # rejected for any other reason, force-with-lease will mask the real
+        # cause. Wren feedback on #2877 — same discipline shape as the rebase-
+        # cleanup comment in #2789.
+        force_with_lease="--force-with-lease"
+        shift
+        ;;
+      --branch)
+        # Explicit push target. Replaces the _CHORUS_PUSH_REF env-carry
+        # shipped in #2699. (#2705)
+        shift
+        push_branch="${1:-}"
+        if [ -z "$push_branch" ]; then
+          echo "git-queue: error — push --branch requires <ref>" >&2
+          return 1
+        fi
+        shift
+        ;;
+      --delete)
+        # Remote-only deletion path: no commit lands, no working-tree
+        # interaction. Dispatched after parsing so flag order doesn't
+        # matter. (#2701)
+        shift
+        delete_branch="${1:-}"
+        shift || true
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [ -n "$delete_branch" ]; then
+    do_delete_remote "$delete_branch"
+    return $?
   fi
   if ! check_branch "push" "$force_flag"; then
     exit 1
@@ -543,13 +562,33 @@ do_push() {
   # capture and this push step.
   # #2705: now via --branch <ref> arg (parsed at top of do_push) instead of
   # _CHORUS_PUSH_REF env. Substrate-uniform with --force-branch shape.
+  # #2877: pin the lease to origin's view of the branch BEFORE pull-rebase
+  # fetches. Without this, _try_pull_rebase_with_autoresolve runs `git pull`
+  # which fetches origin and updates refs/remotes/origin/<branch> to current.
+  # The subsequent --force-with-lease check then sees a "fresh" view and
+  # always approves the force — even if a peer pushed concurrently between
+  # our capture and our push. Pinning to the pre-fetch SHA preserves the
+  # lease's safety promise: refuse if origin moved since we last looked.
+  local _lease_pin=""
+  if [ -n "$force_with_lease" ] && [ -n "$push_branch" ]; then
+    _lease_pin=$(git -C "$REPO_ROOT" rev-parse "refs/remotes/origin/${push_branch}" 2>/dev/null || echo "")
+  fi
   # #2799: assemble push args with optional --force-with-lease. Force-with-lease
   # only applies on the rebase-then-push paths (has_upstream); fresh-branch
   # first push doesn't need it (no remote ref to overwrite). Argument
   # placement matters for git: flag before refspec.
   local _fwl_args=()
   if [ -n "$force_with_lease" ]; then
-    _fwl_args+=("--force-with-lease")
+    if [ -n "$_lease_pin" ]; then
+      # Pinned form: --force-with-lease=<refname>:<expected-sha>. Refuses if
+      # origin's <refname> no longer equals <expected-sha>. Survives the
+      # implicit fetch in pull-rebase (#2877).
+      _fwl_args+=("--force-with-lease=${push_branch}:${_lease_pin}")
+    else
+      # Fresh branch (no origin ref to capture) — plain flag is sufficient
+      # because there's nothing to clobber.
+      _fwl_args+=("--force-with-lease")
+    fi
   fi
 
   # #2865 — auto-resolve rebase conflicts on auto-generated files.
@@ -614,7 +653,13 @@ do_push() {
   fi
 
   clear_meta
-  log_event "build.push.completed" "exit_code=${exit_code}"
+  # #2877: emit force_with_lease field so spine analytics can distinguish
+  # plain pushes from rewrite-pushes and trace lease-pin coverage over time.
+  local _fwl_field="false"
+  [ -n "$force_with_lease" ] && _fwl_field="true"
+  local _fwl_pinned="false"
+  [ -n "$_lease_pin" ] && _fwl_pinned="true"
+  log_event "build.push.completed" "exit_code=${exit_code}" "force_with_lease=${_fwl_field}" "lease_pinned=${_fwl_pinned}"
 
   if [ $exit_code -ne 0 ]; then
     echo "git-queue: push failed (exit ${exit_code})" >&2
