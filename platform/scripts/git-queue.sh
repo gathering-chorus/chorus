@@ -533,17 +533,55 @@ do_push() {
   if [ -n "$force_with_lease" ]; then
     _fwl_args+=("--force-with-lease")
   fi
+
+  # #2865 — auto-resolve rebase conflicts on auto-generated files.
+  # claudemd-gen auto-bumps designing/claudemd/manifest.json's _build integer
+  # on every commit; branches always lag main; every push conflicts on this
+  # file alone. When EVERY unmerged file is in the auto-generated allowlist,
+  # take origin's version (rebase semantics: --ours == upstream side), stage,
+  # continue. If even one conflicted file is human-edited, abort the rebase
+  # so the caller sees an honest push-conflict and resolves manually.
+  _autoresolve_rebase_drift() {
+    local unmerged
+    unmerged=$(git -C "$REPO_ROOT" diff --name-only --diff-filter=U 2>/dev/null)
+    [ -z "$unmerged" ] && return 1
+    while IFS= read -r f; do
+      case "$f" in
+        designing/claudemd/manifest.json) ;;
+        *) return 1 ;;
+      esac
+    done <<< "$unmerged"
+    while IFS= read -r f; do
+      git -C "$REPO_ROOT" checkout --ours -- "$f" 9>&- 2>/dev/null || return 1
+      git -C "$REPO_ROOT" add -- "$f" 9>&- 2>/dev/null || return 1
+    done <<< "$unmerged"
+    GIT_EDITOR=true git -C "$REPO_ROOT" rebase --continue 9>&- 2>/dev/null || return 1
+    log_event "build.push.auto_resolved_rebase_drift" "files=$(echo "$unmerged" | tr '\n' ',')"
+    return 0
+  }
+
+  _try_pull_rebase_with_autoresolve() {
+    if git -C "$REPO_ROOT" pull --rebase 9>&-; then
+      return 0
+    fi
+    if _autoresolve_rebase_drift; then
+      return 0
+    fi
+    git -C "$REPO_ROOT" rebase --abort 9>&- 2>/dev/null || true
+    return 1
+  }
+
   if [ -n "$push_branch" ]; then
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
     else
-      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" origin "${push_branch}:${push_branch}" || exit_code=$?
+      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" origin "${push_branch}:${push_branch}" || exit_code=$?
     fi
   else
     if [ -z "$has_upstream" ]; then
       git -C "$REPO_ROOT" push 9>&- || exit_code=$?
     else
-      git -C "$REPO_ROOT" pull --rebase 9>&- && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" || exit_code=$?
+      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- "${_fwl_args[@]}" || exit_code=$?
     fi
   fi
 
