@@ -1253,6 +1253,8 @@ async function executeAcp(
     try {
       await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env: transactionEnv, timeout: 5_000 });
     } catch { /* best-effort */ }
+    // #2897: cleanup demo trace file on /acp success (fast-path)
+    try { const fsp = await import('fs/promises'); await fsp.unlink(`/tmp/demo-trace-${cardId}.txt`); } catch { /* file may not exist if /demo wasn't invoked this session */ }
     emit('chorus_acp.completed', { role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true });
     return {
       content: [
@@ -1440,6 +1442,8 @@ async function executeAcp(
     stepEmit('release-trigger', 'completed', { ok: false, error: stderr.slice(0, 200) });
   }
 
+  // #2897: cleanup demo trace file on /acp success (normal path)
+  try { const fsp = await import('fs/promises'); await fsp.unlink(`/tmp/demo-trace-${cardId}.txt`); } catch { /* file may not exist if /demo wasn't invoked this session */ }
   emit('chorus_acp.completed', { role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed });
 
   return {

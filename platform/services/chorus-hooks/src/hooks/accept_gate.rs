@@ -18,6 +18,17 @@ use tracing::{info, warn};
 
 fn board_ts() -> String { format!("{}/platform/scripts/cards", chorus_root()) }
 
+/// #2897: Read the /demo trace_id for a card (written by demo_preflight.rs on
+/// /demo entry) so dispatched gate scripts inherit it as CHORUS_TRACE_ID env.
+/// Returns empty string when no trace file exists — chorus_log.rs's fallback
+/// (read from /tmp/demo-trace-${card}.txt) still works in that case.
+fn read_demo_trace(card_id: &str) -> String {
+    let path = format!("/tmp/demo-trace-{}.txt", card_id);
+    std::fs::read_to_string(&path)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
 /// #2864: Show-gate dispatch — runs skills/demo/gates/show-gate.sh which
 /// queries Loki for the demo chain (card.demo.started + jeff.input.delivered
 /// window + demo.preflight.passed) and emits demo.show.completed/failed.
@@ -36,6 +47,7 @@ pub fn demo_show_passes(card_id: &str, role: &str) -> bool {
                 home
             ),
         )
+        .env("CHORUS_TRACE_ID", read_demo_trace(card_id))
         .output();
 
     match output {
@@ -72,6 +84,7 @@ pub fn demo_chain_passes(card_id: &str, role: &str) -> (bool, String) {
                 home
             ),
         )
+        .env("CHORUS_TRACE_ID", read_demo_trace(card_id))
         .output();
 
     match output {
@@ -101,6 +114,7 @@ pub fn demo_happy_path_passes(card_id: &str, role: &str) -> (bool, String) {
                 home
             ),
         )
+        .env("CHORUS_TRACE_ID", read_demo_trace(card_id))
         .output();
 
     match output {
@@ -132,6 +146,7 @@ pub fn demo_stakes_passes(card_id: &str, role: &str) -> (bool, String) {
                 home
             ),
         )
+        .env("CHORUS_TRACE_ID", read_demo_trace(card_id))
         .output();
 
     match output {
