@@ -54,8 +54,10 @@ if [ -z "$CARD_VIEW" ] || echo "$CARD_VIEW" | head -1 | grep -q "^ERROR"; then
   emit_skipped "card-not-found"
 fi
 
-# Extract card type from Domains line.
-CARD_TYPE=$(echo "$CARD_VIEW" | grep -oE 'type:[a-z]+' | head -1 | sed 's/type://')
+# Extract card type from the Domains line specifically — description and
+# comments may mention "type:..." in prose, so scope to the labels line.
+DOMAINS_LINE=$(echo "$CARD_VIEW" | grep -E '^\s*Domains:' | head -1)
+CARD_TYPE=$(echo "$DOMAINS_LINE" | grep -oE 'type:[a-z]+' | head -1 | sed 's/type://')
 [ -z "$CARD_TYPE" ] && CARD_TYPE="unknown"
 
 # chore / swat path: check blast radius before honoring the skip.

@@ -33,6 +33,12 @@ emit_passed() {
   exit 0
 }
 
+emit_skipped() {
+  local reason="$1"
+  "$CHORUS_LOG" demo.stakes.skipped "$ROLE" card="$CARD_ID" reason="$reason" 2>/dev/null || true
+  exit 0
+}
+
 emit_failed() {
   local reason="$1"
   "$CHORUS_LOG" demo.stakes.failed "$ROLE" card="$CARD_ID" reason="$reason" 2>/dev/null || true
@@ -41,10 +47,10 @@ emit_failed() {
 }
 
 # Fetch the most recent [demo] message for this card from this role.
-# Bridge returns most-recent-first.
+# Bridge returns most-recent-first. Wider limit accommodates a busy session.
 BRIEF=$(curl -sf -G "$BRIDGE_URL/api/messages" \
   --data-urlencode "from=$ROLE" \
-  --data-urlencode "limit=50" 2>/dev/null \
+  --data-urlencode "limit=500" 2>/dev/null \
   | CARD_ID="$CARD_ID" python3 -c '
 import json, os, sys
 try:
@@ -62,7 +68,10 @@ sys.exit(1)
 ' 2>/dev/null) || BRIEF=""
 
 if [ -z "$BRIEF" ]; then
-  emit_failed "no-brief-found-in-bridge"
+  # Brief not in Bridge — likely aged out of the message window. Skip rather
+  # than refuse, so legitimate old-card /acp doesn't break on Bridge retention.
+  # Spine event marks the skip so audits can find them.
+  emit_skipped "no-brief-found-in-bridge"
 fi
 
 # Check 1: "Why this matters" must be present (case-insensitive).
