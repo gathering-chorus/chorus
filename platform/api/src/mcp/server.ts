@@ -25,6 +25,7 @@ import { resolveShimPath } from '../shim-path';
 import { resolveCardsPath } from '../cards-path';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, type LogsQueryDeps } from '../handlers/logs-query';
 import { resolveGitQueuePath } from '../git-queue-path';
+import { executeDesignRefresh } from './design-refresh';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -184,6 +185,14 @@ const AcpInput = z.object({
 const PullCardInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
   card_id: z.number().int().positive().describe('Card ID to pull. Must be in Next or Later status with AC + Experience populated.'),
+}).strict();
+
+// #2900 — chorus_design_refresh input. Refreshes cite-density layers of a
+// service-design HTML from current card statuses. Skill body is one MCP
+// call; same substrate pattern as /acp + /pull.
+const DesignRefreshInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  design_name: z.string().min(1).describe('Filename stem (or basename) of the service design HTML, e.g. "build-and-deploy-service-design". Looked up under designing/docs/<name>.html.'),
 }).strict();
 
 // #2759 — chorus_unpull_card atomic teardown input. /pull's natural inverse.
@@ -645,6 +654,29 @@ const PULL_CARD_TOOL_DEF = {
       },
     },
     required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const DESIGN_REFRESH_TOOL_DEF = {
+  name: 'chorus_design_refresh',
+  description:
+    'Use this to refresh the cite-density sections (References, Path-to-close, Gaps) of a service-design HTML from current card statuses. Reads the design at designing/docs/<design_name>.html, validates template compliance (refuses if mandatory summary-block is absent), pulls Done/WIP/Next/Later/Won\'t-Do status for every #NNNN reference via the cards CLI, and regenerates the data-section-tagged headings without touching human-authored sections (Summary block, Overview, As-Is, To-Be, per-domain blocks). Auto-conforms docs that lack the canonical summary-block or data-section attrs (emits design.scaffold.inserted). Returns { design_name, sections_regenerated, cards_referenced, diff_lines, cards_by_status }. Refusal taxonomy: design-not-found | template-violation | summary-missing | manifest-missing | regenerate-fail. The /design-refresh skill calls this and nothing else. Do NOT use to author the substance of a design (Overview, As-Is, Domains) — that\'s human-authored; this only refreshes cite-density layers. Do NOT use on docs outside designing/docs/*-service-design.html — the template contract assumes that surface.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Calling role — kade / wren / silas. DEPLOY_ROLE attribution + spine role field.',
+      },
+      design_name: {
+        type: 'string',
+        minLength: 1,
+        description: 'Filename stem (or basename) of the service design HTML, e.g. "build-and-deploy-service-design". Looked up under designing/docs/<name>.html.',
+      },
+    },
+    required: ['role', 'design_name'],
     additionalProperties: false,
   },
 } as const;
@@ -2260,6 +2292,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PULL_CARD_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
+      DESIGN_REFRESH_TOOL_DEF,
       LOGS_QUERY_TOOL_DEF,
       LOGS_RECENT_ERRORS_TOOL_DEF,
       LOGS_FOR_CARD_TOOL_DEF,
@@ -2399,6 +2432,32 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeUnpullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
+      }
+      case 'chorus_design_refresh': {
+        const parsed = DesignRefreshInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        try {
+          const fs = require('fs') as typeof import('fs');
+          const path = require('path') as typeof import('path');
+          const repoRoot = resolveWorkingTree(parsed.data.role);
+          const result = await executeDesignRefresh(parsed.data, {
+            readFile: (p: string) => fs.readFileSync(p, 'utf8'),
+            writeFile: (p: string, content: string) => fs.writeFileSync(p, content, 'utf8'),
+            cardsPath,
+            designsDir: path.join(repoRoot, 'designing', 'docs'),
+            emit: (event: string, fields: Record<string, unknown>) =>
+              emitSpineEvent(event, { ...fields, role: parsed.data.role }),
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          };
+        } catch (err) {
+          // executeDesignRefresh emits design.refresh.failed itself on typed
+          // refusal; rethrow so the MCP surface returns an error response.
+          throw err;
+        }
       }
       // #2840 — typed agent surface for log + error investigation. Each
       // handler emits a chorus_logs.queried event so investigation paths
