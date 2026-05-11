@@ -428,6 +428,16 @@ async fn post_tool_use(
     // Clock sync on every tool call (#1849) — keeps /tmp/wall-clock.txt fresh
     hooks::clock_sync::post_tick(&input).await;
 
+    // #2891 — observer runs BEFORE stop_on_error so it sees failing tool calls.
+    // stop_on_error returns exit_code 2 on detected error and the handler
+    // early-returns, which prior to #2891 silently dropped observer.error
+    // emission for the very class of events the card was filed to capture.
+    let state_clone_pre = state.clone();
+    let input_clone_pre = input.clone();
+    tokio::spawn(async move {
+        hooks::observer::observe(&input_clone_pre, &state_clone_pre).await;
+    });
+
     // Stop-on-error gate (#1841) — block next action when previous errored
     let r = hooks::stop_on_error::check(&input, &state).await;
     if r.exit_code != 0 {
@@ -591,12 +601,9 @@ async fn post_tool_use(
     // early. Logic moved into accept_gate.rs (PreToolUse on chorus_acp), which
     // invokes skills/demo/gates/show-gate.sh at the correct moment.
 
-    // Persistent observer — digest every meaningful tool call
-    let state_clone = state.clone();
-    let input_clone = input.clone();
-    tokio::spawn(async move {
-        hooks::observer::observe(&input_clone, &state_clone).await;
-    });
+    // #2891 — observer.observe moved to top of post_tool_use (above
+    // stop_on_error) so it sees failing tool calls. This block is left as
+    // a marker; the spawn above replaces it.
 
     // #2120 — refresh /tmp/pulse-latest.json on every post-tool-use so the team
     // state snapshot is always current. Readers (tiles.ts, The Clearing) poll

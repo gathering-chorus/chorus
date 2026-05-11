@@ -34,6 +34,90 @@ pub struct Observation {
     pub card: Option<String>,
 }
 
+/// #2891 — Error context extracted from a tool's PostToolUse response.
+/// Crate-private: only consumed by `observe()` and tests in this module.
+#[allow(dead_code)] // lib-target dead-code analysis can't trace reachability through bin entry
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ToolErrorContext {
+    /// Full error text (stderr / error message), no truncation per AC.
+    pub error_full: String,
+    /// Exit code when the response surfaces one (Bash typically does).
+    pub exit_code: Option<i64>,
+}
+
+/// #2891 — Regex for "Exit code N" pattern Claude Code writes into Bash
+/// tool_response on non-zero exit. Mirrors stop_on_error::EXIT_CODE_RE.
+#[allow(dead_code)] // lib-target dead-code analysis can't trace reachability through bin entry
+static OBSERVER_EXIT_CODE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)exit code (\d+)").unwrap()
+});
+
+/// #2891 — Detect tool failure from PostToolUse `tool_response`.
+///
+/// Claude Code's tool_response varies by tool:
+/// - Bash: bare string like `"ls: ...\nExit code 1"` OR object with stdout/stderr
+/// - Edit/Write: object with `is_error` / `isError` boolean on failure
+///
+/// Detection signals (any one fires error):
+/// 1. Structured `is_error` / `isError` true
+/// 2. Structured `interrupted` true
+/// 3. Explicit `exit_code` / `exitCode` field != 0
+/// 4. Regex-matched "Exit code N" with N > 0 in the response text
+///
+/// Returns None on success or when no signal fires.
+#[allow(dead_code)] // lib-target dead-code analysis can't trace reachability through bin entry
+pub(crate) fn detect_tool_error(input: &HookInput) -> Option<ToolErrorContext> {
+    let resp = input.tool_response.as_ref()?;
+
+    let (response_text, is_err_flag, interrupted, struct_exit_code) = match resp {
+        serde_json::Value::String(s) => (s.clone(), false, false, None),
+        serde_json::Value::Object(_) => {
+            let is_err_flag = resp.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false)
+                || resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+            let interrupted = resp.get("interrupted").and_then(|v| v.as_bool()).unwrap_or(false);
+            let exit_code = resp
+                .get("exit_code")
+                .or_else(|| resp.get("exitCode"))
+                .and_then(|v| v.as_i64());
+            // Prefer stderr, then error, then content; fall back to full stringify.
+            let text = resp
+                .get("stderr")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| resp.get("error").and_then(|v| v.as_str()))
+                .or_else(|| resp.get("content").and_then(|v| v.as_str()))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| resp.to_string());
+            (text, is_err_flag, interrupted, exit_code)
+        }
+        _ => return None,
+    };
+
+    // Regex pull from text (Claude Code's Bash format) when no explicit field.
+    let regex_exit: Option<i64> = OBSERVER_EXIT_CODE_RE
+        .captures(&response_text)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<i64>().ok());
+
+    let exit_code = struct_exit_code.or(regex_exit);
+    let exit_nonzero = exit_code.map(|n| n != 0).unwrap_or(false);
+
+    if !is_err_flag && !interrupted && !exit_nonzero {
+        return None;
+    }
+
+    let error_full = if response_text.is_empty() {
+        resp.to_string()
+    } else {
+        response_text
+    };
+
+    Some(ToolErrorContext {
+        error_full,
+        exit_code,
+    })
+}
+
 /// Called on every PostToolUse — digest the tool call into an observation
 pub async fn observe(input: &HookInput, _state: &AppState) {
     let role = input.role();
@@ -48,21 +132,36 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
         return;
     }
 
-    // #2220: drop pure-read Bash commands — 65%+ of observer.digest volume is
-    // `bash: grep/cat/ls/...` that carries no decision or catch signal per the
-    // 100-event sample audit. Mutating Bash (writes, cards ops, chorus-log,
-    // launchctl kickstart, git commit/push) still lands.
-    if tool == "Bash" {
+    // #2891 — Detect tool failure from response. The read-only filter below
+    // is relaxed on the error path so a failing grep/cat/lookup still emits
+    // signal (the assumption that followed it is wrong).
+    let mut error = detect_tool_error(input);
+
+    // #2891 — Drop benign-exit Bash from the error path. grep-no-match,
+    // diff-found-differences, test-false etc. are not errors semantically —
+    // they're expected non-zero exits. Reuses stop_on_error::BENIGN_COMMANDS
+    // for a single source of truth (no competing implementations).
+    if tool == "Bash" && error.is_some() {
         let cmd = input.get_tool_input_str("command");
-        if is_read_only_bash(&cmd) {
-            return;
+        if super::stop_on_error::is_benign_bash(&cmd) {
+            error = None;
         }
+    }
+
+    // #2220 — Read-only Bash filter (success path only). #2891 keeps the
+    // success-path drop intact but lets errored read-only commands through
+    // to the observer.error emission below.
+    let is_read_only_cmd = tool == "Bash"
+        && is_read_only_bash(&input.get_tool_input_str("command"));
+
+    if is_read_only_cmd && error.is_none() {
+        return;
     }
 
     let action = tool.to_string();
     let digest = digest_tool_call(input);
 
-    if digest.is_empty() {
+    if digest.is_empty() && error.is_none() {
         return;
     }
 
@@ -77,16 +176,45 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
         write_inferred_state(role.as_str(), inferred_card);
     }
 
-    let obs = Observation {
-        ts: Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string(),
-        role: role.as_str().to_string(),
-        tool: tool.to_string(),
-        action,
-        digest,
-        card,
-    };
+    // Success-path digest: existing behavior. Skipped for read-only commands
+    // (they only reach here on error) and when the digest is empty.
+    if !is_read_only_cmd && !digest.is_empty() {
+        let obs = Observation {
+            ts: Utc::now().with_timezone(&super::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%z").to_string(),
+            role: role.as_str().to_string(),
+            tool: tool.to_string(),
+            action,
+            digest: digest.clone(),
+            card: card.clone(),
+        };
 
-    write_observation(&obs).await;
+        write_observation(&obs).await;
+    }
+
+    // #2891 — On error, emit observer.error spine event paired with the
+    // corresponding observer.digest by {role, ~timestamp, digest}.
+    if let Some(err) = error {
+        let role_owned = role.as_str().to_string();
+        let tool_owned = tool.to_string();
+        let digest_owned = digest;
+        let exit_owned = err.exit_code.map(|n| n.to_string());
+        let err_text = err.error_full;
+        let card_owned = card;
+        tokio::spawn(async move {
+            let mut kvs: Vec<(&str, &str)> = vec![
+                ("tool", tool_owned.as_str()),
+                ("digest", digest_owned.as_str()),
+                ("error_full", err_text.as_str()),
+            ];
+            if let Some(ref ec) = exit_owned {
+                kvs.push(("exit_code", ec.as_str()));
+            }
+            if let Some(ref c) = card_owned {
+                kvs.push(("card", c.as_str()));
+            }
+            chorus_log("observer.error", role_owned.as_str(), &kvs).await;
+        });
+    }
 }
 
 /// #2220 — Classify a Bash command as read-only (observation noise) or
@@ -736,6 +864,190 @@ mod tests {
         };
         let json = serde_json::to_string(&obs).unwrap();
         assert!(!json.contains("card"), "card:None should be skipped");
+    }
+
+    // === detect_tool_error tests (#2891) ===
+
+    fn make_input_with_response(tool: &str, tool_input: serde_json::Value, response: serde_json::Value) -> HookInput {
+        HookInput {
+            tool_name: Some(tool.to_string()),
+            tool_input: Some(tool_input),
+            tool_response: Some(response),
+            session_id: Some("test".to_string()),
+            cwd: Some(format!("{}/architect", chorus_root())),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+            chorus_worktree_override: None,
+        }
+    }
+
+    #[test]
+    fn detect_tool_error_none_on_success() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "echo hi"}),
+            json!({"stdout": "hi\n", "stderr": "", "interrupted": false}),
+        );
+        assert!(detect_tool_error(&input).is_none());
+    }
+
+    #[test]
+    fn detect_tool_error_catches_is_error_snake() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "false"}),
+            json!({"stdout": "", "stderr": "command failed", "is_error": true}),
+        );
+        let err = detect_tool_error(&input).expect("should detect error");
+        assert_eq!(err.error_full, "command failed");
+    }
+
+    #[test]
+    fn detect_tool_error_catches_is_error_camel() {
+        let input = make_input_with_response(
+            "Edit",
+            json!({"file_path": "/no/such/file"}),
+            json!({"content": "File does not exist", "isError": true}),
+        );
+        let err = detect_tool_error(&input).expect("should detect camelCase error");
+        assert_eq!(err.error_full, "File does not exist");
+    }
+
+    #[test]
+    fn detect_tool_error_catches_interrupted() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "sleep 100"}),
+            json!({"stdout": "", "stderr": "", "interrupted": true}),
+        );
+        assert!(detect_tool_error(&input).is_some());
+    }
+
+    #[test]
+    fn detect_tool_error_catches_nonzero_exit() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "git push"}),
+            json!({"stdout": "", "stderr": "remote rejected", "exit_code": 1}),
+        );
+        let err = detect_tool_error(&input).expect("nonzero exit_code is error");
+        assert_eq!(err.error_full, "remote rejected");
+        assert_eq!(err.exit_code, Some(1));
+    }
+
+    #[test]
+    fn detect_tool_error_none_on_zero_exit() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "git status"}),
+            json!({"stdout": "clean", "stderr": "", "exit_code": 0}),
+        );
+        assert!(detect_tool_error(&input).is_none());
+    }
+
+    #[test]
+    fn detect_tool_error_none_on_bare_string_response_success() {
+        // Plain string with no "Exit code N" → success.
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "echo hi"}),
+            json!("ok"),
+        );
+        assert!(detect_tool_error(&input).is_none());
+    }
+
+    #[test]
+    fn detect_tool_error_catches_bare_string_exit_code() {
+        // Claude Code's actual Bash error shape: bare string with "Exit code N".
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "ls /nope"}),
+            json!("ls: /nope: No such file or directory\nExit code 1"),
+        );
+        let err = detect_tool_error(&input).expect("should detect bare-string exit code");
+        assert_eq!(err.exit_code, Some(1));
+        assert!(err.error_full.contains("No such file or directory"));
+    }
+
+    #[test]
+    fn detect_tool_error_bare_string_zero_is_success() {
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "true"}),
+            json!("Exit code 0"),
+        );
+        assert!(detect_tool_error(&input).is_none());
+    }
+
+    #[test]
+    fn detect_tool_error_preserves_full_stderr_no_truncation() {
+        // AC: "all the data" — no 200-byte truncation. Build a 50KB stderr
+        // and verify it round-trips intact.
+        let huge = "E".repeat(50_000);
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "cargo test"}),
+            json!({"stdout": "", "stderr": huge.clone(), "is_error": true}),
+        );
+        let err = detect_tool_error(&input).expect("should detect");
+        assert_eq!(err.error_full.len(), 50_000);
+        assert_eq!(err.error_full, huge);
+    }
+
+    #[test]
+    fn detect_tool_error_still_flags_benign_at_detection_layer() {
+        // detect_tool_error itself is shape-agnostic — it reports exit_code=1
+        // regardless of whether the command was benign. The benign-skip is an
+        // observe()-layer concern (uses BENIGN_COMMANDS list). This test pins
+        // the contract so a future refactor doesn't accidentally couple them.
+        let input = make_input_with_response(
+            "Bash",
+            json!({"command": "grep foo /nonexistent"}),
+            json!("Exit code 1"),
+        );
+        let err = detect_tool_error(&input).expect("detect layer still fires");
+        assert_eq!(err.exit_code, Some(1));
+    }
+
+    #[test]
+    fn benign_bash_classifier_skips_no_match_grep() {
+        // grep-no-match is the canonical benign exit. Pin it.
+        assert!(super::super::stop_on_error::is_benign_bash("grep foo /etc/passwd"));
+        assert!(super::super::stop_on_error::is_benign_bash("rg pattern src/"));
+        assert!(super::super::stop_on_error::is_benign_bash("diff a.txt b.txt"));
+        assert!(super::super::stop_on_error::is_benign_bash("git status"));
+        assert!(super::super::stop_on_error::is_benign_bash("git diff HEAD~1"));
+        assert!(super::super::stop_on_error::is_benign_bash("test -f /tmp/x"));
+        // Word-boundary: "grepy" must NOT match "grep"
+        assert!(!super::super::stop_on_error::is_benign_bash("grepy foo"));
+        assert!(!super::super::stop_on_error::is_benign_bash("diffstat report"));
+        // Env prefix tolerated
+        assert!(super::super::stop_on_error::is_benign_bash("FOO=bar grep baz"));
+        // Path prefix tolerated
+        assert!(super::super::stop_on_error::is_benign_bash("/usr/bin/grep foo bar"));
+        // Mutating commands are NOT benign
+        assert!(!super::super::stop_on_error::is_benign_bash("rm -rf /tmp/x"));
+        assert!(!super::super::stop_on_error::is_benign_bash("git commit -m x"));
+    }
+
+    #[test]
+    fn detect_tool_error_falls_back_to_error_then_content_then_stringify() {
+        // Prefer stderr → error → content → full stringify
+        let no_stderr = make_input_with_response(
+            "Tool",
+            json!({}),
+            json!({"error": "boom", "is_error": true}),
+        );
+        assert_eq!(detect_tool_error(&no_stderr).unwrap().error_full, "boom");
+
+        let no_error_field = make_input_with_response(
+            "Tool",
+            json!({}),
+            json!({"content": "denied", "is_error": true}),
+        );
+        assert_eq!(detect_tool_error(&no_error_field).unwrap().error_full, "denied");
     }
 
     // === short_path ===

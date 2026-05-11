@@ -5,7 +5,7 @@
 //!
 //! Exemptions for known-benign exit patterns (grep no-match, diff with differences, etc.)
 
-use crate::state::{chorus_log, AppState};
+use crate::state::AppState;
 use crate::types::{HookInput, HookResponse};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -17,7 +17,7 @@ static EXIT_CODE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Commands where non-zero exit is expected/normal behavior
-static BENIGN_COMMANDS: &[&str] = &[
+pub(crate) static BENIGN_COMMANDS: &[&str] = &[
     "grep",       // exit 1 = no matches
     "rg",         // exit 1 = no matches
     "diff",       // exit 1 = differences found (not an error)
@@ -28,6 +28,33 @@ static BENIGN_COMMANDS: &[&str] = &[
     "git status", // sometimes exits non-zero for edge cases
     "git diff",   // exit 1 = differences found
 ];
+
+/// #2891 — Shared classifier: is this Bash command in the benign-exit list?
+/// Used by observer.error to skip emitting on grep-no-match etc., same family
+/// stop_on_error skips for blocking. Single source of truth.
+///
+/// Multi-word benign entries ("git status", "test ") prefix-match; single-word
+/// entries ("grep", "rg") match on the first non-env token to avoid false
+/// positives like "grepy" or "diffstat".
+#[allow(dead_code)] // lib-target dead-code analysis can't trace reachability through bin entry
+pub fn is_benign_bash(cmd: &str) -> bool {
+    let trimmed = cmd.trim_start();
+    // First non-env token (skip FOO=bar prefixes).
+    let first = trimmed
+        .split_whitespace()
+        .find(|tok| !tok.contains('='))
+        .unwrap_or("");
+    // Strip leading path so /usr/bin/grep matches "grep".
+    let first = first.rsplit('/').next().unwrap_or(first);
+    BENIGN_COMMANDS.iter().any(|b| {
+        let pattern = b.trim_end();
+        if pattern.contains(' ') {
+            trimmed.starts_with(pattern)
+        } else {
+            first == pattern
+        }
+    })
+}
 
 /// Commands that are always exempt (output is noisy/expected to contain "error")
 static EXEMPT_COMMANDS: &[&str] = &[
@@ -146,17 +173,12 @@ pub async fn check(input: &HookInput, _state: &AppState) -> HookResponse {
         "stop-on-error: blocking next action"
     );
 
-    // Emit spine event
-    chorus_log(
-        "tool.error.blocked",
-        role.as_str(),
-        &[
-            ("exit_code", &exit_code.to_string()),
-            ("command", &cmd_short),
-            ("error", &error_short),
-        ],
-    )
-    .await;
+    // #2891 — Spine emit retired here. observer.error (fired earlier in
+    // post_tool_use, above the stop_on_error gate) is the canonical surface
+    // for error correlation. It captures full stderr (no `error_short`
+    // truncation), covers non-Bash tools, and includes exempt commands.
+    // stop_on_error retains its blocking responsibility; the spine record
+    // moves upstream to observer.
 
     HookResponse::block_with_stderr(&format!(
         "Stop-on-error: previous command exited {exit_code}.\n  cmd: {cmd_short}\n  error: {error_short}\nDiagnose and fix before continuing. Do not proceed past errors silently."
