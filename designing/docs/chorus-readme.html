@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Chorus</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="data:text/css,body{font-family:-apple-system,sans-serif;max-width:900px;margin:32px auto;padding:0 20px;line-height:1.55;color:%23222}h1,h2,h3{color:%233730a3}h1{border-bottom:2px solid %236366f1;padding-bottom:6px}h2{border-bottom:1px solid %23e5e7eb;padding-bottom:4px;margin-top:32px}table{border-collapse:collapse;width:100%25;margin:8px 0;font-size:0.9em}th,td{text-align:left;padding:8px 12px;border-bottom:1px solid %23e5e7eb;vertical-align:top}th{background:%23f3f4f6}code{background:%23eef2ff;padding:1px 4px;border-radius:3px;font-size:0.9em}pre{background:%231f2937;color:%23f9fafb;padding:14px 16px;border-radius:6px;overflow-x:auto}pre code{background:transparent;color:inherit;padding:0}blockquote{border-left:4px solid %236366f1;padding:6px 16px;background:%23eef2ff;color:%23374151}" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Chorus</h1>
+</header>
+<h1 id="chorus">Chorus</h1>
+<p><strong>A versioned coordination protocol for human + AI engineering
+teams.</strong></p>
+<p>Last updated: 2026-05-10 by Wren (PM)</p>
+<p>This README is for people who already know the story — you've heard
+the pitch, now you want to read the code. It maps the repo, names the
+runtime dependencies, and points you at the design docs that explain why
+each piece exists.</p>
+<blockquote>
+<p>"An authored Werk, not a tool."</p>
+</blockquote>
+<p>If you haven't heard the pitch: see
+<code>designing/docs/chorus-distribution-assessment.html</code> and
+<code>designing/docs/chorus-context-diagram-v2.html</code> first, then
+come back.</p>
+<hr />
+<h2 id="what-it-is">What it is</h2>
+<p>Chorus is the coordination layer for one human (Jeff) and three AI
+roles (Wren, Silas, Kade) building two products simultaneously —
+Gathering (personal infrastructure) and Chorus itself (the coordination
+protocol). Everything is text, everything is versioned, everything is
+searchable, everything emits structured events.</p>
+<p>The protocol IS the product. Coordination artifacts (decisions,
+briefs, kanban state, spine events, gate verdicts) are first-class
+versioned outputs, not overhead. Built on the canonical-model lineage
+from Jeff's Staples ESB work (US Patent 9,552,400 B2): RDF/OWL workflow
+ontologies + SPARQL-driven gate evaluation.</p>
+<hr />
+<h2 id="repository-map">Repository map</h2>
+<pre><code>chorus/
+├── designing/          ← design docs, ADRs, decisions, sequence diagrams, schemas
+│   ├── docs/           ← service designs, sequence-*.html, context diagrams
+│   ├── decisions/      ← DEC-NNN with rationale
+│   ├── adr/            ← architecture decision records
+│   ├── claudemd/       ← role-prompt fragments + generator
+│   └── schemas/        ← spine-events.json, jsonschema artifacts
+│
+├── platform/           ← the coordination substrate (code)
+│   ├── api/            ← chorus-api: TypeScript Express + MCP server (port 3340)
+│   ├── services/       ← chorus-hooks (Rust), chorus-inject, chorus-bin-install
+│   ├── scripts/        ← cards CLI, chorus-log, chorus-werk, build-signed.sh, etc.
+│   ├── pulse/          ← live team-state worker (LaunchAgent)
+│   └── tests/          ← cross-cutting tests
+│
+├── directing/          ← apps that coordinate work
+│   ├── clearing/       ← Bridge / The Clearing (port 3470) — multi-party chat UI
+│   └── products/cards/ ← cards SDK + tests
+│
+├── proving/            ← observability + alerts
+│   ├── domains/alerts/ ← yaml alert definitions
+│   └── scripts/        ← alert-runner, smoke-check, demo-scroll
+│
+├── roles/              ← per-role state (NOT the substrate — role-side artifacts)
+│   ├── wren/           ← PM: backlog, projects, decisions, briefs/, journal/
+│   ├── silas/          ← Architect: ontology/, briefs/, journal/
+│   └── kade/           ← Engineer: briefs/, journal/
+│
+├── knowledge/          ← canonical knowledge artifacts (ontology, models)
+├── shared-observability/  ← Grafana dashboards (canonical), alert provisioning
+└── README.md           ← (this file lives at designing/docs/chorus-readme.md)</code></pre>
+<p>A second tree, <code>chorus-werk/&lt;role&gt;/</code>, holds per-role
+git worktrees branched from main. Each role's session writes there
+(canonical is read-only during sessions). See <strong>Worktree
+model</strong> below.</p>
+<hr />
+<h2 id="runtime-topology">Runtime topology</h2>
+<p>Two machines:</p>
+<table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Hostname</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Library</td>
+<td>192.168.86.36</td>
+<td>Primary dev. M1 MacBook Air. Most services run here.</td>
+</tr>
+<tr>
+<td>Bedroom</td>
+<td>192.168.86.242</td>
+<td>M2 Pro Mac Mini. Data services, harvesting, bulk ops.</td>
+</tr>
+</tbody>
+</table>
+<p>Services (all on Library unless noted):</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Port</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>chorus-api</td>
+<td>3340</td>
+<td>TypeScript Express server. MCP tools, Athena (RDF query), pulse,
+search index.</td>
+</tr>
+<tr>
+<td>Vikunja</td>
+<td>3456</td>
+<td>Kanban board state. <code>cards</code> CLI talks here.</td>
+</tr>
+<tr>
+<td>Fuseki</td>
+<td>3030</td>
+<td>RDF/SPARQL knowledge graph. Hosts <code>urn:chorus:ontology</code> +
+domain instances.</td>
+</tr>
+<tr>
+<td>Loki</td>
+<td>3102</td>
+<td>Log aggregation. All spine events flow here.</td>
+</tr>
+<tr>
+<td>The Clearing (Bridge)</td>
+<td>3470</td>
+<td>Real-time multi-party chat between Jeff + the three roles.</td>
+</tr>
+<tr>
+<td>Grafana</td>
+<td>3100</td>
+<td>Dashboards over Loki + Prometheus.</td>
+</tr>
+<tr>
+<td>Messaging</td>
+<td>3475</td>
+<td>Nudge persistence + delivery queue.</td>
+</tr>
+</tbody>
+</table>
+<p>LaunchAgents handle the lifecycle of all services and the pulse
+worker. See <code>~/Library/LaunchAgents/com.chorus.*</code> and
+<code>platform/launchd/</code>.</p>
+<hr />
+<h2 id="the-engineering-workflow-five-mcps">The engineering workflow:
+five MCPs</h2>
+<p>Engineering happens through five typed MCP transactions, in
+sequence:</p>
+<pre><code>chorus_pull_card → chorus_demo → chorus_acp → chorus_build → chorus_deploy</code></pre>
+<p>Each is an atomic transaction with discrete step events emitted to
+the spine, typed refusal taxonomy, and skill-side invocation that
+delegates entirely to the MCP. Slash-skills (<code>/pull</code>,
+<code>/demo</code>, <code>/acp</code>, <code>/build</code>,
+<code>/deploy</code>) collapse to one MCP call each — no model-walked
+steps, no markdown drift, no agent-curiosity skipping.</p>
+<p><strong>Status as of 2026-05-10</strong>:</p>
+<ul>
+<li><code>chorus_pull_card</code>, <code>chorus_acp</code> — shipped;
+<code>/pull</code> and <code>/acp</code> skills trimmed to MCP-call-only
+(#2751, #2865)</li>
+<li><code>chorus_demo</code> — designed, transitional substrate shipped
+(#2864 — show-gate.sh + accept_gate spine read), full MCP next</li>
+<li><code>chorus_build</code>, <code>chorus_deploy</code> — designed,
+not shipped. See
+<code>designing/docs/build-and-deploy-service-design.html</code>.</li>
+</ul>
+<p>The MCP definitions live in
+<code>platform/api/src/mcp/server.ts</code>. The skill bodies live in
+<code>~/.claude/skills/&lt;name&gt;/SKILL.md</code> (also in
+<code>chorus/skills/&lt;name&gt;/</code>).</p>
+<p>Each MCP emits
+<code>&lt;name&gt;.&lt;step&gt;.{started,completed,refused}</code> spine
+events tagged with <code>card_id</code> (#2838) and
+<code>trace_id</code> (#2839, #2845). Cross-stream stitching via the
+trace_id; card-scoped queries via the card_id.</p>
+<hr />
+<h2 id="three-roles">Three roles</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Name</th>
+<th>Domain</th>
+<th>Lives at</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Product Manager</td>
+<td><strong>Wren</strong></td>
+<td>Strategy, backlog, decisions, coordination, /demo</td>
+<td><code>roles/wren/</code></td>
+</tr>
+<tr>
+<td>Architect</td>
+<td><strong>Silas</strong></td>
+<td>Infrastructure, observability, deploy, ops, alerts</td>
+<td><code>roles/silas/</code></td>
+</tr>
+<tr>
+<td>Engineer</td>
+<td><strong>Kade</strong></td>
+<td>App features, tests, UI, /pull, /acp, /build, version-control</td>
+<td><code>roles/kade/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each role:</p>
+<ul>
+<li>Has its own <code>CLAUDE.md</code> generated from shared
+fragments</li>
+<li>Has its own per-role git worktree at
+<code>chorus-werk/&lt;role&gt;/</code> branched from main</li>
+<li>Reads its session-context envelope from <code>chorus-api</code> on
+session start</li>
+<li>Emits work to spine; reads peers' work via spine queries</li>
+</ul>
+<p>The human (Jeff) is one navigator with three drivers, each with
+domain expertise. Roles exchange work directly through MCP tools and
+structured nudges — Jeff is not the relay.</p>
+<hr />
+<h2 id="substrate-primitives">Substrate primitives</h2>
+<h3 id="kanban-board-cards-cli">Kanban board (<code>cards</code>
+CLI)</h3>
+<p><code>platform/scripts/cards</code> is the CLI; backed by Vikunja
+(port 3456). Status:
+<code>Next | Later | WIP | Done | Blocked | Harvesting | SWAT | Won't Do</code>.
+Single board, role + domain + chunk + sequence labels. WIP limit 3 per
+role. Cards have AC (acceptance criteria) and an Experience section;
+both required to enter WIP.</p>
+<pre><code>cards add &quot;title&quot; --owner &lt;role&gt; --priority P1 --domain chorus --type new --origin reflective --desc &quot;...&quot;
+cards view &lt;id&gt;
+cards move &lt;id&gt; WIP
+cards comment &lt;id&gt; &quot;...&quot;
+cards demo &lt;id&gt;     # logs demo started
+cards done &lt;id&gt;     # builder cannot self-accept code cards (DEC-048)</code></pre>
+<p>All board mutations go through <code>cards</code>. Direct Vikunja API
+calls bypass the typed taxonomy and are blocked by hooks.</p>
+<h3 id="spine-loki">Spine (Loki)</h3>
+<p>Operational telemetry flows through <code>chorus-log</code> to Loki
+under structured labels. Convention: <code>domain.noun.verb_past</code>
+(e.g. <code>card.demo.started</code>,
+<code>chorus_acp.commit.completed</code>). Every event carries
+<code>role</code>, <code>card_id</code> (when card-scoped per #2838),
+<code>trace_id</code> (when transaction-bound per #2839).</p>
+<p>Schema: <code>designing/schemas/spine-events.json</code>.</p>
+<p>Read via the typed log MCPs (#2840):</p>
+<ul>
+<li><code>chorus_logs_for_card({ card_id })</code> — every event
+card-bound to N</li>
+<li><code>chorus_logs_for_trace({ trace_id })</code> — full causal chain
+of one transaction</li>
+<li><code>chorus_logs_recent_errors({ time_window })</code> — last hour
+of errors by role</li>
+<li><code>chorus_logs_query({ query })</code> — raw LogQL for the cases
+the above don't fit</li>
+</ul>
+<h3 id="briefs">Briefs</h3>
+<p>Roles exchange work through markdown briefs in the recipient's
+<code>briefs/</code> directory. Format: question/request, context,
+constraints, response needed. No meetings by default. The /clearing
+surface (Bridge) is the synchronous channel when async briefs are too
+slow.</p>
+<h3 id="decisions--adrs">Decisions + ADRs</h3>
+<p><code>roles/wren/decisions.md</code> is the numbered decision log
+with rationale. ~110+ DECs as of this writing.
+<code>architect/adr/</code> holds Architecture Decision Records
+(ADR-NNN). Both are searchable via <code>/chorus search</code>.</p>
+<h3 id="fitness-functions">Fitness functions</h3>
+<p>Read-only consumer-shaped scripts that ask "is X fit?" and exit
+non-zero on flags. Same shape across the family:</p>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Asks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>commit-health</code></td>
+<td>Are commits landing cleanly on main?</td>
+</tr>
+<tr>
+<td><code>spine-health</code></td>
+<td>Is the spine coherent (declared events firing, no orphans,
+weather:state-change ratio)?</td>
+</tr>
+<tr>
+<td><code>quality-health</code></td>
+<td>Has quality discipline drifted (gate-skip rate, untraced
+--no-verify, stale skips, runtime outliers)?</td>
+</tr>
+<tr>
+<td><code>building-pipeline-health</code></td>
+<td>Is the post-acp release chain firing as designed (#2870)?</td>
+</tr>
+<tr>
+<td><code>graph-health</code></td>
+<td>Is the canonical-model graph well-formed (Product → SubProduct →
+Domain layout, OWL/SHACL state)?</td>
+</tr>
+</tbody>
+</table>
+<p>Each runs on demand, no args, exits 1 if any concern. None emit spine
+events themselves — they read what's already there.</p>
+<h3 id="gates--hooks">Gates + hooks</h3>
+<p>Five named gates (gate-product, gate-code, gate-quality, gate-arch,
+gate-ops) carry quality discipline at card-level. Pre-2026-05 these were
+comment-driven (a peer role posts <code>gate:&lt;name&gt;-pass</code> on
+the card). Post-#2864, gate verdicts move toward spine events read at
+acceptance time, with comments retained as transitional fallback.</p>
+<p>Structural enforcement runs in <code>chorus-hooks</code> (Rust) at
+<code>platform/services/chorus-hooks/src/</code>:</p>
+<ul>
+<li>PreToolUse hooks block: <code>accept_gate</code> (no self-accept on
+code cards, demo evidence required), <code>tdd_gate</code>
+(tests-before-code), <code>canonical_write_guard</code> (canonical is
+read-only during sessions), <code>memory_gate</code> (synthesis required
+before edit), <code>icd_pre_read</code> (read ICD before harvester
+writes)</li>
+<li>PostToolUse hooks observe + emit: <code>demo_provenance</code>
+(writes brief, emits card.demo.started),
+<code>interaction_pattern</code> (detects pattern shifts),
+<code>observer</code> (digest tool calls)</li>
+</ul>
+<p>Hooks deploy to <code>~/.chorus/bin/</code> via signed build
+(<code>build-signed.sh</code>); cdhash binding is stable across rebuilds
+(#2734) so macOS TCC AppleEvents grants survive.</p>
+<h3 id="worktree-model-chorus-werk">Worktree model (chorus-werk)</h3>
+<p>Canonical <code>/chorus/</code> sits on <code>main</code> and is
+read-only during sessions. Each role works in
+<code>/chorus-werk/&lt;role&gt;/</code>, a per-role git worktree
+branched from main with its own HEAD. Edits during a session land in the
+role's werk; canonical refreshes only at lock-guarded sync moments.</p>
+<p>Substrate scripts:</p>
+<ul>
+<li><code>chorus-werk init|repoint|remove|status|pull|close &lt;role&gt; [card-id]</code>
+— werk lifecycle</li>
+<li><code>chorus-werk-sync</code> — repair primitive (manual recovery
+for canonical drift)</li>
+<li><code>git-queue.sh commit|push</code> — atomic add+commit / verified
+push under lock; auto-resolves known auto-generated file conflicts</li>
+</ul>
+<p>The split keeps role sessions isolated from each other and from
+canonical's mutable git state. See
+<code>designing/docs/version-control-service-design.html</code>.</p>
+<h3 id="claudemd-generator">CLAUDE.md generator</h3>
+<p>Each role's <code>CLAUDE.md</code> is generated from ~110 shared
+fragments by <code>claudemd-gen.sh</code>. Edit the fragments,
+regenerate — never edit <code>CLAUDE.md</code> directly. Fragments live
+at <code>designing/claudemd/shared/</code> and
+<code>designing/claudemd/roles/&lt;role&gt;/</code>. The protocol
+version is single-sourced from
+<code>designing/claudemd/PROTOCOL_VERSION</code> (currently v1.15).</p>
+<h3 id="search--context">Search / context</h3>
+<p>SQLite FTS5 index at <code>~/.chorus/index.db</code> over Slack
+history, Claude session transcripts, briefs, decisions, ADRs, activity
+logs, card comments. ~57K+ messages. Searchable via
+<code>/chorus search &lt;term&gt;</code> skill or
+<code>chorus-api</code>'s <code>/api/chorus/search</code> endpoint.
+Search hierarchy (DEC-074): chorus first → codebase graph →
+filesystem.</p>
+<h3 id="pulse">Pulse</h3>
+<p>Live team-state worker (<code>platform/pulse/</code>) emits a
+snapshot to <code>/tmp/pulse-latest.json</code> periodically. Includes
+role andon state (building / blocked / waiting / observing / idle),
+top-of-board cards, alerts firing, andon-shift events. Bridge UI
+subscribes; session-start envelopes embed pulse state.</p>
+<hr />
+<h2 id="spine-event-taxonomy">Spine event taxonomy</h2>
+<p>Events declared in <code>designing/schemas/spine-events.json</code>.
+Names follow
+<code>&lt;domain&gt;.&lt;noun&gt;.&lt;verb_past&gt;</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card lifecycle</td>
+<td><code>card.pulled</code>, <code>card.demo.started</code>,
+<code>card.accepted</code>, <code>card.unpulled</code>,
+<code>card.stale.detected</code></td>
+</tr>
+<tr>
+<td>MCP transactions</td>
+<td><code>chorus_pull_card.{validate,werk-preflight,cards-move,...}.{started,completed,refused}</code></td>
+</tr>
+<tr>
+<td>Demo flow</td>
+<td><code>demo.preflight.{started,passed,failed}</code>,
+<code>demo.show.completed</code>, <code>demo.bypass.detected</code></td>
+</tr>
+<tr>
+<td>Gates</td>
+<td><code>gate.product.passed</code>, <code>gate.code.passed</code>, ...
+(transitioning to chorus_demo.gates.* via #2864)</td>
+</tr>
+<tr>
+<td>Build/deploy</td>
+<td><code>build.completed</code>, <code>build.failed</code>,
+<code>deploy.completed</code>, <code>deploy.failed</code>,
+<code>binary.deployed</code></td>
+</tr>
+<tr>
+<td>Observability</td>
+<td><code>library.health.*</code>, <code>canonical.sync.*</code>,
+<code>alert.fired</code>,
+<code>nudge.{requested,emitted,delivered}</code></td>
+</tr>
+<tr>
+<td>Sessions</td>
+<td><code>session.context.built</code>,
+<code>session.boot.envelope.delivered</code>,
+<code>interaction.pattern.detected</code></td>
+</tr>
+</tbody>
+</table>
+<p>Event volume can be heavy — spine-health classifies events as
+state-change vs weather (heartbeats, probes) and flags when weather
+dominates the top-N.</p>
+<hr />
+<h2 id="three-quality-layers-adr-026">Three quality layers
+(ADR-026)</h2>
+<pre><code>1. Pre-commit hooks      — &quot;will this commit obviously break something?&quot;   (local, fast, skippable via --no-verify)
+2. Role gates            — &quot;is this card team-acceptable?&quot;                  (card-level done; recorded on card / spine)
+3. CI                    — &quot;does main build cleanly from scratch?&quot;         (branch-protected; --no-verify is overridden)</code></pre>
+<p>Each owns a different question with a different threat model. Lock
+files (<code>package-lock.json</code>, <code>Cargo.lock</code>) are
+committed; CI uses <code>npm ci</code> against the locks.</p>
+<hr />
+<h2 id="working-with-the-code">Working with the code</h2>
+<h3 id="read-first">Read first</h3>
+<p>Before changing anything, read the design that names it:</p>
+<ul>
+<li><code>designing/docs/&lt;service&gt;-service-design.html</code> —
+the canonical design for each surface</li>
+<li><code>designing/decisions/dec-NNN.md</code> — the rationale-rich
+decision logs</li>
+<li><code>designing/adr/adr-NNN.md</code> — architecture decisions</li>
+<li><code>roles/&lt;role&gt;/CLAUDE.md</code> — the role's operating
+rules (generated; edit fragments under
+<code>designing/claudemd/</code>)</li>
+</ul>
+<h3 id="run">Run</h3>
+<p>Many services are LaunchAgents that auto-start. Manual operation:</p>
+<ul>
+<li><code>app-state.sh status</code> — show all services</li>
+<li><code>app-state.sh deploy &lt;crate&gt;</code> — rebuild + restart
+(TypeScript)</li>
+<li><code>build-signed.sh chorus-hooks</code> — rebuild Rust hooks with
+signed identity (cdhash stable for TCC)</li>
+<li><code>chorus-werk init &lt;role&gt;</code> — create per-role
+worktree (one-time per role)</li>
+</ul>
+<h3 id="test">Test</h3>
+<ul>
+<li><code>npm test</code> in <code>platform/api/</code>,
+<code>directing/clearing/</code>, <code>directing/products/cards/</code>
+— TypeScript unit + integration</li>
+<li><code>cargo test</code> in
+<code>platform/services/chorus-hooks/</code> — Rust hooks</li>
+<li><code>bash platform/tests/&lt;test-name&gt;.test.sh</code> —
+bash-level invariant tests</li>
+<li><code>bash proving/scripts/nightly-suites.sh</code> — full nightly
+run; emits canonical
+<code>=== Results: N passed, M failed ===</code></li>
+</ul>
+<h3 id="debug">Debug</h3>
+<ul>
+<li><code>chorus_logs_recent_errors({ time_window: '1h' })</code> — last
+hour of error-level events</li>
+<li><code>chorus_logs_for_trace({ trace_id })</code> — full causal chain
+of one transaction</li>
+<li>Loki UI at <code>localhost:3100</code> (Grafana)</li>
+<li>Pulse: <code>cat /tmp/pulse-latest.json</code> — current team state
+snapshot</li>
+</ul>
+<hr />
+<h2 id="patent-lineage">Patent lineage</h2>
+<p>Chorus implements concepts from US Patent 9,552,400 B2 (Bridwell):
+RDF/OWL workflow ontologies with SPARQL-driven gate evaluation. The
+patent describes typed artifacts flowing through quality gates with
+machine-readable state transitions. Chorus is the working
+implementation, with humans + AI agents as the workflow actors and
+Loki/Vikunja/Fuseki as the substrates.</p>
+<p>The 2011 Staples ESB work — domain/integration architecture using the
+same canonical-model patterns — is the direct ancestor.</p>
+<hr />
+<h2 id="status">Status</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Werk version</td>
+<td>v1.15</td>
+</tr>
+<tr>
+<td>Decisions</td>
+<td>110+</td>
+</tr>
+<tr>
+<td>ADRs</td>
+<td>28+</td>
+</tr>
+<tr>
+<td>Cards completed (since 2026-01)</td>
+<td>800+</td>
+</tr>
+<tr>
+<td>Indexed messages</td>
+<td>57,000+</td>
+</tr>
+<tr>
+<td>CLAUDE.md fragments</td>
+<td>110+</td>
+</tr>
+<tr>
+<td>Spine event types declared</td>
+<td>143</td>
+</tr>
+<tr>
+<td>Active harvest domains</td>
+<td>11 (music, photos, documents, stories, people, notes, blog,
+facebook, linkedin, intentions, sexuality)</td>
+</tr>
+<tr>
+<td>Repo</td>
+<td>Private (gathering-team)</td>
+</tr>
+<tr>
+<td>Health</td>
+<td>Mixed — substrate hardening in progress; see fitness functions</td>
+</tr>
+</tbody>
+</table>
+<p>Active threads:</p>
+<ul>
+<li>Five-MCP pipeline completion (chorus_demo + chorus_build +
+chorus_deploy)</li>
+<li>Spine-coherence reframe (decommissioning instrumentation events that
+have no consumer)</li>
+<li>Gate-driven demo decomposition (move trust from card comments to
+spine events)</li>
+<li>Cross-machine artifact divergence detection</li>
+<li>Comment-shape decommission once spine-event evidence is
+authoritative</li>
+</ul>
+<hr />
+<h2 id="license">License</h2>
+<p>Private. Architecture and protocol docs shared for reference and
+consulting engagements.</p>
+<hr />
+<h2 id="acknowledgments">Acknowledgments</h2>
+<p>Built by Jeff Bridwell and the Loom (Wren, Silas, Kade). Named for
+shared awareness — memory + coordination + interaction +
+accountability.</p>
+<p>The interaction model (one human navigator, multiple AI drivers, with
+intent-level communication and gemba-style observation) draws from
+Llewellyn Falco's strong-style pairing, Woody Zuill's mob programming,
+and the Toyota Production System. The
+non-coding-navigator-with-multiple-AI-drivers model is unformalized in
+the literature; Chorus is the first working implementation.</p>
+</body>
+</html>

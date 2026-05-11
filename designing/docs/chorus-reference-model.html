@@ -537,6 +537,105 @@
 
 <!-- ============================================================ -->
 
+<h2><span class="num">XI.</span> Read the Code</h2>
+
+<p>If you've made it this far and want to look at the actual implementation, here's where to start. The codebase is private (gathering-team) but architecture and protocol docs are shared for reference and consulting engagements.</p>
+
+<h3>Repository Map</h3>
+
+<p>The Chorus repo is structured around the five-layer model:</p>
+
+<table>
+  <tr><th>Path</th><th>What's there</th></tr>
+  <tr><td><code>designing/</code></td><td>Design docs, ADRs, decisions, sequence diagrams, schemas. <code>designing/claudemd/</code> holds the role-prompt fragments the generator composes into each role's CLAUDE.md.</td></tr>
+  <tr><td><code>platform/</code></td><td>The coordination substrate. <code>platform/api/</code> is the chorus-api Express + MCP server. <code>platform/services/chorus-hooks/</code> is the Rust enforcement layer. <code>platform/scripts/</code> holds the cards CLI, chorus-log, chorus-werk, build-signed.sh.</td></tr>
+  <tr><td><code>directing/</code></td><td>Apps that coordinate work. <code>directing/clearing/</code> is The Clearing (multi-party chat). <code>directing/products/cards/</code> is the cards SDK.</td></tr>
+  <tr><td><code>proving/</code></td><td>Observability and alerts. YAML alert definitions, smoke checks, demo orchestration.</td></tr>
+  <tr><td><code>roles/</code></td><td>Per-role state — briefs, journals, decision logs, role-specific CLAUDE.md (generated from fragments).</td></tr>
+  <tr><td><code>knowledge/</code></td><td>Canonical knowledge artifacts — ontology TTL, domain models.</td></tr>
+  <tr><td><code>shared-observability/</code></td><td>Grafana dashboards (canonical) and alert provisioning.</td></tr>
+</table>
+
+<h3>Runtime Dependencies</h3>
+
+<p>Two machines (one M1 MacBook Air "Library" for primary dev, one M2 Mac Mini "Bedroom" for data services). Services run as LaunchAgents:</p>
+
+<table>
+  <tr><th>Service</th><th>Port</th><th>Role</th></tr>
+  <tr><td>chorus-api</td><td>3340</td><td>TypeScript Express + MCP server. Hosts Athena (RDF query), pulse, search index, all typed MCP tools.</td></tr>
+  <tr><td>Vikunja</td><td>3456</td><td>Kanban board state. The <code>cards</code> CLI is the typed API in front of it.</td></tr>
+  <tr><td>Fuseki</td><td>3030</td><td>RDF/SPARQL knowledge graph. Hosts <code>urn:chorus:ontology</code> + domain instance graphs.</td></tr>
+  <tr><td>Loki</td><td>3102</td><td>Log aggregation. All spine events flow here.</td></tr>
+  <tr><td>The Clearing (Bridge)</td><td>3470</td><td>Real-time multi-party chat between Jeff and the three roles.</td></tr>
+  <tr><td>Grafana</td><td>3100</td><td>Dashboards over Loki + Prometheus.</td></tr>
+  <tr><td>Messaging</td><td>3475</td><td>Nudge persistence + delivery queue.</td></tr>
+</table>
+
+<h3>How to Run It</h3>
+
+<p>Manual operation reference (most things are LaunchAgents that auto-start):</p>
+
+<ul>
+  <li><code>app-state.sh status</code> — show all services and health</li>
+  <li><code>app-state.sh deploy &lt;crate&gt;</code> — rebuild + restart a TypeScript service</li>
+  <li><code>build-signed.sh chorus-hooks</code> — rebuild the Rust hooks with stable signed identity (cdhash binding survives rebuilds, so macOS TCC AppleEvents grants don't break)</li>
+  <li><code>chorus-werk init &lt;role&gt;</code> — create a per-role git worktree (one-time per role)</li>
+  <li><code>cards view &lt;id&gt;</code> / <code>cards add ...</code> / <code>cards move &lt;id&gt; WIP</code> — board operations</li>
+</ul>
+
+<h3>How to Read the Design</h3>
+
+<p>Before changing anything, read the design that names it. The docs are organized so you can trace any feature back to the decision that authored it:</p>
+
+<ul>
+  <li><code>designing/docs/&lt;service&gt;-service-design.html</code> — the canonical design for each surface (cards, nudge, demo, build-and-deploy, logs, version-control, etc.)</li>
+  <li><code>designing/decisions/dec-NNN.md</code> — rationale-rich decision logs (~120 DECs)</li>
+  <li><code>designing/adr/adr-NNN.md</code> — architecture decision records</li>
+  <li><code>roles/&lt;role&gt;/CLAUDE.md</code> — the role's operating rules (generated from fragments under <code>designing/claudemd/</code>; never edit directly)</li>
+  <li><code>chorus-reference-model.html</code> (this doc) — the abstract patterns + their tests</li>
+</ul>
+
+<h3>The Five-MCP Engineering Workflow</h3>
+
+<p>Engineering happens through five typed MCP transactions, in sequence — each emits discrete step events to the spine and refuses with typed reasons. Slash-skills collapse to one MCP call each, no model-walked steps.</p>
+
+<pre style="background: #f8f9fa; padding: 12px 16px; border-radius: 6px; font-size: 13px;">chorus_pull_card → chorus_demo → chorus_acp → chorus_build → chorus_deploy</pre>
+
+<p>Status (May 2026): <code>chorus_pull_card</code> and <code>chorus_acp</code> shipped with skills trimmed; <code>chorus_demo</code> in flight; <code>chorus_build</code> and <code>chorus_deploy</code> designed (see <code>build-and-deploy-service-design.html</code>) but not yet shipped.</p>
+
+<h3>Fitness Functions</h3>
+
+<p>Read-only consumer-shaped scripts that ask "is X fit?" and exit non-zero on flags. The family pattern:</p>
+
+<table>
+  <tr><th>Script</th><th>Asks</th></tr>
+  <tr><td><code>commit-health</code></td><td>Are commits landing cleanly on main?</td></tr>
+  <tr><td><code>spine-health</code></td><td>Is the spine coherent (declared events firing, no orphans, weather-vs-state-change ratio)?</td></tr>
+  <tr><td><code>quality-health</code></td><td>Has quality discipline drifted (gate-skip rate, untraced --no-verify, stale skips)?</td></tr>
+  <tr><td><code>building-pipeline-health</code></td><td>Is the post-acp release chain firing as designed?</td></tr>
+  <tr><td><code>graph-health</code></td><td>Is the canonical-model graph well-formed?</td></tr>
+</table>
+
+<h3>Forking Guide</h3>
+
+<p>Chorus is designed to be adapted to other teams. What to bring as-is vs adapt:</p>
+
+<table>
+  <tr><th>Bring as-is</th><th>Adapt to your team</th></tr>
+  <tr><td>CLAUDE.md fragment architecture + generator</td><td>Role names and domains (you might have 2 roles or 5)</td></tr>
+  <tr><td>Decision log format (DEC-NNN with rationale)</td><td>Board tooling (Vikunja is one option; any kanban with API works)</td></tr>
+  <tr><td>Brief exchange protocol</td><td>Observability stack (Grafana/Prometheus or whatever you run)</td></tr>
+  <tr><td>Card quality gates and the Werk value stream</td><td>WIP limits (tune to your team size)</td></tr>
+  <tr><td>The five-MCP pipeline shape</td><td>Context index (swap SQLite FTS for whatever search you prefer)</td></tr>
+  <tr><td>Spine event taxonomy and structure</td><td>AI execution layer (Claude Code, Cursor, or whatever)</td></tr>
+</table>
+
+<h3>License + Contact</h3>
+
+<p>Repo is private. Architecture and protocol docs are shared for reference and consulting engagements. If you're considering a fork or adoption — or if you've read this and want to push back on any of it — Jeff Bridwell at <code>jeffbridwell@gmail.com</code>.</p>
+
+<!-- ============================================================ -->
+
 <div class="epigraph" style="margin-top: 48px;">
   "The best work happens in relationship — when people actually pay attention to each other, push back honestly, and show up consistently. My friendship with the people who matter to me is part of why I believe that. The attention, the honesty, the showing up — that's what I'm trying to build into the system."
   <div class="attr">— Jeff Bridwell, March 2026</div>
