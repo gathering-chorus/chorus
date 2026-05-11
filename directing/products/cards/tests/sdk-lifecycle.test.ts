@@ -223,7 +223,7 @@ describe('addCard — validation', () => {
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
         domain: 'chorus', priority: 'P1', sequence: 'chorus',
-        description: '## Experience\nJeff sees\n## AC\n- [ ] first\n- [ ] second',
+        description: '## Experience\nJeff sees\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## AC\n- [ ] first\n- [ ] second',
       });
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();
@@ -235,7 +235,7 @@ describe('addCard — validation', () => {
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
         domain: 'chorus', priority: 'P1', sequence: 'chorus',
-        description: '## Experience\nok\n1. first\n2. second',
+        description: '## Experience\nok\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## AC\n1. first\n2. second',
       });
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();

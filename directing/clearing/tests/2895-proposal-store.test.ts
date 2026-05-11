@@ -20,9 +20,9 @@ describe('#2895 proposalStore lifecycle', () => {
     expect(p.submittedAt).toBeLessThanOrEqual(Date.now());
   });
 
-  test('proposalStore.approve transitions pending to approved', () => {
+  test('proposalStore.approve transitions pending to approved', async () => {
     const p = proposalStore.submit({ ...baseInput(), title: 'approve-me' });
-    const after = proposalStore.approve(p.id);
+    const after = await proposalStore.approve(p.id);
     expect(after?.status).toBe('approved');
     expect(after?.decidedAt).toBeDefined();
   });
@@ -34,9 +34,9 @@ describe('#2895 proposalStore lifecycle', () => {
     expect(after?.deniedReason).toBe('not aligned');
   });
 
-  test('proposalStore.approve on a non-pending proposal is a no-op', () => {
+  test('proposalStore.approve on a non-pending proposal is a no-op', async () => {
     const p = proposalStore.submit({ ...baseInput(), title: 'decided' });
-    proposalStore.approve(p.id);
+    await proposalStore.approve(p.id);
     const after = proposalStore.deny(p.id, 'too late');
     expect(after?.status).toBe('approved');
     expect(after?.deniedReason).toBeUndefined();

@@ -835,9 +835,9 @@ app.get('/api/cards/proposals/:id', (req, res) => {
   res.json(p);
 });
 
-app.post('/api/cards/proposals/:id/approve', (req, res) => {
+app.post('/api/cards/proposals/:id/approve', async (req, res) => {
   if (!isLocal(req)) return res.status(403).json({ error: 'approval requires local request (Jeff only)' });
-  const p = proposalStore.approve(req.params.id);
+  const p = await proposalStore.approve(req.params.id);
   if (!p) return res.status(404).json({ error: 'proposal not found' });
   res.json(p);
 });

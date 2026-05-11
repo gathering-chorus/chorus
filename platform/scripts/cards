@@ -11,9 +11,25 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLIENT_DIR="$SCRIPT_DIR/../../directing/products/cards"
 
-# Use compiled JS if available, fall back to ts-node
-if [ -f "$CLIENT_DIR/dist/cli.js" ]; then
-  exec node "$CLIENT_DIR/dist/cli.js" "$@"
+# #2905: prefer dist ONLY when it's not stale relative to src. Stale dist
+# silently disabled the #2895 bouncer for a full day: source had the hook,
+# dist didn't, every agent cards add filed direct. Detection: dist mtime
+# must be ≥ newest src/*.ts mtime; otherwise fall back to ts-node from src.
+DIST_CLI="$CLIENT_DIR/dist/cli.js"
+SRC_DIR="$CLIENT_DIR/src"
+dist_is_fresh=0
+if [ -f "$DIST_CLI" ]; then
+  dist_mtime=$(stat -f %m "$DIST_CLI" 2>/dev/null || stat -c %Y "$DIST_CLI" 2>/dev/null || echo 0)
+  newest_src_mtime=$(find "$SRC_DIR" -name '*.ts' -type f -exec stat -f %m {} \; 2>/dev/null | sort -nr | head -1)
+  if [ -z "$newest_src_mtime" ]; then
+    newest_src_mtime=$(find "$SRC_DIR" -name '*.ts' -type f -printf '%T@\n' 2>/dev/null | cut -d. -f1 | sort -nr | head -1)
+  fi
+  if [ -n "$dist_mtime" ] && [ -n "$newest_src_mtime" ] && [ "$dist_mtime" -ge "$newest_src_mtime" ]; then
+    dist_is_fresh=1
+  fi
+fi
+if [ "$dist_is_fresh" = "1" ]; then
+  exec node "$DIST_CLI" "$@"
 else
   exec npx --prefix "$CLIENT_DIR" ts-node "$CLIENT_DIR/src/cli.ts" "$@"
 fi

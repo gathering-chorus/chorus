@@ -1454,6 +1454,13 @@ async function renderProposals() {
       PROPOSALS_PANEL.style.display = 'none';
       return;
     }
+    // Preserve which <details> are open across re-renders so the 3s poll
+    // doesn't collapse a description Jeff is actively reading.
+    const openIds = new Set(
+      Array.from(PROPOSALS_CONTENT.querySelectorAll('details[open]'))
+        .map(d => d.closest('.proposal')?.getAttribute('data-id'))
+        .filter(Boolean)
+    );
     PROPOSALS_PANEL.style.display = 'block';
     PROPOSALS_COUNT.textContent = `(${pending.length})`;
     PROPOSALS_CONTENT.innerHTML = pending.map(p => `
@@ -1462,7 +1469,7 @@ async function renderProposals() {
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:0.78rem;color:var(--text);margin-bottom:0.2rem;">${escapeHtml(p.title)}</div>
             <div style="font-size:0.65rem;color:var(--text-muted);">${escapeHtml(p.role)} → ${escapeHtml(p.owner)} · ${escapeHtml(p.priority)} · ${escapeHtml(p.type)} · ${escapeHtml(p.domain)}/${escapeHtml(p.sequence)} · ${escapeHtml(p.origin)}</div>
-            <details style="margin-top:0.25rem;"><summary style="font-size:0.65rem;color:var(--text-muted);cursor:pointer;">desc</summary><pre style="font-size:0.65rem;white-space:pre-wrap;color:var(--text-muted);margin:0.25rem 0 0 0;background:transparent;">${escapeHtml(p.description)}</pre></details>
+            <details ${openIds.has(p.id) ? 'open' : ''} style="margin-top:0.25rem;"><summary style="font-size:0.65rem;color:var(--text-muted);cursor:pointer;">desc</summary><pre style="font-size:0.65rem;white-space:pre-wrap;color:var(--text-muted);margin:0.25rem 0 0 0;background:transparent;">${escapeHtml(p.description)}</pre></details>
           </div>
           <div style="display:flex;flex-direction:column;gap:0.25rem;flex-shrink:0;">
             <button onclick="approveProposal('${p.id}')" style="font-size:0.65rem;padding:3px 10px;background:#2ea043;color:#fff;border:none;border-radius:3px;cursor:pointer;">Approve</button>

@@ -689,6 +689,20 @@ function validateDescription(
   if (!hasExperience) {
     errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands). Use --quick/-q to skip on housekeeping cards.');
   }
+  // #2905: require a substantive "## Why this matters" section. Jeff direct
+  // 2026-05-11: "force u to send me a request — can i approve card xzy —
+  // here is why it matters and is valuable and not a nit or an edge case."
+  // Min 30 words after the heading filters one-line generics. The bouncer
+  // refuses weak proposals, not just non-Jeff ones.
+  const whyMatch = (opts.description || '').match(/##\s*why\s+this\s+matters\b([\s\S]*?)(?=\n##\s|\n*$)/i);
+  if (!whyMatch) {
+    errors.push('Description missing "## Why this matters" section — make the case for value: why this matters, why it\'s not a nit or an edge case. The bouncer refuses proposals without a substantive case.');
+  } else {
+    const wordCount = whyMatch[1].trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount < 30) {
+      errors.push(`"## Why this matters" too thin (${wordCount} words; need ≥30) — name the actual stakes: who benefits, what breaks without this, why it isn't an edge case. The bouncer refuses cases that read as nits.`);
+    }
+  }
 }
 
 // Reports collected errors and exits the process.
@@ -744,24 +758,26 @@ async function applyDynamicLabel(
 }
 
 /**
- * #2895: agent-initiated `cards add` routes the proposal to Jeff for approval.
+ * #2895 phase 2: agent-initiated `cards add` submits a proposal and EXITS
+ * IMMEDIATELY. Card filing happens server-side when Jeff approves (Bridge
+ * approve handler POSTs chorus-api /api/cards/add with X-Role: jeff, which
+ * bypasses this hook). Agent doesn't block — Jeff decides at his pace.
  *
- * If DEPLOY_ROLE is wren / silas / kade and CHORUS_BYPASS_PROPOSAL is unset,
- * POST a proposal to the Bridge at localhost:3470, then poll until status !=
- * pending or 10 minutes elapse. On approved: return (caller continues to
- * client.add()). On denied/timeout: console.error reason, process.exit(1).
- *
- * Jeff invocations (DEPLOY_ROLE=jeff or unset, or running outside an agent
- * session) bypass entirely. The CHORUS_BYPASS_PROPOSAL escape hatch exists
- * for chorus_acp / cards-MCP server flows that already operate on Jeff's
- * authority (those don't re-prompt).
+ * Bypasses (file immediately, no proposal):
+ *   - DEPLOY_ROLE=jeff or unset (Jeff acting directly)
+ *   - CHORUS_BYPASS_PROPOSAL=1 (chorus-api server-side card-file path on
+ *     proposal-approve, chorus_acp internals — anything on Jeff's authority)
+ *   - NODE_ENV=test (hermetic test runs)
  */
 async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise<void> {
   const role = (process.env.DEPLOY_ROLE || '').toLowerCase();
   const isAgent = role === 'wren' || role === 'silas' || role === 'kade';
   if (!isAgent) return;
-  if (process.env.CHORUS_BYPASS_PROPOSAL === '1') return;
-  // Tests must not hit the live Bridge — events.ts uses the same NODE_ENV check.
+  // #2905: CHORUS_BYPASS_PROPOSAL env-var bypass REMOVED — agent-controllable
+  // loophole closed. Bypass for chorus-api's server-side approve handler
+  // works via DEPLOY_ROLE=jeff (set by runCardsCli from the X-Role header
+  // in chorus-api server.ts). Agents in their own shells cannot trigger
+  // the bypass code path via any env var they set.
   if (process.env.NODE_ENV === 'test') return;
 
   const bridgeUrl = process.env.BRIDGE_URL || 'http://localhost:3470';
@@ -779,7 +795,7 @@ async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise
     description: opts.description || '',
   };
 
-  let submitJson: { proposal_id?: string; error?: string } | null = null;
+  let submitJson: { proposal_id?: string; error?: string };
   try {
     const submitRes = await fetch(submitUrl, {
       method: 'POST',
@@ -792,38 +808,16 @@ async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise
       process.exit(1);
     }
   } catch (err) {
-    console.error(`ERROR: Bridge unreachable at ${bridgeUrl} — cannot submit card proposal. Set CHORUS_BYPASS_PROPOSAL=1 to bypass (Jeff-authorized flows only). Underlying: ${err instanceof Error ? err.message : err}`);
+    console.error(`ERROR: Bridge unreachable at ${bridgeUrl} — cannot submit card proposal. Agent card creation requires Jeff approval via the Bridge; ask Jeff to file the card. Underlying: ${err instanceof Error ? err.message : err}`);
     process.exit(1);
+    return;
   }
 
-  const proposalId = submitJson.proposal_id;
-  const statusUrl = `${bridgeUrl}/api/cards/proposals/${proposalId}`;
-  console.log(`Proposal #${proposalId} submitted to Jeff. Waiting for approval (10 min timeout)...`);
-
-  const deadline = Date.now() + 10 * 60 * 1000;
-  const pollInterval = 2_000;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, pollInterval));
-    try {
-      const res = await fetch(statusUrl);
-      if (!res.ok) continue;
-      const p = (await res.json()) as { status: string; deniedReason?: string };
-      if (p.status === 'approved') {
-        console.log(`Proposal approved by Jeff. Filing card.`);
-        return;
-      }
-      if (p.status === 'denied') {
-        console.error(`ERROR: Jeff denied the card proposal.${p.deniedReason ? ' Reason: ' + p.deniedReason : ''}`);
-        process.exit(1);
-      }
-      if (p.status === 'timeout') {
-        console.error(`ERROR: Proposal timed out (Bridge sweeper).`);
-        process.exit(1);
-      }
-    } catch { /* network blip — retry on next tick */ }
-  }
-  console.error(`ERROR: Proposal #${proposalId} timed out after 10 minutes with no decision from Jeff.`);
-  process.exit(1);
+  // Async by design — agent submits and exits. Jeff's approval triggers the
+  // actual card filing server-side. Agent moves on.
+  console.log(`Proposal submitted: ${submitJson.proposal_id}`);
+  console.log(`Jeff will see it on his Bridge. To check status: curl ${bridgeUrl}/api/cards/proposals/${submitJson.proposal_id}`);
+  process.exit(0);
 }
 
 export async function addCard(
