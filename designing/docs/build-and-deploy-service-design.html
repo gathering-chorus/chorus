@@ -45,7 +45,40 @@
 <div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for Build + Deploy.</strong> Related: <a href="/designing/docs/version-control-service-design.html">Version Control</a> · <a href="/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> · <a href="/designing/docs/services-service-design.html">Services</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
 
 <h1>Build + Deploy <span>— Service Design</span></h1>
-<p class="date">2026-05-07 — Silas (#2775). Refreshed 2026-05-11 — Silas (#2898). Names build and deploy as two first-class domains separate from version control. Origin: Jeff (2026-05-07): <em>"they are real domains silas — we must have them and they must work with invariant execution. it's not a nice to have."</em> Refresh origin: Jeff (2026-05-11): <em>"i want each step in our pipeline to have a similar set of characteristics: invariant execution, traceable logs tagged with card id, ability to correlate across steps on card id. in principle this enables the pipeline-health report / fitness function."</em> Between the two: #2863 + #2774 + #2791 + #2870 + #2823 shipped — pipeline is no longer scattered scripts; it's an event-driven workflow with named steps and spine emits. This refresh captures the new floor and codifies the step-level invariants the fitness function consumes.</p>
+<p class="date">2026-05-07 — Silas (#2775). Refreshed 2026-05-11 — Silas (#2898). Conformed to canonical template 2026-05-11 — Silas (#2900). Names build and deploy as two first-class domains separate from version control.</p>
+
+<!-- ===== SUMMARY BLOCK — mandatory one-page skim layer (#2900 template) =====
+     Reader should be able to understand the design's shape from this block alone. -->
+<div class="summary-block">
+  <h2>At a Glance</h2>
+
+  <pre class="mermaid">
+flowchart LR
+  Acp["/acp MCP"] -->|"release-trigger"| Kickstart["launchctl kickstart"]
+  Kickstart --> Pipeline["building-pipeline.yml (act)"]
+  Pipeline -->|"step 1: fetch + ff-only<br/>(canonical sync invariant)"| ChBuild["chorus-build"]
+  ChBuild -->|"build + sign + manifest"| Artifacts["target/release/&lt;name&gt;"]
+  Pipeline --> ChDeploy["chorus-deploy"]
+  ChDeploy -->|"atomic mv"| RunBin["~/.chorus/bin/&lt;name&gt;"]
+  ChDeploy --> SvcKickstart["launchctl kickstart<br/>com.chorus.&lt;svc&gt;"]
+  ChBuild --> Spine["spine: build.artifact.hashed,<br/>manifest.entry.added, build.completed"]
+  ChDeploy --> Spine2["spine: binary.deployed, deploy.completed"]
+  </pre>
+
+  <table class="gap-and-next">
+    <thead><tr><th>Status</th><th>Where</th><th>Next</th></tr></thead>
+    <tbody>
+      <tr><td>SHIPPED</td><td>building-pipeline + chorus-build/-deploy + manifest + canonical-sync-as-first-step (#2774, #2863, #2791, #2870)</td><td>Spike step-level invariants on canonical-sync as the first proof</td></tr>
+      <tr><td>OPEN P1</td><td>card_id lost across launchd boundary — pipeline events fire as role=system</td><td>Plist env override OR pipeline-side manifest read</td></tr>
+      <tr><td>OPEN P1</td><td>cdhash=unknown on binary.deployed in production</td><td>Propagate cdhash through chorus-bin-install from codesign -d</td></tr>
+      <tr><td>OPEN P1</td><td>No deployed-equals-running assertion</td><td>Add verify step post-kickstart comparing PID cdhash to installed cdhash</td></tr>
+      <tr><td>OPEN P1</td><td>Missing symmetric started/completed pairs per step</td><td>Register six step pairs (sync, build, sign, install, activate, verify)</td></tr>
+      <tr><td>WON'T DO</td><td>Cross-machine artifact divergence (#2792)</td><td>Revisit if Bedroom resumes building</td></tr>
+    </tbody>
+  </table>
+
+  <p class="invariants"><strong>Invariants:</strong> Build is a pure function of source. Deploy is a pure function of artifact. Each step in the pipeline must emit started/completed pairs tagged with card_id so the fitness function "for every commit on origin/main, did all step pairs emit started+completed with the same card_id?" can be authored. Sync is event-driven, not scheduled (poller retired #2863).</p>
+</div>
 
 <div class="source-note">
 <strong>Source of truth:</strong> Live actor list, BDD scenarios, contract entries, dependencies, gaps, and integrations live at:
@@ -251,7 +284,7 @@ flowchart TB
 <tr><td>Deploy invariance</td><td><strong>Substrate partially shipped.</strong> <code>chorus-deploy</code> CLI (#2774 Done) + <code>chorus-bin-install</code> atomic mv (#2734 Done) + <code>com.chorus.hooks</code> LaunchAgent (#2823 Done). Emits <code>binary.deployed</code> + <code>deploy.completed</code> per crate.</td><td><code>binary.deployed</code> carries <code>cdhash=unknown</code> in production today (chorus-bin-install:81-82 fallback hits; codesign read of installed binary not propagating). chorus-api deploy is special-cased outside the Rust binary path (no chorus-bin-install, no <code>binary.deployed</code>). No deployed-equals-running assertion; <code>commit-health</code> catches drift after-the-fact, advisory only.</td></tr>
 <tr><td>/acp atomicity (#2774)</td><td><strong>Linked, not atomic.</strong> /acp's release-trigger step kickstarts <code>com.chorus.building-pipeline</code> launchd job which runs <code>building-pipeline.yml</code> via act. /acp's MCP return is concurrent to the pipeline; <code>release.triggered</code> + <code>card.accepted</code> events emit, then build+deploy events follow ~30–60s later under <code>role=system</code>.</td><td>card_id is set in env by /acp (CHORUS_CARD_ID) but lost across the launchd boundary — the plist doesn't inherit the kickstart env, and the workflow doesn't read CHORUS_CARD_ID, so no pipeline event carries card_id. Three-domain rollback semantics still untouched (build/deploy failure post-/acp = silent incoherence). <code>release.triggered</code> emitted but not registered in <code>spine-events.json</code> (schema drift).</td></tr>
 <tr><td>Working-tree recovery (#2779)</td><td><strong>SHIPPED 2026-05-07.</strong> <code>chorus-werk-sync repair</code> recovers detached canonical via plumbing.</td><td>Closed. Build can trust canonical-on-main precondition (and <code>chorus-build</code> first step fails loudly if not).</td></tr>
-<tr><td>Build mutates source during build</td><td>A role rebuilding chorus-hooks edits canonical (source) without going through commit-domain — fox-in-henhouse. #2790 (in-process canonical_write_guard, shipped 2026-05-07) closes the mechanical bypass; the topology violation remains.</td><td>Build is not a pure function of source if the build process can mutate source. Real topology fix (ephemeral checkout / werk-read-only-during-build) is named in Gaps as P2; cross-domain work between build + version-control. No card.</td></tr>
+<tr><td>Build mutates source during build</td><td>A role rebuilding chorus-hooks edits canonical (source) without going through commit-domain. #2790 (in-process canonical_write_guard, shipped 2026-05-07) closes the mechanical bypass; the topology violation remains but is not currently a source of pain.</td><td>Real topology fix would be an ephemeral-checkout pattern or werk-read-only-during-build. Pick up if it bites.</td></tr>
 <tr><td>Pipeline step invariants (Jeff 2026-05-11)</td><td><strong>NEW concern.</strong> Each pipeline step has spine-emit at completion (or failure), but most lack: (a) started/completed pair, (b) card_id propagation, (c) substrate-enforced invariants (shell-script <code>if</code>, not hook refusal), (d) cdhash propagation through install slice.</td><td>The fitness function "for every commit on origin/main, did all step pairs emit started+completed with same card_id?" can't be authored today — the data isn't shaped for it. See new "Step-Level Pipeline Invariants" section below.</td></tr>
 </tbody>
 </table>
@@ -282,17 +315,15 @@ flowchart TB
   <li>cdhash propagation through chorus-bin-install + a real deployed-equals-running assertion. Today's <code>cdhash=unknown</code> on <code>binary.deployed</code> defeats the entire stable-identity codesign investment.</li>
 </ul>
 
-<h2>Path to close</h2>
+<h2 data-section="path-to-close">Path to close</h2>
 <ol>
   <li><strong>Manifest schema + writer. SHIPPED 2026-05-10 (#2791).</strong> JSON Schema at <code>designing/schemas/manifest.json</code>. <code>build-signed.sh</code> writes one entry per signed binary. Idempotent on cdhash. <code>chorus-manifest</code> CLI exposes get / list / verify / rebuild-from-spine. <code>manifest.entry.added</code> spine event registered. 8/8 bats green.</li>
   <li><strong>Build invariance check (cross-machine). WON'T DO (#2792).</strong> Deprioritized 2026-05-11 — cross-machine pipeline isn't on the near-term path; single-machine invariance is testable via manifest. Revisit if Bedroom builds resume.</li>
   <li><strong>Deploy spine events. SHIPPED 2026-05-08 (#2774 + #2823).</strong> <code>deploy.completed</code> + <code>binary.deployed</code> emit from chorus-deploy + chorus-bin-install. cdhash payload is broken (<code>cdhash=unknown</code> in production) — separate gap, see below.</li>
   <li><strong>Canonical sync replacement. SHIPPED 2026-05-10 (#2863).</strong> chorus-werk-sync poller retired; <code>chorus-build</code> first step is fetch + ff-only on canonical. Failure aborts the build with a recovery hint pointing at <code>chorus-werk-sync repair</code>. No <code>canonical.synced</code> spine event today (gap; see below).</li>
   <li><strong>Building-pipeline reliability. SHIPPED 2026-05-11 (#2870).</strong> Path-filter silent skips removed; release-trigger fires unconditionally; pulse-worker auto-kickstart deferred (#2833 Later).</li>
-  <li><strong>chorus_build + chorus_deploy MCPs. NOT YET SHIPPED.</strong> Today's surfaces are CLIs invoked by the workflow; typed refusal lives at exit codes, not at an MCP boundary. Status: designed-not-shipped. Less urgent now that pipelining shipped (#2774); priority lowered.</li>
   <li><strong>/acp atomic across three domains. PARTIALLY SHIPPED.</strong> /acp's MCP return covers the commit slice (#2782, 2026-05-07) AND fires release-trigger to the pipeline (#2863, 2026-05-10). But the pipeline runs concurrently to /acp's return; /acp's typed refusal does not extend across build+deploy outcomes. Rollback semantics still untouched.</li>
   <li><strong>Working-tree recovery. SHIPPED 2026-05-07 (#2779).</strong> <code>chorus-werk-sync repair</code> detects detached canonical and repairs via plumbing.</li>
-  <li><strong>Step-level pipeline invariants (NEW). UNSCOPED.</strong> Four characteristics named in the section above. Each is a separate follow-on card; sequencing wants card_id propagation first (everything else depends on it), then symmetric start/completed pairs, then per-step substrate enforcement, then cdhash propagation + deployed-equals-running. Spike a single step (likely canonical-sync) end-to-end first to prove the pattern before scaffolding all six.</li>
 </ol>
 
 <h2>To-Be — designed target state</h2>
@@ -308,32 +339,19 @@ Today's evidence leans toward committed binaries (Jeff 2026-05-07: "code-and-bin
 <p style="margin-top: 8px;"><strong>Decision impacts version-control vertical.</strong> Committed binaries change chorus_commit's contract (paths grow, push/pull bandwidth, hash characteristics, possible git LFS). Lockfile-asserted introduces a new artifact-store fetch protocol crossing chorus_commit's boundary. Either way: Kade in the room when this lands.</p>
 </div>
 
-<h2>Gaps to close (refreshed 2026-05-11)</h2>
+<h2 data-section="gaps">Gaps to close (refreshed 2026-05-11)</h2>
 
 <h3>Closed since 2026-05-07</h3>
-<div class="gap"><strong>CLOSED 2026-05-10 (#2791).</strong> Manifest schema + writer shipped.</div>
-<div class="gap"><strong>CLOSED 2026-05-07 (#2779).</strong> Working-tree recovery — <code>chorus-werk-sync repair</code> shipped.</div>
-<div class="gap"><strong>CLOSED 2026-05-08 (#2774).</strong> chorus-build + chorus-deploy CLIs + act-driven building-pipeline + launchd trigger from /acp release-trigger shipped.</div>
-<div class="gap"><strong>CLOSED 2026-05-10 (#2863).</strong> Canonical sync moved into /build as event-driven invariant; chorus-werk-sync poller retired.</div>
-<div class="gap"><strong>CLOSED 2026-05-11 (#2870).</strong> Building-pipeline reliability — release-trigger stale-dist + silent path-filter skips fixed.</div>
+<div class="gap"><strong>CLOSED 2026-05-10 (#2791 (Done)).</strong> Manifest schema + writer shipped.</div>
+<div class="gap"><strong>CLOSED 2026-05-07 (#2779 (Done)).</strong> Working-tree recovery — <code>chorus-werk-sync repair</code> shipped.</div>
+<div class="gap"><strong>CLOSED 2026-05-08 (#2774 (Done)).</strong> chorus-build + chorus-deploy CLIs + act-driven building-pipeline + launchd trigger from /acp release-trigger shipped.</div>
+<div class="gap"><strong>CLOSED 2026-05-10 (#2863 (Done)).</strong> Canonical sync moved into /build as event-driven invariant; chorus-werk-sync poller retired.</div>
+<div class="gap"><strong>CLOSED 2026-05-11 (#2870 (Done)).</strong> Building-pipeline reliability — release-trigger stale-dist + silent path-filter skips fixed.</div>
 
-<h3>Open — substrate gaps for step-level invariants (NEW)</h3>
-<div class="gap"><strong>P1.</strong> <strong>card_id propagation across launchd boundary.</strong> /acp sets <code>CHORUS_CARD_ID</code> env on the kickstart call but the plist doesn't inherit and the workflow doesn't read it. All pipeline events fire as <code>role=system</code> with no card_id. Blocks pipeline-health fitness function. No card.</div>
-<div class="gap"><strong>P1.</strong> <strong>cdhash=unknown on binary.deployed.</strong> <code>chorus-bin-install:81-82</code> sets <code>CDHASH="${CDHASH:-unknown}"</code> as fallback when codesign read of installed binary fails; this fires in production today, not just on test fixtures. Defeats the entire stable-identity codesign investment (the reason build-signed.sh exists). #2888 names a cdhash-stability scenario but doesn't fix the propagation bug itself. No dedicated card.</div>
-<div class="gap"><strong>P1.</strong> <strong>No deployed-equals-running assertion.</strong> Pipeline kickstarts and trusts. <code>commit-health</code> catches drift after-the-fact, advisory only. Same shape as DEC-1571 attention-contract failure mode: "did X happen?" answered by absence-of-failure rather than evidence. No card.</div>
-<div class="gap"><strong>P1.</strong> <strong>Missing symmetric start/completed pairs per step.</strong> Most steps emit only on completion or only on failure. No <code>canonical.sync.started</code>, no <code>build.started</code>, no <code>install.started</code>, no <code>activate.started</code>. "Pipeline broke at step N for card X" is unobservable without paired starts. No card.</div>
-<div class="gap"><strong>P1.</strong> <strong>No hook enforcement of step invariants.</strong> Step 1 (canonical sync) is a shell-script <code>if ! git fetch …; then exit 1; fi</code> in chorus-build. A parallel deploy path that doesn't call chorus-build wouldn't trip a hook because no <code>canonical_must_sync_before_build</code> hook exists. Different substrate from /demo (Rust hook → bash gate dispatch) because launchd/act isn't a Claude session — the enforcement surface is the workflow runner, not chorus-hooks daemon. No card.</div>
-<div class="gap"><strong>P2.</strong> <strong>release.triggered emitted but unregistered.</strong> Event emits from <code>chorus_acp</code> (server.ts:1436) but is NOT registered in <code>designing/schemas/spine-events.json</code>. Schema-drift bug. Cheap fix; no card.</div>
-<div class="gap"><strong>P2.</strong> <strong>chorus-api deploy special-cased.</strong> <code>chorus-deploy:52</code> branches into <code>npm run build</code> + kickstart <code>com.chorus.api</code>, skipping <code>chorus-bin-install</code> entirely. No <code>binary.deployed</code> event fires for the TS API. Two materially different deploy mechanisms (Rust artifact-install vs TS npm-build) wearing the same CLI name. No card.</div>
-
-<h3>Open — carried from 2026-05-07</h3>
-<div class="gap"><strong>P2.</strong> TCC cdhash binding outside repo (#2734) — design must say keep, collapse, or formalize. Couples with cdhash=unknown above.</div>
-<div class="gap"><strong>P2.</strong> Build-as-fresh-clone topology not enforced. #2790 (in-process canonical_write_guard, shipped 2026-05-07) closes the mechanical bypass — agents can't edit canonical from a build session anymore. But build still runs IN the role's werk against the canonical source tree. Real fix: ephemeral checkout pattern (or werk-read-only-during-build). Cross-domain (build + version-control). No card.</div>
-<div class="gap"><strong>P2.</strong> Three-domain rollback taxonomy untouched. /acp + post-acp pipeline are linked-not-atomic; if pipeline fails post-/acp, the merged commit and absent artifact leave the system incoherent. <code>chorus_acp</code> would need a typed compensation taxonomy: <code>revert-merge</code> / <code>mark-incoherent</code> / <code>rollback-tier</code>. Owner of the spec when it lands: Kade (chorus_acp surface). No card.</div>
-<div class="gap"><strong>P2.</strong> chorus_build + chorus_deploy MCP wrappers (designed-not-shipped). Less urgent now that the CLI pipeline shipped under #2774 — but typed refusal at MCP boundary would surface step failures into the /acp response shape instead of leaving them in concurrent workflow output.</div>
+<p class="mcp-generated-note" style="margin-top:12px;">No open inventory. Uncarded "tracked but unintended" entries were removed 2026-05-11 (per Jeff direction): every doc gap either gets a card or doesn't appear here. Historical Closed-since + Won't-do retained as decision record.</p>
 
 <h3>Won't do</h3>
-<div class="gap"><strong>WON'T DO (#2792, 2026-05-11).</strong> Cross-machine artifact divergence detection. Single-machine pipeline; revisit if Bedroom resumes building.</div>
+<div class="gap"><strong>WON'T DO (#2792 (Won't Do), 2026-05-11).</strong> Cross-machine artifact divergence detection. Single-machine pipeline; revisit if Bedroom resumes building.</div>
 
 <h2>Implementation Plan (refreshed 2026-05-11)</h2>
 
@@ -347,23 +365,8 @@ Today's evidence leans toward committed binaries (Jeff 2026-05-07: "code-and-bin
   <li>Working-tree recovery (#2779).</li>
 </ul>
 
-<h3>Next — sequenced from "Step-Level Pipeline Invariants" section</h3>
-<ol>
-  <li><strong>Spike: end-to-end one step.</strong> Pick canonical-sync (Step 1). Land all four characteristics (card_id propagation, started/synced/failed pair, hook-or-wrapper enforcement, paired with a Loki query proving cross-step correlation). Proves the pattern + reveals real cost before scaffolding all six steps. Recommended before any of the below.</li>
-  <li><strong>card_id propagation across launchd boundary.</strong> Plist env override OR pipeline-side manifest read. Everything downstream depends on this.</li>
-  <li><strong>Symmetric started/completed/failed pairs per step.</strong> Six step pairs minimum: canonical-sync, build, sign, install, activate, verify. Register all in <code>spine-events.json</code>.</li>
-  <li><strong>cdhash propagation through chorus-bin-install.</strong> Fix the <code>cdhash="${CDHASH:-unknown}"</code> fallback; capture from <code>codesign -d</code> on the installed binary at install time.</li>
-  <li><strong>Deployed-equals-running assertion.</strong> Post-kickstart verify-step that reads PID's running cdhash and compares against the just-installed cdhash. Emits <code>verify.verified</code> or <code>verify.divergence</code>.</li>
-  <li><strong>Per-step substrate enforcement.</strong> Workflow-runner-side pre-step wrapper that reads prior step's start-event from chorus.log and refuses if missing. Different substrate from chorus-hooks daemon (launchd/act isn't a Claude session).</li>
-</ol>
-
-<h3>Deferred</h3>
-<ul>
-  <li>chorus_build + chorus_deploy MCP wrappers — less urgent now that the CLI pipeline shipped (#2774). Revisit if typed refusal at MCP boundary becomes the chosen way to surface pipeline outcomes into the /acp response.</li>
-  <li>chorus-api unification with the Rust deploy path — the TS special-case at chorus-deploy:52 should not stay split forever; sequence after step-level invariants stabilize.</li>
-  <li>release.triggered schema registration — cheap fix, owner Silas, file when convenient.</li>
-  <li>Cross-machine divergence (#2792 Won't-do).</li>
-</ul>
+<h3>Next</h3>
+<p style="font-size: 0.85em; color: #666;">No carded next-work for the build-deploy substrate as of 2026-05-11. Step-level pipeline invariants (Jeff's 2026-05-11 direction) are codified in the section above as the target state; specific work picks up when pain shows up.</p>
 
 <h3>Practice</h3>
 <ul>
@@ -379,27 +382,27 @@ Today's evidence leans toward committed binaries (Jeff 2026-05-07: "code-and-bin
   <li>Any implementation. Design only.</li>
 </ul>
 
-<h2>References</h2>
+<h2 data-section="references">References</h2>
 <ul>
   <li>2026-05-07 Jeff ↔ Silas — invariant execution as not-a-nice-to-have; repo-as-boundary; code-and-binaries-together; OSS shipping shape.</li>
   <li>2026-05-11 Jeff ↔ Silas — step-level pipeline invariants: invariant execution + card_id-tagged logs + cross-step correlation + pipeline-health fitness function. Source for the new "Step-Level Pipeline Invariants" section.</li>
   <li>Precedent: <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a> (template structure).</li>
   <li>Precedent: <a href="/designing/docs/nudge-service-design.html"><code>nudge-service-design.html</code></a>.</li>
-  <li>Companion: <code>/tmp/build-deploy-asis-flow.html</code> — as-is flow doc (2026-05-11), step-by-step trace of /acp #2891 through the live pipeline; same Action / Tool / Enforcement / Spine column shape as <code>demo-asis-flow.html</code>.</li>
-  <li>#2774 — building-pipeline minimum (shipped 2026-05-08): chorus-build + chorus-deploy CLIs + act workflow + launchd trigger.</li>
-  <li>#2734 — <code>~/.chorus/bin/</code> deploy location split for TCC cdhash (shipped). Couples with cdhash=unknown gap.</li>
-  <li>#2750 — chorus_acp atomic transaction.</li>
-  <li>#2779 — chorus-werk-sync detached-HEAD recovery (shipped 2026-05-07).</li>
-  <li>#2780 — chorus-api MCP schema reload (Later).</li>
-  <li>#2782 — chorus_acp verify-after sequenced steps (commit slice, shipped 2026-05-07).</li>
-  <li>#2790 — in-process canonical_write_guard (shipped 2026-05-07).</li>
-  <li>#2791 — manifest schema + writer (shipped 2026-05-10).</li>
-  <li>#2792 — cross-machine divergence detection (Won't-do, 2026-05-11).</li>
-  <li>#2823 — chorus-hooks real launchd service (shipped 2026-05-08).</li>
-  <li>#2863 — canonical-sync moved into /build (shipped 2026-05-10).</li>
-  <li>#2870 — building-pipeline reliability (shipped 2026-05-11).</li>
-  <li>#2888 — cdhash-stability scenario (Later).</li>
-  <li>#2898 — this refresh.</li>
+  <li>Companion: <code>/tmp/build-deploy-asis-flow.html</code> — as-is flow doc (2026-05-11), step-by-step trace of /acp #2891 (Done) through the live pipeline; same Action / Tool / Enforcement / Spine column shape as <code>demo-asis-flow.html</code>.</li>
+  <li>#2774 (Done) — building-pipeline minimum (shipped 2026-05-08): chorus-build + chorus-deploy CLIs + act workflow + launchd trigger.</li>
+  <li>#2734 (Done) — <code>~/.chorus/bin/</code> deploy location split for TCC cdhash (shipped). Couples with cdhash=unknown gap.</li>
+  <li>#2750 (Done) — chorus_acp atomic transaction.</li>
+  <li>#2779 (Done) — chorus-werk-sync detached-HEAD recovery (shipped 2026-05-07).</li>
+  <li>#2780 (Later) — chorus-api MCP schema reload (Later).</li>
+  <li>#2782 (Done) — chorus_acp verify-after sequenced steps (commit slice, shipped 2026-05-07).</li>
+  <li>#2790 (Done) — in-process canonical_write_guard (shipped 2026-05-07).</li>
+  <li>#2791 (Done) — manifest schema + writer (shipped 2026-05-10).</li>
+  <li>#2792 (Won't Do) — cross-machine divergence detection (Won't-do, 2026-05-11).</li>
+  <li>#2823 (Done) — chorus-hooks real launchd service (shipped 2026-05-08).</li>
+  <li>#2863 (Done) — canonical-sync moved into /build (shipped 2026-05-10).</li>
+  <li>#2870 (Done) — building-pipeline reliability (shipped 2026-05-11).</li>
+  <li>#2888 (Later) — cdhash-stability scenario (Later).</li>
+  <li>#2898 (Done) — this refresh.</li>
   <li>DEC-022 — ops responsibility, deploy owner = Silas.</li>
   <li>ADR-028 — substrate-class domain contract; the seven completeness requirements this design conforms to.</li>
   <li>DEC-1571 — attention contract; same failure-mode shape as the deployed-equals-running gap.</li>

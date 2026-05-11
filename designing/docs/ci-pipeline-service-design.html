@@ -40,6 +40,32 @@
 <h1>CI/CD Pipeline <span>— Service Design</span></h1>
 <p class="date">Kade, 2026-04-25 / refreshed 2026-04-30 (vocabulary cleanup, five-surface pre-merge layer, retirement gates, affordance-layer refusal — folded subagent review corrections).</p>
 
+<!-- ===== SUMMARY BLOCK — auto-inserted by chorus_design_refresh (#2900) =====
+     Fill in the {{PLACEHOLDER}} tokens, then re-run /design-refresh. -->
+<div class="summary-block">
+  <h2>At a Glance</h2>
+
+  <pre class="mermaid">
+flowchart LR
+  A[Actor or input] --> B[Domain surface]
+  B --> C[Output or effect]
+  B --> D[Spine emit]
+  </pre>
+  <p style="font-size:0.8em;color:#999;font-style:italic;">Replace node labels above with the real actors / surfaces / outputs / spine events for this domain.</p>
+
+  <table class="gap-and-next">
+    <thead><tr><th>Status</th><th>Where</th><th>Next</th></tr></thead>
+    <tbody>
+      <tr><td>{{STATUS_1}}</td><td>{{WHERE_1}}</td><td>{{NEXT_1}}</td></tr>
+      <tr><td>{{STATUS_2}}</td><td>{{WHERE_2}}</td><td>{{NEXT_2}}</td></tr>
+      <tr><td>{{STATUS_3}}</td><td>{{WHERE_3}}</td><td>{{NEXT_3}}</td></tr>
+    </tbody>
+  </table>
+
+  <p class="invariants"><strong>Invariants:</strong> {{INVARIANT_PARAGRAPH}}</p>
+</div>
+
+
 <h2>Promise</h2>
 <div class="promise">
 Every change that reaches <code>main</code> is measured by the same gates regardless of who pushed it. Five hooks fire pre-merge. Five named code-review checks record card-level acceptance. One scheduled GitHub Actions run on <code>main</code> (~daily) is the post-merge witness. One reactive alert wakes the on-call when CI goes red.
@@ -310,15 +336,15 @@ flowchart TB
   <li>Cost / runtime budget for CI minutes — addressed by #2600</li>
 </ul>
 
-<h2>References</h2>
+<h2 data-section="references">References</h2>
 <ul>
   <li>ADR-026 — CI architecture + lock-file policy (<code>roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md</code>), 2026-04-25 addendum (smoke-check stays out)</li>
   <li>DEC-2525 — required-checks governance, 2026-04-29 amendment (lockstep across branch-protection + Repository Rulesets)</li>
-  <li><strong>Cards (Done):</strong> #2580, #2597, #2598, #2600, #2625, #2603, #2627, #2467, #2629, #2632, #2526, #2611</li>
-  <li><strong>Cards (Phase A):</strong> #2529, #2497, #2496, #2491, #2493</li>
-  <li><strong>Cards (Phase B):</strong> #2528, #2527, #2530</li>
-  <li><strong>Cards (Phase C):</strong> #2591, #2200</li>
-  <li><strong>Cards (Phase D):</strong> #2333, #2589, #2599, #2152, #2499, #2500</li>
+  <li><strong>Cards (Done):</strong> #2580 (Done), #2597 (Done), #2598 (Done), #2600 (Done), #2625 (Done), #2603 (Done), #2627 (Done), #2467 (Done), #2629 (Done), #2632 (Done), #2526 (Done), #2611 (Done)</li>
+  <li><strong>Cards (Phase A):</strong> #2529 (Later), #2497 (Done), #2496 (Later), #2491 (Later), #2493 (Later)</li>
+  <li><strong>Cards (Phase B):</strong> #2528 (Later), #2527 (Later), #2530 (Later)</li>
+  <li><strong>Cards (Phase C):</strong> #2591 (Won't Do), #2200 (Next)</li>
+  <li><strong>Cards (Phase D):</strong> #2333 (Done), #2589 (Done), #2599 (Later), #2152 (Next), #2499 (Later), #2500 (Done)</li>
   <li><code>proving/domains/alerts/ci-main-red.yml</code> — reactive alert</li>
   <li>Pipelines-domain page — <code>http://localhost:3000/gathering-docs/domain-detail.html?id=pipelines-domain</code></li>
   <li>Quality service design (<code>designing/docs/quality-service-design.md</code>) — sibling layer</li>

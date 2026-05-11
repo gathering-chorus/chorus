@@ -173,199 +173,13 @@
     "role.nudge.consumed": "role.nudge.consumed"
   },
   "events": {
-    "canonical.sync.repaired": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "chorus-werk-sync",
-      "description": "chorus-werk-sync auto-repaired a recoverable abort case (e.g., detached HEAD) when run with --auto-repair / CHORUS_WERK_SYNC_AUTO_REPAIR=1 (#2846). Distinguishes scheduled-recovery from operator-invoked `repair` (which emits canonical.repaired).",
-      "fields": {
-        "trigger": "What invoked the auto-repair (e.g., auto-repair)"
-      }
-    },
-    "crawler.graph.hydrated": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler hydrator emitted one event per Hydratable class after the batch insert pass; reports counts and failures for that class (#2827).",
-      "fields": {
-        "class": "Hydratable class identifier (e.g., chorus:File)",
-        "count": "Number of records hydrated in this batch",
-        "duration_ms": "Batch duration in milliseconds",
-        "failures": "Count of failed inserts in this batch"
-      }
-    },
-    "crawler.graph.failed": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler hydrator failed to write to Fuseki — batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
-      "fields": {
-        "class": "Hydratable class identifier; '*' when Fuseki itself is unreachable",
-        "reason": "Failure reason (e.g., batch-insert-fail-count-N, stale-update-fail-http-N, fuseki-unreachable)",
-        "duration_ms": "Duration when known; absent on Fuseki-unreachable case"
-      }
-    },
-    "crawler.graph.orphan.detected": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler hydrator detected a graph record whose source file no longer exists on disk; flagged stale in Fuseki (#2827).",
-      "fields": {
-        "class": "Hydratable class identifier (e.g., chorus:File)",
-        "identifier": "Record identifier (filesystem path)",
-        "last_seen_at": "ISO 8601 UTC timestamp when the orphan was detected",
-        "deleted_path": "Filesystem path of the deleted source"
-      }
-    },
-    "hydration.partial.divergent": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler reconciliation found a record present on one side (SQLite or Fuseki) but missing on the other; emitted per divergent record (#2827).",
-      "fields": {
-        "class": "Hydratable class identifier (e.g., chorus:File)",
-        "identifier": "Record identifier (filesystem path)",
-        "missing_side": "Which store is missing the record (fuseki or sqlite)",
-        "recovery_attempted": "Whether single-record retry was attempted (true/false)"
-      }
-    },
-    "library.health.passed": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "library-health-probe.sh",
-      "description": "Bedroom-side probe: all Library services healthy on this run (#2835)",
-      "fields": {
-        "source": "Probe source (e.g., bedroom-probe)"
-      }
-    },
-    "library.health.failed": {
-      "vertebra": "operating",
-      "legacy_name": null,
-      "source": "library-health-probe.sh",
-      "description": "Bedroom-side probe: one or more Library services unreachable/degraded (#2835)",
-      "fields": {
-        "source": "Probe source (e.g., bedroom-probe)",
-        "failures": "Count of services that failed health check"
-      }
-    },
-    "card.item.created": {
-      "vertebra": "capturing",
-      "legacy_name": "card_created",
-      "source": "cards",
-      "description": "New card added to the board",
-      "fields": {
-        "card_id": "Card identifier",
-        "title": "Card title",
-        "status": "Initial bucket/status",
-        "board": "Board name (gathering or chorus)",
-        "product": "Product label"
-      }
-    },
-    "card.quality.warned": {
-      "vertebra": "capturing",
-      "legacy_name": "quality_gate_warn",
-      "source": "cards",
-      "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
-      "fields": {
-        "gate": "Gate type (title_short, description_empty, no_comments)",
-        "stage": "Vertebra stage where warning fired",
-        "card_id": "Card identifier",
-        "title": "Card title (for title_short)",
-        "board": "Board name"
-      }
-    },
-    "card.swat.created": {
-      "vertebra": "capturing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
-      "fields": {
-        "card_id": "Card identifier",
-        "title": "Card title",
-        "board": "Board name"
-      }
-    },
-    "card.item.moved": {
-      "vertebra": "directing",
-      "legacy_name": "card_moved",
-      "source": "cards",
-      "description": "Card moved to a different bucket/status",
-      "fields": {
-        "card_id": "Card identifier",
-        "to": "Destination bucket name",
-        "board": "Board name"
-      }
-    },
-    "card.item.blocked": {
-      "vertebra": "directing",
-      "legacy_name": "card_blocked",
-      "source": "cards",
-      "description": "Card marked as blocked",
-      "fields": {
-        "card_id": "Card identifier",
-        "reason": "Blocking reason",
-        "board": "Board name"
-      }
-    },
-    "card.item.unblocked": {
-      "vertebra": "directing",
-      "legacy_name": "card_unblocked",
-      "source": "cards",
-      "description": "Card unblocked",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name"
-      }
-    },
-    "card.item.updated": {
-      "vertebra": "directing",
-      "legacy_name": "card_updated",
-      "source": "cards",
-      "description": "Card metadata updated (title, description, labels)",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name",
-        "new_title": "Updated title (if changed)",
-        "description_changed": "Whether description was modified",
-        "product": "Product label (if changed)"
-      }
-    },
-    "card.item.commented": {
-      "vertebra": "directing",
-      "legacy_name": "card_commented",
-      "source": "cards",
-      "description": "Comment added to a card",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name"
-      }
-    },
-    "card.item.tagged": {
-      "vertebra": "directing",
-      "legacy_name": "card_tagged",
-      "source": "cards",
-      "description": "Label or tag added to a card",
-      "fields": {
-        "card_id": "Card identifier",
-        "tag": "Tag or label applied",
-        "board": "Board name"
-      }
-    },
-    "card.item.completed": {
-      "vertebra": "directing",
-      "legacy_name": "card_done",
-      "source": "cards",
-      "description": "Card moved to Done",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name"
-      }
-    },
     "ac.ticked": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "AC item checked on a card — `- [ ]` → `- [x]`. Emitted per update that advances the check count. #2193.",
-      "keys": ["card_id"],
+      "description": "AC item checked on a card \u2014 `- [ ]` \u2192 `- [x]`. Emitted per update that advances the check count. #2193.",
+      "keys": [
+        "card_id"
+      ],
       "fields": {
         "card_id": "Card identifier",
         "ticked_count": "Number of items flipped from unchecked to checked in this update",
@@ -374,213 +188,82 @@
         "board": "Board name"
       }
     },
-    "commit.landed": {
+    "app.service.restarted": {
+      "vertebra": "proving",
+      "legacy_name": "app_restart",
+      "source": "chorus-events",
+      "description": "Application restarted via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "app.service.restartfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_restart_fail",
+      "source": "chorus-events",
+      "description": "Application restart failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "app.service.rollbackfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_rollback_fail",
+      "source": "chorus-events",
+      "description": "Application rollback failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "app.service.rolledback": {
+      "vertebra": "proving",
+      "legacy_name": "app_rollback",
+      "source": "chorus-events",
+      "description": "Application rolled back via app-state.sh",
+      "fields": {
+        "message": "Rollback message"
+      }
+    },
+    "app.service.started": {
+      "vertebra": "proving",
+      "legacy_name": "app_start",
+      "source": "chorus-events",
+      "description": "Application started via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "app.service.startfailed": {
+      "vertebra": "proving",
+      "legacy_name": "app_start_fail",
+      "source": "chorus-events",
+      "description": "Application start failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "app.service.stopped": {
+      "vertebra": "proving",
+      "legacy_name": "app_stop",
+      "source": "chorus-events",
+      "description": "Application stopped via app-state.sh",
+      "fields": {
+        "message": "Status message"
+      }
+    },
+    "batch.progress": {
       "vertebra": "building",
-      "source": "git-queue",
-      "description": "Commit landed on main via git-queue.sh. Emitted after successful commit, before push. #2193.",
-      "keys": ["sha"],
-      "fields": {
-        "sha": "Commit SHA (short)",
-        "author_role": "Role that authored (kade/silas/wren)",
-        "card_id": "Card id extracted from commit message, if present",
-        "files_changed": "Number of files in the commit",
-        "message_subject": "First line of commit message"
-      }
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
     },
-    "test.delta": {
-      "vertebra": "proving",
-      "source": "gate-code-tests",
-      "description": "Test run completed with delta vs prior run. #2193.",
-      "keys": ["run_id"],
-      "fields": {
-        "run_id": "Unique run identifier (timestamp-role)",
-        "suite": "Suite name (api/clearing/cards/pulse/workflow/bats)",
-        "passed": "Tests passed",
-        "failed": "Tests failed",
-        "delta_passed": "Change vs prior run (+N / -N / 0)",
-        "delta_failed": "Change vs prior run",
-        "role": "Role that ran"
-      }
-    },
-    "self.biometric.transposition_rate": {
+    "batch.progress.complete": {
       "vertebra": "building",
-      "source": "chorus-events",
-      "description": "Typing correction rate \u2014 backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
-      "fields": {
-        "rate": "Corrections / keystrokes ratio (0.0 to 1.0)",
-        "errors_30s": "Correction count in window",
-        "keystrokes_30s": "Total keystrokes in window"
-      }
-    },
-    "card.pulled": {
-      "vertebra": "building",
-      "source": "chorus-events",
-      "description": "Card pulled to WIP — role started building",
-      "keys": ["card_id"],
-      "fields": {
-        "card_id": "Card identifier"
-      }
-    },
-    "seed.received": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "SMS webhook received — Twilio payload validated, before dedup check",
-      "keys": ["messageSid"],
-      "fields": {
-        "source": "Channel (sms)",
-        "from": "Sender phone number or name",
-        "messageSid": "Twilio MessageSid"
-      }
-    },
-    "seed.captured": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "Seed classified and persisted to domain graph",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed slug",
-        "classification": "story|photo|note",
-        "graph": "Target graph URI",
-        "source": "Channel (sms)",
-        "preview": "First 100 chars of content",
-        "peopleLinked": "Number of person links created"
-      }
-    },
-    "seed.routed": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "Seed routed to destination domain via hashtag or default routing",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed slug",
-        "hashtag": "Routing hashtag",
-        "destination": "Resolved destination (ideas, reading, wren, etc.)",
-        "routedTo": "Full route URI"
-      }
-    },
-    "seed.hashtag.correlated": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "Pending seed correlated with a hashtag from the same sender within the correlation window",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed slug",
-        "hashtag": "Matched hashtag",
-        "destination": "Resolved destination",
-        "correlatedWith": "Sender identity"
-      }
-    },
-    "seed.brief.written": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "Brief file written to a role's inbox from a routed seed",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed slug",
-        "role": "Target role",
-        "file": "Brief file path"
-      }
-    },
-    "seed.dropped": {
-      "vertebra": "capturing",
-      "source": "jeff-bridwell-personal-site",
-      "description": "Seed dropped — no routable content, no hashtag, no correlation",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed slug",
-        "reason": "Why the seed was dropped"
-      }
-    },
-    "seed.recovered": {
-      "vertebra": "capturing",
-      "source": "chorus-events",
-      "description": "Seed recovered — spine event emitted retroactively for a seed that arrived during app downtime",
-      "keys": ["slug"],
-      "fields": {
-        "slug": "Seed file slug",
-        "recovered_at": "Recovery timestamp",
-        "original_ts": "Original arrival timestamp"
-      }
-    },
-    "role.nudge.sent": {
-      "vertebra": "directing",
-      "source": "chorus-events",
-      "description": "Nudge message sent from one role to another",
-      "fields": {
-        "target": "Target role",
-        "chars": "Message length",
-        "content": "Message content (truncated)"
-      }
-    },
-    "role.nudge.delivered": {
-      "vertebra": "directing",
-      "source": "chorus-events",
-      "description": "Nudge message delivered to target role's session",
-      "fields": {
-        "target": "Target role",
-        "mode": "Delivery mode (idle, busy-inject)"
-      }
-    },
-    "card.demo.started": {
-      "vertebra": "proving",
-      "source": "cards",
-      "description": "Demo started for card (DEC-048 Proving gate)",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name"
-      }
-    },
-    "card.accepted": {
-      "vertebra": "proving",
-      "source": "cards",
-      "description": "Card accepted after demo (DEC-048 Proving gate)",
-      "fields": {
-        "card_id": "Card identifier",
-        "board": "Board name"
-      }
-    },
-    "card.rejected": {
-      "vertebra": "proving",
-      "source": "cards",
-      "description": "Card rejected after demo with reason",
-      "fields": {
-        "card_id": "Card identifier",
-        "reason": "Rejection reason",
-        "board": "Board name"
-      }
-    },
-    "card.stale.detected": {
-      "vertebra": "directing",
-      "legacy_name": "stale_card_detected",
-      "source": "cards",
-      "description": "Card detected as stale during board audit (>48h in Now/WIP, >7d in Next)",
-      "fields": {
-        "card_id": "Card identifier",
-        "stage": "Current bucket",
-        "status": "Card status",
-        "age": "Age description",
-        "board": "Board name"
-      }
-    },
-    "board.snapshot.taken": {
-      "vertebra": "directing",
-      "legacy_name": "board_snapshot",
-      "source": "cards",
-      "description": "Board state snapshot taken",
-      "fields": {
-        "board": "Board name",
-        "task_count": "Number of tasks in snapshot"
-      }
-    },
-    "board.audit.started": {
-      "vertebra": "directing",
-      "legacy_name": "board_audit_start",
-      "source": "cards",
-      "description": "Board audit initiated at session start",
-      "fields": {
-        "board": "Board name",
-        "snapshot": "Snapshot file path"
-      }
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
     },
     "board.audit.closed": {
       "vertebra": "directing",
@@ -594,6 +277,16 @@
         "retroactive": "Retroactive card count"
       }
     },
+    "board.audit.started": {
+      "vertebra": "directing",
+      "legacy_name": "board_audit_start",
+      "source": "cards",
+      "description": "Board audit initiated at session start",
+      "fields": {
+        "board": "Board name",
+        "snapshot": "Snapshot file path"
+      }
+    },
     "board.limit.set": {
       "vertebra": "directing",
       "legacy_name": "bucket_limit_set",
@@ -605,112 +298,23 @@
         "board": "Board name"
       }
     },
-    "card.blast_radius.failed": {
+    "board.snapshot.taken": {
+      "vertebra": "directing",
+      "legacy_name": "board_snapshot",
+      "source": "cards",
+      "description": "Board state snapshot taken",
+      "fields": {
+        "board": "Board name",
+        "task_count": "Number of tasks in snapshot"
+      }
+    },
+    "brief.handoff.acknowledged": {
       "vertebra": "designing",
       "legacy_name": null,
-      "source": "cards",
-      "description": "Blast radius generation failed — card has 0 files on a code card",
-      "fields": {
-        "card_id": "Card identifier",
-        "reason": "Failure reason"
-      }
-    },
-    "card.bulk.moved": {
-      "vertebra": "directing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "Multiple cards moved in a single bulk operation",
-      "fields": {
-        "card_ids": "Comma-separated card identifiers",
-        "status": "Target status",
-        "count": "Number of cards moved"
-      }
-    },
-    "card.item.reassigned": {
-      "vertebra": "directing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "Card ownership changed to a different role",
-      "fields": {
-        "card_id": "Card identifier",
-        "from": "Previous owner role",
-        "to": "New owner role"
-      }
-    },
-    "card.quick.created": {
-      "vertebra": "capturing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "Card created with --quick flag, skipping full AC requirement",
-      "fields": {
-        "card_id": "Card identifier",
-        "title": "Card title"
-      }
-    },
-    "card.sequence.bulk_tagged": {
-      "vertebra": "directing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "Multiple cards tagged with a sequence label in bulk",
-      "fields": {
-        "card_ids": "Comma-separated card identifiers",
-        "sequence": "Sequence label applied",
-        "count": "Number of cards tagged"
-      }
-    },
-    "card.unblocked": {
-      "vertebra": "directing",
-      "legacy_name": null,
-      "source": "cards",
-      "description": "Card moved from Blocked back to Next",
-      "fields": {
-        "card_id": "Card identifier",
-        "reason": "Original block reason"
-      }
-    },
-    "workflow.manifest.created": {
-      "vertebra": "designing",
-      "legacy_name": "workflow_created",
-      "source": "cards",
-      "description": "Workflow manifest auto-created when card moves to Now",
-      "fields": {
-        "workflow_id": "Workflow identifier (WF-NNN)",
-        "card_id": "Associated card identifier",
-        "board": "Board name"
-      }
-    },
-    "workflow.manifest.completed": {
-      "vertebra": "directing",
-      "legacy_name": "workflow_complete",
       "source": "chorus-events",
-      "description": "All workflow steps completed",
+      "description": "Brief surfaced at boot by werk-init \u2014 closes the send/receive chain (#616)",
       "fields": {
-        "workflow_id": "Workflow identifier",
-        "card_id": "Associated card identifier",
-        "step_count": "Total steps in workflow",
-        "total_duration_seconds": "Total workflow duration"
-      }
-    },
-    "workflow.step.completed": {
-      "vertebra": "directing",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Individual workflow step completed",
-      "fields": {
-        "workflow_id": "Workflow identifier (WF-NNN)",
-        "step": "Step number",
-        "total_steps": "Total steps in workflow",
-        "notes": "Step completion notes"
-      }
-    },
-    "brief.handoff.written": {
-      "vertebra": "designing",
-      "legacy_name": "brief_written",
-      "source": "chorus-events",
-      "description": "Brief file written to a role's briefs/ directory",
-      "fields": {
-        "recipient": "Target role",
-        "title": "Brief title"
+        "artifact": "Brief filename"
       }
     },
     "brief.handoff.read": {
@@ -723,13 +327,14 @@
         "title": "Brief title"
       }
     },
-    "brief.handoff.acknowledged": {
+    "brief.handoff.written": {
       "vertebra": "designing",
-      "legacy_name": null,
+      "legacy_name": "brief_written",
       "source": "chorus-events",
-      "description": "Brief surfaced at boot by werk-init \u2014 closes the send/receive chain (#616)",
+      "description": "Brief file written to a role's briefs/ directory",
       "fields": {
-        "artifact": "Brief filename"
+        "recipient": "Target role",
+        "title": "Brief title"
       }
     },
     "brief.notify.sent": {
@@ -743,21 +348,11 @@
         "artifact": "Brief filename"
       }
     },
-    "decision.record.created": {
-      "vertebra": "designing",
-      "legacy_name": "decision",
-      "source": "chorus-events",
-      "description": "Product or architectural decision recorded",
-      "fields": {
-        "id": "Decision identifier (DEC-NNN)",
-        "title": "Decision title"
-      }
-    },
     "build.artifact.hashed": {
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Built+signed binary hashed post-codesign — invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
+      "description": "Built+signed binary hashed post-codesign \u2014 invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
       "fields": {
         "commit": "Source commit SHA (short)",
         "crate": "Cargo crate name (e.g., chorus-hooks, chorus-inject)",
@@ -765,85 +360,6 @@
         "cdhash": "Codesign cdhash of signed binary",
         "sha256": "SHA-256 of signed binary file",
         "builder_host": "Hostname of machine that built it"
-      }
-    },
-    "manifest.entry.added": {
-      "vertebra": "building",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign — the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
-      "fields": {
-        "commit": "Source commit SHA (short) — same as build.artifact.hashed",
-        "crate": "Cargo crate name — same as build.artifact.hashed",
-        "identifier": "Installed binary identifier — same as build.artifact.hashed",
-        "cdhash": "Codesign cdhash — same as build.artifact.hashed; the binding identity",
-        "sha256": "SHA-256 of signed binary — same as build.artifact.hashed; informational",
-        "build_time": "ISO 8601 UTC timestamp of the build",
-        "builder_host": "Hostname of machine that built it — same as build.artifact.hashed",
-        "builder_role": "Role attribution — wren/silas/kade/system"
-      }
-    },
-    "deploy.artifact.verified": {
-      "vertebra": "operations",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Installed artifact post-deploy verification — invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
-      "fields": {
-        "artifact_sha256": "Expected sha256 (from build.artifact.hashed)",
-        "target": "Install target name (e.g., chorus-hook-shim)",
-        "installed_cdhash": "Codesign cdhash of binary at deploy location",
-        "deployed_at": "Deploy location path (~/.chorus/bin/<name>)"
-      }
-    },
-    "build.completed": {
-      "vertebra": "building",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Building-pipeline build step finished for one crate (#2774). Emitted by chorus-build CLI after all binaries in the crate are signed and recorded in the manifest. Per-binary detail lives in build.artifact.hashed; this event is the crate-level signal the act workflow sequences on. duration_ms enables Loki histogram for build-cache rot detection.",
-      "fields": {
-        "commit": "Source commit SHA (short) at build time",
-        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
-        "duration_ms": "End-to-end build slice duration in milliseconds",
-        "builder_host": "Hostname of machine that built it"
-      }
-    },
-    "build.failed": {
-      "vertebra": "building",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases — never to absence of build.completed.",
-      "fields": {
-        "commit": "Source commit SHA (short) at build time",
-        "crate": "Cargo crate name",
-        "exit_code": "Numeric exit code from build-signed.sh",
-        "duration_ms": "Time elapsed before failure (ms)",
-        "reason": "Coarse failure class (build-signed-fail today; finer classes added as named)",
-        "builder_host": "Hostname of machine that built it"
-      }
-    },
-    "deploy.completed": {
-      "vertebra": "operations",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on.",
-      "fields": {
-        "commit": "Source commit SHA (short) at deploy time",
-        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
-        "cdhash": "Codesign cdhash of installed binary (last in crate's binary set)",
-        "target": "Primary install path (~/.chorus/bin/<name>)",
-        "duration_ms": "End-to-end deploy slice duration in milliseconds"
-      }
-    },
-    "deploy.failed": {
-      "vertebra": "operations",
-      "legacy_name": null,
-      "source": "chorus-events",
-      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures — never to absence of deploy.completed.",
-      "fields": {
-        "commit": "Source commit SHA (short)",
-        "crate": "Cargo crate name",
-        "duration_ms": "Time elapsed before failure (ms)",
-        "reason": "Failure class — install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
       }
     },
     "build.commit.created": {
@@ -867,49 +383,42 @@
         "board": "Board name (gathering or chorus)"
       }
     },
-    "build.queue.waiting": {
+    "build.completed": {
       "vertebra": "building",
-      "legacy_name": "commit_queue_waiting",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Role waiting to acquire git commit lock",
+      "description": "Building-pipeline build step finished for one crate (#2774). Emitted by chorus-build CLI after all binaries in the crate are signed and recorded in the manifest. Per-binary detail lives in build.artifact.hashed; this event is the crate-level signal the act workflow sequences on. duration_ms enables Loki histogram for build-cache rot detection.",
       "fields": {
-        "files": "Files to be committed"
+        "commit": "Source commit SHA (short) at build time",
+        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
+        "duration_ms": "End-to-end build slice duration in milliseconds",
+        "builder_host": "Hostname of machine that built it"
       }
     },
-    "build.queue.acquired": {
+    "build.failed": {
       "vertebra": "building",
-      "legacy_name": "commit_queue_acquired",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Git commit lock acquired",
-      "fields": {}
-    },
-    "build.queue.released": {
-      "vertebra": "building",
-      "legacy_name": "commit_queue_released",
-      "source": "chorus-events",
-      "description": "Git commit lock released",
+      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases \u2014 never to absence of build.completed.",
       "fields": {
-        "exit_code": "Commit exit code"
+        "commit": "Source commit SHA (short) at build time",
+        "crate": "Cargo crate name",
+        "exit_code": "Numeric exit code from build-signed.sh",
+        "duration_ms": "Time elapsed before failure (ms)",
+        "reason": "Coarse failure class (build-signed-fail today; finer classes added as named)",
+        "builder_host": "Hostname of machine that built it"
       }
     },
-    "build.queue.timedout": {
+    "build.memory.written": {
       "vertebra": "building",
-      "legacy_name": "commit_queue_timeout",
+      "legacy_name": "memory_write",
       "source": "chorus-events",
-      "description": "Git commit lock acquisition timed out (30s)",
+      "description": "State file or memory file updated in a commit",
       "fields": {
-        "timeout": "Timeout duration"
-      }
-    },
-    "build.tsc.completed": {
-      "vertebra": "proving",
-      "legacy_name": "tsc_compile",
-      "source": "chorus-events",
-      "description": "TypeScript compilation run (app repo pre-commit)",
-      "fields": {
-        "duration_seconds": "Compilation time",
-        "error_count": "Number of type errors",
-        "result": "pass or fail"
+        "file": "File basename",
+        "path": "Full file path",
+        "owner": "File owner role",
+        "sha": "Commit SHA"
       }
     },
     "build.precommit.completed": {
@@ -965,6 +474,51 @@
         "result": "pass or fail"
       }
     },
+    "build.push.completed": {
+      "vertebra": "building",
+      "legacy_name": "git_push",
+      "source": "chorus-events",
+      "description": "Git push to remote",
+      "fields": {
+        "branch": "Branch name",
+        "sha": "HEAD commit SHA",
+        "commit_count": "Number of commits pushed"
+      }
+    },
+    "build.queue.acquired": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_acquired",
+      "source": "chorus-events",
+      "description": "Git commit lock acquired",
+      "fields": {}
+    },
+    "build.queue.released": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_released",
+      "source": "chorus-events",
+      "description": "Git commit lock released",
+      "fields": {
+        "exit_code": "Commit exit code"
+      }
+    },
+    "build.queue.timedout": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_timeout",
+      "source": "chorus-events",
+      "description": "Git commit lock acquisition timed out (30s)",
+      "fields": {
+        "timeout": "Timeout duration"
+      }
+    },
+    "build.queue.waiting": {
+      "vertebra": "building",
+      "legacy_name": "commit_queue_waiting",
+      "source": "chorus-events",
+      "description": "Role waiting to acquire git commit lock",
+      "fields": {
+        "files": "Files to be committed"
+      }
+    },
     "build.test.completed": {
       "vertebra": "proving",
       "legacy_name": "test_run",
@@ -978,144 +532,418 @@
         "tier": "Test tier"
       }
     },
-    "build.push.completed": {
+    "build.tsc.completed": {
+      "vertebra": "proving",
+      "legacy_name": "tsc_compile",
+      "source": "chorus-events",
+      "description": "TypeScript compilation run (app repo pre-commit)",
+      "fields": {
+        "duration_seconds": "Compilation time",
+        "error_count": "Number of type errors",
+        "result": "pass or fail"
+      }
+    },
+    "canonical.sync.repaired": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "chorus-werk-sync",
+      "description": "chorus-werk-sync auto-repaired a recoverable abort case (e.g., detached HEAD) when run with --auto-repair / CHORUS_WERK_SYNC_AUTO_REPAIR=1 (#2846). Distinguishes scheduled-recovery from operator-invoked `repair` (which emits canonical.repaired).",
+      "fields": {
+        "trigger": "What invoked the auto-repair (e.g., auto-repair)"
+      }
+    },
+    "card.accepted": {
+      "vertebra": "proving",
+      "source": "cards",
+      "description": "Card accepted after demo (DEC-048 Proving gate)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.blast_radius.failed": {
+      "vertebra": "designing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Blast radius generation failed \u2014 card has 0 files on a code card",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Failure reason"
+      }
+    },
+    "card.blast_radius.generated": {
+      "vertebra": "designing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.blast_radius.zero_code": {
+      "vertebra": "designing"
+    },
+    "card.bulk.moved": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Multiple cards moved in a single bulk operation",
+      "fields": {
+        "card_ids": "Comma-separated card identifiers",
+        "status": "Target status",
+        "count": "Number of cards moved"
+      }
+    },
+    "card.demo.started": {
+      "vertebra": "proving",
+      "source": "cards",
+      "description": "Demo started for card (DEC-048 Proving gate)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.blocked": {
+      "vertebra": "directing",
+      "legacy_name": "card_blocked",
+      "source": "cards",
+      "description": "Card marked as blocked",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Blocking reason",
+        "board": "Board name"
+      }
+    },
+    "card.item.commented": {
+      "vertebra": "directing",
+      "legacy_name": "card_commented",
+      "source": "cards",
+      "description": "Comment added to a card",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.completed": {
+      "vertebra": "directing",
+      "legacy_name": "card_done",
+      "source": "cards",
+      "description": "Card moved to Done",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.created": {
+      "vertebra": "capturing",
+      "legacy_name": "card_created",
+      "source": "cards",
+      "description": "New card added to the board",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title",
+        "status": "Initial bucket/status",
+        "board": "Board name (gathering or chorus)",
+        "product": "Product label"
+      }
+    },
+    "card.item.moved": {
+      "vertebra": "directing",
+      "legacy_name": "card_moved",
+      "source": "cards",
+      "description": "Card moved to a different bucket/status",
+      "fields": {
+        "card_id": "Card identifier",
+        "to": "Destination bucket name",
+        "board": "Board name"
+      }
+    },
+    "card.item.reassigned": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card ownership changed to a different role",
+      "fields": {
+        "card_id": "Card identifier",
+        "from": "Previous owner role",
+        "to": "New owner role"
+      }
+    },
+    "card.item.set": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.item.tagged": {
+      "vertebra": "directing",
+      "legacy_name": "card_tagged",
+      "source": "cards",
+      "description": "Label or tag added to a card",
+      "fields": {
+        "card_id": "Card identifier",
+        "tag": "Tag or label applied",
+        "board": "Board name"
+      }
+    },
+    "card.item.unblocked": {
+      "vertebra": "directing",
+      "legacy_name": "card_unblocked",
+      "source": "cards",
+      "description": "Card unblocked",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name"
+      }
+    },
+    "card.item.updated": {
+      "vertebra": "directing",
+      "legacy_name": "card_updated",
+      "source": "cards",
+      "description": "Card metadata updated (title, description, labels)",
+      "fields": {
+        "card_id": "Card identifier",
+        "board": "Board name",
+        "new_title": "Updated title (if changed)",
+        "description_changed": "Whether description was modified",
+        "product": "Product label (if changed)"
+      }
+    },
+    "card.owner.notified": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.pm.briefed": {
+      "vertebra": "proving",
+      "envelope": [
+        "timestamp",
+        "role",
+        "card_id"
+      ]
+    },
+    "card.pulled": {
       "vertebra": "building",
-      "legacy_name": "git_push",
       "source": "chorus-events",
-      "description": "Git push to remote",
+      "description": "Card pulled to WIP \u2014 role started building",
+      "keys": [
+        "card_id"
+      ],
       "fields": {
-        "branch": "Branch name",
-        "sha": "HEAD commit SHA",
-        "commit_count": "Number of commits pushed"
+        "card_id": "Card identifier"
       }
     },
-    "build.memory.written": {
+    "card.quality.blocked": {
+      "vertebra": "proving"
+    },
+    "card.quality.warned": {
+      "vertebra": "capturing",
+      "legacy_name": "quality_gate_warn",
+      "source": "cards",
+      "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
+      "fields": {
+        "gate": "Gate type (title_short, description_empty, no_comments)",
+        "stage": "Vertebra stage where warning fired",
+        "card_id": "Card identifier",
+        "title": "Card title (for title_short)",
+        "board": "Board name"
+      }
+    },
+    "card.quick.created": {
+      "vertebra": "capturing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card created with --quick flag, skipping full AC requirement",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title"
+      }
+    },
+    "card.rejected": {
+      "vertebra": "proving",
+      "source": "cards",
+      "description": "Card rejected after demo with reason",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Rejection reason",
+        "board": "Board name"
+      }
+    },
+    "card.sequence.bulk_tagged": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Multiple cards tagged with a sequence label in bulk",
+      "fields": {
+        "card_ids": "Comma-separated card identifiers",
+        "sequence": "Sequence label applied",
+        "count": "Number of cards tagged"
+      }
+    },
+    "card.stale.detected": {
+      "vertebra": "directing",
+      "legacy_name": "stale_card_detected",
+      "source": "cards",
+      "description": "Card detected as stale during board audit (>48h in Now/WIP, >7d in Next)",
+      "fields": {
+        "card_id": "Card identifier",
+        "stage": "Current bucket",
+        "status": "Card status",
+        "age": "Age description",
+        "board": "Board name"
+      }
+    },
+    "card.swat.created": {
+      "vertebra": "capturing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
+      "fields": {
+        "card_id": "Card identifier",
+        "title": "Card title",
+        "board": "Board name"
+      }
+    },
+    "card.unblocked": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "cards",
+      "description": "Card moved from Blocked back to Next",
+      "fields": {
+        "card_id": "Card identifier",
+        "reason": "Original block reason"
+      }
+    },
+    "card.wip_overlap.detected": {
+      "vertebra": "directing"
+    },
+    "chat.session.ended": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Chat channel closed",
+      "fields": {
+        "id": "Chat session ID",
+        "lines": "Number of messages exchanged"
+      }
+    },
+    "chat.session.started": {
+      "vertebra": "directing",
+      "source": "chorus-events",
+      "description": "Chat channel opened between two roles",
+      "fields": {
+        "with": "Partner role",
+        "topic": "Chat topic",
+        "id": "Chat session ID"
+      }
+    },
+    "codebase.graph.harvest.completed": {
+      "vertebra": "building"
+    },
+    "codebase.graph.harvest.started": {
+      "vertebra": "building"
+    },
+    "commit.landed": {
       "vertebra": "building",
-      "legacy_name": "memory_write",
-      "source": "chorus-events",
-      "description": "State file or memory file updated in a commit",
+      "source": "git-queue",
+      "description": "Commit landed on main via git-queue.sh. Emitted after successful commit, before push. #2193.",
+      "keys": [
+        "sha"
+      ],
       "fields": {
-        "file": "File basename",
-        "path": "Full file path",
-        "owner": "File owner role",
-        "sha": "Commit SHA"
+        "sha": "Commit SHA (short)",
+        "author_role": "Role that authored (kade/silas/wren)",
+        "card_id": "Card id extracted from commit message, if present",
+        "files_changed": "Number of files in the commit",
+        "message_subject": "First line of commit message"
       }
     },
-    "app.service.started": {
-      "vertebra": "proving",
-      "legacy_name": "app_start",
-      "source": "chorus-events",
-      "description": "Application started via app-state.sh",
+    "crawler.graph.failed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator failed to write to Fuseki \u2014 batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
       "fields": {
-        "message": "Status message"
+        "class": "Hydratable class identifier; '*' when Fuseki itself is unreachable",
+        "reason": "Failure reason (e.g., batch-insert-fail-count-N, stale-update-fail-http-N, fuseki-unreachable)",
+        "duration_ms": "Duration when known; absent on Fuseki-unreachable case"
       }
     },
-    "app.service.startfailed": {
-      "vertebra": "proving",
-      "legacy_name": "app_start_fail",
-      "source": "chorus-events",
-      "description": "Application start failed",
+    "crawler.graph.hydrated": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator emitted one event per Hydratable class after the batch insert pass; reports counts and failures for that class (#2827).",
       "fields": {
-        "message": "Error message"
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "count": "Number of records hydrated in this batch",
+        "duration_ms": "Batch duration in milliseconds",
+        "failures": "Count of failed inserts in this batch"
       }
     },
-    "app.service.stopped": {
-      "vertebra": "proving",
-      "legacy_name": "app_stop",
-      "source": "chorus-events",
-      "description": "Application stopped via app-state.sh",
+    "crawler.graph.orphan.detected": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler hydrator detected a graph record whose source file no longer exists on disk; flagged stale in Fuseki (#2827).",
       "fields": {
-        "message": "Status message"
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "identifier": "Record identifier (filesystem path)",
+        "last_seen_at": "ISO 8601 UTC timestamp when the orphan was detected",
+        "deleted_path": "Filesystem path of the deleted source"
       }
     },
-    "app.service.restarted": {
-      "vertebra": "proving",
-      "legacy_name": "app_restart",
+    "decision.gate.jdi_override": {
+      "vertebra": "directing"
+    },
+    "decision.record.created": {
+      "vertebra": "designing",
+      "legacy_name": "decision",
       "source": "chorus-events",
-      "description": "Application restarted via app-state.sh",
+      "description": "Product or architectural decision recorded",
       "fields": {
-        "message": "Status message"
+        "id": "Decision identifier (DEC-NNN)",
+        "title": "Decision title"
       }
     },
-    "app.service.restartfailed": {
-      "vertebra": "proving",
-      "legacy_name": "app_restart_fail",
+    "deploy.artifact.verified": {
+      "vertebra": "operations",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Application restart failed",
+      "description": "Installed artifact post-deploy verification \u2014 invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
       "fields": {
-        "message": "Error message"
+        "artifact_sha256": "Expected sha256 (from build.artifact.hashed)",
+        "target": "Install target name (e.g., chorus-hook-shim)",
+        "installed_cdhash": "Codesign cdhash of binary at deploy location",
+        "deployed_at": "Deploy location path (~/.chorus/bin/<name>)"
       }
     },
-    "app.service.rolledback": {
-      "vertebra": "proving",
-      "legacy_name": "app_rollback",
+    "deploy.completed": {
+      "vertebra": "operations",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Application rolled back via app-state.sh",
+      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on.",
       "fields": {
-        "message": "Rollback message"
+        "commit": "Source commit SHA (short) at deploy time",
+        "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
+        "cdhash": "Codesign cdhash of installed binary (last in crate's binary set)",
+        "target": "Primary install path (~/.chorus/bin/<name>)",
+        "duration_ms": "End-to-end deploy slice duration in milliseconds"
       }
     },
-    "app.service.rollbackfailed": {
-      "vertebra": "proving",
-      "legacy_name": "app_rollback_fail",
+    "deploy.failed": {
+      "vertebra": "operations",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Application rollback failed",
+      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures \u2014 never to absence of deploy.completed.",
       "fields": {
-        "message": "Error message"
-      }
-    },
-    "deploy.pipeline.started": {
-      "vertebra": "proving",
-      "legacy_name": "deploy_start",
-      "source": "chorus-events",
-      "description": "Deploy/restart/rollback initiated",
-      "fields": {
-        "action": "Action type (restart, deploy, rollback)",
-        "sha": "Commit SHA (optional)",
-        "trigger": "What triggered the deploy"
-      }
-    },
-    "deploy.phase.completed": {
-      "vertebra": "proving",
-      "legacy_name": "deploy_phase",
-      "source": "chorus-events",
-      "description": "Deploy phase completed (build, health_gate, smoke)",
-      "fields": {
-        "phase": "Phase name",
-        "duration_seconds": "Phase time",
-        "sha": "Commit SHA",
-        "result": "Phase result"
-      }
-    },
-    "deploy.pipeline.completed": {
-      "vertebra": "proving",
-      "legacy_name": "deploy_complete",
-      "source": "chorus-events",
-      "description": "Deploy/restart/rollback finished",
-      "fields": {
-        "action": "Action type",
-        "duration_seconds": "Total deploy time",
-        "result": "success or fail",
-        "sha": "Commit SHA (optional)"
-      }
-    },
-    "deploy.pipeline.succeeded": {
-      "vertebra": "proving",
-      "legacy_name": "deploy_success",
-      "source": "chorus-events",
-      "description": "Deploy succeeded (legacy event from app-state.sh)",
-      "fields": {
-        "message": "Success message",
-        "sha": "Commit SHA"
-      }
-    },
-    "deploy.pipeline.failed": {
-      "vertebra": "proving",
-      "legacy_name": "deploy_fail",
-      "source": "chorus-events",
-      "description": "Deploy or rollback failed",
-      "fields": {
-        "message": "Error message"
+        "commit": "Source commit SHA (short)",
+        "crate": "Cargo crate name",
+        "duration_ms": "Time elapsed before failure (ms)",
+        "reason": "Failure class \u2014 install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
       }
     },
     "deploy.freeze.activated": {
@@ -1149,6 +977,60 @@
         "status": "ok or fail"
       }
     },
+    "deploy.phase.completed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_phase",
+      "source": "chorus-events",
+      "description": "Deploy phase completed (build, health_gate, smoke)",
+      "fields": {
+        "phase": "Phase name",
+        "duration_seconds": "Phase time",
+        "sha": "Commit SHA",
+        "result": "Phase result"
+      }
+    },
+    "deploy.pipeline.completed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_complete",
+      "source": "chorus-events",
+      "description": "Deploy/restart/rollback finished",
+      "fields": {
+        "action": "Action type",
+        "duration_seconds": "Total deploy time",
+        "result": "success or fail",
+        "sha": "Commit SHA (optional)"
+      }
+    },
+    "deploy.pipeline.failed": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_fail",
+      "source": "chorus-events",
+      "description": "Deploy or rollback failed",
+      "fields": {
+        "message": "Error message"
+      }
+    },
+    "deploy.pipeline.started": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_start",
+      "source": "chorus-events",
+      "description": "Deploy/restart/rollback initiated",
+      "fields": {
+        "action": "Action type (restart, deploy, rollback)",
+        "sha": "Commit SHA (optional)",
+        "trigger": "What triggered the deploy"
+      }
+    },
+    "deploy.pipeline.succeeded": {
+      "vertebra": "proving",
+      "legacy_name": "deploy_success",
+      "source": "chorus-events",
+      "description": "Deploy succeeded (legacy event from app-state.sh)",
+      "fields": {
+        "message": "Success message",
+        "sha": "Commit SHA"
+      }
+    },
     "deploy.verification.completed": {
       "vertebra": "proving",
       "legacy_name": "verification_complete",
@@ -1160,189 +1042,58 @@
         "method": "manual"
       }
     },
-    "session.role.started": {
-      "vertebra": "directing",
-      "legacy_name": "session_start",
+    "design.refresh.failed": {
+      "vertebra": "designing",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Role session started",
+      "description": "chorus_design_refresh MCP refused with typed reason (#2900). Refusal taxonomy: template-violation, design-not-found, manifest-missing, summary-missing, regenerate-fail.",
       "fields": {
-        "domain": "Work domain (optional)",
-        "title": "Session title (optional)"
+        "design_name": "Filename stem of the design",
+        "reason": "Refusal taxonomy slug",
+        "detail": "Specific section / line / card_id that triggered the refusal"
       }
     },
-    "session.role.ended": {
-      "vertebra": "directing",
-      "legacy_name": "session_end",
+    "design.refresh.started": {
+      "vertebra": "designing",
+      "legacy_name": null,
       "source": "chorus-events",
-      "description": "Role session ended",
+      "description": "Service-design refresh begun (#2900). Emitted by chorus_design_refresh MCP on entry. Paired with design.refreshed on success or design.refresh.failed on refusal.",
       "fields": {
-        "cost": "Session cost estimate (optional)"
+        "design_name": "Filename stem of the design (e.g., build-and-deploy-service-design)",
+        "cards_referenced_count": "Number of card refs found in the design at refresh entry"
       }
     },
-    "session.turn.completed": {
+    "design.refreshed": {
+      "vertebra": "designing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Service-design cite-density layers regenerated from card statuses (#2900). Emitted by chorus_design_refresh MCP on success. Human-authored sections (summary block, Overview, As-Is, To-Be) are untouched; MCP-generated sections (Completeness Contract, Path-to-close, Gaps, Implementation Plan, References) are rewritten from current board state.",
+      "fields": {
+        "design_name": "Filename stem of the design",
+        "sections_regenerated": "Comma-separated list of data-section IDs that were rewritten",
+        "cards_referenced": "Comma-separated list of card IDs whose status was pulled",
+        "diff_lines": "Net line delta against the prior version of the file"
+      }
+    },
+    "design.scaffold.inserted": {
+      "vertebra": "designing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "chorus_design_refresh auto-conformed a service-design doc that lacked the canonical template structure (#2900). Inserted summary-block scaffold and/or data-section attributes on standard H2 headings so the same refresh command works on any next doc with one command. Emits before design.refreshed in the same run.",
+      "fields": {
+        "design_name": "Filename stem of the design",
+        "scaffolded": "Comma-separated list of what was scaffolded \u2014 e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
+      }
+    },
+    "guard.classify.decided": {
       "vertebra": "building",
-      "legacy_name": "session_turn",
+      "legacy_name": "data_classification",
       "source": "chorus-events",
-      "description": "Session turn \u2014 user/assistant exchange",
+      "description": "Sensitive paths hook fired \u2014 classified file read attempt",
       "fields": {
-        "duration_seconds": "Turn duration",
-        "message": "Turn summary"
-      }
-    },
-    "session.tool.used": {
-      "vertebra": "building",
-      "legacy_name": "session_tool",
-      "source": "chorus-events",
-      "description": "Tool use within a session",
-      "fields": {
-        "action": "Tool name",
-        "message": "Tool use context"
-      }
-    },
-    "session.context.compacted": {
-      "vertebra": "directing",
-      "legacy_name": "session_compact",
-      "source": "chorus-events",
-      "description": "Context window compaction event",
-      "fields": {}
-    },
-    "session.docscan.completed": {
-      "vertebra": "directing",
-      "legacy_name": "doc_scan",
-      "source": "chorus-events",
-      "description": "Domain doc scan at session close \u2014 role validated their vertical docs for staleness (DEC-058, #312)",
-      "fields": {
-        "checked": "Number of files scanned",
-        "updated": "Number of files updated"
-      }
-    },
-    "ops.agent.completed": {
-      "vertebra": "directing",
-      "legacy_name": "ops_agent_run",
-      "source": "chorus-events",
-      "description": "Ops agent autonomous run completed",
-      "fields": {
-        "status": "Run status",
-        "findings": "Number of findings",
-        "cards": "Cards created/updated",
-        "model": "AI model used",
-        "summary": "Run summary"
-      }
-    },
-    "ops.defect.detected": {
-      "vertebra": "proving",
-      "legacy_name": "defect_detected",
-      "source": "chorus-events",
-      "description": "Defect poller found a new defect and carded it",
-      "fields": {
-        "source": "Detection source",
-        "tier": "Defect tier",
-        "hash": "Defect hash for dedup",
-        "card_id": "Created card identifier",
-        "pattern": "Defect pattern"
-      }
-    },
-    "ops.alert.fired": {
-      "vertebra": "proving",
-      "legacy_name": "alert_firing",
-      "source": "chorus-events",
-      "description": "Prometheus alert started firing",
-      "fields": {
-        "alertname": "Alert name",
-        "severity": "Alert severity"
-      }
-    },
-    "ops.alert.resolved": {
-      "vertebra": "proving",
-      "legacy_name": "alert_resolved",
-      "source": "chorus-events",
-      "description": "Prometheus alert resolved",
-      "fields": {
-        "alertname": "Alert name"
-      }
-    },
-    "ops.disk.checked": {
-      "vertebra": "proving",
-      "legacy_name": "disk_check",
-      "source": "chorus-events",
-      "description": "Disk usage check \u2014 emitted on session start, full audit, and periodic health",
-      "fields": {
-        "disk_pct": "Disk usage percentage",
-        "status": "ok, warning, or critical",
-        "volume": "Volume path checked"
-      }
-    },
-    "ops.container.changed": {
-      "vertebra": "building",
-      "legacy_name": "container_state_change",
-      "source": "chorus-events",
-      "description": "Container health or running state transition",
-      "fields": {
-        "container": "Container name",
-        "from_state": "Previous state (running, stopped, healthy, unhealthy)",
-        "to_state": "New state",
-        "reason": "Transition reason (optional)"
-      }
-    },
-    "ops.system.started": {
-      "vertebra": "directing",
-      "legacy_name": "system_start",
-      "source": "chorus-events",
-      "description": "Full system started via system-state.sh",
-      "fields": {}
-    },
-    "ops.system.stopped": {
-      "vertebra": "directing",
-      "legacy_name": "system_stop",
-      "source": "chorus-events",
-      "description": "Full system stopped via system-state.sh",
-      "fields": {}
-    },
-    "harvest.pipeline.started": {
-      "vertebra": "building",
-      "legacy_name": "harvest_start",
-      "source": "chorus-events",
-      "description": "Collection harvest initiated",
-      "fields": {
-        "collection": "Collection name (music, photos, notes, books)",
-        "source": "Harvest source path or endpoint"
-      }
-    },
-    "harvest.pipeline.completed": {
-      "vertebra": "building",
-      "legacy_name": "harvest_complete",
-      "source": "chorus-events",
-      "description": "Collection harvest finished",
-      "fields": {
-        "collection": "Collection name",
-        "items_processed": "Number of items harvested",
-        "duration_seconds": "Harvest duration",
-        "result": "success or fail",
-        "error": "Error message (on failure)"
-      }
-    },
-    "harvest.notify.sent": {
-      "vertebra": "building",
-      "legacy_name": "harvest_notify",
-      "source": "chorus-events",
-      "description": "Push notification sent for harvest completion or failure",
-      "fields": {
-        "domain": "Harvest domain name",
-        "result": "completed or failed",
-        "items": "Number of items harvested"
-      }
-    },
-    "ops.cost.reported": {
-      "vertebra": "directing",
-      "legacy_name": "cost_report",
-      "source": "chorus-events",
-      "description": "Daily cost and usage report emitted",
-      "fields": {
-        "sessions": "Number of sessions today",
-        "messages": "Number of messages today",
-        "tokens": "Output tokens today",
-        "sms_count": "SMS messages sent (optional)",
-        "sms_cost": "SMS cost in USD (optional)"
+        "decision": "deny or ask",
+        "tier": "Data classification tier (private or internal)",
+        "path": "File path being read"
       }
     },
     "guard.rule.decided": {
@@ -1368,15 +1119,136 @@
         "path": "File path being written"
       }
     },
-    "guard.classify.decided": {
+    "guard.sparql.warned": {
+      "vertebra": "building"
+    },
+    "harvest.codebase.load.failed": {
+      "vertebra": "building"
+    },
+    "harvest.codebase.load.started": {
+      "vertebra": "building"
+    },
+    "harvest.notify.sent": {
       "vertebra": "building",
-      "legacy_name": "data_classification",
+      "legacy_name": "harvest_notify",
       "source": "chorus-events",
-      "description": "Sensitive paths hook fired \u2014 classified file read attempt",
+      "description": "Push notification sent for harvest completion or failure",
       "fields": {
-        "decision": "deny or ask",
-        "tier": "Data classification tier (private or internal)",
-        "path": "File path being read"
+        "domain": "Harvest domain name",
+        "result": "completed or failed",
+        "items": "Number of items harvested"
+      }
+    },
+    "harvest.pipeline.completed": {
+      "vertebra": "building",
+      "legacy_name": "harvest_complete",
+      "source": "chorus-events",
+      "description": "Collection harvest finished",
+      "fields": {
+        "collection": "Collection name",
+        "items_processed": "Number of items harvested",
+        "duration_seconds": "Harvest duration",
+        "result": "success or fail",
+        "error": "Error message (on failure)"
+      }
+    },
+    "harvest.pipeline.started": {
+      "vertebra": "building",
+      "legacy_name": "harvest_start",
+      "source": "chorus-events",
+      "description": "Collection harvest initiated",
+      "fields": {
+        "collection": "Collection name (music, photos, notes, books)",
+        "source": "Harvest source path or endpoint"
+      }
+    },
+    "hydration.partial.divergent": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "crawler-hydrate-graph.sh",
+      "description": "Crawler reconciliation found a record present on one side (SQLite or Fuseki) but missing on the other; emitted per divergent record (#2827).",
+      "fields": {
+        "class": "Hydratable class identifier (e.g., chorus:File)",
+        "identifier": "Record identifier (filesystem path)",
+        "missing_side": "Which store is missing the record (fuseki or sqlite)",
+        "recovery_attempted": "Whether single-record retry was attempted (true/false)"
+      }
+    },
+    "interaction.jdi.received": {
+      "vertebra": "directing"
+    },
+    "library.health.failed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "library-health-probe.sh",
+      "description": "Bedroom-side probe: one or more Library services unreachable/degraded (#2835)",
+      "fields": {
+        "source": "Probe source (e.g., bedroom-probe)",
+        "failures": "Count of services that failed health check"
+      }
+    },
+    "library.health.passed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "library-health-probe.sh",
+      "description": "Bedroom-side probe: all Library services healthy on this run (#2835)",
+      "fields": {
+        "source": "Probe source (e.g., bedroom-probe)"
+      }
+    },
+    "manifest.entry.added": {
+      "vertebra": "building",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign \u2014 the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
+      "fields": {
+        "commit": "Source commit SHA (short) \u2014 same as build.artifact.hashed",
+        "crate": "Cargo crate name \u2014 same as build.artifact.hashed",
+        "identifier": "Installed binary identifier \u2014 same as build.artifact.hashed",
+        "cdhash": "Codesign cdhash \u2014 same as build.artifact.hashed; the binding identity",
+        "sha256": "SHA-256 of signed binary \u2014 same as build.artifact.hashed; informational",
+        "build_time": "ISO 8601 UTC timestamp of the build",
+        "builder_host": "Hostname of machine that built it \u2014 same as build.artifact.hashed",
+        "builder_role": "Role attribution \u2014 wren/silas/kade/system"
+      }
+    },
+    "observer.digest": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "ops.agent.completed": {
+      "vertebra": "directing",
+      "legacy_name": "ops_agent_run",
+      "source": "chorus-events",
+      "description": "Ops agent autonomous run completed",
+      "fields": {
+        "status": "Run status",
+        "findings": "Number of findings",
+        "cards": "Cards created/updated",
+        "model": "AI model used",
+        "summary": "Run summary"
+      }
+    },
+    "ops.alert.fired": {
+      "vertebra": "proving",
+      "legacy_name": "alert_firing",
+      "source": "chorus-events",
+      "description": "Prometheus alert started firing",
+      "fields": {
+        "alertname": "Alert name",
+        "severity": "Alert severity"
+      }
+    },
+    "ops.alert.resolved": {
+      "vertebra": "proving",
+      "legacy_name": "alert_resolved",
+      "source": "chorus-events",
+      "description": "Prometheus alert resolved",
+      "fields": {
+        "alertname": "Alert name"
       }
     },
     "ops.audit.checked": {
@@ -1391,12 +1263,95 @@
         "mode": "Audit mode (start, close, full)"
       }
     },
-    "protocol.boot.started": {
-      "vertebra": "directing",
-      "legacy_name": null,
+    "ops.container.changed": {
+      "vertebra": "building",
+      "legacy_name": "container_state_change",
       "source": "chorus-events",
-      "description": "Protocol boot sequence started \u2014 envelope open for grouping boot steps",
+      "description": "Container health or running state transition",
+      "fields": {
+        "container": "Container name",
+        "from_state": "Previous state (running, stopped, healthy, unhealthy)",
+        "to_state": "New state",
+        "reason": "Transition reason (optional)"
+      }
+    },
+    "ops.cost.reported": {
+      "vertebra": "directing",
+      "legacy_name": "cost_report",
+      "source": "chorus-events",
+      "description": "Daily cost and usage report emitted",
+      "fields": {
+        "sessions": "Number of sessions today",
+        "messages": "Number of messages today",
+        "tokens": "Output tokens today",
+        "sms_count": "SMS messages sent (optional)",
+        "sms_cost": "SMS cost in USD (optional)"
+      }
+    },
+    "ops.defect.detected": {
+      "vertebra": "proving",
+      "legacy_name": "defect_detected",
+      "source": "chorus-events",
+      "description": "Defect poller found a new defect and carded it",
+      "fields": {
+        "source": "Detection source",
+        "tier": "Defect tier",
+        "hash": "Defect hash for dedup",
+        "card_id": "Created card identifier",
+        "pattern": "Defect pattern"
+      }
+    },
+    "ops.disk.checked": {
+      "vertebra": "proving",
+      "legacy_name": "disk_check",
+      "source": "chorus-events",
+      "description": "Disk usage check \u2014 emitted on session start, full audit, and periodic health",
+      "fields": {
+        "disk_pct": "Disk usage percentage",
+        "status": "ok, warning, or critical",
+        "volume": "Volume path checked"
+      }
+    },
+    "ops.system.started": {
+      "vertebra": "directing",
+      "legacy_name": "system_start",
+      "source": "chorus-events",
+      "description": "Full system started via system-state.sh",
       "fields": {}
+    },
+    "ops.system.stopped": {
+      "vertebra": "directing",
+      "legacy_name": "system_stop",
+      "source": "chorus-events",
+      "description": "Full system stopped via system-state.sh",
+      "fields": {}
+    },
+    "pair.roles.swapped": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Driver and navigator swapped roles during a pair session",
+      "fields": {
+        "card": "Card being worked on"
+      }
+    },
+    "pair.session.ended": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Pair programming session ended",
+      "fields": {
+        "card": "Card worked on",
+        "partner": "Partner role",
+        "duration": "Session duration in minutes"
+      }
+    },
+    "pair.session.started": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Pair programming session started \u2014 strong-style pairing with navigator and driver",
+      "fields": {
+        "card": "Card being worked on",
+        "partner": "Partner role"
+      }
     },
     "protocol.boot.completed": {
       "vertebra": "directing",
@@ -1411,11 +1366,11 @@
         "status": "Overall boot status (green, yellow, red)"
       }
     },
-    "protocol.close.started": {
+    "protocol.boot.started": {
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol close-out sequence started \u2014 envelope open for grouping close steps",
+      "description": "Protocol boot sequence started \u2014 envelope open for grouping boot steps",
       "fields": {}
     },
     "protocol.close.completed": {
@@ -1430,6 +1385,13 @@
         "fail": "Steps that failed"
       }
     },
+    "protocol.close.started": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Protocol close-out sequence started \u2014 envelope open for grouping close steps",
+      "fields": {}
+    },
     "protocol.step.completed": {
       "vertebra": "directing",
       "legacy_name": null,
@@ -1442,51 +1404,37 @@
         "detail": "Optional detail (e.g., count, specific issue)"
       }
     },
-    "chat.session.started": {
+    "role.nudge.consumed": {
+      "vertebra": "directing",
+      "envelope": [
+        "timestamp",
+        "role"
+      ]
+    },
+    "role.nudge.delivered": {
       "vertebra": "directing",
       "source": "chorus-events",
-      "description": "Chat channel opened between two roles",
+      "description": "Nudge message delivered to target role's session",
       "fields": {
-        "with": "Partner role",
-        "topic": "Chat topic",
-        "id": "Chat session ID"
+        "target": "Target role",
+        "mode": "Delivery mode (idle, busy-inject)"
       }
     },
-    "chat.session.ended": {
+    "role.nudge.sent": {
       "vertebra": "directing",
       "source": "chorus-events",
-      "description": "Chat channel closed",
+      "description": "Nudge message sent from one role to another",
       "fields": {
-        "id": "Chat session ID",
-        "lines": "Number of messages exchanged"
+        "target": "Target role",
+        "chars": "Message length",
+        "content": "Message content (truncated)"
       }
     },
-    "pair.session.started": {
-      "vertebra": "building",
-      "source": "chorus-events",
-      "description": "Pair programming session started \u2014 strong-style pairing with navigator and driver",
-      "fields": {
-        "card": "Card being worked on",
-        "partner": "Partner role"
-      }
+    "search.hierarchy.code_lookup": {
+      "vertebra": "building"
     },
-    "pair.session.ended": {
-      "vertebra": "building",
-      "source": "chorus-events",
-      "description": "Pair programming session ended",
-      "fields": {
-        "card": "Card worked on",
-        "partner": "Partner role",
-        "duration": "Session duration in minutes"
-      }
-    },
-    "pair.roles.swapped": {
-      "vertebra": "building",
-      "source": "chorus-events",
-      "description": "Driver and navigator swapped roles during a pair session",
-      "fields": {
-        "card": "Card being worked on"
-      }
+    "search.hierarchy.enrichment": {
+      "vertebra": "building"
     },
     "search.query.executed": {
       "vertebra": "building",
@@ -1503,101 +1451,218 @@
         "role_filter": "Role filter (chorus-api only, optional)"
       }
     },
-    "observer.digest": {
+    "seed.brief.written": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Brief file written to a role's inbox from a routed seed",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed slug",
+        "role": "Target role",
+        "file": "Brief file path"
+      }
+    },
+    "seed.captured": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed classified and persisted to domain graph",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed slug",
+        "classification": "story|photo|note",
+        "graph": "Target graph URI",
+        "source": "Channel (sms)",
+        "preview": "First 100 chars of content",
+        "peopleLinked": "Number of person links created"
+      }
+    },
+    "seed.dropped": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed dropped \u2014 no routable content, no hashtag, no correlation",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed slug",
+        "reason": "Why the seed was dropped"
+      }
+    },
+    "seed.hashtag.correlated": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Pending seed correlated with a hashtag from the same sender within the correlation window",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed slug",
+        "hashtag": "Matched hashtag",
+        "destination": "Resolved destination",
+        "correlatedWith": "Sender identity"
+      }
+    },
+    "seed.received": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "SMS webhook received \u2014 Twilio payload validated, before dedup check",
+      "keys": [
+        "messageSid"
+      ],
+      "fields": {
+        "source": "Channel (sms)",
+        "from": "Sender phone number or name",
+        "messageSid": "Twilio MessageSid"
+      }
+    },
+    "seed.recovered": {
+      "vertebra": "capturing",
+      "source": "chorus-events",
+      "description": "Seed recovered \u2014 spine event emitted retroactively for a seed that arrived during app downtime",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed file slug",
+        "recovered_at": "Recovery timestamp",
+        "original_ts": "Original arrival timestamp"
+      }
+    },
+    "seed.routed": {
+      "vertebra": "capturing",
+      "source": "jeff-bridwell-personal-site",
+      "description": "Seed routed to destination domain via hashtag or default routing",
+      "keys": [
+        "slug"
+      ],
+      "fields": {
+        "slug": "Seed slug",
+        "hashtag": "Routing hashtag",
+        "destination": "Resolved destination (ideas, reading, wren, etc.)",
+        "routedTo": "Full route URI"
+      }
+    },
+    "self.biometric.transposition_rate": {
+      "vertebra": "building",
+      "source": "chorus-events",
+      "description": "Typing correction rate \u2014 backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
+      "fields": {
+        "rate": "Corrections / keystrokes ratio (0.0 to 1.0)",
+        "errors_30s": "Correction count in window",
+        "keystrokes_30s": "Total keystrokes in window"
+      }
+    },
+    "session.context.compacted": {
       "vertebra": "directing",
-      "envelope": [
-        "timestamp",
-        "role"
-      ]
+      "legacy_name": "session_compact",
+      "source": "chorus-events",
+      "description": "Context window compaction event",
+      "fields": {}
     },
-    "card.blast_radius.generated": {
-      "vertebra": "designing",
-      "envelope": [
-        "timestamp",
-        "role",
-        "card_id"
-      ]
-    },
-    "card.item.set": {
+    "session.docscan.completed": {
       "vertebra": "directing",
-      "envelope": [
-        "timestamp",
-        "role",
-        "card_id"
-      ]
+      "legacy_name": "doc_scan",
+      "source": "chorus-events",
+      "description": "Domain doc scan at session close \u2014 role validated their vertical docs for staleness (DEC-058, #312)",
+      "fields": {
+        "checked": "Number of files scanned",
+        "updated": "Number of files updated"
+      }
     },
-    "card.owner.notified": {
+    "session.role.ended": {
       "vertebra": "directing",
-      "envelope": [
-        "timestamp",
-        "role",
-        "card_id"
-      ]
+      "legacy_name": "session_end",
+      "source": "chorus-events",
+      "description": "Role session ended",
+      "fields": {
+        "cost": "Session cost estimate (optional)"
+      }
     },
-    "card.pm.briefed": {
+    "session.role.started": {
+      "vertebra": "directing",
+      "legacy_name": "session_start",
+      "source": "chorus-events",
+      "description": "Role session started",
+      "fields": {
+        "domain": "Work domain (optional)",
+        "title": "Session title (optional)"
+      }
+    },
+    "session.tool.used": {
+      "vertebra": "building",
+      "legacy_name": "session_tool",
+      "source": "chorus-events",
+      "description": "Tool use within a session",
+      "fields": {
+        "action": "Tool name",
+        "message": "Tool use context"
+      }
+    },
+    "session.turn.completed": {
+      "vertebra": "building",
+      "legacy_name": "session_turn",
+      "source": "chorus-events",
+      "description": "Session turn \u2014 user/assistant exchange",
+      "fields": {
+        "duration_seconds": "Turn duration",
+        "message": "Turn summary"
+      }
+    },
+    "test.delta": {
       "vertebra": "proving",
-      "envelope": [
-        "timestamp",
-        "role",
-        "card_id"
-      ]
+      "source": "gate-code-tests",
+      "description": "Test run completed with delta vs prior run. #2193.",
+      "keys": [
+        "run_id"
+      ],
+      "fields": {
+        "run_id": "Unique run identifier (timestamp-role)",
+        "suite": "Suite name (api/clearing/cards/pulse/workflow/bats)",
+        "passed": "Tests passed",
+        "failed": "Tests failed",
+        "delta_passed": "Change vs prior run (+N / -N / 0)",
+        "delta_failed": "Change vs prior run",
+        "role": "Role that ran"
+      }
     },
-    "batch.progress": {
-      "vertebra": "building",
-      "envelope": [
-        "timestamp",
-        "role"
-      ]
-    },
-    "batch.progress.complete": {
-      "vertebra": "building",
-      "envelope": [
-        "timestamp",
-        "role"
-      ]
-    },
-    "role.nudge.consumed": {
+    "workflow.manifest.completed": {
       "vertebra": "directing",
-      "envelope": [
-        "timestamp",
-        "role"
-      ]
+      "legacy_name": "workflow_complete",
+      "source": "chorus-events",
+      "description": "All workflow steps completed",
+      "fields": {
+        "workflow_id": "Workflow identifier",
+        "card_id": "Associated card identifier",
+        "step_count": "Total steps in workflow",
+        "total_duration_seconds": "Total workflow duration"
+      }
     },
-    "codebase.graph.harvest.started": {
-      "vertebra": "building"
+    "workflow.manifest.created": {
+      "vertebra": "designing",
+      "legacy_name": "workflow_created",
+      "source": "cards",
+      "description": "Workflow manifest auto-created when card moves to Now",
+      "fields": {
+        "workflow_id": "Workflow identifier (WF-NNN)",
+        "card_id": "Associated card identifier",
+        "board": "Board name"
+      }
     },
-    "codebase.graph.harvest.completed": {
-      "vertebra": "building"
-    },
-    "harvest.codebase.load.started": {
-      "vertebra": "building"
-    },
-    "harvest.codebase.load.failed": {
-      "vertebra": "building"
-    },
-    "search.hierarchy.code_lookup": {
-      "vertebra": "building"
-    },
-    "search.hierarchy.enrichment": {
-      "vertebra": "building"
-    },
-    "guard.sparql.warned": {
-      "vertebra": "building"
-    },
-    "card.blast_radius.zero_code": {
-      "vertebra": "designing"
-    },
-    "card.wip_overlap.detected": {
-      "vertebra": "directing"
-    },
-    "card.quality.blocked": {
-      "vertebra": "proving"
-    },
-    "decision.gate.jdi_override": {
-      "vertebra": "directing"
-    },
-    "interaction.jdi.received": {
-      "vertebra": "directing"
+    "workflow.step.completed": {
+      "vertebra": "directing",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "Individual workflow step completed",
+      "fields": {
+        "workflow_id": "Workflow identifier (WF-NNN)",
+        "step": "Step number",
+        "total_steps": "Total steps in workflow",
+        "notes": "Step completion notes"
+      }
     }
   }
 }
