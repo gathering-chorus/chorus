@@ -34,9 +34,13 @@ function spies() {
   };
 }
 
-// #2905: "## Why this matters" required with substantive content (≥30 words) — fixture meets bar.
+// #2905: six required sections in description, each with substance.
 const goodWhy = '## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.';
-const goodDesc = `## Experience\nuser sees X after this lands.\n${goodWhy}\n## AC\n- [ ] thing`;
+const goodHelpsChorus = '## Why it helps Chorus\nThe spine becomes signal-rich for all three roles plus Jeff. Direct improvement to chorus_logs_for_card joins and recent-errors queries, the surface the whole team reads when something breaks during a card.';
+const goodNotGoldPlating = "## Why it's not gold plating or a nit\nThe noise is currently masking real failure modes; I missed two yesterday because tunnel-probe events drowned the signal. Cosmetic would be reformatting; this is recovering load-bearing observability for the team.";
+const goodDeps = '## Dependencies\nNone external. One file in chorus-hooks observer.rs; ships with the same build pipeline as the rest of the hook crate. No coordination required with other roles.';
+const goodScope = '## Scope of impact\nEvery observer.error emit and every chorus_logs_for_card query touch this. All three agent roles plus Jeff read the resulting spine surface. Tested with a real cf-connecting-ip fixture; no API shape change.';
+const goodDesc = `## Experience\nuser sees X after this lands.\n${goodWhy}\n${goodHelpsChorus}\n${goodNotGoldPlating}\n${goodDeps}\n${goodScope}\n## AC\n- [ ] thing`;
 const fullOpts = {
   owner: 'wren', priority: 'P2', domain: 'chorus', type: 'fix',
   origin: 'reactive', sequence: 'chorus', description: goodDesc, quick: false,

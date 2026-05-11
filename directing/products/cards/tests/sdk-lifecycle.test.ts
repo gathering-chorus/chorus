@@ -223,7 +223,7 @@ describe('addCard — validation', () => {
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
         domain: 'chorus', priority: 'P1', sequence: 'chorus',
-        description: '## Experience\nJeff sees\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## AC\n- [ ] first\n- [ ] second',
+        description: '## Experience\nJeff sees\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## Why it helps Chorus\nThe spine becomes signal-rich for all three roles plus Jeff. Direct improvement to chorus_logs_for_card joins and recent-errors queries, the surface the whole team reads when something breaks during a card.\n## Why it\'s not gold plating or a nit\nThe noise is currently masking real failure modes; I missed two yesterday because tunnel-probe events drowned the signal. Cosmetic would be reformatting; this is recovering load-bearing observability for the team.\n## Dependencies\nNone external. One file in chorus-hooks observer.rs; ships with the same build pipeline as the rest of the hook crate.\n## Scope of impact\nEvery observer.error emit and every chorus_logs_for_card query touch this. All three agent roles plus Jeff read the resulting spine surface. No API shape change.\n## AC\n- [ ] first\n- [ ] second',
       });
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();
@@ -235,7 +235,7 @@ describe('addCard — validation', () => {
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
         domain: 'chorus', priority: 'P1', sequence: 'chorus',
-        description: '## Experience\nok\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## AC\n1. first\n2. second',
+        description: '## Experience\nok\n## Why this matters\nWithout this fix the X path silently drops events that downstream consumers depend on, and the Y page renders stale data until restart. This affects normal usage weekly for multiple roles plus Jeff during active sessions, not an edge case.\n## Why it helps Chorus\nThe spine becomes signal-rich for all three roles plus Jeff. Direct improvement to chorus_logs_for_card joins and recent-errors queries, the surface the whole team reads when something breaks during a card.\n## Why it\'s not gold plating or a nit\nThe noise is currently masking real failure modes; I missed two yesterday because tunnel-probe events drowned the signal. Cosmetic would be reformatting; this is recovering load-bearing observability for the team.\n## Dependencies\nNone external. One file in chorus-hooks observer.rs; ships with the same build pipeline as the rest of the hook crate.\n## Scope of impact\nEvery observer.error emit and every chorus_logs_for_card query touch this. All three agent roles plus Jeff read the resulting spine surface. No API shape change.\n## AC\n1. first\n2. second',
       });
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'add')).toBeDefined();

@@ -689,18 +689,27 @@ function validateDescription(
   if (!hasExperience) {
     errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands). Use --quick/-q to skip on housekeeping cards.');
   }
-  // #2905: require a substantive "## Why this matters" section. Jeff direct
-  // 2026-05-11: "force u to send me a request — can i approve card xzy —
-  // here is why it matters and is valuable and not a nit or an edge case."
-  // Min 30 words after the heading filters one-line generics. The bouncer
-  // refuses weak proposals, not just non-Jeff ones.
-  const whyMatch = (opts.description || '').match(/##\s*why\s+this\s+matters\b([\s\S]*?)(?=\n##\s|\n*$)/i);
-  if (!whyMatch) {
-    errors.push('Description missing "## Why this matters" section — make the case for value: why this matters, why it\'s not a nit or an edge case. The bouncer refuses proposals without a substantive case.');
-  } else {
-    const wordCount = whyMatch[1].trim().split(/\s+/).filter(Boolean).length;
-    if (wordCount < 30) {
-      errors.push(`"## Why this matters" too thin (${wordCount} words; need ≥30) — name the actual stakes: who benefits, what breaks without this, why it isn't an edge case. The bouncer refuses cases that read as nits.`);
+  // #2905 (Jeff direct 2026-05-11): require all four articulated sections
+  // plus dependency-count and scope-of-impact. The structured composition is
+  // the forcing function — agents have to literally write each before they
+  // can ask Jeff to approve. Many weak cards die at the agent's own mirror
+  // step before reaching Jeff. Min 30 words per section filters generics.
+  const REQUIRED_SECTIONS: Array<{ heading: string; pattern: RegExp; minWords: number; purpose: string }> = [
+    { heading: 'Why this matters', pattern: /##\s*why\s+this\s+matters\b/i, minWords: 30, purpose: 'who benefits, what breaks without this, why now' },
+    { heading: 'Why it helps Chorus', pattern: /##\s*why\s+it\s+helps\s+chorus\b/i, minWords: 30, purpose: 'how this serves the team coordination product, not just one role' },
+    { heading: "Why it's not gold plating or a nit", pattern: /##\s*why\s+it'?s?\s+not\s+(?:gold\s+plating|a\s+nit)(?:\s+or\s+(?:gold\s+plating|a\s+nit))?/i, minWords: 30, purpose: "name the load-bearing reason this isn't cosmetic / edge-case / nice-to-have" },
+    { heading: 'Dependencies', pattern: /##\s*dependencies\b/i, minWords: 20, purpose: 'enumerate what needs to land first / what other surfaces must change — count is the truth-teller' },
+    { heading: 'Scope of impact', pattern: /##\s*scope\s+of\s+impact\b/i, minWords: 20, purpose: 'what surfaces this touches, who is affected when it lands, what could break elsewhere' },
+  ];
+  for (const sec of REQUIRED_SECTIONS) {
+    const m = (opts.description || '').match(new RegExp(sec.pattern.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
+    if (!m) {
+      errors.push(`Description missing "## ${sec.heading}" section — ${sec.purpose}. The bouncer refuses proposals without a substantive answer to each of the six questions.`);
+    } else {
+      const wc = m[1].trim().split(/\s+/).filter(Boolean).length;
+      if (wc < sec.minWords) {
+        errors.push(`"## ${sec.heading}" too thin (${wc} words; need ≥${sec.minWords}) — ${sec.purpose}.`);
+      }
     }
   }
 }
@@ -758,66 +767,73 @@ async function applyDynamicLabel(
 }
 
 /**
- * #2895 phase 2: agent-initiated `cards add` submits a proposal and EXITS
- * IMMEDIATELY. Card filing happens server-side when Jeff approves (Bridge
- * approve handler POSTs chorus-api /api/cards/add with X-Role: jeff, which
- * bypasses this hook). Agent doesn't block — Jeff decides at his pace.
+ * #2905 (Jeff direct 2026-05-11): agent-initiated `cards add` is REFUSED.
+ * The CLI composes the structured approval-ask nudge from the description
+ * the agent already wrote (validated to have the six required sections),
+ * prints it to stdout for the agent to read + decide whether to send via
+ * chorus_nudge_message to Jeff, and exits non-zero. The card is not filed.
  *
- * Bypasses (file immediately, no proposal):
- *   - DEPLOY_ROLE=jeff or unset (Jeff acting directly)
- *   - CHORUS_BYPASS_PROPOSAL=1 (chorus-api server-side card-file path on
- *     proposal-approve, chorus_acp internals — anything on Jeff's authority)
- *   - NODE_ENV=test (hermetic test runs)
+ * The agent may decide — after seeing what they wrote in the mirror —
+ * not to send the nudge at all. That's the forcing function: many weak
+ * cards die at this step before Jeff ever sees them.
+ *
+ * If Jeff approves, Jeff files the card himself from his own terminal
+ * (DEPLOY_ROLE=jeff or unset → no bouncer hook fires).
+ *
+ * Bypasses (file immediately, no nudge):
+ *   - DEPLOY_ROLE=jeff or unset (Jeff acting directly).
+ *   - NODE_ENV=test (hermetic test runs).
+ *
+ * No env-var bypass an agent can set in their shell.
  */
 async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise<void> {
   const role = (process.env.DEPLOY_ROLE || '').toLowerCase();
   const isAgent = role === 'wren' || role === 'silas' || role === 'kade';
   if (!isAgent) return;
-  // #2905: CHORUS_BYPASS_PROPOSAL env-var bypass REMOVED — agent-controllable
-  // loophole closed. Bypass for chorus-api's server-side approve handler
-  // works via DEPLOY_ROLE=jeff (set by runCardsCli from the X-Role header
-  // in chorus-api server.ts). Agents in their own shells cannot trigger
-  // the bypass code path via any env var they set.
   if (process.env.NODE_ENV === 'test') return;
 
-  const bridgeUrl = process.env.BRIDGE_URL || 'http://localhost:3470';
-  const submitUrl = `${bridgeUrl}/api/cards/proposals`;
-
-  const body = {
-    role,
-    title,
-    owner: opts.owner || '',
-    priority: opts.priority || '',
-    domain: opts.domain || '',
-    type: opts.type || '',
-    origin: opts.origin || '',
-    sequence: opts.sequence || '',
-    description: opts.description || '',
+  // Compose the structured approval-ask nudge from the description sections.
+  // validateDescription already enforced these are present + substantive.
+  const desc = opts.description || '';
+  const section = (heading: RegExp): string => {
+    const m = desc.match(new RegExp(heading.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
+    return m ? m[1].trim() : '';
   };
+  const whyMatters = section(/##\s*why\s+this\s+matters\b/i);
+  const whyHelpsChorus = section(/##\s*why\s+it\s+helps\s+chorus\b/i);
+  const whyNotGold = section(/##\s*why\s+it'?s?\s+not\s+(?:gold\s+plating|a\s+nit)(?:\s+or\s+(?:gold\s+plating|a\s+nit))?/i);
+  const deps = section(/##\s*dependencies\b/i);
+  const scope = section(/##\s*scope\s+of\s+impact\b/i);
+  const experience = section(/##\s*experience\b/i);
 
-  let submitJson: { proposal_id?: string; error?: string };
-  try {
-    const submitRes = await fetch(submitUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    submitJson = (await submitRes.json()) as { proposal_id?: string; error?: string };
-    if (!submitRes.ok || !submitJson.proposal_id) {
-      console.error(`ERROR: Bridge refused proposal: ${submitJson.error || submitRes.statusText}`);
-      process.exit(1);
-    }
-  } catch (err) {
-    console.error(`ERROR: Bridge unreachable at ${bridgeUrl} — cannot submit card proposal. Agent card creation requires Jeff approval via the Bridge; ask Jeff to file the card. Underlying: ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
-    return;
-  }
+  const nudge = `[card-approval] ${role} → jeff
 
-  // Async by design — agent submits and exits. Jeff's approval triggers the
-  // actual card filing server-side. Agent moves on.
-  console.log(`Proposal submitted: ${submitJson.proposal_id}`);
-  console.log(`Jeff will see it on his Bridge. To check status: curl ${bridgeUrl}/api/cards/proposals/${submitJson.proposal_id}`);
-  process.exit(0);
+I need you to approve a card before I file it.
+
+Title: ${title}
+Owner: ${opts.owner || '(unset)'}   Priority: ${opts.priority || '(unset)'}   Type: ${opts.type || '(unset)'}   Domain: ${opts.domain || '(unset)'}   Sequence: ${opts.sequence || '(unset)'}
+
+Description (what changes): ${experience}
+
+Why this matters: ${whyMatters}
+
+Why it helps Chorus: ${whyHelpsChorus}
+
+Why it's not gold plating or a nit: ${whyNotGold}
+
+Dependencies: ${deps}
+
+Scope of impact: ${scope}
+
+Waiting for your yes. I won't file or proceed until you respond. If you approve, file the card yourself from your terminal — DEPLOY_ROLE=jeff bypasses this gate cleanly.`;
+
+  console.log('---');
+  console.log('Agent card creation is refused. Send this nudge to Jeff via chorus_nudge_message:');
+  console.log('---');
+  console.log(nudge);
+  console.log('---');
+  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. Read your own ask above; if it stands, send via chorus_nudge_message to jeff and wait for his yes.');
+  process.exit(1);
 }
 
 export async function addCard(
