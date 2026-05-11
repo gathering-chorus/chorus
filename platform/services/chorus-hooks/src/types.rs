@@ -258,6 +258,18 @@ pub fn card_type_for_role(role: &str) -> String {
     "unknown".to_string()
 }
 
+/// Detect the caller's role from env for spine attribution. Prefers
+/// `CHORUS_ROLE` (set by shim.rs:124 inside hook execution), then
+/// `DEPLOY_ROLE` (set by /role-state, cards CLI, agent context). Falls back
+/// to `"unknown"` when neither is set — never panic, never hardcode (#2899).
+pub(crate) fn caller_role_for_event() -> String {
+    std::env::var("CHORUS_ROLE")
+        .ok()
+        .or_else(|| std::env::var("DEPLOY_ROLE").ok())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 /// Check if ANY building role is working a fix card.
 ///
 /// Test/smoke override: `CHORUS_TEST_FORCE_FIX_CARD=1` forces true,
@@ -265,14 +277,18 @@ pub fn card_type_for_role(role: &str) -> String {
 /// so the smoke is deterministic (does not depend on live board WIP).
 /// Name is intentionally `CHORUS_TEST_*`-scoped to mark intent and discourage
 /// shell-discoverable use as a runtime gate-bypass (silas review #2644).
-/// Every override-fire emits a `gate.bypass.fix_card_override` spine event for
+/// Every override-fire emits a `gate.test_override.checked` spine event for
 /// audit (ADR-028 hook-bypass discipline; same family as CHORUS_MCP_BYPASS).
+/// Event is named for what actually happened — the test override env var was
+/// checked — not "gate bypassed in production." Role attribution comes from
+/// `caller_role_for_event()`, never hardcoded (#2899).
 pub fn is_fix_card() -> bool {
     if let Ok(v) = std::env::var("CHORUS_TEST_FORCE_FIX_CARD") {
         let forced = v == "1" || v.eq_ignore_ascii_case("true");
+        let role = caller_role_for_event();
         // Best-effort spine emit; failures must not affect gate behavior.
         let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
-            .args(["gate.bypass.fix_card_override", "kade",
+            .args(["gate.test_override.checked", &role,
                    &format!("forced={} value={}", forced, v)])
             .output();
         return forced;
