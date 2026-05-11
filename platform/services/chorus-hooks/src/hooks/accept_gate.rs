@@ -47,6 +47,37 @@ pub fn demo_evidence_exists(card_view: &str) -> bool {
     card_view.contains("demo:preflight-pass")
 }
 
+/// #2893: Stakes-brief lint dispatch — runs skills/demo/gates/stakes-brief-lint.sh
+/// which reads the brief from Bridge and lints for "Why this matters" presence +
+/// absence of mechanics-first openers. Emits demo.stakes.passed/failed.
+/// Invoked at /acp time (PostToolUse on /demo fires before Step 5c POSTs the
+/// brief to Bridge, same reason show-gate moved here per #2864).
+/// Returns (passed, stderr_message).
+pub fn demo_stakes_passes(card_id: &str, role: &str) -> (bool, String) {
+    let script = format!("{}/skills/demo/gates/stakes-brief-lint.sh", chorus_root());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    let output = Command::new("bash")
+        .args(["-l", &script, card_id, role])
+        .env("CHORUS_ROOT", chorus_root())
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!(
+                "{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                home
+            ),
+        )
+        .output();
+
+    match output {
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
+            (o.status.success(), stderr)
+        }
+        Err(_) => (true, String::new()), // Don't block on dispatch failure
+    }
+}
+
 /// Check if this is an /acp invocation and validate acceptance gates
 pub async fn check(input: &HookInput) -> HookResponse {
     let skill = input.get_tool_input_str("skill");
@@ -90,6 +121,23 @@ pub async fn check(input: &HookInput) -> HookResponse {
         info!(card = %card_id, "accept-gate: show-gate passed (full demo chain on spine, Jeff watched)");
     } else {
         info!(card = %card_id, "accept-gate: only comment evidence — show chain incomplete (transitional fallback)");
+    }
+
+    // Gate 1b: Stakes-brief lint (#2893). Refuses /acp if the demo brief lacked
+    // a "Why this matters" line or opened with a mechanics-first anti-pattern.
+    // Skipped when only comment-fallback is available (no show-pass) — the brief
+    // is queried from Bridge which requires a real demo run.
+    if has_show_pass && role != Role::Unknown {
+        let (stakes_pass, stakes_stderr) = demo_stakes_passes(&card_id, role.as_str());
+        if !stakes_pass {
+            let msg = format!(
+                "Accept blocked: stakes-brief lint failed for #{}. {} Rewrite the demo brief — must contain 'Why this matters' and must not open with mechanics-first phrasing ('I built', 'The API now', 'Here's what changed', etc.).",
+                card_id, stakes_stderr
+            );
+            warn!("{}", msg);
+            return HookResponse::deny(&permission_deny_json(&msg));
+        }
+        info!(card = %card_id, "accept-gate: stakes-brief lint passed");
     }
 
     // Gate 2: Self-accept check on code cards (reuse card_view).
