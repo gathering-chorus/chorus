@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>/demo — As-Is Flow (skill, tools, hooks, spine)</title>
+<style>
+  @page { margin: 0.6in; }
+  body { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: 10.5pt; line-height: 1.4; color: #222; max-width: 7.3in; margin: 0 auto; }
+  h1 { font-size: 18pt; border-bottom: 2px solid #3730a3; padding-bottom: 4px; margin-bottom: 4px; color: #3730a3; }
+  h2 { font-size: 13pt; margin-top: 18px; margin-bottom: 4px; color: #3730a3; border-bottom: 1px solid #c7d2fe; padding-bottom: 2px; }
+  h3 { font-size: 11pt; margin-top: 12px; margin-bottom: 3px; color: #1f2937; }
+  .meta { font-size: 9pt; color: #6b7280; margin-bottom: 14px; }
+  table { border-collapse: collapse; width: 100%; margin: 4px 0 10px; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; }
+  code { background: #eef2ff; padding: 0 3px; border-radius: 2px; font-size: 9.5pt; font-family: "SF Mono", Menlo, monospace; }
+  .enf-hook { background: #dcfce7; color: #14532d; padding: 1px 5px; border-radius: 2px; font-weight: 600; font-size: 9pt; }
+  .enf-prose { background: #fee2e2; color: #7f1d1d; padding: 1px 5px; border-radius: 2px; font-weight: 600; font-size: 9pt; }
+  .enf-mcp { background: #dbeafe; color: #1e3a8a; padding: 1px 5px; border-radius: 2px; font-weight: 600; font-size: 9pt; }
+  .skip { color: #6b7280; font-style: italic; }
+  .gate { color: #b91c1c; font-weight: 600; }
+  .step-num { display: inline-block; background: #3730a3; color: #fff; width: 22px; height: 22px; border-radius: 50%; text-align: center; line-height: 22px; font-weight: 600; margin-right: 6px; }
+  .nb { background: #fef9c3; border-left: 3px solid #ca8a04; padding: 6px 9px; margin: 6px 0; font-size: 9.5pt; }
+  ul { margin: 3px 0 6px 22px; padding: 0; }
+  li { margin-bottom: 1px; }
+  .ambient { background: #f9fafb; padding: 8px 10px; border-radius: 4px; margin-top: 6px; }
+  pre.example { background:#f3f4f6;padding:8px 10px;border-radius:3px;font-size:9.5pt;white-space:pre-wrap; }
+  .legend { font-size: 9pt; color: #4b5563; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>/demo — As-Is Flow</h1>
+<p class="meta">Source verified against <code>skills/demo/SKILL.md</code>, <code>platform/services/chorus-hooks/src/hooks/</code>, and <code>skills/demo/gates/*.sh</code> on <code>main</code>. Mapping each functional step to: tools it calls, hooks that enforce it, gate scripts the hooks dispatch to, and spine events emitted.</p>
+
+<div class="legend">
+  <strong>Enforcement legend:</strong>
+  <span class="enf-hook">HOOK</span> = Rust hook in <code>chorus-hooks</code> dispatches to a bash gate script; refusal blocks the action.
+  <span class="enf-mcp">MCP</span> = MCP tool with typed refusal taxonomy.
+  <span class="enf-prose">PROSE</span> = markdown-only; model-executed; no substrate enforces.
+</div>
+
+<h2><span class="step-num">0</span>Invocation</h2>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Type <code>/demo &lt;card-id&gt;</code></td><td>Claude Code Skill tool</td><td><span class="enf-hook">HOOK</span> SessionStart injects context envelope; <code>chorus-hook-shim</code> wraps every subsequent PreToolUse / PostToolUse</td><td>—</td></tr>
+</table>
+
+<h2><span class="step-num">1+1.5</span>Validate &amp; AC Pre-flight <span class="gate">HARD GATE</span></h2>
+<p>SKILL.md describes this as two steps; the hook collapses them into one substrate gate. The hook fires <strong>before</strong> /demo runs — model can't bypass.</p>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Verify card in WIP, AC exists, smoke passes, ICD renders (for domain cards)</td><td>PreToolUse on <code>Skill(demo)</code></td><td><span class="enf-hook">HOOK</span> <code>demo_preflight.rs</code> → <code>skills/demo/gates/preflight.sh</code>. Exit 0 = allow; exit 1 = deny (stderr = refusal message)</td><td><code>demo.preflight.started</code>, <code>demo.preflight.failed reason=&lt;…&gt;</code> or <code>demo.preflight.passed</code></td></tr>
+  <tr><td>Post <code>demo:preflight-pass</code> comment (compat)</td><td><code>cards comment</code></td><td><span class="enf-hook">HOOK</span> Bash PreToolUse + <code>write_scrubber</code></td><td>—</td></tr>
+</table>
+<p class="legend">Gate refusal reasons coded in preflight.sh: <code>not_found</code>, wrong status, missing AC, smoke-fail, ICD-render-fail. Each emits a <code>demo.preflight.failed</code> spine line with <code>reason=&lt;…&gt;</code>.</p>
+
+<h2><span class="step-num">2</span>Gate Chain</h2>
+<p>Five <code>/gate-*</code> skills, each coded independently. Sequencing across them is model-executed prose; the gates themselves are coded.</p>
+<table>
+  <tr><th>Gate</th><th>Owner</th><th>Skill</th><th>Enforcement of the gate's own logic</th><th>Evidence</th></tr>
+  <tr><td><code>gate:product</code></td><td>Wren</td><td><code>/gate-product</code></td><td><span class="enf-hook">HOOK</span> own gate script (separate skill)</td><td>card comment <code>gate:product-pass</code></td></tr>
+  <tr><td><code>gate:code</code></td><td>Kade</td><td><code>/gate-code</code></td><td><span class="enf-hook">HOOK</span></td><td><code>gate:code-pass</code></td></tr>
+  <tr><td><code>gate:quality</code></td><td>Kade</td><td><code>/gate-quality</code></td><td><span class="enf-hook">HOOK</span></td><td><code>gate:quality-pass</code></td></tr>
+  <tr><td><code>gate:arch</code></td><td>Silas</td><td><code>/gate-arch</code></td><td><span class="enf-hook">HOOK</span> + <code>icd_write_gate.rs</code> for harvester writes</td><td><code>gate:arch-pass</code></td></tr>
+  <tr><td><code>gate:ops</code></td><td>Silas</td><td><code>/gate-ops</code></td><td><span class="enf-hook">HOOK</span></td><td><code>gate:ops-pass</code></td></tr>
+</table>
+<p><span class="enf-hook">HOOK</span> Chain orchestration (#2893): <code>accept_gate.rs</code> → <code>chain-orchestration.sh</code> at /acp time. Non-chore/swat cards require all 5 gate-pass comments. chore/swat honored only if blast radius ≤ 3 files AND ≤ 200 lines vs origin/main; mistagged-chore on larger work refused.</p>
+<p class="skip">Skip condition: card tagged <code>type:chore</code> or <code>type:swat</code> — chain bypassed entirely. (This is the gate-avoidance failure mode #2893 surfaced: mistagging skips all five gates.)</p>
+
+<h2><span class="step-num">3</span>Smoke Check</h2>
+<p>Folded into preflight.sh — the preflight gate calls <code>smoke-check.sh</code>, so the smoke run is part of the same hook refusal taxonomy.</p>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Blast-radius smoke</td><td><code>smoke-check.sh --card=&lt;id&gt;</code></td><td><span class="enf-hook">HOOK</span> invoked inside <code>preflight.sh</code>; non-zero exit → <code>demo.preflight.failed reason=smoke-fail</code></td><td>smoke-check emits its own events</td></tr>
+  <tr><td>Card-specific happy path</td><td>curl / browser via <code>chrome-window.sh</code> (DEC-090); also AC-derived auto-checks</td><td><span class="enf-hook">HOOK</span> (#2893) <code>accept_gate.rs</code> → <code>happy-path.sh</code> at /acp time. Parses AC for URL / file / spine-event refs, runs derived checks; skipped on abstract-only AC.</td><td><code>demo.happy-path.passed</code> | <code>demo.happy-path.failed</code> | <code>demo.happy-path.skipped</code></td></tr>
+</table>
+
+<h2><span class="step-num">4</span>Stakes Brief</h2>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Print "Why this matters" + "What to show you"</td><td>terminal text output + Bridge POST (Step 5c)</td><td><span class="enf-hook">HOOK</span> (#2893) <code>accept_gate.rs</code> → <code>stakes-brief-lint.sh</code> at /acp time. Reads brief from Bridge; refuses on missing "Why this matters" or mechanics-first opening.</td><td><code>demo.stakes.completed</code> + <code>demo.stakes.passed</code> | <code>demo.stakes.failed</code></td></tr>
+</table>
+
+<h2><span class="step-num">5</span>Signal</h2>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>5a — <code>cards demo</code> board entry</td><td>cards CLI</td><td><span class="enf-hook">HOOK</span> Bash PreToolUse</td><td>—</td></tr>
+  <tr><td>5b — emit spine</td><td><code>chorus-log card.demo.started</code></td><td><span class="enf-hook">HOOK</span> Bash PreToolUse</td><td><code>card.demo.started</code></td></tr>
+  <tr><td>5c — Bridge POST</td><td>curl localhost:3470</td><td><span class="enf-hook">HOOK</span> <code>write_scrubber</code></td><td>—</td></tr>
+  <tr><td>5d — <code>[demo]</code> nudge per peer (retiring under #2893)</td><td><code>chorus_nudge_message</code> MCP</td><td><span class="enf-mcp">MCP</span> typed delivery; <span class="enf-prose">PROSE</span> /gemba + ACK content unenforced</td><td>persisted via messaging API</td></tr>
+  <tr><td>5e — <code>[feedback]</code> nudge per peer</td><td><code>chorus_nudge_message</code> MCP</td><td><span class="enf-mcp">MCP</span> typed delivery; <span class="enf-prose">PROSE</span> ACK contract unenforced (#2872 will fix)</td><td>persisted via messaging API</td></tr>
+  <tr><td>5f — signal complete</td><td><code>chorus-log demo.signal.completed</code></td><td><span class="enf-hook">HOOK</span> Bash PreToolUse</td><td><code>demo.signal.completed</code></td></tr>
+</table>
+
+<h2>PostToolUse — Provenance + Show Gate (fire automatically after /demo exits)</h2>
+<table>
+  <tr><th>Action</th><th>Hook</th><th>Script</th><th>Spine</th></tr>
+  <tr><td>Generate brief, emit completion</td><td><span class="enf-hook">HOOK</span> <code>demo_provenance.rs</code></td><td><code>skills/demo/gates/provenance.sh</code></td><td>provenance event + brief artifact</td></tr>
+  <tr><td>Show-gate (preview — see below for the load-bearing fire)</td><td><span class="enf-hook">HOOK</span> <code>demo_show.rs</code></td><td><code>skills/demo/gates/show-gate.sh</code></td><td>—</td></tr>
+</table>
+<p class="legend"><strong>Important:</strong> the show-gate's load-bearing invocation is not the PostToolUse fire — it's the PreToolUse on <code>Skill(acp)</code> via <code>accept_gate.rs</code>. PostToolUse fires too early (before <code>card.demo.started</code> lands on spine).</p>
+
+<h2><span class="step-num">6</span>Show, Don't Tell</h2>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Open page / hit endpoint</td><td><code>chrome-window.sh</code> (DEC-090)</td><td><span class="enf-hook">HOOK</span> <code>chrome_tab_gate.rs</code> blocks raw <code>open &lt;url&gt;</code></td><td>—</td></tr>
+  <tr><td>Jeff reacts (typing in his terminal counts)</td><td>terminal stdin → spine</td><td><span class="enf-hook">HOOK</span> Jeff's input emits <code>jeff.input.delivered</code> events that show-gate later reads</td><td><code>jeff.input.delivered</code></td></tr>
+  <tr><td>Scroll for Jeff</td><td><code>demo-scroll.sh</code></td><td><span class="enf-hook">HOOK</span> Bash PreToolUse</td><td>—</td></tr>
+</table>
+
+<h2><span class="step-num">7</span>Accept (via /acp) — load-bearing show-gate fire</h2>
+<table>
+  <tr><th>Action</th><th>Tool</th><th>Enforcement</th><th>Spine</th></tr>
+  <tr><td>Pre-flight: prove Jeff watched</td><td>PreToolUse on <code>Skill(acp)</code></td><td><span class="enf-hook">HOOK</span> <code>accept_gate.rs</code> → <code>show-gate.sh</code>. Reads Loki for <code>card.demo.started</code> + <code>jeff.input.delivered</code> window + <code>demo.preflight.passed</code>. Missing any → <code>demo.show.failed</code>, /acp blocked. Present all → <code>demo.show.completed</code>, /acp allowed.</td><td><code>demo.show.completed</code> | <code>demo.show.failed reason=&lt;…&gt;</code></td></tr>
+  <tr><td>Self-accept check</td><td>same hook</td><td><span class="enf-hook">HOOK</span> <code>accept_gate.rs</code> refuses builder-self-accept on code cards (Jeff override per DEC-048)</td><td>—</td></tr>
+  <tr><td>Accept flow</td><td><code>chorus_acp</code> MCP</td><td><span class="enf-mcp">MCP</span> typed taxonomy: commit + push + PR merge + cards-done + branch-close + release-trigger; refusal reasons: <code>card-mismatch | hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail</code></td><td><code>card.accepted</code></td></tr>
+</table>
+
+<h2>Encoded Communication — what the steps actually send</h2>
+<p>Templates with #2893 substitutions.</p>
+
+<h3>Step 1+1.5 — Pre-flight evidence (transitional comment shape; show-gate uses spine)</h3>
+<pre class="example">demo:preflight-pass ac=5/5 — wren</pre>
+
+<h3>Step 5a — cards demo entry</h3>
+<pre class="example">Demo started: #2893 — Drop the [demo] announcement nudge from /demo Step 5</pre>
+
+<h3>Step 5c — Bridge POST body</h3>
+<pre class="example">{
+  "from": "wren",
+  "text": "[demo] #2893 — Drop the [demo] announcement nudge from /demo Step 5
+
+**Why this matters:** /demo Step 5 was firing two nudges per peer where one carried the load.
+
+**What to show Jeff:** Commit aca44d85 on wren/2893 — 1 file changed, 1 insertion, 17 deletions."
+}</pre>
+
+<h3>Step 5d — [demo] nudge (per peer; soon retired by #2893)</h3>
+<pre class="example">[demo] #2893 — Drop the [demo] announcement nudge from /demo Step 5. /gemba wren, card #2893. ACK REQUIRED: confirm observation started within 5 min or reply blocked-on-X.</pre>
+
+<h3>Step 5e — [feedback] nudge (per peer)</h3>
+<pre class="example">[feedback] #2893 — /demo Step 5 now sends ONE [feedback] nudge per peer instead of [demo] notification + [feedback]. /gemba removed from the Step 5 contract entirely.
+(1) How does this impact your products?
+(2) How does it impact your users?
+(3) Am I over-building or under-planning?
+ACK REQUIRED: substantive reply within 10 min or blocked-on-X.</pre>
+
+<h3>Step 7 — /acp accept envelope (returned by chorus_acp MCP)</h3>
+<pre class="example">{
+  "role": "wren",
+  "card_id": 2893,
+  "sha": "aca44d85",
+  "pr_url": "https://github.com/gathering-chorus/chorus/pull/223",
+  "branch_closed": true
+}</pre>
+
+<h2>Ambient Hooks (fire across every step)</h2>
+<div class="ambient">
+<ul>
+  <li><code>SessionStart</code> — context envelope injection.</li>
+  <li><code>chorus-hook-shim</code> — Rust binary at <code>~/.chorus/bin/</code>; wraps every Edit / Write / Bash PreToolUse and PostToolUse.</li>
+  <li><code>write_scrubber</code> — blocks credentials in writes.</li>
+  <li><code>canonical_write_guard</code> — blocks role edits under canonical when <code>CHORUS_WERK_ENABLE=1</code>; redirects to <code>$&lt;ROLE&gt;_WERK</code>.</li>
+  <li><code>icd_write_gate</code> — blocks harvester writes without an ICD provider (DEC-095).</li>
+  <li><code>chrome_tab_gate</code> — blocks raw <code>open &lt;url&gt;</code>; routes via <code>chrome-window.sh</code>.</li>
+  <li><code>clock_sync</code> — wall-clock validation.</li>
+  <li><code>pair_enforcement</code>, <code>memory_gate</code>, <code>observer</code>, <code>autonomy_guard</code>, <code>e2e_responder</code>, <code>interaction_pattern</code> — additional behavioral hooks at PreToolUse / PostToolUse boundaries.</li>
+  <li><code>git-queue.sh</code> branch-check (#2580); pre-commit (<code>platform/hooks/pre-commit</code>); pre-push (#2598/#2625/#2639).</li>
+  <li>MCP layer (<code>chorus_pull_card</code>, <code>chorus_acp</code>, <code>chorus_nudge_message</code>): typed refusal taxonomy replaces prose for those flows.</li>
+</ul>
+</div>
+
+<h2>What is still <span class="enf-prose">PROSE</span>-only (not substrate-enforced)</h2>
+<ul>
+  <li>Step 5 ACK contract — recipient MUST reply substantively; sender re-nudges; escalation to Jeff after 2 retries. <strong>#2872 will make it substrate.</strong></li>
+  <li>Step 6 show-don't-tell behavior — model self-policed.</li>
+</ul>
+<p class="legend">Three former PROSE rows moved to HOOK under #2893: Step 2 chain-orchestration (mistagged-chore caught), Step 3 AC happy-path (derived checks), Step 4 stakes-brief lint ("Why this matters" required, mechanics-first refused).</p>
+
+<h2>What's enforced that isn't obvious from SKILL.md</h2>
+<ul>
+  <li><strong>Pre-flight is substrate, not model-grep.</strong> <code>demo_preflight.rs</code> → <code>preflight.sh</code> fires on <code>Skill(demo)</code> PreToolUse — you cannot run /demo with unchecked AC; the hook refuses before SKILL.md is read.</li>
+  <li><strong>Show-gate's load-bearing fire is at /acp time, not /demo time.</strong> The PostToolUse-after-/demo registration fires too early; <code>accept_gate.rs</code> runs show-gate on <code>Skill(acp)</code> PreToolUse, reads Loki for the demo chain (started + Jeff-input window + preflight-passed), and refuses /acp if any precondition is missing.</li>
+  <li><strong>"Jeff watched" is provable.</strong> <code>jeff.input.delivered</code> spine events in the window after <code>card.demo.started</code> are the evidence — not just that the agent posted a preflight comment. #2864 raised the bar from comment-shape to Jeff-attention-shape.</li>
+  <li><strong>Self-accept refusal is in the hook.</strong> <code>accept_gate.rs</code> refuses builder-self-accept on code cards; Jeff override per DEC-048.</li>
+</ul>
+
+</body>
+</html>

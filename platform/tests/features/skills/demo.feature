@@ -70,3 +70,53 @@ Feature: /demo skill — proving gate behaviors
     When the demo signal step is attempted for the card
     Then no demo.signal.completed event with result=pass fires for the card
     And the smoke-check failure is reported on the card or in stdout
+
+  # --- Scenario 7: Gate-chain skip on type:chore is a typed refusal, not silent ---
+
+  # @wip until #2893 lands the chain-orchestration substrate hook. Today
+  # type:chore / type:swat skips all five gates silently — mistagging a
+  # feature card as chore bypasses the entire chain. The substrate must
+  # refuse with a typed reason that names the skip, so it shows up in
+  # spine and review.
+  @wip @gap-2893
+  Scenario: Mistagged type:chore card is refused when scope warrants gates
+    Given a fixture card exists with type:chore AND files-changed > N lines
+    When /demo runs against the fixture card
+    Then the gate-chain hook refuses with a typed reason naming gate-chain-skip-not-authorized
+    And a demo.gate-chain.refused spine event fires with reason=mistagged-chore
+    And no gate:product-pass / gate:code-pass / gate:quality-pass / gate:arch-pass / gate:ops-pass comment is bypassed silently
+
+  # --- Scenario 8: AC-derived happy-path check is enforced ---
+
+  # @wip until #2893 lands gates/happy-path.sh. Today the model improvises
+  # curl/browser checks per AC; a card whose AC references an endpoint
+  # that 404s can still demo successfully because no substrate runs the
+  # derived check.
+  @wip @gap-2893
+  Scenario: AC referencing an unreachable endpoint blocks demo signal
+    Given a fixture card exists with all AC checked
+    And one AC item references an endpoint that returns 404
+    When /demo runs against the fixture card
+    Then the happy-path hook refuses with the failing AC item named
+    And no demo.signal.completed event with result=pass fires for the card
+
+  # --- Scenario 9: Stakes-brief lint refuses mechanics-first openings ---
+
+  # @wip until #2893 lands gates/stakes-brief-lint.sh. Today the editorial
+  # gate ("leading with mechanics fails") is self-policed prose; a brief
+  # opening "I built a function that..." passes despite skill anti-pattern
+  # rules.
+  @wip @gap-2893
+  Scenario: Stakes brief without "Why this matters" is refused
+    Given a fixture card exists with all AC checked
+    When /demo emits a stakes brief whose body lacks "Why this matters"
+    Then the stakes-brief-lint hook refuses with reason=missing-why-this-matters
+    And no demo.stakes.completed event with result=pass fires for the card
+
+  @wip @gap-2893
+  Scenario: Stakes brief opening with mechanics-first anti-pattern is refused
+    Given a fixture card exists with all AC checked
+    When /demo emits a stakes brief starting with "I built a function that"
+    Then the stakes-brief-lint hook refuses with reason=mechanics-first-opening
+    And the offending phrase is reported in the refusal message
+    And no demo.stakes.completed event with result=pass fires for the card
