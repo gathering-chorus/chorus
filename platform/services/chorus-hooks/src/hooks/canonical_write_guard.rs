@@ -25,15 +25,15 @@ const DEFAULT_CHORUS_HOME: &str = "/Users/jeffbridwell/CascadeProjects/chorus";
 const DEFAULT_CHORUS_WERK_BASE: &str = "/Users/jeffbridwell/CascadeProjects/chorus-werk";
 
 pub fn check(input: &HookInput) -> HookResponse {
-    // Feature flag — per-role opt-in (#2735). The guard ships in the binary
-    // but is dormant until each role flips CHORUS_WERK_ENABLE=1 in their own
-    // session-start. Without this, the guard would activate the moment a
-    // fresh chorus-hooks binary lands, breaking every role still writing to
-    // canonical. Flag is strict: only "1" activates; empty / "0" / "true"
-    // are dormant to avoid accidental activation from inherited shell vars.
-    if std::env::var("CHORUS_WERK_ENABLE").ok().as_deref() != Some("1") {
-        return HookResponse::allow();
-    }
+    // #2908: CHORUS_WERK_ENABLE flag retired 2026-05-11. All three roles
+    // have the flag set in their settings.json as of #2735's per-role rollout,
+    // so the flag's per-role-opt-in purpose is fulfilled. Bug-class receipt:
+    // Wren's 2026-05-11 edit to canonical (directing/clearing/public/index.html)
+    // wasn't refused because the flag wasn't loaded into the hook's env at
+    // evaluation time — three-layer attention tax followed. With the flag
+    // retired, the guard fires whenever the role is determinable. Bootstrap /
+    // migration / generic-shell paths are still allowed via the role-detection
+    // bail-out below (no role → no refusal).
 
     let tool = input.tool_name_str();
     if tool != "Write" && tool != "Edit" && tool != "MultiEdit" {

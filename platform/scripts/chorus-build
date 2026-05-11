@@ -47,8 +47,56 @@ fi
 # we never build on stale canonical. Replaces the chorus-werk-sync poll
 # substrate (10-min interval was the gap that let canonical lag behind
 # origin during team activity, leaving the daemon running old code).
+#
+# #2908 — drift-class classification before ff-only. Pre-#2908 the ff-only
+# merge would fail on any dirty tree with a generic "not fast-forwardable"
+# message, requiring manual triage (Wren 2026-05-11 receipt: three-layer
+# attention tax to recover). Now: classify each dirty file. Union-merge files
+# (activity.md) are git's problem. Real uncommitted code = refuse loudly
+# with file path + werk recovery hint. Auto-drift (next-session.md.consumed,
+# PROTOCOL_VERSION) is gitignored in canonical post-#2908 so it shouldn't
+# appear here — if it does, that's its own bug.
 CHORUS_HOME_BUILD="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 echo "chorus-build: sync canonical from origin (invariant — first step of every build)"
+
+# Drift-class classifier (#2908). Runs BEFORE fetch so a dirty tree is
+# detected without making network calls. Files with merge=union .gitattributes
+# are expected dirty between syncs (activity.md, possibly others). Anything
+# else in M/A/D state is real uncommitted work that shouldn't live in canonical.
+DIRTY_LINES=$(git -C "$CHORUS_HOME_BUILD" status --porcelain 2>/dev/null | grep -E '^[ MAD]' || true)
+if [ -n "$DIRTY_LINES" ]; then
+  PROBLEMATIC=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    path="${line:3}"
+    # Check .gitattributes for merge=union — those files git auto-merges and
+    # we don't need to refuse on them.
+    attr=$(git -C "$CHORUS_HOME_BUILD" check-attr merge "$path" 2>/dev/null | awk -F': ' '{print $3}')
+    if [ "$attr" = "union" ]; then
+      continue
+    fi
+    PROBLEMATIC="${PROBLEMATIC}${line}"$'\n'
+  done <<< "$DIRTY_LINES"
+
+  if [ -n "$PROBLEMATIC" ]; then
+    echo "chorus-build: ABORT — canonical has uncommitted work blocking the sync" >&2
+    echo "  Files with real changes (not merge=union auto-merge):" >&2
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      echo "    $line" >&2
+    done <<< "$PROBLEMATIC"
+    echo "" >&2
+    echo "  These edits belong in a role's werk (\$<ROLE>_WERK/<path>), not canonical." >&2
+    echo "  Recovery options:" >&2
+    echo "    1. Move each edit to the owning role's werk; commit + acp normally." >&2
+    echo "    2. If the edits are unrecoverable drift, ops can reset canonical:" >&2
+    echo "       cd $CHORUS_HOME_BUILD && git stash && git pull --ff-only origin main" >&2
+    echo "       (stash preserves the edits for later recovery)" >&2
+    echo "  Auto-recovery is not attempted: real work could be lost." >&2
+    exit 1
+  fi
+fi
+
 if ! git -C "$CHORUS_HOME_BUILD" fetch --quiet origin main 2>&1; then
   echo "chorus-build: ABORT — git fetch origin main failed" >&2
   exit 1
@@ -59,7 +107,7 @@ if ! git -C "$CHORUS_HOME_BUILD" merge --ff-only origin/main >/dev/null 2>&1; th
   echo "chorus-build: ABORT — canonical not fast-forwardable to origin/main" >&2
   echo "  canonical HEAD: $HEAD_BEFORE" >&2
   echo "  origin/main:    $ORIGIN_TIP" >&2
-  echo "  Likely cause: detached HEAD, divergent local commits, or dirty tree blocking the merge" >&2
+  echo "  Likely cause: detached HEAD or divergent local commits" >&2
   echo "  Recover: chorus-werk-sync repair, then re-run /build" >&2
   exit 1
 fi
