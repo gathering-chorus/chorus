@@ -271,17 +271,7 @@ curl -s -X POST http://localhost:3470/api/message \
   > /dev/null 2>&1
 ```
 
-**Nudge the other roles into demo observer mode** — call MCP per role (skip yourself). Every nudge formally requests ack; recipients MUST reply with substance, not silence. Sender re-nudges until ack received.
-
-```
-For each role in [wren, silas, kade] except <your-role>:
-  mcp__chorus-api__chorus_nudge_message({
-    to: "<role>",
-    message: "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}. ACK REQUIRED: confirm observation started within 5 min or reply blocked-on-X."
-  })
-```
-
-Then **auto-nudge for feedback** — don't wait for Jeff to ask.
+**Nudge the other roles for feedback** — call MCP per role (skip yourself). Every nudge formally requests ack; recipients MUST reply with substance, not silence. Sender re-nudges until ack received.
 
 **Frame the nudge as concrete consumer-impact questions, not agent-curiosity edge cases.** Edge-case questions ("is this a Quality-horizontal-family-fit?", "is the sibling-script pattern worth naming as a convention?") get edge-case engagement — agents climb into the frame and produce structured 1-2-3 answers that feel substantive but never ask whether the work matters. Concrete consumer questions force the recipient to ground their answer in real users and real impact.
 
@@ -312,12 +302,6 @@ For each role in [wren, silas, kade] except <your-role>:
 - "review and accept" — tells them the answer before they look
 - "Jeff is waiting" — creates urgency that shortcuts thinking
 - "Is the X pattern worth naming?" / "Does this read as Y-family-fit?" / "Is the AC framing the template for future Z?" — agent-curiosity edge cases. Recipient climbs into the frame and produces 1-2-3 structure that displaces the substantive consumer question.
-
-### Demo Observer Mode (for nudge recipients)
-
-When you receive a `[demo]` nudge, **enter `/gemba <builder-role>` immediately.** Demo observation IS gemba — same tail, same digest loop, same commentary. The nudge is just the trigger.
-
-The `/gemba` skill owns the full observe-loop pattern. Don't duplicate it here.
 
 ### Feedback Response (MANDATORY for `[feedback]` nudge recipients)
 
