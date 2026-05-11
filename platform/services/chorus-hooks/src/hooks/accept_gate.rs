@@ -38,7 +38,13 @@ pub fn demo_show_passes(card_id: &str, role: &str) -> bool {
         )
         .output();
 
-    matches!(output, Ok(o) if o.status.success())
+    match output {
+        Ok(o) => o.status.success(),
+        Err(e) => {
+            warn!(card = %card_id, "demo-show: dispatch failed (Command::output Err) — {}; defaulting to pass to avoid blocking on infra failure", e);
+            true
+        }
+    }
 }
 
 /// #2177: Demo evidence comment on card. Retained as transitional fallback
@@ -133,7 +139,10 @@ pub fn demo_stakes_passes(card_id: &str, role: &str) -> (bool, String) {
             let stderr = String::from_utf8_lossy(&o.stderr).trim().to_string();
             (o.status.success(), stderr)
         }
-        Err(_) => (true, String::new()), // Don't block on dispatch failure
+        Err(e) => {
+            warn!(card = %card_id, "demo-stakes-lint: dispatch failed (Command::output Err) — {}; defaulting to pass to avoid blocking on infra failure", e);
+            (true, String::new())
+        }
     }
 }
 
