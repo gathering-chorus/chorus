@@ -689,6 +689,29 @@ function validateDescription(
   if (!hasExperience) {
     errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands). Use --quick/-q to skip on housekeeping cards.');
   }
+  // #2905 (Jeff direct 2026-05-11): require all four articulated sections
+  // plus dependency-count and scope-of-impact. The structured composition is
+  // the forcing function — agents have to literally write each before they
+  // can ask Jeff to approve. Many weak cards die at the agent's own mirror
+  // step before reaching Jeff. Min 30 words per section filters generics.
+  const REQUIRED_SECTIONS: Array<{ heading: string; pattern: RegExp; minWords: number; purpose: string }> = [
+    { heading: 'Why this matters', pattern: /##\s*why\s+this\s+matters\b/i, minWords: 30, purpose: 'who benefits, what breaks without this, why now' },
+    { heading: 'Why it helps Chorus', pattern: /##\s*why\s+it\s+helps\s+chorus\b/i, minWords: 30, purpose: 'how this serves the team coordination product, not just one role' },
+    { heading: "Why it's not gold plating or a nit", pattern: /##\s*why\s+it'?s?\s+not\s+(?:gold\s+plating|a\s+nit)(?:\s+or\s+(?:gold\s+plating|a\s+nit))?/i, minWords: 30, purpose: "name the load-bearing reason this isn't cosmetic / edge-case / nice-to-have" },
+    { heading: 'Dependencies', pattern: /##\s*dependencies\b/i, minWords: 20, purpose: 'enumerate what needs to land first / what other surfaces must change — count is the truth-teller' },
+    { heading: 'Scope of impact', pattern: /##\s*scope\s+of\s+impact\b/i, minWords: 20, purpose: 'what surfaces this touches, who is affected when it lands, what could break elsewhere' },
+  ];
+  for (const sec of REQUIRED_SECTIONS) {
+    const m = (opts.description || '').match(new RegExp(sec.pattern.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
+    if (!m) {
+      errors.push(`Description missing "## ${sec.heading}" section — ${sec.purpose}. The bouncer refuses proposals without a substantive answer to each of the six questions.`);
+    } else {
+      const wc = m[1].trim().split(/\s+/).filter(Boolean).length;
+      if (wc < sec.minWords) {
+        errors.push(`"## ${sec.heading}" too thin (${wc} words; need ≥${sec.minWords}) — ${sec.purpose}.`);
+      }
+    }
+  }
 }
 
 // Reports collected errors and exits the process.
@@ -744,85 +767,72 @@ async function applyDynamicLabel(
 }
 
 /**
- * #2895: agent-initiated `cards add` routes the proposal to Jeff for approval.
+ * #2905 (Jeff direct 2026-05-11): agent-initiated `cards add` is REFUSED.
+ * The CLI composes the structured approval-ask nudge from the description
+ * the agent already wrote (validated to have the six required sections),
+ * prints it to stdout for the agent to read + decide whether to send via
+ * chorus_nudge_message to Jeff, and exits non-zero. The card is not filed.
  *
- * If DEPLOY_ROLE is wren / silas / kade and CHORUS_BYPASS_PROPOSAL is unset,
- * POST a proposal to the Bridge at localhost:3470, then poll until status !=
- * pending or 10 minutes elapse. On approved: return (caller continues to
- * client.add()). On denied/timeout: console.error reason, process.exit(1).
+ * The agent may decide — after seeing what they wrote in the mirror —
+ * not to send the nudge at all. That's the forcing function: many weak
+ * cards die at this step before Jeff ever sees them.
  *
- * Jeff invocations (DEPLOY_ROLE=jeff or unset, or running outside an agent
- * session) bypass entirely. The CHORUS_BYPASS_PROPOSAL escape hatch exists
- * for chorus_acp / cards-MCP server flows that already operate on Jeff's
- * authority (those don't re-prompt).
+ * If Jeff approves, Jeff files the card himself from his own terminal
+ * (DEPLOY_ROLE=jeff or unset → no bouncer hook fires).
+ *
+ * Bypasses (file immediately, no nudge):
+ *   - DEPLOY_ROLE=jeff or unset (Jeff acting directly).
+ *   - NODE_ENV=test (hermetic test runs).
+ *
+ * No env-var bypass an agent can set in their shell.
  */
 async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise<void> {
   const role = (process.env.DEPLOY_ROLE || '').toLowerCase();
   const isAgent = role === 'wren' || role === 'silas' || role === 'kade';
   if (!isAgent) return;
-  if (process.env.CHORUS_BYPASS_PROPOSAL === '1') return;
-  // Tests must not hit the live Bridge — events.ts uses the same NODE_ENV check.
   if (process.env.NODE_ENV === 'test') return;
 
-  const bridgeUrl = process.env.BRIDGE_URL || 'http://localhost:3470';
-  const submitUrl = `${bridgeUrl}/api/cards/proposals`;
-
-  const body = {
-    role,
-    title,
-    owner: opts.owner || '',
-    priority: opts.priority || '',
-    domain: opts.domain || '',
-    type: opts.type || '',
-    origin: opts.origin || '',
-    sequence: opts.sequence || '',
-    description: opts.description || '',
+  // Compose the structured approval-ask nudge from the description sections.
+  // validateDescription already enforced these are present + substantive.
+  const desc = opts.description || '';
+  const section = (heading: RegExp): string => {
+    const m = desc.match(new RegExp(heading.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
+    return m ? m[1].trim() : '';
   };
+  const whyMatters = section(/##\s*why\s+this\s+matters\b/i);
+  const whyHelpsChorus = section(/##\s*why\s+it\s+helps\s+chorus\b/i);
+  const whyNotGold = section(/##\s*why\s+it'?s?\s+not\s+(?:gold\s+plating|a\s+nit)(?:\s+or\s+(?:gold\s+plating|a\s+nit))?/i);
+  const deps = section(/##\s*dependencies\b/i);
+  const scope = section(/##\s*scope\s+of\s+impact\b/i);
+  const experience = section(/##\s*experience\b/i);
 
-  let submitJson: { proposal_id?: string; error?: string } | null = null;
-  try {
-    const submitRes = await fetch(submitUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    submitJson = (await submitRes.json()) as { proposal_id?: string; error?: string };
-    if (!submitRes.ok || !submitJson.proposal_id) {
-      console.error(`ERROR: Bridge refused proposal: ${submitJson.error || submitRes.statusText}`);
-      process.exit(1);
-    }
-  } catch (err) {
-    console.error(`ERROR: Bridge unreachable at ${bridgeUrl} — cannot submit card proposal. Set CHORUS_BYPASS_PROPOSAL=1 to bypass (Jeff-authorized flows only). Underlying: ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
-  }
+  const nudge = `[card-approval] ${role} → jeff
 
-  const proposalId = submitJson.proposal_id;
-  const statusUrl = `${bridgeUrl}/api/cards/proposals/${proposalId}`;
-  console.log(`Proposal #${proposalId} submitted to Jeff. Waiting for approval (10 min timeout)...`);
+I need you to approve a card before I file it.
 
-  const deadline = Date.now() + 10 * 60 * 1000;
-  const pollInterval = 2_000;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, pollInterval));
-    try {
-      const res = await fetch(statusUrl);
-      if (!res.ok) continue;
-      const p = (await res.json()) as { status: string; deniedReason?: string };
-      if (p.status === 'approved') {
-        console.log(`Proposal approved by Jeff. Filing card.`);
-        return;
-      }
-      if (p.status === 'denied') {
-        console.error(`ERROR: Jeff denied the card proposal.${p.deniedReason ? ' Reason: ' + p.deniedReason : ''}`);
-        process.exit(1);
-      }
-      if (p.status === 'timeout') {
-        console.error(`ERROR: Proposal timed out (Bridge sweeper).`);
-        process.exit(1);
-      }
-    } catch { /* network blip — retry on next tick */ }
-  }
-  console.error(`ERROR: Proposal #${proposalId} timed out after 10 minutes with no decision from Jeff.`);
+Title: ${title}
+Owner: ${opts.owner || '(unset)'}   Priority: ${opts.priority || '(unset)'}   Type: ${opts.type || '(unset)'}   Domain: ${opts.domain || '(unset)'}   Sequence: ${opts.sequence || '(unset)'}
+
+Description (what changes): ${experience}
+
+Why this matters: ${whyMatters}
+
+Why it helps Chorus: ${whyHelpsChorus}
+
+Why it's not gold plating or a nit: ${whyNotGold}
+
+Dependencies: ${deps}
+
+Scope of impact: ${scope}
+
+Waiting for your yes. I won't file or proceed until you respond. If you approve, file the card yourself from your terminal — DEPLOY_ROLE=jeff bypasses this gate cleanly.`;
+
+  console.log('---');
+  console.log('Agent card creation is refused. Send this nudge to Jeff via chorus_nudge_message:');
+  console.log('---');
+  console.log(nudge);
+  console.log('---');
+  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. Read your own ask above; if it stands, send via chorus_nudge_message to jeff and wait for his yes.');
   process.exit(1);
 }
 
