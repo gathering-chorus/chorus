@@ -271,12 +271,13 @@ curl -s -X POST http://localhost:3470/api/message \
   > /dev/null 2>&1
 ```
 
-**Nudge the other roles into demo observer mode** — call MCP per role (skip yourself):
+**Nudge the other roles into demo observer mode** — call MCP per role (skip yourself). Every nudge formally requests ack; recipients MUST reply with substance, not silence. Sender re-nudges until ack received.
+
 ```
 For each role in [wren, silas, kade] except <your-role>:
   mcp__chorus-api__chorus_nudge_message({
     to: "<role>",
-    message: "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}."
+    message: "[demo] #${CARD_ID} — <title>. /gemba <your-role>, card #${CARD_ID}. ACK REQUIRED: confirm observation started within 5 min or reply blocked-on-X."
   })
 ```
 
@@ -291,11 +292,19 @@ For each role in [wren, silas, kade] except <your-role>:
     message: "[feedback] #${CARD_ID} — <1-line what changed>.
               (1) How does this impact your products?
               (2) How does it impact your users?
-              (3) Am I over-building or under-planning?"
+              (3) Am I over-building or under-planning?
+              ACK REQUIRED: substantive reply within 10 min or blocked-on-X."
   })
 ```
 
 **The three questions are the only ones to send.** Don't tailor per-role with cleverness; don't substitute agent-curiosity edge cases. The same three force every role to ground in their own consumers, name the value-or-cost, and call out scope mistakes.
+
+**Ack discipline (every nudge, every time)**:
+- Sender requests ack explicitly in the nudge body. Format: "ACK REQUIRED: <expected reply shape> within <window> or blocked-on-X."
+- Recipient MUST reply with substance OR with `blocked-on-X` (specific blocker named). Silent ignore is contract violation.
+- Sender's session tracks outstanding acks; re-nudges at the deadline if no reply lands.
+- After 2 re-nudges with no reply, escalates to Jeff with the recipient + card + question.
+- Jeff should never have to ask "did X reply?" — the substrate chases, not him. Structural enforcement filed as #2872; until that ships, the discipline lives here.
 
 **Nudge framing anti-patterns (NEVER use these):**
 - "Jeff wants your review" — invokes authority, produces rubber stamps
