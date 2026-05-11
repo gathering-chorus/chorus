@@ -28,6 +28,8 @@ CARD_ID="${1:-}"
 ROLE="${2:-system}"
 [ -z "$CARD_ID" ] && exit 0
 
+"$CHORUS_LOG" demo.stakes.started "$ROLE" card="$CARD_ID" 2>/dev/null || true
+
 emit_passed() {
   "$CHORUS_LOG" demo.stakes.passed "$ROLE" card="$CARD_ID" 2>/dev/null || true
   exit 0

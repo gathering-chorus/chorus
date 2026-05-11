@@ -122,6 +122,40 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
         }
     }
 
+    // #2897: Demo trace propagation. If a card= or card_id= field was provided,
+    // look up the trace_id from /tmp/demo-trace-${card}.txt (with CHORUS_TRACE_ID
+    // env taking precedence). Lets `grep '"trace":"<id>"'` reconstruct one /demo
+    // run end-to-end; `grep '"card":"N"'` still finds all traces for that card.
+    // demo_preflight.rs writes the temp file on /demo entry; chorus_acp cleans
+    // it up on /acp success.
+    let mut card_arg: Option<String> = None;
+    for kv in args.iter().skip(2) {
+        if let Some((k, v)) = kv.split_once('=') {
+            if k == "card" || k == "card_id" {
+                card_arg = Some(v.to_string());
+                break;
+            }
+        }
+    }
+    let trace_id_opt = std::env::var("CHORUS_TRACE_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            card_arg.as_ref().and_then(|c| {
+                let path = format!("/tmp/demo-trace-{}.txt", c);
+                std::fs::read_to_string(&path)
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            })
+        });
+    if let Some(trace) = trace_id_opt {
+        let escaped =
+            serde_json::to_string(&trace).unwrap_or_else(|_| "\"\"".to_string());
+        extras.push_str(&format!(r#","trace":{}"#, escaped));
+        display.push_str(&format!(" trace={}", trace));
+    }
+
     // Validate level
     if !["info", "warn", "critical"].contains(&level.as_str()) {
         eprintln!("Invalid level '{}' — use info, warn, or critical", level);

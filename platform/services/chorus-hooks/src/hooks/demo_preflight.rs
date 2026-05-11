@@ -24,6 +24,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // #2897: Generate trace_id for this /demo run, write to /tmp so chorus_log.rs
+    // auto-reads it when subsequent events are emitted with card=<card_id>.
+    // accept_gate.rs at /acp time reads the same file and propagates as
+    // CHORUS_TRACE_ID env to the gate scripts it dispatches. Cleaned up by
+    // chorus_acp on /acp success.
+    let trace_id = uuid::Uuid::now_v7().to_string();
+    let trace_path = format!("/tmp/demo-trace-{}.txt", card_id);
+    if let Err(e) = std::fs::write(&trace_path, &trace_id) {
+        warn!(card = %card_id, "demo-preflight: failed to write trace file {} — {}; continuing without trace propagation", trace_path, e);
+    } else {
+        info!(card = %card_id, trace = %trace_id, "demo-preflight: trace_id generated for /demo run");
+    }
+
     info!(card = %card_id, "demo-preflight: dispatching to preflight.sh");
 
     let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());

@@ -24,6 +24,8 @@ CARD_ID="${1:-}"
 ROLE="${2:-system}"
 [ -z "$CARD_ID" ] && exit 0
 
+"$CHORUS_LOG" demo.show.started "$ROLE" card="$CARD_ID" 2>/dev/null || true
+
 emit_completed() {
   "$CHORUS_LOG" demo.show.completed "$ROLE" card="$CARD_ID" jeff_input_count="$1" 2>/dev/null || true
   exit 0  # PreToolUse: allow /acp
