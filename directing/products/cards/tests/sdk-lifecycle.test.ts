@@ -222,7 +222,7 @@ describe('addCard — validation', () => {
     const cap = silenceConsole();
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
-        domain: 'chorus', priority: 'P1',
+        domain: 'chorus', priority: 'P1', sequence: 'chorus',
         description: '## Experience\nJeff sees\n## AC\n- [ ] first\n- [ ] second',
       });
     } finally { cap.restore(); }
@@ -234,7 +234,7 @@ describe('addCard — validation', () => {
     const cap = silenceConsole();
     try {
       await addCard(asBoardClient(mock), 'fix thing', {
-        domain: 'chorus', priority: 'P1',
+        domain: 'chorus', priority: 'P1', sequence: 'chorus',
         description: '## Experience\nok\n1. first\n2. second',
       });
     } finally { cap.restore(); }

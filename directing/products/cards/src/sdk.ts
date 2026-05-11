@@ -641,6 +641,8 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   if (!opts.priority) errors.push('Missing --priority P1|P2|P3');
   if (!opts.origin) errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
   else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
+  // #2895: promote sequence WARN → ERROR. --quick bypasses (housekeeping cards may legitimately have no sequence).
+  if (!opts.quick && !opts.sequence) errors.push('Missing --sequence <name> (the product/area this card belongs to). Use --quick/-q for housekeeping cards.');
   // #2652 AC2 — subproduct refuse-at-source (closed list)
   if (opts.subproduct) {
     const sp = opts.subproduct.toLowerCase();
@@ -663,9 +665,10 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   return errors;
 }
 
-// Validates description has AC when not in --quick mode. Warns on missing Experience.
+// Validates description has AC and Experience when not in --quick mode.
+// #2895: Experience promoted from WARN to ERROR — caller no longer needs title/board for the warn-event emit.
 function validateDescription(
-  opts: AddOpts, title: string, boardName: string, errors: string[],
+  opts: AddOpts, _title: string, _boardName: string, errors: string[],
 ): void {
   if (opts.quick) return;
   const desc = (opts.description || '').trim();
@@ -679,12 +682,12 @@ function validateDescription(
       /\d+\.\s+\S/m.test(desc);
     if (!hasAC) errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items). Use --quick/-q to skip');
   }
+  // #2895: promote Experience WARN → ERROR. Required for non-quick cards —
+  // the user-impact framing is the difference between "what to build" and
+  // "what changes for the user when it lands."
   const hasExperience = /##\s*experience/i.test(opts.description || '');
   if (!hasExperience) {
-    console.log('  WARN: No Experience section. Wren should add "## Experience" before this card enters WIP.');
-    emitSpineEvent('card.quality.warned', detectRole(), {
-      title, gate: 'experience_missing_at_creation', board: boardName,
-    });
+    errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands). Use --quick/-q to skip on housekeeping cards.');
   }
 }
 
@@ -740,6 +743,89 @@ async function applyDynamicLabel(
   await client.applyLabelByName(index, labelName);
 }
 
+/**
+ * #2895: agent-initiated `cards add` routes the proposal to Jeff for approval.
+ *
+ * If DEPLOY_ROLE is wren / silas / kade and CHORUS_BYPASS_PROPOSAL is unset,
+ * POST a proposal to the Bridge at localhost:3470, then poll until status !=
+ * pending or 10 minutes elapse. On approved: return (caller continues to
+ * client.add()). On denied/timeout: console.error reason, process.exit(1).
+ *
+ * Jeff invocations (DEPLOY_ROLE=jeff or unset, or running outside an agent
+ * session) bypass entirely. The CHORUS_BYPASS_PROPOSAL escape hatch exists
+ * for chorus_acp / cards-MCP server flows that already operate on Jeff's
+ * authority (those don't re-prompt).
+ */
+async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise<void> {
+  const role = (process.env.DEPLOY_ROLE || '').toLowerCase();
+  const isAgent = role === 'wren' || role === 'silas' || role === 'kade';
+  if (!isAgent) return;
+  if (process.env.CHORUS_BYPASS_PROPOSAL === '1') return;
+  // Tests must not hit the live Bridge — events.ts uses the same NODE_ENV check.
+  if (process.env.NODE_ENV === 'test') return;
+
+  const bridgeUrl = process.env.BRIDGE_URL || 'http://localhost:3470';
+  const submitUrl = `${bridgeUrl}/api/cards/proposals`;
+
+  const body = {
+    role,
+    title,
+    owner: opts.owner || '',
+    priority: opts.priority || '',
+    domain: opts.domain || '',
+    type: opts.type || '',
+    origin: opts.origin || '',
+    sequence: opts.sequence || '',
+    description: opts.description || '',
+  };
+
+  let submitJson: { proposal_id?: string; error?: string } | null = null;
+  try {
+    const submitRes = await fetch(submitUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    submitJson = (await submitRes.json()) as { proposal_id?: string; error?: string };
+    if (!submitRes.ok || !submitJson.proposal_id) {
+      console.error(`ERROR: Bridge refused proposal: ${submitJson.error || submitRes.statusText}`);
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`ERROR: Bridge unreachable at ${bridgeUrl} — cannot submit card proposal. Set CHORUS_BYPASS_PROPOSAL=1 to bypass (Jeff-authorized flows only). Underlying: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
+
+  const proposalId = submitJson.proposal_id;
+  const statusUrl = `${bridgeUrl}/api/cards/proposals/${proposalId}`;
+  console.log(`Proposal #${proposalId} submitted to Jeff. Waiting for approval (10 min timeout)...`);
+
+  const deadline = Date.now() + 10 * 60 * 1000;
+  const pollInterval = 2_000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, pollInterval));
+    try {
+      const res = await fetch(statusUrl);
+      if (!res.ok) continue;
+      const p = (await res.json()) as { status: string; deniedReason?: string };
+      if (p.status === 'approved') {
+        console.log(`Proposal approved by Jeff. Filing card.`);
+        return;
+      }
+      if (p.status === 'denied') {
+        console.error(`ERROR: Jeff denied the card proposal.${p.deniedReason ? ' Reason: ' + p.deniedReason : ''}`);
+        process.exit(1);
+      }
+      if (p.status === 'timeout') {
+        console.error(`ERROR: Proposal timed out (Bridge sweeper).`);
+        process.exit(1);
+      }
+    } catch { /* network blip — retry on next tick */ }
+  }
+  console.error(`ERROR: Proposal #${proposalId} timed out after 10 minutes with no decision from Jeff.`);
+  process.exit(1);
+}
+
 export async function addCard(
   client: BoardClient, title: string, opts: AddOpts,
 ): Promise<BoardTask> {
@@ -752,6 +838,10 @@ export async function addCard(
   const errors = await collectRequiredFieldErrors(opts);
   validateDescription(opts, title, client.boardName, errors);
   if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
+
+  // #2895: agent-initiated card adds route through Jeff for approval first.
+  // Jeff-self (DEPLOY_ROLE=jeff or unset) bypasses the gate — files immediately.
+  await requireJeffApprovalIfAgent(title, opts);
 
   if (opts.quick) {
     emitSpineEvent('card.quick.created', detectRole(), { title, board: client.boardName });

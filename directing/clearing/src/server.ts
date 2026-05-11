@@ -15,6 +15,7 @@ import { MessageRouter } from './router';
 import { ChorusLogTailer } from './tailer';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
+import { proposalStore } from './card-proposals';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -803,6 +804,51 @@ app.get('/api/tiles', (_req, res) => res.json(tilePoller.getTiles()));
 
 // API: get recent messages (for page load)
 app.get('/api/messages', (req, res) => res.json(messageRouter.getRecent(50, !!req.query.includeHidden)));
+
+// #2895: card proposal routes. Agents submit; Jeff (and only Jeff) approves/denies.
+// Auth: Jeff routes require local request OR BRIDGE_TOKEN; submit is open to local roles.
+app.post('/api/cards/proposals', (req, res) => {
+  const b = req.body || {};
+  const required = ['role', 'title', 'owner', 'priority', 'domain', 'type', 'origin', 'sequence', 'description'];
+  const missing = required.filter(k => !b[k]);
+  if (missing.length > 0) {
+    return res.status(400).json({ error: 'missing required fields', missing });
+  }
+  if (!['wren', 'silas', 'kade'].includes(b.role)) {
+    return res.status(400).json({ error: `invalid role "${b.role}" — must be wren / silas / kade` });
+  }
+  const proposal = proposalStore.submit({
+    role: b.role, title: b.title, owner: b.owner, priority: b.priority,
+    domain: b.domain, type: b.type, origin: b.origin, sequence: b.sequence,
+    description: b.description,
+  });
+  res.json({ proposal_id: proposal.id, status: proposal.status, submittedAt: proposal.submittedAt });
+});
+
+app.get('/api/cards/proposals', (_req, res) => {
+  res.json({ proposals: proposalStore.pending() });
+});
+
+app.get('/api/cards/proposals/:id', (req, res) => {
+  const p = proposalStore.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'proposal not found' });
+  res.json(p);
+});
+
+app.post('/api/cards/proposals/:id/approve', (req, res) => {
+  if (!isLocal(req)) return res.status(403).json({ error: 'approval requires local request (Jeff only)' });
+  const p = proposalStore.approve(req.params.id);
+  if (!p) return res.status(404).json({ error: 'proposal not found' });
+  res.json(p);
+});
+
+app.post('/api/cards/proposals/:id/deny', (req, res) => {
+  if (!isLocal(req)) return res.status(403).json({ error: 'denial requires local request (Jeff only)' });
+  const reason = req.body?.reason || '';
+  const p = proposalStore.deny(req.params.id, reason);
+  if (!p) return res.status(404).json({ error: 'proposal not found' });
+  res.json(p);
+});
 
 // API: receive message from role (callback endpoint)
 app.post('/api/message', (req, res) => {
