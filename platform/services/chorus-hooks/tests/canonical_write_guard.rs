@@ -183,30 +183,48 @@ fn no_role_env_means_no_refusal() {
 }
 
 #[test]
-fn dormant_without_feature_flag_even_when_role_set() {
-    // 1x1 release contract: PR #128 ships the substrate but the guard is
-    // dormant until each role opts in via CHORUS_WERK_ENABLE=1. Without the
-    // flag, even a fully-configured role session writes to canonical without
-    // refusal — same as today. This is what makes per-role rollout safe.
+fn guard_active_regardless_of_feature_flag() {
+    // #2908 (2026-05-11): the CHORUS_WERK_ENABLE feature flag is retired. All
+    // three roles have CHORUS_WERK_ENABLE=1 in their settings.json today; the
+    // flag's per-role-opt-in purpose is fulfilled. Bug-class receipt: Wren's
+    // session 2026-05-11 edited canonical (directing/clearing/public/index.html)
+    // and the guard didn't fire because the flag wasn't loaded into the hook's
+    // env at evaluation time. Three-layer attention tax followed (Wren pings
+    // silas, silas surfaces Jeff, Jeff decides). Solution: guard fires when
+    // role is determinable, full stop. No flag.
     std::env::set_var("CHORUS_HOME", "/Users/jeff/CascadeProjects/chorus");
     std::env::set_var("CHORUS_ROLE", "kade");
     std::env::set_var("KADE_WERK", "/Users/jeff/CascadeProjects/chorus-werk/kade");
     std::env::set_var("CHORUS_WERK_BASE", "/Users/jeff/CascadeProjects/chorus-werk");
-    std::env::remove_var("CHORUS_WERK_ENABLE");
 
+    // Case 1: flag missing → guard MUST refuse (new contract, was allow).
+    std::env::remove_var("CHORUS_WERK_ENABLE");
     let input = write_input("/Users/jeff/CascadeProjects/chorus/platform/scripts/foo.sh");
     let r = canonical_write_guard::check(&input);
     assert!(
-        r.stdout.is_none(),
-        "without CHORUS_WERK_ENABLE=1, guard must be dormant — feature-flag contract"
+        r.stdout.is_some(),
+        "without CHORUS_WERK_ENABLE, guard must STILL refuse — flag retired #2908"
     );
 
-    // Cross-role write also dormant — flag is the master switch.
-    let cross = write_input("/Users/jeff/CascadeProjects/chorus-werk/wren/foo.md");
-    let r2 = canonical_write_guard::check(&cross);
+    // Case 2: flag set to non-"1" → guard MUST refuse (new contract, was allow).
+    for val in ["", "0", "true", "yes", "false", "no"] {
+        std::env::set_var("CHORUS_WERK_ENABLE", val);
+        let input = write_input("/Users/jeff/CascadeProjects/chorus/platform/scripts/foo.sh");
+        let r = canonical_write_guard::check(&input);
+        assert!(
+            r.stdout.is_some(),
+            "CHORUS_WERK_ENABLE='{val}' must STILL refuse — flag retired #2908"
+        );
+    }
+
+    // Case 3: flag set to "1" → still refuses (regression check; was the
+    // only pre-#2908 path that fired).
+    std::env::set_var("CHORUS_WERK_ENABLE", "1");
+    let input = write_input("/Users/jeff/CascadeProjects/chorus/platform/scripts/foo.sh");
+    let r = canonical_write_guard::check(&input);
     assert!(
-        r2.stdout.is_none(),
-        "without CHORUS_WERK_ENABLE=1, even cross-role writes are dormant — full opt-in"
+        r.stdout.is_some(),
+        "with CHORUS_WERK_ENABLE=1, guard refuses (regression check)"
     );
 
     // Cleanup
@@ -214,31 +232,30 @@ fn dormant_without_feature_flag_even_when_role_set() {
     std::env::remove_var("CHORUS_ROLE");
     std::env::remove_var("KADE_WERK");
     std::env::remove_var("CHORUS_WERK_BASE");
+    std::env::remove_var("CHORUS_WERK_ENABLE");
 }
 
 #[test]
-fn flag_set_to_anything_other_than_1_also_dormant() {
-    // Strict contract: only "1" activates. "true", "yes", "0", empty all
-    // mean dormant. Avoids accidental activation from inherited shell vars
-    // that happen to be non-empty.
+fn cross_role_write_refused_regardless_of_flag() {
+    // Companion to guard_active_regardless_of_feature_flag — cross-role
+    // writes should also refuse without depending on the flag.
     std::env::set_var("CHORUS_HOME", "/Users/jeff/CascadeProjects/chorus");
     std::env::set_var("CHORUS_ROLE", "kade");
     std::env::set_var("KADE_WERK", "/Users/jeff/CascadeProjects/chorus-werk/kade");
     std::env::set_var("CHORUS_WERK_BASE", "/Users/jeff/CascadeProjects/chorus-werk");
+    std::env::remove_var("CHORUS_WERK_ENABLE");
 
-    for val in ["", "0", "true", "yes", "false", "no"] {
-        std::env::set_var("CHORUS_WERK_ENABLE", val);
-        let input = write_input("/Users/jeff/CascadeProjects/chorus/platform/scripts/foo.sh");
-        let r = canonical_write_guard::check(&input);
-        assert!(
-            r.stdout.is_none(),
-            "CHORUS_WERK_ENABLE='{val}' must be dormant — only '1' activates"
-        );
-    }
+    let cross = write_input("/Users/jeff/CascadeProjects/chorus-werk/wren/foo.md");
+    let r = canonical_write_guard::check(&cross);
+    assert!(
+        r.stdout.is_some(),
+        "cross-role write must refuse without flag dependency"
+    );
+    let msg = r.stdout.unwrap_or_default();
+    assert!(msg.contains("cross-role"), "refusal must name cross-role: {msg}");
 
     std::env::remove_var("CHORUS_HOME");
     std::env::remove_var("CHORUS_ROLE");
     std::env::remove_var("KADE_WERK");
     std::env::remove_var("CHORUS_WERK_BASE");
-    std::env::remove_var("CHORUS_WERK_ENABLE");
 }
