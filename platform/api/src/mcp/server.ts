@@ -1229,24 +1229,22 @@ async function executeAcp(
     const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
     const currentBranch = branchOut.trim();
     if (currentBranch && currentBranch !== 'main') {
-      // Check if the branch's tip (or any of its commits) is reachable from origin/main.
-      // git merge-base --is-ancestor returns 0 if HEAD is an ancestor of origin/main.
+      // #2911: check HEAD's reachability from origin/main directly. The prior
+      // implementation asked `gh pr view <branch> state` which answers the
+      // wrong question — `gh` maps to the most recent PR for the branch name,
+      // so a branch with a merged PR plus new unmerged commits returns
+      // state=MERGED and short-circuits /acp to closure with the new work
+      // unshipped (Wren #2910: bed47114 unmerged but prior PR #233 marked
+      // the branch MERGED). The right question is "is THIS commit already
+      // on main?" — `git merge-base --is-ancestor HEAD origin/main` answers
+      // it without trusting branch↔PR mapping.
       await execFileAsync('git', ['fetch', '--quiet', 'origin', 'main'], { env: transactionEnv, cwd: repoRoot, timeout: 15_000 });
       try {
-        // Strategy: check if the role's branch ref on origin (which is the stale
-        // pre-merge SHA, if PR already squashed) has been incorporated into origin/main
-        // via squash-merge detection. Simpler: if `gh pr view <branch> --json state`
-        // returns MERGED, the work is on main.
-        const { stdout: prStateOut } = await execFileAsync(
-          'gh',
-          ['pr', 'view', currentBranch, '--json', 'state', '-q', '.state'],
-          { env: transactionEnv, cwd: repoRoot, timeout: 15_000 },
-        );
-        if (prStateOut.trim() === 'MERGED') {
-          alreadyMerged = true;
-        }
+        await execFileAsync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
+        // rc=0 → HEAD is ancestor of origin/main → already merged
+        alreadyMerged = true;
       } catch {
-        /* gh pr view failed (no PR for this branch yet) — proceed normally */
+        /* rc!=0 → HEAD not ancestor → real work to ship; proceed normally */
       }
     }
   } catch {
