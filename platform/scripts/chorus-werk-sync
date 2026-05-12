@@ -17,12 +17,23 @@
 #     (symbolic-ref / update-ref / read-tree) to bypass blocked porcelain
 #     (checkout / switch / branch).
 #
+#   chorus-werk-sync recover (#2909)
+#     Auto-recover from a dirty canonical without losing work. For each file
+#     in M/A/D state that isn't merge=union: copy to ~/.chorus/recovery/<ts>/,
+#     emit canonical.recovery.stashed event with path + sha + recovery_path,
+#     restore from HEAD. Then fetch + ff-only origin/main. End state: clean
+#     tree at origin/main tip; recovered work preserved in ~/.chorus/recovery/.
+#     Replaces the manual stash+pull workaround chorus-build pointed at
+#     pre-#2909. A role can invoke this from their own session if /build
+#     happens to leave canonical stuck.
+#
 # Usage:
 #   chorus-werk-sync repair
+#   chorus-werk-sync recover
 #
 # Exit codes:
 #   0  success
-#   1  repair failed (printed reason)
+#   1  repair / recover failed (printed reason)
 #   2  usage error
 
 set -uo pipefail
@@ -93,11 +104,108 @@ do_repair() {
   exit 0
 }
 
+# #2909 — do_recover: auto-stash real uncommitted files to ~/.chorus/recovery/
+# then sync. Replaces the "ops runs git stash && git pull" workaround the
+# pre-#2909 chorus-build pointed at. Lossless, no role-in-the-middle.
+do_recover() {
+  if [ ! -d "$CHORUS_HOME/.git" ]; then
+    abort "CHORUS_HOME=$CHORUS_HOME is not a git repo"
+  fi
+
+  local recovery_ts
+  recovery_ts=$(date +%Y%m%dT%H%M%S)
+  local recovery_dir="$HOME/.chorus/recovery/$recovery_ts"
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    abort "lockf timeout after ${LOCK_TIMEOUT}s — another git op is holding $LOCK_FILE"
+  fi
+
+  # Read dirty files (M/A/D entries in working tree or index).
+  local dirty_lines
+  dirty_lines=$(git -C "$CHORUS_HOME" status --porcelain 2>/dev/null | grep -E '^[ MAD]' || true)
+
+  local recovered=0
+  if [ -n "$dirty_lines" ]; then
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      local path="${line:3}"
+      [ -z "$path" ] && continue
+
+      # Skip merge=union files — git auto-merges them on pull.
+      local attr
+      attr=$(git -C "$CHORUS_HOME" check-attr merge "$path" 2>/dev/null | awk -F': ' '{print $3}')
+      if [ "$attr" = "union" ]; then
+        continue
+      fi
+
+      # Hash the path for the recovery filename (12 chars is enough to avoid
+      # collisions across a single timestamp dir).
+      local path_hash
+      path_hash=$(printf '%s' "$path" | shasum -a 256 | awk '{print $1}' | cut -c1-12)
+
+      mkdir -p "$recovery_dir"
+
+      # Save current working-tree content (if file exists; D-state files are
+      # already gone from disk).
+      local content_sha=""
+      if [ -f "$CHORUS_HOME/$path" ]; then
+        cp "$CHORUS_HOME/$path" "$recovery_dir/$path_hash"
+        content_sha=$(shasum -a 256 "$recovery_dir/$path_hash" | awk '{print $1}')
+      fi
+
+      # Append to manifest so a human can recover from $recovery_dir.
+      printf '%s\t%s\n' "$path_hash" "$path" >> "$recovery_dir/manifest.tsv"
+
+      # Restore from HEAD to clean the dirty state. If file isn't in HEAD (A
+      # state — added to index but not committed), remove it instead.
+      if git -C "$CHORUS_HOME" cat-file -e "HEAD:$path" 2>/dev/null; then
+        git -C "$CHORUS_HOME" checkout HEAD -- "$path" 2>/dev/null || true
+      else
+        rm -f "$CHORUS_HOME/$path" 2>/dev/null || true
+        # Unstage if it was added to index
+        git -C "$CHORUS_HOME" reset -q HEAD -- "$path" 2>/dev/null || true
+      fi
+
+      emit "canonical.recovery.stashed" \
+        "path=$path" \
+        "recovery_path=$recovery_dir/$path_hash" \
+        "sha=$content_sha"
+
+      recovered=$((recovered + 1))
+    done <<< "$dirty_lines"
+  fi
+
+  # Tree is now clean (or only has union-merge files). Fetch + ff-only.
+  if ! git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null; then
+    abort "recover: git fetch origin main failed"
+  fi
+  if ! git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
+    abort "recover: ff-only merge failed after stash — try chorus-werk-sync repair"
+  fi
+
+  local to_sha
+  to_sha=$(git -C "$CHORUS_HOME" rev-parse --short HEAD)
+
+  if [ "$recovered" -gt 0 ]; then
+    echo "chorus-werk-sync: recover — stashed $recovered file(s) to $recovery_dir/, synced to $to_sha"
+    echo "  Manifest: $recovery_dir/manifest.tsv (one row per stashed file: hash<TAB>original_path)"
+  else
+    echo "chorus-werk-sync: recover — no dirty files; synced to $to_sha (no-op)"
+  fi
+  emit "canonical.recovery.completed" "recovered=$recovered" "to=$to_sha"
+  exit 0
+}
+
 case "${1:-}" in
   repair) do_repair ;;
+  recover) do_recover ;;
   *)
-    echo "Usage: chorus-werk-sync repair" >&2
-    echo "  Manual canonical recovery primitive. Sync is automatic inside /build (#2863)." >&2
+    echo "Usage: chorus-werk-sync {repair|recover}" >&2
+    echo "  repair   — Re-attach HEAD to main, ff to origin/main (detached-HEAD recovery)" >&2
+    echo "  recover  — Auto-stash dirty files to ~/.chorus/recovery/<ts>/, then ff to origin/main (#2909)" >&2
+    echo "" >&2
+    echo "  Sync is automatic inside /build (#2863). Use these only when /build aborts." >&2
     exit 2
     ;;
 esac

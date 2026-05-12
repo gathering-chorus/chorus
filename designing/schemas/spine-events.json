@@ -543,6 +543,27 @@
         "result": "pass or fail"
       }
     },
+    "canonical.recovery.completed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "chorus-werk-sync recover finished \u2014 stashed zero or more files and synced canonical to origin/main tip (#2909). Pairs each `canonical.recovery.stashed` emit with a completion record so a fitness function can detect started-without-completed cases.",
+      "fields": {
+        "recovered": "Count of files stashed in this run (0 = no-op, tree was already clean)",
+        "to": "Short sha of canonical HEAD after sync"
+      }
+    },
+    "canonical.recovery.stashed": {
+      "vertebra": "operating",
+      "legacy_name": null,
+      "source": "chorus-events",
+      "description": "chorus-werk-sync recover moved a real uncommitted file out of canonical to ~/.chorus/recovery/<ts>/ before syncing. Lossless auto-recovery (#2909). Emitted once per stashed file. Replaces the pre-#2909 manual stash+pull workaround. Loki alert downstream surfaces the event so the team sees work landed in recovery.",
+      "fields": {
+        "path": "Original path inside canonical (relative)",
+        "recovery_path": "Absolute path under ~/.chorus/recovery/<ts>/ where the content was copied",
+        "sha": "sha256 of stashed content (empty if file was D-state \u2014 already deleted from disk)"
+      }
+    },
     "canonical.sync.repaired": {
       "vertebra": "operating",
       "legacy_name": null,

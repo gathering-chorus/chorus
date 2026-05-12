@@ -59,59 +59,21 @@ fi
 CHORUS_HOME_BUILD="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 echo "chorus-build: sync canonical from origin (invariant — first step of every build)"
 
-# Drift-class classifier (#2908). Runs BEFORE fetch so a dirty tree is
-# detected without making network calls. Files with merge=union .gitattributes
-# are expected dirty between syncs (activity.md, possibly others). Anything
-# else in M/A/D state is real uncommitted work that shouldn't live in canonical.
-DIRTY_LINES=$(git -C "$CHORUS_HOME_BUILD" status --porcelain 2>/dev/null | grep -E '^[ MAD]' || true)
-if [ -n "$DIRTY_LINES" ]; then
-  PROBLEMATIC=""
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    path="${line:3}"
-    # Check .gitattributes for merge=union — those files git auto-merges and
-    # we don't need to refuse on them.
-    attr=$(git -C "$CHORUS_HOME_BUILD" check-attr merge "$path" 2>/dev/null | awk -F': ' '{print $3}')
-    if [ "$attr" = "union" ]; then
-      continue
-    fi
-    PROBLEMATIC="${PROBLEMATIC}${line}"$'\n'
-  done <<< "$DIRTY_LINES"
-
-  if [ -n "$PROBLEMATIC" ]; then
-    echo "chorus-build: ABORT — canonical has uncommitted work blocking the sync" >&2
-    echo "  Files with real changes (not merge=union auto-merge):" >&2
-    while IFS= read -r line; do
-      [ -z "$line" ] && continue
-      echo "    $line" >&2
-    done <<< "$PROBLEMATIC"
-    echo "" >&2
-    echo "  These edits belong in a role's werk (\$<ROLE>_WERK/<path>), not canonical." >&2
-    echo "  Recovery options:" >&2
-    echo "    1. Move each edit to the owning role's werk; commit + acp normally." >&2
-    echo "    2. If the edits are unrecoverable drift, ops can reset canonical:" >&2
-    echo "       cd $CHORUS_HOME_BUILD && git stash && git pull --ff-only origin main" >&2
-    echo "       (stash preserves the edits for later recovery)" >&2
-    echo "  Auto-recovery is not attempted: real work could be lost." >&2
-    exit 1
-  fi
-fi
-
-if ! git -C "$CHORUS_HOME_BUILD" fetch --quiet origin main 2>&1; then
-  echo "chorus-build: ABORT — git fetch origin main failed" >&2
+# #2909 — delegate to chorus-werk-sync recover. The recover verb auto-stashes
+# real uncommitted files to ~/.chorus/recovery/<ts>/, then ff-only syncs.
+# Replaces the pre-#2909 path which refused with a manual recovery hint.
+# Single source of truth for sync recovery logic lives in chorus-werk-sync;
+# chorus-build is now a thin caller. End state: lossless auto-recovery, no
+# role-in-the-middle, no Jeff-escalation.
+SYNC_SCRIPT="$(dirname "$0")/chorus-werk-sync"
+if [ ! -x "$SYNC_SCRIPT" ]; then
+  echo "chorus-build: ABORT — chorus-werk-sync not found at $SYNC_SCRIPT" >&2
   exit 1
 fi
-if ! git -C "$CHORUS_HOME_BUILD" merge --ff-only origin/main >/dev/null 2>&1; then
-  HEAD_BEFORE=$(git -C "$CHORUS_HOME_BUILD" rev-parse --short HEAD 2>/dev/null || echo unknown)
-  ORIGIN_TIP=$(git -C "$CHORUS_HOME_BUILD" rev-parse --short origin/main 2>/dev/null || echo unknown)
-  echo "chorus-build: ABORT — canonical not fast-forwardable to origin/main" >&2
-  echo "  canonical HEAD: $HEAD_BEFORE" >&2
-  echo "  origin/main:    $ORIGIN_TIP" >&2
-  echo "  Likely cause: detached HEAD or divergent local commits" >&2
-  echo "  Recover: chorus-werk-sync repair, then re-run /build" >&2
+if ! CHORUS_HOME="$CHORUS_HOME_BUILD" "$SYNC_SCRIPT" recover; then
+  echo "chorus-build: ABORT — chorus-werk-sync recover failed (see above)" >&2
   exit 1
 fi
-echo "chorus-build: canonical at $(git -C "$CHORUS_HOME_BUILD" rev-parse --short HEAD)"
 
 CRATE="${1}"
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
