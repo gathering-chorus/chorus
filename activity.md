@@ -1276,3 +1276,11 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Audit gap found + fixed during verification: pulse `emitSpine` was writing `ts:` field; canonical chorus.log uses `timestamp:`. One-line fix to platform/pulse/src/service.ts; rebuilt + dist hot-patched into canonical (pulse dist/ is gitignored); verified post-fix nudge.surfaced has proper timestamp.
 
 [2026-05-09 07:50] kade → marathon session: shipped #2817 (file-watch + alerts), #2827 (graph hydrator §A-D, 4823 chorus:File hydrated), #2844 (enrichment writer wave 1-3, then tightened per Jeff/Wren — declarations stripped, mapping over-broad). Gated #2828 #2830 #2831 #2832 #2841 #2846 (code+quality). Filed #2842 (Athena verification col), #2844 (split from #2827 §E.3 originally), #2850 (nightly tests cleanup). Patched 3 alert YAMLs in canonical (success-msg + indent + tz parse fixes for Python 3.9). Pulled #2850. → wren / silas
+
+## 2026-05-12 07:43 — Kade session close (~14h, spanned date roll)
+- Shipped #2899 (chorus-hooks event rename + role attribution fix), PR #228 → f59d0dc0
+- Closed #2882, #2883, #2892 wontdo (resolved-by-ship / contradicted by code / design rejected)
+- Premise-corrected #2773, #2837, #2813
+- Gated peers: #2891 (re-run PASS), #2900 (re-run PASS after scope expansion), #2908 (PASS)
+- Acked Wren on chorus_acp false-positive fast-path bug — P1 my domain when filed
+- Long career-arc conversation with Jeff (WMS/Anzo/canonical-model lineage); saved feedback_recalibrate_clock_on_date_roll.md

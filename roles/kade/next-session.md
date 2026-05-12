@@ -1,55 +1,37 @@
 # Kade — Next Session
 
-**Last session: 2026-05-08 evening through 2026-05-09 ~07:50 (long marathon)**
+**Last session: 2026-05-10 17:31 → 2026-05-12 07:43 (~14h, spanned date roll)**
 
 ## State at close
 
-WIP: **#2850** (Nightly tests cleanup). Just pulled, zero commits yet. Edit on `nightly-suites.sh` was rejected by Jeff's /reboot mid-flight — recover the prepared parser-fix from conversation context.
+- WIP: **none** (idle)
+- Werk: kade/2899 was closed at /acp; canonical clean
+- Outstanding stash: `pre-pull #2899 stale lifecycle state` on kade werk (activity.md +9, next-session.md mods) — pre-existing handoff drift, not authored this session, can drop on next pull
 
-**HELD: #2844** committed at f28fc413 on origin (kade/2844 branch preserved). Per Silas: green-light on /acp comes after #2847 lands. Card has 5/5 gates passed. Three waves shipped. chorus.ttl has chorus:hasPathPattern as predicate-only (declarations stripped).
+## Shipped this session
 
-## #2850 plan when resuming
+- **#2899** — chorus-hooks types.rs: rename `gate.bypass.fix_card_override` → `gate.test_override.checked` + drop hardcoded "kade" role (caller_role_for_event reads CHORUS_ROLE → DEPLOY_ROLE → "unknown"). Integration test verifies attribution end-to-end via spine tail. f59d0dc0, PR #228.
+- **#2882, #2883** — closed wontdo (taxonomy already in chorus_acp; BDD coverage already in features/gates/accept.feature)
+- **#2773, #2837, #2813** — premise-corrected (blast radius, count drift, BDD count)
+- **#2892** — closed wontdo on Silas's clock-recalibration design (>12h threshold + system-reminder injection inherits the failure mode it's supposed to fix)
 
-**§A Parser robustness** (closest to done, blocked by /reboot):
-- Edit `platform/scripts/nightly-suites.sh` lines 158-176. Shell tier: scan whole output for `=== Results: N passed, M failed ===` first, fallback to `[N pass].*[N fail]`, last-resort synthesize from rc. Cargo tier: when zero pass+fail and rc!=0, emit "1 failed (compile/run failure)" so daily-review-quality flags it correctly instead of silent DID NOT RUN.
-- Add unit test feeding fixture stdouts from the 3 violating shell scripts.
+## Gates run for peers
 
-**§B Stale tests for retired bash nudge:**
-- `directing/products/cards/tests/nudge-pipeline-flow.test.ts` asserts `/platform/scripts/nudge` exists. nudge bash retired in #2804/#2809. Delete the file or rewrite for MCP. Grep for other stale refs.
+- **#2891** (Silas, observer.error) — gate:code FAIL on +3 dead-code warnings → re-run PASS after #[allow(dead_code)] fix; gate:quality PASS retroactively
+- **#2900** (Silas, chorus_design_refresh) — gate:code + gate:quality PASS; re-validated after autoConform scope expansion (27/27)
+- **#2908** (Silas, three subtractive bugs) — gate:code + gate:quality PASS
 
-**§C Gathering integration triage:**
-- 8 failing suites: doc-catalog-links, chorus-explorer-e2e, chorus-explorer-layout, performance-baselines, icd.service, seed-webhook-e2e, convergence-page, api-e2e. Classify hermeticity-gap / real-bug / test-rot. Skip-or-card.
+## Open threads to pick up
 
-## Off-card patches landed in canonical (no card)
+- **chorus_acp false-positive fast-path bug** — Wren filing as P1 in version-control domain (my domain). Repro: card reopened post-merge, new commits on fresh branch, /acp returns `already-merged: true` keying on card-id-ever-merged not `git rev-list origin/main..HEAD`. Worse: fast-path also runs branch-close → orphans new commits (Wren reflog-recovered 3x in an hour). AC sketch in my reply nudge: detection switches to rev-list count, branch-close gated on three conditions including reflog-recency check.
+- **3-min /acp observation** — Jeff named this. Hypothesis: same bug as above (false-positive fast-path doing expensive `gh pr list` lookups). Suggest measuring via Loki chorus_acp.* timestamp deltas before splitting into separate card.
+- **Pre-existing flake** — `tests/server-unit.test.ts:84 POST /api/chorus/embed no body` times out at 5s under full-suite parallel load (LanceDB embed timeout). Confirmed on main and Silas's werks. Worth a follow-on to bump timeout or move embed-touching tests to serial.
+- **Schema gap** — `designing/schemas/spine-events.json` doesn't register `gate.test_override.checked` (nor the old `gate.bypass.fix_card_override`). Pre-existing, surfaced by Silas's gate:arch on #2899. Easy follow-on card.
 
-3 alert YAMLs (crawler-stale, crawler-error, hydration-divergence) patched via Bash sed. Three independent fixes to #2817:
-1. Success message → literal `ok` (alert-runner exact-matches).
-2. Multi-line python indented so awk extractor doesn't bail at `import`.
-3. TZ `-0400` → `-04:00` before fromisoformat (Python 3.9 alert-runner needs colon).
+## Long career-arc conversation with Jeff
 
-Werk copies reverted to keep #2844 diff scoped. NO follow-on card — Jeff said stop touching alerts.
-
-## Threads in motion
-
-- **#2847** Wren hierarchy cleanup — Silas pulling. Pings me to re-run #2844 enrichment.
-- **#2851** Athena hierarchy CRUD API (auto-filed by audit-close).
-- **#2842** Athena verification column — kade, P2, after #2844 re-run.
-- **#2843** spine-events.json batch — Silas folding my enrichment.fileInDomain.written.
-- **#2839** trace_id propagation contract — Silas drafting using my MCP-mint+SpineEmitter-carries framing.
-- **#2818** test tagging — kade, depends on cleaned subdomain names.
-
-## Jeff's frustrations to remember
-
-- Don't touch alerts unprompted. He said "I am NOT OK WITH THESE ALERTS."
-- Path-regex tagging is wrong model (domain ≠ directory). Wiped 4046 misleading triples. Tightening held.
-- Show outcomes in plain English, not mechanics. "Show me in a way I can understand."
-- Card title shouldn't overpromise. "What was the deliverable here."
-
-## Werk state
-
-Werk on kade/2850 (fresh, detached origin). kade/2844 branch preserved on origin at f28fc413. After #2850 acps, switch back to kade/2844.
+Jeff reflected on the WMS/EXE Dallas Systems work + Anzo/Cambridge Semantics + canonical-model 25 years of priors being reenacted at AI-agent speed. Substrate failures compound at agent-emit rate that humans never hit. Memory file `feedback_recalibrate_clock_on_date_roll.md` came out of the date-roll incident (both Wren and I missed the 19:30 ETA crossing midnight). Saved. Pattern this session: substrate is finally observable enough that the variance shows — not new variance, just newly visible.
 
 ## Boot recommendation
 
-If Silas pinged on #2847 land: switch to kade/2844 → /acp → file follow-on for re-run against cleaned names → resume #2850.
-Else: §A parser fix first (smallest, closes the noise that triggered #2850).
+Pull the chorus_acp fast-path fix when Wren files it (P1, my domain). It's small surgical work — change detection from card-id-ever-merged to `git rev-list count = 0`, gate branch-close on three conditions, regression test. AC will be self-evident from Wren's repro.
