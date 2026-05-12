@@ -157,6 +157,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] kade: m\n', stderr: '' };
         if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
         if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        // #2911: merge-base --is-ancestor throws (rc!=0) → HEAD not on main → normal flow
+        if (file === 'git' && args[0] === 'merge-base') { const e = new Error('not ancestor') as { code?: number }; e.code = 1; throw e; }
         if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
         if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
         if (file === 'gh' && args[1] === 'merge') {
@@ -237,6 +239,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2799 abcd] kade: m\n', stderr: '' };
         if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
         if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2799\n', stderr: '' };
+        // #2911: HEAD not ancestor → normal flow
+        if (file === 'git' && args[0] === 'merge-base') { const e = new Error('not ancestor') as { code?: number }; e.code = 1; throw e; }
         if (file === 'gh' && args[1] === 'view') return { stdout: 'https://github.com/x/y/pull/1\n', stderr: '' };
         if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
@@ -274,6 +278,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] kade: m\n', stderr: '' };
         if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
         if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        // #2911: HEAD not ancestor → normal flow (idempotent path still creates+merges; "already merged" is a separate concept now)
+        if (file === 'git' && args[0] === 'merge-base') { const e = new Error('not ancestor') as { code?: number }; e.code = 1; throw e; }
         if (file === 'gh' && args[1] === 'view') {
           // PR already exists — view succeeds
           return { stdout: 'https://github.com/x/y/pull/999\n', stderr: '' };
@@ -394,6 +400,88 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(doneCalls[0].args[1]).toBe('2779');
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.card_id).toBe(2779);
+    });
+  });
+
+  describe('#2911 — already-merged check uses merge-base, not gh-pr-view state', () => {
+    // Wren #2910 (2026-05-12): wren/2910 had a prior PR #233 merged (bouncer
+    // half). Wren pushed a second commit bed47114 onto wren/2910 for the SDK-
+    // consolidation half. /acp asked `gh pr view wren/2910 state` which
+    // returned MERGED (gh resolves to the most recent matching PR — #233 —
+    // which IS merged). Fast-path triggered, cards-done ran, branch closed,
+    // bed47114 was never shipped. Stuck for hours.
+    //
+    // Right question: "is HEAD on origin/main?" Answered by
+    // `git merge-base --is-ancestor HEAD origin/main`. rc=0 → ancestor →
+    // already merged. rc!=0 → not ancestor → real work to ship.
+
+    test('does NOT short-circuit when HEAD is not ancestor of origin/main, even if branch had a merged PR', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'wren/2910\n', stderr: '' };
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        // HEAD not ancestor of origin/main → throw (rc!=0)
+        if (file === 'git' && args[0] === 'merge-base') { const e = new Error('not ancestor') as { code?: number }; e.code = 1; throw e; }
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[wren/2910 bed4711] wren: m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') return { stdout: 'https://github.com/x/y/pull/234\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'wren', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2910, title: 'sdk consolidation' }] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'wren' } } }, {});
+
+      // Normal flow must run: commit, push, pr-merge all called
+      expect(calls.some((c) => c.file.endsWith('git-queue.sh') && c.args[0] === 'commit')).toBe(true);
+      expect(calls.some((c) => c.file.endsWith('git-queue.sh') && c.args[0] === 'push')).toBe(true);
+      expect(calls.some((c) => c.file === 'gh' && c.args[1] === 'merge')).toBe(true);
+      // Result is NOT fast-path
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.fast_path).toBeUndefined();
+      // already-merged-check step ran and reported not-merged
+      const checkCompleted = events.find((e) => e.event === 'chorus_acp.already-merged-check.completed');
+      expect(checkCompleted?.fields.already_merged).toBe(false);
+    });
+
+    test('DOES short-circuit when HEAD is ancestor of origin/main (true already-merged)', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        // HEAD IS ancestor of origin/main → rc=0
+        if (file === 'git' && args[0] === 'merge-base') return { stdout: '', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+      // commit + push + pr-merge NOT called
+      expect(calls.some((c) => c.file.endsWith('git-queue.sh') && c.args[0] === 'commit')).toBe(false);
+      expect(calls.some((c) => c.file === 'gh' && c.args[1] === 'merge')).toBe(false);
+      // cards done still called
+      expect(calls.some((c) => c.file.endsWith('cards') && c.args[0] === 'done')).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.fast_path).toBe(true);
     });
   });
 
