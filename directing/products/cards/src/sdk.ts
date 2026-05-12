@@ -249,10 +249,15 @@ function checkDemoEvidence(cardIndex: number): boolean {
   }
 
   // Check 2: card.demo.started spine event in chorus.log
+  // #2911: chorus-log emits card_id as a JSON number (no quotes), not a string.
+  // Original check searched for `"card_id":"${cardIndex}"` and never matched
+  // post-#2857 (when card_id moved to typed-int in the structured emit shape).
+  // Accept either form so we keep working if the emit format flips back.
   const logPath = path.join(__dirname, '..', '..', '..', '..', 'platform', 'logs', 'chorus.log');
   try {
     const log = fs.readFileSync(logPath, 'utf-8');
-    if (log.includes('"event":"card.demo.started"') && log.includes(`"card_id":"${cardIndex}"`)) {
+    if (log.includes('"event":"card.demo.started"')
+      && (log.includes(`"card_id":${cardIndex}`) || log.includes(`"card_id":"${cardIndex}"`))) {
       return true;
     }
   } catch { /* log may not exist */ }
