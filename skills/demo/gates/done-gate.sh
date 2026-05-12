@@ -47,45 +47,24 @@ if echo "$CARD_VIEW" | grep -qi "type:chore\|type:swat\|\[swat\]"; then
   exit 0
 fi
 
-# Check for demo evidence
-
-# Evidence 1: Demo brief in wren/briefs/ (active or under archive subdirs)
-BRIEF_DIR="$CHORUS_ROOT/roles/wren/briefs"
-if ls "$BRIEF_DIR"/*demo*"$CARD_ID"* >/dev/null 2>&1 \
-   || (find "$BRIEF_DIR" -maxdepth 4 -name "*demo*${CARD_ID}*" 2>/dev/null | grep -q .); then
-  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="brief" 2>/dev/null || true
-  exit 0
-fi
-
-# Evidence 2: Demo spine event via Chorus search API
-# #2806: DONE_GATE_SKIP_SEARCH=1 disables the spine-search path. test-skip-
-# gates.sh's demo_gate fixture sets this env so the test exercises the
-# evidence-not-found path without false positives from the live search log
-# (search logs record their own query history, so any card_id appears in
-# results once it's been queried). Pre-#2806 the env was named in the
-# test's setup but never honored here — gate always passed via spine_event.
-if [ -z "${DONE_GATE_SKIP_SEARCH:-}" ] \
-   && curl -sf "http://localhost:3340/api/chorus/search?q=card.demo.started+card%3D${CARD_ID}" 2>/dev/null | grep -q "card.demo.started"; then
-  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="spine_event" 2>/dev/null || true
-  exit 0
-fi
-
-# Evidence 3: cards demo was called (recorded in card comments, not description)
+# Check for demo evidence — CANONICAL FORM ONLY (#2910, Jeff direct 2026-05-12).
+# The single gate-evidence is the demo:preflight-pass card comment that /demo
+# Step 1.5 writes for every demo. Brief files, spine events, and "Demo started"
+# comments still get emitted by /demo for observability, but they are no longer
+# load-bearing for the gate. One reader, one form, no drift.
+#
+# Why: tonight (2026-05-12) chorus_acp refused on a card that had the comment
+# evidence; manual done-gate.sh accepted the same card. Root cause: cards SDK
+# checkDemoEvidence and this script had drifted to different evidence sets and
+# the SDK's spine-event check used a stale field name. Moving to one canonical
+# form means SDK and script reduce to identical greps.
 COMMENTS=$(echo "$CARD_VIEW" | sed -n '/Comments/,$p')
-if echo "$COMMENTS" | grep -qi "Demo started"; then
-  "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="comment" 2>/dev/null || true
-  exit 0
-fi
-
-# Evidence 4: demo:preflight-pass comment per /demo skill Step 1.5 / #2090
-# (#2770 — done-gate was checking three other forms but missed the one the
-# skill explicitly prescribes for single-card demos).
 if echo "$COMMENTS" | grep -qi "demo:preflight-pass"; then
   "$CHORUS_LOG" demo.done_gate.passed system card="$CARD_ID" evidence="preflight-comment" 2>/dev/null || true
   exit 0
 fi
 
-# No evidence found
+# No canonical evidence found
 echo "Demo gate: #${CARD_ID} has no demo evidence. Run /demo ${CARD_ID} first." >&2
 "$CHORUS_LOG" demo.done_gate.failed system card="$CARD_ID" reason="no_evidence" 2>/dev/null || true
 exit 1

@@ -114,7 +114,9 @@ function createMockClient(): BoardClient {
       return Promise.resolve({ ...body, id: taskId });
     }
     if (endpoint.match(/\/tasks\/\d+\/comments$/)) {
-      if (method === 'GET') return Promise.resolve([]);
+      if (method === 'GET') return Promise.resolve([
+        { author: { username: 'wren' }, comment: 'demo:preflight-pass ac=3/3 — wren' },
+      ]);
       return Promise.resolve({ id: 1, comment: body?.comment || '' });
     }
     if (endpoint.match(/\/tasks\/\d+\/labels/)) {
