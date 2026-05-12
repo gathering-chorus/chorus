@@ -827,12 +827,34 @@ Scope of impact: ${scope}
 
 Waiting for your yes. I won't file or proceed until you respond. If you approve, file the card yourself from your terminal — DEPLOY_ROLE=jeff bypasses this gate cleanly.`;
 
+  // #2910: write the composed ask to a pickup file so the model can surface it
+  // in its next response to Jeff. Previous design relied on the model reading
+  // its own stdout and deciding to forward the nudge — Silas demonstrated that
+  // gap by relaying a summary instead. The pickup file lets the next-response
+  // hook (or model-side discipline per skills/cards/bouncer-flow.md) surface
+  // the ask verbatim. Without this, the only reliable delivery channel to Jeff
+  // (model response text) is opt-in.
+  const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- node-builtin import in a CLI helper, no async needed for synchronous mkdir+write
+    const fs = require('fs');
+    fs.mkdirSync(pendingDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fname = `${pendingDir}/${role}-${stamp}.txt`;
+    fs.writeFileSync(fname, nudge);
+    console.log(`[card-approval pickup written to ${fname}]`);
+  } catch (err) {
+    // Best-effort write; failure logs but doesn't block the refusal exit.
+    console.error(`WARN: failed to write pickup file under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
+  }
+
   console.log('---');
-  console.log('Agent card creation is refused. Send this nudge to Jeff via chorus_nudge_message:');
+  console.log('Agent card creation is refused. The structured ask was written to the pickup file above AND printed below.');
+  console.log('The model contract (per skills/cards/bouncer-flow.md): before your next response to Jeff, surface this [card-approval] block verbatim in your reply text, then delete the pickup file.');
   console.log('---');
   console.log(nudge);
   console.log('---');
-  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. Read your own ask above; if it stands, send via chorus_nudge_message to jeff and wait for his yes.');
+  console.error('REFUSED: agent cards add requires Jeff approval. No card filed. The pickup file is the auto-send substrate — the model surfaces the ask in its next response, no agent opt-out.');
   process.exit(1);
 }
 
