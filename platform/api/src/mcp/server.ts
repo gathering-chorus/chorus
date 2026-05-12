@@ -1229,22 +1229,29 @@ async function executeAcp(
     const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
     const currentBranch = branchOut.trim();
     if (currentBranch && currentBranch !== 'main') {
-      // #2911: check HEAD's reachability from origin/main directly. The prior
-      // implementation asked `gh pr view <branch> state` which answers the
-      // wrong question — `gh` maps to the most recent PR for the branch name,
-      // so a branch with a merged PR plus new unmerged commits returns
-      // state=MERGED and short-circuits /acp to closure with the new work
-      // unshipped (Wren #2910: bed47114 unmerged but prior PR #233 marked
-      // the branch MERGED). The right question is "is THIS commit already
-      // on main?" — `git merge-base --is-ancestor HEAD origin/main` answers
-      // it without trusting branch↔PR mapping.
+      // #2911: ask "are all of HEAD's commits already on origin/main, by
+      // content?" Prior impl asked `gh pr view <branch> state` (wrong question:
+      // gh maps to most recent PR for the branch name, so a merged-prior-PR
+      // plus new unmerged commits returned MERGED → short-circuit → new work
+      // unshipped — Wren #2910 / bed47114).
+      //
+      // First fix was `git merge-base --is-ancestor HEAD origin/main`, but
+      // that regresses the squash-merge case (Silas, #2177): after squash,
+      // HEAD is no longer an ancestor of main even though every commit's
+      // content lives there as the new squash commit.
+      //
+      // `git cherry origin/main HEAD` answers by patch-id:
+      //   '+ <sha>'  commit's patch NOT upstream  (real work to ship)
+      //   '- <sha>'  commit's patch IS upstream  (squash-equivalent or merged)
+      // No '+' lines → every commit is already on main → alreadyMerged=true.
+      // Catches both sha-ancestor merge AND patch-id squash-merge in one check.
       await execFileAsync('git', ['fetch', '--quiet', 'origin', 'main'], { env: transactionEnv, cwd: repoRoot, timeout: 15_000 });
       try {
-        await execFileAsync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
-        // rc=0 → HEAD is ancestor of origin/main → already merged
-        alreadyMerged = true;
+        const { stdout: cherryOut } = await execFileAsync('git', ['cherry', 'origin/main', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
+        const hasUnmerged = cherryOut.split('\n').some((line) => line.startsWith('+'));
+        if (!hasUnmerged) alreadyMerged = true;
       } catch {
-        /* rc!=0 → HEAD not ancestor → real work to ship; proceed normally */
+        /* git cherry failed (no upstream, no commits) — proceed normally */
       }
     }
   } catch {
