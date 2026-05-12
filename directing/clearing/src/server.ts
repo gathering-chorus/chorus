@@ -912,9 +912,11 @@ app.post('/api/restart', (_req, res) => {
     tailer.stop();
     sessionTailer.stop();
     void io.close();
-    server.close(() => process.exit(0));
-    // Force exit after 3s if graceful close hangs
-    setTimeout(() => process.exit(0), 3000);
+    // Force exit if graceful close hangs; unref + clear-on-success so the
+    // fallback doesn't fire after tests mock-then-restore process.exit.
+    const forceExit = setTimeout(() => process.exit(0), 3000);
+    forceExit.unref();
+    server.close(() => { clearTimeout(forceExit); process.exit(0); });
   }, 500);
 });
 
