@@ -82,7 +82,9 @@ UNCHECKED_LINES=$(echo "$AC_LINES" | grep '^\s*- \[ \]')
   ```
 - If `AC_TOTAL = 0` → **STOP.** Card has no AC — same as Step 1 validation.
 
-### 2. Post demo evidence (#2090)
+### 2. Post demo evidence (#2090, #2910)
+
+**The `demo:preflight-pass` card comment is the single gate-evidence (#2910).** done-gate.sh and the cards SDK both grep card comments for this exact string — one reader, one writer, no drift. Brief files and spine events still get emitted for observability but are no longer load-bearing for the gate.
 
 **For single-card demos:** Post a card comment as gate evidence. No brief file — spine events and card comments are the provenance record.
 

@@ -44,7 +44,11 @@ class MockClient {
       created: '2026-04-19T10:00:00Z', updated: '2026-04-19T10:00:00Z', done: status === 'Done',
     } as unknown as BoardTask;
   }
-  async comments(index: number) { this.calls.push({ method: 'comments', args: [index] }); return []; }
+  commentsByIndex: Map<number, Array<{ author: string; text: string }>> = new Map();
+  async comments(index: number) {
+    this.calls.push({ method: 'comments', args: [index] });
+    return this.commentsByIndex.get(index) || [];
+  }
 }
 
 function asBoardClient(m: MockClient): BoardClient { return m as unknown as BoardClient; }
@@ -77,20 +81,26 @@ describe('doneCard demo-evidence scan', () => {
     expect(mock.calls.find((c) => c.method === 'done')?.args[0]).toBe(42);
   });
 
-  it('no --proven, no brief file → TS layer still completes (Rust gate is the blocker)', async () => {
+  it('no demo:preflight-pass comment → process.exit(1) blocks done (#2910 canonical)', async () => {
     const mock = new MockClient();
     const cap = silence();
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
     try {
-      await doneCard(asBoardClient(mock), 99);
-    } finally { cap.restore(); }
-    expect(mock.calls.find((c) => c.method === 'done')?.args[0]).toBe(99);
+      await expect(doneCard(asBoardClient(mock), 99)).rejects.toThrow('exit:1');
+    } finally {
+      cap.restore();
+      exitSpy.mockRestore();
+    }
+    expect(mock.calls.find((c) => c.method === 'done')).toBeUndefined();
   });
 
-  it('finds demo brief in redirected briefs/ dir when one exists', async () => {
-    const wrenDir = path.join(tmp, 'wren', 'briefs');
-    fs.mkdirSync(wrenDir, { recursive: true });
-    fs.writeFileSync(path.join(wrenDir, '2026-04-19-demo-42.md'), '# demo');
+  it('finds demo:preflight-pass comment via client.comments() (#2910 canonical)', async () => {
     const mock = new MockClient();
+    mock.commentsByIndex.set(42, [
+      { author: 'wren', text: 'demo:preflight-pass ac=3/3 — wren' },
+    ]);
     const cap = silence();
     try {
       await doneCard(asBoardClient(mock), 42);

@@ -99,7 +99,7 @@ class MockClient {
 
   async comments(_index: number): Promise<Array<{ author: string; text: string }>> {
     this.record('comments', [_index]);
-    return [];
+    return [{ author: 'wren', text: 'demo:preflight-pass ac=1/1 — wren' }];
   }
 
   async update(index: number, fields: unknown): Promise<void> {

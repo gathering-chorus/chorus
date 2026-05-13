@@ -66,7 +66,7 @@ class FixtureClient {
   async block(index: number, reason: string): Promise<void> { this.record('block', [index, reason]); }
   async unblock(index: number): Promise<void> { this.record('unblock', [index]); }
   async comment(index: number, text: string): Promise<void> { this.record('comment', [index, text]); }
-  async comments(_index: number): Promise<Array<{ author: string; text: string }>> { this.record('comments', [_index]); return []; }
+  async comments(_index: number): Promise<Array<{ author: string; text: string }>> { this.record('comments', [_index]); return [{ author: 'wren', text: 'demo:preflight-pass ac=1/1 — wren' }]; }
   async update(index: number, fields: unknown): Promise<void> { this.record('update', [index, fields]); }
   async tag(index: number, category: string, value: string): Promise<void> { this.record('tag', [index, category, value]); }
   async untag(index: number, label: string): Promise<void> { this.record('untag', [index, label]); }
