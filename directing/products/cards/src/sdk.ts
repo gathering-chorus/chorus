@@ -223,46 +223,30 @@ export function isCodeCard(text: string): boolean {
   return CODE_INDICATORS.test(text);
 }
 
-// ── Demo evidence check (#1834) ──
+// ── Demo evidence check (#1834, canonicalized in #2910) ──
 
 /**
- * Check for demo evidence: a demo brief file OR a card.demo.started spine event.
+ * Check for demo evidence — CANONICAL FORM ONLY (#2910, Jeff direct 2026-05-12).
+ *
+ * The single gate-evidence is the demo:preflight-pass card comment that /demo
+ * Step 1.5 writes for every demo. Prior versions checked brief files and a
+ * card.demo.started spine event with a stale `card_id` field name; both forms
+ * had drifted from done-gate.sh's checks and caused chorus_acp to refuse on
+ * cards that the manual script accepted. Now: this function checks the same
+ * single form done-gate.sh checks. One reader, one form, no drift.
+ *
+ * Brief files, spine events, and "Demo started" comments still get emitted by
+ * /demo for observability, but they are no longer load-bearing as gate evidence.
+ *
+ * @returns true if the card has a `demo:preflight-pass` comment.
  */
-function checkDemoEvidence(cardIndex: number): boolean {
-  const briefDirs = [
-    path.join(__dirname, '..', '..', '..', '..', 'roles', 'wren', 'briefs'),
-    path.join(__dirname, '..', '..', '..', '..', 'roles', 'silas', 'briefs'),
-    path.join(__dirname, '..', '..', '..', '..', 'roles', 'kade', 'briefs'),
-    path.join(__dirname, '..', '..', 'roles', 'wren', 'briefs'),
-    path.join(__dirname, '..', '..', 'roles', 'silas', 'briefs'),
-    path.join(__dirname, '..', '..', 'roles', 'kade', 'briefs'),
-  ];
-
-  // Check 1: demo brief file in any role's briefs/
-  for (const dir of briefDirs) {
-    try {
-      const files = fs.readdirSync(dir);
-      if (files.some(f => f.includes('demo') && f.includes(String(cardIndex)))) {
-        return true;
-      }
-    } catch { /* dir may not exist */ }
-  }
-
-  // Check 2: card.demo.started spine event in chorus.log
-  // #2911: chorus-log emits card_id as a JSON number (no quotes), not a string.
-  // Original check searched for `"card_id":"${cardIndex}"` and never matched
-  // post-#2857 (when card_id moved to typed-int in the structured emit shape).
-  // Accept either form so we keep working if the emit format flips back.
-  const logPath = path.join(__dirname, '..', '..', '..', '..', 'platform', 'logs', 'chorus.log');
+async function checkDemoEvidence(cardIndex: number, client: BoardClient): Promise<boolean> {
   try {
-    const log = fs.readFileSync(logPath, 'utf-8');
-    if (log.includes('"event":"card.demo.started"')
-      && (log.includes(`"card_id":${cardIndex}`) || log.includes(`"card_id":"${cardIndex}"`))) {
-      return true;
-    }
-  } catch { /* log may not exist */ }
-
-  return false;
+    const comments = await client.comments(cardIndex);
+    return comments.some(c => /demo:preflight-pass/i.test(c.text || ''));
+  } catch {
+    return false;
+  }
 }
 
 // ── Quality gates ──
@@ -1089,7 +1073,7 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
     const cardDomains = cardForGate?.domains || [];
     const isExempt = cardDomains.some((d: string) => d === 'type:chore' || d === 'type:swat');
     if (!isExempt) {
-      const hasDemoEvidence = checkDemoEvidence(index);
+      const hasDemoEvidence = await checkDemoEvidence(index, client);
       if (!hasDemoEvidence) {
         console.error(`Demo gate: #${index} has no demo evidence. Run /demo ${index} first.`);
         process.exit(1);
