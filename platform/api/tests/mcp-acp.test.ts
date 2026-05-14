@@ -241,7 +241,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2799\n', stderr: '' };
         // #2911: cherry shows + line → unmerged → normal flow
         if (file === 'git' && args[0] === 'cherry') return { stdout: '+ abc1234 new work\n', stderr: '' };
-        if (file === 'gh' && args[1] === 'view') return { stdout: 'https://github.com/x/y/pull/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') return { stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/1', state: 'OPEN' }), stderr: '' };
         if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
         return { stdout: '', stderr: '' };
@@ -281,8 +281,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         // #2911: cherry shows + line → unmerged → normal flow (idempotent path still creates+merges; "already merged" is a separate concept now)
         if (file === 'git' && args[0] === 'cherry') return { stdout: '+ abc1234 new work\n', stderr: '' };
         if (file === 'gh' && args[1] === 'view') {
-          // PR already exists — view succeeds
-          return { stdout: 'https://github.com/x/y/pull/999\n', stderr: '' };
+          // PR already exists and is OPEN — view succeeds
+          return { stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/999', state: 'OPEN' }), stderr: '' };
         }
         if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done: #2750\n', stderr: '' };
@@ -433,7 +433,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file === 'git' && args[0] === 'cherry') return { stdout: '+ bed47114 new commit on top of merged PR\n', stderr: '' };
         if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[wren/2910 bed4711] wren: m\n', stderr: '' };
         if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
-        if (file === 'gh' && args[1] === 'view') return { stdout: 'https://github.com/x/y/pull/234\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') return { stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/234', state: 'OPEN' }), stderr: '' };
         if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
         return { stdout: '', stderr: '' };
@@ -676,6 +676,97 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       );
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.card_id).toBe(2750);
+    });
+  });
+
+  // #2913 — reused branch: a stale MERGED/CLOSED PR + new commits opens a
+  // fresh PR. Self-acp receipt, 2026-05-14: kade/2913 shipped via merged PR
+  // #241, then accrued a new commit. /acp ran — `git cherry` correctly showed
+  // the new commit unmerged (no fast-path), but the PR step ran
+  // `gh pr view kade/2913`, which returns the *most recent* PR for the branch
+  // name: the MERGED #241. `gh pr merge` on #241 errored "already merged",
+  // caught as idempotent success → new commit shipped nothing, cards-done ran
+  // falsely, chorus-werk remove couldn't delete the unmerged branch
+  // (branch_closed:false). The PR step must consult the found PR's state: a
+  // MERGED/CLOSED PR on a branch with unmerged commits is stale — open a fresh
+  // PR for the new work, don't try to re-merge the dead one.
+  describe('#2913 — reused branch: stale merged PR + new commits opens a fresh PR', () => {
+    test('opens a fresh PR when gh pr view returns a MERGED PR but commits are unmerged', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2913\n', stderr: '' };
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        // cherry shows '+' → new commit, unmerged → no fast-path
+        if (file === 'git' && args[0] === 'cherry') return { stdout: '+ 1ecae41a doc fix on top of merged PR\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2913 1ecae41a] kade: m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        // gh pr view returns the stale MERGED PR #241 for the reused branch name
+        if (file === 'gh' && args[1] === 'view') {
+          return { stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/241', state: 'MERGED' }), stderr: '' };
+        }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://github.com/x/y/pull/242\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2913, owner: 'kade', title: 'chorus-werk rewrite' }] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      // A fresh PR MUST be created — the stale merged #241 is not the target.
+      const createCalls = calls.filter((c) => c.file === 'gh' && c.args[1] === 'create');
+      expect(createCalls.length).toBe(1);
+      // pr-merge still runs (against the fresh PR).
+      expect(calls.some((c) => c.file === 'gh' && c.args[1] === 'merge')).toBe(true);
+      // Result carries the fresh PR url, not the stale #241.
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.pr_url).toContain('/pull/242');
+      expect(parsed.pr_url).not.toContain('/pull/241');
+    });
+
+    test('reuses the existing PR when gh pr view returns an OPEN PR (no stale-PR churn)', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2913\n', stderr: '' };
+        if (file === 'git' && args[0] === 'fetch') return { stdout: '', stderr: '' };
+        if (file === 'git' && args[0] === 'cherry') return { stdout: '+ abc1234 new work\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2913 abc1234] kade: m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') {
+          return { stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/300', state: 'OPEN' }), stderr: '' };
+        }
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [{ id: 2913, owner: 'kade', title: 'x' }] })) as never,
+        emitSpineEvent: (() => {}) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      // OPEN PR is reused — no fresh PR created.
+      const createCalls = calls.filter((c) => c.file === 'gh' && c.args[1] === 'create');
+      expect(createCalls.length).toBe(0);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.pr_url).toContain('/pull/300');
     });
   });
 });
