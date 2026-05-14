@@ -159,38 +159,34 @@ CLI (`cards`) for mutations. API is read-only.
 
 See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget.
 
-# Per-Role Worktrees — chorus-werk (#2735, 2026-05-05)
+# Per-Role Worktrees — chorus-werk (#2735, #2913)
 
-**Per-role worktrees are the substrate.** Each role works in `/CascadeProjects/chorus-werk/<role>/` — a git worktree of canonical, branched from main, with its own `HEAD` file (under `.git/worktrees/<role>/HEAD`). Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions. Edits during a session land in the role's werk; canonical refreshes only via lock-guarded `chorus-werk-sync`.
+**Worktrees are ephemeral per-card.** Each card gets its own git worktree at `/CascadeProjects/chorus-werk/<role>-<card>/` — a worktree of canonical, branched from `origin/main`, with its own `HEAD`. It is created on `/pull` and removed on `/acp`. Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions. Edits during a session land in the card's werk; canonical refreshes only via lock-guarded `chorus-werk-sync`. #2913 replaced the persistent-per-role model (`chorus-werk/<role>/`, one directory mutated across cards via `repoint`) — branch-swap-in-place is gone, so the detached-HEAD failure class it produced cannot recur.
 
 ## Substrate scripts (`platform/scripts/`)
 
-- `chorus-werk init <role>` — create worktree at `$CHORUS_WERK_BASE/<role>/`, detached at main's tip; bakes per-werk `user.email`/`user.name` so each role's commits are correctly attributed
-- `chorus-werk repoint <role> <branch>` — switch werk to `<branch>` via `git-queue.sh checkout`
-- `chorus-werk pull <role> <card-id>` — atomic init-if-needed + repoint to `<role>/<card-id>`
-- `chorus-werk close <role> <card-id>` — branch closes when card closes (#2740): verifies Done, refuses on dirty werk, detaches werk at main, deletes local branch, attempts remote cleanup, emits `card.branch.closed` spine event
-- `chorus-werk remove <role>` — `git worktree remove`
-- `chorus-werk status` — list current worktrees
-- `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit)
+- `chorus-werk add <role> <card-id>` — create the card's worktree at `$CHORUS_WERK_BASE/<role>-<card>/` from `origin/main` on branch `<role>/<card-id>`; node_modules bootstrap; bakes per-werk `user.email`/`user.name` so each role's commits are correctly attributed; idempotent
+- `chorus-werk remove <role> <card-id>` — tear down the card's worktree end-to-end: refuses on dirty werk, removes the worktree, deletes the local branch, attempts remote-branch cleanup, runs `git worktree prune`, emits `card.branch.closed` spine event; idempotent
+- `chorus-werk status` — list current ephemeral worktrees (`<role>-<card>` slots)
+- `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit); `repair` subcommand re-attaches a detached canonical
 - `chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 - `chorus-bin-install` — atomic install of a built+signed binary to `~/.chorus/bin/<name>` with `binary.deployed` spine emit (#2734)
 
+The `init / repoint / pull / close` verbs were **removed** by #2913. `/pull` calls `chorus-werk add`; `/acp` calls `chorus-werk remove`. There is no branch-swap-in-place anywhere in the script.
+
 ## Edit/Write rules (chorus-hooks `canonical_write_guard`)
 
-**Dormant unless `CHORUS_WERK_ENABLE=1`** in the role's session env. Per-role opt-in is the migration mechanism — PR #128 ships the guard in the binary but it does nothing until each role flips the flag.
+The `CHORUS_WERK_ENABLE` feature flag was **retired** by #2908 — the guard fires whenever the role is determinable.
 
-When active:
-- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
-- Edits under another role's werk → blocked (cross-role)
+- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to the card's werk
+- Edits under another role's werk → blocked (cross-role); the guard parses the owning role as the segment before the first `-` in the werk-slot name (`<role>-<card>`)
 - `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
 - Reads of canonical → allowed (role state lives there)
-- Silent when role env isn't set (bootstrap / generic shell)
-
-Strict flag check: only `CHORUS_WERK_ENABLE=1` activates. Empty / `0` / `true` / `yes` all leave the guard dormant — avoids accidental activation from inherited shell vars.
+- Silent when role env isn't set (bootstrap / migration / generic shell)
 
 ## Protected primitive — session-start anchor
 
-The session-start cwd remains `/chorus/roles/<role>/` in canonical. That's where role state (current-work.md, briefs/, memory pointers) reads from. Only the *write* surface moves to `/chorus-werk/<role>/`. The 2026-05-01 ruling rejected mechanisms that move session-start; chorus-werk does not.
+The session-start cwd remains `/chorus/roles/<role>/` in canonical. That's where role state (current-work.md, briefs/, memory pointers) reads from. Only the *write* surface moves to the card's werk at `/chorus-werk/<role>-<card>/`. The 2026-05-01 ruling rejected mechanisms that move session-start; chorus-werk does not.
 
 ## Earlier rejected shapes — what chorus-werk is NOT
 
