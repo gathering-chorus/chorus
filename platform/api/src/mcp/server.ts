@@ -75,12 +75,10 @@ export interface McpServerDeps {
   // the canonical commit+push surface. Default resolves to the repo's
   // platform/scripts/git-queue.sh; tests inject a fake path + mock execFileAsync.
   gitQueuePath?: string;
-  // #2750 — resolve the working tree (cwd) for git-queue.sh subprocs. When a
-  // role's CHORUS_WERK_ENABLE flag is on, commits and pulls must run against
-  // /chorus-werk/<role>/, not canonical (#2735). Default impl reads role's
-  // settings.json env block; tests inject a stub path. Returning the
-  // canonical repo root preserves pre-#2750 behavior exactly (#2662
-  // cwd=repo-root contract).
+  // #2913 — resolve the working tree (cwd / script root) for a role. The
+  // default impl globs chorus-werk/<role>-* : a single match is the role's
+  // active card werk, zero/ambiguous returns canonical (#2662 cwd=repo-root
+  // contract preserved). Tests inject a stub path.
   resolveWorkingTree?: (role: 'kade' | 'wren' | 'silas') => string;
   // #2760 — werk path existence check. Default uses fs.existsSync; tests
   // inject `() => true` so refusal taxonomy tests don't need real /tmp dirs.
@@ -608,14 +606,11 @@ const PULL_TOOL_DEF = {
   },
 } as const;
 
-// #2750 slice 2 — chorus_acp tool def. Atomic /acp transaction:
-// commit + push + PR open (or detect existing) + PR merge (squash + delete-branch)
-// + cards done + card.accepted spine event + chorus-werk close (when flag on).
-// Skill collapses to a single MCP call so model-compliance gaps can't shortcut steps.
+// #2759 — chorus_unpull_card tool def. /pull's atomic inverse.
 const UNPULL_CARD_TOOL_DEF = {
   name: 'chorus_unpull_card',
   description:
-    'Use this to reverse a pull and tear down the role\'s WIP card cleanly. Service runs validate (must be WIP + owned by role) + werk pre-flight (refuses werk-dirty) + cards move <id> Next + chorus-werk close (detach + branch teardown + werk.detached event) + role-state idle + card.unpulled spine event in one atomic transaction. Returns { role, card_id, prior_branch, branch_closed }. Refusal taxonomy: card-not-found | wrong-status | wrong-owner | werk-dirty | move-fail | branch-close-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy and leave stale branches. The /unpull skill calls this and nothing else.',
+    'Use this to reverse a pull and tear down the role\'s WIP card cleanly. Service runs validate (must be WIP + owned by role) + werk pre-flight (refuses werk-dirty) + cards move <id> Next + chorus-werk remove (removes the card\'s ephemeral worktree, deletes the branch, prunes stale admin entries, emits card.branch.closed) + role-state idle + card.unpulled spine event in one atomic transaction. Returns { role, card_id, prior_branch, branch_closed }. Refusal taxonomy: card-not-found | wrong-status | wrong-owner | werk-not-initialized | werk-dirty | move-fail | branch-close-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy and leave stale branches. The /unpull skill calls this and nothing else.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -638,7 +633,7 @@ const UNPULL_CARD_TOOL_DEF = {
 const PULL_CARD_TOOL_DEF = {
   name: 'chorus_pull_card',
   description:
-    'Use this to pull a card to WIP and ready the role\'s werk for building. Service runs validate + werk-pre-flight (refuses werk-dirty / werk-wrong-branch) + cards move WIP + chorus-werk repoint + role-state building + card.pulled spine event in one atomic transaction. Returns { role, card_id, branch }. Refusal taxonomy: card-not-found | wrong-status | ac-missing | experience-missing | werk-dirty | werk-wrong-branch | move-fail | branch-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy. The /pull skill calls this and nothing else.',
+    'Use this to pull a card to WIP and ready the role\'s werk for building. Service runs validate + cards move WIP + chorus-werk add (creates the card\'s ephemeral worktree chorus-werk/<role>-<card>/ on branch <role>/<card-id>) + role-state building + card.pulled spine event in one atomic transaction. Returns { role, card_id, branch }. Refusal taxonomy: card-not-found | wrong-status | ac-missing | experience-missing | move-fail | branch-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy. The /pull skill calls this and nothing else.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -871,20 +866,21 @@ function extractStderr(err: unknown): string {
   return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
 }
 
-// #2750 — default werk-aware resolver. Reads role's settings.json env block
-// for CHORUS_WERK_ENABLE. If "1", returns the role's werk path (sibling to
-// canonical: $HOME/CascadeProjects/chorus-werk/<role>). Else returns canonical.
+// #2913 — ephemeral-worktree resolver. Replaces the #2750 CHORUS_WERK_ENABLE
+// flag-router. Under the ephemeral model (chorus-werk/<role>-<card>/) there is
+// no per-role opt-in flag and no persistent per-role werk to route to: a role's
+// working tree IS the card's worktree, which exists only between /pull and /acp.
 //
-// #2779 / latent L1: NO caching. The cache shipped with #2750 was claimed safe
-// because "settings.json is a small file, role-state changes are rare events
-// bounded by session lifecycle." Both halves wrong: settings.json mutates
-// during a session (env-block edits, read-tree reset to main, role
-// reassignments), and "rare" is not "never" — when it happened on 2026-05-07
-// the cached resolution silently routed commits to canonical for the daemon's
-// lifetime. Cost: ~30 minutes of forensic work + a parked-branch recovery.
-// The fix is to read settings.json on every call. The file is ~1KB; JSON.parse
-// is microseconds; this is per-MCP-request, not per-spine-event. Correctness
-// is worth the read.
+// Resolution — single-card glob (#2913 path (a)):
+//   - exactly one chorus-werk/<role>-* dir → that is the role's active werk
+//   - zero → no card in flight; fall back to canonical (same as old flag-off)
+//   - more than one → ambiguous; the >1-card case needs an explicit card_id
+//     from the caller. That refinement is #2920 (MCP-affordance multi-card).
+//     Until then, return canonical so a wrong single werk is never guessed.
+//
+// No caching (the #2779 lesson): the set of werk dirs changes within a session
+// as cards are pulled and acp'd. readdir is microseconds; this is per-MCP-
+// request. Correctness over a cache that silently goes stale.
 export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs') as typeof import('node:fs');
@@ -892,22 +888,21 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
   const path = require('node:path') as typeof import('node:path');
 
   return (role: 'kade' | 'wren' | 'silas'): string => {
-    const settingsPath = path.join(canonicalRoot, 'roles', role, '.claude', 'settings.json');
-    let werkEnabled = false;
+    // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
+    const werkBase = path.join(path.dirname(canonicalRoot), 'chorus-werk');
+    let matches: string[] = [];
     try {
-      const raw = fs.readFileSync(settingsPath, 'utf8');
-      const parsed = JSON.parse(raw) as { env?: Record<string, string> };
-      werkEnabled = parsed.env?.CHORUS_WERK_ENABLE === '1';
+      matches = fs.readdirSync(werkBase, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name.startsWith(`${role}-`))
+        .map((e) => path.join(werkBase, e.name));
     } catch {
-      // settings.json missing or unreadable — treat as flag-off, fall back to canonical
-      werkEnabled = false;
+      // werk base missing/unreadable — no werk in flight, fall back to canonical
+      return canonicalRoot;
     }
-
-    if (werkEnabled) {
-      // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
-      const parent = path.dirname(canonicalRoot);
-      return path.join(parent, 'chorus-werk', role);
+    if (matches.length === 1) {
+      return matches[0];
     }
+    // zero or ambiguous-multiple — fall back to canonical rather than guess
     return canonicalRoot;
   };
 }
@@ -1279,7 +1274,7 @@ async function executeAcp(
     if (cardId !== null) {
       try {
         const chorusWerkPath = transactionPath.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-        await execFileAsync(chorusWerkPath, ['close', role, String(cardId)], { env: transactionEnv, timeout: 30_000 });
+        await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env: transactionEnv, timeout: 30_000 });
         branchClosed = true;
       } catch {
         /* non-fatal */
@@ -1338,13 +1333,15 @@ async function executeAcp(
   // --head main --base main is unrecoverable in-place; pre-#2793 the call
   // marched on and produced 4 different ad-hoc gh-improvisations in one
   // session (2026-05-07: gh-merge-direct, cards-done-direct, force-push,
-  // manual-PR). Refusing here gives operators one named recovery
-  // (chorus-werk repoint) instead of inventing a path. Builds on #2782's
-  // verify-after sequenced-steps shape: new typed refusal at a new step.
+  // manual-PR). Refusing here gives operators one named recovery instead
+  // of inventing a path. Builds on #2782's verify-after sequenced-steps
+  // shape: new typed refusal at a new step. (#2915 retires this guard
+  // entirely — the ephemeral model creates the werk on <role>/<card>, so a
+  // werk-on-main state cannot arise from a normal /pull.)
   if (branch === 'main') {
     const detail = cardId !== null
-      ? `werk is on main; run: chorus-werk repoint ${role} ${role}/${cardId}`
-      : `werk is on main and no card resolved from branch or board; pull a card first or repoint to ${role}/<card-id>`;
+      ? `werk is on main; the card's werk should be on ${role}/${cardId} — re-pull the card`
+      : `werk is on main and no card resolved from branch or board; pull a card first`;
     emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pre-pr-create', reason: 'werk-on-main', detail });
     throw new Error(`chorus_acp refused: werk-on-main — ${detail}`);
   }
@@ -1419,8 +1416,8 @@ async function executeAcp(
   try {
     // #2753 — no --delete-branch flag: gh's branch deletion does an implicit
     // `git checkout main` which collides with canonical's worktree (dual-
-    // checkout refusal). chorus-werk close (called below) handles local +
-    // remote branch cleanup correctly via update-ref-d + push --delete.
+    // checkout refusal). chorus-werk remove (called below) handles the
+    // worktree + local branch + remote-ref cleanup correctly.
     await execFileAsync('gh', ['pr', 'merge', branch, '--squash'], { env, cwd: repoRoot, timeout: 60_000 });
     stepEmit('pr-merge', 'completed', { idempotent: false });
   } catch (err) {
@@ -1449,13 +1446,13 @@ async function executeAcp(
   // Step 5 — spine event card.accepted.
   emit(CARD_ACCEPTED, { role, card: cardId });
 
-  // Step 6 — chorus-werk close (best-effort; doesn't fail the transaction).
+  // Step 6 — chorus-werk remove (best-effort; doesn't fail the transaction).
   let branchClosed = false;
   if (cardId !== null) {
     stepEmit('werk-close', 'started');
     try {
       const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-      await execFileAsync(chorusWerkPath, ['close', role, String(cardId)], { env, timeout: 30_000 });
+      await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
       branchClosed = true;
       stepEmit('werk-close', 'completed', { branch_closed: true });
     } catch (err) {
@@ -1503,9 +1500,12 @@ async function executePullCard(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
   resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-  fsExists: (p: string) => boolean,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role, card_id: cardId } = args;
+  // #2913: at pull time the card's ephemeral werk does not exist yet —
+  // `chorus-werk add` creates it below. resolveWorkingTree finds no
+  // <role>-<card> match and returns canonical; that is the correct root
+  // for invoking the substrate scripts (chorus-werk, role-state).
   const repoRoot = resolveWorkingTree(role);
   const branch = `${role}/${cardId}`;
 
@@ -1560,43 +1560,16 @@ async function executePullCard(
   }
   stepEmit('validate', 'completed', { status });
 
-  // Step 2 — werk pre-flight. Refuses werk-not-initialized, werk-dirty,
-  // werk-corrupt, werk-wrong-branch with typed reasons.
-  // #2751: dirty werk refusal stops contamination at the door.
-  // #2760: existence check FIRST so a missing werk path doesn't get
-  // mis-classified as werk-dirty. Wren hit this 2026-05-06: flag flipped,
-  // init never ran. Separating exec failures from dirty-output checks
-  // also kills the recursive double-throw the old try/catch produced.
-  stepEmit('werk-preflight', 'started');
-  if (!fsExists(repoRoot)) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
-  }
-  if (!fsExists(path.join(repoRoot, '.git'))) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
-  }
-  let dirty = '';
-  try {
-    const r = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
-    dirty = r.stdout;
-  } catch (err) {
-    refuse('werk-preflight', 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
-  }
-  if (dirty.trim().length > 0) {
-    refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
-  }
-  let currentBranch = '';
-  try {
-    const r = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
-    currentBranch = r.stdout.trim();
-  } catch (err) {
-    refuse('werk-preflight', 'werk-corrupt', `git rev-parse failed at ${repoRoot}: ${extractStderr(err)}`);
-  }
-  if (currentBranch !== 'main' && currentBranch !== 'HEAD' && currentBranch !== '') {
-    refuse('werk-preflight', 'werk-wrong-branch', `werk is on '${currentBranch}' — must be on main or detached`);
-  }
-  stepEmit('werk-preflight', 'completed');
+  // #2913: no werk pre-flight. Under the persistent-werk model this step
+  // checked one stable chorus-werk/<role>/ dir for dirty/wrong-branch state
+  // carried over from a prior card. The ephemeral model has no carry-over —
+  // each card gets a fresh worktree, created below by `chorus-werk add`,
+  // which is idempotent and refuses (exit 3) if a dir already exists on a
+  // different branch. The protection moved into `add` itself; pre-flighting
+  // a werk that does not exist yet was checking the wrong thing (and would
+  // false-refuse if canonical happened to be dirty).
 
-  // Step 3 — cards move WIP. Idempotent on already-WIP via cards CLI's own check.
+  // Step 2 — cards move WIP. Idempotent on already-WIP via cards CLI's own check.
   stepEmit('cards-move', 'started');
   try {
     await execFileAsync(cardsPath, ['move', String(cardId), 'WIP'], { env, timeout: 15_000 });
@@ -1609,18 +1582,19 @@ async function executePullCard(
     stepEmit('cards-move', 'completed', { idempotent: true });
   }
 
-  // Step 4 — chorus-werk repoint to <role>/<card-id>. Creates the branch
-  // off origin/main if it doesn't exist; switches to it if it does.
-  stepEmit('werk-repoint', 'started', { branch });
+  // Step 3 — chorus-werk add: create the card's ephemeral worktree at
+  // chorus-werk/<role>-<card>/ on branch <role>/<card-id>, branched from
+  // origin/main. Idempotent — a re-pull of the same card is a no-op.
+  stepEmit('werk-add', 'started', { branch });
   try {
     const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-    await execFileAsync(chorusWerkPath, ['repoint', role, branch], { env, timeout: 30_000 });
-    stepEmit('werk-repoint', 'completed', { branch });
+    await execFileAsync(chorusWerkPath, ['add', role, String(cardId)], { env, timeout: 30_000 });
+    stepEmit('werk-add', 'completed', { branch });
   } catch (err) {
-    refuse('werk-repoint', 'branch-fail', extractStderr(err));
+    refuse('werk-add', 'branch-fail', extractStderr(err));
   }
 
-  // Step 5 — role-state declare building.
+  // Step 4 — role-state declare building.
   stepEmit('role-state', 'started');
   try {
     const roleStatePath = path.join(repoRoot, 'platform', 'scripts', 'role-state');
@@ -1631,7 +1605,7 @@ async function executePullCard(
     stepEmit('role-state', 'completed', { warning: 'role-state declare failed (non-fatal)' });
   }
 
-  // Step 6 — spine event card.pulled.
+  // Step 5 — spine event card.pulled.
   emit(CARD_PULLED, { role, card_id: cardId, branch });
   emit('chorus_pull_card.completed', { role, card_id: cardId, branch });
 
@@ -1644,8 +1618,8 @@ async function executePullCard(
 
 // #2759 — chorus_unpull_card atomic teardown. /pull's natural inverse.
 // Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
-// uncommitted work. Reuses chorus-werk close for the detach + branch
-// teardown + werk.detached spine event.
+// uncommitted work. Uses chorus-werk remove to tear down the card's
+// ephemeral worktree + branch + emit card.branch.closed (#2913).
 async function executeUnpullCard(
   args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
   emit: SpineEmitter,
@@ -1704,14 +1678,19 @@ async function executeUnpullCard(
   }
   stepEmit('validate', 'completed', { status, owner });
 
-  // Step 2 — werk pre-flight. Refuse on missing werk path (#2760), exec
-  // failures (werk-corrupt), or uncommitted changes (don't lose work).
+  // Step 2 — werk pre-flight. Unlike pull, the card's ephemeral werk DOES
+  // exist at unpull time (it was created when the card was pulled), so
+  // pre-flighting it is checking the right thing. Refuse on a missing werk
+  // path, exec failures (werk-corrupt), or uncommitted changes (don't lose
+  // work — `chorus-werk remove` also refuses dirty, this surfaces it earlier
+  // with a typed reason). #2913: resolveWorkingTree returns the single
+  // chorus-werk/<role>-<card>/ match when the role has one card in flight.
   stepEmit('werk-preflight', 'started');
   if (!fsExists(repoRoot)) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
+    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — the card's werk may already be removed`);
   }
   if (!fsExists(path.join(repoRoot, '.git'))) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot} — run \`chorus-werk init ${role}\` first`);
+    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot}`);
   }
   let dirty = '';
   try {
@@ -1738,21 +1717,24 @@ async function executeUnpullCard(
     stepEmit('cards-move', 'completed', { idempotent: true });
   }
 
-  // Step 4 — chorus-werk close <role> <card_id>. Reuses #2740/#2757
-  // implementation: detach werk to origin/main, delete local branch,
-  // best-effort delete remote, emit werk.detached spine event. Pass
-  // --no-done-check because the card just went WIP→Next, not Done.
+  // Step 4 — chorus-werk remove <role> <card_id>. #2913 ephemeral model:
+  // remove the card's worktree, delete the local branch, best-effort delete
+  // the remote, prune stale admin entries, emit card.branch.closed. `remove`
+  // refuses on a dirty werk — the Step 2 pre-flight already caught that, this
+  // is belt-and-suspenders. There is no done-state check on `remove` (the
+  // old `close --no-done-check` flag is gone): remove is not gated on card
+  // status, it just refuses to drop uncommitted work.
   stepEmit('werk-close', 'started');
   let branchClosed = false;
   try {
     const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-    await execFileAsync(chorusWerkPath, ['close', '--no-done-check', role, String(cardId)], { env, timeout: 30_000 });
+    await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
     branchClosed = true;
     stepEmit('werk-close', 'completed', { branch_closed: true });
   } catch (err) {
     const stderr = extractStderr(err);
-    if (/already closed|no local ref/i.test(stderr)) {
-      // Idempotent: branch was already torn down.
+    if (/already removed/i.test(stderr)) {
+      // Idempotent: worktree + branch were already torn down.
       branchClosed = true;
       stepEmit('werk-close', 'completed', { idempotent: true });
     } else {
@@ -2255,9 +2237,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
   const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
   const gitQueuePath = deps.gitQueuePath ?? resolveGitQueuePath();
-  // #2750 — werk-aware cwd resolver. Default reads role's settings.json env
-  // for CHORUS_WERK_ENABLE; if "1", routes git-queue.sh to /chorus-werk/<role>/.
-  // Otherwise returns canonical (#2662 cwd=repo-root contract preserved).
+  // #2913 — ephemeral-worktree cwd resolver. Default globs chorus-werk/<role>-*;
+  // a single match is the role's active card werk, zero/ambiguous falls back to
+  // canonical (#2662 cwd=repo-root contract preserved). No CHORUS_WERK_ENABLE
+  // flag — the ephemeral model is the model, not an opt-in.
   const canonicalRepoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
@@ -2429,7 +2412,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
+        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree);
       }
       case 'chorus_unpull_card': {
         const parsed = UnpullCardInput.safeParse(req.params.arguments);

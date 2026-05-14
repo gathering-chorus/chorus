@@ -101,7 +101,7 @@ export interface GitFixture {
 
 /**
  * Create a hermetic bare-repo origin + working clone, branch off main at
- * <role>/<cardId>. Upstream tracks origin/main (matches chorus-werk repoint
+ * <role>/<cardId>. Upstream tracks origin/main (matches chorus-werk add
  * convention — important for the fresh-branch regression guard).
  *
  * Each call uses a unique sub-dir under runDir() so scenarios don't collide.
@@ -132,7 +132,7 @@ export function newGitFixture(role: 'kade' | 'wren' | 'silas', cardId: number): 
   }
   execFileSync('git', ['-C', cloneDir, 'push', '-q', '-u', 'origin', 'main']);
 
-  // Create role/card branch, set upstream to origin/main (chorus-werk repoint shape).
+  // Create role/card branch, set upstream to origin/main (chorus-werk add shape).
   execFileSync('git', ['-C', cloneDir, 'checkout', '-q', '-b', branch]);
   execFileSync('git', ['-C', cloneDir, 'branch', '--set-upstream-to=origin/main', branch]);
 

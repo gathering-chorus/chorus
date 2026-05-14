@@ -1,22 +1,20 @@
 /**
- * #2751 — MCP chorus_pull_card atomic transaction.
+ * #2751 / #2913 — MCP chorus_pull_card atomic transaction (ephemeral worktree).
  *
- * /pull skill today is 7 hard gates the model executes by reading markdown
- * (validate, preflight, wip-check, domain-context, design-gate, TDD-readiness,
- * move + branch + role-state + spine). Same model-compliance reliability gap
- * /acp had before #2750. Same fix shape: substrate primitive runs the whole
- * transaction; skill collapses to one MCP call.
+ * /pull is one MCP call: validate the card, move it to WIP, create the card's
+ * ephemeral worktree via `chorus-werk add`, declare role-state, emit
+ * card.pulled. The skill collapses to invoking this and nothing else.
  *
- * Plus the lived-experience addition from 2026-05-06 morning: when flag-on
- * and werk has uncommitted carry-over from a prior session, a /pull onto
- * dirty werk smuggled Wren's in-progress file into a kade commit. The MCP
- * refuses dirty werk and wrong-branch werk with typed reasons, so the
- * substrate can't be tricked into the same accident.
+ * #2913 changed the werk model. The old persistent-per-role werk had a
+ * werk-preflight step (refuse werk-dirty / werk-wrong-branch / werk-not-
+ * initialized) because a single stable chorus-werk/<role>/ dir carried state
+ * across cards. The ephemeral model has no carry-over: each card gets a fresh
+ * worktree, created here by `chorus-werk add`, which is idempotent and refuses
+ * a clobber itself. The preflight is gone — pre-flighting a werk that does not
+ * exist yet was checking the wrong thing.
  *
- * Per DEC-1674 (TDD): RED first. Specs describe Jeff's experience: he says
- * /pull <id> once and the card lands in WIP with a clean branch in the role's
- * werk; if the werk has carry-over drift, he gets a typed refusal naming the
- * dirty files, not a half-baked pull.
+ * Per DEC-1674 (TDD): specs describe Jeff's experience — he says /pull <id>
+ * once and the card lands in WIP with its own worktree on a fresh branch.
  */
 import { buildMcpServer } from '../src/mcp/server';
 
@@ -42,16 +40,10 @@ const baseCardJson = {
   domains: 'chunk:ops, domain:chorus, type:fix',
 };
 
-function buildHappyExec(opts: { dirty?: string; branch?: string; cardOverride?: Record<string, unknown> } = {}) {
+function buildHappyExec(opts: { cardOverride?: Record<string, unknown>; werkAddFails?: boolean } = {}) {
   const calls: Array<{ file: string; args: string[]; cwd?: string }> = [];
   const fn = jest.fn(async (file: string, args: string[], options: { cwd?: string } = {}) => {
     calls.push({ file, args, cwd: options.cwd });
-    if (file === 'git' && args[0] === 'status' && args[1] === '--porcelain') {
-      return { stdout: opts.dirty ?? '', stderr: '' };
-    }
-    if (file === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
-      return { stdout: (opts.branch ?? 'main') + '\n', stderr: '' };
-    }
     if (file.endsWith('cards') && args[0] === 'view') {
       const card = { ...baseCardJson, ...(opts.cardOverride ?? {}) };
       return { stdout: JSON.stringify(card), stderr: '' };
@@ -59,8 +51,14 @@ function buildHappyExec(opts: { dirty?: string; branch?: string; cardOverride?: 
     if (file.endsWith('cards') && args[0] === 'move') {
       return { stdout: 'Moved #2751 to WIP\n  Blast radius: 116 files, 1 domains\n', stderr: '' };
     }
-    if (file.endsWith('chorus-werk') && args[0] === 'repoint') {
-      return { stdout: 'chorus-werk: kade now on kade/2751\n', stderr: '' };
+    if (file.endsWith('chorus-werk') && args[0] === 'add') {
+      if (opts.werkAddFails) {
+        const err = new Error('add failed') as Error & { code?: number; stderr?: string };
+        err.code = 4;
+        err.stderr = 'chorus-werk: git worktree add -b kade/2751 failed';
+        throw err;
+      }
+      return { stdout: 'chorus-werk: added kade-2751 at /fake/chorus-werk/kade-2751 (branch kade/2751)\n', stderr: '' };
     }
     if (file.endsWith('role-state')) {
       return { stdout: 'role.state.changed\n', stderr: '' };
@@ -73,7 +71,7 @@ function buildHappyExec(opts: { dirty?: string; branch?: string; cardOverride?: 
   return { fn, calls };
 }
 
-describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
+describe('#2751 / #2913 — chorus_pull_card MCP atomic transaction', () => {
   describe('AC1 — registration', () => {
     test('exposes chorus_pull_card in tools/list', async () => {
       const server = buildMcpServer(() => 'kade');
@@ -96,15 +94,14 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
   });
 
   describe('AC2 — happy path runs full transaction', () => {
-    test('validates → moves to WIP → repoints werk → declares state → emits card.pulled', async () => {
+    test('validates → moves to WIP → chorus-werk add → declares state → emits card.pulled', async () => {
       const { fn: exec, calls } = buildHappyExec();
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       const result = await handler(
@@ -115,8 +112,10 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
       const fileNames = calls.map((c) => `${c.file.split('/').pop()}:${c.args[0]}`);
       expect(fileNames).toContain('cards:view');
       expect(fileNames).toContain('cards:move');
-      expect(fileNames).toContain('chorus-werk:repoint');
+      expect(fileNames).toContain('chorus-werk:add');
       expect(fileNames).toContain('role-state:kade');
+      // No git status / rev-parse — the werk-preflight step is gone (#2913).
+      expect(fileNames).not.toContain('git:status');
 
       expect(events.find((e) => e.event === 'card.pulled')).toBeDefined();
       expect(events.find((e) => e.event === 'card.pulled')?.fields.card_id).toBe(2751);
@@ -157,8 +156,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -173,8 +171,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -189,8 +186,7 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
@@ -199,92 +195,41 @@ describe('#2751 — chorus_pull_card MCP atomic transaction', () => {
       expect(events.find((e) => e.event === 'chorus_pull_card.refused')?.fields.reason).toBe('experience-missing');
     });
 
-    test('refuses werk-dirty when werk has uncommitted changes', async () => {
-      const { fn: exec } = buildHappyExec({ dirty: ' M roles/silas/next-session.md\n M platform/api/src/server.ts\n' });
+    test('refuses branch-fail when chorus-werk add fails', async () => {
+      const { fn: exec } = buildHappyExec({ werkAddFails: true });
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await expect(
         handler({ method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 2751 } } }, {}),
-      ).rejects.toThrow(/werk-dirty/);
-      const refusal = events.find((e) => e.event === 'chorus_pull_card.refused');
-      expect(refusal?.fields.reason).toBe('werk-dirty');
-      expect(String(refusal?.fields.detail)).toContain('next-session.md');
-    });
-
-    test('refuses werk-wrong-branch when werk is on a card branch instead of main', async () => {
-      const { fn: exec } = buildHappyExec({ branch: 'kade/2752' });
-      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
-      const server = buildMcpServer(() => 'kade', {
-        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
-        execFileAsync: exec as never,
-        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
-      } as never);
-      const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
-      await expect(
-        handler({ method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 2751 } } }, {}),
-      ).rejects.toThrow(/werk-wrong-branch/);
-      const refusal = events.find((e) => e.event === 'chorus_pull_card.refused');
-      expect(refusal?.fields.reason).toBe('werk-wrong-branch');
-      expect(String(refusal?.fields.detail)).toContain('kade/2752');
-    });
-
-    test('detached HEAD (post-acp state) is acceptable, not a refusal', async () => {
-      const { fn: exec } = buildHappyExec({ branch: 'HEAD' });
-      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
-      const server = buildMcpServer(() => 'kade', {
-        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
-        execFileAsync: exec as never,
-        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
-      } as never);
-      const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
-      await handler(
-        { method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 2751 } } },
-        {},
-      );
-      expect(events.find((e) => e.event === 'chorus_pull_card.refused')).toBeUndefined();
-      expect(events.find((e) => e.event === 'card.pulled')).toBeDefined();
+      ).rejects.toThrow(/branch-fail/);
+      expect(events.find((e) => e.event === 'chorus_pull_card.refused')?.fields.reason).toBe('branch-fail');
     });
   });
 
   describe('AC4 — werk-aware', () => {
-    test('routes git status + chorus-werk + role-state cwd via resolveWorkingTree', async () => {
-      const cwds: string[] = [];
-      const exec = jest.fn(async (file: string, args: string[], options: { cwd?: string } = {}) => {
-        if (options.cwd && (file === 'git' || file.endsWith('chorus-werk'))) cwds.push(options.cwd);
-        if (file === 'git' && args[0] === 'status' && args[1] === '--porcelain') return { stdout: '', stderr: '' };
-        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'main\n', stderr: '' };
-        if (file.endsWith('cards') && args[0] === 'view') return { stdout: JSON.stringify(baseCardJson), stderr: '' };
-        if (file.endsWith('cards') && args[0] === 'move') return { stdout: 'Moved\n', stderr: '' };
-        if (file.endsWith('chorus-werk')) return { stdout: 'kade now on kade/2751\n', stderr: '' };
-        if (file.endsWith('role-state')) return { stdout: 'changed\n', stderr: '' };
-        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
-        return { stdout: '', stderr: '' };
-      });
+    test('resolves the chorus-werk + role-state script paths from resolveWorkingTree root', async () => {
+      const { fn: exec, calls } = buildHappyExec();
       const server = buildMcpServer(() => 'kade', {
         emitSpineEvent: (() => {}) as never,
         execFileAsync: exec as never,
         gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-        resolveWorkingTree: ((_role: string) => '/fake/chorus-werk/kade') as never,
-        fsExists: ((_p: string) => true) as never,
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
       } as never);
       const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
       await handler(
         { method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 2751 } } },
         {},
       );
-      expect(cwds.length).toBeGreaterThan(0);
-      cwds.forEach((cwd) => expect(cwd).toBe('/fake/chorus-werk/kade'));
+      const werkCall = calls.find((c) => c.file.endsWith('chorus-werk'));
+      const roleStateCall = calls.find((c) => c.file.endsWith('role-state'));
+      expect(werkCall!.file).toBe('/fake/canonical/platform/scripts/chorus-werk');
+      expect(roleStateCall!.file).toBe('/fake/canonical/platform/scripts/role-state');
     });
   });
 });

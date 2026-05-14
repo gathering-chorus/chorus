@@ -601,10 +601,10 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
 
     test('#2750 — werk-aware: when resolveWorkingTree returns role werk, all subprocs use that cwd', async () => {
       // Captures silas/2333 first werk-acp gap: chorus_commit ran git-queue.sh
-      // in canonical, where the role's files didn't exist (they were in
-      // /chorus-werk/<role>/). Handler must route cwd to whatever
-      // resolveWorkingTree returns. Production default reads role's
-      // settings.json env to detect CHORUS_WERK_ENABLE=1.
+      // in canonical, where the role's files didn't exist (they were in the
+      // role's werk). Handler must route cwd to whatever resolveWorkingTree
+      // returns. Production default (#2913) globs chorus-werk/<role>-* and
+      // returns the single match, else canonical.
       const cwds: string[] = [];
       const exec = jest.fn(async (_file: string, args: string[], opts: { cwd: string }) => {
         cwds.push(opts.cwd);
@@ -630,9 +630,10 @@ describe('#2682 chorus_commit (write) MCP tool — contract', () => {
       cwds.forEach((cwd) => expect(cwd).toBe('/fake/chorus-werk/kade'));
     });
 
-    test('#2750 — flag-off (default): cwd is canonical repo root (regression guard)', async () => {
-      // Pre-#2750 callers omit resolveWorkingTree entirely. Default behavior
-      // must derive repoRoot from gitQueuePath as today (#2662 contract).
+    test('#2750 — no werk in flight (default): cwd is canonical repo root (regression guard)', async () => {
+      // Callers that omit resolveWorkingTree get the default. With no
+      // chorus-werk/<role>-* dir present (#2913), it falls back to repoRoot
+      // derived from gitQueuePath (#2662 contract).
       const cwds: string[] = [];
       const exec = jest.fn(async (_file: string, args: string[], opts: { cwd: string }) => {
         cwds.push(opts.cwd);

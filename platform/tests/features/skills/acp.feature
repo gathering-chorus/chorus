@@ -95,7 +95,7 @@ Feature: /acp skill — accept-commit-push behaviors
     And the HEAD branch is "wren/99216"
     And the gh stub succeeds on create + merge
     And the cards CLI succeeds on done
-    And chorus-werk close is configured to fail for the role
+    And chorus-werk remove is configured to fail for the role
     When chorus_acp is called with card_id 99216
     Then the call returns successfully with branch_closed=false
     And a chorus_acp.branch-close.skipped or .failed step event was emitted

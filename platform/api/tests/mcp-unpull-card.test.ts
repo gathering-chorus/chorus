@@ -43,8 +43,8 @@ function buildHappyExec(opts: { dirty?: string; cardOverride?: Record<string, un
     if (file.endsWith('cards') && args[0] === 'move') {
       return { stdout: `Moved #${args[1]} to ${args[2]}\n`, stderr: '' };
     }
-    if (file.endsWith('chorus-werk') && args[0] === 'close') {
-      return { stdout: 'chorus-werk: closed kade/2759 (werk detached, local branch deleted, remote cleanup attempted)\n', stderr: '' };
+    if (file.endsWith('chorus-werk') && args[0] === 'remove') {
+      return { stdout: 'chorus-werk: removed kade-2759 (worktree gone, branch kade/2759 deleted, remote cleanup attempted)\n', stderr: '' };
     }
     if (file.endsWith('role-state')) {
       return { stdout: 'role.state.changed\n', stderr: '' };
@@ -74,7 +74,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
   });
 
   describe('AC2 — happy path tears down', () => {
-    test('moves card WIP→Next, runs chorus-werk close, sets role-state idle, emits card.unpulled', async () => {
+    test('moves card WIP→Next, runs chorus-werk remove, sets role-state idle, emits card.unpulled', async () => {
       const { fn: exec, calls } = buildHappyExec();
       const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
       const server = buildMcpServer(() => 'kade', {
@@ -92,7 +92,7 @@ describe('#2759 — chorus_unpull_card MCP atomic teardown', () => {
       const fileNames = calls.map((c) => `${c.file.split('/').pop()}:${c.args[0]}`);
       expect(fileNames).toContain('cards:view');
       expect(fileNames).toContain('cards:move');
-      expect(fileNames).toContain('chorus-werk:close');
+      expect(fileNames).toContain('chorus-werk:remove');
       expect(fileNames).toContain('role-state:kade');
       const moveCall = calls.find((c) => c.file.endsWith('cards') && c.args[0] === 'move');
       expect(moveCall?.args).toContain('Next');
