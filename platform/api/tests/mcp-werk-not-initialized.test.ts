@@ -1,32 +1,31 @@
 /**
- * #2760 — chorus_pull_card and chorus_unpull_card refuse cleanly when the
- * role's werk isn't initialized.
+ * #2760 / #2913 — chorus_unpull_card refuses cleanly when the card's werk
+ * isn't present.
  *
- * Wren hit this 2026-05-06: flag flipped last session but `chorus-werk init
- * wren` never ran, so /CascadeProjects/chorus-werk/wren/ doesn't exist. The
- * MCP refused with `werk-dirty — git status failed` (mis-classified ENOENT
- * as dirty), and the recursive try/catch around refuse() doubled the error
- * message ("chorus_pull_card refused: ... — chorus_pull_card refused: ...").
+ * History: Wren hit a mis-classification 2026-05-06 — the werk path was
+ * missing and the MCP refused with `werk-dirty — git status failed`
+ * (ENOENT mis-read as dirty), with a doubled "refused:" message from a
+ * recursive try/catch. #2760 added a typed `werk-not-initialized` refusal
+ * and a single-pass message.
  *
- * This card adds:
- * 1. `werk-not-initialized` typed refusal in BOTH chorus_pull_card and
- *    chorus_unpull_card when the werk path is missing.
- * 2. Refusal message single-pass (no "refused:" repeated twice).
+ * #2913 (ephemeral worktrees): chorus_pull_card no longer has a werk
+ * pre-flight — there is no werk to flight-check at pull time; `chorus-werk
+ * add` creates it. So the pull-side of this test is gone. chorus_unpull_card
+ * still pre-flights — at unpull time the card's worktree DOES exist (it was
+ * created at pull), so a missing path is a real, typed refusal.
  */
 import { buildMcpServer } from '../src/mcp/server';
 
 type Handler = (req: unknown, ctx: unknown) => Promise<unknown>;
 type Handlers = { _requestHandlers: Map<string, Handler> };
 
-const cardNext = {
+const cardWip = {
   index: 1,
-  status: 'Next',
+  status: 'WIP',
   owner: 'Kade',
   title: 'fixture',
   description: '## Experience\nx\n\n## AC\n- [ ] x\n',
 };
-
-const cardWip = { ...cardNext, status: 'WIP' };
 
 function execEnoent(viewStdout: string) {
   return jest.fn(async (file: string, args: string[]) => {
@@ -43,35 +42,8 @@ function execEnoent(viewStdout: string) {
   });
 }
 
-describe('#2760 — werk-not-initialized refusal in chorus_pull_card', () => {
-  test('chorus_pull_card refuses werk-not-initialized when werk path missing', async () => {
-    const exec = execEnoent(JSON.stringify(cardNext));
-    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
-    const server = buildMcpServer(() => 'kade', {
-      emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
-      execFileAsync: exec as never,
-      gitQueuePath: '/fake/platform/scripts/git-queue.sh',
-      resolveWorkingTree: ((_role: string) => '/fake/missing/werk-2760') as never,
-    } as never);
-    const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call')!;
-    let caught: Error | null = null;
-    try {
-      await handler({ method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 1 } } }, {});
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).not.toBeNull();
-    expect(caught!.message).toMatch(/werk-not-initialized/);
-    const refusedCount = (caught!.message.match(/chorus_pull_card refused:/g) || []).length;
-    expect(refusedCount).toBe(1);
-    const refusal = events.find((e) => e.event === 'chorus_pull_card.refused');
-    expect(refusal?.fields.reason).toBe('werk-not-initialized');
-    expect(String(refusal?.fields.detail)).toContain('chorus-werk init kade');
-  });
-});
-
-describe('#2760 — werk-not-initialized refusal in chorus_unpull_card', () => {
-  test('chorus_unpull_card refuses werk-not-initialized when werk path missing', async () => {
+describe('#2760 / #2913 — werk-not-initialized refusal in chorus_unpull_card', () => {
+  test('chorus_unpull_card refuses werk-not-initialized when the card werk path is missing', async () => {
     const exec = execEnoent(JSON.stringify(cardWip));
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
     const server = buildMcpServer(() => 'kade', {
@@ -92,6 +64,6 @@ describe('#2760 — werk-not-initialized refusal in chorus_unpull_card', () => {
     expect(refusedCount).toBe(1);
     const refusal = events.find((e) => e.event === 'chorus_unpull_card.refused');
     expect(refusal?.fields.reason).toBe('werk-not-initialized');
-    expect(String(refusal?.fields.detail)).toContain('chorus-werk init kade');
+    expect(String(refusal?.fields.detail)).toContain('werk path does not exist');
   });
 });

@@ -1,10 +1,13 @@
-//! Canonical write guard (#2735).
+//! Canonical write guard (#2735, #2913).
 //!
-//! Refuses Edit/Write to canonical (`$CHORUS_HOME`) and to other roles' werks
-//! when the role's own werk is initialized. Edits during a session belong in
-//! the role's worktree at `/chorus-werk/<role>/`, not in the shared canonical
-//! tree. This is the structural close to the shared-canonical anti-pattern
-//! Jeff named 2026-05-05.
+//! Refuses Edit/Write to canonical (`$CHORUS_HOME`) and to other roles' werks.
+//! Edits during a session belong in the role's worktree, not in the shared
+//! canonical tree. This is the structural close to the shared-canonical
+//! anti-pattern Jeff named 2026-05-05.
+//!
+//! #2913: werks are ephemeral per-card — `/chorus-werk/<role>-<card>/`, not
+//! the old persistent `/chorus-werk/<role>/`. The cross-role check parses the
+//! owning role as the segment before the first `-` in the werk-slot name.
 //!
 //! Silent when role env isn't set — bootstrap, migration, and generic shell
 //! contexts must not be blocked. Once env is in place, every role-session
@@ -70,8 +73,12 @@ pub fn check(input: &HookInput) -> HookResponse {
         .unwrap_or_else(|| DEFAULT_CHORUS_WERK_BASE.to_string());
 
     let werk_var = format!("{}_WERK", role.to_uppercase());
-    let own_werk = std::env::var(&werk_var)
-        .unwrap_or_else(|_| format!("{}/{}", werk_base, role));
+    // #2913: no persistent-per-role fallback. Under the ephemeral model the
+    // role's werk is per-card (chorus-werk/<role>-<card>/), so there is no
+    // single stable path to default to. If <ROLE>_WERK isn't set, leave
+    // own_werk empty — the suggestion messages below handle that case
+    // without fabricating a path that doesn't exist.
+    let own_werk = std::env::var(&werk_var).unwrap_or_default();
 
     // Sketch / temp surfaces — always allowed (matches file_classification.rs exemption)
     if file_path.starts_with("/tmp/") || file_path.starts_with("/var/folders/") {
@@ -82,8 +89,13 @@ pub fn check(input: &HookInput) -> HookResponse {
     // regardless of where canonical points.
     if file_path.starts_with(&format!("{}/", werk_base)) {
         // Inside CHORUS_WERK_BASE — figure out which role's slot it lands in.
+        // #2913: werk slots are <role>-<card> (ephemeral per-card). The owning
+        // role is the segment before the first '-'. A bare <role> slot from
+        // the pre-#2913 persistent model still parses — no '-', whole segment
+        // is the role — so this is correct during a heterogeneous migration.
         let rest = &file_path[werk_base.len() + 1..];
-        let other_role = rest.split('/').next().unwrap_or("");
+        let werk_slot = rest.split('/').next().unwrap_or("");
+        let other_role = werk_slot.split('-').next().unwrap_or("");
         if !other_role.is_empty() && other_role != role {
             let msg = format!(
                 "BLOCKED: cross-role write — {role} cannot write to {other_role}'s werk at {file_path}. \
@@ -105,7 +117,11 @@ pub fn check(input: &HookInput) -> HookResponse {
         let suggested = if !own_werk.is_empty() {
             format!("{}/{}", own_werk, rel)
         } else {
-            format!("(role werk not initialized; run 'chorus-werk init {role}')")
+            // #2913: ephemeral model — no persistent per-role werk to point
+            // at. The werk for the active card is chorus-werk/<role>-<card>/,
+            // created by `chorus-werk add` (via /pull). If ${werk_var} isn't
+            // set, the role hasn't pulled a card this session.
+            format!("(no active werk — pull a card first; its werk is {werk_base}/{role}-<card>/{rel})")
         };
         let msg = format!(
             "BLOCKED: canonical is read-only during sessions ({canonical}). \

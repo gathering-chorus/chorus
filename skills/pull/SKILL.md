@@ -35,15 +35,14 @@ mcp__chorus-api__chorus_pull_card({ role: "<target-role>", card_id: <CARD_ID> })
 That's the entire skill. The MCP runs the atomic transaction:
 
 - validate (card exists, status Next/Later, AC + Experience present)
-- werk pre-flight (refuses `werk-dirty` / `werk-wrong-branch` with offending detail)
 - `cards move <id> WIP` (idempotent on already-WIP)
-- `chorus-werk repoint <role> <role>/<id>` (creates branch off origin/main; switches if exists)
+- `chorus-werk add <role> <id>` (creates the card's ephemeral worktree `chorus-werk/<role>-<id>/` on branch `<role>/<id>` off origin/main; idempotent)
 - `role-state <role> building`
 - emit `card.pulled` spine event
 
 All in one call. Returns `{ role, card_id, branch }` on success.
 
-On refusal you get a typed reason: `card-not-found | wrong-status | ac-missing | experience-missing | werk-dirty | werk-wrong-branch | move-fail | branch-fail`. Each refusal documents which step failed and what's recoverable.
+On refusal you get a typed reason: `card-not-found | wrong-status | ac-missing | experience-missing | move-fail | branch-fail`. Each refusal documents which step failed and what's recoverable. (#2913: there is no werk pre-flight — the ephemeral model has no carry-over to flight-check; `chorus-werk add` creates a fresh worktree per card and is idempotent.)
 
 ## Step 2: Build
 
@@ -58,8 +57,8 @@ Then start building immediately. Pull = go.
 ## Hard rules
 
 - **Use `chorus_pull_card` MCP — never raw `cards`, `git`, `chorus-werk`, `role-state`, or `chorus-log` from this skill.** Those bypass the typed refusal taxonomy and the atomic transaction. The MCP is the contract.
-- **The skill's job is invocation, nothing else.** It does NOT call `cards move`, `git-queue.sh checkout`, `chorus-werk pull`, `role-state`, or emit spine events directly. Those are all owned by `chorus_pull_card`. No overlap. No race.
-- **MCP unreachable is the only escape hatch.** If `chorus-api` itself is down, escalate to ops to bring it back up. Do not improvise raw `cards move` / `chorus-werk repoint` — that's how this morning's dirty-werk contamination happened.
+- **The skill's job is invocation, nothing else.** It does NOT call `cards move`, `chorus-werk add`, `role-state`, or emit spine events directly. Those are all owned by `chorus_pull_card`. No overlap. No race.
+- **MCP unreachable is the only escape hatch.** If `chorus-api` itself is down, escalate to ops to bring it back up. Do not improvise raw `cards move` / `chorus-werk add` — those bypass the atomic transaction.
 - **No confirmation prompt.** Jeff said pull, so pull. Pull = go signal.
 - **Cross-role pull**: if Jeff says `/pull 1092 kade` and the invoking role isn't kade, the MCP still runs (DEPLOY_ROLE attribution comes from the `role` arg). The kade session sees `card.pulled` in its session-start envelope.
 

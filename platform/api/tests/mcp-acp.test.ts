@@ -71,7 +71,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
           return { stdout: 'Done: #2750\n', stderr: '' };
         }
         if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         // #2863 — release trigger: kickstarts building-pipeline post-merge.
         if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
         throw new Error(`unexpected: ${file} ${args.join(' ')}`);
@@ -102,7 +102,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(has('git-queue.sh:push')).toBe(true);
       expect(has('gh:pr/merge')).toBe(true);
       expect(has('cards:done')).toBe(true);
-      expect(has('chorus-werk:close')).toBe(true);
+      expect(has('chorus-werk:remove')).toBe(true);
 
       // Spine event emitted on success
       expect(events.find((e) => e.event === 'card.accepted')).toBeDefined();
@@ -187,7 +187,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
     // #2793 — werk-on-main is the variant-recovery class. 4 hits in one
     // day produced 4 different gh-improvisations because gh pr create
     // --head main --base main is unrecoverable in-place. Refusal names
-    // the one recovery (chorus-werk repoint) so operators stop inventing
+    // the one recovery (re-pull the card) so operators stop inventing
     // paths. New typed refusal at a new step (pre-pr-create), built on
     // #2782's verify-after sequenced-steps shape.
     test('refuses werk-on-main before reaching pr-create', async () => {
@@ -214,7 +214,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(refused?.fields.reason).toBe('werk-on-main');
       expect(refused?.fields.step).toBe('pre-pr-create');
       // Detail names the recovery command
-      expect(String(refused?.fields.detail ?? '')).toMatch(/chorus-werk repoint/);
+      expect(String(refused?.fields.detail ?? '')).toMatch(/re-pull the card/);
       // pr-create MUST NOT have run
       const createCalls = calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create');
       expect(createCalls.length).toBe(0);
@@ -335,8 +335,8 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file.endsWith('cards') && args[0] === 'done') {
           return { stdout: 'Done: #2779\n', stderr: '' };
         }
-        if (file.endsWith('chorus-werk') && args[0] === 'close') {
-          return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') {
+          return { stdout: 'removed\n', stderr: '' };
         }
         return { stdout: '', stderr: '' };
       });
@@ -381,7 +381,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
           return { stdout: 'MERGED\n', stderr: '' };
         }
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         return { stdout: '', stderr: '' };
       });
       const server = buildMcpServer(() => 'kade', {
@@ -470,7 +470,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         // No '+' lines (empty or only '-' lines) → already merged
         if (file === 'git' && args[0] === 'cherry') return { stdout: '', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         if (file === 'launchctl') return { stdout: '', stderr: '' };
         return { stdout: '', stderr: '' };
       });
@@ -507,7 +507,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         // All commits show '-' (patch-id is upstream via squash) → no '+' lines → already merged
         if (file === 'git' && args[0] === 'cherry') return { stdout: '- aaaa1111 squashed-equiv 1\n- bbbb2222 squashed-equiv 2\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         if (file === 'launchctl') return { stdout: '', stderr: '' };
         return { stdout: '', stderr: '' };
       });
@@ -624,7 +624,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file === 'gh' && args[0] === 'pr' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
         if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
         throw new Error(`unexpected: ${file} ${args.join(' ')}`);
       });
@@ -658,7 +658,7 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         if (file === 'gh' && args[0] === 'pr' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
         if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
         if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
-        if (file.endsWith('chorus-werk') && args[0] === 'close') return { stdout: 'closed\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
         if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
         throw new Error(`unexpected: ${file} ${args.join(' ')}`);
       });

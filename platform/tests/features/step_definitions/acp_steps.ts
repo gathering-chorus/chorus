@@ -56,7 +56,7 @@ interface AcpCtx {
   /** Pre-fetch upstream SHA captured for force-with-lease regression guard. */
   preFetchOriginSha: string | null;
   /** Branch-close-non-fatal scenario flag. */
-  werkCloseShouldFail: boolean;
+  werkRemoveShouldFail: boolean;
   /** Demo-evidence pre-check refusal message (substrate-side simulation). */
   demoEvidenceRefusal: string | null;
 }
@@ -74,7 +74,7 @@ Before({ tags: '@acp-skill' }, function () {
     malformedLease: false,
     result: null,
     preFetchOriginSha: null,
-    werkCloseShouldFail: false,
+    werkRemoveShouldFail: false,
     demoEvidenceRefusal: null,
   };
   // Reset gh stub state per scenario (best-effort; runner ensures GH_STUB_STATE).
@@ -174,7 +174,7 @@ When('chorus_acp is called with card_id {int}', function (cardId: number) {
   // Path (D) substrate-only: run the substrate chain chorus_acp shells out
   // to, stopping at the first non-zero exit. Production wrapper paths:
   // server.ts L1220 (commit), L1356-1385 (push + pr-view + pr-create + merge),
-  // L1393+ (cards done), L1414-1427 (chorus-werk close — non-fatal).
+  // L1393+ (cards done), L1414-1427 (chorus-werk remove — non-fatal).
   //
   // Each substrate's exit + stderr is captured into ctx.commitResult; the
   // refusal-reason Then steps assert against the right substrate's signature.
@@ -224,8 +224,8 @@ When('chorus_acp is called with card_id {int}', function (cardId: number) {
     return;
   }
 
-  // Step 6: chorus-werk close (non-fatal per server.ts L1414-1427).
-  const branchClosed = !ctx.werkCloseShouldFail;
+  // Step 6: chorus-werk remove (non-fatal per server.ts L1414-1427).
+  const branchClosed = !ctx.werkRemoveShouldFail;
   if (!branchClosed) {
     emitSpine('chorus_acp.branch-close.failed', cardId);
   } else {
@@ -496,12 +496,12 @@ When('cards done is invoked for the card', function () {
 // branch-close non-fatal (#2882 reconcile)
 // ───────────────────────────────────────────────────────────────────────────
 
-Given('chorus-werk close is configured to fail for the role', function () {
-  // Stub behavior: simulate chorus-werk close failure by removing the
+Given('chorus-werk remove is configured to fail for the role', function () {
+  // Stub behavior: simulate chorus-werk remove failure by removing the
   // expected lock file path or by injecting an env flag the test code
   // checks. Path (D): we don't actually run chorus-werk, we record the
   // intent + assert the substrate-truth result shape (branch_closed=false).
-  ctx.werkCloseShouldFail = true;
+  ctx.werkRemoveShouldFail = true;
 });
 
 Then('the call returns successfully with branch_closed=false', function () {
@@ -554,11 +554,11 @@ When('the full \\/acp substrate chain runs for card_id {int}', function (cardId:
   const view = runGhInvocation(fix, 'pr view ' + fix.branch + ' --json url -q .url');
   // First view is allowed to fail (no PR yet).
   if (view.exitCode === 0 && view.stdout.trim().length > 0) {
-    ctx.result = { sha: localSha(fix), pr_url: view.stdout.trim(), branch_closed: !ctx.werkCloseShouldFail };
+    ctx.result = { sha: localSha(fix), pr_url: view.stdout.trim(), branch_closed: !ctx.werkRemoveShouldFail };
   } else {
     const create = runGhInvocation(fix, 'pr create --title acp --body x');
     if (create.exitCode !== 0) throw new Error(`pr create failed: ${create.stderr}`);
-    ctx.result = { sha: localSha(fix), pr_url: create.stdout.trim(), branch_closed: !ctx.werkCloseShouldFail };
+    ctx.result = { sha: localSha(fix), pr_url: create.stdout.trim(), branch_closed: !ctx.werkRemoveShouldFail };
   }
   // Step 3: gh pr merge.
   const merge = runGhInvocation(fix, 'pr merge ' + fix.branch + ' --squash');
@@ -572,7 +572,7 @@ When('the full \\/acp substrate chain runs for card_id {int}', function (cardId:
   // Under (D) the test reproduces the emission pattern; trace_id propagation
   // is gap-2884.
   emitSpine('card.accepted', cardId);
-  if (!ctx.werkCloseShouldFail) {
+  if (!ctx.werkRemoveShouldFail) {
     emitSpine('card.branch.closed', cardId);
   } else {
     emitSpine('chorus_acp.branch-close.failed', cardId);

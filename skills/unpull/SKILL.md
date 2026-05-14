@@ -35,7 +35,7 @@ That's the entire skill. The MCP runs the atomic transaction:
 - validate (card is WIP and owned by role)
 - werk pre-flight (refuses `werk-dirty` so you don't lose uncommitted work)
 - `cards move <id> Next`
-- `chorus-werk close <role> <id>` (detach + branch teardown + `werk.detached` spine event)
+- `chorus-werk remove <role> <id>` (removes the card's ephemeral worktree, deletes the branch, prunes stale admin entries, emits `card.branch.closed`)
 - `role-state <role> idle`
 - emit `card.unpulled` spine event
 

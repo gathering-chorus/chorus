@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
-# chorus-werk — bootstrap and manage per-role git worktrees outside canonical (#2735).
+# chorus-werk — ephemeral per-card git worktrees outside canonical (#2913).
 #
-# Each role works in its own worktree at $CHORUS_WERK_BASE/<role>/, branched
-# from main, with its own HEAD file. Canonical /chorus/ stays on main always
-# and is read-only during sessions. Eliminates the shared-canonical-work-area
-# anti-pattern Jeff named 2026-05-05.
+# #2913 rewrite. The persistent-per-role model (#2735: init/repoint/pull/close
+# around one stable chorus-werk/<role>/ dir) is gone. Its `repoint` verb swapped
+# branches in a live directory — branch-swap-in-place — which detached HEADs and
+# burned the team 2026-05-13/14. The ephemeral model has no repoint: each card
+# gets its own worktree, created on pull and destroyed on acp.
+#
+#   chorus-werk/<role>-<card>/   one worktree per card, on branch <role>/<card>
 #
 # Subcommands:
-#   init <role>            — create the role's worktree at $CHORUS_WERK_BASE/<role>/
-#                            from main. Idempotent.
-#   repoint <role> <branch> — switch that worktree to <branch>. Creates the
-#                            branch off main if it doesn't exist locally.
-#                            Routes through git-queue.sh checkout for flock
-#                            serialization.
-#   remove <role>          — git worktree remove + branch cleanup.
-#   status                 — list current worktrees and their branches.
-#   pull <role> <card-id>  — atomic init-if-needed + repoint to
-#                            <role>/<card-id>. The /pull skill calls this
-#                            instead of raw `git-queue.sh checkout -b`.
+#   add <role> <card-id>     create chorus-werk/<role>-<card>/ on branch
+#                            <role>/<card-id> from origin/main. node_modules
+#                            symlink bootstrap, per-werk git identity.
+#                            Idempotent: re-add of an existing card is a no-op.
+#   remove <role> <card-id>  refuse if the werk is dirty; otherwise
+#                            git worktree remove + delete local branch +
+#                            best-effort remote-ref delete + git worktree prune.
+#                            Idempotent: re-remove of a gone card is a no-op.
+#   status                   list ephemeral worktrees (chorus-werk/<role>-*).
 #
 # Environment:
-#   CHORUS_HOME       — canonical repo path. Defaults to /Users/jeffbridwell/CascadeProjects/chorus.
-#   CHORUS_WERK_BASE  — where worktrees live. Defaults to /Users/jeffbridwell/CascadeProjects/chorus-werk.
+#   CHORUS_HOME       canonical repo path. Default /Users/jeffbridwell/CascadeProjects/chorus.
+#   CHORUS_WERK_BASE  where worktrees live. Default /Users/jeffbridwell/CascadeProjects/chorus-werk.
 #
-# Card: #2735. Test: platform/scripts/test-chorus-werk.sh.
+# Card: #2913. Test: platform/scripts/test-chorus-werk.sh.
 
 set -uo pipefail
 
@@ -35,10 +36,9 @@ usage() {
 Usage: chorus-werk <subcommand> [args]
 
 Subcommands:
-  init <role>             create worktree at \$CHORUS_WERK_BASE/<role> from main (idempotent)
-  repoint <role> <branch> switch role's worktree to <branch>
-  remove <role>           remove role's worktree + delete its branch reference
-  status                  list current worktrees
+  add <role> <card-id>     create chorus-werk/<role>-<card>/ on branch <role>/<card-id>
+  remove <role> <card-id>  remove the card's worktree + branch (refuses on dirty werk)
+  status                   list ephemeral worktrees
 
 Environment:
   CHORUS_HOME       (default: /Users/jeffbridwell/CascadeProjects/chorus)
@@ -66,11 +66,26 @@ require_role() {
   esac
 }
 
+require_card_id() {
+  local card_id="${1:-}"
+  if [ -z "$card_id" ]; then
+    echo "chorus-werk: missing <card-id> argument" >&2
+    usage >&2
+    exit 2
+  fi
+}
+
 # Symlink node_modules from canonical into the werk for every npm-managed
 # subdirectory that exists in both. Eliminates the ~30s npm-install tax per
-# init (#2758). Skips silently when canonical has no node_modules at the
+# add (#2758). Skips silently when canonical has no node_modules at the
 # matching path. Idempotent: existing werk node_modules (file, dir, or
 # symlink) are left alone — bootstrap only fills empty slots.
+#
+# #2913 caveat: a symlink means the werk shares canonical's installed deps.
+# For same-version work that is a clean disk saving; two cards needing
+# different dependency versions would corrupt each other. Resolving that
+# (per-werk install for divergent deps, or a content-addressed store) is
+# left to a follow-on — named in version-control-service-design.html.
 bootstrap_node_modules() {
   local werk="$1"
   local pkg_files
@@ -93,131 +108,156 @@ bootstrap_node_modules() {
   done <<< "$pkg_files"
 }
 
-cmd_init() {
+# Emit a spine event, best-effort — never fails the caller.
+emit_spine() {
+  local event="$1"; shift
+  if command -v chorus-log >/dev/null 2>&1; then
+    chorus-log "$event" "$@" >/dev/null 2>&1 || true
+  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
+    "$CHORUS_HOME/platform/scripts/chorus-log" "$event" "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+# Resolve the base ref for a new card branch. Prefer origin/main — canonical's
+# local main lags whenever a peer pushes between sessions; basing a new branch
+# on stale local main starts the card behind. Best-effort fetch first; fall
+# back to local main when origin/main doesn't exist (test fixtures, no remote).
+resolve_base() {
+  git -C "$CHORUS_HOME" fetch origin main >/dev/null 2>&1 || true
+  if git -C "$CHORUS_HOME" rev-parse --verify origin/main >/dev/null 2>&1; then
+    echo "origin/main"
+  else
+    echo "main"
+  fi
+}
+
+cmd_add() {
   require_role "${1:-}"
+  require_card_id "${2:-}"
   local role="$1"
-  local werk="$CHORUS_WERK_BASE/$role"
+  local card_id="$2"
+  local werk="$CHORUS_WERK_BASE/$role-$card_id"
+  local branch="$role/$card_id"
 
   require_canonical
   mkdir -p "$CHORUS_WERK_BASE"
 
-  # Idempotent: if worktree already exists and is registered, no-op.
-  # macOS resolves /tmp and /var/folders through /private/, and git stores
-  # the resolved path in worktree list — compare resolved paths.
-  local werk_resolved=""
+  # Idempotent: if the worktree already exists, is registered, and sits on the
+  # expected branch — no-op. macOS resolves /tmp + /var/folders through
+  # /private/; git stores the resolved path, so compare resolved paths.
   if [ -d "$werk" ]; then
+    local werk_resolved
     werk_resolved="$(cd "$werk" && pwd -P)"
-  fi
-  if [ -n "$werk_resolved" ] && \
-     git -C "$CHORUS_HOME" worktree list --porcelain 2>/dev/null | grep -q "^worktree $werk_resolved$"; then
-    echo "chorus-werk: $role worktree already initialized at $werk"
-    return 0
-  fi
-
-  # If the directory exists but isn't a registered worktree, refuse rather than clobber.
-  if [ -e "$werk" ]; then
+    if git -C "$CHORUS_HOME" worktree list --porcelain 2>/dev/null \
+         | grep -q "^worktree $werk_resolved$"; then
+      local cur_branch
+      cur_branch=$(git -C "$werk" rev-parse --abbrev-ref HEAD 2>/dev/null)
+      if [ "$cur_branch" = "$branch" ]; then
+        echo "chorus-werk: $role-$card_id already on $branch"
+        return 0
+      fi
+      echo "chorus-werk: $werk is registered but on '$cur_branch', not '$branch' — refusing to clobber" >&2
+      exit 3
+    fi
     echo "chorus-werk: $werk exists but isn't a registered worktree — refusing to clobber" >&2
     exit 3
   fi
 
-  # Detached HEAD at main's tip. We can't share the `main` branch with
-  # canonical (git refuses dual-checkout), and role worktrees should never
-  # sit on main anyway — they exist to host card branches. Detached state
-  # is the "ready to receive a repoint" position.
-  #
-  # #2768: prefer origin/main over local main (mirror of #2757's close fix).
-  # Canonical's local main lags whenever a peer pushes between sessions; if
-  # init lands the werk at stale local main, the role starts the next pull
-  # behind by however many ships happened on origin since the last
-  # canonical fast-forward. Best-effort fetch + fall back to local main when
-  # origin/main doesn't exist (test fixtures without remotes).
-  git -C "$CHORUS_HOME" fetch origin main >/dev/null 2>&1 || true
-  local init_target="main"
-  if git -C "$CHORUS_HOME" rev-parse --verify origin/main >/dev/null 2>&1; then
-    init_target="origin/main"
-  fi
-  if ! git -C "$CHORUS_HOME" worktree add --detach "$werk" "$init_target" 2>&1; then
-    echo "chorus-werk: git worktree add failed" >&2
-    exit 4
+  local base
+  base=$(resolve_base)
+
+  # Create the worktree directly on the card branch. If the branch already
+  # exists locally (e.g. a prior session created it), attach to it; otherwise
+  # branch it from base. No detach, no repoint — the worktree is born on the
+  # branch it will live on.
+  if git -C "$CHORUS_HOME" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+    if ! git -C "$CHORUS_HOME" worktree add "$werk" "$branch" 2>&1; then
+      echo "chorus-werk: git worktree add (existing branch $branch) failed" >&2
+      exit 4
+    fi
+  else
+    if ! git -C "$CHORUS_HOME" worktree add -b "$branch" "$werk" "$base" 2>&1; then
+      echo "chorus-werk: git worktree add -b $branch failed" >&2
+      exit 4
+    fi
   fi
 
-  # Per-werk git identity (Wren #2735 review). Worktrees share canonical's
-  # .git/config, so commits would otherwise all use one identity. Setting
-  # user.email/name in the worktree's local config gives each role its
-  # own attribution. Worktree config wins over the shared .git/config.
+  # Per-werk git identity. Worktrees share canonical's .git/config, so commits
+  # would otherwise all use one identity. Worktree-local config wins.
   git -C "$werk" config user.email "$role@chorus.local"
   git -C "$werk" config user.name "$role"
 
   bootstrap_node_modules "$werk"
 
-  echo "chorus-werk: initialized $role at $werk (detached at main, repoint to start a card)"
-}
-
-cmd_repoint() {
-  require_role "${1:-}"
-  local role="$1"
-  local branch="${2:-}"
-  local werk="$CHORUS_WERK_BASE/$role"
-
-  if [ -z "$branch" ]; then
-    echo "chorus-werk: missing <branch> argument" >&2
-    exit 2
-  fi
-  if [ ! -d "$werk" ]; then
-    echo "chorus-werk: $role worktree not initialized — run 'chorus-werk init $role' first" >&2
-    exit 3
-  fi
-
-  # Use git-queue.sh checkout if available (production path), fall back to
-  # plain git for the test fixture (where canonical isn't a chorus repo).
-  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
-  pushd "$werk" >/dev/null
-
-  # Does the branch exist locally?
-  if git rev-parse --verify "$branch" >/dev/null 2>&1; then
-    if [ -x "$gq" ]; then
-      DEPLOY_ROLE="$role" "$gq" checkout "$branch" >/dev/null 2>&1 || git checkout "$branch" >/dev/null 2>&1
-    else
-      git checkout "$branch" >/dev/null 2>&1
-    fi
-  else
-    # New branch — create from main (or from origin/main if remote exists)
-    local base="main"
-    if git rev-parse --verify "origin/main" >/dev/null 2>&1; then
-      base="origin/main"
-    fi
-    if [ -x "$gq" ]; then
-      DEPLOY_ROLE="$role" "$gq" checkout -b "$branch" "$base" >/dev/null 2>&1 || git checkout -b "$branch" "$base" >/dev/null 2>&1
-    else
-      git checkout -b "$branch" "$base" >/dev/null 2>&1
-    fi
-  fi
-  local rc=$?
-  popd >/dev/null
-
-  if [ "$rc" -ne 0 ]; then
-    echo "chorus-werk: failed to switch $role worktree to $branch" >&2
-    exit 5
-  fi
-  echo "chorus-werk: $role now on $branch"
+  emit_spine card.werk.added "$role" "card=$card_id" "branch=$branch" "werk=$werk"
+  echo "chorus-werk: added $role-$card_id at $werk (branch $branch)"
 }
 
 cmd_remove() {
   require_role "${1:-}"
+  require_card_id "${2:-}"
   local role="$1"
-  local werk="$CHORUS_WERK_BASE/$role"
+  local card_id="$2"
+  local werk="$CHORUS_WERK_BASE/$role-$card_id"
+  local branch="$role/$card_id"
 
   require_canonical
-  if [ ! -d "$werk" ]; then
-    echo "chorus-werk: $role worktree not present at $werk — nothing to remove"
+
+  local werk_present=0
+  local branch_present=0
+  [ -d "$werk" ] && werk_present=1
+  git -C "$CHORUS_HOME" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1 && branch_present=1
+
+  # Idempotent: nothing left to remove.
+  if [ "$werk_present" = "0" ] && [ "$branch_present" = "0" ]; then
+    git -C "$CHORUS_HOME" worktree prune >/dev/null 2>&1 || true
+    echo "chorus-werk: $role-$card_id already removed"
     return 0
   fi
 
-  if ! git -C "$CHORUS_HOME" worktree remove --force "$werk" 2>&1; then
-    echo "chorus-werk: git worktree remove failed" >&2
-    exit 6
+  # Refuse on dirty werk — never silently lose work.
+  if [ "$werk_present" = "1" ]; then
+    local dirty
+    dirty=$(git -C "$werk" status --porcelain 2>/dev/null)
+    if [ -n "$dirty" ]; then
+      echo "chorus-werk: $werk has uncommitted changes — refusing remove (commit, stash, or abandon explicitly)" >&2
+      exit 5
+    fi
   fi
-  echo "chorus-werk: removed $role worktree at $werk"
+
+  # Remove the worktree (clean — dirty was refused above; --force suppresses
+  # the interactive guard, nothing to lose).
+  if [ "$werk_present" = "1" ]; then
+    if ! git -C "$CHORUS_HOME" worktree remove --force "$werk" 2>&1; then
+      echo "chorus-werk: git worktree remove failed for $werk" >&2
+      exit 6
+    fi
+  fi
+
+  # Delete the local branch. -d (not -D) refuses to drop unmerged work — a
+  # feature, not a limitation: /acp calls remove only after push + merge, so
+  # by then the branch is merged and -d succeeds.
+  if [ "$branch_present" = "1" ]; then
+    if ! git -C "$CHORUS_HOME" branch -d "$branch" 2>&1; then
+      echo "chorus-werk: 'git branch -d $branch' refused — branch has unmerged commits. Merge or abandon explicitly (git branch -D)." >&2
+      exit 7
+    fi
+  fi
+
+  # Best-effort remote-ref delete via git-queue.sh. Already-deleted-remote
+  # (the common case post-acp) is fine.
+  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
+  if [ -x "$gq" ]; then
+    DEPLOY_ROLE="$role" "$gq" push --delete "$branch" >/dev/null 2>&1 || true
+  fi
+
+  # Prune stale .git/worktrees admin entries (Silas gate-arch condition 3b).
+  # git worktree remove unregisters cleanly; prune also catches entries left
+  # by a non-clean removal (e.g. the dir was rm -rf'd out from under git).
+  git -C "$CHORUS_HOME" worktree prune >/dev/null 2>&1 || true
+
+  emit_spine card.branch.closed "$role" "card=$card_id" "branch=$branch"
+  echo "chorus-werk: removed $role-$card_id (worktree gone, branch $branch deleted, remote cleanup attempted)"
 }
 
 cmd_status() {
@@ -225,146 +265,20 @@ cmd_status() {
   echo "Canonical: $CHORUS_HOME (HEAD=$(git -C "$CHORUS_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null))"
   echo "Werk base: $CHORUS_WERK_BASE"
   echo
-  echo "Role worktrees:"
+  echo "Ephemeral worktrees:"
   local found=0
-  for role in kade wren silas; do
-    local werk="$CHORUS_WERK_BASE/$role"
-    if [ -d "$werk" ]; then
-      local branch
-      branch=$(git -C "$werk" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
-      printf "  %-7s %s  (branch: %s)\n" "$role" "$werk" "$branch"
-      found=1
-    fi
+  local werk
+  for werk in "$CHORUS_WERK_BASE"/kade-* "$CHORUS_WERK_BASE"/wren-* "$CHORUS_WERK_BASE"/silas-*; do
+    [ -d "$werk" ] || continue
+    local name branch
+    name=$(basename "$werk")
+    branch=$(git -C "$werk" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+    printf "  %-22s %s  (branch: %s)\n" "$name" "$werk" "$branch"
+    found=1
   done
   if [ "$found" = "0" ]; then
-    echo "  (no role worktrees initialized)"
+    echo "  (no ephemeral worktrees)"
   fi
-}
-
-cmd_close() {
-  # Parse optional --no-done-check flag (must come before positional args).
-  # When present, skip the cards CLI Done-state lookup. Production /acp
-  # wiring runs `cards done` immediately before close, so Done state is
-  # guaranteed by call order; the flag exists for tests + manual cleanup.
-  local skip_done_check=0
-  while [ "${1:-}" = "--no-done-check" ]; do
-    skip_done_check=1
-    shift
-  done
-
-  require_role "${1:-}"
-  local role="$1"
-  local card_id="${2:-}"
-  local werk="$CHORUS_WERK_BASE/$role"
-  local branch="$role/$card_id"
-
-  if [ -z "$card_id" ]; then
-    echo "chorus-werk: missing <card-id> argument" >&2
-    exit 2
-  fi
-
-  require_canonical
-
-  # Idempotent: if the local branch is already gone, close is a no-op.
-  if ! git -C "$CHORUS_HOME" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
-    echo "chorus-werk: $branch already closed (no local ref)"
-    return 0
-  fi
-
-  # Refuse on dirty werk — never silently lose work.
-  if [ -d "$werk" ]; then
-    local dirty
-    dirty=$(git -C "$werk" status --porcelain 2>/dev/null)
-    if [ -n "$dirty" ]; then
-      echo "chorus-werk: $werk has uncommitted changes — refusing close (commit, stash, or abandon explicitly)" >&2
-      exit 7
-    fi
-  fi
-
-  # Verify card is Done unless caller bypassed.
-  if [ "$skip_done_check" = "0" ]; then
-    if [ -x "$CHORUS_HOME/platform/scripts/cards" ]; then
-      local card_status
-      card_status=$("$CHORUS_HOME/platform/scripts/cards" view "$card_id" 2>/dev/null \
-        | grep -E '^\s*Status:' | head -1 | awk '{print $2}')
-      if [ "$card_status" != "Done" ]; then
-        echo "chorus-werk: card #$card_id status is '$card_status' — refusing close (use --no-done-check to override)" >&2
-        exit 8
-      fi
-    fi
-  fi
-
-  # Detach the worktree at main's tip BEFORE deleting the branch
-  # (can't delete a branch that's checked out in the worktree).
-  #
-  # Resolution order: prefer origin/main over local main when origin/main
-  # exists. Local canonical main lags behind whenever a peer pushes between
-  # sessions; detaching to local main starts the next pull-cycle behind,
-  # producing phantom rebase warnings and diff-vs-main showing every
-  # post-stale-point file as a deletion. (#2757 — observed twice 2026-05-06
-  # while shipping #2126 + #2756 + #2758 themselves.)
-  if [ -d "$werk" ]; then
-    git -C "$CHORUS_HOME" fetch origin main >/dev/null 2>&1 || true
-    local main_tip
-    if git -C "$CHORUS_HOME" rev-parse --verify origin/main >/dev/null 2>&1; then
-      main_tip=$(git -C "$CHORUS_HOME" rev-parse origin/main 2>/dev/null)
-    else
-      main_tip=$(git -C "$CHORUS_HOME" rev-parse main 2>/dev/null)
-    fi
-    if [ -z "$main_tip" ]; then
-      echo "chorus-werk: cannot resolve main tip (origin/main or local main) — refusing close" >&2
-      exit 9
-    fi
-    if ! (cd "$werk" && git checkout --detach "$main_tip" >/dev/null 2>&1); then
-      echo "chorus-werk: failed to detach $role werk at main's tip" >&2
-      exit 10
-    fi
-    # #2751 — werk.detached spine event. Missing event next session = loud
-    # signal that close didn't run cleanly. Best-effort; doesn't fail close.
-    if command -v chorus-log >/dev/null 2>&1; then
-      chorus-log werk.detached "$role" "card=$card_id" "prior_branch=$branch" "head_at_detach=$main_tip" >/dev/null 2>&1 || true
-    elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
-      "$CHORUS_HOME/platform/scripts/chorus-log" werk.detached "$role" "card=$card_id" "prior_branch=$branch" "head_at_detach=$main_tip" >/dev/null 2>&1 || true
-    fi
-  fi
-
-  # Delete the local branch.
-  if ! git -C "$CHORUS_HOME" update-ref -d "refs/heads/$branch" 2>&1; then
-    echo "chorus-werk: failed to delete local branch $branch" >&2
-    exit 11
-  fi
-
-  # Best-effort: delete remote branch via git-queue.sh push --delete.
-  # Already-deleted-remote (the common case post-acp) is fine.
-  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
-  if [ -x "$gq" ]; then
-    DEPLOY_ROLE="$role" "$gq" push --delete "$branch" >/dev/null 2>&1 || true
-  fi
-
-  # Spine event — best-effort.
-  if command -v chorus-log >/dev/null 2>&1; then
-    chorus-log card.branch.closed "$role" "card=$card_id" "branch=$branch" >/dev/null 2>&1 || true
-  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
-    "$CHORUS_HOME/platform/scripts/chorus-log" card.branch.closed "$role" "card=$card_id" "branch=$branch" >/dev/null 2>&1 || true
-  fi
-
-  echo "chorus-werk: closed $branch (werk detached, local branch deleted, remote cleanup attempted)"
-}
-
-cmd_pull() {
-  require_role "${1:-}"
-  local role="$1"
-  local card_id="${2:-}"
-
-  if [ -z "$card_id" ]; then
-    echo "chorus-werk: missing <card-id> argument" >&2
-    exit 2
-  fi
-
-  # Idempotent init — no-op if already initialized.
-  cmd_init "$role" >/dev/null
-  # Repoint to the card branch. Branch naming convention: <role>/<card-id>.
-  cmd_repoint "$role" "$role/$card_id"
 }
 
 main() {
@@ -374,12 +288,9 @@ main() {
   fi
   local sub="$1"; shift
   case "$sub" in
-    init) cmd_init "$@" ;;
-    repoint) cmd_repoint "$@" ;;
+    add) cmd_add "$@" ;;
     remove) cmd_remove "$@" ;;
     status) cmd_status "$@" ;;
-    pull) cmd_pull "$@" ;;
-    close) cmd_close "$@" ;;
     -h|--help|help) usage ;;
     *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
   esac
