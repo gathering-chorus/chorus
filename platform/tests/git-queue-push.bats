@@ -146,3 +146,53 @@ teardown() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "after" || (echo "expected after-line, got: $output" && false)
 }
+
+# --- #2915: packed-refs bounded retry on the push path (Silas condition 3a) ---
+# Worktrees share one .git/; concurrent ref operations collide on
+# .git/packed-refs.lock and the push fails transiently with "cannot lock ref"
+# / "packed-refs.lock: File exists". do_push must retry with backoff before
+# surfacing it as a real push-conflict.
+
+@test "push retries past a packed-refs lock failure (#2915)" {
+  # Real upstream so a push can actually complete.
+  ORIGIN=$(mktemp -d)
+  git init --quiet --bare "$ORIGIN"
+  git remote add origin "$ORIGIN"
+  git checkout -b silas/2915-test --quiet
+  echo seed > seed.txt; git add seed.txt; git commit --quiet -m "silas: seed for 2915"
+  git push -q -u origin silas/2915-test
+  echo new > new.txt; git add new.txt; git commit --quiet -m "silas: new commit for 2915"
+
+  # git shim: fail the FIRST `push` with a packed-refs lock error, then defer
+  # to real git. Captures real git BEFORE the shim shadows PATH.
+  SHIM_DIR=$(mktemp -d)
+  REAL_GIT=$(command -v git)
+  cat > "$SHIM_DIR/git" <<EOF
+#!/usr/bin/env bash
+_is_push=
+for a in "\$@"; do [ "\$a" = push ] && _is_push=1; done
+if [ "\$_is_push" = 1 ] && [ ! -f "$SHIM_DIR/.push_failed_once" ]; then
+  : > "$SHIM_DIR/.push_failed_once"
+  echo "error: cannot lock ref 'refs/heads/silas/2915-test': Unable to create '$ORIGIN/packed-refs.lock': File exists." >&2
+  exit 1
+fi
+exec "$REAL_GIT" "\$@"
+EOF
+  chmod +x "$SHIM_DIR/git"
+
+  # --force-branch skips check_branch (which sources branch-check.sh relative
+  # to the repo root — absent in a bare temp repo). The retry under test lives
+  # in do_push, downstream of check_branch, so this exercises it directly.
+  run env PATH="$SHIM_DIR:$PATH" bash "$GIT_QUEUE" push --force-branch
+
+  # The shim failed the first push with a packed-refs lock. Without the retry,
+  # do_push surfaces exit 1. With it, do_push retries and the push succeeds.
+  [ -f "$SHIM_DIR/.push_failed_once" ]   # proves the failure path was exercised
+  if [ "$status" -ne 0 ]; then
+    echo "expected push to retry past packed-refs lock and exit 0; got status=$status"
+    echo "output=[$output]"
+    false
+  fi
+
+  rm -rf "$ORIGIN" "$SHIM_DIR"
+}

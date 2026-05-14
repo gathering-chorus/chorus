@@ -634,17 +634,42 @@ do_push() {
     return 1
   }
 
+  # #2915 — packed-refs bounded retry (Silas condition 3a). Worktrees share
+  # one .git/; concurrent ref operations (peer pushes, gc, chorus-werk
+  # add/remove) collide on .git/packed-refs.lock and the push fails
+  # transiently with "cannot lock ref" / "packed-refs.lock: File exists".
+  # Retry with backoff before surfacing it as a real push-conflict.
+  _git_push_retry() {
+    local attempt=1 max=4 out rc
+    while :; do
+      rc=0
+      out=$(git -C "$REPO_ROOT" push 9>&- "$@" 2>&1) || rc=$?
+      if [ "$rc" -eq 0 ]; then
+        if [ -n "$out" ]; then echo "$out" >&2; fi
+        return 0
+      fi
+      if [ "$attempt" -lt "$max" ] && printf '%s' "$out" | grep -qE 'packed-refs\.lock|cannot lock ref'; then
+        log_event "build.push.packed_refs_retry" "attempt=${attempt}"
+        sleep "$(awk "BEGIN{print 0.2 * ${attempt}}")"
+        attempt=$((attempt + 1))
+        continue
+      fi
+      echo "$out" >&2
+      return "$rc"
+    done
+  }
+
   if [ -n "$push_branch" ]; then
     if [ -z "$has_upstream" ]; then
-      git -C "$REPO_ROOT" push 9>&- origin "${push_branch}:${push_branch}" || exit_code=$?
+      _git_push_retry origin "${push_branch}:${push_branch}" || exit_code=$?
     else
-      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- ${_fwl_args[@]+"${_fwl_args[@]}"} origin "${push_branch}:${push_branch}" || exit_code=$?
+      _try_pull_rebase_with_autoresolve && _git_push_retry ${_fwl_args[@]+"${_fwl_args[@]}"} origin "${push_branch}:${push_branch}" || exit_code=$?
     fi
   else
     if [ -z "$has_upstream" ]; then
-      git -C "$REPO_ROOT" push 9>&- || exit_code=$?
+      _git_push_retry || exit_code=$?
     else
-      _try_pull_rebase_with_autoresolve && git -C "$REPO_ROOT" push 9>&- ${_fwl_args[@]+"${_fwl_args[@]}"} || exit_code=$?
+      _try_pull_rebase_with_autoresolve && _git_push_retry ${_fwl_args[@]+"${_fwl_args[@]}"} || exit_code=$?
     fi
   fi
 
