@@ -50,26 +50,26 @@ Signed Rust binaries (`chorus-inject`, `chorus-hook-shim`, `chorus-hooks`) deplo
 
 To answer "which commit is the live binary?" — query the spine for the latest `binary.deployed` event for the binary in question. The cdhash and commit fields tell you exactly what's running.
 
-## Per-role Worktrees (#2735)
+## Per-role Worktrees (#2735, #2913)
 
-Each role works in its own git worktree at `/CascadeProjects/chorus-werk/<role>/`, branched from main, with its own HEAD. Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions; edits during a session land in the role's werk, not in canonical.
+Each card gets its own ephemeral git worktree at `/CascadeProjects/chorus-werk/<role>-<card>/`, created from `origin/main` on `/pull` and removed on `/acp`. Canonical `/CascadeProjects/chorus/` always sits on `main` and is read-only during sessions; edits during a session land in the card's werk, not in canonical. Werks are **not** persistent-per-role — #2913 replaced the persistent `chorus-werk/<role>/` model (one directory mutated across cards via `repoint`) with ephemeral per-card worktrees. Branch-swap-in-place is gone, so the detached-HEAD failure class it produced (which burned the team 2026-05-13/14) cannot recur.
 
-The protected primitive `/chorus/roles/<role>/` IS session-start is preserved — that's still where every role's session anchors to read role state. Only the *write* surface moves to the werk. See `designing/docs/version-control-service-design.html` for the full Candidate D path-to-close.
+The protected primitive `/chorus/roles/<role>/` IS session-start is preserved — that's still where every role's session anchors to read role state. Only the *write* surface moves to the werk. See `designing/docs/version-control-service-design.html` for the full design.
 
 Substrate scripts:
-- `platform/scripts/chorus-werk` — `init / repoint / remove / status / pull / close`
-- `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical. Subcommands: default sync; `repair` (#2779) recovers a detached canonical by re-attaching HEAD to main, fast-forwarding to origin/main, and aligning the working tree. Use when sync aborts with "canonical HEAD is detached" — happens when an unpushed peer commit lands directly on canonical between syncs (cost ~30 min on 2026-05-07 to find the plumbing under pressure; `repair` makes that a one-command operation).
+- `platform/scripts/chorus-werk` — `add <role> <card-id>` (create the card's worktree from origin/main on branch `<role>/<card-id>`; node_modules bootstrap; per-werk identity; idempotent), `remove <role> <card-id>` (refuse-if-dirty, tear down worktree + local branch + remote branch, `git worktree prune`; idempotent), `status` (list ephemeral worktrees). The `init / repoint / pull / close` verbs were **removed** by #2913 — there is no branch-swap-in-place anywhere in the script.
+- `platform/scripts/chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical. Subcommands: default sync; `repair` (#2779) recovers a detached canonical by re-attaching HEAD to main, fast-forwarding to origin/main, and aligning the working tree. Use when sync aborts with "canonical HEAD is detached" — happens when an unpushed peer commit lands directly on canonical between syncs.
 - `platform/scripts/chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 
-Branch lifecycle (#2740): `chorus-werk close <role> <card-id>` closes the role's card branch end-to-end — verifies card is Done, refuses on dirty werk, detaches werk at main's tip, deletes local branch, attempts remote-branch cleanup, emits `card.branch.closed` spine event. /acp wires it as the final step (gated by `CHORUS_WERK_ENABLE=1`). Without this, every /acp leaves a stale local + remote branch behind — exactly what bit the team 2026-05-06 (15 stale wren remotes + 3 kade remotes accumulated unnoticed before manual cleanup).
+Lifecycle: `/pull` invokes `chorus-werk add` — the card's worktree is created fresh from origin/main. `/acp` invokes `chorus-werk remove` — once the card is accepted, its worktree and branch are torn down end-to-end (refuses on dirty werk, deletes local branch, attempts remote-branch cleanup, prunes the worktree admin entry, emits `card.branch.closed` spine event). A role with two cards in flight has two separate worktrees; removing one never disturbs the other.
 
-Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`, **dormant unless `CHORUS_WERK_ENABLE=1`**):
-- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to `$<ROLE>_WERK`
-- Edits under another role's werk → blocked (cross-role)
+Edit/Write rules (enforced by chorus-hooks `canonical_write_guard`):
+- Edits under `$CHORUS_HOME/...` from a role session → blocked, redirected to the card's werk
+- Edits under another role's werk → blocked (cross-role); the guard parses the owning role as the segment before the first `-` in the werk-slot name (`<role>-<card>`)
 - `/tmp/` and `/var/folders/` → allowed (sketch surfaces)
 - Reads of canonical → allowed (role state lives there)
 
-The feature flag is the per-role opt-in. PR #128 ships the substrate dormant; each role activates by setting `CHORUS_WERK_ENABLE=1` in their own session-start when they migrate. Mid-migration heterogeneous state (some roles in werk, some in canonical) is supported — the guard is silent for any role that hasn't flipped the flag.
+The `CHORUS_WERK_ENABLE` feature flag was **retired** by #2908 — the guard fires whenever the role is determinable; bootstrap / migration / generic-shell contexts (no role env) are still silent.
 
 ## Conventions
 

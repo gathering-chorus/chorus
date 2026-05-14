@@ -1384,18 +1384,37 @@ async function executeAcp(
     throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
   }
 
-  // Step 3 — gh pr view (detect existing) → gh pr create (if missing) → gh pr merge.
+  // Step 3 — gh pr view (detect usable existing PR) → gh pr create (if missing
+  // or stale) → gh pr merge.
   stepEmit('pr-view', 'started', { branch });
   let prUrl = '';
   let prAlreadyExists = false;
   try {
-    const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url', '-q', '.url'], { env, cwd: repoRoot, timeout: 15_000 });
-    prUrl = stdout.trim();
-    prAlreadyExists = true;
-    stepEmit('pr-view', 'completed', { pr_url: prUrl, exists: true });
+    const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url,state'], { env, cwd: repoRoot, timeout: 15_000 });
+    const pr = JSON.parse(stdout) as { url: string; state: string };
+    if (pr.state === 'OPEN') {
+      prUrl = pr.url;
+      prAlreadyExists = true;
+      stepEmit('pr-view', 'completed', { pr_url: prUrl, exists: true, state: pr.state });
+    } else {
+      // #2913: `gh pr view <branch>` resolves to the *most recent* PR for the
+      // branch name. On a reused branch — the card's branch already shipped a
+      // merged PR, then accrued new commits — that's a stale MERGED/CLOSED PR,
+      // not the PR for this work. The already-merged fast-path upstream already
+      // confirmed there ARE unmerged commits, so this PR is definitively stale.
+      // Treat it as "no usable PR" and fall through to pr-create — otherwise
+      // gh pr merge hits the merged PR, "already merged" is caught as idempotent
+      // success, and the new commits ship nothing (the #2913 self-acp failure).
+      stepEmit('pr-view', 'completed', { exists: false, stale_pr_url: pr.url, stale_pr_state: pr.state });
+    }
   } catch {
+    // No PR for this branch at all.
     stepEmit('pr-view', 'completed', { exists: false });
-    // No existing PR — create one.
+  }
+
+  if (!prAlreadyExists) {
+    // No usable PR (none exists, or the only one is a stale merged/closed PR
+    // on a reused branch) — create a fresh one for the unmerged commits.
     stepEmit('pr-create', 'started', { branch });
     try {
       const { stdout } = await execFileAsync(
@@ -1418,7 +1437,11 @@ async function executeAcp(
     // `git checkout main` which collides with canonical's worktree (dual-
     // checkout refusal). chorus-werk remove (called below) handles the
     // worktree + local branch + remote-ref cleanup correctly.
-    await execFileAsync('gh', ['pr', 'merge', branch, '--squash'], { env, cwd: repoRoot, timeout: 60_000 });
+    // #2913 — merge by the resolved prUrl, not the branch name: on a reused
+    // branch a stale merged PR and the fresh PR both share the branch name, so
+    // `gh pr merge <branch>` is ambiguous. prUrl is unambiguously the PR we
+    // resolved (OPEN existing) or just created.
+    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash'], { env, cwd: repoRoot, timeout: 60_000 });
     stepEmit('pr-merge', 'completed', { idempotent: false });
   } catch (err) {
     const stderr = extractStderr(err);
