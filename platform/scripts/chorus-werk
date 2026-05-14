@@ -234,12 +234,26 @@ cmd_remove() {
     fi
   fi
 
-  # Delete the local branch. -d (not -D) refuses to drop unmerged work — a
-  # feature, not a limitation: /acp calls remove only after push + merge, so
-  # by then the branch is merged and -d succeeds.
+  # Delete the local branch. `git branch -d` checks *ancestry* — but after a
+  # squash-merge the branch is NOT an ancestor of origin/main even though its
+  # commits ARE upstream by content, so -d refuses (the #2913 self-acp left
+  # kade/2913 dangling: branch_closed:false). Check merged-ness by patch-id
+  # instead — the same `git cherry` test chorus_acp uses (#2911): no '+' lines
+  # means every commit is upstream → safe to -D. A '+' line is genuinely
+  # unmerged work → keep the refusal so remove never silently drops it.
   if [ "$branch_present" = "1" ]; then
-    if ! git -C "$CHORUS_HOME" branch -d "$branch" 2>&1; then
-      echo "chorus-werk: 'git branch -d $branch' refused — branch has unmerged commits. Merge or abandon explicitly (git branch -D)." >&2
+    git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || true
+    local cherry_out
+    if ! cherry_out=$(git -C "$CHORUS_HOME" cherry origin/main "$branch" 2>/dev/null); then
+      echo "chorus-werk: could not determine merge state of '$branch' (git cherry failed) — refusing to delete. Resolve manually." >&2
+      exit 7
+    fi
+    if echo "$cherry_out" | grep -q '^+'; then
+      echo "chorus-werk: '$branch' has commits not on origin/main by content — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
+      exit 7
+    fi
+    if ! git -C "$CHORUS_HOME" branch -D "$branch" 2>&1; then
+      echo "chorus-werk: 'git branch -D $branch' failed" >&2
       exit 7
     fi
   fi

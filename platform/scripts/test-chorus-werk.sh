@@ -213,5 +213,41 @@ CLOSED_LINE=$(grep "card.branch.closed" "$SPINE_LOG" | head -1)
 assert "card.branch.closed names role" grep -q "kade" <<< "$CLOSED_LINE"
 assert "card.branch.closed names card" grep -q "card=3003" <<< "$CLOSED_LINE"
 
+# --- TEST 16: remove deletes a squash-merged branch (patch-id, not ancestry) ---
+# The #2913 self-acp bug: after `gh pr merge --squash`, the branch is NOT an
+# ancestor of origin/main even though its commit IS upstream by content.
+# `git branch -d` checks ancestry → refused → remove exit 7, branch_closed:false.
+# remove must check merged-ness by patch-id (git cherry) and -D a branch whose
+# work is upstream by content.
+"$CHORUS_WERK" add kade 3004 > /dev/null 2>&1
+echo "feature work" > "$WERK_BASE/kade-3004/feature.txt"
+git -C "$WERK_BASE/kade-3004" add feature.txt
+git -C "$WERK_BASE/kade-3004" commit -q -m "kade: feature (#3004)"
+# Simulate squash-merge: apply the SAME diff as a NEW commit on main, so
+# origin/main carries kade/3004's patch-id but kade/3004 is not its ancestor.
+echo "feature work" > "$CANONICAL/feature.txt"
+git -C "$CANONICAL" add feature.txt
+git -C "$CANONICAL" commit -q -m "kade: #3004 squash (#999)"
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+git -C "$CANONICAL" merge-base --is-ancestor kade/3004 origin/main 2>/dev/null
+assert "test-16 setup: squash-merged branch is NOT an ancestor of origin/main" test "$?" -ne 0
+"$CHORUS_WERK" remove kade 3004 > /dev/null 2>&1
+RC=$?
+assert "remove deletes a squash-merged branch (exit 0)" test "$RC" -eq 0
+assert "squash-merged branch is gone" test -z "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3004 2>/dev/null)"
+assert "squash-merged werk dir is gone" test ! -d "$WERK_BASE/kade-3004"
+
+# --- TEST 17: remove refuses a branch with genuinely unmerged commits ---
+# The patch-id check must still guard real work — a '+' line means the commit
+# is NOT upstream by content, so remove refuses and the branch is preserved.
+"$CHORUS_WERK" add kade 3005 > /dev/null 2>&1
+echo "unmerged work" > "$WERK_BASE/kade-3005/unmerged.txt"
+git -C "$WERK_BASE/kade-3005" add unmerged.txt
+git -C "$WERK_BASE/kade-3005" commit -q -m "kade: unmerged (#3005)"
+"$CHORUS_WERK" remove kade 3005 > /dev/null 2>&1
+RC=$?
+assert "remove refuses a branch with unmerged commits (exit non-zero)" test "$RC" -ne 0
+assert "unmerged branch preserved when remove refused" test -n "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3005 2>/dev/null)"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
