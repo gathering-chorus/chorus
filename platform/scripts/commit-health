@@ -112,9 +112,13 @@ done
 # --- per-role werk state ----------------------------------------------------
 WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}"
 for ROLE in kade wren silas; do
-  WERK_DIR="$WERK_BASE/$ROLE"
-  if [ ! -d "$WERK_DIR/.git" ] && [ ! -f "$WERK_DIR/.git" ]; then
-    printf "werk/%-6s       %s\n" "$ROLE:" "$(flag "werk missing at $WERK_DIR")"
+  # #2923: werks are ephemeral chorus-werk/<role>-<card>/, not the persistent
+  # chorus-werk/<role>/. Resolve the role's active werk by glob; no werk = no
+  # card pulled = a normal state, not a flag. head -1 if a role has >1 in
+  # flight (degraded report, not a crash).
+  WERK_DIR="$(find "$WERK_BASE" -maxdepth 1 -type d -name "$ROLE-*" 2>/dev/null | head -1 || true)"
+  if [ -z "$WERK_DIR" ]; then
+    printf "werk/%-6s       %s\n" "$ROLE:" "$(ok "no active werk")"
     continue
   fi
   WERK_HEAD=$(git -C "$WERK_DIR" symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")

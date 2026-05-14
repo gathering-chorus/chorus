@@ -64,9 +64,13 @@ CARD_TYPE=$(echo "$DOMAINS_LINE" | grep -oE 'type:[a-z]+' | head -1 | sed 's/typ
 
 # chore / swat path: check blast radius before honoring the skip.
 if [ "$CARD_TYPE" = "chore" ] || [ "$CARD_TYPE" = "swat" ]; then
-  # Find the role's werk to inspect the branch diff.
+  # Find the role's werk to inspect the branch diff. <ROLE>_WERK is set by
+  # chorus-env-setup.sh when the role has exactly one ephemeral werk; unset
+  # for zero or many. Fall back to empty (not the deleted persistent
+  # chorus-werk/<role>/ path) so the -d check below skips the diff stat
+  # rather than pointing at a directory that no longer exists (#2923).
   ROLE_WERK_VAR=$(echo "${ROLE}_WERK" | tr '[:lower:]' '[:upper:]')
-  ROLE_WERK="${!ROLE_WERK_VAR:-$HOME_DIR/CascadeProjects/chorus-werk/${ROLE}}"
+  ROLE_WERK="${!ROLE_WERK_VAR:-}"
 
   files_changed=0
   lines_changed=0
