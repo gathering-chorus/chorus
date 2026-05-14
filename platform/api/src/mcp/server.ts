@@ -1205,98 +1205,14 @@ async function executeAcp(
     throw new Error(`chorus_acp refused: card-mismatch — requested=${args.card_id} branch=${cardId}`);
   }
 
-  // #2752 bug-5 — transaction-level idempotency. If the PR is already merged
-  // to origin/main, the commit+push+merge phase is moot — skip to cards-done
-  // + werk-close. This catches Silas's silas/2177 case: PR squash-merged on
-  // first attempt, subsequent retries kept failing on push (origin's branch
-  // ref is stale pre-merge SHA, local has post-squash history, non-ff). The
-  // right answer when work is already on main: just close the card.
-  const transactionPath = require('path') as typeof import('path');
-  const transactionEnv = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
-    PATH: `${transactionPath.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-  let alreadyMerged = false;
-  try {
-    const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
-    const currentBranch = branchOut.trim();
-    if (currentBranch && currentBranch !== 'main') {
-      // #2911: ask "are all of HEAD's commits already on origin/main, by
-      // content?" Prior impl asked `gh pr view <branch> state` (wrong question:
-      // gh maps to most recent PR for the branch name, so a merged-prior-PR
-      // plus new unmerged commits returned MERGED → short-circuit → new work
-      // unshipped — Wren #2910 / bed47114).
-      //
-      // First fix was `git merge-base --is-ancestor HEAD origin/main`, but
-      // that regresses the squash-merge case (Silas, #2177): after squash,
-      // HEAD is no longer an ancestor of main even though every commit's
-      // content lives there as the new squash commit.
-      //
-      // `git cherry origin/main HEAD` answers by patch-id:
-      //   '+ <sha>'  commit's patch NOT upstream  (real work to ship)
-      //   '- <sha>'  commit's patch IS upstream  (squash-equivalent or merged)
-      // No '+' lines → every commit is already on main → alreadyMerged=true.
-      // Catches both sha-ancestor merge AND patch-id squash-merge in one check.
-      await execFileAsync('git', ['fetch', '--quiet', 'origin', 'main'], { env: transactionEnv, cwd: repoRoot, timeout: 15_000 });
-      try {
-        const { stdout: cherryOut } = await execFileAsync('git', ['cherry', 'origin/main', 'HEAD'], { env: transactionEnv, cwd: repoRoot, timeout: 5_000 });
-        const hasUnmerged = cherryOut.split('\n').some((line) => line.startsWith('+'));
-        if (!hasUnmerged) alreadyMerged = true;
-      } catch {
-        /* git cherry failed (no upstream, no commits) — proceed normally */
-      }
-    }
-  } catch {
-    /* fall through; normal commit+push path will handle */
-  }
-  stepEmit('already-merged-check', 'completed', { already_merged: alreadyMerged });
-
-  if (alreadyMerged) {
-    // Skip commit/push/PR-merge — jump straight to cards-done + werk-close.
-    stepEmit('skip-to-closure', 'started', { reason: 'pr-already-merged-to-main' });
-    if (cardId !== null) {
-      try {
-        await execFileAsync(cardsPath, ['done', String(cardId)], { env: transactionEnv, timeout: 15_000 });
-      } catch (err) {
-        const stderr = extractStderr(err);
-        // "already Done" is success
-        if (!/already.*Done|Card.*Done/i.test(stderr)) {
-          emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
-          throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
-        }
-      }
-    }
-    emit(CARD_ACCEPTED, { role, card: cardId });
-    let branchClosed = false;
-    if (cardId !== null) {
-      try {
-        const chorusWerkPath = transactionPath.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
-        await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env: transactionEnv, timeout: 30_000 });
-        branchClosed = true;
-      } catch {
-        /* non-fatal */
-      }
-    }
-    // #2863 — release event on the already-merged fast-path. Same as the
-    // main path: kick building-pipeline; best-effort.
-    try {
-      await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env: transactionEnv, timeout: 5_000 });
-    } catch { /* best-effort */ }
-    // #2897: cleanup demo trace file on /acp success (fast-path)
-    try { const fsp = await import('fs/promises'); await fsp.unlink(`/tmp/demo-trace-${cardId}.txt`); } catch { /* file may not exist if /demo wasn't invoked this session */ }
-    emit('chorus_acp.completed', { role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ role, card_id: cardId, sha: ALREADY_MERGED, pr_url: ALREADY_MERGED, branch_closed: branchClosed, fast_path: true }, null, 2),
-        },
-      ],
-    };
-  }
+  // #2923: the fast-path (alreadyMerged → skip commit/push/PR → cards-done)
+  // was removed. It was a false-success shortcut — `git cherry` showing no
+  // commits ahead is identical whether the work is already merged OR never
+  // committed, so an uncommitted werk took the shortcut and got marked Done
+  // with nothing shipped. The normal path below is idempotent on re-runs
+  // (commit catches "nothing to commit", push catches "up to date",
+  // pr-merge catches "already merged"), so it handles the already-merged
+  // case correctly without a separate branch.
 
   // Step 2 — commit + push via existing executeCommit machinery. Reuse the
   // CommitArgs path: paths=['.'] commits everything staged in werk; the role

@@ -65,15 +65,25 @@ if [ -z "${CHORUS_WERK_BASE:-}" ]; then
 fi
 unset __chorus_env_parent
 
-# Per-role werk var: <ROLE>_WERK points at this role's worktree path.
-# Only set when CHORUS_ROLE is known; downstream callers shouldn't see a
-# stale or guessed werk path otherwise.
+# Per-role werk var: <ROLE>_WERK points at the role's ephemeral werk —
+# but only when exactly one exists. The ephemeral model (#2913/#2917) has
+# no single persistent werk per role; a role has 0, 1, or N
+# chorus-werk/<role>-<card>/ worktrees. Resolve like resolveWorkingTree:
+# exactly one match → set it; zero or many → leave unset, so callers see
+# absence rather than a guessed or deleted path. `find` (not a shell glob
+# or array) keeps this identical under bash and zsh — this script is
+# sourced from both.
 if [ -n "${CHORUS_ROLE:-}" ]; then
-  case "$CHORUS_ROLE" in
-    kade)  export KADE_WERK="$CHORUS_WERK_BASE/kade"   ;;
-    wren)  export WREN_WERK="$CHORUS_WERK_BASE/wren"   ;;
-    silas) export SILAS_WERK="$CHORUS_WERK_BASE/silas" ;;
-  esac
+  __chorus_env_werk_dir="$(find "$CHORUS_WERK_BASE" -maxdepth 1 -type d -name "$CHORUS_ROLE-*" 2>/dev/null)"
+  __chorus_env_werk_count="$(printf '%s' "$__chorus_env_werk_dir" | grep -c .)"
+  if [ "$__chorus_env_werk_count" = "1" ]; then
+    case "$CHORUS_ROLE" in
+      kade)  export KADE_WERK="$__chorus_env_werk_dir"   ;;
+      wren)  export WREN_WERK="$__chorus_env_werk_dir"   ;;
+      silas) export SILAS_WERK="$__chorus_env_werk_dir"  ;;
+    esac
+  fi
+  unset __chorus_env_werk_dir __chorus_env_werk_count
 fi
 
 # CHORUS_BIN: single deployed location for chorus-* binaries (#2734 target).
