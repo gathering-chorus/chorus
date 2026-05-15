@@ -1133,7 +1133,27 @@ async function executeAcp(
   resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { role } = args;
-  const repoRoot = resolveWorkingTree(role);
+  // #2925 — when caller asserts card_id, prefer that card's exact ephemeral
+  // werk over the glob resolver's fallback-to-canonical. Closes a bootstrap
+  // recursion: a role with 2+ active werks (e.g. silas/2605 + silas/2925)
+  // hits the ambiguous-multiple case and the default returns canonical →
+  // executeAcp runs git from main → pre-push hook #2598 refuses
+  // "branch 'main' does not match role prefix 'silas/'".
+  const acpRequireBoot = require as NodeJS.Require;
+  const acpFsBoot = acpRequireBoot('node:fs') as typeof import('node:fs');
+  const acpPathBoot = acpRequireBoot('node:path') as typeof import('node:path');
+  let repoRoot = resolveWorkingTree(role);
+  if (args.card_id !== undefined) {
+    const werkBase = process.env.CHORUS_WERK_BASE
+      ?? acpPathBoot.join(
+        acpPathBoot.dirname(process.env.CHORUS_ROOT ?? '/Users/jeffbridwell/CascadeProjects/chorus'),
+        'chorus-werk'
+      );
+    const cardWerk = acpPathBoot.join(werkBase, `${role}-${args.card_id}`);
+    if (acpFsBoot.existsSync(cardWerk)) {
+      repoRoot = cardWerk;
+    }
+  }
   // #2857 — flow trace. Mint trace_id at handler entry, wrap emit so every
   // event in this flow carries it. Re-wrap with card_id once derived. Bash
   // subprocesses (git-queue, gh, cards CLI) inherit via CHORUS_TRACE_ID +
