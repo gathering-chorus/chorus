@@ -39,16 +39,22 @@ ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 # default don't drift. Add new targets here once.
 KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api"
 
-if [ $# -ne 1 ]; then
-  echo "Usage: chorus-deploy <${KNOWN_CRATES}>" >&2
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: chorus-deploy <${KNOWN_CRATES}> [--rollback]" >&2
   exit 2
 fi
 
 CRATE="$1"
+MODE="${2:-deploy}"
+if [ "$MODE" != "deploy" ] && [ "$MODE" != "--rollback" ]; then
+  echo "Usage: chorus-deploy <${KNOWN_CRATES}> [--rollback]" >&2
+  exit 2
+fi
 
 # #2831: chorus-api is TS, not a Rust crate. Different deploy mechanic — build
 # dist via npm + kickstart launchd service. Branched early because the rest of
 # the script is structured around target/release/ binaries and chorus-bin-install.
+# #2925 AC4: --rollback restores dist/ from dist.prev/ (preserved at each deploy).
 if [ "$CRATE" = "chorus-api" ]; then
   COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   START_TS=$(date +%s)
@@ -57,9 +63,47 @@ if [ "$CRATE" = "chorus-api" ]; then
     echo "chorus-deploy: chorus-api dir not found at $API_DIR" >&2
     exit 1
   fi
+
+  if [ "$MODE" = "--rollback" ]; then
+    # #2925 AC4: one-shot rollback to prior deployed dist/.
+    PREV_DIR="$API_DIR/dist.prev"
+    if [ ! -d "$PREV_DIR" ]; then
+      echo "chorus-deploy: no dist.prev to rollback to ($PREV_DIR not found) — no prior deploy to restore" >&2
+      exit 1
+    fi
+    rm -rf "$API_DIR/dist"
+    mv "$PREV_DIR" "$API_DIR/dist"
+    if ! launchctl kickstart -k "gui/$(id -u)/com.chorus.api" 2>/dev/null; then
+      echo "chorus-deploy: WARN — launchctl kickstart com.chorus.api failed during rollback" >&2
+    else
+      echo "chorus-deploy: kickstarted com.chorus.api (rollback)"
+    fi
+    END_TS=$(date +%s)
+    DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+    if [ -x "$CHORUS_LOG" ]; then
+      "$CHORUS_LOG" deploy.rolled_back "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        >/dev/null 2>&1 || true
+    fi
+    echo "chorus-deploy: $CRATE rolled back in ${DURATION_MS}ms"
+    exit 0
+  fi
+
+  # #2925 AC4: preserve current dist/ as dist.prev/ before rebuild so rollback
+  # has a target. atomic mv; rm any stale dist.prev first.
+  if [ -d "$API_DIR/dist" ]; then
+    rm -rf "$API_DIR/dist.prev"
+    mv "$API_DIR/dist" "$API_DIR/dist.prev"
+  fi
   echo "chorus-deploy: npm run build in $API_DIR"
   if ! (cd "$API_DIR" && npm run build); then
     echo "chorus-deploy: npm run build failed" >&2
+    # Restore dist from dist.prev so disk state stays consistent — service is
+    # still running prior code in memory, so disk should match.
+    if [ -d "$API_DIR/dist.prev" ]; then
+      rm -rf "$API_DIR/dist"
+      mv "$API_DIR/dist.prev" "$API_DIR/dist"
+    fi
     if [ -x "$CHORUS_LOG" ]; then
       END_TS=$(date +%s)
       DURATION_MS=$(( (END_TS - START_TS) * 1000 ))

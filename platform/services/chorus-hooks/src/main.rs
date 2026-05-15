@@ -411,6 +411,14 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
         }
+        // #2925 AC3: refuse daemon-runtime card-adds without a Deploy Probe section.
+        "mcp__chorus-api__chorus_cards_add" => {
+            _last_module = "card_add_probe".into();
+            let r = hooks::card_add_probe::check(input).await;
+            if r.exit_code != 0 {
+                return (_last_module.clone(), r);
+            }
+        }
         _ => {}
     }
 

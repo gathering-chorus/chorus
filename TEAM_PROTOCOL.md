@@ -171,6 +171,7 @@ See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget
 - `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit); `repair` subcommand re-attaches a detached canonical
 - `chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 - `chorus-bin-install` — atomic install of a built+signed binary to `~/.chorus/bin/<name>` with `binary.deployed` spine emit (#2734)
+- `deploy-daemon-card.sh <card-id> --probe "<smoke>"` — bootstrap deploy wrapper for daemon-runtime cards (#2925). Sequences `chorus-werk-sync` → `chorus-deploy chorus-api` → probe → `cards done`, with `chorus-deploy chorus-api --rollback` invoked automatically on probe fail. Silas-only (`DEPLOY_ROLE=silas`, DEC-022). See "Daemon-runtime cards" section below.
 
 The `init / repoint / pull / close` verbs were **removed** by #2913. `/pull` calls `chorus-werk add`; `/acp` calls `chorus-werk remove`. There is no branch-swap-in-place anywhere in the script.
 
@@ -206,11 +207,63 @@ chorus-werk preserves session-start at `/chorus/roles/<role>/` in canonical and 
 - **Cross-role commit:** `git-queue` branch-check (`#2580`) + pre-push hook (`#2598` / `#2625` / `#2639`). Shipped.
 - **Same-role wrong-card:** active-card-id strict check, sequenced as `#2641`. Re-evaluate after #2735 — most of the cross-role-contamination cases the guard catches become impossible by construction once per-role werks are active.
 
+## Daemon-runtime cards — bootstrap deploy path (#2925)
+
+A daemon-runtime card is any card whose diff touches:
+
+- `platform/api/src/**` — the chorus-api daemon
+- `mcp/server.ts` — MCP server (subset of the above; called out because it's the surface every MCP tool routes through)
+- `platform/services/chorus-hooks/**` — chorus-hooks daemon
+
+These cards **cannot ship through `chorus_acp` or `chorus_commit` MCP** — those tools run inside the daemon being changed; using them deploys the old code that the card is trying to replace. The 2026-05-14 #2923 / #2916 incident reproduced this: chorus_acp's `alreadyMerged` fast-path silently skipped commit/push/PR, marking the cards Done without shipping anything. The bootstrap path below is the answer; it lives entirely on shell tools that don't depend on the changed code.
+
+### Sanctioned sequence
+
+1. `git-queue.sh` commit + push (plain shell, not daemon-routed)
+2. `gh pr create` + `gh pr merge` (CI-gated; entirely GitHub-side — not the daemon)
+3. `chorus-werk-sync` (pull main into canonical so chorus-deploy sees the new code)
+4. `deploy-daemon-card.sh <card-id> --probe "<smoke>"` — the one-verb wrapper that sequences chorus-deploy, runs the smoke probe, and `cards done` on success or `chorus-deploy chorus-api --rollback` on probe fail
+
+### Wrapper contract — `deploy-daemon-card.sh`
+
+- Silas-only (`DEPLOY_ROLE=silas`, DEC-022 — "builds are Silas")
+- `--probe "<command>"` is mandatory; the probe verifies the new behavior is live in the **restarted** daemon (not that the diff merged)
+- Exit codes are distinct per failed step (2 = usage, 3 = role guard, 4 = missing probe, 10/11/12/13 = step 1/2/3/4 failures)
+- On probe failure: `chorus-deploy chorus-api --rollback` fires automatically; wrapper still exits non-zero
+
+### Rollback contract — `chorus-deploy chorus-api --rollback`
+
+Each chorus-api deploy preserves the previous `platform/api/dist/` as `platform/api/dist.prev/` atomically before `npm run build`. `--rollback` swaps `dist.prev/` back into `dist/` and kickstarts `com.chorus.api`. One-shot: a second rollback in a row fails (no prior deploy left). If `npm run build` fails mid-deploy, the wrapper restores `dist.prev` → `dist` automatically so on-disk state stays consistent with the running daemon.
+
+### Card-level enforcement — chorus-hooks `card_add_probe`
+
+A `## Deploy Probe` section is required on the card description. The chorus-hooks PreToolUse on `mcp__chorus-api__chorus_cards_add` (hook `card_add_probe.rs`) refuses card-adds that mention daemon-runtime trigger paths but lack a probe section. The refusal message includes a template the author can paste.
+
+### Per-machine settings (not in repo)
+
+Each developer machine must add the following entries to `~/.claude/settings.json` `permissions.allow` so the Claude Code semantic classifier stops gating the deploy commands (the broad `Bash(*)` pattern doesn't override by-name gates on consequential commands):
+
+```json
+"Bash(chorus-deploy chorus-api*)",
+"Bash(/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-api*)",
+"Bash(deploy-daemon-card.sh*)",
+"Bash(/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deploy-daemon-card.sh*)"
+```
+
+The bats test `platform/tests/ac1-deploy-permission-allow.bats` verifies these entries exist on the current machine. Replicate manually on a new machine, then re-run the test.
+
+### Deferred (follow-on card)
+
+- **Post-merge auto-trigger** — a watcher or GitHub Action that fires `deploy-daemon-card.sh` automatically when a PR-merged-to-main touches trigger paths. Out of scope for v1; today the operator runs the wrapper after merge.
+
 ## Related
 
+- `#2925` — daemon-runtime deploy path (this section); wrapper + rollback + bouncer + settings
+- `#2923` / `#2916` — the bootstrap-hole incidents this section closes (chorus_acp fast-path falsely shipping daemon-runtime cards)
 - `#2735` — chorus-werk per-role worktrees (Candidate D, this convention)
 - `#2734` — `~/.chorus/bin/` single deploy location for chorus-* binaries
 - `#2710` — `do_checkout` flock adapter (belt-and-suspenders for canonical sync)
 - `#2640` — sibling worktree retirement (sets the protected primitive)
 - `#2580` — git-queue branch-check (defense-in-depth at commit gate)
 - `version-control-service-design.html` — full design narrative, path-to-close, rejected family
+- `ci-harness-research-brief.html` (Kade) — names automated rollback as "single highest-leverage CD investment"; AC4 lands it for chorus-api
