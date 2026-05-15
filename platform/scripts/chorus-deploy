@@ -34,6 +34,8 @@ INSTALL="$SCRIPT_DIR/chorus-bin-install"
 CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+# Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
+CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
@@ -82,7 +84,7 @@ if [ "$CRATE" = "chorus-api" ]; then
     DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
     if [ -x "$CHORUS_LOG" ]; then
       "$CHORUS_LOG" deploy.rolled_back "$ROLE" \
-        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
         >/dev/null 2>&1 || true
     fi
     echo "chorus-deploy: $CRATE rolled back in ${DURATION_MS}ms"
@@ -109,7 +111,7 @@ if [ "$CRATE" = "chorus-api" ]; then
       DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
       "$CHORUS_LOG" deploy.failed "$ROLE" \
         "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
-        "reason=npm-build-fail" >/dev/null 2>&1 || true
+        "reason=npm-build-fail" "card=$CARD_ID" >/dev/null 2>&1 || true
     fi
     exit 1
   fi
@@ -122,7 +124,7 @@ if [ "$CRATE" = "chorus-api" ]; then
   DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
   if [ -x "$CHORUS_LOG" ]; then
     "$CHORUS_LOG" deploy.completed "$ROLE" \
-      "commit=$COMMIT" "crate=$CRATE" "target=$API_DIR/dist/server.js" "duration_ms=$DURATION_MS" \
+      "commit=$COMMIT" "crate=$CRATE" "target=$API_DIR/dist/server.js" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
       >/dev/null 2>&1 || true
   fi
   echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT)"
@@ -157,7 +159,7 @@ emit_deploy_failed() {
   if [ -x "$CHORUS_LOG" ]; then
     "$CHORUS_LOG" deploy.failed "$ROLE" \
       "commit=$COMMIT" "crate=$CRATE" "duration_ms=$duration_ms" \
-      "reason=$reason" >/dev/null 2>&1 || true
+      "reason=$reason" "card=$CARD_ID" >/dev/null 2>&1 || true
   fi
 }
 
@@ -209,7 +211,7 @@ TARGET="$HOME/.chorus/bin/${BINARIES[0]}"
 
 if [ -x "$CHORUS_LOG" ]; then
   "$CHORUS_LOG" deploy.completed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "duration_ms=$DURATION_MS" \
+    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
     >/dev/null 2>&1 || echo "chorus-deploy: WARN — deploy.completed emit failed (non-fatal)" >&2
 fi
 

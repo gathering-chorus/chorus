@@ -77,6 +77,7 @@ assert "spine log was written" test -f "$SPINE_LOG"
 SPINE_CONTENT=$(cat "$SPINE_LOG" 2>/dev/null || echo "")
 assert "spine has binary.deployed event" contains "$SPINE_CONTENT" "binary.deployed"
 assert "spine event names the binary" contains "$SPINE_CONTENT" "binary=chorus-test-binary"
+assert "spine event carries card= field (#2930)" contains "$SPINE_CONTENT" "card="
 
 # --- TEST 5: re-install of same source overwrites cleanly ---
 echo "fake binary v2" > "$SRC"
