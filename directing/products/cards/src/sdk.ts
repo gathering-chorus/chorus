@@ -756,6 +756,33 @@ async function applyDynamicLabel(
 }
 
 /**
+ * #2924 AC3 bridge — write the pickup artifacts the bouncer hands off to the
+ * chorus-hooks UserPromptSubmit responder. Two siblings under <pendingDir>:
+ *   - <role>-<stamp>.txt        human-readable [card-approval] block
+ *   - <role>-<stamp>.argv.json  structured {title, opts} for replay
+ *
+ * When Jeff types `approve`, the responder reads the .argv.json and replays
+ * `cards add` with DEPLOY_ROLE=jeff (bypasses the bouncer cleanly). The .txt
+ * remains for human inspection.
+ */
+export function writePendingApprovalArtifacts(args: {
+  pendingDir: string;
+  role: string;
+  stamp: string;
+  nudge: string;
+  title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cardOpts: any;
+}): { txtPath: string; argvPath: string } {
+  fs.mkdirSync(args.pendingDir, { recursive: true });
+  const txtPath = `${args.pendingDir}/${args.role}-${args.stamp}.txt`;
+  const argvPath = `${args.pendingDir}/${args.role}-${args.stamp}.argv.json`;
+  fs.writeFileSync(txtPath, args.nudge);
+  fs.writeFileSync(argvPath, JSON.stringify({ title: args.title, opts: args.cardOpts }, null, 2));
+  return { txtPath, argvPath };
+}
+
+/**
  * #2924 AC1 — deliver the structured approval-ask into the requesting agent's
  * session via the pulse messaging API. Best-effort: if pulse is unreachable,
  * the bouncer still refuses and the pickup file remains the fallback surface.
@@ -885,16 +912,15 @@ Waiting for your yes. I won't file or proceed until you respond. If you approve,
   // (model response text) is opt-in.
   const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- node-builtin import in a CLI helper, no async needed for synchronous mkdir+write
-    const fs = require('fs');
-    fs.mkdirSync(pendingDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fname = `${pendingDir}/${role}-${stamp}.txt`;
-    fs.writeFileSync(fname, nudge);
-    console.log(`[card-approval pickup written to ${fname}]`);
+    const { txtPath, argvPath } = writePendingApprovalArtifacts({
+      pendingDir, role, stamp, nudge, title, cardOpts: opts,
+    });
+    console.log(`[card-approval pickup written: ${txtPath}]`);
+    console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);
   } catch (err) {
     // Best-effort write; failure logs but doesn't block the refusal exit.
-    console.error(`WARN: failed to write pickup file under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
+    console.error(`WARN: failed to write pickup artifacts under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
   }
 
   // #2924 AC1: deliver the [card-approval] block into the requesting agent's
