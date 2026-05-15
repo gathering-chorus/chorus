@@ -141,6 +141,26 @@ flowchart TD
 This is the structural model the audit findings demand — <strong>not Athena-specific in the sense that it's the model every subproduct uses</strong>. The Loom doc already named this layer "the Athena product model" and noted it is "not Loom-specific." This doc is its canonical home; future subproduct-design docs reference back here for the structural classes rather than inlining them.
 </div>
 
+<h3>Why two tiers — schema posture</h3>
+<div class="frame">
+RDF and OWL are very powerful — open extension, multi-typing, inference, federated queryability. <strong>But the schema, in many ways, sits <em>below</em> the data — instead of around or above it.</strong> The ontology describes what triples <em>could</em> exist; it doesn't gate what does. Triples can be inserted with no schema awareness and remain valid — the open-world assumption treats absence-of-schema as absence-of-knowledge, not absence-of-permission. That permissiveness allows sloppiness that leads to bad data.
+
+<br><br>
+
+The AS-IS findings above are exactly this pattern: <code>belongsTo</code> used 34 times but never declared; <code>hasDomain</code> declared twice with conflicting signatures; Service nodes typed as <code>SubDomain</code> because no rule enforces type discipline. The schema didn't catch these because it doesn't try to — it describes, it doesn't gate.
+
+<br><br>
+
+The two-tier design responds to this directly:
+
+<ul>
+  <li><strong>Relational core</strong> — Product, Domain, Service, Role, Vertebra. Schema sits <em>around and above</em> the data: SHACL-enforced at write, closed-world, required attributes verified, type discipline a hard gate. Relational rigor where predictability matters — typed API endpoints (<code>/athena/product/:id</code>) need shapes clients can rely on.</li>
+  <li><strong>Graph overlays</strong> — authority, ownership-history, deploy-route, customer-happiness binding, future annotations not yet imagined. Schema sits <em>below</em> the data, RDF-native: open extension, new predicates land without core schema migration, queryable via <code>/athena/edges</code> and <code>/athena/sparql</code>.</li>
+</ul>
+
+Same RDF substrate; two enforcement postures, one per tier. The relational core stops sloppiness in the load-bearing places; the overlay layer keeps the graph's evolutionary openness where new dimensions need to land cheaply.
+</div>
+
 <h3>Structural layer — three classes, recursive containment</h3>
 <p>From <code>domain-model-asis-tobe.html</code> and Loom's "Structural layer" section, consolidated:</p>
 <ul>
