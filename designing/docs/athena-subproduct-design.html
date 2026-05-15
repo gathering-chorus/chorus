@@ -469,6 +469,37 @@ chorus:ServiceShape a sh:NodeShape ;
 
 <p class="caption">This is the contract the API enforces. Writes through <code>POST /athena/{product,domain,service}</code> run SHACL validation against <code>shapes.ttl</code>; refusals name the failing constraint. The retired predicates (<code>inParent</code>, <code>inProduct</code>, <code>hostedBy</code>) are write-blocked by the API regardless of what AS-IS data still carries them — the migration card backfills the canonical-direction predicate before retiring the old triples. The "fix later" surface: the prose / class tables / classDiagram above still reference some retired predicate directions; canonical answers live in this section, not those.</p>
 
+<h2>Edge handling on API calls</h2>
+<div class="frame">
+Edges are first-class resources, not embedded fields. <strong>Reads</strong> project them inline on the parent instance for convenience; <strong>writes</strong> always go through edge-typed endpoints so SHACL validates one predicate at a time and refusals point to the exact constraint that failed.
+</div>
+
+<h3>Read projection</h3>
+<p><code>GET /athena/product/:id</code> returns the instance plus its outbound edges as JSON arrays keyed by predicate (<code>hasChild</code>, <code>hasDomain</code>, <code>consumes</code>, <code>atStep</code>, <code>ownedBy</code>, <code>hasDesignDoc</code>) — IRIs only, not embedded objects, to keep the payload bounded. Inverse views (<code>parentOf</code>, <code>hostedIn</code> for Services, <code>consumers</code> for Services) are computed at query time from SPARQL and projected on the appropriate side; they are <em>not</em> stored. Traversal endpoints (<code>/children</code>, <code>/domains</code>, <code>/services</code>, <code>/host</code>, <code>/consumers</code>) follow one predicate recursively or one-hop.</p>
+
+<h3>Write — edge endpoints</h3>
+<table>
+<tr><th>Predicate</th><th>Endpoint</th><th>Body</th><th>SHACL gate</th></tr>
+<tr><td><code>hasChild</code></td><td><code>POST /athena/product/:id/children</code> · <code>POST /athena/domain/:id/children</code></td><td><code>{ child: &lt;iri&gt; }</code></td><td>child must be same class as parent (Product or Domain); no cycles; no re-parenting if child already has a parent (move = DELETE then POST)</td></tr>
+<tr><td><code>hasDomain</code></td><td><code>POST /athena/product/:id/domains</code></td><td><code>{ domain: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Domain</code></td></tr>
+<tr><td><code>hosts</code></td><td><code>POST /athena/domain/:id/services</code></td><td><code>{ service: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Service</code>; ServiceShape's <code>sh:inversePath hosts</code> requires exactly one — POST refuses if the Service is already hosted elsewhere (move = DELETE then POST)</td></tr>
+<tr><td><code>consumes</code></td><td><code>POST /athena/product/:id/consumes</code></td><td><code>{ service: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Service</code>; structurally optional, no minCount</td></tr>
+<tr><td><code>atStep</code></td><td><code>PUT /athena/{product,domain,service}/:id/at-step</code></td><td><code>{ step: &lt;iri&gt; }</code></td><td>object must be <code>chorus:ValueStreamStep</code>; PUT (not POST) because each instance has exactly one — re-PUT replaces</td></tr>
+<tr><td><code>ownedBy</code></td><td><code>PUT /athena/{product,domain,service}/:id/owner</code></td><td><code>{ role: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Role</code>; minCount 1 — initial PUT required at create</td></tr>
+<tr><td><code>hasDesignDoc</code></td><td><code>POST /athena/{product,domain,service}/:id/design-docs</code></td><td><code>{ document: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Document</code>; minCount 1 across instance</td></tr>
+<tr><td><code>dependsOn</code> · <code>commitsTo</code> · <code>integratesWith</code> · <code>runsOn</code> · <code>persistsIn</code></td><td><code>POST /athena/{domain,service}/:id/{depends,commits,integrates,runs,persists}</code></td><td><code>{ target: &lt;iri&gt; }</code></td><td>range enforced per OWL declaration; cycles refused for <code>dependsOn</code></td></tr>
+<tr><td>Content back-pointers (<code>chorus:domain</code>, <code>chorus:service</code>)</td><td>Written by the owning content-class endpoint, not by Domain/Service endpoints (e.g., <code>POST /athena/actor</code> sets <code>chorus:domain</code> as a required field on Actor)</td><td><code>{ domain: &lt;iri&gt; }</code> on the content payload</td><td>back-pointer is required on the content class's own SHACL shape, not on Domain/Service</td></tr>
+</table>
+
+<h3>Edge removal</h3>
+<p><code>DELETE /athena/{product,domain,service}/:id/{edge-path}/:target-id</code> for each edge endpoint above. Refuses if removal would violate a SHACL minCount (e.g., deleting the last <code>hasDesignDoc</code>, the only <code>ownedBy</code>, the sole <code>hosts</code> edge for a Service). Refusal message names the shape + constraint, not just "validation failed."</p>
+
+<h3>Retired-predicate writes — explicit refusal</h3>
+<p>The API maintains a deny-list at the write boundary: <code>chorus:inParent</code>, <code>chorus:inProduct</code>, <code>chorus:hostedBy</code>, <code>chorus:belongsTo</code>, <code>chorus:partOf</code>. Any write attempting these predicates — via the structured endpoints, via <code>POST /athena/sparql</code> (which is read-only by guard anyway), or via the underlying triplestore if proxied — returns <code>409 retired-predicate</code> with the canonical-direction predicate to use instead (e.g., "write <code>chorus:hosts</code> on the Domain, not <code>chorus:hostedBy</code> on the Service"). This is how the AS-IS data gets migrated forward without the schema being downgraded by new writes during the transition.</p>
+
+<h3><code>/athena/edges</code> — read-only predicate-pattern query</h3>
+<p><code>GET /athena/edges?subject=&amp;predicate=&amp;object=</code> answers "which triples match this pattern" — direct equivalent of <code>logs_query</code> for the graph. Any combination of the three slots may be bound or wildcard. Read-only by guard; the typed mutation endpoints above are the only write surface for edges. This is the verb that closes the substrate-shift master-lever ("make the graph as interrogable as the logs already are").</p>
+
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
 The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.
