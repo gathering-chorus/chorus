@@ -756,6 +756,93 @@ async function applyDynamicLabel(
 }
 
 /**
+ * #2924 AC3 bridge — write the pickup artifacts the bouncer hands off to the
+ * chorus-hooks UserPromptSubmit responder. Two siblings under <pendingDir>:
+ *   - <role>-<stamp>.txt        human-readable [card-approval] block
+ *   - <role>-<stamp>.argv.json  structured {title, opts} for replay
+ *
+ * When Jeff types `approve`, the responder reads the .argv.json and replays
+ * `cards add` with DEPLOY_ROLE=jeff (bypasses the bouncer cleanly). The .txt
+ * remains for human inspection.
+ */
+export function writePendingApprovalArtifacts(args: {
+  pendingDir: string;
+  role: string;
+  stamp: string;
+  nudge: string;
+  title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cardOpts: any;
+}): { txtPath: string; argvPath: string } {
+  fs.mkdirSync(args.pendingDir, { recursive: true });
+  const txtPath = `${args.pendingDir}/${args.role}-${args.stamp}.txt`;
+  const argvPath = `${args.pendingDir}/${args.role}-${args.stamp}.argv.json`;
+  fs.writeFileSync(txtPath, args.nudge);
+  fs.writeFileSync(argvPath, JSON.stringify({ title: args.title, opts: args.cardOpts }, null, 2));
+  return { txtPath, argvPath };
+}
+
+/**
+ * #2924 AC1 — deliver the structured approval-ask into the requesting agent's
+ * session via the pulse messaging API. Best-effort: if pulse is unreachable,
+ * the bouncer still refuses and the pickup file remains the fallback surface.
+ *
+ * The nudge addresses the *requesting role* (the agent's own session), not
+ * Jeff — because Jeff is interacting with that terminal. Nudges injected
+ * there surface to him as user-prompt-style messages, and his `approve` /
+ * `deny` reply is detected by the #2924 AC3 UserPromptSubmit hook which
+ * then completes or cancels the deferred card filing.
+ */
+export type FetchLike = (
+  url: string,
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+  },
+) => Promise<{ ok: boolean; status: number; text?: () => Promise<string> }>;
+
+export async function sendCardApprovalNudge(args: {
+  from: string;
+  to: string;
+  message: string;
+  pulseUrl?: string;
+  fetchImpl?: FetchLike;
+  timeoutMs?: number;
+}): Promise<{ delivered: boolean; status?: number; error?: string; traceId: string }> {
+  const pulseUrl = args.pulseUrl || process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fetchImpl: FetchLike | undefined = args.fetchImpl || ((globalThis as any).fetch as FetchLike | undefined);
+  const traceId = `card-approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!fetchImpl) {
+    return { delivered: false, error: 'no-fetch-impl', traceId };
+  }
+  try {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 5000);
+    const resp = await fetchImpl(pulseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Chorus-Trace-Id': traceId,
+        'X-Chorus-MCP-Caller': '1',
+      },
+      body: JSON.stringify({ from: args.from, to: args.to, content: args.message, traceId }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) {
+      const errText = resp.text ? await resp.text().catch(() => '') : '';
+      return { delivered: false, status: resp.status, error: errText.slice(0, 200), traceId };
+    }
+    return { delivered: true, status: resp.status, traceId };
+  } catch (err) {
+    return { delivered: false, error: err instanceof Error ? err.message : String(err), traceId };
+  }
+}
+
+/**
  * #2905 (Jeff direct 2026-05-11): agent-initiated `cards add` is REFUSED.
  * The CLI composes the structured approval-ask nudge from the description
  * the agent already wrote (validated to have the six required sections),
@@ -825,16 +912,31 @@ Waiting for your yes. I won't file or proceed until you respond. If you approve,
   // (model response text) is opt-in.
   const pendingDir = `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/pending-approvals`;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- node-builtin import in a CLI helper, no async needed for synchronous mkdir+write
-    const fs = require('fs');
-    fs.mkdirSync(pendingDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fname = `${pendingDir}/${role}-${stamp}.txt`;
-    fs.writeFileSync(fname, nudge);
-    console.log(`[card-approval pickup written to ${fname}]`);
+    const { txtPath, argvPath } = writePendingApprovalArtifacts({
+      pendingDir, role, stamp, nudge, title, cardOpts: opts,
+    });
+    console.log(`[card-approval pickup written: ${txtPath}]`);
+    console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);
   } catch (err) {
     // Best-effort write; failure logs but doesn't block the refusal exit.
-    console.error(`WARN: failed to write pickup file under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
+    console.error(`WARN: failed to write pickup artifacts under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
+  }
+
+  // #2924 AC1: deliver the [card-approval] block into the requesting agent's
+  // session via the pulse messaging API. Best-effort — pickup file remains as
+  // fallback if pulse is unreachable. Nudge is addressed to the requesting role
+  // (the agent's own session) because Jeff is interacting with that terminal;
+  // his `approve`/`deny` reply is detected by the AC3 UserPromptSubmit hook.
+  try {
+    const delivery = await sendCardApprovalNudge({ from: role, to: role, message: nudge });
+    if (delivery.delivered) {
+      console.log(`[card-approval nudge delivered to ${role}'s session via pulse, trace=${delivery.traceId}]`);
+    } else {
+      console.error(`WARN: card-approval nudge delivery failed (${delivery.error || 'status=' + delivery.status}); pickup-file fallback remains active. trace=${delivery.traceId}`);
+    }
+  } catch (err) {
+    console.error(`WARN: card-approval nudge dispatch threw: ${err instanceof Error ? err.message : err}; pickup-file fallback remains active.`);
   }
 
   console.log('---');
