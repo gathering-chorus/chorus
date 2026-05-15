@@ -335,6 +335,140 @@ classDiagram
 
 <p class="caption"><strong>13 stored (all required) + 11 derived.</strong> Same invariant-rendering discipline as Product and Domain: every section the service-design page renders has data behind it on every Service instance, no conditional "show if defined" branches. The existing <code>*-service-design.html</code> docs become the canonical narrative anchors; <code>/athena/service/:id</code> renders them from the graph + their linked Document.</p>
 
+<h2>RDF — OWL + SHACL <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+The API enforces these edges going forward. Storage direction follows the classDiagram (containment direction is canonical) — <code>hasChild</code>, <code>hasDomain</code>, <code>hosts</code>, <code>consumes</code>, <code>atStep</code> are all stored on the subject side named in the diagram. Inverse views (<code>parentOf</code>, <code>hostedIn</code>) are computed at query time, not stored. The earlier <code>inParent</code> / <code>inProduct</code> / <code>hostedBy</code> direction (Service→Domain via <code>hostedBy</code>, etc.) is dropped — one storage direction per edge, no double-keyed truth. Predicate-direction drift in the prose / class tables / diagrams above is acknowledged and queued as a follow-on cleanup; this section is canonical.
+</div>
+
+<pre><code># chorus.ttl — Athena v2 (additive; coexists with AS-IS during migration)
+@prefix chorus: &lt;https://jeffbridwell.com/chorus#&gt; .
+@prefix owl:    &lt;http://www.w3.org/2002/07/owl#&gt; .
+@prefix rdfs:   &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+@prefix sh:     &lt;http://www.w3.org/ns/shacl#&gt; .
+@prefix xsd:    &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+
+# ── Structural classes ──────────────────────────────────────────────
+chorus:Product          a owl:Class .
+chorus:Domain           a owl:Class .
+chorus:Service          a owl:Class .
+chorus:Role             a owl:Class .
+chorus:ValueStream      a owl:Class .
+chorus:ValueStreamStep  a owl:Class .
+chorus:Document         a owl:Class .
+chorus:Principle        a owl:Class .
+chorus:Practice         a owl:Class .
+chorus:Infrastructure   a owl:Class .
+chorus:Store            a owl:Class .
+
+# ── Containment edges (stored on parent / containment side) ─────────
+chorus:hasChild   a owl:ObjectProperty .   # Product→Product OR Domain→Domain (recursive)
+chorus:hasDomain  a owl:ObjectProperty ;
+    rdfs:domain chorus:Product ;
+    rdfs:range  chorus:Domain .
+chorus:hosts      a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range  chorus:Service .            # Domain hosts Service (1:* from Domain)
+chorus:consumes   a owl:ObjectProperty ;
+    rdfs:domain chorus:Product ;
+    rdfs:range  chorus:Service .            # cross-cutting; structurally optional
+
+# ── Placement / ownership / design link ─────────────────────────────
+chorus:atStep        a owl:ObjectProperty ;
+    rdfs:range chorus:ValueStreamStep .     # subject ∈ {Product, Domain, Service}
+chorus:ownedBy       a owl:ObjectProperty ;
+    rdfs:range chorus:Role .
+chorus:hasDesignDoc  a owl:ObjectProperty ;
+    rdfs:range chorus:Document .
+chorus:inStream      a owl:ObjectProperty ;
+    rdfs:domain chorus:ValueStreamStep ;
+    rdfs:range  chorus:ValueStream .
+
+# ── Service-side edges ──────────────────────────────────────────────
+chorus:dependsOn      a owl:ObjectProperty ;
+    rdfs:domain chorus:Service ; rdfs:range chorus:Service .
+chorus:commitsTo      a owl:ObjectProperty ;
+    rdfs:domain chorus:Service .            # range: Principle ∨ Practice
+chorus:integratesWith a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Domain .
+chorus:runsOn         a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Infrastructure .
+chorus:persistsIn     a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Store .
+
+# ── Content back-pointers (stored on the content side) ──────────────
+chorus:domain   a owl:ObjectProperty ;
+    rdfs:range chorus:Domain .              # Actor/Scenario/Endpoint/Page/Pipeline/LogStream/Alert/Decision/PriorArt/Release → Domain
+chorus:service  a owl:ObjectProperty ;
+    rdfs:range chorus:Service .             # Test/Component/ConsumerContract → Service
+
+# ── Dropped (collapsed into containment-direction predicates) ───────
+# chorus:inParent, chorus:inProduct, chorus:hostedBy — DO NOT WRITE.
+# chorus:belongsTo, chorus:partOf — retired (AS-IS).
+
+# ── Stored narrative attributes (xsd:string, invariant-rendered) ────
+chorus:label              a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:comment            a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:overview           a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:vision             a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:valueProposition   a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:audience           a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:status             a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:asIs               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:toBe               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:implementationPlan a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:pathToClose        a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:gaps               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:notInScope         a owl:DatatypeProperty ; rdfs:range xsd:string .
+</code></pre>
+
+<pre><code># shapes.ttl — SHACL enforcement (invariant-rendering: every stored required)
+@prefix chorus: &lt;https://jeffbridwell.com/chorus#&gt; .
+@prefix sh:     &lt;http://www.w3.org/ns/shacl#&gt; .
+@prefix xsd:    &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+
+chorus:ProductShape a sh:NodeShape ;
+    sh:targetClass chorus:Product ;
+    sh:property [ sh:path chorus:label            ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:comment          ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy          ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:vision           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:valueProposition ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:audience         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:status           ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:atStep           ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:hasDesignDoc     ; sh:minCount 1 ; sh:class chorus:Document ] .
+    # consumes — structurally optional (cross-cutting); hasChild / hasDomain enforced where present, not minCount.
+
+chorus:DomainShape a sh:NodeShape ;
+    sh:targetClass chorus:Domain ;
+    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:comment      ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:atStep       ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status       ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc ; sh:minCount 1 ; sh:class chorus:Document ] .
+
+chorus:ServiceShape a sh:NodeShape ;
+    sh:targetClass chorus:Service ;
+    sh:property [ sh:path chorus:label              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
+    sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
+</code></pre>
+
+<p class="caption">This is the contract the API enforces. Writes through <code>POST /athena/{product,domain,service}</code> run SHACL validation against <code>shapes.ttl</code>; refusals name the failing constraint. The retired predicates (<code>inParent</code>, <code>inProduct</code>, <code>hostedBy</code>) are write-blocked by the API regardless of what AS-IS data still carries them — the migration card backfills the canonical-direction predicate before retiring the old triples. The "fix later" surface: the prose / class tables / classDiagram above still reference some retired predicate directions; canonical answers live in this section, not those.</p>
+
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
 The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.
