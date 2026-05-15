@@ -58,13 +58,13 @@ Live AS-IS data: Fuseki at <code>http://localhost:3030/pods/query</code> on grap
 <p>Athena is what makes the chorus-product-tree <em>queryable</em>. Every other subproduct's structural placement (Loom's principles, Werk's pipelines, Borg's logs) is an Athena instance. <code>chorus-instance-explorer.html</code> already proves the read-surface works — but it bypasses the chorus API entirely to query Fuseki direct because the API exposes 3 of 29 node types as thin nouns and zero traversal verbs (per <code>reasoning-substrate-shift.html</code>). Athena v2 is what fixes that.</p>
 
 <h2>Structure — up and down</h2>
-<p><strong>UP:</strong> single inbound edge — <code>chorusProduct hasSubProduct athena-product</code>. Same one-directional containment shape as Loom.</p>
+<p><strong>UP:</strong> single inbound edge — <code>chorus-product hasChild athena-product</code>. Athena is a Product that is the child of the Chorus Product (recursive-Product model per TO-BE; the AS-IS graph today uses <code>hasSubProduct</code> as a transitional predicate, scheduled for collapse into <code>hasChild</code>).</p>
 
 <pre class="mermaid">
 flowchart TD
-  Chorus["Chorus — Product"] -->|hasSubProduct| Athena["Athena — SubProduct<br/>owned by Wren · Designing step"]
-  Athena --> D["domains<br/>49 SubDomain instances (graph-wide)"]
-  Athena --> S["services<br/>0 Service instances · 2 ServiceDesign · mis-typed under SubDomain"]
+  Chorus["Chorus — Product"] -->|hasChild| Athena["Athena — Product<br/>(child of Chorus)<br/>owned by Wren · Designing step"]
+  Athena --> D["domains<br/>49 Domain instances (graph-wide, AS-IS typed as SubDomain)"]
+  Athena --> S["services hosted by Athena's domains<br/>0 Service instances today · service-named nodes mis-typed as SubDomain · 2 ServiceDesign"]
   classDef pop fill:#d1fae5,stroke:#065f46,color:#065f46;
   classDef shell fill:#fef9c3,stroke:#854d0e,color:#854d0e;
   classDef anchor fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
@@ -72,7 +72,7 @@ flowchart TD
   class D pop;
   class S shell;
 </pre>
-<p class="caption">Green = holds content instances · yellow = intent-aligned but content mis-shaped (Service nodes exist as SubDomain instances rather than Service instances).</p>
+<p class="caption">Recursive-Product structure: Chorus contains Athena via <code>hasChild</code> — no separate <code>SubProduct</code> class. Athena's substance is the union of its child Domains (and the Services those Domains host). Green = holds content · yellow = intent-aligned but content mis-typed.</p>
 
 <h2>AS-IS — structural class state in Fuseki (queried 2026-05-15)</h2>
 
