@@ -458,7 +458,7 @@ do_push() {
   # in fixed order. With the documented `push --branch X --force-with-lease`
   # usage, --force-with-lease silently never engaged because $1 was --branch.
   # Receipts: kade/2844 squash 2026-05-10 — non-FF rejection despite passing
-  # --force-with-lease, forced fall-back to DEPLOY_ROLE_PREPUSH_OVERRIDE bypass.
+  # --force-with-lease, which silently never engaged.
   local force_flag=""
   local force_with_lease=""
   local push_branch=""
