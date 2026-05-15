@@ -83,17 +83,19 @@ CDHASH="${CDHASH:-unknown}"
 
 # Resolve commit context (best-effort — script may be invoked outside a git tree).
 COMMIT=$(git -C "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
+CARD_ID=$(git -C "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
 # Emit spine event. Test fixture overrides via $CHORUS_BIN_SPINE_LOG so we
 # don't depend on a working chorus-log in the test temp $HOME.
 if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT" >> "$CHORUS_BIN_SPINE_LOG"
+  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT card=$CARD_ID" >> "$CHORUS_BIN_SPINE_LOG"
 elif command -v chorus-log >/dev/null 2>&1; then
-  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" >/dev/null 2>&1 || true
+  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" >/dev/null 2>&1 || true
 elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
   "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" >/dev/null 2>&1 || true
+    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" >/dev/null 2>&1 || true
 fi
 
-echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT)"
+echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID)"

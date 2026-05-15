@@ -77,6 +77,8 @@ fi
 
 CRATE="${1}"
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
+CARD_ID=$(git log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
 BUILDER_HOST=$(hostname -s)
 START_TS=$(date +%s)
 
@@ -98,7 +100,7 @@ if [ "$RC" -ne 0 ]; then
   if [ -x "$CHORUS_LOG" ]; then
     "$CHORUS_LOG" build.failed "$ROLE" \
       "commit=$COMMIT" "crate=$CRATE" "exit_code=$RC" "duration_ms=$DURATION_MS" \
-      "reason=build-signed-fail" "builder_host=$BUILDER_HOST" \
+      "reason=build-signed-fail" "builder_host=$BUILDER_HOST" "card=$CARD_ID" \
       >/dev/null 2>&1 || true
   fi
   exit 1
@@ -108,7 +110,7 @@ fi
 # (build cache rot detection per #2774 review).
 if [ -x "$CHORUS_LOG" ]; then
   "$CHORUS_LOG" build.completed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" "builder_host=$BUILDER_HOST" \
+    "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" "builder_host=$BUILDER_HOST" "card=$CARD_ID" \
     >/dev/null 2>&1 || echo "chorus-build: WARN — build.completed emit failed (non-fatal)" >&2
 fi
 
