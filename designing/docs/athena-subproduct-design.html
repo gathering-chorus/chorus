@@ -192,21 +192,29 @@ classDiagram
 
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
-The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with a verb layer.
+The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.
 </div>
 
 <table>
-<tr><th>Verb</th><th>Today</th><th>Athena v2</th><th>Returns</th></tr>
-<tr><td><code>product_get(id)</code> · <code>product_list()</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Product instances + their direct <code>hasChild</code> / <code>hasDomain</code> / <code>consumes</code> / <code>atStep</code> edges.</td></tr>
-<tr><td><code>domain_get(id)</code> · <code>domain_list(parent?)</code></td><td><code>subdomains_get</code> (4 fields, no edges)</td><td><span class="verb">REPLACES</span></td><td>Domain with all its outbound edges + content instances by class.</td></tr>
-<tr><td><code>domain_traverse(root, depth?, predicate?)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive children via <code>hasChild</code> (or any specified predicate). Solves the "give me everything under Werk" use case.</td></tr>
-<tr><td><code>service_get(id)</code> · <code>service_list()</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Service + its <code>dependencies</code> / <code>consumers</code> / <code>surfaces</code>. Live after the SubDomain→Service migration.</td></tr>
-<tr><td><code>edges(subject?, predicate?, object?)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Predicate-pattern query. Direct equivalent of LogQL pattern-matching on triples.</td></tr>
-<tr><td><code>blast_radius(subject, depth?)</code></td><td>Computed inside <code>cards</code> CLI, emitted as spine event</td><td><span class="verb">PROMOTES</span></td><td>Queryable surface for "what does changing X affect."</td></tr>
-<tr><td><code>sparql(query)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Arbitrary read-only SPARQL passthrough. The graph equivalent of <code>logs_query</code>. Read-only by guard; writes go through typed mutation verbs.</td></tr>
-<tr><td><code>vertebra_list()</code> · <code>step_chain(product)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Value-stream surfaces — the Vertebra / ValueStream graph that exists in instances but has no API today.</td></tr>
-<tr><td><code>principle_invoke(card_id)</code> · <code>practice_invoke(card_id, decision_point)</code></td><td><code>principles_get/list/create</code> (CRUD only)</td><td><span class="verb">NEW</span></td><td>Normative-layer <em>invocation</em> at a decision point. Returns the principles/practices that apply + their constraints, not a list-dump.</td></tr>
+<tr><th>HTTP path</th><th>Today</th><th>Athena v2</th><th>Returns</th></tr>
+<tr><td><code>GET /athena/product</code> · <code>GET /athena/product/:id</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Product list / Product instance + its direct <code>hasChild</code> / <code>hasDomain</code> / <code>consumes</code> / <code>atStep</code> edges.</td></tr>
+<tr><td><code>GET /athena/product/:id/children</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive <code>hasChild</code> traversal — child Products beneath this Product (e.g., Gathering's children).</td></tr>
+<tr><td><code>GET /athena/product/:id/domains</code></td><td>—</td><td><span class="verb">NEW</span></td><td>The Domains this Product contains (<code>hasDomain</code> edges). Athena's "union of child Domains" surface.</td></tr>
+<tr><td><code>GET /athena/product/:id/services</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Services this Product <code>consumes</code> (cross-cutting deps, dashed edge — not the hosts edge).</td></tr>
+<tr><td><code>GET /athena/domain</code> · <code>GET /athena/domain/:id</code></td><td><code>subdomains_get</code> (4 fields, no edges)</td><td><span class="verb">REPLACES</span></td><td>Domain with all its outbound edges + content instances by class.</td></tr>
+<tr><td><code>GET /athena/domain/:id/children</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive <code>hasChild</code> for Domains (Domain → Domain depth).</td></tr>
+<tr><td><code>GET /athena/domain/:id/services</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Services this Domain <code>hosts</code> (where the code lives — solid edge).</td></tr>
+<tr><td><code>GET /athena/service</code> · <code>GET /athena/service/:id</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Service list / instance with <code>dependencies</code> / <code>consumers</code> / <code>surfaces</code>. Live after SubDomain → Service migration.</td></tr>
+<tr><td><code>GET /athena/service/:id/host</code></td><td>—</td><td><span class="verb">NEW</span></td><td>The single Domain that hosts this Service (inverse of <code>hosts</code>).</td></tr>
+<tr><td><code>GET /athena/service/:id/consumers</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Products / Domains that <code>consume</code> this Service (the dependency graph for impact analysis).</td></tr>
+<tr><td><code>GET /athena/edges?subject=&amp;predicate=&amp;object=</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Predicate-pattern query — any-position binding (<code>?s ?p ?o</code> with optional filters). Direct equivalent of <code>logs_query</code> for triples.</td></tr>
+<tr><td><code>GET /athena/blast-radius/:id</code></td><td>Computed inside <code>cards</code> CLI, emitted as spine event</td><td><span class="verb">PROMOTES</span></td><td>Queryable surface for "what does changing X affect" — recursive consumers + hosted services + dependents.</td></tr>
+<tr><td><code>POST /athena/sparql</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Arbitrary read-only SPARQL passthrough — the graph equivalent of <code>logs_query</code>. Read-only by guard; writes route through typed mutation paths.</td></tr>
+<tr><td><code>GET /athena/vertebra</code> · <code>GET /athena/product/:id/steps</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Value-stream surfaces — the Vertebra / ValueStream graph that exists in instances but has no API today.</td></tr>
+<tr><td><code>POST /athena/principle/invoke</code> · <code>POST /athena/practice/invoke</code></td><td><code>principles_get/list/create</code> (CRUD only)</td><td><span class="verb">NEW</span></td><td>Normative-layer <em>invocation</em> at a decision point — pass card_id + decision-point name, returns the principles/practices that apply + their constraints. Not a list-dump.</td></tr>
 </table>
+
+<p class="caption">Mutation paths (POST/PATCH/DELETE on the same resources) ship in a later wave — Athena v2 lands read-side first, mirroring how the chorus-api shipped read surfaces ahead of mutation tools. The overlay paths (<code>/athena/overlay/authority</code>, <code>/athena/overlay/deploy-route</code>, etc.) land alongside the structural reads as their own resource namespace.</p>
 
 <h2>Overlay model — first-class queryable annotations</h2>
 <p>The structural tree (Product / Domain / Service) names <em>what exists</em>. Overlays name <em>relations across the tree that aren't containment</em>. Each overlay is queryable independently of the structural graph and applies across leaves.</p>
