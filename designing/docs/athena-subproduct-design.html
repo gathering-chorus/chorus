@@ -656,6 +656,38 @@ v1 went <strong>data → schema-by-discovery → API-by-priority</strong>. v2 in
 
 <p>Order is the cookbook's order, not negotiable. Move 5's hook only earns its keep after Moves 1–4 have made the typed path more attractive than the path being blocked. Move 3's drift test is the most-skipped step in the cookbook's history; it is what makes the contract a contract. Per cookbook two-phase model, Phase 2 (placement — where Athena v2 code lives, where the renderer lives, where overlay graphs sit) opens after Phase 1's doneness-six holds; this design covers Phase 1 only.</p>
 
+<h2>Move 0 — JSON-first operational bridge</h2>
+<div class="frame" style="border-left-color:#0ea5e9">
+The 5-move plan above is ~6 weeks elapsed at current cadence. Operational value (product-impact answers in <code>/demo</code>, ownership routing for nudges, blast-radius for gates) cannot wait six weeks. Move 0 is a hand-authored JSON tree that delivers the operational layer in days, then becomes the data-seed input Move 5 ingests through composite-POST. The work compounds — same authoring, different storage substrate when it lands.
+</div>
+
+<h3>Artifact: <code>data/athena/tree.json</code></h3>
+<p>Single source-of-truth for the structural model — Products → Domains → Services with <code>ownedBy</code> / <code>atStep</code> / <code>consumes</code> / <code>hosts</code> / <code>dependsOn</code> / <code>contains</code> / <code>hasDesignDoc</code> fields. JSON shape mirrors what composite-POST will accept, so Move 5 ingest is mechanical. Hand-authored from existing knowledge + AS-IS Fuseki state as starting input.</p>
+
+<h3>Emission surfaces — three layered, one source</h3>
+<table>
+<tr><th>Surface</th><th>When</th><th>What it gives</th></tr>
+<tr><td><strong>SessionStart envelope injection</strong></td><td>First turn of every role session</td><td>Per role: (a) owned Products/Domains/Services compact list; (b) <strong>most active 3–5</strong> units (signal: open WIP+Next cards, recent commits, recent spine events, recent <code>/gate</code> activity); (c) <strong>needs more work 3–5</strong> units (signal: stale design doc &gt;30d, open AC items past N days, gaps count, low completeness %, recent <code>/gate</code> refusals); (d) flat ownership map <code>{iri → role}</code> for cross-role lookup; (e) URL of the rendered tree page. Opening boot prompt leads with the active + needs-work lists; the 5-beat thesis grounds in them rather than generic reflection.</td></tr>
+<tr><td><strong>MCP tools</strong> — <code>chorus_tree_get</code> / <code>chorus_ownership_lookup({iri})</code> / <code>chorus_blast_radius({iri})</code></td><td>On demand, any turn</td><td>Full tree / single-IRI ownership lookup / inferred dependency closure (<code>consumes</code> + <code>hosts</code> + <code>dependsOn</code> walked recursively). Single-verb-single-target per cookbook.</td></tr>
+<tr><td><strong>Rendered HTML page</strong> — <code>platform/api/public/athena/tree.html</code></td><td>Jeff's eyes; gate-product manual review; cross-role demo backing</td><td>Product / Domain / Service hierarchy with ownership chips, click-to-see-edges, "show what touches X" filter.</td></tr>
+</table>
+
+<p>Signal weights for active / needs-work ranking live in <code>data/athena/session-start-signals.json</code> (data, not code — weight tuning is a JSON edit, not a deploy). Signal calculators are testable units with fixture corpora.</p>
+
+<h3>Why three surfaces, not one</h3>
+<p>SessionStart gives instant "is this my domain / what should I be on" answers without an MCP call (cheap, costs context budget once per session). MCP handles deep lookups (full blast-radius traversal) without bloating every session envelope. The page gives Jeff and the team a shared visual artifact every demo can reference. None of the three are "ask another role" or "search the codebase" — the answer lives in the tree, queryable through three congruent paths, same answer from all of them. That's what unambiguous context means structurally: one source, multiple call shapes, no fallback path that produces a different answer (ADR-028 I-4 applied to the operational layer).</p>
+
+<h3>Operational consumers</h3>
+<ul>
+<li><strong><code>/demo</code> feedback nudge</strong> — product-impact answers cite tree IRIs, no paraphrase. The three-question feedback frame ("how does this impact your products / users / am I over- or under-building") is answered against the tree, not from memory.</li>
+<li><strong><code>/gate-product</code></strong> — reads tree.json to verify the card's <code>Domains:</code> label exists; refuses if not. Closes the "I named a domain that isn't a domain" failure mode.</li>
+<li><strong>Role-nudge routing</strong> — "who owns this?" resolves through <code>chorus_ownership_lookup</code> instead of pattern-matching role files.</li>
+<li><strong>Pre-commit lint</strong> (cookbook req-4 head start) — catches paraphrased structural-class restatement in role CLAUDE.md / briefs / design docs before Move 4's full sweep lands.</li>
+</ul>
+
+<h3>Sequencing — Move 0 first, then Moves 1–5</h3>
+<p>Move 0 lands in days; Move 5's data-seed ingests it; Moves 1–4 land independently on the schedule cookbook ordering demands. The "chorus tuning" cards (small skill/hook/flow tweaks unblocked by the tree being queryable) ride on top of Move 0 immediately, not waiting for Moves 1–5. By the time Move 5 fires, the team has used the tree operationally for weeks — the migration is mechanical because the data shape is already correct.</p>
+
 <h2>Open questions</h2>
 <ul>
   <li>The Borg / Chorus split at the Product level — instances graph has Borg as Product, the chorus-product-tree has Borg as SubProduct under Chorus. Which view is canonical? Affects every traversal verb that starts from "Chorus."</li>
