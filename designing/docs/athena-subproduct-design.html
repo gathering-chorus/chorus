@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athena — Subproduct Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-pop { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-shell { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-extra { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Athena <span>— Subproduct Design</span></h1>
+<p class="date">Wren · 2026-05-15 · second subproduct-design doc (peer to <code>loom-subproduct-design.html</code>) — Athena is the structural &amp; query layer the other subproducts use. AS-IS audit + TO-BE structural / SHACL / API model.</p>
+
+<div class="frame">
+This doc consumes four influences into one design:
+<strong>(1) <code>domain-model-asis-tobe.html</code></strong> (2026-05-09 — the predicate-layer / Domain-class refactor),
+<strong>(2) <code>loom-subproduct-design.html</code></strong> (2026-05-14 — first subproduct-design, contains the "Structural layer — the Athena product model" section that this doc lifts to its canonical home),
+<strong>(3) <code>chorus-product-tree.html</code></strong> (2026-05-14 — product / step / subproduct / domain intent-set),
+<strong>(4) <code>reasoning-substrate-shift.html</code></strong> (2026-05-14 — the "rebalance the API" master lever).
+Live AS-IS data: Fuseki at <code>http://localhost:3030/pods/query</code> on graph <code>urn:chorus:instances</code>, namespace <code>https://jeffbridwell.com/chorus#</code>, queried 2026-05-15.
+</div>
+
+<h2>What Athena is</h2>
+<p>The <strong>structural and query layer</strong> of Chorus — the canonical model of <em>what exists</em> in the team's product world (products, subproducts, domains, services) and the predicates that connect them. A subproduct of the <strong>Chorus</strong> product at the <strong>Designing</strong> value-stream step. Intent-set subdomains: <strong>domains</strong>, <strong>services</strong>.</p>
+<p>Athena is what makes the chorus-product-tree <em>queryable</em>. Every other subproduct's structural placement (Loom's principles, Werk's pipelines, Borg's logs) is an Athena instance. <code>chorus-instance-explorer.html</code> already proves the read-surface works — but it bypasses the chorus API entirely to query Fuseki direct because the API exposes 3 of 29 node types as thin nouns and zero traversal verbs (per <code>reasoning-substrate-shift.html</code>). Athena v2 is what fixes that.</p>
+
+<h2>Structure — up and down</h2>
+<p><strong>UP:</strong> single inbound edge — <code>chorusProduct hasSubProduct athena-product</code>. Same one-directional containment shape as Loom.</p>
+
+<pre class="mermaid">
+flowchart TD
+  Chorus["Chorus — Product"] -->|hasSubProduct| Athena["Athena — SubProduct<br/>owned by Wren · Designing step"]
+  Athena --> D["domains<br/>49 SubDomain instances (graph-wide)"]
+  Athena --> S["services<br/>0 Service instances · 2 ServiceDesign · mis-typed under SubDomain"]
+  classDef pop fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef shell fill:#fef9c3,stroke:#854d0e,color:#854d0e;
+  classDef anchor fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+  class Chorus,Athena anchor;
+  class D pop;
+  class S shell;
+</pre>
+<p class="caption">Green = holds content instances · yellow = intent-aligned but content mis-shaped (Service nodes exist as SubDomain instances rather than Service instances).</p>
+
+<h2>AS-IS — structural class state in Fuseki (queried 2026-05-15)</h2>
+
+<table>
+<tr><th>Class</th><th>Instances</th><th>Status</th><th>Notes</th></tr>
+<tr><td><code>Product</code></td><td class="num">3</td><td><span class="t-pop">POPULATED</span></td><td>Gathering, Chorus, Borg. (Tree intent says 6 — convergence/loom/werk/clearing/athena are at the SubProduct level today; Borg is at Product level, split out from Chorus.)</td></tr>
+<tr><td><code>SubProduct</code></td><td class="num">5</td><td><span class="t-pop">POPULATED</span></td><td>Loom, The Clearing, Werk, Convergence, Athena. Missing relative to tree: Borg lives at Product level instead.</td></tr>
+<tr><td><code>Domain</code> (abstract parent class)</td><td class="num">0</td><td><span class="t-extra">UNUSED AS CONCRETE TYPE</span></td><td>Abstract — every instance uses one of the three subclasses below.</td></tr>
+<tr><td><code>SubDomain</code></td><td class="num">49</td><td><span class="t-pop">POPULATED</span></td><td>The spine of the instance graph. Many concrete "service" nodes (cards-service, gates-service, spine-service, skills-service) are typed as SubDomain despite the <code>-service</code> suffix.</td></tr>
+<tr><td><code>Service</code></td><td class="num">0</td><td><span class="t-shell">SHELL CLASS</span></td><td>OWL class declared (<code>chorus.ttl</code> L416) but no concrete instances — the actual service nodes are mis-typed as SubDomain.</td></tr>
+<tr><td><code>ServiceDesign</code></td><td class="num">2</td><td><span class="t-extra">NOT IN INTENT SET</span></td><td>Currently a separate type; should fold into Service or remain as design-artifact metadata.</td></tr>
+<tr><td><code>Vertebra</code></td><td class="num">11</td><td><span class="t-pop">POPULATED</span></td><td>Value-stream step nodes — Shaping / Designing / Directing / Building / Proving and their substeps.</td></tr>
+<tr><td><code>ValueStream</code></td><td class="num">3</td><td><span class="t-pop">POPULATED</span></td><td>Substantive but no API verbs to query them.</td></tr>
+<tr><td><code>Class</code> / <code>ObjectProperty</code> / <code>DatatypeProperty</code></td><td class="num">50/70/67</td><td>—</td><td>Schema-as-instances; bookkeeping of the OWL definitions.</td></tr>
+</table>
+
+<h3>Top edge predicates by count (instance graph)</h3>
+<table>
+<tr><th>Predicate</th><th>Edges</th><th>What it carries</th></tr>
+<tr><td><code>type</code> / <code>filePath</code> / <code>fileSha</code> / <code>fileLastModified</code></td><td class="num">5483 / 4894 / 4823 / 4823</td><td>RDF + File bookkeeping (mostly the 4,823 File instances).</td></tr>
+<tr><td><code>label</code> / <code>comment</code></td><td class="num">622 / 516</td><td>Display strings.</td></tr>
+<tr><td><code>id</code> / <code>decisionType</code></td><td class="num">143 / 143</td><td>Decisions get IDs + DEC/ADR type tags.</td></tr>
+<tr><td><code>hasSkill</code></td><td class="num">125</td><td>Skill linkage.</td></tr>
+<tr><td><code>consumes</code></td><td class="num">89</td><td>The overloaded predicate — declared <code>Product → Service</code> in the OWL, used <code>SubDomain → SubDomain</code> in practice. Same defect Loom doc named at #1.</td></tr>
+<tr><td><code>expresses</code></td><td class="num">84</td><td>Practice → Principle expression.</td></tr>
+<tr><td><code>contains</code> / <code>hasPage</code> / <code>pageType</code> / <code>route</code></td><td class="num">71 / 71 / 71 / 71</td><td>Page model.</td></tr>
+<tr><td><code>ownedBy</code></td><td class="num">55</td><td>Ownership edges. (Loom doc cited 379 in May 14 evening snapshot — heavy cleanup since.)</td></tr>
+<tr><td><code>implementedIn</code></td><td class="num">52</td><td>Class → File linkage.</td></tr>
+<tr><td><code>hasDomain</code></td><td class="num">40</td><td>The double-declared predicate (<code>Product → Domain</code> + <code>Document → SubDomain</code> as tag). Loom doc cited 426 — cleanup dropped this an order of magnitude.</td></tr>
+<tr><td><code>belongsTo</code></td><td class="num">34</td><td>The undeclared-but-used predicate. Loom doc cited as the "single biggest hole" — still undeclared.</td></tr>
+</table>
+
+<p class="caption">Counts above are the live state at 2026-05-15. Heavy cleanup happened since the Loom doc was written (2026-05-14) — <code>hasDomain</code> dropped ~10×, <code>ownedBy</code> ~7×, <code>SubDomain</code> ~½. The structural shape didn't change; volume contracted as redundant edges were retired.</p>
+
+<h2>OWL — AS-IS (from <code>chorus.ttl</code>)</h2>
+<p><strong>Structural classes</strong> (<code>chorus.ttl</code> L226–243, L416):</p>
+<ul>
+  <li><code>chorus:Domain</code> — abstract; three subclasses (<code>SubProduct</code>, <code>SubDomain</code>, <code>CollectionDomain</code>) all <code>rdfs:subClassOf chorus:Domain</code>.</li>
+  <li><code>chorus:SubProduct</code> <strong>is a subclass of <code>chorus:Domain</code></strong> — same structural oddity Loom doc flagged. SubProduct semantically is a <em>parent</em> of domains, not a kind of domain.</li>
+  <li><code>chorus:Service</code> — declared as its own class (L416) but instantiated zero times; service-named nodes live as SubDomain.</li>
+  <li><code>chorus:Product</code> — declared standalone, not a subclass.</li>
+</ul>
+
+<h3>Predicate-layer incoherences — same defects as Loom audit, still live</h3>
+<div class="gap"><strong><code>hasDomain</code> declared twice with conflicting signatures</strong> — <code>Document → SubDomain</code> (tag-shape) and <code>Product → Domain</code> (containment). One IRI, two semantics. <em>This is the OWL-layer source of the API problem: a traversal verb over <code>hasDomain</code> can't return one consistent type of thing.</em></div>
+<div class="gap"><strong><code>consumes</code> declared <code>Product → Service</code>, used <code>SubDomain → SubDomain</code></strong> — the ontology has <code>dependsOn</code> explicitly for this and it's ignored in practice.</div>
+<div class="gap"><strong><code>belongsTo</code> used 34 times, never declared.</strong> Phantom predicate carrying real structure.</div>
+<ul>
+  <li><code>partOf</code> — neither declared nor used. Phantom concept.</li>
+  <li><code>dependsOn</code>, <code>expresses</code> — declared without <code>rdfs:domain</code> / <code>rdfs:range</code>.</li>
+  <li><code>framework.ttl</code> runs a parallel vocabulary (<code>fw:Domain owl:equivalentClass chorus:Domain</code>, plus <code>fw:ownedBy</code> / <code>fw:dependsOn</code> with no equivalence bridge to the <code>chorus:</code> versions).</li>
+</ul>
+
+<h2>SHACL — AS-IS</h2>
+<p>Structural minimums constrained: <code>ProductDomainShape</code>, <code>SubProductParentShape</code>, <code>SubProductDomainShape</code>, <code>SubDomainParentShape</code>. Substance unconstrained: <code>Domain</code> (the abstract class), <code>Service</code>, and the Athena-content classes themselves have no shapes. The <code>CatalogDocShape</code> targets a class (<code>chorus:CatalogDoc</code>) that isn't declared in the OWL — a shape constraining a phantom.</p>
+
+<h2>Coherence findings — synthesis</h2>
+<div class="finding"><strong>1. The predicate layer is the bottleneck for the API.</strong> Every defect in the AS-IS list above directly blocks the API surface Athena v2 needs. A graph-traversal verb can't have predictable types when <code>hasDomain</code> means two things. A dependency-query verb can't return useful results when <code>consumes</code> is overloaded with containment. The API problem (3 nouns, 0 verbs) is downstream of the predicate problem.</div>
+<div class="finding"><strong>2. Service is a missing layer, not just a missing class.</strong> Service nodes exist conceptually (cards-service, gates-service, etc.) but are typed SubDomain. Athena can't expose Service as a queryable entity until the type-migration runs.</div>
+<div class="finding"><strong>3. The recursive-Domain refactor (domain-model-asis-tobe) is the unblock.</strong> Collapsing the three subclasses of Domain into one recursive class plus separating SubProduct as its own kind fixes both (1) and (2). It is the prerequisite for the API surface, not a parallel concern.</div>
+<div class="finding"><strong>4. Two vocabularies, no bridge.</strong> <code>chorus:</code> and <code>fw:</code> model the same domains, classes, ownership twice with no equivalence axioms. Same finding as Loom audit; still open. Out of scope for this doc (graph-wide, not Athena-specific) but worth naming.</div>
+
+<h2>OWL + SHACL Model — Athena <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+This is the structural model the audit findings demand — <strong>not Athena-specific in the sense that it's the model every subproduct uses</strong>. The Loom doc already named this layer "the Athena product model" and noted it is "not Loom-specific." This doc is its canonical home; future subproduct-design docs reference back here for the structural classes rather than inlining them.
+</div>
+
+<h3>Structural layer — three classes, recursive containment</h3>
+<p>From <code>domain-model-asis-tobe.html</code> and Loom's "Structural layer" section, consolidated:</p>
+<ul>
+  <li><strong><code>Product</code> is recursive.</strong> A Product can contain Products via <code>hasChild</code>; a "subproduct" is just a Product that is the child of another Product. <code>SubProduct</code> as a separate class is removed — erases the "<code>SubProduct rdfs:subClassOf Domain</code>" structural oddity.</li>
+  <li><strong><code>Domain</code> is recursive.</strong> A Domain can contain Domains via <code>hasChild</code>; <code>SubDomain</code> as a separate class is removed — depth becomes a <em>data</em> decision (add <code>hasChild</code> edges), not a <em>schema</em> decision (invent a deeper class).</li>
+  <li><strong><code>Service</code> is a first-class structural layer.</strong> Real service nodes (<code>cards-service</code>, <code>gates-service</code>, <code>spine-service</code>, <code>skills-service</code>) get re-typed to Service. The <code>chorus:Service</code> OWL class exists today; what's missing is type migration of the mis-typed SubDomain instances.</li>
+  <li><strong>One clean predicate set</strong> — <code>hasChild</code> (recursive containment, validated per-source-shape, never via global <code>rdfs:range</code>); <code>hasDomain</code> single-declared <code>Product → Domain</code> (Document→SubDomain tag-use migrates to <code>taggedDomain</code>); <code>consumes</code> single-meaning <code>Product → Service</code> (SubDomain→SubDomain dependency moves to <code>dependsOn</code>); <code>contains</code> for content (<code>Domain → content-instance</code>); <code>atStep : Product → Vertebra</code> replaces both <code>hasValueStreamStep</code> and the instance-level <code>primaryStep</code> drift; <code>belongsTo</code> and <code>partOf</code> dropped.</li>
+  <li><strong>CollectionDomain is removed</strong> from Chorus per <code>domain-model-asis-tobe</code> — Gathering's data domains (Photos, Music, Stories, Books, People, Property) belong to Gathering's ontology, not Chorus's. Chorus models how the team works; the Gathering data layer is downstream.</li>
+</ul>
+
+<pre class="mermaid">
+classDiagram
+  class Product {
+    &lt;&lt;ProductShape&gt;&gt;
+    label · comment · owner
+    vision · valueProposition
+    audience · roadmap · status
+  }
+  class Domain {
+    &lt;&lt;DomainShape&gt;&gt;
+    label · comment · owner · step
+    actors · scenarios · code
+    tests · endpoints · uiPages
+    pipeline · logs · alerts
+    decisions · priorArt · releases
+  }
+  class Service {
+    &lt;&lt;ServiceShape&gt;&gt;
+    overview · vocabulary
+    asIs · toBe · components
+    interactionModel
+    dependencies · consumers
+    surfaces · implementationPlan
+  }
+  class Vertebra
+  class Role
+  Product "1" --> "*" Product : hasChild
+  Product "1" --> "*" Domain : hasDomain
+  Domain "1" --> "*" Domain : hasChild
+  Product --> Service : consumes
+  Product --> Vertebra : atStep
+  Product --> Role : ownedBy
+  Domain --> Role : ownedBy
+  Service --> Role : ownedBy
+</pre>
+<p class="caption">Three structural classes — Product and Domain both recursive via <code>hasChild</code>. SHACL shape stereotypes named per class.</p>
+
+<h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with a verb layer.
+</div>
+
+<table>
+<tr><th>Verb</th><th>Today</th><th>Athena v2</th><th>Returns</th></tr>
+<tr><td><code>product_get(id)</code> · <code>product_list()</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Product instances + their direct <code>hasChild</code> / <code>hasDomain</code> / <code>consumes</code> / <code>atStep</code> edges.</td></tr>
+<tr><td><code>domain_get(id)</code> · <code>domain_list(parent?)</code></td><td><code>subdomains_get</code> (4 fields, no edges)</td><td><span class="verb">REPLACES</span></td><td>Domain with all its outbound edges + content instances by class.</td></tr>
+<tr><td><code>domain_traverse(root, depth?, predicate?)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive children via <code>hasChild</code> (or any specified predicate). Solves the "give me everything under Werk" use case.</td></tr>
+<tr><td><code>service_get(id)</code> · <code>service_list()</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Service + its <code>dependencies</code> / <code>consumers</code> / <code>surfaces</code>. Live after the SubDomain→Service migration.</td></tr>
+<tr><td><code>edges(subject?, predicate?, object?)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Predicate-pattern query. Direct equivalent of LogQL pattern-matching on triples.</td></tr>
+<tr><td><code>blast_radius(subject, depth?)</code></td><td>Computed inside <code>cards</code> CLI, emitted as spine event</td><td><span class="verb">PROMOTES</span></td><td>Queryable surface for "what does changing X affect."</td></tr>
+<tr><td><code>sparql(query)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Arbitrary read-only SPARQL passthrough. The graph equivalent of <code>logs_query</code>. Read-only by guard; writes go through typed mutation verbs.</td></tr>
+<tr><td><code>vertebra_list()</code> · <code>step_chain(product)</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Value-stream surfaces — the Vertebra / ValueStream graph that exists in instances but has no API today.</td></tr>
+<tr><td><code>principle_invoke(card_id)</code> · <code>practice_invoke(card_id, decision_point)</code></td><td><code>principles_get/list/create</code> (CRUD only)</td><td><span class="verb">NEW</span></td><td>Normative-layer <em>invocation</em> at a decision point. Returns the principles/practices that apply + their constraints, not a list-dump.</td></tr>
+</table>
+
+<h2>Overlay model — first-class queryable annotations</h2>
+<p>The structural tree (Product / Domain / Service) names <em>what exists</em>. Overlays name <em>relations across the tree that aren't containment</em>. Each overlay is queryable independently of the structural graph and applies across leaves.</p>
+
+<table>
+<tr><th>Overlay</th><th>Question it answers</th><th>Tonight's precedent</th></tr>
+<tr><td><strong>Authority</strong></td><td>Who is authorized to invoke a given operation on a given unit? (e.g., per-unit deploy authority)</td><td>#2927 AC4 — invocation-authority follows per-unit domain owner; DEC-022's "builds are Silas" applies specifically to LaunchAgent / plist / cdhash surfaces, not blanket per-unit.</td></tr>
+<tr><td><strong>Ownership</strong></td><td>Who owns a node? (Wren owns cards-service code; Silas owns deploy infra.)</td><td>Already partly modeled via <code>ownedBy</code> (55 edges); needs to be query-promoted, not just present.</td></tr>
+<tr><td><strong>Deploy-route</strong></td><td>How is this unit shipped? (Rust crate via <code>build-signed.sh</code>; TypeScript via <code>npm build</code> + rsync; etc.)</td><td>#2925 + #2927 — the wrapper's per-unit dispatch is the implementation; Athena v2 should expose deploy-route as queryable so cards can introspect their own ship path.</td></tr>
+<tr><td><strong>Customer-happiness binding</strong></td><td>Which units' health affects which customer's experience?</td><td>Today's customer-happiness conversation — connects measurement to the unit graph. Open: this overlay's home (likely Loom-metrics + Athena edges).</td></tr>
+</table>
+
+<p>Overlays are queryable via the same verb layer — <code>overlay_get(node, kind)</code> and <code>overlay_query(kind, filters)</code> — and stored as their own predicates in the graph (e.g., <code>hasDeployAuthority</code>, <code>hasDeployRoute</code>). They are <em>not</em> implicit; the AS-IS Athena has no overlay surface at all.</p>
+
+<h2>Open questions</h2>
+<ul>
+  <li>The Borg / Chorus split at the Product level — instances graph has Borg as Product, the chorus-product-tree has Borg as SubProduct under Chorus. Which view is canonical? Affects every traversal verb that starts from "Chorus."</li>
+  <li>ServiceDesign vs Service — fold ServiceDesign into Service metadata, or keep as a separate artifact-type class that <code>describes</code> a Service?</li>
+  <li>Where does the customer-happiness overlay actually live — under Loom (measurement-of-operating-model) or Athena (structural annotation)? Today's discussion left it open. Affects whether the metrics class is in Loom's content layer or Athena's overlay surface.</li>
+  <li>Migration ordering — Service type-migration first, or recursive-Domain collapse first? Each affects the live counts the other depends on. Suggested: Service migration first (smaller, isolated), then Domain collapse (bigger, dependency on Service to be settled).</li>
+  <li>The <code>fw:</code> parallel vocabulary — bridge with <code>owl:equivalentProperty</code> axioms, or retire <code>framework.ttl</code> entirely? Out of scope for this doc, but every API verb that traverses the graph hits the question.</li>
+</ul>
+
+<h2>Scope &amp; caveats</h2>
+<div class="caveat">
+<strong>Verified:</strong> live class + edge counts (Fuseki, 2026-05-15); OWL class definitions in <code>chorus.ttl</code> (cited by line); the four-doc influence set's content (Loom audit, domain-model-asis-tobe, chorus-product-tree, reasoning-substrate-shift — all read fresh for this consolidation).
+<br><br>
+<strong>Inferred:</strong> that the API verbs as named will be the actual implementation shape — names + intents are correct; signatures are sketched, not specified. Implementation cards will define exact signatures, error models, pagination.
+<br><br>
+<strong>Not in this doc:</strong> implementation. This is design-only, mirroring the Loom doc's stance. Implementation lands in downstream cards (Athena v2 API endpoints, Service type-migration, recursive-Domain collapse, overlay-graph build-out, <code>fw:</code> vocabulary reconciliation).
+</div>
+
+<h2>References</h2>
+<ul>
+  <li><code>domain-model-asis-tobe.html</code> — Wren 2026-05-09 — predicate-layer + Domain-class refactor; this doc consumes and extends.</li>
+  <li><code>loom-subproduct-design.html</code> — Wren 2026-05-14 — first subproduct-design; structural-layer section lifted to here as its canonical home.</li>
+  <li><code>chorus-product-tree.html</code> — Wren 2026-05-14 — intent-set placement; this doc reconciles against live Fuseki counts.</li>
+  <li><code>reasoning-substrate-shift.html</code> — Wren 2026-05-14 — names "rebalance the API" as the master lever; this doc enumerates the verbs.</li>
+  <li><code>chorus-instance-explorer.html</code> — the read-only UI that already queries Fuseki direct (bypasses the chorus API). Live proof the read-surface exists; what's missing is the API equivalent.</li>
+  <li><code>chorus.ttl</code> (<code>roles/silas/ontology/</code>) — OWL state; class defs at L226–243, L416.</li>
+  <li>#2927 AC4 — live precedent for per-unit invocation-authority overlay.</li>
+</ul>
+
+<p class="footer">Athena — Subproduct Design · Wren · 2026-05-15 · AS-IS Fuseki audit + TO-BE OWL/SHACL/API model · second doc in the subproduct-design series · supersedes the partial Athena framing previously embedded in <code>loom-subproduct-design.html</code></p>
+
+</body>
+</html>
