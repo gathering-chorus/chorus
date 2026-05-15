@@ -173,19 +173,19 @@ pub async fn check(input: &HookInput) -> HookResponse {
                 if GIT_REBASE_RE.is_match(&cmd) && !GIT_REBASE_CLEANUP_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-rebase").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally), or use the override env var DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if you have a real reason. (Cleanup flags --abort/--continue/--skip/--edit-todo/--quit/--show-current-patch are allowed and not blocked here.)"
+                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally). (Cleanup flags --abort/--continue/--skip/--edit-todo/--quit/--show-current-patch are allowed and not blocked here.)"
                     ));
                 }
                 if GIT_CHERRY_PICK_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-cherry-pick").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git cherry-pick is prohibited in the team repo (#2598). Use the override env var if cross-branch cherry-pick is genuinely needed."
+                        "BLOCKED: Direct git cherry-pick is prohibited in the team repo (#2598)."
                     ));
                 }
                 if GIT_RESET_HARD_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-reset-hard").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598). Override with DEPLOY_ROLE_PREPUSH_OVERRIDE=1 if intentional."
+                        "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598)."
                     ));
                 }
                 if GIT_CHECKOUT_RE.is_match(&cmd_for_match) {
