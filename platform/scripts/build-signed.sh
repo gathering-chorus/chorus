@@ -48,6 +48,48 @@ SIGNING_IDENTITY="${CHORUS_SIGNING_IDENTITY:-9086CB9855BC4642CA03D0B6415A50BD90B
 
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
+# #2931 — inherit trace_id + card_id from the commit being built. chorus_acp
+# writes `Chorus-Trace-Id:` / `Chorus-Card-Id:` git trailers on every acp
+# commit; reading them here lets chorus-log's env-bridge (#2857) tag every
+# downstream build.* event with the same trace_id the ACP step used, so
+# chorus_logs_for_trace returns one continuous chain pull → acp → build →
+# deploy. Env wins over trailer (caller can override); trailer fills the gap
+# when the pipeline picks up a commit cold.
+if [ -z "${CHORUS_TRACE_ID:-}" ] || [ -z "${CHORUS_CARD_ID:-}" ]; then
+  _trailers=$(git -C "$ROOT" log -1 --format=%B 2>/dev/null \
+              | git interpret-trailers --parse 2>/dev/null || true)
+  if [ -z "${CHORUS_TRACE_ID:-}" ]; then
+    _tid=$(printf '%s\n' "$_trailers" | awk -F': ' '$1=="Chorus-Trace-Id"{print $2;exit}')
+    [ -n "$_tid" ] && export CHORUS_TRACE_ID="$_tid"
+  fi
+  if [ -z "${CHORUS_CARD_ID:-}" ]; then
+    _cid=$(printf '%s\n' "$_trailers" | awk -F': ' '$1=="Chorus-Card-Id"{print $2;exit}')
+    [ -n "$_cid" ] && export CHORUS_CARD_ID="$_cid"
+  fi
+fi
+
+# #2931 — failure-emit trap. AC5 of #2931: simulated failure at build produces
+# result=fail event with error= field visible in chorus_logs_for_card. ERR
+# trap fires on any uncaught nonzero (set -e in effect), captures the failing
+# line + command + exit code, emits build.failed via chorus-log, then exits.
+# chorus-log's env-bridge (#2857) attaches CHORUS_TRACE_ID / CHORUS_CARD_ID
+# automatically, so the failure joins the same trace chain as the
+# build.artifact.hashed success events.
+_build_role="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+_emit_build_failed() {
+  local exit_code="$1" line_no="$2" failed_cmd="$3"
+  local err_msg="line=${line_no} cmd=${failed_cmd} exit=${exit_code}"
+  if command -v chorus-log >/dev/null 2>&1; then
+    chorus-log build.failed "$_build_role" \
+      "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
+  elif [ -x "${CHORUS_HOME:-$ROOT}/platform/scripts/chorus-log" ]; then
+    "${CHORUS_HOME:-$ROOT}/platform/scripts/chorus-log" \
+      build.failed "$_build_role" \
+      "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
+  fi
+}
+trap '_emit_build_failed $? $LINENO "$BASH_COMMAND"' ERR
+
 resolve_crate() {
   # chorus-hooks shortcut signs BOTH binaries (chorus-hook-shim + chorus-hooks)
   # via a follow-up sign step at the bottom. Returned spec drives the primary
