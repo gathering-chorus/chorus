@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athena — Subproduct Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-pop { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-shell { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-extra { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Athena <span>— Subproduct Design</span></h1>
+<p class="date">Wren · 2026-05-15 · second subproduct-design doc (peer to <code>loom-subproduct-design.html</code>) — Athena is the structural &amp; query layer the other subproducts use. AS-IS audit + TO-BE structural / SHACL / API model.</p>
+
+<div class="frame">
+This doc consumes five influences into one design:
+<strong>(1) <code>domain-model-asis-tobe.html</code></strong> (2026-05-09 — the predicate-layer / Domain-class refactor),
+<strong>(2) <code>loom-subproduct-design.html</code></strong> (2026-05-14 — first subproduct-design, contains the "Structural layer — the Athena product model" section that this doc lifts to its canonical home),
+<strong>(3) <code>chorus-product-tree.html</code></strong> (2026-05-14 — product / step / subproduct / domain intent-set),
+<strong>(4) <code>reasoning-substrate-shift.html</code></strong> (2026-05-14 — the "rebalance the API" master lever),
+<strong>(5) <code>2907-architecture-notes-draft.html</code></strong> (2026-05-11 — Jeff↔Silas substrate-recursion conversation; names Track A / Track B split, the "HTML service designs as <code>chorus:Hydratable</code> source" bridge that this doc operationalizes as Move 0's JSON tree, the tagging layer as the operational interface between Athena and everything else, and the validators-feed-Loom learning loop).
+Live AS-IS data: Fuseki at <code>http://localhost:3030/pods/query</code> on graph <code>urn:chorus:instances</code>, namespace <code>https://jeffbridwell.com/chorus#</code>, queried 2026-05-15.
+</div>
+
+<div class="frame" style="border-left-color:#0ea5e9">
+<strong>Ultimately, Athena is a product-and-design pipeline.</strong> Not "a schema" or "an API rebuild." The structural model (Product / Domain / Service) is the <em>product</em> layer — vision, audience, value proposition, status, owner, gaps, value-stream placement. The narrative attributes (asIs / toBe / implementationPlan / pathToClose / notInScope / hasDesignDoc) are the <em>design</em> layer — how decisions get encoded structurally rather than living in scattered docs. The substrate is the <em>pipeline</em>: every product surface, every design doc, every service definition is an instance under the same contract (SHACL-gated), flowing through the same artifact lifecycle (<code>exploring → building → operating → retiring</code>), rendered by the same UI. That's why API-only writes + SHACL gate + invariant rendering matter: an instance can't advance to the next state until the prior state's invariant holds.
+<br><br>
+<strong>Two pipelines, one substrate.</strong> The <em>card pipeline</em> (idea → carded → AC → designed → implemented → demoed → accepted) is the team's work-tracking flow — it lives in the cards-service and emits spine events per transition. The <em>artifact lifecycle</em> (<code>chorus:status</code>: exploring → building → operating → retiring) is the state of the Product/Domain/Service itself, SHACL-gated, advancing in Athena's own write path. The two intersect: a card with status "demoed" can advance the artifact it's about from <code>building</code> to <code>operating</code> — but they are different pipelines, observable through different surfaces. This doc's machinery is the artifact-lifecycle pipeline; the card pipeline is referenced through cards-service-design and emits its own spine events.
+</div>
+
+<h2>What Athena is</h2>
+<p>The <strong>structural and query layer</strong> of Chorus — the canonical model of <em>what exists</em> in the team's product world (products, subproducts, domains, services) and the predicates that connect them. A subproduct of the <strong>Chorus</strong> product at the <strong>Designing</strong> value-stream step. Intent-set subdomains: <strong>domains</strong>, <strong>services</strong>. The pipeline framing above is what the rest of this doc operationalizes — the audit names where the pipeline is broken today; the RDF + edge handling name the contract that closes those gaps; the cookbook + ADR-028 alignment names the discipline that keeps it closed.</p>
+<p>Athena is what makes the chorus-product-tree <em>queryable</em>. Every other subproduct's structural placement (Loom's principles, Werk's pipelines, Borg's logs) is an Athena instance. <code>chorus-instance-explorer.html</code> already proves the read-surface works — but it bypasses the chorus API entirely to query Fuseki direct because the API exposes 3 of 29 node types as thin nouns and zero traversal verbs (per <code>reasoning-substrate-shift.html</code>). Athena v2 is what fixes that.</p>
+
+<h2>Structure — up and down</h2>
+<p><strong>UP:</strong> single inbound edge — <code>chorus-product hasChild athena-product</code>. Athena is a Product that is the child of the Chorus Product (recursive-Product model per TO-BE; the AS-IS graph today uses <code>hasSubProduct</code> as a transitional predicate, scheduled for collapse into <code>hasChild</code>).</p>
+
+<pre class="mermaid">
+flowchart TD
+  Chorus["Chorus — Product"] -->|hasChild| Athena["Athena — Product<br/>(child of Chorus)<br/>owned by Wren · Designing step"]
+  Athena -->|hasDomain| D1["Domain<br/>(e.g. cards, gates, spine, skills,<br/>nudge, principles, decisions, ...<br/>49 in graph today)"]
+  D1 -->|hosts| Svc["Service<br/>(cards-service, gates-service,<br/>spine-service, skills-service<br/>— AS-IS mis-typed as SubDomain;<br/>TO-BE re-typed to Service)"]
+  Athena -.->|consumes| Svc
+  classDef pop fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef shell fill:#fef9c3,stroke:#854d0e,color:#854d0e;
+  classDef anchor fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+  class Chorus,Athena anchor;
+  class D1 pop;
+  class Svc shell;
+</pre>
+<p class="caption">Recursive-Product structure: Chorus → Athena via <code>hasChild</code>. Athena's substance is the union of its child Domains. Each Domain <code>hosts</code> its own Services (where the code lives — solid edge); the Athena Product <code>consumes</code> the Services it depends on across its Domains (dashed edge — cross-cutting dependency, not containment). Green = holds content · yellow = content mis-typed today.</p>
+
+<h2>AS-IS — structural class state in Fuseki (queried 2026-05-15)</h2>
+
+<table>
+<tr><th>Class</th><th>Instances</th><th>Status</th><th>Notes</th></tr>
+<tr><td><code>Product</code></td><td class="num">3</td><td><span class="t-pop">POPULATED</span></td><td>Gathering, Chorus, Borg. (Tree intent says 6 — convergence/loom/werk/clearing/athena are at the SubProduct level today; Borg is at Product level, split out from Chorus.)</td></tr>
+<tr><td><code>SubProduct</code></td><td class="num">5</td><td><span class="t-pop">POPULATED</span></td><td>Loom, The Clearing, Werk, Convergence, Athena. Missing relative to tree: Borg lives at Product level instead.</td></tr>
+<tr><td><code>Domain</code> (abstract parent class)</td><td class="num">0</td><td><span class="t-extra">UNUSED AS CONCRETE TYPE</span></td><td>Abstract — every instance uses one of the three subclasses below.</td></tr>
+<tr><td><code>SubDomain</code></td><td class="num">49</td><td><span class="t-pop">POPULATED</span></td><td>The spine of the instance graph. Many concrete "service" nodes (cards-service, gates-service, spine-service, skills-service) are typed as SubDomain despite the <code>-service</code> suffix.</td></tr>
+<tr><td><code>Service</code></td><td class="num">0</td><td><span class="t-shell">SHELL CLASS</span></td><td>OWL class declared (<code>chorus.ttl</code> L416) but no concrete instances — the actual service nodes are mis-typed as SubDomain.</td></tr>
+<tr><td><code>ServiceDesign</code></td><td class="num">2</td><td><span class="t-extra">NOT IN INTENT SET</span></td><td>Currently a separate type; should fold into Service or remain as design-artifact metadata.</td></tr>
+<tr><td><code>Vertebra</code></td><td class="num">11</td><td><span class="t-pop">POPULATED</span></td><td>Value-stream step nodes — Shaping / Designing / Directing / Building / Proving and their substeps.</td></tr>
+<tr><td><code>ValueStream</code></td><td class="num">3</td><td><span class="t-pop">POPULATED</span></td><td>Substantive but no API verbs to query them.</td></tr>
+<tr><td><code>Class</code> / <code>ObjectProperty</code> / <code>DatatypeProperty</code></td><td class="num">50/70/67</td><td>—</td><td>Schema-as-instances; bookkeeping of the OWL definitions.</td></tr>
+</table>
+
+<h3>Top edge predicates by count (instance graph)</h3>
+<table>
+<tr><th>Predicate</th><th>Edges</th><th>What it carries</th></tr>
+<tr><td><code>type</code> / <code>filePath</code> / <code>fileSha</code> / <code>fileLastModified</code></td><td class="num">5483 / 4894 / 4823 / 4823</td><td>RDF + File bookkeeping (mostly the 4,823 File instances).</td></tr>
+<tr><td><code>label</code> / <code>comment</code></td><td class="num">622 / 516</td><td>Display strings.</td></tr>
+<tr><td><code>id</code> / <code>decisionType</code></td><td class="num">143 / 143</td><td>Decisions get IDs + DEC/ADR type tags.</td></tr>
+<tr><td><code>hasSkill</code></td><td class="num">125</td><td>Skill linkage.</td></tr>
+<tr><td><code>consumes</code></td><td class="num">89</td><td>The overloaded predicate — declared <code>Product → Service</code> in the OWL, used <code>SubDomain → SubDomain</code> in practice. Same defect Loom doc named at #1.</td></tr>
+<tr><td><code>expresses</code></td><td class="num">84</td><td>Practice → Principle expression.</td></tr>
+<tr><td><code>contains</code> / <code>hasPage</code> / <code>pageType</code> / <code>route</code></td><td class="num">71 / 71 / 71 / 71</td><td>Page model.</td></tr>
+<tr><td><code>ownedBy</code></td><td class="num">55</td><td>Ownership edges. (Loom doc cited 379 in May 14 evening snapshot — heavy cleanup since.)</td></tr>
+<tr><td><code>implementedIn</code></td><td class="num">52</td><td>Class → File linkage.</td></tr>
+<tr><td><code>hasDomain</code></td><td class="num">40</td><td>The double-declared predicate (<code>Product → Domain</code> + <code>Document → SubDomain</code> as tag). Loom doc cited 426 — cleanup dropped this an order of magnitude.</td></tr>
+<tr><td><code>belongsTo</code></td><td class="num">34</td><td>The undeclared-but-used predicate. Loom doc cited as the "single biggest hole" — still undeclared.</td></tr>
+</table>
+
+<p class="caption">Counts above are the live state at 2026-05-15. Heavy cleanup happened since the Loom doc was written (2026-05-14) — <code>hasDomain</code> dropped ~10×, <code>ownedBy</code> ~7×, <code>SubDomain</code> ~½. The structural shape didn't change; volume contracted as redundant edges were retired.</p>
+
+<h2>OWL — AS-IS (from <code>chorus.ttl</code>)</h2>
+<p><strong>Structural classes</strong> (<code>chorus.ttl</code> L226–243, L416):</p>
+<ul>
+  <li><code>chorus:Domain</code> — abstract; three subclasses (<code>SubProduct</code>, <code>SubDomain</code>, <code>CollectionDomain</code>) all <code>rdfs:subClassOf chorus:Domain</code>.</li>
+  <li><code>chorus:SubProduct</code> <strong>is a subclass of <code>chorus:Domain</code></strong> — same structural oddity Loom doc flagged. SubProduct semantically is a <em>parent</em> of domains, not a kind of domain.</li>
+  <li><code>chorus:Service</code> — declared as its own class (L416) but instantiated zero times; service-named nodes live as SubDomain.</li>
+  <li><code>chorus:Product</code> — declared standalone, not a subclass.</li>
+</ul>
+
+<h3>Predicate-layer incoherences — same defects as Loom audit, still live</h3>
+<div class="gap"><strong><code>hasDomain</code> declared twice with conflicting signatures</strong> — <code>Document → SubDomain</code> (tag-shape) and <code>Product → Domain</code> (containment). One IRI, two semantics. <em>This is the OWL-layer source of the API problem: a traversal verb over <code>hasDomain</code> can't return one consistent type of thing.</em></div>
+<div class="gap"><strong><code>consumes</code> declared <code>Product → Service</code>, used <code>SubDomain → SubDomain</code></strong> — the ontology has <code>dependsOn</code> explicitly for this and it's ignored in practice.</div>
+<div class="gap"><strong><code>belongsTo</code> used 34 times, never declared.</strong> Phantom predicate carrying real structure.</div>
+<ul>
+  <li><code>partOf</code> — neither declared nor used. Phantom concept.</li>
+  <li><code>dependsOn</code>, <code>expresses</code> — declared without <code>rdfs:domain</code> / <code>rdfs:range</code>.</li>
+  <li><code>framework.ttl</code> runs a parallel vocabulary (<code>fw:Domain owl:equivalentClass chorus:Domain</code>, plus <code>fw:ownedBy</code> / <code>fw:dependsOn</code> with no equivalence bridge to the <code>chorus:</code> versions).</li>
+</ul>
+
+<h2>SHACL — AS-IS</h2>
+<p>Structural minimums constrained: <code>ProductDomainShape</code>, <code>SubProductParentShape</code>, <code>SubProductDomainShape</code>, <code>SubDomainParentShape</code>. Substance unconstrained: <code>Domain</code> (the abstract class), <code>Service</code>, and the Athena-content classes themselves have no shapes. The <code>CatalogDocShape</code> targets a class (<code>chorus:CatalogDoc</code>) that isn't declared in the OWL — a shape constraining a phantom.</p>
+
+<h2>Coherence findings — synthesis</h2>
+<div class="finding"><strong>1. The predicate layer is the bottleneck for the API.</strong> Every defect in the AS-IS list above directly blocks the API surface Athena v2 needs. A graph-traversal verb can't have predictable types when <code>hasDomain</code> means two things. A dependency-query verb can't return useful results when <code>consumes</code> is overloaded with containment. The API problem (3 nouns, 0 verbs) is downstream of the predicate problem.</div>
+<div class="finding"><strong>2. Service is a missing layer, not just a missing class.</strong> Service nodes exist conceptually (cards-service, gates-service, etc.) but are typed SubDomain. Athena can't expose Service as a queryable entity until the type-migration runs.</div>
+<div class="finding"><strong>3. The recursive-Domain refactor (domain-model-asis-tobe) is the unblock.</strong> Collapsing the three subclasses of Domain into one recursive class plus separating SubProduct as its own kind fixes both (1) and (2). It is the prerequisite for the API surface, not a parallel concern.</div>
+<div class="finding"><strong>4. Two vocabularies, no bridge.</strong> <code>chorus:</code> and <code>fw:</code> model the same domains, classes, ownership twice with no equivalence axioms. Same finding as Loom audit; still open. Out of scope for this doc (graph-wide, not Athena-specific) but worth naming.</div>
+
+<h2>OWL + SHACL Model — Athena <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+This is the structural model the audit findings demand — <strong>not Athena-specific in the sense that it's the model every subproduct uses</strong>. The Loom doc already named this layer "the Athena product model" and noted it is "not Loom-specific." This doc is its canonical home; future subproduct-design docs reference back here for the structural classes rather than inlining them.
+</div>
+
+<h3>Why two tiers — schema posture</h3>
+<div class="frame">
+RDF and OWL are very powerful — open extension, multi-typing, inference, federated queryability. <strong>But the schema, in many ways, sits <em>below</em> the data — instead of around or above it.</strong> The ontology describes what triples <em>could</em> exist; it doesn't gate what does. Triples can be inserted with no schema awareness and remain valid — the open-world assumption treats absence-of-schema as absence-of-knowledge, not absence-of-permission. That permissiveness allows sloppiness that leads to bad data.
+
+<br><br>
+
+The AS-IS findings above are exactly this pattern: <code>belongsTo</code> used 34 times but never declared; <code>hasDomain</code> declared twice with conflicting signatures; Service nodes typed as <code>SubDomain</code> because no rule enforces type discipline. The schema didn't catch these because it doesn't try to — it describes, it doesn't gate.
+
+<br><br>
+
+The two-tier design responds to this directly:
+
+<ul>
+  <li><strong>Relational core</strong> — Product, Domain, Service, Role, ValueStreamStep, ValueStream. Schema sits <em>around and above</em> the data: SHACL-enforced at write, closed-world, required attributes verified, type discipline a hard gate. Relational rigor where predictability matters — typed API endpoints (<code>/athena/product/:id</code>) need shapes clients can rely on.</li>
+  <li><strong>Graph overlays</strong> — authority, ownership-history, deploy-route, customer-happiness binding, future annotations not yet imagined. Schema sits <em>below</em> the data, RDF-native: open extension, new predicates land without core schema migration, queryable via <code>/athena/edges</code> and <code>/athena/sparql</code>.</li>
+</ul>
+
+Same RDF substrate; two enforcement postures, one per tier. The relational core stops sloppiness in the load-bearing places; the overlay layer keeps the graph's evolutionary openness where new dimensions need to land cheaply.
+</div>
+
+<h3>Structural layer — three classes, recursive containment</h3>
+<p>From <code>domain-model-asis-tobe.html</code> and Loom's "Structural layer" section, consolidated:</p>
+<ul>
+  <li><strong><code>Product</code> is recursive.</strong> A Product can contain Products via <code>hasChild</code>; a "subproduct" is just a Product that is the child of another Product. <code>SubProduct</code> as a separate class is removed — erases the "<code>SubProduct rdfs:subClassOf Domain</code>" structural oddity.</li>
+  <li><strong><code>Domain</code> is recursive.</strong> A Domain can contain Domains via <code>hasChild</code>; <code>SubDomain</code> as a separate class is removed — depth becomes a <em>data</em> decision (add <code>hasChild</code> edges), not a <em>schema</em> decision (invent a deeper class).</li>
+  <li><strong><code>Service</code> is a first-class structural layer.</strong> Real service nodes (<code>cards-service</code>, <code>gates-service</code>, <code>spine-service</code>, <code>skills-service</code>) get re-typed to Service. The <code>chorus:Service</code> OWL class exists today; what's missing is type migration of the mis-typed SubDomain instances.</li>
+  <li><strong>One clean predicate set</strong> — <code>hasChild</code> (recursive containment, validated per-source-shape, never via global <code>rdfs:range</code>); <code>hasDomain</code> single-declared <code>Product → Domain</code> (Document→SubDomain tag-use migrates to <code>taggedDomain</code>); <code>consumes : Product → Service</code> (a Product depends on Services to function — cross-domain consumption); <code>hosts : Domain → Service</code> (the Domain that owns the Service's code and runtime — every Service has exactly one host Domain); <code>contains</code> for content (<code>Domain → content-instance</code>); <code>atStep : Product → ValueStreamStep</code> replaces both <code>hasValueStreamStep</code> and the instance-level <code>primaryStep</code> drift; <code>belongsTo</code> and <code>partOf</code> dropped.</li>
+  <li><strong>Services attach at the Domain level primarily, the Product level secondarily.</strong> The cards-service / gates-service / spine-service / skills-service nodes today mis-typed as SubDomain each have an owning Domain — the code lives there. A Service is <strong>hosted by</strong> exactly one Domain (where its code lives) and <strong>consumed by</strong> any number of Products / other Domains (who depend on it). This resolves the AS-IS ambiguity where "where does cards-service belong" had no unique answer.</li>
+  <li><strong>CollectionDomain is removed</strong> from Chorus per <code>domain-model-asis-tobe</code> — Gathering's data domains (Photos, Music, Stories, Books, People, Property) belong to Gathering's ontology, not Chorus's. Chorus models how the team works; the Gathering data layer is downstream.</li>
+</ul>
+
+<pre class="mermaid">
+classDiagram
+  class Product {
+    &lt;&lt;ProductShape&gt;&gt;
+    label · comment · owner
+    vision · valueProposition
+    audience · roadmap · status
+  }
+  class Domain {
+    &lt;&lt;DomainShape&gt;&gt;
+    label · comment · owner · step
+    actors · scenarios · code
+    tests · endpoints · uiPages
+    pipeline · logs · alerts
+    decisions · priorArt · releases
+  }
+  class Service {
+    &lt;&lt;ServiceShape&gt;&gt;
+    overview · vocabulary
+    asIs · toBe · components
+    interactionModel
+    dependencies · consumers
+    surfaces · implementationPlan
+  }
+  class ValueStreamStep
+  class Role
+  Product "1" --> "*" Product : hasChild
+  Product "1" --> "*" Domain : hasDomain
+  Domain "1" --> "*" Domain : hasChild
+  Domain "1" --> "*" Service : hosts
+  Product --> Service : consumes
+  Product --> ValueStreamStep : atStep
+  Product --> Role : ownedBy
+  Domain --> Role : ownedBy
+  Service --> Role : ownedBy
+</pre>
+<p class="caption">Three structural classes — Product and Domain both recursive via <code>hasChild</code>. Service attaches at the Domain level (hosts — where code lives) and the Product level (consumes — depends on it to function). SHACL shape stereotypes named per class.</p>
+
+<h3>Attribute schema — typed per class</h3>
+<p>The diagram shows the <em>shape</em>; the tables below give the <em>schema</em>. Each attribute is <code>chorus:</code>-prefixed, has a range (<code>xsd:</code> datatype or class reference), cardinality, and SHACL required-status. Attribute lists were lifted from <code>loom-subproduct-design.html</code> (Product, Domain, Service) + the existing Athena UI domain page (<code>platform/api/public/athena/domain-detail.html</code> + 20 service-design docs); refined here with types, cardinality, the literal-vs-relational distinction, and the inverse-property pattern.</p>
+
+<p>Two kinds of attributes per class:</p>
+<ul>
+  <li><strong>Stored</strong> — present as triples on the instance. Returned inline by structural endpoints (<code>/athena/product/:id</code>, etc.).</li>
+  <li><strong>Derived</strong> — graph patterns evaluated at query time. Not stored as triples on the instance. Returned by dedicated traversal endpoints (e.g., <code>/athena/domain/:id/decisions</code>, <code>/athena/service/:id/consumers</code>).</li>
+</ul>
+
+<div class="frame">
+<strong>Invariant rendering — all stored attributes are required.</strong> The UI page for a Product / Domain / Service must render the same sections every time, in the same order, regardless of which instance is being viewed. That requires every stored attribute to <em>exist</em> on every instance — no conditional "show only if defined" branches in the rendering. SHACL <code>minCount 1</code> on every stored attribute. Multi-valued attributes (<code>gaps</code>, <code>notInScope</code>, etc.) require at least one entry; the entry can be a placeholder literal like <code>"none identified yet"</code>, but the triple must exist. Genuinely-optional attributes (e.g., <code>inParent</code> on root Products that have no parent, <code>consumes</code> on Products without external service deps) are the explicit exceptions and stay optional with their semantics named.
+</div>
+
+<p>Universal <code>status</code> enum across all three classes: <code>{exploring, building, operating, retiring}</code> (this is the artifact lifecycle — distinct from the card pipeline named in the top frame; the two are reconciled in the pipeline-framing section below).</p>
+
+<p><strong>Storage direction (resolved 2026-05-15):</strong> all containment edges store on the parent / containment side, matching the classDiagram. Product stores <code>hasChild</code> (child Products), <code>hasDomain</code> (owned Domains), <code>consumes</code> (cross-cutting Service deps). Domain stores <code>hasChild</code> (child Domains), <code>hosts</code> (owned Services), <code>contains</code> (content records — actors, scenarios, decisions, …, per ADR-028 req-1). Service stores its dependsOn / commitsTo / integratesWith / runsOn / persistsIn outbound edges. <code>inParent</code> / <code>inProduct</code> / <code>hostedBy</code> are dropped from the schema — child→parent views are derived via SPARQL <code>sh:inversePath</code> at query time.</p>
+
+<h4>Product</h4>
+<p><strong>Stored attributes</strong> (11 required, 2 structurally optional):</p>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Short name.</td></tr>
+<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Longer description (Identity / promise narrative).</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td><strong>required</strong></td><td>Owning role.</td></tr>
+<tr><td><code>chorus:vision</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Aspirational trajectory. Per Jeff: every Product declares.</td></tr>
+<tr><td><code>chorus:valueProposition</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>What it promises whom. Contract statement; customer-happiness overlay binds against this.</td></tr>
+<tr><td><code>chorus:audience</code></td><td>xsd:string</td><td>1..n</td><td><strong>required</strong></td><td>Who it is for (at least one named).</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td><strong>required</strong></td><td><code>{exploring, building, operating, retiring}</code>.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>1..n</td><td><strong>required</strong></td><td>Known limitations (placeholder "none identified yet" is a valid literal).</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:ValueStreamStep</td><td>1</td><td><strong>required</strong></td><td>Value-stream placement.</td></tr>
+<tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>1..n</td><td><strong>required</strong></td><td>Every Product must have ≥1 design artifact.</td></tr>
+<tr><td><code>chorus:hasDomain</code></td><td>chorus:Domain</td><td>1..n</td><td><strong>required</strong></td><td>Every Product owns ≥1 Domain.</td></tr>
+<tr><td><code>chorus:hasChild</code></td><td>chorus:Product</td><td>0..n</td><td>optional</td><td>Child Products (recursive). Empty for leaf Products. Parent view from a child is derived via inverse.</td></tr>
+<tr><td><code>chorus:consumes</code></td><td>chorus:Service</td><td>0..n</td><td>optional</td><td>Cross-cutting Service deps. Genuinely optional — some Products consume no external Services.</td></tr>
+</table>
+
+<p><strong>Derived sections</strong> (inverse traversals + computed views):</p>
+<table>
+<tr><th>Section</th><th>Graph pattern</th><th>API endpoint</th></tr>
+<tr><td><code>parentOf</code></td><td><code>?p chorus:hasChild ?this</code> (inverse; ≤1 parent)</td><td><code>/athena/product/:id/parent</code></td></tr>
+<tr><td><code>completeness %</code></td><td>computed from required-attribute coverage</td><td><code>/athena/product/:id/completeness</code></td></tr>
+</table>
+<p class="caption">13 stored (11 required, 2 structurally optional) + 2 derived. <code>hasDomain minCount 1</code> means every Product owns at least one Domain; <code>hasChild</code> is optional (leaf Products have none); the parent view from a child is derived via <code>sh:inversePath chorus:hasChild</code> rather than stored.</p>
+
+<h4>Domain</h4>
+<p>Domain owns the structural-class membership edges (per ADR-028 req-1: every subdomain links to its records via <code>chorus:contains</code>). Stored attributes include the literal narrative + ownership + the membership edges (<code>hosts</code>, <code>contains</code>, <code>hasChild</code>); content classes (Actor, Scenario, Decision, etc.) do <em>not</em> carry a back-pointer — Domain's <code>contains</code> is the canonical edge, queried by the page renderer.</p>
+
+<p><strong>Stored attributes</strong> (8 required, 2 optional):</p>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Short name.</td></tr>
+<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>The "promise" — what this Domain is for. Rendered in the promise block.</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td><strong>required</strong></td><td>Owning role.</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:ValueStreamStep</td><td>1</td><td><strong>required</strong></td><td>Value-stream placement. Rendered in the breadcrumb.</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td><strong>required</strong></td><td><code>{exploring, building, operating, retiring}</code>.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>1..n</td><td><strong>required</strong></td><td>Known limitations / status notes (placeholder "none identified yet" is a valid literal).</td></tr>
+<tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>1..n</td><td><strong>required</strong></td><td>Every Domain must have ≥1 design artifact.</td></tr>
+<tr><td><code>chorus:contains</code></td><td>chorus:Record (union of content classes: Actor, Scenario, Decision, Endpoint, Page, Pipeline, LogStream, Alert, PriorArt, Release, Test, Component, ConsumerContract, Glossary, Reference, …)</td><td>1..n</td><td><strong>required</strong></td><td>Membership edge — cookbook req-1. Page renderer queries this to enumerate; missing edge = invisible record. Placeholder allowed (a minimal Record stub during bootstrap).</td></tr>
+<tr><td><code>chorus:hosts</code></td><td>chorus:Service</td><td>0..n</td><td>optional</td><td>Services whose code lives in this Domain. Empty for Domains with no hosted Services yet. <strong>Inverse-cardinality SHACL on ServiceShape: every Service must be the object of exactly one <code>hosts</code> edge.</strong></td></tr>
+<tr><td><code>chorus:hasChild</code></td><td>chorus:Domain</td><td>0..n</td><td>optional</td><td>Child Domains (recursive). Parent view from a child is derived via inverse.</td></tr>
+</table>
+<p class="caption">Inverse constraint enforced on the Domain side: every Domain must be the object of a <code>chorus:hasDomain</code> edge from a Product (no orphan Domains). The previous <code>chorus:inProduct</code> stored predicate is dropped; the relationship is owned by the Product side.</p>
+
+<p><strong>Derived sections</strong> (graph patterns evaluated at query time; one API endpoint per section; one page section consumes each):</p>
+<table>
+<tr><th>Section (page renders)</th><th>Graph pattern</th><th>API endpoint</th></tr>
+<tr><td><code>actors</code></td><td><code>?this chorus:contains ?a . ?a a chorus:Actor</code></td><td><code>/athena/domain/:id/actors</code></td></tr>
+<tr><td><code>scenarios</code> (BDD)</td><td><code>?this chorus:contains ?s . ?s a chorus:Scenario</code></td><td><code>/athena/domain/:id/scenarios</code></td></tr>
+<tr><td><code>code</code></td><td><code>?this chorus:contains ?f . ?f a chorus:File ; chorus:fileType "code"</code></td><td><code>/athena/domain/:id/code</code></td></tr>
+<tr><td><code>tests</code></td><td><code>?this chorus:contains ?f . ?f a chorus:File ; chorus:fileType "test"</code></td><td><code>/athena/domain/:id/tests</code></td></tr>
+<tr><td><code>endpoints</code></td><td><code>?this chorus:contains ?e . ?e a chorus:Endpoint</code></td><td><code>/athena/domain/:id/endpoints</code></td></tr>
+<tr><td><code>uiPages</code></td><td><code>?this chorus:contains ?p . ?p a chorus:Page</code></td><td><code>/athena/domain/:id/pages</code></td></tr>
+<tr><td><code>pipeline</code></td><td><code>?this chorus:contains ?p . ?p a chorus:Pipeline</code></td><td><code>/athena/domain/:id/pipeline</code></td></tr>
+<tr><td><code>logs</code></td><td><code>?this chorus:contains ?l . ?l a chorus:LogStream</code></td><td><code>/athena/domain/:id/logs</code></td></tr>
+<tr><td><code>alerts</code></td><td><code>?this chorus:contains ?a . ?a a chorus:Alert</code></td><td><code>/athena/domain/:id/alerts</code></td></tr>
+<tr><td><code>decisions</code></td><td><code>?this chorus:contains ?d . ?d a chorus:Decision</code></td><td><code>/athena/domain/:id/decisions</code></td></tr>
+<tr><td><code>priorArt</code></td><td><code>?this chorus:contains ?p . ?p a chorus:PriorArt</code></td><td><code>/athena/domain/:id/prior-art</code></td></tr>
+<tr><td><code>releases</code></td><td><code>?this chorus:contains ?r . ?r a chorus:Release</code></td><td><code>/athena/domain/:id/releases</code></td></tr>
+<tr><td><code>dependencies</code></td><td><code>?this chorus:dependsOn ?d</code> <em>(stored on Domain, rendered via traversal)</em></td><td><code>/athena/domain/:id/dependencies</code></td></tr>
+<tr><td><code>integrations</code></td><td><code>?this chorus:integratesWith ?i</code> <em>(stored on Domain)</em></td><td><code>/athena/domain/:id/integrations</code></td></tr>
+<tr><td><code>infrastructure</code></td><td><code>?this chorus:runsOn ?infra</code> <em>(stored on Domain)</em></td><td><code>/athena/domain/:id/infrastructure</code></td></tr>
+<tr><td><code>persistence</code></td><td><code>?this chorus:persistsIn ?store</code> <em>(stored on Domain)</em></td><td><code>/athena/domain/:id/persistence</code></td></tr>
+<tr><td><code>consumed</code> (Shared Infrastructure)</td><td><code>?x chorus:consumes ?this</code> (inverse — Products consuming this Domain's Services)</td><td><code>/athena/domain/:id/consumers</code></td></tr>
+<tr><td><code>services</code> (hosted Services)</td><td><code>?this chorus:hosts ?s . ?s a chorus:Service</code> (direct — <code>hosts</code> is stored on Domain)</td><td><code>/athena/domain/:id/services</code></td></tr>
+<tr><td><code>parentOf</code></td><td><code>?d chorus:hasChild ?this . ?d a chorus:Domain</code> (inverse; ≤1 parent)</td><td><code>/athena/domain/:id/parent</code></td></tr>
+<tr><td><code>completeness %</code></td><td>computed from coverage of derived sections (per shape's required-fields list)</td><td><code>/athena/domain/:id/completeness</code></td></tr>
+</table>
+
+<p class="caption">10 stored attributes (8 required, 2 optional: <code>hosts</code>, <code>hasChild</code>) + 20 rendered sections (some are direct traversals on stored Domain-outbound edges like <code>hosts</code>/<code>contains</code>; some are inverse traversals like <code>parentOf</code>/<code>consumed</code>). The Domain stays a tight node; the renderer composes its sections by walking the Domain's outbound edges and one inverse hop. Per cookbook req-1, the <code>chorus:contains</code> edge is non-negotiable — it's what makes records visible to the page renderer.</p>
+
+<h4>Service</h4>
+<p>Schema derived from surveying the 20 existing service-design docs in <code>designing/docs/*-service-design.{html,md}</code>; common sections clustered. Per Jeff's invariant-rendering principle, all stored attributes are required. <strong>The hosting relationship is stored on the Domain side</strong> (<code>?domain chorus:hosts ?this</code>); Service does not store <code>hostedBy</code>. The 1:1 hosting constraint is enforced via <code>sh:inversePath chorus:hosts</code> with <code>minCount 1 maxCount 1</code> in ServiceShape.</p>
+
+<p><strong>Stored attributes</strong> (12 required):</p>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Short name.</td></tr>
+<tr><td><code>chorus:overview</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>The promise — what this Service does.</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td><strong>required</strong></td><td>Owning role.</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:ValueStreamStep</td><td>1</td><td><strong>required</strong></td><td>Value-stream placement (Services sit at a step too).</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td><strong>required</strong></td><td><code>{exploring, building, operating, retiring}</code>.</td></tr>
+<tr><td><code>chorus:asIs</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Current-state narrative.</td></tr>
+<tr><td><code>chorus:toBe</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Target-state narrative.</td></tr>
+<tr><td><code>chorus:implementationPlan</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Build / migration plan.</td></tr>
+<tr><td><code>chorus:pathToClose</code></td><td>xsd:string</td><td>1</td><td><strong>required</strong></td><td>Gap-closure steps.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>1..n</td><td><strong>required</strong></td><td>Known limitations (placeholder literal valid).</td></tr>
+<tr><td><code>chorus:notInScope</code></td><td>xsd:string</td><td>1..n</td><td><strong>required</strong></td><td>Explicit non-goals (placeholder literal valid).</td></tr>
+<tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>1..n</td><td><strong>required</strong></td><td>Every Service must have ≥1 design artifact (the existing <code>*-service-design.html</code> files become the canonical anchors).</td></tr>
+</table>
+
+<p><strong>Derived sections</strong> (graph patterns; each → one <code>/athena/service/:id/&lt;section&gt;</code> endpoint):</p>
+<table>
+<tr><th>Section</th><th>Graph pattern</th></tr>
+<tr><td><code>vocabulary</code></td><td><code>?this chorus:contains ?t . ?t a chorus:Glossary</code></td></tr>
+<tr><td><code>surfaces</code></td><td><code>?this chorus:contains ?s . ?s a chorus:APISurface</code></td></tr>
+<tr><td><code>components</code></td><td><code>?this chorus:contains ?c . ?c a chorus:Component</code></td></tr>
+<tr><td><code>decisions</code></td><td><code>?this chorus:contains ?d . ?d a chorus:Decision</code></td></tr>
+<tr><td><code>references</code></td><td><code>?this chorus:contains ?r . ?r a chorus:Reference</code></td></tr>
+<tr><td><code>consumers</code></td><td>inverse of <code>?x consumes ?this</code> (returns Products + Domains that consume this Service)</td></tr>
+<tr><td><code>dependencies</code></td><td><code>?this chorus:dependsOn ?d</code> <em>(stored on Service, rendered via traversal)</em></td></tr>
+<tr><td><code>loomContracts</code></td><td><code>?this chorus:commitsTo ?p</code> where <code>?p ∈ {Principle, Practice}</code> <em>(stored on Service)</em></td></tr>
+<tr><td><code>hostingDomain</code></td><td>inverse of <code>?d chorus:hosts ?this</code> (exactly one — SHACL-enforced)</td></tr>
+<tr><td><code>spineEvents</code></td><td><code>?e chorus:atService ?this</code> (events tagged with this Service)</td></tr>
+<tr><td><code>cardsInFlight</code></td><td><code>?card chorus:atService ?this . ?card chorus:status != "Done"</code></td></tr>
+<tr><td><code>completeness %</code></td><td>computed from required-attribute coverage</td></tr>
+</table>
+
+<p class="caption"><strong>12 stored (all required) + 12 rendered sections</strong> (5 via Service-stored <code>contains</code>, 3 via Service-stored outbound edges, 2 via inverse traversal from external entities, 1 via inverse <code>hosts</code>, 1 computed). Same invariant-rendering discipline as Product and Domain: every section the service-design page renders has data behind it on every Service instance, no conditional "show if defined" branches. The existing <code>*-service-design.html</code> docs become the canonical narrative anchors; <code>/athena/service/:id</code> renders them from the graph + their linked Document. Per cookbook req-1, Service-level records (vocab, surfaces, components, decisions, references) are linked via <code>chorus:contains</code>; external entities that <em>reference</em> the Service (cards, spine events) point at it via <code>chorus:atService</code> — that's a reference, not containment.</p>
+
+<h2>RDF — OWL + SHACL <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+<strong>The invariant: if every write goes through the API, the graph is whole — and the Athena UI renders every instance properly, no conditional branches.</strong> SHACL is the contract, the API is the only writer that honors it. Every required attribute populated, every required edge present, every retired predicate refused at the write boundary, every cardinality enforced — by construction, not by post-hoc audit. Because the graph is whole, the consumer-side guarantee follows: <code>/athena/product/:id</code>, <code>/athena/domain/:id</code>, <code>/athena/service/:id</code> always return complete instances, and the Athena UI pages (<code>domain-detail.html</code>, the service-design renderer, the product surface) render every section on every instance without "show if defined" branches or empty-state placeholders for required fields. The AS-IS sloppiness exists because writes happened through paths that didn't validate (direct triplestore writes, ad-hoc TTL files, harvesters with no shape contract) — which forced the UI to defensively branch on "is this field even there?" v2 closes those paths: the API is the only writer; SHACL is the only gate; the graph stays whole because it cannot become un-whole through any sanctioned write; the UI renders consistently because it can trust the API response.
+<br><br>
+Mechanics: storage direction follows the classDiagram (containment direction is canonical) — <code>hasChild</code>, <code>hasDomain</code>, <code>hosts</code>, <code>contains</code>, <code>consumes</code>, <code>atStep</code> stored on the subject side named in the diagram. Inverse views (<code>parentOf</code>, <code>hostingDomain</code>) computed at query time via <code>sh:inversePath</code>, not stored. The earlier <code>inParent</code> / <code>inProduct</code> / <code>hostedBy</code> direction is dropped — one storage direction per edge, no double-keyed truth. The cookbook req-1 predicate <code>chorus:contains</code> is the canonical Domain→Record / Service→Record membership edge (renderers query by it). Content records carry no back-pointer; external entities (cards, spine events) that <em>reference</em> a Service use <code>chorus:atService</code> instead of <code>chorus:contains</code>.
+</div>
+
+<pre><code># chorus.ttl — Athena v2 (additive; coexists with AS-IS during migration)
+@prefix chorus: &lt;https://jeffbridwell.com/chorus#&gt; .
+@prefix owl:    &lt;http://www.w3.org/2002/07/owl#&gt; .
+@prefix rdfs:   &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+@prefix sh:     &lt;http://www.w3.org/ns/shacl#&gt; .
+@prefix xsd:    &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+
+# ── Structural classes ──────────────────────────────────────────────
+chorus:Product          a owl:Class .
+chorus:Domain           a owl:Class .
+chorus:Service          a owl:Class .
+chorus:Role             a owl:Class .
+chorus:ValueStream      a owl:Class .
+chorus:ValueStreamStep  a owl:Class .
+chorus:Document         a owl:Class .
+chorus:Principle        a owl:Class .
+chorus:Practice         a owl:Class .
+chorus:Infrastructure   a owl:Class .
+chorus:Store            a owl:Class .
+
+# ── Containment edges (stored on parent / containment side) ─────────
+chorus:hasChild   a owl:ObjectProperty .   # Product→Product OR Domain→Domain (recursive)
+chorus:hasDomain  a owl:ObjectProperty ;
+    rdfs:domain chorus:Product ;
+    rdfs:range  chorus:Domain .
+chorus:hosts      a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range  chorus:Service .            # Domain hosts Service (1:* from Domain)
+chorus:consumes   a owl:ObjectProperty ;
+    rdfs:domain chorus:Product ;
+    rdfs:range  chorus:Service .            # cross-cutting; structurally optional
+
+# ── Placement / ownership / design link ─────────────────────────────
+chorus:atStep        a owl:ObjectProperty ;
+    rdfs:range chorus:ValueStreamStep .     # subject ∈ {Product, Domain, Service}
+chorus:ownedBy       a owl:ObjectProperty ;
+    rdfs:range chorus:Role .
+chorus:hasDesignDoc  a owl:ObjectProperty ;
+    rdfs:range chorus:Document .
+chorus:inStream      a owl:ObjectProperty ;
+    rdfs:domain chorus:ValueStreamStep ;
+    rdfs:range  chorus:ValueStream .
+
+# ── Service-side edges ──────────────────────────────────────────────
+chorus:dependsOn      a owl:ObjectProperty ;
+    rdfs:domain chorus:Service ; rdfs:range chorus:Service .
+chorus:commitsTo      a owl:ObjectProperty ;
+    rdfs:domain chorus:Service .            # range: Principle ∨ Practice
+chorus:integratesWith a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Domain .
+chorus:runsOn         a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Infrastructure .
+chorus:persistsIn     a owl:ObjectProperty ;
+    rdfs:domain chorus:Domain ; rdfs:range chorus:Store .
+
+# ── Membership (ADR-028 req-1: subdomain links to its records) ──────
+chorus:contains a owl:ObjectProperty .       # Domain → Record OR Service → Record (union of content classes)
+
+# ── External reference (entities that point AT a Service, not contained) ──
+chorus:atService a owl:ObjectProperty ;
+    rdfs:range chorus:Service .              # Card / SpineEvent / … → Service (reference, not containment)
+
+# ── Dropped (collapsed into containment-direction predicates) ───────
+# chorus:inParent, chorus:inProduct, chorus:hostedBy — DO NOT WRITE.
+# chorus:domain, chorus:service (back-pointers) — replaced by chorus:contains (Domain/Service → Record).
+# chorus:belongsTo, chorus:partOf — retired (AS-IS).
+
+# ── Stored narrative attributes (xsd:string, invariant-rendered) ────
+chorus:label              a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:comment            a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:overview           a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:vision             a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:valueProposition   a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:audience           a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:status             a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:asIs               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:toBe               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:implementationPlan a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:pathToClose        a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:gaps               a owl:DatatypeProperty ; rdfs:range xsd:string .
+chorus:notInScope         a owl:DatatypeProperty ; rdfs:range xsd:string .
+</code></pre>
+
+<pre><code># shapes.ttl — SHACL enforcement (invariant-rendering: every stored required)
+@prefix chorus: &lt;https://jeffbridwell.com/chorus#&gt; .
+@prefix sh:     &lt;http://www.w3.org/ns/shacl#&gt; .
+@prefix xsd:    &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+
+chorus:ProductShape a sh:NodeShape ;
+    sh:targetClass chorus:Product ;
+    sh:property [ sh:path chorus:label            ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:comment          ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy          ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:vision           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:valueProposition ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:audience         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:status           ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:atStep           ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:hasDesignDoc     ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:hasDomain        ; sh:minCount 1 ; sh:class chorus:Domain ] .
+    # consumes / hasChild — structurally optional; ranges enforced where present.
+
+chorus:DomainShape a sh:NodeShape ;
+    sh:targetClass chorus:Domain ;
+    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:comment      ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:atStep       ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status       ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:contains     ; sh:minCount 1 ] ;  # cookbook req-1: every Domain links its records
+    sh:property [ sh:path [ sh:inversePath chorus:hasDomain ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Product ] .  # every Domain belongs to exactly one Product
+    # hosts / hasChild — structurally optional.
+
+chorus:ServiceShape a sh:NodeShape ;
+    sh:targetClass chorus:Service ;
+    sh:property [ sh:path chorus:label              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
+    sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
+</code></pre>
+
+<p class="caption">This is the contract the API enforces. Writes through <code>POST /athena/{product,domain,service}</code> run SHACL validation against <code>shapes.ttl</code>; refusals name the failing constraint. The retired predicates (<code>inParent</code>, <code>inProduct</code>, <code>hostedBy</code>, <code>chorus:domain</code> / <code>chorus:service</code> back-pointers) are write-blocked by the API regardless of what AS-IS data still carries them — the migration card backfills the canonical-direction predicate before retiring the old triples. Inverse-path SHACL on DomainShape and ServiceShape enforces that every Domain belongs to exactly one Product, every Service is hosted by exactly one Domain — without storing the inverse edge on the child side.</p>
+
+<h2>Edge handling on API calls</h2>
+<div class="frame">
+Edges are first-class resources, not embedded fields. <strong>Reads</strong> project them inline on the parent instance for convenience; <strong>writes</strong> always go through edge-typed endpoints so SHACL validates one predicate at a time and refusals point to the exact constraint that failed.
+</div>
+
+<h3>Read projection</h3>
+<p><code>GET /athena/product/:id</code> returns the instance plus its outbound edges as JSON arrays keyed by predicate (<code>hasChild</code>, <code>hasDomain</code>, <code>consumes</code>, <code>atStep</code>, <code>ownedBy</code>, <code>hasDesignDoc</code>) — IRIs only, not embedded objects, to keep the payload bounded. Domain reads project <code>hasChild</code>, <code>hosts</code>, <code>contains</code>, <code>integratesWith</code>, <code>runsOn</code>, <code>persistsIn</code> plus the same common edges. Service reads project <code>contains</code>, <code>dependsOn</code>, <code>commitsTo</code> plus the common edges. Inverse views (<code>parentOf</code> for Products/Domains, <code>hostingDomain</code> for Services, <code>consumers</code> for Services) are computed at query time from SPARQL and projected on the appropriate side; they are <em>not</em> stored. Traversal endpoints (<code>/children</code>, <code>/domains</code>, <code>/services</code>, <code>/host</code>, <code>/consumers</code>) follow one predicate recursively or one-hop.</p>
+
+<h3>Write — edge endpoints</h3>
+<table>
+<tr><th>Predicate</th><th>Endpoint</th><th>Body</th><th>SHACL gate</th></tr>
+<tr><td><code>hasChild</code></td><td><code>POST /athena/product/:id/children</code> · <code>POST /athena/domain/:id/children</code></td><td><code>{ child: &lt;iri&gt; }</code></td><td>child must be same class as parent (Product or Domain); no cycles; no re-parenting if child already has a parent (move = DELETE then POST)</td></tr>
+<tr><td><code>hasDomain</code></td><td><code>POST /athena/product/:id/domains</code></td><td><code>{ domain: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Domain</code></td></tr>
+<tr><td><code>hosts</code></td><td><code>POST /athena/domain/:id/services</code></td><td><code>{ service: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Service</code>; ServiceShape's <code>sh:inversePath hosts</code> requires exactly one — POST refuses if the Service is already hosted elsewhere (move = DELETE then POST)</td></tr>
+<tr><td><code>consumes</code></td><td><code>POST /athena/product/:id/consumes</code></td><td><code>{ service: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Service</code>; structurally optional, no minCount</td></tr>
+<tr><td><code>atStep</code></td><td><code>PUT /athena/{product,domain,service}/:id/at-step</code></td><td><code>{ step: &lt;iri&gt; }</code></td><td>object must be <code>chorus:ValueStreamStep</code>; PUT (not POST) because each instance has exactly one — re-PUT replaces</td></tr>
+<tr><td><code>ownedBy</code></td><td><code>PUT /athena/{product,domain,service}/:id/owner</code></td><td><code>{ role: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Role</code>; minCount 1 — initial PUT required at create</td></tr>
+<tr><td><code>hasDesignDoc</code></td><td><code>POST /athena/{product,domain,service}/:id/design-docs</code></td><td><code>{ document: &lt;iri&gt; }</code></td><td>object must be <code>chorus:Document</code>; minCount 1 across instance</td></tr>
+<tr><td><code>dependsOn</code> · <code>commitsTo</code> · <code>integratesWith</code> · <code>runsOn</code> · <code>persistsIn</code></td><td><code>POST /athena/{domain,service}/:id/{depends,commits,integrates,runs,persists}</code></td><td><code>{ target: &lt;iri&gt; }</code></td><td>range enforced per OWL declaration; cycles refused for <code>dependsOn</code></td></tr>
+<tr><td><code>contains</code> (cookbook req-1)</td><td><code>POST /athena/{domain,service}/:id/records</code></td><td><code>{ record: &lt;iri&gt; }</code></td><td>object must be a content-class instance (Actor, Scenario, Decision, Endpoint, Page, Pipeline, LogStream, Alert, PriorArt, Release, Test, Component, ConsumerContract, Glossary, APISurface, Reference); DomainShape requires <code>contains minCount 1</code></td></tr>
+<tr><td><code>atService</code> (external reference)</td><td>Written by the referencing entity's endpoint (e.g., <code>POST /athena/card</code> with <code>{ atService: &lt;iri&gt; }</code>); not written via Service endpoints</td><td><code>{ atService: &lt;iri&gt; }</code> on the referrer's payload</td><td>range must be <code>chorus:Service</code>; not containment — Service does not own its cards / spine events</td></tr>
+</table>
+
+<h3>Atomic instance creation — composite POST</h3>
+<p><code>POST /athena/{product,domain,service}</code> with the <em>full required-attribute payload</em> creates the instance atomically. The body includes both literal attributes and required edges; SHACL validates the whole record as a unit before any triple is written. Refusal returns <code>422 shape-violation</code> with the failing constraint paths. Example shape for Domain create:</p>
+<pre><code>POST /athena/domain
+{
+  "label": "cards",
+  "comment": "team board — work intake to acceptance",
+  "ownedBy": "chorus:wren",
+  "atStep": "chorus:value-stream-step-directing",
+  "status": "operating",
+  "gaps": ["board sometimes lags real WIP"],
+  "hasDesignDoc": ["chorus:doc-cards-service-design"],
+  "hasDomain_inverse": "chorus:athena",     // satisfies inverse-hasDomain minCount 1 atomically
+  "contains": ["chorus:record-cards-actors", "chorus:record-cards-scenarios", ...]  // ≥1 satisfies cookbook req-1
+}</code></pre>
+<p>Post-create, edges are mutated via the edge endpoints above (POST to add, DELETE to remove). The composite create endpoint exists only for the create-with-required-edges atomic guarantee; once an instance is whole, edges flow through their typed paths. Refusal is binary — if any required attribute or edge is missing, the entire instance is refused; no partial writes ever land in the graph.</p>
+
+<h3>Edge removal</h3>
+<p><code>DELETE /athena/{product,domain,service}/:id/{edge-path}/:target-id</code> for each edge endpoint above. Refuses if removal would violate a SHACL minCount (e.g., deleting the last <code>hasDesignDoc</code>, the only <code>ownedBy</code>, the sole <code>hosts</code> edge for a Service). Refusal message names the shape + constraint, not just "validation failed."</p>
+
+<h3>Retired-predicate writes — explicit refusal</h3>
+<p>The API maintains a deny-list at the write boundary: <code>chorus:inParent</code>, <code>chorus:inProduct</code>, <code>chorus:hostedBy</code>, <code>chorus:belongsTo</code>, <code>chorus:partOf</code>, <code>chorus:domain</code> (back-pointer; superseded by <code>chorus:contains</code>), <code>chorus:service</code> (back-pointer; superseded by <code>chorus:contains</code> for records, <code>chorus:atService</code> for external references). Any write attempting these predicates — via the structured endpoints, via <code>POST /athena/sparql</code> (which is read-only by guard anyway), or via the underlying triplestore if proxied — returns <code>409 retired-predicate</code> with the canonical-direction predicate to use instead (e.g., "write <code>chorus:hosts</code> on the Domain, not <code>chorus:hostedBy</code> on the Service"; "write <code>chorus:contains</code> on the Domain, not <code>chorus:domain</code> on the record"). This is how AS-IS data migrates forward without new writes degrading the schema.</p>
+
+<h3><code>/athena/edges</code> — read-only predicate-pattern query</h3>
+<p><code>GET /athena/edges?subject=&amp;predicate=&amp;object=</code> answers "which triples match this pattern" — direct equivalent of <code>logs_query</code> for the graph. Any combination of the three slots may be bound or wildcard. Read-only by guard; the typed mutation endpoints above are the only write surface for edges. This is the verb that closes the substrate-shift master-lever ("make the graph as interrogable as the logs already are").</p>
+
+<h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.
+</div>
+
+<table>
+<tr><th>HTTP path</th><th>Today</th><th>Athena v2</th><th>Returns</th></tr>
+<tr><td><code>GET /athena/product</code> · <code>GET /athena/product/:id</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Product list / Product instance + its direct <code>hasChild</code> / <code>hasDomain</code> / <code>consumes</code> / <code>atStep</code> edges.</td></tr>
+<tr><td><code>GET /athena/product/:id/children</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive <code>hasChild</code> traversal — child Products beneath this Product (e.g., Gathering's children).</td></tr>
+<tr><td><code>GET /athena/product/:id/domains</code></td><td>—</td><td><span class="verb">NEW</span></td><td>The Domains this Product contains (<code>hasDomain</code> edges). Athena's "union of child Domains" surface.</td></tr>
+<tr><td><code>GET /athena/product/:id/services</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Services this Product <code>consumes</code> (cross-cutting deps, dashed edge — not the hosts edge).</td></tr>
+<tr><td><code>GET /athena/domain</code> · <code>GET /athena/domain/:id</code></td><td><code>subdomains_get</code> (4 fields, no edges)</td><td><span class="verb">REPLACES</span></td><td>Domain with all its outbound edges + content instances by class.</td></tr>
+<tr><td><code>GET /athena/domain/:id/children</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Recursive <code>hasChild</code> for Domains (Domain → Domain depth).</td></tr>
+<tr><td><code>GET /athena/domain/:id/services</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Services this Domain <code>hosts</code> (where the code lives — solid edge).</td></tr>
+<tr><td><code>GET /athena/service</code> · <code>GET /athena/service/:id</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Service list / instance with <code>dependencies</code> / <code>consumers</code> / <code>surfaces</code>. Live after SubDomain → Service migration.</td></tr>
+<tr><td><code>GET /athena/service/:id/host</code></td><td>—</td><td><span class="verb">NEW</span></td><td>The single Domain that hosts this Service (inverse of <code>hosts</code>).</td></tr>
+<tr><td><code>GET /athena/service/:id/consumers</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Products / Domains that <code>consume</code> this Service (the dependency graph for impact analysis).</td></tr>
+<tr><td><code>GET /athena/edges?subject=&amp;predicate=&amp;object=</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Predicate-pattern query — any-position binding (<code>?s ?p ?o</code> with optional filters). Direct equivalent of <code>logs_query</code> for triples.</td></tr>
+<tr><td><code>GET /athena/blast-radius/:id</code></td><td>Computed inside <code>cards</code> CLI, emitted as spine event</td><td><span class="verb">PROMOTES</span></td><td>Queryable surface for "what does changing X affect" — recursive consumers + hosted services + dependents.</td></tr>
+<tr><td><code>POST /athena/sparql</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Arbitrary read-only SPARQL passthrough — the graph equivalent of <code>logs_query</code>. Read-only by guard; writes route through typed mutation paths.</td></tr>
+<tr><td><code>GET /athena/value-stream-step</code> · <code>GET /athena/product/:id/steps</code></td><td>—</td><td><span class="verb">NEW</span></td><td>Value-stream surfaces — the ValueStreamStep / ValueStream graph that exists in instances but has no API today.</td></tr>
+<tr><td><code>POST /athena/principle/invoke</code> · <code>POST /athena/practice/invoke</code></td><td><code>principles_get/list/create</code> (CRUD only)</td><td><span class="verb">NEW</span></td><td>Normative-layer <em>invocation</em> at a decision point — pass card_id + decision-point name, returns the principles/practices that apply + their constraints. Not a list-dump.</td></tr>
+</table>
+
+<p class="caption">Mutation paths (POST/PATCH/DELETE on the same resources) ship in a later wave — Athena v2 lands read-side first, mirroring how the chorus-api shipped read surfaces ahead of mutation tools. The overlay paths (<code>/athena/overlay/authority</code>, <code>/athena/overlay/deploy-route</code>, etc.) land alongside the structural reads as their own resource namespace.</p>
+
+<h2>Overlay model — first-class queryable annotations</h2>
+<p>The structural tree (Product / Domain / Service) names <em>what exists</em>. Overlays name <em>relations across the tree that aren't containment</em>. Each overlay is queryable independently of the structural graph and applies across leaves.</p>
+
+<table>
+<tr><th>Overlay</th><th>Question it answers</th><th>Tonight's precedent</th></tr>
+<tr><td><strong>Authority</strong></td><td>Who is authorized to invoke a given operation on a given unit? (e.g., per-unit deploy authority)</td><td>#2927 AC4 — invocation-authority follows per-unit domain owner; DEC-022's "builds are Silas" applies specifically to LaunchAgent / plist / cdhash surfaces, not blanket per-unit.</td></tr>
+<tr><td><strong>Ownership</strong></td><td>Who owns a node? (Wren owns cards-service code; Silas owns deploy infra.)</td><td>Already partly modeled via <code>ownedBy</code> (55 edges); needs to be query-promoted, not just present.</td></tr>
+<tr><td><strong>Deploy-route</strong></td><td>How is this unit shipped? (Rust crate via <code>build-signed.sh</code>; TypeScript via <code>npm build</code> + rsync; etc.)</td><td>#2925 + #2927 — the wrapper's per-unit dispatch is the implementation; Athena v2 should expose deploy-route as queryable so cards can introspect their own ship path.</td></tr>
+<tr><td><strong>Customer-happiness binding</strong></td><td>Which units' health affects which customer's experience?</td><td>Today's customer-happiness conversation — connects measurement to the unit graph. Open: this overlay's home (likely Loom-metrics + Athena edges).</td></tr>
+</table>
+
+<p>Overlays are queryable via the same verb layer — <code>overlay_get(node, kind)</code> and <code>overlay_query(kind, filters)</code> — and stored as their own predicates in the graph (e.g., <code>hasDeployAuthority</code>, <code>hasDeployRoute</code>). They are <em>not</em> implicit; the AS-IS Athena has no overlay surface at all.</p>
+
+<h2>Alignment with the substrate-class cookbook + ADR-028</h2>
+<div class="frame">
+Athena v2 IS the substrate-class treatment applied to the structural-model domain (Product / Domain / Service). The pattern is not new — <code>/loom/cookbook-substrate-class-domain.html</code> abstracts it from the principles arc and the decisions arc; <a href="../../roles/silas/adr/ADR-028-substrate-class-domain-contract.md">ADR-028</a> names the seven completeness requirements every such domain must hold. This design adopts both, verbatim, and adds nothing the cookbook doesn't already prescribe — the wholeness invariant is the cookbook's req-1 + req-2 expressed as a contract.
+</div>
+
+<h3>The seven requirements (ADR-028) — applied</h3>
+<table>
+<tr><th>Req</th><th>ADR-028 language</th><th>How Athena v2 satisfies it</th></tr>
+<tr><td>1. Data layer separation</td><td>Schema in <code>urn:chorus:ontology</code>, records in <code>urn:chorus:instances</code>; <code>rdfs:label</code> + <code>rdfs:comment</code> minimum; <code>chorus:contains</code> reverse edge from subdomain</td><td><code>chorus.ttl</code> ships to ontology graph; Product/Domain/Service instances to instances graph; SHACL <code>minCount 1</code> on <code>chorus:label</code> + <code>chorus:comment</code>; <code>hasDomain</code> / <code>hasChild</code> / <code>hosts</code> are the containment edges (the cookbook's <code>chorus:contains</code> analog at the structural level)</td></tr>
+<tr><td>2. One write path</td><td>All mutations through <code>POST/PUT/DELETE /api/athena/subdomains/...</code>; no direct TTL edits, no SPARQL UPDATE outside Athena handlers</td><td>Edge-handling section above defines the typed write endpoints; SPARQL passthrough is read-only by guard; pre-commit hook (req. 5) refuses direct edits to <code>chorus.ttl</code> outside migrations</td></tr>
+<tr><td>3. One read path</td><td>Canonical reads at <code>GET /api/athena/subdomains/.../{entityType}</code>; predecessors 308-redirect; no parallel read shapes</td><td><code>GET /athena/{product,domain,service}/:id</code> + traversal endpoints + <code>/athena/edges</code> are the only readers; AS-IS <code>subdomains_get</code> / <code>subdomains_list</code> stay live as legacy reads then 308-redirect at cutover, then retire wholesale</td></tr>
+<tr><td>4. Cite-by-ID, never paraphrase</td><td>Role fragments, briefs, code reference URIs; no inlined record text; lint enforces</td><td>Role CLAUDE.md fragments and design docs reference Product/Domain/Service by IRI (e.g., <code>chorus:athena</code>, <code>chorus:cards-service</code>), never paraphrase their description; a lint pass under the doc tree refuses inlined restatements of structural-class attributes</td></tr>
+<tr><td>5. Hook backstops the old path</td><td>Pre-commit blocks the path the API replaces; bypass exists with spine-event audit</td><td>Pre-commit refuses direct edits to <code>chorus.ttl</code> + <code>shapes.ttl</code> outside cards tagged <code>migration:athena-v2</code>; bypass <code>CHORUS_TTL_DIRECT_EDIT_SKIP=1</code> emits <code>athena.bypass.invoked</code> spine event with role + card; the retired-predicate 409 at the API is the runtime backstop</td></tr>
+<tr><td>6. Drift test as gate</td><td>Static baseline holds against live graph; divergence fails CI; counts are floors</td><td><code>book/athena-reconstructed.html</code> rendered from a frozen TTL snapshot in <code>book/athena-frozen.ttl</code>; CI diff against the live SHACL-gated graph; structural-class instance counts asserted as floors (<code>Product ≥ 3</code>, <code>Service ≥ 0</code> pre-migration); hermetic SHACL fixture tests run deterministically</td></tr>
+<tr><td>7. Subdomain plumbed</td><td>Domain itself passes the completeness gate; meta-alerts on stale index / API errors / orphan records; MCP tools single-verb-single-target; <code>X-Chorus-Role</code> end-to-end</td><td>The <code>athena</code> Product/Domain row will satisfy its own SHACL shape during the Move-1 OWL+SHACL card (label, comment, vision, valueProposition, audience, status, gaps, atStep, ownedBy, hasDesignDoc, hasDomain populated); this file is linked as a <code>chorus:Document</code> instance during the Move-5 data-seed migration (IRI: <code>chorus:doc-athena-subproduct-design</code>). Meta-alerts for SHACL validation lag, retired-predicate write attempts, orphan instances. MCP tools (<code>chorus_product_get</code>, <code>chorus_domain_get</code>, <code>chorus_service_get</code>) per the cookbook's single-verb rule.</td></tr>
+</table>
+
+<h3>The five moves — applied to implementation order</h3>
+<table>
+<tr><th>Move</th><th>Cookbook</th><th>Athena v2 mapping</th></tr>
+<tr><td>1. Graph as the single source</td><td>Instances populated in <code>urn:chorus:instances</code>; URI scheme declared; predicate names single-declared; ID collisions resolved pre-populate</td><td>OWL+SHACL card (#1 in implementation path) declares <code>chorus.ttl</code> + <code>shapes.ttl</code> as canonical; URI scheme <code>https://jeffbridwell.com/chorus#&lt;class&gt;-&lt;slug&gt;</code> declared in addendum; <strong>pre-Move-1 audits</strong>: existing AS-IS predicate set already queried (counts in audit table); retired-predicate list already enumerated; the data-seed card is itself the discovery move (refusals identify AS-IS sloppiness case-by-case)</td></tr>
+<tr><td>2. API as the only write path</td><td>Typed endpoints; pre-existing parallel paths retired (308 then removed)</td><td>API surface card (#2 in implementation path) — fresh write under <code>/athena/*</code>, AS-IS <code>/api/chorus/subdomains/*</code> stays live as legacy reads, 308-redirects at cutover, retires wholesale</td></tr>
+<tr><td>3. Drift test as the gate</td><td>Static baseline + CI assertion; mutate either side without the other → red</td><td>Drift-test card (added to implementation path below) — <code>book/athena-reconstructed.html</code> baseline; SHACL fixture corpus in CI; ≥-count floors over the live graph</td></tr>
+<tr><td>4. Cite-by-ID, never inline</td><td>Every caller (role CLAUDE.md fragments, briefs, decisions, code comments) references by URI; lint enforces</td><td>Cite-by-ID card (added) — sweep role files and design docs for inlined structural-class restatement; rewrite as IRI citations; pre-commit lint catches regressions</td></tr>
+<tr><td>5. Hook backstops the affordance</td><td>MCP tools for the typed path + pre-commit blocking the retired path</td><td>Hook card (added) — MCP tools <code>chorus_product_*</code>, <code>chorus_domain_*</code>, <code>chorus_service_*</code>; pre-commit refuses direct <code>chorus.ttl</code> / <code>shapes.ttl</code> edits outside migration cards; runtime 409 at the API for retired predicates (already in edge-handling section)</td></tr>
+</table>
+
+<h3>Three meta-invariants (ADR-028) — already satisfied</h3>
+<ul>
+  <li><strong>I-1: Graph is the source of truth.</strong> Wholeness invariant: API-only writes → graph whole → UI renders properly. No paraphrase surfaces; design docs cite IRIs.</li>
+  <li><strong>I-4: One source, multiple call shapes.</strong> REST endpoints, MCP tools, SPARQL passthrough, the Athena UI renderer — all delegate to the same handler reading the same graph. SHACL is the single declarative validator shared by every write surface (ADR-028's validation-schema addendum: one declarative schema, not duplicated across N sites).</li>
+  <li><strong>I-10: Atomic per record class, not atomic across classes.</strong> Implementation cards land per-class: Product migration, Domain migration, Service type-migration are separate atomic units. Cross-class atomicity sacrificed for testability and reversibility.</li>
+</ul>
+
+<h3>Phase 1 / Phase 2 split (cookbook two-phase model)</h3>
+<p><strong>Phase 1 — data correctness.</strong> Five moves above. Closes when the doneness-six holds: every instance in graph, every write through API, CI fails on drift, every caller cites by ID, MCP+hook close old path, lifecycle gate measures truth (derived / required-authored / optional-authored).</p>
+<p><strong>Phase 2 — refactor / placement.</strong> A separate card opens after Phase 1 closes: where Athena v2 code lives (chorus-api vs a dedicated <code>chorus-athena</code> service), where the renderer lives (gathering app today; chorus product surface tomorrow per ADR-028's #2485 precedent), where overlay graphs sit. Phase 2 is its own card; this design is Phase 1.</p>
+
+<h2>Other requirements</h2>
+<div class="frame">
+The wholeness invariant ("API-only writes → graph whole → UI renders properly") names <em>what</em> v2 guarantees. The requirements below name <em>what the API has to enforce</em> to make that guarantee real. Each one closes a specific failure mode the AS-IS exhibits.
+</div>
+
+<table>
+<tr><th>Requirement</th><th>What it means</th><th>Failure mode it closes</th></tr>
+<tr><td><strong>Atomic instance creation</strong></td><td>Composite <code>POST /athena/{product,domain,service}</code> takes the full required-attribute payload (literals + required edges, including the inverse-cardinality satisfier — e.g., a Domain create carries <code>hasDomain_inverse: &lt;product-iri&gt;</code> to satisfy DomainShape's inverse-hasDomain minCount 1) in one call and validates as a unit. Body shape and SHACL-vs-edge-endpoint relationship documented in the <em>Atomic instance creation — composite POST</em> subsection above. Partial creates refused with <code>422 shape-violation</code>; no half-validated instances ever land. Post-create, individual edges flow through their typed edge endpoints.</td><td>AS-IS today has instances with some attributes populated and others not — because writes happened one-triple-at-a-time without a shape contract. Atomic create means an instance is either whole or not present. Resolves the apparent contradiction between SHACL minCount-1 requirements (instance must have hasDesignDoc, ownedBy, hosts-target, etc.) and edge endpoints (which post-create mutate one edge at a time).</td></tr>
+<tr><td><strong>Write attribution + spine event per mutation</strong></td><td>Every write emits a spine event <code>athena.&lt;class&gt;.&lt;op&gt;</code> with <code>role</code>, <code>card_id</code>, <code>subject_iri</code>, <code>predicate</code>, <code>object</code>; <code>card_id</code> propagates per #2930. Every triple also carries provenance metadata (writer role, source card, timestamp) — either as reified statements or as a parallel named-graph.</td><td>AS-IS has no answer to "who wrote this triple, when, from which card." Audit, rollback, and impact-tracing all depend on this.</td></tr>
+<tr><td><strong>Uniform error taxonomy</strong></td><td>All endpoints return one of: <code>retired-predicate</code>, <code>shape-violation</code>, <code>range-violation</code>, <code>cycle</code>, <code>cardinality</code>, <code>not-found</code>, <code>conflict</code> (concurrent write), <code>auth</code>. Body names the shape + path + offending value. Same shape across every verb.</td><td>Refusal messages today (where they exist) are ad-hoc string errors. Clients can't programmatically branch on "is this fixable by me or is it a bug?"</td></tr>
+<tr><td><strong>Bootstrap order</strong></td><td><code>Role</code>, <code>ValueStream</code>, <code>ValueStreamStep</code>, and a small set of seed <code>Document</code> instances must be populated <em>before</em> any Product / Domain / Service can validate (every Product requires <code>ownedBy</code>, <code>atStep</code>, <code>hasDesignDoc</code>). The seed migration card runs this in order: classes → bootstrap instances → Service type-migration → Domain instance backfill → Product instance backfill.</td><td>Schema-first bootstrap has a chicken-and-egg if not sequenced — every required edge has to have an existing target before the source instance validates.</td></tr>
+<tr><td><strong>SHACL → OpenAPI generation</strong></td><td>SHACL is the canonical source; OpenAPI / JSON-Schema for the HTTP layer is <em>generated</em> from it (single source of truth for both the graph validator and the typed clients). No hand-maintained parallel contract.</td><td>Two contracts drift. Today's TypeScript types for Athena responses don't match what the graph actually holds; that's how harvesters started writing fields the readers didn't expect.</td></tr>
+<tr><td><strong>SPARQL passthrough guard</strong></td><td><code>POST /athena/sparql</code> is read-only (no <code>INSERT</code>/<code>DELETE</code>); enforces a per-query timeout, a complexity limit (triple-pattern count / join depth), and a result-size cap. <code>/athena/edges</code> pattern queries flow through the same guard.</td><td>Without a guard, the passthrough verb is a DoS surface and a bypass of the typed mutation contract. With the guard, it's <em>only</em> a read tool — the wholeness invariant survives the existence of an open query API.</td></tr>
+<tr><td><strong>Schema evolution discipline</strong></td><td>Adding a required attribute to a Shape ships <em>with</em> the backfill migration; deprecating a predicate ships <em>with</em> the read-side replacement. Shape changes never land alone. <code>shapes.ttl</code> versions are tagged and the migration card references the version it migrates from / to.</td><td>Schema-evolves-faster-than-data is exactly how AS-IS got <code>belongsTo</code> declared one way and used another. Coupling shape + migration prevents the gap.</td></tr>
+<tr><td><strong>Read-time consistency</strong></td><td>Strong-read-after-write for the resource just written (the same client sees its own writes immediately). Derived views (SPARQL-computed inverse views like <code>consumers</code>, <code>parentOf</code>) are computed at query time, so they reflect the latest write by construction — no separate index to keep in sync.</td><td>Today's <code>subdomains_get</code> reads can lag harvester writes; consumers see stale data and start treating "is the field there" as an open question. Computing inverses on the fly removes the eventual-consistency surface entirely.</td></tr>
+<tr><td><strong>Auth surface (read-free, write-gated)</strong></td><td>Reads (<code>GET /athena/*</code>) require no auth, per chorus-api convention. Writes require the call to carry <code>DEPLOY_ROLE</code> attribution (already enforced on <code>git-queue</code> and the cards pipeline); the API records that role as the writer on every spine event and on triple provenance. Per-class authority (who can mutate which subject type) follows the <strong>Authority overlay</strong> (#2927 AC4) — owner of the unit's domain is the authorized writer.</td><td>AS-IS has no write-attribution at all; the harvesters write under whichever process happened to invoke them. v2 wires write-authority into the existing role-attribution substrate.</td></tr>
+<tr><td><strong>Comprehensive logging + error handling</strong></td><td>Every API request emits a structured log line (Loki, role + endpoint + subject + outcome + latency). Every refusal emits a spine event (<code>athena.&lt;class&gt;.&lt;op&gt;.refused</code>) with the typed reason and offending payload — no silent 4xx. Every internal error emits both a log line at <code>error</code> level and a spine event (<code>athena.internal.error</code>) with stack + request context; the response carries a correlation ID that resolves the spine event. No <code>console.log</code>, no swallowed exceptions, no unwrapped <code>throw new Error(message)</code> — every error path types its reason against the uniform taxonomy above.</td><td>AS-IS today: harvester failures go to stdout and disappear; client 4xx have ad-hoc bodies; the operator can't reconstruct what a failed write attempted. Without comprehensive observability the wholeness invariant becomes unfalsifiable — you can't prove the graph is whole if you can't see what got refused.</td></tr>
+<tr><td><strong>Infer dependencies from the graph</strong></td><td>Dependency edges that the structural graph already implies are <em>derived</em>, not stored. Examples: if Product P <code>consumes</code> Service S and Domain D <code>hosts</code> S (so D inverse-hosts → S), then "P depends on D" is a SPARQL traversal, not a separate <code>dependsOn</code> triple. Cross-domain dependencies between Domain A and Domain B emerge when Services in A consume Services in B — same inference, no hand-maintained <code>integratesWith</code> required. Stored <code>dependsOn</code> / <code>integratesWith</code> stay in the schema only for relationships the structural graph <em>can't</em> express (e.g., "Domain A's behavior depends on Domain B even though no shared Service"). <code>GET /athena/{product,domain,service}/:id/depends</code> returns the union of stored + inferred. <code>GET /athena/blast-radius/:id</code> runs this inference recursively.</td><td>Hand-maintained dependency lists drift the moment a Service moves. The structural graph already encodes "who calls whom"; restating it as a separate dependency edge is double-storage that goes stale. Inferring keeps the source of truth in one place — the call graph — and removes a whole class of "we forgot to update X" failures.</td></tr>
+<tr><td><strong>Comprehensive test coverage — five layers</strong></td><td><strong>(1) Unit</strong> — every SHACL shape ships with valid + invalid fixture corpora (one fixture per violation type: missing required, wrong range, cardinality, retired-predicate). <strong>(2) Integration</strong> — full write→read round trips per resource: POST then GET, POST then DELETE then GET, POST that violates a shape then verify graph unchanged. <strong>(3) API contract</strong> — every endpoint × every refusal-taxonomy reason; OpenAPI conformance check (response shape matches generated schema). <strong>(4) UI</strong> — <code>domain-detail.html</code> / service-design renderer / product surface against canned API responses; every required-attribute section renders, no empty-state placeholders for required fields, edge-array projections render correctly. <strong>(5) Data quality</strong> — scheduled SHACL validation pass over the live graph (not just write-gate) emits a spine event per violation found; catches AS-IS residue, harvester drift, schema-evolution gaps. SHACL tests run in CI before API tests; API tests run before UI tests; data-quality runs continuously against the live graph.</td><td>Each layer catches a different failure class — unit alone passes against an empty graph; integration alone misses UI rendering bugs; UI alone misses data-quality drift over time. The wholeness invariant has five attack surfaces; each layer defends one.</td></tr>
+</table>
+
+<p class="caption">Cross-cutting: every requirement above leans on the wholeness invariant, and every requirement above also <em>protects</em> it. Atomic creation prevents partial instances; provenance answers who-wrote-what; uniform errors keep clients honest; bootstrap order prevents the validator from being its own first victim; OpenAPI-from-SHACL prevents contract drift; the SPARQL guard prevents the open query API from being a bypass; schema-evolution discipline keeps the invariant across time; consistency rules keep it across requests; auth wires it to roles; tests prove it. Take any one out and "the graph stays whole" becomes "the graph mostly stays whole" — which is where AS-IS lives.</p>
+
+<h2>Implementation path — OWL+SHACL first, API second, data third</h2>
+<div class="frame">
+v1 went <strong>data → schema-by-discovery → API-by-priority</strong>. v2 inverts: <strong>schema → API → data</strong>. Same three layers, reversed dependency. v1's order let each layer be <em>constrained by</em> what already existed below it — sloppiness in the data became normal because the schema had to accommodate it. v2's order makes each layer <em>constrain</em> what gets added above it — the schema gates what the API can express; the API gates what data clients can write.
+</div>
+
+<div class="frame" style="border-left-color:#0ea5e9">
+<strong>Fresh write, not rewrite.</strong> v2 lives under a new namespace (<code>/athena/*</code>, parallel to the AS-IS <code>/api/chorus/subdomains/*</code>) and is built SHACL-gated from line 1 — no path through the v2 code reaches the triplestore without validating against <code>shapes.ttl</code>. Rewriting the AS-IS endpoints in place would carry forward the un-validated write paths that produced today's sloppiness, because the retrofit would have to keep them working while validation gets bolted on, and the team would defer to "existing behavior" every time the gate refused. Greenfield avoids that trap. AS-IS endpoints stay live as legacy reads during migration; cutover is by namespace, not by endpoint — when v2's coverage is complete, the v1 namespace retires wholesale.
+</div>
+
+<p>Five downstream cards derive from #2928, in cookbook order (Phase 1 of the two-phase model — data correctness):</p>
+
+<ol>
+  <li><strong>Move 1 — OWL + SHACL rigor (graph as the single source).</strong> Formally declare Product / Domain / Service / Role / ValueStreamStep / ValueStream / Document as <code>chorus:</code>-prefixed classes; every attribute typed with cardinality and SHACL required-status per the tables above; <code>chorus:contains</code> declared per cookbook req-1; inverse-path SHACL constraints (DomainShape: inverse <code>hasDomain</code> minCount 1; ServiceShape: inverse <code>hosts</code> minCount/maxCount 1); <code>status</code> enum as <code>sh:in</code>; predicate-layer defects from the audit closed; URI scheme declared once. Output: <code>chorus.ttl</code> + <code>shapes.ttl</code> pair landed in <code>urn:chorus:ontology</code>.</li>
+  <li><strong>Move 2 — API surface (only write path).</strong> Build the <code>/athena/{product,domain,service}</code> endpoints (composite create + edge endpoints + retired-predicate refusal + edge / sparql / blast-radius / value-stream-step / principle-invoke verbs) backed by the SHACL shapes from card 1. Reads return shape-shaped JSON; writes validate against shapes; refusal taxonomy uniform across endpoints. AS-IS <code>/api/chorus/subdomains/*</code> stays live as legacy reads, 308-redirects at cutover, retires wholesale post-migration.</li>
+  <li><strong>Move 3 — Drift test as the gate.</strong> Static baseline (<code>book/athena-reconstructed.html</code> rendered from a frozen TTL snapshot in <code>book/athena-frozen.ttl</code>) + CI assertion comparing the live SHACL-gated graph against the baseline. Includes SHACL fixture corpus (valid + invalid fixtures per shape, one per violation type) and live-graph data-quality scan (scheduled SHACL pass emitting <code>athena.shacl.violation</code> spine events). Floors not exact counts (graphs grow).</li>
+  <li><strong>Move 4 — Cite-by-ID, never inline.</strong> Sweep role CLAUDE.md files, briefs, design docs, code comments for inlined structural-class restatement; rewrite as IRI citations (e.g., <code>chorus:athena</code>, <code>chorus:cards-service</code>). Pre-commit lint refuses regressions. Output: <code>grep</code> for inline-restatement pattern across the tree returns 0.</li>
+  <li><strong>Move 5 — Hook backstops the affordance.</strong> MCP tools <code>chorus_product_get/list</code>, <code>chorus_domain_get/list</code>, <code>chorus_service_get/list</code> (cookbook's single-verb-single-target rule; defer <code>_create</code> until cadence proves out). Pre-commit hook refuses direct edits to <code>chorus.ttl</code> + <code>shapes.ttl</code> outside cards tagged <code>migration:athena-v2</code>; bypass <code>CHORUS_TTL_DIRECT_EDIT_SKIP=1</code> emits <code>athena.bypass.invoked</code> spine event for audit. Runtime 409 retired-predicate at the API (already in edge-handling section) is the runtime backstop. <strong>The data-seed migration runs concurrently with Move 5</strong> — re-type service-named SubDomain instances to Service, populate <code>hosts</code> edges, populate <code>contains</code> edges, backfill literal attributes through composite-POST until validation passes. Validation refusals identify residual AS-IS sloppiness case-by-case.</li>
+</ol>
+
+<p>Order is the cookbook's order, not negotiable. Move 5's hook only earns its keep after Moves 1–4 have made the typed path more attractive than the path being blocked. Move 3's drift test is the most-skipped step in the cookbook's history; it is what makes the contract a contract. Per cookbook two-phase model, Phase 2 (placement — where Athena v2 code lives, where the renderer lives, where overlay graphs sit) opens after Phase 1's doneness-six holds; this design covers Phase 1 only.</p>
+
+<h2>Move 0 — JSON-first operational bridge</h2>
+<div class="frame" style="border-left-color:#0ea5e9">
+The 5-move plan above is ~6 weeks elapsed at current cadence. Operational value (product-impact answers in <code>/demo</code>, ownership routing for nudges, blast-radius for gates) cannot wait six weeks. Move 0 is a hand-authored JSON tree that delivers the operational layer in days, then becomes the data-seed input Move 5 ingests through composite-POST. The work compounds — same authoring, different storage substrate when it lands.
+</div>
+
+<h3>Artifact: <code>data/athena/tree.json</code></h3>
+<p>Single source-of-truth for the structural model — Products → Domains → Services with <code>ownedBy</code> / <code>atStep</code> / <code>consumes</code> / <code>hosts</code> / <code>dependsOn</code> / <code>contains</code> / <code>hasDesignDoc</code> fields. JSON shape mirrors what composite-POST will accept, so Move 5 ingest is mechanical. Hand-authored from existing knowledge + AS-IS Fuseki state as starting input.</p>
+
+<h3>Emission surfaces — three layered, one source</h3>
+<table>
+<tr><th>Surface</th><th>When</th><th>What it gives</th></tr>
+<tr><td><strong>SessionStart envelope injection</strong></td><td>First turn of every role session</td><td>Per role: (a) owned Products/Domains/Services compact list; (b) <strong>most active 3–5</strong> units (signal: open WIP+Next cards, recent commits, recent spine events, recent <code>/gate</code> activity); (c) <strong>needs more work 3–5</strong> units (signal: stale design doc &gt;30d, open AC items past N days, gaps count, low completeness %, recent <code>/gate</code> refusals); (d) flat ownership map <code>{iri → role}</code> for cross-role lookup; (e) URL of the rendered tree page. Opening boot prompt leads with the active + needs-work lists; the 5-beat thesis grounds in them rather than generic reflection.</td></tr>
+<tr><td><strong>MCP tools</strong> — <code>chorus_tree_get</code> / <code>chorus_ownership_lookup({iri})</code> / <code>chorus_blast_radius({iri})</code></td><td>On demand, any turn</td><td>Full tree / single-IRI ownership lookup / inferred dependency closure (<code>consumes</code> + <code>hosts</code> + <code>dependsOn</code> walked recursively). Single-verb-single-target per cookbook.</td></tr>
+<tr><td><strong>Rendered HTML page</strong> — <code>platform/api/public/athena/tree.html</code></td><td>Jeff's eyes; gate-product manual review; cross-role demo backing</td><td>Product / Domain / Service hierarchy with ownership chips, click-to-see-edges, "show what touches X" filter.</td></tr>
+</table>
+
+<p>Signal weights for active / needs-work ranking live in <code>data/athena/session-start-signals.json</code> (data, not code — weight tuning is a JSON edit, not a deploy). Signal calculators are testable units with fixture corpora.</p>
+
+<h3>Why three surfaces, not one</h3>
+<p>SessionStart gives instant "is this my domain / what should I be on" answers without an MCP call (cheap, costs context budget once per session). MCP handles deep lookups (full blast-radius traversal) without bloating every session envelope. The page gives Jeff and the team a shared visual artifact every demo can reference. None of the three are "ask another role" or "search the codebase" — the answer lives in the tree, queryable through three congruent paths, same answer from all of them. That's what unambiguous context means structurally: one source, multiple call shapes, no fallback path that produces a different answer (ADR-028 I-4 applied to the operational layer).</p>
+
+<h3>Operational consumers</h3>
+<ul>
+<li><strong><code>/demo</code> feedback nudge</strong> — product-impact answers cite tree IRIs, no paraphrase. The three-question feedback frame ("how does this impact your products / users / am I over- or under-building") is answered against the tree, not from memory.</li>
+<li><strong><code>/gate-product</code></strong> — reads tree.json to verify the card's <code>Domains:</code> label exists; refuses if not. Closes the "I named a domain that isn't a domain" failure mode.</li>
+<li><strong>Role-nudge routing</strong> — "who owns this?" resolves through <code>chorus_ownership_lookup</code> instead of pattern-matching role files.</li>
+<li><strong>Pre-commit lint</strong> (cookbook req-4 head start) — catches paraphrased structural-class restatement in role CLAUDE.md / briefs / design docs before Move 4's full sweep lands.</li>
+</ul>
+
+<h3>Tagging layer — operational interface between Athena and everything else</h3>
+<div class="frame">
+2907's framing: the tree's IRIs are not just data, they are the <strong>canonical tag enumeration</strong> for cards, code, and tests. Card #2931 (gated tonight) already tags <code>domain:chorus</code>, <code>subproduct:borg</code>, <code>sequence:werk</code>, <code>type:enhance</code>. That convention is running today; Athena's job is to be the source-of-truth for those tag values.
+</div>
+
+<ul>
+<li><strong>Card labels:</strong> <code>domain:&lt;iri-slug&gt;</code>, <code>subproduct:&lt;iri-slug&gt;</code>, <code>product:&lt;iri-slug&gt;</code>, <code>service:&lt;iri-slug&gt;</code>, <code>sequence:&lt;value-stream-step&gt;</code>. Validity = tag value resolves to an IRI in the tree.</li>
+<li><strong>Code tags:</strong> source files declare their owning Service / Domain via header comment or per-language convention (TS module-level <code>chorus:domain</code> JSDoc, Rust module attribute, shell-script preamble); the tree maps each Service to one or more <code>pathPattern</code> globs so a diff's file list resolves to affected Services automatically.</li>
+<li><strong>Test tags:</strong> tests declare the Service/Domain they exercise; CI can then "run only tests for the domains this card touches" — bounded blast-radius, no full-suite cost per card.</li>
+<li><strong>The queries this unlocks (from 2907, verbatim shape):</strong> blast-radius (diff → file tags → affected domains/services); domain-radius (domain tag → all code/tests/services with that tag); demo-question (peer reads card tags vs their owned-products list → bounded few-word answer); CI-routing (per-domain test execution).</li>
+</ul>
+
+<h3>Validators → Loom learning corpus</h3>
+<div class="frame">
+The data-quality scan defined in "Other requirements" (scheduled SHACL pass over the live graph) is not just a monitoring mechanism — per 2907, it is the <strong>learning substrate for Loom</strong>. Recurring incoherence patterns surface as candidate principles, policies, practices.
+</div>
+
+<p>Each validator (SHACL shape, retired-predicate write attempt, orphan record, stale design doc, completeness regression) emits a structured spine event with: validator name, query, row count, affected entities, timestamp, card_id if known. These events feed:</p>
+<ul>
+<li><strong>Loki dashboards</strong> for trend visibility (per Silas's Borg surface).</li>
+<li><strong>Threshold alerts</strong> when violation rates spike or stay stale.</li>
+<li><strong>Auto-card-filing</strong> on structural-repair work when a violation cluster exceeds a configurable bar.</li>
+<li><strong>Demo-gate preconditions</strong> — a card touching a domain with active high-severity violations gets flagged at /gate-product.</li>
+<li><strong>Loom corpus</strong> — recurring incoherence patterns are candidate inputs for Loom's principle/policy/practice formation. The substrate stops being passively-described and starts being actively-learned-from.</li>
+</ul>
+
+<p>This is the recursion 2907 named explicitly: <em>"validators emit structured data → great learning substrate for Loom."</em> Athena is not a closed structural model; it is the input to the team's normative-layer evolution. Drift seen by validators today becomes principle/policy authored tomorrow. The system grows substrate for its own evolution.</p>
+
+<h3>Sequencing — Move 0 first, then Moves 1–5</h3>
+<p>Move 0 lands in days; Move 5's data-seed ingests it; Moves 1–4 land independently on the schedule cookbook ordering demands. The "chorus tuning" cards (small skill/hook/flow tweaks unblocked by the tree being queryable) ride on top of Move 0 immediately, not waiting for Moves 1–5. By the time Move 5 fires, the team has used the tree operationally for weeks — the migration is mechanical because the data shape is already correct.</p>
+
+<h2>Open questions</h2>
+<ul>
+  <li>The Borg / Chorus split at the Product level — instances graph has Borg as Product, the chorus-product-tree has Borg as SubProduct under Chorus. Which view is canonical? Affects every traversal verb that starts from "Chorus."</li>
+  <li>ServiceDesign vs Service — fold ServiceDesign into Service metadata, or keep as a separate artifact-type class that <code>describes</code> a Service?</li>
+  <li>Where does the customer-happiness overlay actually live — under Loom (measurement-of-operating-model) or Athena (structural annotation)? Today's discussion left it open. Affects whether the metrics class is in Loom's content layer or Athena's overlay surface.</li>
+  <li>Migration ordering — Service type-migration first, or recursive-Domain collapse first? Each affects the live counts the other depends on. Suggested: Service migration first (smaller, isolated), then Domain collapse (bigger, dependency on Service to be settled).</li>
+  <li>The <code>fw:</code> parallel vocabulary — bridge with <code>owl:equivalentProperty</code> axioms, or retire <code>framework.ttl</code> entirely? Out of scope for this doc, but every API verb that traverses the graph hits the question.</li>
+</ul>
+
+<h2>Scope &amp; caveats</h2>
+<div class="caveat">
+<strong>Verified:</strong> live class + edge counts (Fuseki, 2026-05-15); OWL class definitions in <code>chorus.ttl</code> (cited by line); the four-doc influence set's content (Loom audit, domain-model-asis-tobe, chorus-product-tree, reasoning-substrate-shift — all read fresh for this consolidation).
+<br><br>
+<strong>Inferred:</strong> that the API verbs as named will be the actual implementation shape — names + intents are correct; signatures are sketched, not specified. Implementation cards will define exact signatures, error models, pagination.
+<br><br>
+<strong>Not in this doc:</strong> implementation. This is design-only, mirroring the Loom doc's stance. Implementation lands in downstream cards (Athena v2 API endpoints, Service type-migration, recursive-Domain collapse, overlay-graph build-out, <code>fw:</code> vocabulary reconciliation).
+</div>
+
+<h2>References</h2>
+<ul>
+  <li><code>domain-model-asis-tobe.html</code> — Wren 2026-05-09 — predicate-layer + Domain-class refactor; this doc consumes and extends.</li>
+  <li><code>loom-subproduct-design.html</code> — Wren 2026-05-14 — first subproduct-design; structural-layer section lifted to here as its canonical home.</li>
+  <li><code>chorus-product-tree.html</code> — Wren 2026-05-14 — intent-set placement; this doc reconciles against live Fuseki counts.</li>
+  <li><code>reasoning-substrate-shift.html</code> — Wren 2026-05-14 — names "rebalance the API" as the master lever; this doc enumerates the verbs.</li>
+  <li><code>2907-architecture-notes-draft.html</code> — Silas/Jeff 2026-05-11 — substrate-recursion conversation; names Track A (cardinal-six substrate) vs Track B (domain-model clarity), the HTML-service-design Hydratable bridge (operationalized here as Move 0's JSON tree), the tagging layer as the operational interface, and the validators→Loom learning loop. The plank-road sequencing Jeff named tonight is the same call this doc made 5 days ago.</li>
+  <li><code>chorus-instance-explorer.html</code> — the read-only UI that already queries Fuseki direct (bypasses the chorus API). Live proof the read-surface exists; what's missing is the API equivalent.</li>
+  <li><code>chorus.ttl</code> (<code>roles/silas/ontology/</code>) — OWL state; class defs at L226–243, L416.</li>
+  <li>#2927 AC4 — live precedent for per-unit invocation-authority overlay.</li>
+</ul>
+
+<p class="footer">Athena — Subproduct Design · Wren · 2026-05-15 · AS-IS Fuseki audit + TO-BE OWL/SHACL/API model · second doc in the subproduct-design series · supersedes the partial Athena framing previously embedded in <code>loom-subproduct-design.html</code></p>
+
+</body>
+</html>
