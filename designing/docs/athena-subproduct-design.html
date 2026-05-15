@@ -63,16 +63,17 @@ Live AS-IS data: Fuseki at <code>http://localhost:3030/pods/query</code> on grap
 <pre class="mermaid">
 flowchart TD
   Chorus["Chorus — Product"] -->|hasChild| Athena["Athena — Product<br/>(child of Chorus)<br/>owned by Wren · Designing step"]
-  Athena --> D["domains<br/>49 Domain instances (graph-wide, AS-IS typed as SubDomain)"]
-  Athena --> S["services hosted by Athena's domains<br/>0 Service instances today · service-named nodes mis-typed as SubDomain · 2 ServiceDesign"]
+  Athena -->|hasDomain| D1["Domain<br/>(e.g. cards, gates, spine, skills,<br/>nudge, principles, decisions, ...<br/>49 in graph today)"]
+  D1 -->|hosts| Svc["Service<br/>(cards-service, gates-service,<br/>spine-service, skills-service<br/>— AS-IS mis-typed as SubDomain;<br/>TO-BE re-typed to Service)"]
+  Athena -.->|consumes| Svc
   classDef pop fill:#d1fae5,stroke:#065f46,color:#065f46;
   classDef shell fill:#fef9c3,stroke:#854d0e,color:#854d0e;
   classDef anchor fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   class Chorus,Athena anchor;
-  class D pop;
-  class S shell;
+  class D1 pop;
+  class Svc shell;
 </pre>
-<p class="caption">Recursive-Product structure: Chorus contains Athena via <code>hasChild</code> — no separate <code>SubProduct</code> class. Athena's substance is the union of its child Domains (and the Services those Domains host). Green = holds content · yellow = intent-aligned but content mis-typed.</p>
+<p class="caption">Recursive-Product structure: Chorus → Athena via <code>hasChild</code>. Athena's substance is the union of its child Domains. Each Domain <code>hosts</code> its own Services (where the code lives — solid edge); the Athena Product <code>consumes</code> the Services it depends on across its Domains (dashed edge — cross-cutting dependency, not containment). Green = holds content · yellow = content mis-typed today.</p>
 
 <h2>AS-IS — structural class state in Fuseki (queried 2026-05-15)</h2>
 
