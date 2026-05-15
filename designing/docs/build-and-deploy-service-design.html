@@ -207,6 +207,35 @@ flowchart LR
 </ul>
 <p style="font-size: 0.85em; color: #999;"><em>Authoring status: not yet populated in graph (deferred to follow-on; sequenced under deploys-domain).</em></p>
 
+<h2>Per-card slot isolation — <code>$CHORUS_DEMO_BIN</code> / <code>$CHORUS_BIN</code> (designed)</h2>
+<p>The deploy domain has a concurrency property the VCS and CI/CD domains don't: <strong>multiple roles can be mid-flight on daemon-runtime cards simultaneously</strong> (Wren on chorus-hooks, Silas on chorus-api, Kade on cards-SDK — all in their own werks, all building/deploying candidate artifacts before /acp). The current single-slot rollback model (<code>dist.prev/</code>, <code>~/.chorus/bin/chorus-hooks.prev</code>) clobbers under concurrency — a second role's deploy overwrites the first role's rollback target. The 2026-05-15 #2924/#2925/#2927 sequence surfaced this gap; the path to close is named here, scoped to a separate follow-on card.</p>
+
+<div class="component">
+<h3>Two-slot contract</h3>
+<ul>
+  <li><strong><code>$CHORUS_BIN</code></strong> — production stable path. <code>~/.chorus/bin/&lt;name&gt;</code> for Rust crates, <code>platform/api/dist/</code> for chorus-api, <code>directing/products/cards/dist/</code> for cards-SDK. Never modified during the demo phase. The running daemon reads from here when no card is in-flight.</li>
+  <li><strong><code>$CHORUS_DEMO_BIN</code></strong> — per-card ephemeral slot. <code>~/.chorus/bin/demo/&lt;role&gt;-&lt;card&gt;/&lt;name&gt;</code> for Rust, <code>~/.chorus/demo/&lt;role&gt;-&lt;card&gt;/&lt;unit&gt;/dist/</code> for TS surfaces. Named uniquely per (role, card) so concurrent roles don't collide. Populated by the <code>deploy-daemon-card.sh</code> wrapper's build step BEFORE <code>/demo</code> runs — the probe validates the candidate live via env resolution. The daemon resolves <code>$CHORUS_DEMO_BIN</code> via env when that role's card is in-flight, falling back to <code>$CHORUS_BIN</code> otherwise.</li>
+</ul>
+</div>
+
+<div class="component">
+<h3>Demo-phase decision contract</h3>
+<p>The <code>/demo</code> gate is the pivot. One decision point, two exits:</p>
+<ul>
+  <li><strong>Accept (/acp)</strong> → atomic <code>mv $CHORUS_DEMO_BIN $CHORUS_BIN</code> + kickstart the service. Same mv-pattern as <code>chorus-bin-install</code> uses today, just one step deeper in the lifecycle. The candidate becomes production; the demo slot is consumed.</li>
+  <li><strong>Reject (/demo fail or refusal)</strong> → <code>rm -r $CHORUS_DEMO_BIN</code>. No promote, no mv, no touch on <code>$CHORUS_BIN</code>. Production is byte-identical to its pre-demo state. There is nothing to "rollback to" because nothing was ever modified — the prior-state preservation is structural, not procedural.</li>
+</ul>
+<p><strong>Invariant:</strong> <code>$CHORUS_BIN</code> is never modified between the role pulling the card and the role's <code>/acp</code>. Production is structurally safe across the entire demo phase, including under concurrent multi-role demos. The single-slot <code>dist.prev/</code> model that #2925 shipped is the pre-cursor — it preserves the prior state explicitly via copy. The two-slot model preserves it by never touching it.</p>
+</div>
+
+<div class="component">
+<h3>Why this isn't shipped yet</h3>
+<p>#2925 (the wrapper) and #2927 (multi-unit generalization) both use the single-slot model — adequate for serial single-role demos, broken under concurrency. Tonight's pattern was effectively serial (one daemon-runtime card at a time, manual coordination), so the gap didn't bite. It bites the first time two roles do <code>/demo</code> on daemon-runtime cards in overlapping windows, which is increasingly likely as the team uses the wrapper more. The follow-on card extends the unit registry's deploy/rollback functions to per-card slot paths, adds the env-resolution logic the daemons need to find their card's slot, and updates the role-state machinery to track which card's slot a role is consuming.</p>
+<p>Out of scope here: the schema for <code>$CHORUS_DEMO_BIN</code> path layout (sibling directories vs nested namespacing), the daemon-side env-resolver code, and the cleanup sweep for orphaned demo slots after role-state drift. Each is a discrete piece; the contract above is what they implement.</p>
+
+<p><strong>Orphaned-slot lifecycle (follow-on must address):</strong> a slot is orphaned when its (role, card) is no longer in-flight — Jeff sleeps on a /demo for two days, the role gets rebooted, /demo passes but /acp lags. The follow-on card must tie <code>$CHORUS_DEMO_BIN</code> lifetime to <strong>role-state</strong>: a slot exists exactly while the role declares <code>building &lt;card&gt;</code>. When role-state leaves that card (idle, accepted, blocked-elsewhere), the slot is swept. Without this binding, stale slots accumulate quietly across days and the per-card model leaks the very disk-economy it was supposed to bound.</p>
+</div>
+
 <h2>Sub-Domain Interaction Model</h2>
 <h3>Today (current)</h3>
 <pre class="mermaid">

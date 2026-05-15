@@ -171,7 +171,7 @@ See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget
 - `chorus-werk-sync` — lock-guarded `git pull --ff-only origin main` on canonical (refuses on canonical-not-on-main, in-flight rebase/merge, worktree mid-commit); `repair` subcommand re-attaches a detached canonical
 - `chorus-env-setup.sh` — sets `CHORUS_HOME`, `CHORUS_WERK_BASE`, `<ROLE>_WERK`, `CHORUS_BIN`
 - `chorus-bin-install` — atomic install of a built+signed binary to `~/.chorus/bin/<name>` with `binary.deployed` spine emit (#2734)
-- `deploy-daemon-card.sh <card-id> --probe "<smoke>"` — bootstrap deploy wrapper for daemon-runtime cards (#2925). Sequences `chorus-werk-sync` → `chorus-deploy chorus-api` → probe → `cards done`, with `chorus-deploy chorus-api --rollback` invoked automatically on probe fail. Silas-only (`DEPLOY_ROLE=silas`, DEC-022). See "Daemon-runtime cards" section below.
+- `deploy-daemon-card.sh <card-id> --probe "<smoke>" [--units <list>]` — bootstrap deploy wrapper for daemon-runtime cards (#2925; multi-unit + per-role generalized via #2927). Routes per deploy unit (`chorus-api` / `chorus-hooks` / `cards-sdk`) by `git diff origin/main` introspection from the werk, or by explicit `--units chorus-hooks,cards-sdk` override. Per-unit deploy authority follows the unit's domain owner: any of `kade|wren|silas` may invoke (DEC-022 narrowed to LaunchAgent / cdhash / TCC surfaces). See "Daemon-runtime cards" section below.
 
 The `init / repoint / pull / close` verbs were **removed** by #2913. `/pull` calls `chorus-werk add`; `/acp` calls `chorus-werk remove`. There is no branch-swap-in-place anywhere in the script.
 
@@ -211,9 +211,10 @@ chorus-werk preserves session-start at `/chorus/roles/<role>/` in canonical and 
 
 A daemon-runtime card is any card whose diff touches:
 
-- `platform/api/src/**` — the chorus-api daemon
+- `platform/api/src/**` — the chorus-api daemon (TypeScript)
 - `mcp/server.ts` — MCP server (subset of the above; called out because it's the surface every MCP tool routes through)
-- `platform/services/chorus-hooks/**` — chorus-hooks daemon
+- `platform/services/chorus-hooks/**` — chorus-hooks daemon (Rust)
+- `directing/products/cards/**` — the cards SDK (TypeScript; bouncer + responder live here)
 
 These cards **cannot ship through `chorus_acp` or `chorus_commit` MCP** — those tools run inside the daemon being changed; using them deploys the old code that the card is trying to replace. The 2026-05-14 #2923 / #2916 incident reproduced this: chorus_acp's `alreadyMerged` fast-path silently skipped commit/push/PR, marking the cards Done without shipping anything. The bootstrap path below is the answer; it lives entirely on shell tools that don't depend on the changed code.
 
@@ -221,19 +222,27 @@ These cards **cannot ship through `chorus_acp` or `chorus_commit` MCP** — thos
 
 1. `git-queue.sh` commit + push (plain shell, not daemon-routed)
 2. `gh pr create` + `gh pr merge` (CI-gated; entirely GitHub-side — not the daemon)
-3. `chorus-werk-sync` (pull main into canonical so chorus-deploy sees the new code)
-4. `deploy-daemon-card.sh <card-id> --probe "<smoke>"` — the one-verb wrapper that sequences chorus-deploy, runs the smoke probe, and `cards done` on success or `chorus-deploy chorus-api --rollback` on probe fail
+3. `chorus-werk-sync` (pull main into canonical so deploys see the new code)
+4. `deploy-daemon-card.sh <card-id> --probe "<smoke>" [--units <list>]` — the one-verb wrapper that routes per deploy unit, runs the smoke probe, and `cards done` on success or per-unit rollback on probe fail
 
 ### Wrapper contract — `deploy-daemon-card.sh`
 
-- Silas-only (`DEPLOY_ROLE=silas`, DEC-022 — "builds are Silas")
-- `--probe "<command>"` is mandatory; the probe verifies the new behavior is live in the **restarted** daemon (not that the diff merged)
-- Exit codes are distinct per failed step (2 = usage, 3 = role guard, 4 = missing probe, 10/11/12/13 = step 1/2/3/4 failures)
-- On probe failure: `chorus-deploy chorus-api --rollback` fires automatically; wrapper still exits non-zero
+- **Per-role authority (#2927 AC4):** `DEPLOY_ROLE` must be one of `kade | wren | silas`. DEC-022's "builds are Silas" narrows to LaunchAgent plist / cdhash / TCC surfaces (legitimately Silas's infra domain); per-unit deploy authority follows each unit's domain owner.
+- **Unit resolution (#2927 AC1):** default = `git diff origin/main --name-only` introspection from the werk, matched against per-unit path patterns. `--units chorus-hooks,cards-sdk` overrides for explicit subset (testing / staged rollout).
+- **AC5 fail-safe:** if introspect finds zero known unit paths AND no `--units` given, wrapper exits 7 with explicit refusal (NOT silent no-op).
+- **Probe is mandatory:** `--probe "<command>"` runs after all units deploy; verifies the new behavior is live in the restarted daemon.
+- **Exit codes:** 2 = usage, 3 = role guard, 4 = missing probe, 5 = werk not found, 6 = unknown unit name, 7 = zero-match refusal, 10 = werk-sync, 11 = deploy-unit, 12 = probe rejected, 13 = cards-done.
+- **On probe failure (#2927 AC3):** per-unit rollback fires in REVERSE order of deploy success; wrapper still exits non-zero.
 
-### Rollback contract — `chorus-deploy chorus-api --rollback`
+### Per-unit dispatch (#2927 AC2)
 
-Each chorus-api deploy preserves the previous `platform/api/dist/` as `platform/api/dist.prev/` atomically before `npm run build`. `--rollback` swaps `dist.prev/` back into `dist/` and kickstarts `com.chorus.api`. One-shot: a second rollback in a row fails (no prior deploy left). If `npm run build` fails mid-deploy, the wrapper restores `dist.prev` → `dist` automatically so on-disk state stays consistent with the running daemon.
+| Unit | Deploy | Rollback artifact |
+|---|---|---|
+| `chorus-api` | `npm run build` in werk → `rsync` werk/`dist/` → canonical/`platform/api/dist/` → `launchctl kickstart com.chorus.api` | `platform/api/dist.prev/` (directory rename, atomic) |
+| `chorus-hooks` | `build-signed.sh chorus-hooks` (via `CHORUS_BUILD_SIGNED` env, defaults to canonical script) → atomic install via `chorus-bin-install` → `launchctl kickstart com.chorus.hooks` | `~/.chorus/bin/chorus-hooks.prev` + `chorus-hook-shim.prev` (file copies) |
+| `cards-sdk` | `npm run build` in werk → `rsync` werk/`dist/` → canonical/`directing/products/cards/dist/` (cards CLI re-reads dist on each invocation) | `directing/products/cards/dist.prev/` (directory rename, atomic) |
+
+Per-unit rollback shapes are intentionally asymmetric — Rust binaries are file copies, TypeScript dists are directory renames. The wrapper handles both.
 
 ### Card-level enforcement — chorus-hooks `card_add_probe`
 
@@ -271,13 +280,17 @@ Post-rebase role-branch pushes require `--force-with-lease`. The broad `Bash(git
 
 Force-with-lease on role branches (`<role>/*`) goes through. Force on `main` is still blocked. The bats test `platform/tests/force-push-permissions.bats` verifies both entries on the current machine.
 
-### Deferred (follow-on card)
+### Deferred (follow-on cards)
 
-- **Post-merge auto-trigger** — a watcher or GitHub Action that fires `deploy-daemon-card.sh` automatically when a PR-merged-to-main touches trigger paths. Out of scope for v1; today the operator runs the wrapper after merge.
+- **Post-merge auto-trigger** — a watcher or GitHub Action that fires `deploy-daemon-card.sh` automatically when a PR-merged-to-main touches trigger paths. Today the operator runs the wrapper after merge.
+- **Per-card concurrent isolation ($CHORUS_DEMO_BIN / $CHORUS_BIN)** — today's single-slot `dist.prev/` + `.prev` model clobbers under concurrent multi-role demos (Wren + Silas + Kade all in-flight on daemon-runtime cards simultaneously). The two-slot model splits production stable ($CHORUS_BIN) from per-card ephemeral ($CHORUS_DEMO_BIN per `<role>-<card>`). Decision at /demo: accept → atomic `mv $CHORUS_DEMO_BIN $CHORUS_BIN`; reject → `rm $CHORUS_DEMO_BIN`. $CHORUS_BIN never modified during demo phase. Designed in `build-and-deploy-service-design.html`, not yet implemented.
+- **`chorus-demo-build` / `chorus-demo-deploy` two-script split (rename)** — separates the build verb from the deploy verb, ties to the /demo skill flow. Orthogonal to the slot-isolation refactor; lands when there's a natural pass.
 
 ## Related
 
-- `#2925` — daemon-runtime deploy path (this section); wrapper + rollback + bouncer + settings
+- `#2927` — wrapper generalization (multi-unit dispatch + diff-introspect routing + per-role authority + per-unit rollback shapes)
+- `#2925` — daemon-runtime deploy path (this section); wrapper v1 + rollback + bouncer + settings
+- `#2924` — first dogfood customer of the wrapper (chorus-hooks card_approval_responder + cards SDK bouncer)
 - `#2923` / `#2916` — the bootstrap-hole incidents this section closes (chorus_acp fast-path falsely shipping daemon-runtime cards)
 - `#2735` — chorus-werk per-role worktrees (Candidate D, this convention)
 - `#2734` — `~/.chorus/bin/` single deploy location for chorus-* binaries
