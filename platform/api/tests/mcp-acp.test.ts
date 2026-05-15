@@ -657,4 +657,186 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(msg).not.toMatch(/Chorus-Card-Id: /);
     });
   });
+
+  // #2941 — refusal taxonomy completeness. Pre-#2941 this surface covered
+  // only 3 of 8 typed refusal reasons (hook-fail / pr-merge-fail / card-mismatch).
+  // The 5 untested reasons each fire down a different code path; without
+  // coverage, regressions in classifyCommitFailure / classifyPushFailure /
+  // step sequencing land silently in production.
+  describe('#2941 — refusal taxonomy completeness (5 untested reasons)', () => {
+    test('refuses commit-fail when commit stderr lacks pre-commit marker', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') {
+          const err = new Error('cmd failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'fatal: unable to write index file';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/commit-fail/);
+      expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('commit-fail');
+    });
+
+    test('refuses push-conflict when push stderr names rebase/conflict/merge', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] m\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') {
+          const err = new Error('push failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'fatal: rebase needed before push (refs diverged)';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/push-conflict/);
+      expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('push-conflict');
+    });
+
+    test('refuses push-fail when push stderr is generic (no rebase/conflict marker)', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] m\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') {
+          const err = new Error('push failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'fatal: remote unreachable';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/push-fail/);
+      expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('push-fail');
+    });
+
+    test('refuses pr-create-fail when gh pr create exits non-zero', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') {
+          const err = new Error('pr create failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'GraphQL: head ref does not exist';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/pr-create-fail/);
+      expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('pr-create-fail');
+    });
+
+    test('refuses cards-done-fail when cards CLI exits non-zero on done', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') {
+          const err = new Error('cards failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'cards: card 2750 not in WIP — cannot complete';
+          throw err;
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {}),
+      ).rejects.toThrow(/cards-done-fail/);
+      expect(events.find((e) => e.event === 'chorus_acp.refused')?.fields.reason).toBe('cards-done-fail');
+    });
+  });
+
+  // #2941 — contract-drift regression. Bug receipt 2026-05-15: chorus_acp
+  // tool description names `branch-close-fail` as a refusal; code never
+  // emits it. Callers dispatching on that taxonomy never see the case fire.
+  // This test asserts doc and code agree both ways.
+  describe('#2941 — refusal taxonomy doc/code drift', () => {
+    test('chorus_acp tool description refusal reasons match code emit sites', async () => {
+      const server = buildMcpServer(() => 'kade');
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/list');
+      const result = await handler({ method: 'tools/list', params: {} }, {});
+      const tool = result.tools.find((t: { name: string }) => t.name === 'chorus_acp');
+      const docDescription: string = tool.description ?? '';
+      const taxonomyMatch = docDescription.match(/Refusal taxonomy:\s*([a-z|\- ]+)/i);
+      expect(taxonomyMatch).not.toBeNull();
+      const docReasons = taxonomyMatch![1]
+        .split('|')
+        .map((r) => r.trim())
+        .filter(Boolean)
+        .sort();
+      // Reasons code actually emits in CHORUS_ACP_REFUSED events. Sourced
+      // by grepping `reason: '...'` in executeAcp + classify* functions
+      // in server.ts. Update this list when an emit site is added.
+      const codeReasons = [
+        'card-mismatch',
+        'cards-done-fail',
+        'commit-fail',
+        'hook-fail',
+        'pr-create-fail',
+        'pr-merge-fail',
+        'push-conflict',
+        'push-fail',
+      ].sort();
+      expect(docReasons).toEqual(codeReasons);
+    });
+  });
 });

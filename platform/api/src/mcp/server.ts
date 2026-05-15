@@ -679,7 +679,7 @@ const DESIGN_REFRESH_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
+    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | cards-done-fail. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
   inputSchema: {
     type: 'object',
     properties: {
