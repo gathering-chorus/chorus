@@ -242,30 +242,47 @@ classDiagram
 </table>
 
 <h4>Domain</h4>
+<p>Domain's stored attribute set is small — most of what the Athena UI domain page (<code>platform/api/public/athena/domain-detail.html</code>) renders is <strong>derived from the graph via traversal</strong>, not stored on the Domain node itself. Stored = triples on the Domain instance. Derived = graph patterns evaluated at query time, surfaced via dedicated API endpoints.</p>
+
+<p><strong>Stored attributes:</strong></p>
 <table>
 <tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
 <tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td>required</td><td>Short name.</td></tr>
-<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Longer description.</td></tr>
+<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>The "promise" — what this Domain is for. Rendered in the promise block.</td></tr>
 <tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td>required</td><td>Owning role.</td></tr>
-<tr><td><code>chorus:atStep</code></td><td>chorus:Vertebra</td><td>1</td><td>required</td><td>Every Domain has a value-stream-step placement.</td></tr>
+<tr><td><code>chorus:inProduct</code></td><td>chorus:Product</td><td>1</td><td>required</td><td>The parent Product. Source of truth for the Product → Domain containment edge (Product's <code>hasDomain</code> is the inverse, computed).</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:ValueStreamStep</td><td>1</td><td>required</td><td>Value-stream placement. Rendered in the breadcrumb.</td></tr>
 <tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td>required</td><td><code>{draft, active, sunsetting, retired}</code>.</td></tr>
-<tr><td><code>chorus:hasActor</code></td><td>chorus:Actor</td><td>0..n</td><td>—</td><td>Who interacts with this Domain.</td></tr>
-<tr><td><code>chorus:hasScenario</code></td><td>chorus:Scenario</td><td>0..n</td><td>—</td><td>Gherkin-style behavioral specs.</td></tr>
-<tr><td><code>chorus:hasCode</code></td><td>chorus:File</td><td>0..n</td><td>—</td><td>Code files (relational edge — replaces Loom's casual "code" string).</td></tr>
-<tr><td><code>chorus:hasTest</code></td><td>chorus:File</td><td>0..n</td><td>—</td><td>Test files.</td></tr>
-<tr><td><code>chorus:hasEndpoint</code></td><td>chorus:Endpoint</td><td>0..n</td><td>—</td><td>HTTP / MCP / CLI surfaces.</td></tr>
-<tr><td><code>chorus:hasUiPage</code></td><td>chorus:Page</td><td>0..n</td><td>—</td><td>UI page nodes.</td></tr>
-<tr><td><code>chorus:hasPipeline</code></td><td>chorus:Pipeline</td><td>0..1</td><td>—</td><td>Build/deploy pipeline node.</td></tr>
-<tr><td><code>chorus:hasLog</code></td><td>chorus:LogStream</td><td>0..n</td><td>—</td><td>Loki stream identifiers.</td></tr>
-<tr><td><code>chorus:hasAlert</code></td><td>chorus:Alert</td><td>0..n</td><td>—</td><td>Grafana alert-rule references.</td></tr>
-<tr><td><code>chorus:hasDecision</code></td><td>chorus:Decision</td><td>0..n</td><td>—</td><td>DEC / ADR records that bind here.</td></tr>
-<tr><td><code>chorus:hasPriorArt</code></td><td>xsd:anyURI</td><td>0..n</td><td>—</td><td>External references to similar work.</td></tr>
-<tr><td><code>chorus:hasRelease</code></td><td>chorus:Release</td><td>0..n</td><td>—</td><td>Shipped release records.</td></tr>
-<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Known limitations.</td></tr>
-<tr><td><code>chorus:hasChild</code></td><td>chorus:Domain</td><td>0..n</td><td>—</td><td>Child Domains (recursive containment).</td></tr>
-<tr><td><code>chorus:hosts</code></td><td>chorus:Service</td><td>0..n</td><td>—</td><td>Services hosted by this Domain — the code lives here (solid-edge relationship).</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Known limitations / status notes (rendered as "gaps-or-status" section).</td></tr>
 <tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>0..n</td><td>—</td><td>Design artifacts describing this Domain.</td></tr>
 </table>
+
+<p><strong>Derived sections</strong> (graph patterns evaluated at query time; one API endpoint per section; one page section consumes each):</p>
+<table>
+<tr><th>Section (page renders)</th><th>Graph pattern</th><th>API endpoint</th></tr>
+<tr><td><code>actors</code></td><td><code>?a a chorus:Actor . ?a chorus:domain ?this</code></td><td><code>/athena/domain/:id/actors</code></td></tr>
+<tr><td><code>scenarios</code> (BDD)</td><td><code>?s a chorus:Scenario . ?s chorus:domain ?this</code></td><td><code>/athena/domain/:id/scenarios</code></td></tr>
+<tr><td><code>code</code></td><td><code>?f a chorus:File ; chorus:fileType "code" ; chorus:implementedIn ?this</code></td><td><code>/athena/domain/:id/code</code></td></tr>
+<tr><td><code>tests</code></td><td><code>?f a chorus:File ; chorus:fileType "test" ; chorus:implementedIn ?this</code></td><td><code>/athena/domain/:id/tests</code></td></tr>
+<tr><td><code>endpoints</code></td><td><code>?e a chorus:Endpoint . ?e chorus:domain ?this</code></td><td><code>/athena/domain/:id/endpoints</code></td></tr>
+<tr><td><code>uiPages</code></td><td><code>?p a chorus:Page . ?p chorus:domain ?this</code></td><td><code>/athena/domain/:id/pages</code></td></tr>
+<tr><td><code>pipeline</code></td><td><code>?p a chorus:Pipeline . ?p chorus:domain ?this</code></td><td><code>/athena/domain/:id/pipeline</code></td></tr>
+<tr><td><code>logs</code></td><td><code>?l a chorus:LogStream . ?l chorus:domain ?this</code></td><td><code>/athena/domain/:id/logs</code></td></tr>
+<tr><td><code>alerts</code></td><td><code>?a a chorus:Alert . ?a chorus:domain ?this</code></td><td><code>/athena/domain/:id/alerts</code></td></tr>
+<tr><td><code>decisions</code></td><td><code>?d a chorus:Decision . ?d chorus:domain ?this</code></td><td><code>/athena/domain/:id/decisions</code></td></tr>
+<tr><td><code>priorArt</code></td><td><code>?p a chorus:PriorArt . ?p chorus:domain ?this</code></td><td><code>/athena/domain/:id/prior-art</code></td></tr>
+<tr><td><code>releases</code></td><td><code>?r a chorus:Release . ?r chorus:domain ?this</code></td><td><code>/athena/domain/:id/releases</code></td></tr>
+<tr><td><code>dependencies</code></td><td><code>?this chorus:dependsOn ?d</code></td><td><code>/athena/domain/:id/dependencies</code></td></tr>
+<tr><td><code>integrations</code></td><td><code>?this chorus:integratesWith ?i</code></td><td><code>/athena/domain/:id/integrations</code></td></tr>
+<tr><td><code>infrastructure</code></td><td><code>?this chorus:runsOn ?infra</code></td><td><code>/athena/domain/:id/infrastructure</code></td></tr>
+<tr><td><code>persistence</code></td><td><code>?this chorus:persistsIn ?store</code></td><td><code>/athena/domain/:id/persistence</code></td></tr>
+<tr><td><code>consumed</code> (Shared Infrastructure)</td><td><code>?x chorus:consumes ?this . ?x a chorus:Domain</code> (inverse)</td><td><code>/athena/domain/:id/consumers</code></td></tr>
+<tr><td><code>hosts</code> (Services this Domain owns)</td><td><code>?s a chorus:Service . ?s chorus:hostedBy ?this</code> (inverse)</td><td><code>/athena/domain/:id/services</code></td></tr>
+<tr><td><code>children</code> (recursive Domain tree)</td><td><code>?d a chorus:Domain . ?d chorus:inParent ?this</code> (inverse)</td><td><code>/athena/domain/:id/children</code></td></tr>
+<tr><td><code>completeness %</code></td><td>computed from coverage of derived sections (per shape's required-fields list)</td><td><code>/athena/domain/:id/completeness</code></td></tr>
+</table>
+
+<p class="caption">8 stored attributes (4 required) + 20 derived sections. Domain is a tight node with extensive graph-rendered context. Adding a new page section later = adding a new traversal endpoint + the corresponding class/edge in the OWL; no Domain-schema change. This is what "schema is around/above the structural facts; graph is below for everything else" looks like in practice — the Domain entity is small and rigid, the rendering is open and composable.</p>
 
 <h4>Service</h4>
 <table>
