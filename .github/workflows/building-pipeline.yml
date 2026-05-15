@@ -11,7 +11,7 @@ name: building-pipeline
 # act execution is fired by the launchd plist; this workflow is also valid GHA
 # YAML and could run on hosted/self-hosted GHA runners unchanged.
 
-on: [push]
+on: [workflow_dispatch]
 
 jobs:
   # Sequential-fail-fast is the implicit policy: steps run in order, the job
