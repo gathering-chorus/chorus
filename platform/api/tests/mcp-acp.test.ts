@@ -826,7 +826,11 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       // Reasons code actually emits in CHORUS_ACP_REFUSED events. Sourced
       // by grepping `reason: '...'` in executeAcp + classify* functions
       // in server.ts. Update this list when an emit site is added.
+      // #2943: branch-close-fail re-added — non-throwing in the normal
+      // path (card already accepted), throwing in the idempotent re-run
+      // cleanup path. Both emit CHORUS_ACP_REFUSED with this reason.
       const codeReasons = [
+        'branch-close-fail',
         'card-mismatch',
         'cards-done-fail',
         'commit-fail',
@@ -837,6 +841,124 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
         'push-fail',
       ].sort();
       expect(docReasons).toEqual(codeReasons);
+    });
+  });
+
+  // #2943 — branch-close-fail typed emission + idempotent re-run cleanup.
+  describe('#2943 — branch-close-fail emission + idempotent cleanup', () => {
+    test('non-fatal: emits CHORUS_ACP_REFUSED with branch-close-fail when chorus-werk remove throws (does NOT throw)', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd] m\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'git' && args[0] === 'ls-remote') return { stdout: '', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') {
+          const err = new Error('remote delete failed') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'fatal: unable to access origin: connection refused';
+          throw err;
+        }
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.branch_closed).toBe(false);
+
+      const refused = events.find((e) => e.event === 'chorus_acp.refused' && e.fields.reason === 'branch-close-fail');
+      expect(refused).toBeDefined();
+      expect(refused!.fields.step).toBe('werk-close');
+      expect(refused!.fields.recoverable).toBe(true);
+      expect(typeof refused!.fields.recovery_hint).toBe('string');
+      expect(refused!.fields.recovery_hint as string).toContain('/acp');
+
+      const acceptedIdx = events.findIndex((e) => e.event === 'card.accepted');
+      const refusedIdx = events.findIndex((e) => e.event === 'chorus_acp.refused');
+      expect(acceptedIdx).toBeGreaterThan(-1);
+      expect(refusedIdx).toBeGreaterThan(acceptedIdx);
+    });
+
+    test('idempotent: re-run on accepted card with orphan branch skips commit/push/PR, runs only werk-close', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'git' && args[0] === 'ls-remote') {
+          return { stdout: 'ce3fc43d\trefs/heads/kade/2750\n', stderr: '' };
+        }
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      const result = await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade', card_id: 2750 } } }, {});
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.branch_closed).toBe(true);
+      expect(parsed.idempotent_cleanup).toBe(true);
+
+      expect(events.find((e) => e.event === 'chorus_acp.idempotent-cleanup.detected')).toBeDefined();
+
+      const callFiles = calls.map((c) => `${c.file.split('/').pop()}:${c.args[0]}`);
+      expect(callFiles).not.toContain('git-queue.sh:commit');
+      expect(callFiles).not.toContain('git-queue.sh:push');
+      expect(callFiles.filter((f) => f.startsWith('gh:'))).toEqual([]);
+      expect(callFiles).toContain('chorus-werk:remove');
+    });
+
+    test('idempotent: throws branch-close-fail when re-run cleanup itself fails', async () => {
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'git' && args[0] === 'ls-remote') return { stdout: 'ce3fc43d\trefs/heads/kade/2750\n', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') {
+          const err = new Error('still failing') as Error & { code?: number; stderr?: string };
+          err.code = 1;
+          err.stderr = 'fatal: connection still refused';
+          throw err;
+        }
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [] })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await expect(
+        handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade', card_id: 2750 } } }, {}),
+      ).rejects.toThrow(/branch-close-fail/);
+
+      const refused = events.find((e) => e.event === 'chorus_acp.refused' && e.fields.reason === 'branch-close-fail');
+      expect(refused).toBeDefined();
+      expect(refused!.fields.idempotent_cleanup_attempted).toBe(true);
+      expect(refused!.fields.recovery_hint as string).toContain('silas');
     });
   });
 });
