@@ -45,11 +45,12 @@
 <p class="date">Wren · 2026-05-15 · second subproduct-design doc (peer to <code>loom-subproduct-design.html</code>) — Athena is the structural &amp; query layer the other subproducts use. AS-IS audit + TO-BE structural / SHACL / API model.</p>
 
 <div class="frame">
-This doc consumes four influences into one design:
+This doc consumes five influences into one design:
 <strong>(1) <code>domain-model-asis-tobe.html</code></strong> (2026-05-09 — the predicate-layer / Domain-class refactor),
 <strong>(2) <code>loom-subproduct-design.html</code></strong> (2026-05-14 — first subproduct-design, contains the "Structural layer — the Athena product model" section that this doc lifts to its canonical home),
 <strong>(3) <code>chorus-product-tree.html</code></strong> (2026-05-14 — product / step / subproduct / domain intent-set),
-<strong>(4) <code>reasoning-substrate-shift.html</code></strong> (2026-05-14 — the "rebalance the API" master lever).
+<strong>(4) <code>reasoning-substrate-shift.html</code></strong> (2026-05-14 — the "rebalance the API" master lever),
+<strong>(5) <code>2907-architecture-notes-draft.html</code></strong> (2026-05-11 — Jeff↔Silas substrate-recursion conversation; names Track A / Track B split, the "HTML service designs as <code>chorus:Hydratable</code> source" bridge that this doc operationalizes as Move 0's JSON tree, the tagging layer as the operational interface between Athena and everything else, and the validators-feed-Loom learning loop).
 Live AS-IS data: Fuseki at <code>http://localhost:3030/pods/query</code> on graph <code>urn:chorus:instances</code>, namespace <code>https://jeffbridwell.com/chorus#</code>, queried 2026-05-15.
 </div>
 
@@ -685,6 +686,34 @@ The 5-move plan above is ~6 weeks elapsed at current cadence. Operational value 
 <li><strong>Pre-commit lint</strong> (cookbook req-4 head start) — catches paraphrased structural-class restatement in role CLAUDE.md / briefs / design docs before Move 4's full sweep lands.</li>
 </ul>
 
+<h3>Tagging layer — operational interface between Athena and everything else</h3>
+<div class="frame">
+2907's framing: the tree's IRIs are not just data, they are the <strong>canonical tag enumeration</strong> for cards, code, and tests. Card #2931 (gated tonight) already tags <code>domain:chorus</code>, <code>subproduct:borg</code>, <code>sequence:werk</code>, <code>type:enhance</code>. That convention is running today; Athena's job is to be the source-of-truth for those tag values.
+</div>
+
+<ul>
+<li><strong>Card labels:</strong> <code>domain:&lt;iri-slug&gt;</code>, <code>subproduct:&lt;iri-slug&gt;</code>, <code>product:&lt;iri-slug&gt;</code>, <code>service:&lt;iri-slug&gt;</code>, <code>sequence:&lt;value-stream-step&gt;</code>. Validity = tag value resolves to an IRI in the tree.</li>
+<li><strong>Code tags:</strong> source files declare their owning Service / Domain via header comment or per-language convention (TS module-level <code>chorus:domain</code> JSDoc, Rust module attribute, shell-script preamble); the tree maps each Service to one or more <code>pathPattern</code> globs so a diff's file list resolves to affected Services automatically.</li>
+<li><strong>Test tags:</strong> tests declare the Service/Domain they exercise; CI can then "run only tests for the domains this card touches" — bounded blast-radius, no full-suite cost per card.</li>
+<li><strong>The queries this unlocks (from 2907, verbatim shape):</strong> blast-radius (diff → file tags → affected domains/services); domain-radius (domain tag → all code/tests/services with that tag); demo-question (peer reads card tags vs their owned-products list → bounded few-word answer); CI-routing (per-domain test execution).</li>
+</ul>
+
+<h3>Validators → Loom learning corpus</h3>
+<div class="frame">
+The data-quality scan defined in "Other requirements" (scheduled SHACL pass over the live graph) is not just a monitoring mechanism — per 2907, it is the <strong>learning substrate for Loom</strong>. Recurring incoherence patterns surface as candidate principles, policies, practices.
+</div>
+
+<p>Each validator (SHACL shape, retired-predicate write attempt, orphan record, stale design doc, completeness regression) emits a structured spine event with: validator name, query, row count, affected entities, timestamp, card_id if known. These events feed:</p>
+<ul>
+<li><strong>Loki dashboards</strong> for trend visibility (per Silas's Borg surface).</li>
+<li><strong>Threshold alerts</strong> when violation rates spike or stay stale.</li>
+<li><strong>Auto-card-filing</strong> on structural-repair work when a violation cluster exceeds a configurable bar.</li>
+<li><strong>Demo-gate preconditions</strong> — a card touching a domain with active high-severity violations gets flagged at /gate-product.</li>
+<li><strong>Loom corpus</strong> — recurring incoherence patterns are candidate inputs for Loom's principle/policy/practice formation. The substrate stops being passively-described and starts being actively-learned-from.</li>
+</ul>
+
+<p>This is the recursion 2907 named explicitly: <em>"validators emit structured data → great learning substrate for Loom."</em> Athena is not a closed structural model; it is the input to the team's normative-layer evolution. Drift seen by validators today becomes principle/policy authored tomorrow. The system grows substrate for its own evolution.</p>
+
 <h3>Sequencing — Move 0 first, then Moves 1–5</h3>
 <p>Move 0 lands in days; Move 5's data-seed ingests it; Moves 1–4 land independently on the schedule cookbook ordering demands. The "chorus tuning" cards (small skill/hook/flow tweaks unblocked by the tree being queryable) ride on top of Move 0 immediately, not waiting for Moves 1–5. By the time Move 5 fires, the team has used the tree operationally for weeks — the migration is mechanical because the data shape is already correct.</p>
 
@@ -712,6 +741,7 @@ The 5-move plan above is ~6 weeks elapsed at current cadence. Operational value 
   <li><code>loom-subproduct-design.html</code> — Wren 2026-05-14 — first subproduct-design; structural-layer section lifted to here as its canonical home.</li>
   <li><code>chorus-product-tree.html</code> — Wren 2026-05-14 — intent-set placement; this doc reconciles against live Fuseki counts.</li>
   <li><code>reasoning-substrate-shift.html</code> — Wren 2026-05-14 — names "rebalance the API" as the master lever; this doc enumerates the verbs.</li>
+  <li><code>2907-architecture-notes-draft.html</code> — Silas/Jeff 2026-05-11 — substrate-recursion conversation; names Track A (cardinal-six substrate) vs Track B (domain-model clarity), the HTML-service-design Hydratable bridge (operationalized here as Move 0's JSON tree), the tagging layer as the operational interface, and the validators→Loom learning loop. The plank-road sequencing Jeff named tonight is the same call this doc made 5 days ago.</li>
   <li><code>chorus-instance-explorer.html</code> — the read-only UI that already queries Fuseki direct (bypasses the chorus API). Live proof the read-surface exists; what's missing is the API equivalent.</li>
   <li><code>chorus.ttl</code> (<code>roles/silas/ontology/</code>) — OWL state; class defs at L226–243, L416.</li>
   <li>#2927 AC4 — live precedent for per-unit invocation-authority overlay.</li>
