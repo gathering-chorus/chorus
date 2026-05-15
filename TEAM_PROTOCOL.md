@@ -252,6 +252,25 @@ Each developer machine must add the following entries to `~/.claude/settings.jso
 
 The bats test `platform/tests/ac1-deploy-permission-allow.bats` verifies these entries exist on the current machine. Replicate manually on a new machine, then re-run the test.
 
+### Per-machine settings — force-push (#2926)
+
+Post-rebase role-branch pushes require `--force-with-lease`. The broad `Bash(git push --force*)` deny that previously blocked this was replaced with targeted rules:
+
+```json
+"permissions": {
+  "allow": [
+    "Bash(git push --force-with-lease origin *)",
+    "Bash(git push --force-with-lease *)"
+  ],
+  "deny": [
+    "Bash(git push --force* origin main*)",
+    "Bash(git push * --force* origin main*)"
+  ]
+}
+```
+
+Force-with-lease on role branches (`<role>/*`) goes through. Force on `main` is still blocked. The bats test `platform/tests/force-push-permissions.bats` verifies both entries on the current machine.
+
 ### Deferred (follow-on card)
 
 - **Post-merge auto-trigger** — a watcher or GitHub Action that fires `deploy-daemon-card.sh` automatically when a PR-merged-to-main touches trigger paths. Out of scope for v1; today the operator runs the wrapper after merge.
