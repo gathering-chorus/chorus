@@ -158,6 +158,25 @@ pub fn sweep_stale_pending(pending_dir: &Path, now: SystemTime) -> Vec<String> {
     swept
 }
 
+/// Resolve the cards CLI absolute path. Reads `CHORUS_CARDS_BIN` env var
+/// (testable via `resolve_cards_cli_path_with_env` for an alternate name);
+/// falls back to the canonical absolute path because launchctl-managed
+/// processes (the chorus-hooks daemon) inherit a minimal PATH that does
+/// NOT include the chorus platform/scripts directory. Production tonight
+/// hit this as a `spawn-failed` outcome on the first live replay — the
+/// fallback closes that path-boundary gap.
+pub fn resolve_cards_cli_path() -> String {
+    resolve_cards_cli_path_with_env("CHORUS_CARDS_BIN")
+}
+
+/// Internal helper that accepts the env var name so tests can use isolated
+/// names without trampling production config.
+pub fn resolve_cards_cli_path_with_env(env_name: &str) -> String {
+    std::env::var(env_name).unwrap_or_else(|_| {
+        "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards".to_string()
+    })
+}
+
 /// Remove a pending pair (.argv.json + .txt) given the .argv.json path.
 /// Best-effort — missing siblings are not errors.
 pub fn remove_pending_pair(argv_path: &Path) {
@@ -636,6 +655,22 @@ mod tests {
         // pending preserved so Jeff can retry / inspect
         assert!(argv.exists());
         assert!(tmp.path().join("wren-live.txt").exists());
+    }
+
+    #[test]
+    fn cards_cli_path_env_override() {
+        std::env::set_var("CHORUS_CARDS_BIN_TEST_ONLY", "/tmp/test-cards-bin");
+        let p = resolve_cards_cli_path_with_env("CHORUS_CARDS_BIN_TEST_ONLY");
+        assert_eq!(p, "/tmp/test-cards-bin");
+        std::env::remove_var("CHORUS_CARDS_BIN_TEST_ONLY");
+    }
+
+    #[test]
+    fn cards_cli_path_fallback_is_absolute_canonical() {
+        std::env::remove_var("CHORUS_CARDS_BIN_TEST_ONLY_MISSING");
+        let p = resolve_cards_cli_path_with_env("CHORUS_CARDS_BIN_TEST_ONLY_MISSING");
+        assert!(p.starts_with('/'), "fallback must be absolute: {}", p);
+        assert!(p.ends_with("/platform/scripts/cards"), "fallback must point at cards CLI: {}", p);
     }
 
     #[test]

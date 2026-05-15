@@ -708,9 +708,13 @@ async fn user_prompt_submit(
                 |desc_path, mut argv| {
                     // Production runner: invoke `cards add` with DEPLOY_ROLE=jeff
                     // — bypasses the bouncer per #2905 since Jeff is the authority.
+                    // Resolve `cards` CLI by absolute path because launchctl-managed
+                    // processes inherit a minimal PATH that excludes platform/scripts.
+                    // First live replay (2026-05-15) hit this as spawn-failed.
                     argv.push("--desc-file".to_string());
                     argv.push(desc_path.to_string_lossy().into_owned());
-                    let status = std::process::Command::new("cards")
+                    let cards_bin = hooks::card_approval_responder::resolve_cards_cli_path();
+                    let status = std::process::Command::new(&cards_bin)
                         .arg("add")
                         .args(&argv)
                         .env("DEPLOY_ROLE", "jeff")
