@@ -663,6 +663,110 @@ async fn user_prompt_submit(
         hooks::jdi_detector::check(&input_clone, &state_clone).await;
     });
 
+    // Card-approval responder (#2924 AC3/AC4) — detect `approve`/`deny` in
+    // Jeff's prompt and either replay or cancel the most-recent pending
+    // bouncer-refused card. Fire-and-forget. The subprocess invocation
+    // (cards CLI with DEPLOY_ROLE=jeff) runs on the blocking pool.
+    let approval_role = input.role().as_str().to_string();
+    let approval_prompt = input.prompt.clone().unwrap_or_default();
+    tokio::spawn(async move {
+        use crate::state::chorus_log;
+        use hooks::card_approval_responder::{
+            detect_approval_signal, handle_approval_request, sweep_stale_pending,
+            ApprovalOutcome,
+        };
+        use std::path::PathBuf;
+        use std::time::SystemTime;
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+        let pending_dir = PathBuf::from(format!("{}/.chorus/pending-approvals", home));
+        let now = SystemTime::now();
+
+        // AC4: sweep stale pending pairs before the keyword pass — emits
+        // card.approval.timeout for each (basename stem captured for trace).
+        let pending_dir_for_sweep = pending_dir.clone();
+        let swept = tokio::task::spawn_blocking(move || sweep_stale_pending(&pending_dir_for_sweep, now))
+            .await
+            .unwrap_or_default();
+        for stem in swept {
+            chorus_log("card.approval.timeout", "system", &[("stem", stem.as_str())]).await;
+        }
+
+        let signal = match detect_approval_signal(&approval_prompt) {
+            Some(s) => s,
+            None => return,
+        };
+
+        let role_for_blocking = approval_role.clone();
+        let pending_dir_for_blocking = pending_dir.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            handle_approval_request(
+                &role_for_blocking,
+                signal,
+                &pending_dir_for_blocking,
+                now,
+                |desc_path, mut argv| {
+                    // Production runner: invoke `cards add` with DEPLOY_ROLE=jeff
+                    // — bypasses the bouncer per #2905 since Jeff is the authority.
+                    argv.push("--desc-file".to_string());
+                    argv.push(desc_path.to_string_lossy().into_owned());
+                    let status = std::process::Command::new("cards")
+                        .arg("add")
+                        .args(&argv)
+                        .env("DEPLOY_ROLE", "jeff")
+                        .status()?;
+                    Ok(status.success())
+                },
+            )
+        })
+        .await
+        .unwrap_or(ApprovalOutcome::SpawnFailed);
+
+        match outcome {
+            ApprovalOutcome::Approved { title } => {
+                chorus_log(
+                    "card.approval.granted",
+                    "jeff",
+                    &[("role", approval_role.as_str()), ("title", title.as_str())],
+                )
+                .await;
+            }
+            ApprovalOutcome::Denied { title } => {
+                chorus_log(
+                    "card.approval.denied",
+                    "jeff",
+                    &[("role", approval_role.as_str()), ("title", title.as_str())],
+                )
+                .await;
+            }
+            ApprovalOutcome::TimedOut => {
+                chorus_log(
+                    "card.approval.timeout",
+                    "system",
+                    &[("role", approval_role.as_str()), ("reason", "matched-but-stale")],
+                )
+                .await;
+            }
+            ApprovalOutcome::NoPending => { /* keyword fired with no pending — silent */ }
+            ApprovalOutcome::ReadFailed
+            | ApprovalOutcome::ParseFailed
+            | ApprovalOutcome::SpawnFailed => {
+                let reason = match outcome {
+                    ApprovalOutcome::ReadFailed => "read-failed",
+                    ApprovalOutcome::ParseFailed => "parse-failed",
+                    ApprovalOutcome::SpawnFailed => "spawn-failed",
+                    _ => "unknown",
+                };
+                chorus_log(
+                    "card.approval.failed",
+                    "system",
+                    &[("role", approval_role.as_str()), ("reason", reason)],
+                )
+                .await;
+            }
+        }
+    });
+
     // E2E responder (#1936) — fire-and-forget, detect [e2e-test] nudges, post ack to Clearing
     let input_e2e = input.clone();
     tokio::task::spawn_blocking(move || {
