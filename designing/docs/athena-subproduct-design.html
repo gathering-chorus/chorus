@@ -146,7 +146,8 @@ This is the structural model the audit findings demand — <strong>not Athena-sp
   <li><strong><code>Product</code> is recursive.</strong> A Product can contain Products via <code>hasChild</code>; a "subproduct" is just a Product that is the child of another Product. <code>SubProduct</code> as a separate class is removed — erases the "<code>SubProduct rdfs:subClassOf Domain</code>" structural oddity.</li>
   <li><strong><code>Domain</code> is recursive.</strong> A Domain can contain Domains via <code>hasChild</code>; <code>SubDomain</code> as a separate class is removed — depth becomes a <em>data</em> decision (add <code>hasChild</code> edges), not a <em>schema</em> decision (invent a deeper class).</li>
   <li><strong><code>Service</code> is a first-class structural layer.</strong> Real service nodes (<code>cards-service</code>, <code>gates-service</code>, <code>spine-service</code>, <code>skills-service</code>) get re-typed to Service. The <code>chorus:Service</code> OWL class exists today; what's missing is type migration of the mis-typed SubDomain instances.</li>
-  <li><strong>One clean predicate set</strong> — <code>hasChild</code> (recursive containment, validated per-source-shape, never via global <code>rdfs:range</code>); <code>hasDomain</code> single-declared <code>Product → Domain</code> (Document→SubDomain tag-use migrates to <code>taggedDomain</code>); <code>consumes</code> single-meaning <code>Product → Service</code> (SubDomain→SubDomain dependency moves to <code>dependsOn</code>); <code>contains</code> for content (<code>Domain → content-instance</code>); <code>atStep : Product → Vertebra</code> replaces both <code>hasValueStreamStep</code> and the instance-level <code>primaryStep</code> drift; <code>belongsTo</code> and <code>partOf</code> dropped.</li>
+  <li><strong>One clean predicate set</strong> — <code>hasChild</code> (recursive containment, validated per-source-shape, never via global <code>rdfs:range</code>); <code>hasDomain</code> single-declared <code>Product → Domain</code> (Document→SubDomain tag-use migrates to <code>taggedDomain</code>); <code>consumes : Product → Service</code> (a Product depends on Services to function — cross-domain consumption); <code>hosts : Domain → Service</code> (the Domain that owns the Service's code and runtime — every Service has exactly one host Domain); <code>contains</code> for content (<code>Domain → content-instance</code>); <code>atStep : Product → Vertebra</code> replaces both <code>hasValueStreamStep</code> and the instance-level <code>primaryStep</code> drift; <code>belongsTo</code> and <code>partOf</code> dropped.</li>
+  <li><strong>Services attach at the Domain level primarily, the Product level secondarily.</strong> The cards-service / gates-service / spine-service / skills-service nodes today mis-typed as SubDomain each have an owning Domain — the code lives there. A Service is <strong>hosted by</strong> exactly one Domain (where its code lives) and <strong>consumed by</strong> any number of Products / other Domains (who depend on it). This resolves the AS-IS ambiguity where "where does cards-service belong" had no unique answer.</li>
   <li><strong>CollectionDomain is removed</strong> from Chorus per <code>domain-model-asis-tobe</code> — Gathering's data domains (Photos, Music, Stories, Books, People, Property) belong to Gathering's ontology, not Chorus's. Chorus models how the team works; the Gathering data layer is downstream.</li>
 </ul>
 
@@ -179,13 +180,14 @@ classDiagram
   Product "1" --> "*" Product : hasChild
   Product "1" --> "*" Domain : hasDomain
   Domain "1" --> "*" Domain : hasChild
+  Domain "1" --> "*" Service : hosts
   Product --> Service : consumes
   Product --> Vertebra : atStep
   Product --> Role : ownedBy
   Domain --> Role : ownedBy
   Service --> Role : ownedBy
 </pre>
-<p class="caption">Three structural classes — Product and Domain both recursive via <code>hasChild</code>. SHACL shape stereotypes named per class.</p>
+<p class="caption">Three structural classes — Product and Domain both recursive via <code>hasChild</code>. Service attaches at the Domain level (hosts — where code lives) and the Product level (consumes — depends on it to function). SHACL shape stereotypes named per class.</p>
 
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
