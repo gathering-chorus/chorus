@@ -210,6 +210,87 @@ classDiagram
 </pre>
 <p class="caption">Three structural classes — Product and Domain both recursive via <code>hasChild</code>. Service attaches at the Domain level (hosts — where code lives) and the Product level (consumes — depends on it to function). SHACL shape stereotypes named per class.</p>
 
+<h3>Attribute schema — typed per class</h3>
+<p>The diagram shows the <em>shape</em>; the tables below give the <em>schema</em>. Each attribute is <code>chorus:</code>-prefixed, has a range (<code>xsd:</code> datatype or class reference), cardinality, and SHACL required-status. Attribute lists lifted from <code>loom-subproduct-design.html</code> (which named these for Product, Domain, and Service); refined here with types, cardinality, and the literal-vs-relational distinction Loom left implicit.</p>
+
+<p>Two kinds of attributes:</p>
+<ul>
+  <li><strong>Stored</strong> — present as triples on the instance. Returned inline by structural endpoints (<code>/athena/product/:id</code>, etc.).</li>
+  <li><strong>Computed</strong> — derived from inverse-property traversal at query time, not stored as triples. Returned only by traversal endpoints (e.g., <code>/athena/service/:id/consumers</code>).</li>
+</ul>
+
+<p>Universal <code>status</code> enum across all three classes: <code>{draft, active, sunsetting, retired}</code>.</p>
+
+<h4>Product</h4>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td>required</td><td>Short name.</td></tr>
+<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Longer description.</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td>required</td><td>Owning role.</td></tr>
+<tr><td><code>chorus:vision</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>One-line value statement.</td></tr>
+<tr><td><code>chorus:valueProposition</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>What it promises whom.</td></tr>
+<tr><td><code>chorus:audience</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Who it is for (multi).</td></tr>
+<tr><td><code>chorus:roadmap</code></td><td>xsd:anyURI</td><td>0..1</td><td>—</td><td>Link to roadmap artifact.</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td>required</td><td><code>{draft, active, sunsetting, retired}</code>.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Known limitations.</td></tr>
+<tr><td><code>chorus:references</code></td><td>xsd:anyURI</td><td>0..n</td><td>—</td><td>External links.</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:Vertebra</td><td>0..1</td><td>—</td><td>Value-stream placement.</td></tr>
+<tr><td><code>chorus:hasChild</code></td><td>chorus:Product</td><td>0..n</td><td>—</td><td>Child Products (recursive containment).</td></tr>
+<tr><td><code>chorus:hasDomain</code></td><td>chorus:Domain</td><td>1..n</td><td>required ≥1</td><td>Domains this Product contains. A Product without Domains has no substance.</td></tr>
+<tr><td><code>chorus:consumes</code></td><td>chorus:Service</td><td>0..n</td><td>—</td><td>Cross-cutting Service deps (dashed-edge relationship).</td></tr>
+<tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>0..n</td><td>—</td><td>Design artifacts describing this Product (e.g., this very file).</td></tr>
+</table>
+
+<h4>Domain</h4>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td>required</td><td>Short name.</td></tr>
+<tr><td><code>chorus:comment</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Longer description.</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td>required</td><td>Owning role.</td></tr>
+<tr><td><code>chorus:atStep</code></td><td>chorus:Vertebra</td><td>1</td><td>required</td><td>Every Domain has a value-stream-step placement.</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td>required</td><td><code>{draft, active, sunsetting, retired}</code>.</td></tr>
+<tr><td><code>chorus:hasActor</code></td><td>chorus:Actor</td><td>0..n</td><td>—</td><td>Who interacts with this Domain.</td></tr>
+<tr><td><code>chorus:hasScenario</code></td><td>chorus:Scenario</td><td>0..n</td><td>—</td><td>Gherkin-style behavioral specs.</td></tr>
+<tr><td><code>chorus:hasCode</code></td><td>chorus:File</td><td>0..n</td><td>—</td><td>Code files (relational edge — replaces Loom's casual "code" string).</td></tr>
+<tr><td><code>chorus:hasTest</code></td><td>chorus:File</td><td>0..n</td><td>—</td><td>Test files.</td></tr>
+<tr><td><code>chorus:hasEndpoint</code></td><td>chorus:Endpoint</td><td>0..n</td><td>—</td><td>HTTP / MCP / CLI surfaces.</td></tr>
+<tr><td><code>chorus:hasUiPage</code></td><td>chorus:Page</td><td>0..n</td><td>—</td><td>UI page nodes.</td></tr>
+<tr><td><code>chorus:hasPipeline</code></td><td>chorus:Pipeline</td><td>0..1</td><td>—</td><td>Build/deploy pipeline node.</td></tr>
+<tr><td><code>chorus:hasLog</code></td><td>chorus:LogStream</td><td>0..n</td><td>—</td><td>Loki stream identifiers.</td></tr>
+<tr><td><code>chorus:hasAlert</code></td><td>chorus:Alert</td><td>0..n</td><td>—</td><td>Grafana alert-rule references.</td></tr>
+<tr><td><code>chorus:hasDecision</code></td><td>chorus:Decision</td><td>0..n</td><td>—</td><td>DEC / ADR records that bind here.</td></tr>
+<tr><td><code>chorus:hasPriorArt</code></td><td>xsd:anyURI</td><td>0..n</td><td>—</td><td>External references to similar work.</td></tr>
+<tr><td><code>chorus:hasRelease</code></td><td>chorus:Release</td><td>0..n</td><td>—</td><td>Shipped release records.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Known limitations.</td></tr>
+<tr><td><code>chorus:hasChild</code></td><td>chorus:Domain</td><td>0..n</td><td>—</td><td>Child Domains (recursive containment).</td></tr>
+<tr><td><code>chorus:hosts</code></td><td>chorus:Service</td><td>0..n</td><td>—</td><td>Services hosted by this Domain — the code lives here (solid-edge relationship).</td></tr>
+<tr><td><code>chorus:hasDesignDoc</code></td><td>chorus:Document</td><td>0..n</td><td>—</td><td>Design artifacts describing this Domain.</td></tr>
+</table>
+
+<h4>Service</h4>
+<table>
+<tr><th>Attribute</th><th>Range</th><th>Card.</th><th>SHACL</th><th>Notes</th></tr>
+<tr><td><code>chorus:label</code></td><td>xsd:string</td><td>1</td><td>required</td><td>Short name.</td></tr>
+<tr><td><code>chorus:overview</code></td><td>xsd:string</td><td>1</td><td>required</td><td>What this Service does.</td></tr>
+<tr><td><code>chorus:vocabulary</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Key terms / domain language.</td></tr>
+<tr><td><code>chorus:asIs</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Current state description.</td></tr>
+<tr><td><code>chorus:toBe</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Target state description.</td></tr>
+<tr><td><code>chorus:hasComponent</code></td><td>chorus:Component</td><td>0..n</td><td>—</td><td>Internal components.</td></tr>
+<tr><td><code>chorus:interactionModel</code></td><td>xsd:string OR chorus:Diagram</td><td>0..1</td><td>—</td><td>How clients interact (mermaid / sequence / state).</td></tr>
+<tr><td><code>chorus:dependsOn</code></td><td>chorus:Service</td><td>0..n</td><td>—</td><td>Services this one depends on (stored).</td></tr>
+<tr><td><code>chorus:hasSurface</code></td><td>chorus:APISurface</td><td>0..n</td><td>—</td><td>API / event / CLI surfaces this Service exposes.</td></tr>
+<tr><td><code>chorus:implementationPlan</code></td><td>xsd:string</td><td>0..1</td><td>—</td><td>Build / migration plan.</td></tr>
+<tr><td><code>chorus:notInScope</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Explicit non-goals.</td></tr>
+<tr><td><code>chorus:gaps</code></td><td>xsd:string</td><td>0..n</td><td>—</td><td>Known limitations.</td></tr>
+<tr><td><code>chorus:references</code></td><td>xsd:anyURI</td><td>0..n</td><td>—</td><td>External links.</td></tr>
+<tr><td><code>chorus:hostedBy</code></td><td>chorus:Domain</td><td>1</td><td>required</td><td>The single Domain whose code hosts this Service. Inverse of <code>Domain hosts Service</code>; declared explicitly so the 1:1 host constraint is SHACL-enforceable.</td></tr>
+<tr><td><code>chorus:ownedBy</code></td><td>chorus:Role</td><td>1</td><td>required</td><td>Owning role.</td></tr>
+<tr><td><code>chorus:status</code></td><td>enum</td><td>1</td><td>required</td><td><code>{draft, active, sunsetting, retired}</code>.</td></tr>
+<tr><td><em><code>consumers</code></em> <span style="color:#9333ea">(computed view)</span></td><td>chorus:Product ∪ chorus:Domain</td><td>0..n</td><td>—</td><td><strong>Computed</strong> from <code>?x consumes ?service</code> inverse traversal. Not stored; returned by <code>/athena/service/:id/consumers</code>.</td></tr>
+</table>
+
+<p class="caption">Universal SHACL constraints: every structural instance has <code>chorus:label</code>, <code>chorus:ownedBy</code>, and <code>chorus:status</code>. Service has additional <code>chorus:hostedBy</code> required with <code>maxCount 1</code> (enforces 1:1 hosting at SHACL — sloppiness here would be caught at write, not at audit). Stored vs computed distinction is load-bearing for the API contract: stored attributes return inline; computed views require their own traversal endpoint.</p>
+
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
 The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.
@@ -248,6 +329,21 @@ The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the grap
 </table>
 
 <p>Overlays are queryable via the same verb layer — <code>overlay_get(node, kind)</code> and <code>overlay_query(kind, filters)</code> — and stored as their own predicates in the graph (e.g., <code>hasDeployAuthority</code>, <code>hasDeployRoute</code>). They are <em>not</em> implicit; the AS-IS Athena has no overlay surface at all.</p>
+
+<h2>Implementation path — OWL+SHACL first, API second, data third</h2>
+<div class="frame">
+v1 went <strong>data → schema-by-discovery → API-by-priority</strong>. v2 inverts: <strong>schema → API → data</strong>. Same three layers, reversed dependency. v1's order let each layer be <em>constrained by</em> what already existed below it — sloppiness in the data became normal because the schema had to accommodate it. v2's order makes each layer <em>constrain</em> what gets added above it — the schema gates what the API can express; the API gates what data clients can write.
+</div>
+
+<p>Three downstream cards derive from #2928, in order:</p>
+
+<ol>
+  <li><strong>OWL + SHACL rigor.</strong> Formally declare Product / Domain / Service / Role / Vertebra as <code>chorus:</code>-prefixed classes; every attribute typed (<code>xsd:</code> range or class reference) with cardinality and SHACL required-status per the tables above; inverse properties declared (<code>hostedBy</code> ↔ <code>hosts</code>; <code>consumers</code> as computed view, not stored); <code>status</code> enum domains as SHACL constraints; the predicate-layer defects from the audit (<code>belongsTo</code> undeclared, <code>hasDomain</code> double-declared, <code>consumes</code> overloaded) closed. Output: a <code>chorus.ttl</code> + <code>shapes.ttl</code> pair that gates writes.</li>
+  <li><strong>API surface.</strong> Build the <code>/athena/{product,domain,service}</code> endpoints (and the edge / sparql / blast-radius / vertebra / principle-invoke / practice-invoke verbs) backed by the SHACL shapes from card 1. Reads return shape-shaped JSON; mutation paths validate against shapes at write. The API and the schema are the same contract, expressed twice — once in SHACL for the graph, once in OpenAPI/JSON-schema for the clients.</li>
+  <li><strong>Data seed / migration.</strong> Re-type the service-named SubDomain instances to Service; populate <code>hosts</code> edges from those re-types; backfill the typed attributes from existing markdown / HTML / TTL sources; link design-docs as <code>hasDesignDoc</code> instances (including this very file, the Loom subproduct-design doc, and domain-model-asis-tobe). If the API is right, this is mechanical: feed values through <code>POST /athena/{product,domain,service}</code> until everything validates. Validation refusals identify the AS-IS sloppiness still in the data and force decisions case-by-case.</li>
+</ol>
+
+<p>Order matters because each layer constrains the next: schema gates API contract, API gates client writes, data flows through the gates. Reverse order (data first, schema later — the v1 pattern) is exactly how the AS-IS findings accumulated. The two-tier model (relational core + graph overlays) is the design that holds this discipline; the implementation order is what enforces it in practice.</p>
 
 <h2>Open questions</h2>
 <ul>
