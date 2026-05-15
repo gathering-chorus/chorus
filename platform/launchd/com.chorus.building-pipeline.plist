@@ -31,7 +31,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>cd /Users/jeffbridwell/CascadeProjects/chorus &amp;&amp; /opt/homebrew/bin/act push -P macos-latest=-self-hosted -W .github/workflows/building-pipeline.yml</string>
+    <string>cd /Users/jeffbridwell/CascadeProjects/chorus &amp;&amp; /opt/homebrew/bin/act workflow_dispatch -P macos-latest=-self-hosted -W .github/workflows/building-pipeline.yml</string>
   </array>
 
   <key>StandardOutPath</key>
