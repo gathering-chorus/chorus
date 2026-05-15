@@ -546,6 +546,10 @@ The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the grap
 v1 went <strong>data → schema-by-discovery → API-by-priority</strong>. v2 inverts: <strong>schema → API → data</strong>. Same three layers, reversed dependency. v1's order let each layer be <em>constrained by</em> what already existed below it — sloppiness in the data became normal because the schema had to accommodate it. v2's order makes each layer <em>constrain</em> what gets added above it — the schema gates what the API can express; the API gates what data clients can write.
 </div>
 
+<div class="frame" style="border-left-color:#0ea5e9">
+<strong>Fresh write, not rewrite.</strong> v2 lives under a new namespace (<code>/athena/*</code>, parallel to the AS-IS <code>/api/chorus/subdomains/*</code>) and is built SHACL-gated from line 1 — no path through the v2 code reaches the triplestore without validating against <code>shapes.ttl</code>. Rewriting the AS-IS endpoints in place would carry forward the un-validated write paths that produced today's sloppiness, because the retrofit would have to keep them working while validation gets bolted on, and the team would defer to "existing behavior" every time the gate refused. Greenfield avoids that trap. AS-IS endpoints stay live as legacy reads during migration; cutover is by namespace, not by endpoint — when v2's coverage is complete, the v1 namespace retires wholesale.
+</div>
+
 <p>Three downstream cards derive from #2928, in order:</p>
 
 <ol>
