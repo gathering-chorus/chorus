@@ -92,11 +92,19 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
             level = kv.clone();
             continue;
         }
-        if let Some((key, val)) = kv.split_once('=') {
-            if key == "level" {
+        if let Some((raw_key, val)) = kv.split_once('=') {
+            if raw_key == "level" {
                 level = val.to_string();
                 continue;
             }
+            // #2931: gate/demo skills historically write `card=NNNN` (string),
+            // but logs-query and chorus_logs_for_card key on `card_id` (numeric
+            // — see #2876 unquoted-emit). Two shapes for the same identity
+            // means gate.X.passed events vanish from card joins. Normalize at
+            // the substrate: `card` is an alias for `card_id` on the way out.
+            // Skill markdown can use either; downstream consumers see one
+            // canonical field.
+            let key = if raw_key == "card" { "card_id" } else { raw_key };
             // #2443 follow-on: proper JSON escape — newlines/backslashes/quotes/control
             // chars would otherwise break log-line integrity. Prior `.replace('"', ...)`
             // only handled quotes; multi-line content (Kade's #2280 feedback) produced
@@ -125,7 +133,10 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     // #2897: Demo trace propagation. If a card= or card_id= field was provided,
     // look up the trace_id from /tmp/demo-trace-${card}.txt (with CHORUS_TRACE_ID
     // env taking precedence). Lets `grep '"trace":"<id>"'` reconstruct one /demo
-    // run end-to-end; `grep '"card":"N"'` still finds all traces for that card.
+    // run end-to-end. #2931: `card` is normalized to `card_id` on write, so
+    // post-#2931 events match `"card_id":N` (unquoted, numeric); pre-#2931
+    // legacy events with `"card":"N"` (quoted string) remain in the log
+    // history but are not the canonical form going forward.
     // demo_preflight.rs writes the temp file on /demo entry; chorus_acp cleans
     // it up on /acp success.
     let mut card_arg: Option<String> = None;
@@ -242,7 +253,25 @@ mod tests {
 
         let line = find_event_line("test.emit.writes").expect("event should be in log");
         assert!(line.contains("\"role\":\"kade\""));
-        assert!(line.contains("\"card\":\"1718\""));
+        // #2931: `card=NNNN` input is normalized to canonical `card_id`:NNNN
+        // (unquoted, numeric) so chorus_logs_for_card finds it. Single shape
+        // at the substrate; skill markdown can use either alias.
+        assert!(line.contains("\"card_id\":1718"), "expected canonical card_id, got: {}", line);
+        assert!(!line.contains("\"card\":\"1718\""), "legacy quoted-string card field should not appear: {}", line);
+    }
+
+    #[test]
+    fn emit_normalizes_card_id_passthrough() {
+        // Explicit `card_id=NNNN` should still write `card_id`:NNNN unquoted,
+        // identical to `card=NNNN` after normalization.
+        let result = run(&[
+            "test.cardid.passthrough".into(),
+            "kade".into(),
+            "card_id=2931".into(),
+        ]);
+        assert_eq!(result, ExitCode::SUCCESS);
+        let line = find_event_line("test.cardid.passthrough").expect("event in log");
+        assert!(line.contains("\"card_id\":2931"), "got: {}", line);
     }
 
     #[test]
@@ -285,7 +314,8 @@ mod tests {
         let json_str = extract_json_object(&line, "test.multi.kv2")
             .expect("should find JSON object");
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(parsed["card"], "1718");
+        // #2931: `card` is normalized to canonical `card_id` (unquoted numeric).
+        assert_eq!(parsed["card_id"], 1718);
         assert_eq!(parsed["mode"], "inject");
         assert_eq!(parsed["target"], "silas");
     }
@@ -437,7 +467,8 @@ mod tests {
         let json = extract_json_object(&line, "test.level.combo").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["level"], "critical");
-        assert_eq!(parsed["card"], "1895");
+        // #2931: `card` normalized to canonical `card_id` (unquoted integer).
+        assert_eq!(parsed["card_id"], 1895);
     }
 
     // --- AC3: special characters in values ---

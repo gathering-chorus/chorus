@@ -519,4 +519,142 @@ describe('#2750 slice 2 — chorus_acp MCP atomic transaction', () => {
       expect(parsed.pr_url).toContain('/pull/300');
     });
   });
+
+  describe('#2931 — duration_ms on completed step events', () => {
+    test('every chorus_acp.*.completed event carries duration_ms', async () => {
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') return { stdout: '[kade/2750 abcd5678] msg\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done\n', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-werk')) return { stdout: 'removed\n', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      // Every .completed event must carry numeric duration_ms.
+      const completed = events.filter((e) => /^chorus_acp\.[a-z-]+\.completed$/.test(e.event));
+      expect(completed.length).toBeGreaterThan(3); // commit, push, pr-create, pr-merge, cards-done, ...
+      for (const e of completed) {
+        expect(typeof e.fields.duration_ms).toBe('number');
+        expect(e.fields.duration_ms as number).toBeGreaterThanOrEqual(0);
+      }
+      // Specific contract: each AC2-named step appears.
+      const stepNames = completed.map((e) => e.event.replace(/^chorus_acp\.|\.completed$/g, ''));
+      for (const step of ['commit', 'push', 'pr-create', 'pr-merge', 'release-trigger']) {
+        expect(stepNames).toContain(step);
+      }
+    });
+  });
+
+  describe('#2931 — Chorus-Trace-Id + Chorus-Card-Id commit trailers', () => {
+    // Why: chorus_acp mints a trace_id at the top of the transaction and
+    // emits every spine event with it. The build pipeline runs LATER in a
+    // separate process tree (launchctl-kickstarted building-pipeline), with
+    // no inherited env. Writing the trace_id as a `Chorus-Trace-Id:` git
+    // trailer on the acp commit lets build-signed.sh extract it and export
+    // CHORUS_TRACE_ID, so chorus-log's env-bridge (#2857) tags build.* and
+    // deploy.* events with the same trace_id ACP used. Result: a single
+    // chain in chorus_logs_for_trace from pull → acp → build → deploy.
+    test('commit message carries Chorus-Trace-Id and Chorus-Card-Id trailers', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') {
+          return { stdout: '[kade/2750 abcd5678] kade: acp #2750\n', stderr: '' };
+        }
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'kade/2750\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file.endsWith('cards') && args[0] === 'done') return { stdout: 'Done: #2750\n', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-werk') && args[0] === 'remove') return { stdout: 'removed\n', stderr: '' };
+        if (file === 'launchctl' && args[0] === 'kickstart') return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: oneCard })) as never,
+        emitSpineEvent: (() => undefined) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+
+      const commitCall = calls.find((c) => c.file.endsWith('git-queue.sh') && c.args[0] === 'commit');
+      expect(commitCall).toBeDefined();
+      // -m is the second-to-last arg position pattern (see commitArgs construction).
+      const mIdx = commitCall!.args.lastIndexOf('-m');
+      expect(mIdx).toBeGreaterThan(-1);
+      const msg = commitCall!.args[mIdx + 1];
+      // Subject line preserved.
+      expect(msg.split('\n')[0]).toBe('kade: acp #2750');
+      // Blank line separates subject from trailer block (git-trailer convention).
+      expect(msg).toMatch(/\n\nChorus-Trace-Id: [0-9a-f-]+/);
+      // Card-Id trailer present when cardId resolved.
+      expect(msg).toMatch(/\nChorus-Card-Id: 2750/);
+      // Trace-id is a v7 UUID-shape minted by mintTraceIdV7 — non-empty hex+dashes.
+      const traceMatch = msg.match(/Chorus-Trace-Id: ([0-9a-f-]+)/);
+      expect(traceMatch).not.toBeNull();
+      expect(traceMatch![1].length).toBeGreaterThan(8);
+    });
+
+    test('commit message omits Chorus-Card-Id when cardId cannot be derived', async () => {
+      // Board returns no cards AND branch is not <role>/<id> → cardId stays null.
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = jest.fn(async (file: string, args: string[]) => {
+        calls.push({ file, args });
+        if (file === 'git' && args[0] === 'rev-parse') return { stdout: 'main\n', stderr: '' };
+        if (file.endsWith('git-queue.sh') && args[0] === 'commit') {
+          return { stdout: '[main abcd] kade: acp #unknown\n', stderr: '' };
+        }
+        if (file.endsWith('git-queue.sh') && args[0] === 'push') return { stdout: 'pushed\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'view') { const e = new Error('no PR') as { code?: number }; e.code = 1; throw e; }
+        if (file === 'gh' && args[1] === 'create') return { stdout: 'https://x/pr/1\n', stderr: '' };
+        if (file === 'gh' && args[1] === 'merge') return { stdout: 'merged\n', stderr: '' };
+        if (file === 'launchctl') return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-log')) return { stdout: '', stderr: '' };
+        if (file.endsWith('chorus-werk')) return { stdout: '', stderr: '' };
+        if (file.endsWith('cards')) return { stdout: '', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+      const server = buildMcpServer(() => 'kade', {
+        boardReader: (async () => ({ ok: true, cards: [] })) as never,
+        emitSpineEvent: (() => undefined) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+      } as never);
+      // @ts-expect-error - private handler access
+      const handler = (server as any)._requestHandlers.get('tools/call');
+      try {
+        await handler({ method: 'tools/call', params: { name: 'chorus_acp', arguments: { role: 'kade' } } }, {});
+      } catch {
+        /* downstream steps may refuse; only the commit args matter */
+      }
+
+      const commitCall = calls.find((c) => c.file.endsWith('git-queue.sh') && c.args[0] === 'commit');
+      expect(commitCall).toBeDefined();
+      const mIdx = commitCall!.args.lastIndexOf('-m');
+      const msg = commitCall!.args[mIdx + 1];
+      expect(msg).toMatch(/Chorus-Trace-Id: /);
+      expect(msg).not.toMatch(/Chorus-Card-Id: /);
+    });
+  });
 });

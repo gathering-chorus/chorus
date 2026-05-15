@@ -125,6 +125,33 @@ describe('#2751 / #2913 — chorus_pull_card MCP atomic transaction', () => {
       expect(parsed.card_id).toBe(2751);
       expect(parsed.branch).toBe('kade/2751');
     });
+
+    test('#2931 — every chorus_pull_card.*.completed event carries duration_ms', async () => {
+      const { fn: exec } = buildHappyExec();
+      const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+      const server = buildMcpServer(() => 'kade', {
+        emitSpineEvent: ((event: string, fields: Record<string, unknown>) => events.push({ event, fields })) as never,
+        execFileAsync: exec as never,
+        gitQueuePath: '/fake/platform/scripts/git-queue.sh',
+        resolveWorkingTree: ((_role: string) => '/fake/canonical') as never,
+      } as never);
+      const handler = (server as unknown as Handlers)._requestHandlers.get('tools/call') as CallHandler;
+      await handler(
+        { method: 'tools/call', params: { name: 'chorus_pull_card', arguments: { role: 'kade', card_id: 2751 } } },
+        {},
+      );
+
+      const completed = events.filter((e) => /^chorus_pull_card\.[a-z-]+\.completed$/.test(e.event));
+      expect(completed.length).toBeGreaterThan(2);
+      for (const e of completed) {
+        expect(typeof e.fields.duration_ms).toBe('number');
+        expect(e.fields.duration_ms as number).toBeGreaterThanOrEqual(0);
+      }
+      const stepNames = completed.map((e) => e.event.replace(/^chorus_pull_card\.|\.completed$/g, ''));
+      for (const step of ['validate', 'werk-add']) {
+        expect(stepNames).toContain(step);
+      }
+    });
   });
 
   describe('AC3 — refusal taxonomy', () => {

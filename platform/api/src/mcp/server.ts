@@ -1166,8 +1166,19 @@ async function executeAcp(
   // re-running with verbose flags.
   let cardId: number | null = null;
   emit = createSpineEmitter(trace_id, baseEmit);
-  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
-    emit(`chorus_acp.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
+  // #2931: auto-inject duration_ms on every completed step. Map records the
+  // wall-clock start of each `${step}.started` emit; on `${step}.completed`
+  // we subtract and attach duration_ms before emitting. Per-step keys so
+  // overlapping or re-entered steps (idempotent re-runs of commit/push)
+  // remeasure cleanly. No shared state across handler invocations — Map is
+  // closure-local to this chorus_acp call.
+  const stepStartedAt = new Map<string, number>();
+  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) => {
+    if (status === 'started') stepStartedAt.set(step, Date.now());
+    const dur = status === 'completed' ? stepStartedAt.get(step) : undefined;
+    const duration = dur !== undefined ? { duration_ms: Date.now() - dur } : {};
+    emit(`chorus_acp.${step}.${status}`, { role, card_id: cardId, ...duration, ...(detail ?? {}) });
+  };
 
   emit('chorus_acp.invoked', { role, repo_root: repoRoot });
 
@@ -1266,9 +1277,16 @@ async function executeAcp(
   }
 
   // Commit (skip if no staged changes — gh push will be no-op).
+  // #2931 — write Chorus-Trace-Id / Chorus-Card-Id git trailers so the build
+  // pipeline picks up the ACP trace_id from the commit it's building. Without
+  // this, build/deploy events mint their own trace_id and ACP→build→deploy
+  // can't be joined in chorus_logs_for_trace.
   stepEmit('commit', 'started', { branch });
   try {
-    const commitArgs = ['commit', FORCE_BRANCH_FLAG, '.', '--', '-m', `${role}: acp #${cardId ?? 'unknown'}`];
+    const trailers = [`Chorus-Trace-Id: ${trace_id}`];
+    if (cardId !== null) trailers.push(`Chorus-Card-Id: ${cardId}`);
+    const commitMessage = `${role}: acp #${cardId ?? 'unknown'}\n\n${trailers.join('\n')}`;
+    const commitArgs = ['commit', FORCE_BRANCH_FLAG, '.', '--', '-m', commitMessage];
     const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 60_000, cwd: repoRoot });
     const shaMatch = stdout.match(/\[\S+\s+([a-f0-9]+)\]/);
     if (shaMatch) sha = shaMatch[1];
@@ -1456,8 +1474,15 @@ async function executePullCard(
   const trace_id = mintTraceIdV7();
   emit = createSpineEmitter(trace_id, baseEmit, cardId);
 
-  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
-    emit(`chorus_pull_card.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
+  // #2931: per-step duration_ms — same shape as chorus_acp stepEmit. Map is
+  // closure-local; key is step name; only completed events carry duration.
+  const stepStartedAt = new Map<string, number>();
+  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) => {
+    if (status === 'started') stepStartedAt.set(step, Date.now());
+    const dur = status === 'completed' ? stepStartedAt.get(step) : undefined;
+    const duration = dur !== undefined ? { duration_ms: Date.now() - dur } : {};
+    emit(`chorus_pull_card.${step}.${status}`, { role, card_id: cardId, ...duration, ...(detail ?? {}) });
+  };
 
   emit('chorus_pull_card.invoked', { role, card_id: cardId, repo_root: repoRoot });
 
