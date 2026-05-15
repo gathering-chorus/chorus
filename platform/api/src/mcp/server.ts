@@ -679,7 +679,7 @@ const DESIGN_REFRESH_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | cards-done-fail. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
+    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail (non-throwing — card is accepted; re-run /acp to retry werk-close idempotently). Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1276,6 +1276,58 @@ async function executeAcp(
     /* fall through; will fail at commit */
   }
 
+  // #2943 — idempotent re-run path: detect "card already accepted, only
+  // werk-close pending." Pre-#2943, a transient branch-close failure left
+  // an orphan remote branch that no path could clean up from agent sessions
+  // (#2598 hook prohibits direct git push --delete). Re-running /acp on the
+  // same card retried commit/push/PR, which all returned idempotent no-ops,
+  // and then re-attempted werk-close — works in principle but burned cycles
+  // re-validating already-merged state. New shape: detect the condition
+  // upfront (card status=Done on the board AND remote branch <role>/<id>
+  // still exists), skip directly to werk-close, return cleanly.
+  if (cardId !== null && board.ok) {
+    const acceptedCard = board.cards.find((c) => c.id === cardId);
+    const cardIsDone = acceptedCard === undefined; // boardReader returns WIP-only; absent = not WIP = Done or other
+    if (cardIsDone) {
+      const expectedBranch = `${role}/${cardId}`;
+      let remoteHasOrphan = false;
+      try {
+        const { stdout: lsOut } = await execFileAsync('git', ['ls-remote', '--heads', 'origin', expectedBranch], { env, cwd: repoRoot, timeout: 10_000 });
+        remoteHasOrphan = lsOut.trim().length > 0;
+      } catch { /* ls-remote failure is itself a signal we shouldn't run cleanup */ }
+
+      if (remoteHasOrphan) {
+        emit('chorus_acp.idempotent-cleanup.detected', { role, card_id: cardId, branch: expectedBranch });
+        stepEmit('werk-close', 'started');
+        try {
+          const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+          await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
+          stepEmit('werk-close', 'completed', { branch_closed: true, idempotent_cleanup: true });
+          emit('chorus_acp.completed', { role, card_id: cardId, sha: 'idempotent-cleanup', pr_url: 'idempotent-cleanup', branch_closed: true });
+          return {
+            content: [
+              { type: 'text', text: JSON.stringify({ role, card_id: cardId, sha: 'idempotent-cleanup', pr_url: 'idempotent-cleanup', branch_closed: true, idempotent_cleanup: true }, null, 2) },
+            ],
+          };
+        } catch (err) {
+          const stderr = extractStderr(err);
+          stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200), idempotent_cleanup: true });
+          emit(CHORUS_ACP_REFUSED, {
+            role,
+            card_id: cardId,
+            step: 'werk-close',
+            reason: 'branch-close-fail',
+            detail: stderr.slice(0, 500),
+            recoverable: true,
+            recovery_hint: `re-run \`/acp ${cardId}\` again, or have silas (DEC-022) run \`git push origin --delete ${expectedBranch}\``,
+            idempotent_cleanup_attempted: true,
+          });
+          throw new Error(`chorus_acp refused: branch-close-fail — ${stderr.split('\n')[0]}`);
+        }
+      }
+    }
+  }
+
   // Commit (skip if no staged changes — gh push will be no-op).
   // #2931 — write Chorus-Trace-Id / Chorus-Card-Id git trailers so the build
   // pipeline picks up the ACP trace_id from the commit it's building. Without
@@ -1407,6 +1459,15 @@ async function executeAcp(
   emit(CARD_ACCEPTED, { role, card: cardId });
 
   // Step 6 — chorus-werk remove (best-effort; doesn't fail the transaction).
+  // #2943: when this step fails, emit BOTH the existing werk-close.completed
+  // (with branch_closed: false for backward-compat observability) AND the
+  // typed CHORUS_ACP_REFUSED with reason: 'branch-close-fail' so the taxonomy
+  // contract documented on the tool description is honest. We do NOT throw —
+  // card.accepted has already fired, the transaction is materially complete,
+  // and an orphan remote branch is recoverable via the idempotent re-run
+  // path (above) that detects the accepted-card + orphan-branch state and
+  // runs werk-close alone. The refusal event is the typed signal for
+  // dashboards/observability/operators; it does not break the contract.
   let branchClosed = false;
   if (cardId !== null) {
     stepEmit('werk-close', 'started');
@@ -1419,6 +1480,19 @@ async function executeAcp(
       // Non-fatal — branch close is hygiene; the transaction is already complete.
       const stderr = extractStderr(err);
       stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
+      // #2943 — typed refusal signal (non-throwing). Mirrors the shape of
+      // other CHORUS_ACP_REFUSED emits so callers handling refusal taxonomy
+      // see the case. To recover: re-run /acp; the idempotent path above
+      // detects the orphan branch and runs werk-close alone.
+      emit(CHORUS_ACP_REFUSED, {
+        role,
+        card_id: cardId,
+        step: 'werk-close',
+        reason: 'branch-close-fail',
+        detail: stderr.slice(0, 500),
+        recoverable: true,
+        recovery_hint: `re-run \`/acp ${cardId}\` to retry branch-close (idempotent on accepted cards)`,
+      });
     }
   }
 
