@@ -274,6 +274,48 @@ mod tests {
         assert!(line.contains("\"card_id\":2931"), "got: {}", line);
     }
 
+    // #2941 — normalization edge: `card=` with empty value. Skill markdown
+    // can produce this when CARD_ID env is unset and substituted blindly.
+    // The normalized field should still appear (so log parsers see the
+    // empty as a sentinel, not a missing key), but as a quoted empty
+    // string since "" doesn't parse as i64.
+    #[test]
+    fn empty_card_value_emits_quoted_empty_string() {
+        let result = run(&[
+            "test.2941.card.empty".into(),
+            "kade".into(),
+            "card=".into(),
+        ]);
+        assert_eq!(result, ExitCode::SUCCESS);
+        let line = find_event_line("test.2941.card.empty").expect("event in log");
+        // Normalization still fires (key renamed to card_id) but the empty
+        // value falls through to the quoted-string branch.
+        assert!(line.contains("\"card_id\":\"\""), "expected quoted empty, got: {}", line);
+        assert!(!line.contains("\"card\":"), "legacy 'card' key should not appear: {}", line);
+    }
+
+    // #2941 — normalization edge: both `card=` AND `card_id=` passed
+    // simultaneously. Today both are processed in argv order; whichever
+    // comes LAST wins because each emits its own `,"card_id":...` and the
+    // resulting JSON has duplicate keys (parsers take the last one). This
+    // test pins that behavior — caller-known precedence > silent collision.
+    #[test]
+    fn card_and_card_id_both_passed_last_wins() {
+        let result = run(&[
+            "test.2941.card.collision".into(),
+            "kade".into(),
+            "card=111".into(),
+            "card_id=222".into(),
+        ]);
+        assert_eq!(result, ExitCode::SUCCESS);
+        let line = find_event_line("test.2941.card.collision").expect("event in log");
+        // Both writes happen; JSON parsers honor last-wins.
+        let parsed: serde_json::Value =
+            serde_json::from_str(&extract_json_object(&line, "test.2941.card.collision").unwrap())
+                .expect("valid JSON despite duplicate keys");
+        assert_eq!(parsed["card_id"], 222, "last-wins precedence: card_id=222 should override card=111");
+    }
+
     #[test]
     fn emit_produces_valid_json() {
         run(&["test.json.valid2".into(), "silas".into()]);

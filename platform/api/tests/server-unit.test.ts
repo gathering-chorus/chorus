@@ -81,10 +81,19 @@ describe('server smoke — routes respond without crashing', () => {
     expect([200, 404, 500, 0]).toContain(r.status);
   });
 
+  // #2941: per-test timeout bump. POST /api/chorus/embed is the first
+  // request that touches the embed handler, which lazy-loads LanceDB
+  // (~1.3M vectors). Under full-suite memory pressure that load can
+  // sync-block the event loop past jest's 5s default — long enough that
+  // the in-fetch 3s AbortSignal can't fire either (the abort signal
+  // dispatch is itself a JS task waiting behind LanceDB's blocking
+  // initialization). The test only asserts the route returns *some*
+  // numeric status; widening the budget covers the cold-load path
+  // without weakening the assertion. Standalone runs finish in ~6s.
   test('POST /api/chorus/embed with no body handled', async () => {
     const r = await get('/api/chorus/embed', { method: 'POST' });
     expect(typeof r.status).toBe('number');
-  });
+  }, 30_000);
 
   test('unknown route returns 404', async () => {
     const r = await get('/no-such-route-xxx');

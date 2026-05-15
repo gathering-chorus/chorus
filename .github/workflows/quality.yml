@@ -402,6 +402,28 @@ jobs:
         working-directory: ${{ matrix.crate }}
         run: cargo test --tests
 
+  bats:
+    name: bats — platform/tests
+    runs-on: ubuntu-latest
+    # #2941 AC7: bats tests cover shell-script integration surfaces
+    # (build-signed.sh trailer extraction, deploy-daemon-card.sh failure
+    # traps, e2e trace propagation, deploy-daemon multi-unit dispatch).
+    # Pre-#2941 they ran only locally if at all — load-bearing trace_id
+    # propagation had zero CI coverage. Job is non-required (DEC-2525
+    # cap) and schedule-only (matches cost-stop pattern); signal still
+    # surfaces via job-conclusion red on the nightly drift run, doesn't
+    # block PRs.
+    if: github.event_name == 'schedule'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install bats
+        run: sudo apt-get update -y && sudo apt-get install -y bats
+      - name: Run bats suite (platform/tests/*.bats)
+        # `bats -r` walks the dir; --tap output for log readability when
+        # things break. Per-test isolation is bats's default.
+        run: bats -r --tap platform/tests/
+
   clippy:
     # #2532: Rust lint parity with TS. chorus-inject already clean (-D warnings
     # blocking); chorus-hooks still has 64 known warnings (28 auto-fixed, 64

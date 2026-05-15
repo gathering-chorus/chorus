@@ -134,6 +134,30 @@ fi
 **Fail:** One or more pages broken — gate fails.
 **Warn:** App down locally — surface but don't block.
 
+### 6. Bats — shell-script integration tests (#2941)
+
+CI runs bats nightly only (DEC-2525 cost-stop). Local /gate-quality runs
+the suite at demo time so trailer/trap regressions on shell surfaces
+(build-signed.sh, deploy-daemon-card.sh, e2e trace propagation, deploy-
+daemon multi-unit) are caught before /acp instead of next morning.
+
+```bash
+if command -v bats >/dev/null 2>&1; then
+  if bats /Users/jeffbridwell/CascadeProjects/chorus/platform/tests/ 2>&1; then
+    echo "PASS: bats suite green"
+  else
+    echo "FAIL: bats suite found regressions — see output"
+    exit 1
+  fi
+else
+  echo "WARN: bats not installed — shell-script integration tests skipped (brew install bats-core)"
+fi
+```
+
+**Pass:** All bats tests green.
+**Fail:** One or more bats regressions — gate fails.
+**Warn:** bats not installed — surface but don't block (one-time install).
+
 ## Manual Confirm (1 item)
 
 Only shown if all automated checks pass.
