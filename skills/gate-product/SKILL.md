@@ -95,25 +95,47 @@ fi
 
 ### 4. Domain registration
 
+**Source of truth (#2940 Move 0):** `data/athena/tree.json` is canonical. Verify the card's `domain:<slug>` label resolves to a `chorus:domain-<slug>` IRI in the tree. After Move 1 ships SHACL, the same check runs against the graph; for now JSON is the answer.
+
 ```bash
-# Extract domain from card labels
+# Extract domain slug from card labels
 DOMAIN=$(echo "$CARD_VIEW" | grep -oE 'domain:\w+' | head -1 | sed 's/domain://')
 
 if [ -n "$DOMAIN" ]; then
-  # Query Athena crawler API — does this domain exist and have data?
-  CRAWLER_RESPONSE=$(curl -s "http://localhost:3340/api/chorus/domain/${DOMAIN}" 2>/dev/null)
-  if echo "$CRAWLER_RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('domain') else 1)" 2>/dev/null; then
-    echo "PASS: domain '${DOMAIN}' registered in Athena"
+  # Move 0 path — check tree.json for chorus:domain-<slug> OR chorus:<slug>
+  # (Products are bare `chorus:<slug>`; Domains are `chorus:domain-<slug>`).
+  TREE_JSON=$(curl -s http://localhost:3340/api/athena/tree 2>/dev/null)
+  if [ -z "$TREE_JSON" ]; then
+    # Fallback: read from disk in canonical path
+    TREE_JSON=$(cat "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/data/athena/tree.json" 2>/dev/null)
+  fi
+  if [ -n "$TREE_JSON" ]; then
+    DOMAIN_HIT=$(echo "$TREE_JSON" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+slug='$DOMAIN'
+candidates={f'chorus:domain-{slug}', f'chorus:{slug}'}
+hit = any(p['iri'] in candidates for p in d.get('products',[]))
+hit = hit or any(dm['iri'] in candidates for dm in d.get('domains',[]))
+hit = hit or any(s['iri'] in candidates for s in d.get('services',[]))
+print('yes' if hit else 'no')
+" 2>/dev/null)
+    if [ "$DOMAIN_HIT" = "yes" ]; then
+      echo "PASS: domain '${DOMAIN}' resolves to a tree.json IRI"
+    else
+      echo "FAIL: domain '${DOMAIN}' does NOT exist in data/athena/tree.json — add it to the tree before claiming this domain on a card, or correct the card label"
+    fi
   else
-    echo "WARN: domain '${DOMAIN}' not found in Athena crawler — may need graph population"
+    echo "WARN: tree.json unavailable (api + disk both failed) — can't verify domain"
   fi
 else
   echo "WARN: no domain label on card — can't verify registration"
 fi
 ```
 
-**Pass:** Card's domain exists in the Athena domain graph.
-**Warn:** Domain not found or no domain label — flag for review.
+**Pass:** Card's domain resolves to a tree.json IRI.
+**Fail:** Domain claimed but not in tree — refuse the gate. Closes the "I named a domain that isn't a domain" failure mode (#2940).
+**Warn:** No domain label OR tree.json unreachable.
 
 ### 5. Spine contract
 

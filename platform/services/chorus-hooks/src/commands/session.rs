@@ -10,6 +10,7 @@ use crate::shared::protocol_contract;
 use super::context_cache;
 use super::pulse;
 use super::principles_inject;
+use super::athena_tree_inject;
 
 /// Session start — replaces session-start-thin.sh (#1623)
 pub fn session_start_cmd(args: &[String]) -> ExitCode {
@@ -165,6 +166,11 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
             ]);
         }
     }
+
+    // #2940 — Athena Move 0 tree injection. Appends owned + active + needs-work
+    // ranking + ownership map. Graceful degradation: any failure injects a
+    // one-line note rather than blocking boot.
+    content.push_str(&athena_tree_inject::render_for_role(role));
 
     // Log — silent: session-start owns stdout for the hookSpecificOutput envelope.
     let _ = chorus_log::run_silent(&["session.role.started".to_string(), role.to_string()]);
