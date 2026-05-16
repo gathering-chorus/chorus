@@ -48,6 +48,32 @@
 <h1>Version Control <span>— Service Design</span></h1>
 <p class="date">Domain owner: Kade. Last updated 2026-05-15. Earlier revisions and decision lineage in <a href="http://localhost:3340/designing/docs/version-control-service-design.html#appendix-a">Appendix A</a> (ephemeral correction) and <a href="http://localhost:3340/designing/docs/version-control-service-design.html#appendix-b">Appendix B</a> (shared-HEAD race).</p>
 
+<!-- ===== SUMMARY BLOCK — auto-inserted by chorus_design_refresh (#2900) =====
+     Fill in the {{PLACEHOLDER}} tokens, then re-run /design-refresh. -->
+<div class="summary-block">
+  <h2>At a Glance</h2>
+
+  <pre class="mermaid">
+flowchart LR
+  A[Actor or input] --> B[Domain surface]
+  B --> C[Output or effect]
+  B --> D[Spine emit]
+  </pre>
+  <p style="font-size:0.8em;color:#999;font-style:italic;">Replace node labels above with the real actors / surfaces / outputs / spine events for this domain.</p>
+
+  <table class="gap-and-next">
+    <thead><tr><th>Status</th><th>Where</th><th>Next</th></tr></thead>
+    <tbody>
+      <tr><td>{{STATUS_1}}</td><td>{{WHERE_1}}</td><td>{{NEXT_1}}</td></tr>
+      <tr><td>{{STATUS_2}}</td><td>{{WHERE_2}}</td><td>{{NEXT_2}}</td></tr>
+      <tr><td>{{STATUS_3}}</td><td>{{WHERE_3}}</td><td>{{NEXT_3}}</td></tr>
+    </tbody>
+  </table>
+
+  <p class="invariants"><strong>Invariants:</strong> {{INVARIANT_PARAGRAPH}}</p>
+</div>
+
+
 <div class="source-note">
 <strong>Source of truth:</strong> Live actor list, BDD scenarios, contract entries, dependencies, gaps, and integrations live at
 <a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain"><code>/athena/domain-detail.html?id=version-control-domain</code></a>.
@@ -204,7 +230,7 @@ This doc narrates <em>structure and intent</em> — diagrams, decisions, impleme
 <li><strong>Verification scenarios</strong> — re-run each prior-session blocker against the rebuilt model. The proven-correct gate.</li>
 </ul>
 
-<h2>Gaps to close</h2>
+<h2 data-section="gaps">Gaps to close</h2>
 <p>Card numbers and sequencing live in the Implementation Plan below.</p>
 <div class="gap"><strong>chorus_commit refusal taxonomy.</strong> Still includes coordination-state reasons (<code>board-unreachable</code>, <code>no-wip-card</code>, <code>multi-wip</code>, <code>branch-mismatch</code>, <code>path-not-found</code>). Target: <code>hook-fail</code>, <code>push-conflict</code> only.</div>
 <div class="gap"><strong>False-positive push-conflict.</strong> Handler treats any non-zero exit from <code>git-queue.sh</code> as push-conflict regardless of whether push succeeded.</div>
@@ -293,7 +319,7 @@ This doc narrates <em>structure and intent</em> — diagrams, decisions, impleme
 <li><strong>Class-A graph-backed migration of git history</strong> — git remains canonical store.</li>
 </ul>
 
-<h2>References</h2>
+<h2 data-section="references">References</h2>
 <ul>
 <li><a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain">Athena: <code>version-control-domain</code></a> — live source of truth (actors, scenarios, contract, dependencies, gaps)</li>
 <li><a href="http://localhost:3340/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline service design</a> — shares the whole-flow narrative; the diagram above is the diagram-side complement to its pre-merge-surfaces table</li>
