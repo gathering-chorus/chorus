@@ -1,80 +1,461 @@
 {
-  "schemaVersion": "athena-move-0/2026-05-16-lean",
+  "schemaVersion": "athena-move-0/2026-05-16",
   "namespace": "https://jeffbridwell.com/chorus#",
-  "comment": "Move 0 hand-authored tree, lean shape per chorus-product-tree.html canonical (Jeff+Wren 2026-05-14). Recursive Product (hasChild + hasDomain) per #2928 OWL. Required fields only: label, ownedBy, atStep, hasChild, hasDomain. Rich fields (status, vision, audience, gaps) deferred to optional until Move 1 SHACL enforces.",
+  "comment": "Move 0 hand-authored tree — canonical product/domain/service model. 7 Products, 33 Domains. Per chorus-product-tree.md (Jeff+Wren 2026-05-14). All fields populated: ownedBy, atStep, status, comment, gaps on every product and domain.",
   "valueStreamSteps": [
-    {"iri":"chorus:value-stream-step-shaping",   "label":"Shaping"},
-    {"iri":"chorus:value-stream-step-designing", "label":"Designing"},
-    {"iri":"chorus:value-stream-step-directing", "label":"Directing"},
-    {"iri":"chorus:value-stream-step-building",  "label":"Building"},
-    {"iri":"chorus:value-stream-step-proving",   "label":"Proving"}
+    {
+      "iri": "chorus:value-stream-step-shaping",
+      "label": "Shaping"
+    },
+    {
+      "iri": "chorus:value-stream-step-designing",
+      "label": "Designing"
+    },
+    {
+      "iri": "chorus:value-stream-step-directing",
+      "label": "Directing"
+    },
+    {
+      "iri": "chorus:value-stream-step-building",
+      "label": "Building"
+    },
+    {
+      "iri": "chorus:value-stream-step-proving",
+      "label": "Proving"
+    }
   ],
   "roles": [
-    {"iri":"chorus:role-jeff",  "label":"Jeff",  "kind":"human"},
-    {"iri":"chorus:role-wren",  "label":"Wren",  "kind":"agent"},
-    {"iri":"chorus:role-silas", "label":"Silas", "kind":"agent"},
-    {"iri":"chorus:role-kade",  "label":"Kade",  "kind":"agent"}
+    {
+      "iri": "chorus:role-jeff",
+      "label": "Jeff",
+      "kind": "human"
+    },
+    {
+      "iri": "chorus:role-wren",
+      "label": "Wren",
+      "kind": "agent"
+    },
+    {
+      "iri": "chorus:role-silas",
+      "label": "Silas",
+      "kind": "agent"
+    },
+    {
+      "iri": "chorus:role-kade",
+      "label": "Kade",
+      "kind": "agent"
+    }
   ],
   "products": [
-    {"iri":"chorus:chorus", "label":"Chorus", "ownedBy":"chorus:role-jeff",
-     "hasChild":["chorus:loom","chorus:athena","chorus:convergence","chorus:chorus-knowledge","chorus:clearing","chorus:werk","chorus:borg"],
-     "hasDomain":[]},
-    {"iri":"chorus:loom", "label":"Loom", "ownedBy":"chorus:role-wren",
-     "atStep":"chorus:value-stream-step-shaping",
-     "hasDomain":["chorus:domain-roles","chorus:domain-principles","chorus:domain-policies","chorus:domain-practices","chorus:domain-skills","chorus:domain-decisions","chorus:domain-rcas"]},
-    {"iri":"chorus:athena", "label":"Athena", "ownedBy":"chorus:role-wren",
-     "atStep":"chorus:value-stream-step-designing",
-     "hasDomain":["chorus:domain-domains","chorus:domain-services"]},
-    {"iri":"chorus:convergence", "label":"Convergence", "ownedBy":"chorus:role-silas",
-     "atStep":"chorus:value-stream-step-designing",
-     "hasDomain":["chorus:domain-integrations"]},
-    {"iri":"chorus:chorus-knowledge", "label":"/chorus", "ownedBy":"chorus:role-jeff",
-     "atStep":"chorus:value-stream-step-directing",
-     "hasDomain":["chorus:domain-memory","chorus:domain-knowledge","chorus:domain-search"]},
-    {"iri":"chorus:clearing", "label":"The Clearing", "ownedBy":"chorus:role-kade",
-     "atStep":"chorus:value-stream-step-directing",
-     "hasDomain":["chorus:domain-messages","chorus:domain-streams","chorus:domain-spine","chorus:domain-cards"]},
-    {"iri":"chorus:werk", "label":"Werk", "ownedBy":"chorus:role-kade",
-     "atStep":"chorus:value-stream-step-building",
-     "hasDomain":["chorus:domain-pipelines","chorus:domain-version-control","chorus:domain-code","chorus:domain-tests"]},
-    {"iri":"chorus:borg", "label":"Borg", "ownedBy":"chorus:role-silas",
-     "atStep":"chorus:value-stream-step-proving",
-     "hasDomain":["chorus:domain-builds","chorus:domain-deploys","chorus:domain-logs","chorus:domain-properties","chorus:domain-alerts-monitors","chorus:domain-security-trust","chorus:domain-time","chorus:domain-heralds","chorus:domain-toolchain","chorus:domain-infrastructure","chorus:domain-analytics","chorus:domain-metrics"]}
+    {
+      "iri": "chorus:loom",
+      "label": "Loom",
+      "comment": "Team knowledge layer — the values, roles, principles, policies, practices, and skills that define how the team operates.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:roles",
+        "chorus:principles",
+        "chorus:policies",
+        "chorus:practices",
+        "chorus:skills",
+        "chorus:decisions",
+        "chorus:rcas"
+      ]
+    },
+    {
+      "iri": "chorus:athena",
+      "label": "Athena",
+      "comment": "Structural model — the canonical product/domain/service ontology. Gates, SessionStart envelopes, and blast-radius routing all read from here.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-designing",
+      "status": "building",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:domains",
+        "chorus:services"
+      ]
+    },
+    {
+      "iri": "chorus:convergence",
+      "label": "Convergence",
+      "comment": "Integration layer — connections to external systems, NiFi pipelines, and cross-product data flows.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-designing",
+      "status": "exploring",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:integrations"
+      ]
+    },
+    {
+      "iri": "chorus:chorus",
+      "label": "Chorus",
+      "comment": "Shared memory and knowledge for the team — indexed sessions, Slack history, and semantic search across all team artifacts.",
+      "ownedBy": "chorus:role-jeff",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:memory",
+        "chorus:knowledge",
+        "chorus:search"
+      ]
+    },
+    {
+      "iri": "chorus:clearing",
+      "label": "The Clearing",
+      "comment": "Interaction layer — messages, streams, the spine event log, and the kanban board. How the team talks and tracks work.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:messages",
+        "chorus:streams",
+        "chorus:spine",
+        "chorus:cards"
+      ]
+    },
+    {
+      "iri": "chorus:werk",
+      "label": "Werk",
+      "comment": "Execution substrate — pipelines, version control, code quality, and test infrastructure. How cards become shipped software.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:pipelines",
+        "chorus:version-control",
+        "chorus:code",
+        "chorus:tests"
+      ]
+    },
+    {
+      "iri": "chorus:borg",
+      "label": "Borg",
+      "comment": "Observability and operations — builds, deploys, logs, alerts, properties, security, and infrastructure health.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": [],
+      "hasDomain": [
+        "chorus:builds",
+        "chorus:deploys",
+        "chorus:logs",
+        "chorus:properties",
+        "chorus:alerts-monitors",
+        "chorus:security-trust",
+        "chorus:time",
+        "chorus:heralds",
+        "chorus:toolchain",
+        "chorus:infrastructure",
+        "chorus:analytics",
+        "chorus:metrics"
+      ]
+    }
   ],
   "domains": [
-    {"iri":"chorus:domain-roles",            "label":"roles"},
-    {"iri":"chorus:domain-principles",       "label":"principles"},
-    {"iri":"chorus:domain-policies",         "label":"policies"},
-    {"iri":"chorus:domain-practices",        "label":"practices"},
-    {"iri":"chorus:domain-skills",           "label":"skills"},
-    {"iri":"chorus:domain-decisions",        "label":"decisions"},
-    {"iri":"chorus:domain-rcas",             "label":"rcas"},
-    {"iri":"chorus:domain-domains",          "label":"domains"},
-    {"iri":"chorus:domain-services",         "label":"services"},
-    {"iri":"chorus:domain-integrations",     "label":"integrations"},
-    {"iri":"chorus:domain-memory",           "label":"memory"},
-    {"iri":"chorus:domain-knowledge",        "label":"knowledge"},
-    {"iri":"chorus:domain-search",           "label":"search"},
-    {"iri":"chorus:domain-messages",         "label":"messages"},
-    {"iri":"chorus:domain-streams",          "label":"streams"},
-    {"iri":"chorus:domain-spine",            "label":"spine"},
-    {"iri":"chorus:domain-cards",            "label":"cards"},
-    {"iri":"chorus:domain-pipelines",        "label":"pipelines"},
-    {"iri":"chorus:domain-version-control",  "label":"version-control"},
-    {"iri":"chorus:domain-code",             "label":"code"},
-    {"iri":"chorus:domain-tests",            "label":"tests"},
-    {"iri":"chorus:domain-builds",           "label":"builds"},
-    {"iri":"chorus:domain-deploys",          "label":"deploys"},
-    {"iri":"chorus:domain-logs",             "label":"logs"},
-    {"iri":"chorus:domain-properties",       "label":"properties"},
-    {"iri":"chorus:domain-alerts-monitors",  "label":"alerts-monitors"},
-    {"iri":"chorus:domain-security-trust",   "label":"security-trust"},
-    {"iri":"chorus:domain-time",             "label":"time"},
-    {"iri":"chorus:domain-heralds",          "label":"heralds"},
-    {"iri":"chorus:domain-toolchain",        "label":"toolchain"},
-    {"iri":"chorus:domain-infrastructure",   "label":"infrastructure"},
-    {"iri":"chorus:domain-analytics",        "label":"analytics", "placement":"unresolved"},
-    {"iri":"chorus:domain-metrics",          "label":"metrics",   "placement":"unresolved"}
+    {
+      "iri": "chorus:roles",
+      "label": "roles",
+      "comment": "Team member identities, capabilities, and session lifecycle.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:principles",
+      "label": "principles",
+      "comment": "Values and constraints governing team decisions and priorities.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:policies",
+      "label": "policies",
+      "comment": "Rules that enforce principles in practice — hooks, guards, gates.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:practices",
+      "label": "practices",
+      "comment": "Repeatable patterns the team uses — how we work, not just what we value.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:skills",
+      "label": "skills",
+      "comment": "Invokable capabilities — /skill-name commands that automate team workflows.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:decisions",
+      "label": "decisions",
+      "comment": "Decision log with context, rationale, and tradeoffs recorded.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:rcas",
+      "label": "rcas",
+      "comment": "Root cause analyses — what broke, why, and what changed as a result.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-shaping",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:domains",
+      "label": "domains",
+      "comment": "The canonical product/domain/service structural model — this tree.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-designing",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:services",
+      "label": "services",
+      "comment": "Service definitions, interfaces, and ownership within the product model.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-designing",
+      "status": "building",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:integrations",
+      "label": "integrations",
+      "comment": "Connections to external systems — NiFi, APIs, cross-product data flows.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-designing",
+      "status": "exploring",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:memory",
+      "label": "memory",
+      "comment": "Persistent context across sessions — indexed sessions and artifacts.",
+      "ownedBy": "chorus:role-jeff",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:knowledge",
+      "label": "knowledge",
+      "comment": "Structured facts about the team, products, and their history.",
+      "ownedBy": "chorus:role-jeff",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:search",
+      "label": "search",
+      "comment": "Semantic retrieval across all indexed team knowledge and session history.",
+      "ownedBy": "chorus:role-jeff",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:messages",
+      "label": "messages",
+      "comment": "Direct role-to-role communications — nudges and the bridge messaging API.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:streams",
+      "label": "streams",
+      "comment": "Event streams and pub/sub channels the team uses to coordinate.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:spine",
+      "label": "spine",
+      "comment": "The audit trail — structured log of all team activity and state changes.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:cards",
+      "label": "cards",
+      "comment": "Kanban board and card lifecycle — the unit of work tracking for the team.",
+      "ownedBy": "chorus:role-wren",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:pipelines",
+      "label": "pipelines",
+      "comment": "CI/CD and build orchestration — how code moves from commit to production.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:version-control",
+      "label": "version-control",
+      "comment": "Git workflow, branches, worktrees, hooks, and commit policy enforcement.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:code",
+      "label": "code",
+      "comment": "Source code quality — linting, type-checking, and static analysis.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:tests",
+      "label": "tests",
+      "comment": "Automated test suites — jest, bats, cargo test, and integration tests.",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:builds",
+      "label": "builds",
+      "comment": "Build artifacts, Rust binary signing, and cdhash provenance.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:deploys",
+      "label": "deploys",
+      "comment": "Deployment records, rollback paths, and chorus-deploy orchestration.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:logs",
+      "label": "logs",
+      "comment": "Log aggregation and querying via Loki — structured observability.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:properties",
+      "label": "properties",
+      "comment": "Service configuration and runtime properties across Library and Bedroom.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:alerts-monitors",
+      "label": "alerts-monitors",
+      "comment": "Grafana dashboards, alert rules, and on-call signal management.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:security-trust",
+      "label": "security-trust",
+      "comment": "Authentication, authorization, secrets management, and TCC permissions.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:time",
+      "label": "time",
+      "comment": "Scheduling, cron jobs, and time-based triggers for automated team work.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:heralds",
+      "label": "heralds",
+      "comment": "Notification delivery — nudge routing, chorus-inject, and push delivery.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:toolchain",
+      "label": "toolchain",
+      "comment": "Development tools and their configuration — Claude Code, Node, Rust, git.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:infrastructure",
+      "label": "infrastructure",
+      "comment": "Host machines, Docker, LaunchAgents — the physical substrate the team runs on.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "operating",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:analytics",
+      "label": "analytics",
+      "comment": "Usage analytics and behavioral signals — attention, interaction patterns.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "exploring",
+      "gaps": []
+    },
+    {
+      "iri": "chorus:metrics",
+      "label": "metrics",
+      "comment": "Quantitative measurements of system health — latency, cost, throughput.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-proving",
+      "status": "exploring",
+      "gaps": []
+    }
   ],
   "services": []
 }

@@ -297,7 +297,7 @@ For each role in [wren, silas, kade] except <your-role>:
 - `chorus_blast_radius({iri})` — compute consumer + dependent closure. The recursive walk over `consumes` / `hosts` / `dependsOn` gives the structural impact set; answer (1) and (2) against that set, not memory.
 - `chorus_tree_get()` — full tree when you need to enumerate or visually-scan.
 
-The product-impact answer should cite IRIs (`chorus:cards-service`, `chorus:domain-hooks`) rather than paraphrase ("the cards thing"). IRI-citations survive across sessions and feed the cookbook's req-4 cite-by-ID discipline.
+The product-impact answer should cite IRIs (`chorus:cards-service`, `chorus:hooks`) rather than paraphrase ("the cards thing"). IRI-citations survive across sessions and feed the cookbook's req-4 cite-by-ID discipline.
 
 **Ack discipline (every nudge, every time)**:
 - Sender requests ack explicitly in the nudge body. Format: "ACK REQUIRED: <expected reply shape> within <window> or blocked-on-X."

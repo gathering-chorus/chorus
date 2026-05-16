@@ -856,7 +856,7 @@ const OwnershipLookupInput = z.object({
   iri: z
     .string()
     .regex(/^chorus:[a-z0-9][a-z0-9-]*$/i, 'IRI must match chorus:<slug>')
-    .describe('IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:domain-cards'),
+    .describe('IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:cards'),
 });
 
 const BlastRadiusInput = z.object({
@@ -883,7 +883,7 @@ const OWNERSHIP_LOOKUP_TOOL_DEF = {
       iri: {
         type: 'string',
         pattern: '^chorus:[a-z0-9][a-z0-9-]*$',
-        description: 'IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:domain-cards',
+        description: 'IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:cards',
       },
     },
     required: ['iri'],
