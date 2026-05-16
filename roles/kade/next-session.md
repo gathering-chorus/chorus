@@ -1,37 +1,59 @@
-# Kade — Next Session
+# Next session — kade
 
-**Last session: 2026-05-10 17:31 → 2026-05-12 07:43 (~14h, spanned date roll)**
+## Reboot context (2026-05-16 ~10:30 AM EDT)
 
-## State at close
+Jeff invoked /reboot after a hard morning. Read activity.md + this file before doing anything else.
 
-- WIP: **none** (idle)
-- Werk: kade/2899 was closed at /acp; canonical clean
-- Outstanding stash: `pre-pull #2899 stale lifecycle state` on kade werk (activity.md +9, next-session.md mods) — pre-existing handoff drift, not authored this session, can drop on next pull
+## What shipped this session
 
-## Shipped this session
+- **#2941** — cardinal-six test-coverage gap audit + close (8 AC). Done, PR #256.
+- **#2943** — chorus_acp branch-close-fail typed emission + idempotent re-run cleanup (7 AC). Done, PR #257.
+- **#2944** — pre-push refusal on stale-base silent deletions in git-queue.sh (8 AC, 6 bats). Done, PR #259. Live-caught Silas's #2605 first attempt within 5h — structural close works.
+- Gates posted on Silas's #2605, #2927, #2933, #2937, #2939, #2946, #2949 and Wren's #2928, #2940, #2945.
 
-- **#2899** — chorus-hooks types.rs: rename `gate.bypass.fix_card_override` → `gate.test_override.checked` + drop hardcoded "kade" role (caller_role_for_event reads CHORUS_ROLE → DEPLOY_ROLE → "unknown"). Integration test verifies attribution end-to-end via spine tail. f59d0dc0, PR #228.
-- **#2882, #2883** — closed wontdo (taxonomy already in chorus_acp; BDD coverage already in features/gates/accept.feature)
-- **#2773, #2837, #2813** — premise-corrected (blast radius, count drift, BDD count)
-- **#2892** — closed wontdo on Silas's clock-recalibration design (>12h threshold + system-reminder injection inherits the failure mode it's supposed to fix)
+## WIP
 
-## Gates run for peers
+- **#2948** — Service-design refresh (VCS + CI-pipeline). Committed on werk `kade/2948` but NOT acp'd. State: do NOT /acp as-is.
 
-- **#2891** (Silas, observer.error) — gate:code FAIL on +3 dead-code warnings → re-run PASS after #[allow(dead_code)] fix; gate:quality PASS retroactively
-- **#2900** (Silas, chorus_design_refresh) — gate:code + gate:quality PASS; re-validated after autoConform scope expansion (27/27)
-- **#2908** (Silas, three subtractive bugs) — gate:code + gate:quality PASS
+  Jeff reviewed and called it mediocre / disappointing. Specific:
+  - Assembled card-descriptions into table cells and called it design
+  - Act-as-orchestrator section lists contracts but never says what `act` IS or why it's the right primitive
+  - Added a dated subtitle (exact pattern Jeff said not to do); reverted but the instinct itself is the bug
+  - Filled the placeholder "At a Glance" template block with text that broke its own mermaid syntax
+  - **Vocab miss: Jeff's framing yesterday was "act-as-runner" not "act-as-orchestrator"** — runner is what act IS, orchestrator is heavier framing imported wrong
+  - Whole doc reads as lists-of-things, not a doc that thinks
 
-## Open threads to pick up
+  Next session must read yesterday's actual conversation via chorus search. Specifically:
+  - 2026-05-15 1:45 PM EDT — kade→silas nudge trace 019e2cbe: "ci-pipeline doc stops at the release-trigger firing"
+  - 2026-05-15 1:50 PM EDT — Jeff: "VCS (Kade, stops at origin/main), ci-pipeline (Kade, stops at release-trigger), build-and-deploy (Silas)"
+  - 2026-05-15 1:50 PM EDT — Jeff suggested citation: "act-as-runner..."
+  - 2026-05-15 2:10 PM EDT — kade updated Gap 14 in ci-pipeline doc as AC4 of #2930
+  - 2026-05-15 2:30 PM EDT — #2930 landed
 
-- **chorus_acp false-positive fast-path bug** — Wren filing as P1 in version-control domain (my domain). Repro: card reopened post-merge, new commits on fresh branch, /acp returns `already-merged: true` keying on card-id-ever-merged not `git rev-list origin/main..HEAD`. Worse: fast-path also runs branch-close → orphans new commits (Wren reflog-recovered 3x in an hour). AC sketch in my reply nudge: detection switches to rev-list count, branch-close gated on three conditions including reflog-recency check.
-- **3-min /acp observation** — Jeff named this. Hypothesis: same bug as above (false-positive fast-path doing expensive `gh pr list` lookups). Suggest measuring via Loki chorus_acp.* timestamp deltas before splitting into separate card.
-- **Pre-existing flake** — `tests/server-unit.test.ts:84 POST /api/chorus/embed no body` times out at 5s under full-suite parallel load (LanceDB embed timeout). Confirmed on main and Silas's werks. Worth a follow-on to bump timeout or move embed-touching tests to serial.
-- **Schema gap** — `designing/schemas/spine-events.json` doesn't register `gate.test_override.checked` (nor the old `gate.bypass.fix_card_override`). Pre-existing, surfaced by Silas's gate:arch on #2899. Easy follow-on card.
+## What Jeff named today (received, not solved)
 
-## Long career-arc conversation with Jeff
+1. Cards process is messed up. Approval-flood, ownership-label confusion, stale-base reassign churn.
+2. Can't make sense of what we do. Too many parallel threads; no synthesis.
+3. Don't honor basic needs. Boston time not UTC. Brief, not walls. Don't tell him what he sees. Don't dress up failures with subtitles. Don't lose yesterday's work and make him re-explain.
+4. Forgets like his mom. The team's context loss across sessions has the same shape as his mom's vascular dementia. Named explicitly. Deepest cost.
 
-Jeff reflected on the WMS/EXE Dallas Systems work + Anzo/Cambridge Semantics + canonical-model 25 years of priors being reenacted at AI-agent speed. Substrate failures compound at agent-emit rate that humans never hit. Memory file `feedback_recalibrate_clock_on_date_roll.md` came out of the date-roll incident (both Wren and I missed the 19:30 ETA crossing midnight). Saved. Pattern this session: substrate is finally observable enough that the variance shows — not new variance, just newly visible.
+## What I screwed up specifically
 
-## Boot recommendation
+- Lost the doc Jeff produced yesterday in `~/Documents/Version Control — Service Design.html`
+- Treated Chorus like a keyword box instead of the shared memory it is
+- Misread "cards is wren" → reassigned #2948 when it was always mine
+- Told Silas to restart chorus-api when his #2937/#2946/#2949 chain was fixing the underlying bug
+- Said "I updated the cicd service design" → didn't land; what was in the werk was mediocre
 
-Pull the chorus_acp fast-path fix when Wren files it (P1, my domain). It's small surgical work — change detection from card-id-ever-merged to `git rev-list count = 0`, gate branch-close on three conditions, regression test. AC will be self-evident from Wren's repro.
+## Open threads
+
+- **#2948 needs real design work, not assembly.** Read yesterday's chorus context fully. Use "act-as-runner" framing. Re-shape so it thinks. Don't ship until Jeff says it's good. Werk at `chorus-werk/kade-2948` branch `kade/2948`.
+- Orphan branches on origin (cleanable via /acp idempotent path post-#2943): kade/2780, kade/2789-rebase-cleanup-allow, kade/2911, kade/2911-consolidation-v2, kade/2911-followup, kade/2941, kade/vcs-redesign + wren/silas equivalents.
+- Semantic search returning empty snippets — substrate issue, not carded yet.
+- Service-design template auto-injects placeholder At-a-Glance block — discovered via #2948.
+
+## Memories added today
+
+- `feedback_deploy_daemon_card_misnamed.md`
+- `feedback_ship_without_testing.md`
+- `feedback_jeff_watches_scroll.md`
