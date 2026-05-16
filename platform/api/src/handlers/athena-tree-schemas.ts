@@ -29,7 +29,7 @@
 
 import { z } from 'zod';
 
-// IRI in the chorus namespace, e.g. "chorus:athena" or "chorus:domain-cards".
+// IRI in the chorus namespace, e.g. "chorus:athena" or "chorus:cards".
 const Iri = z.string().regex(/^chorus:[a-z0-9][a-z0-9-]*$/i, {
   message:
     'IRI must be of the form "chorus:<slug>" with slug ∈ [a-zA-Z0-9-] starting alphanumeric',

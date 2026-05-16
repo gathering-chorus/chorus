@@ -95,15 +95,15 @@ fi
 
 ### 4. Domain registration
 
-**Source of truth (#2940 Move 0):** `data/athena/tree.json` is canonical. Verify the card's `domain:<slug>` label resolves to a `chorus:domain-<slug>` IRI in the tree. After Move 1 ships SHACL, the same check runs against the graph; for now JSON is the answer.
+**Source of truth (#2940 Move 0):** `data/athena/tree.json` is canonical. Verify the card's `domain:<slug>` label resolves to a `chorus:<slug>` IRI in the tree. After Move 1 ships SHACL, the same check runs against the graph; for now JSON is the answer.
 
 ```bash
 # Extract domain slug from card labels
 DOMAIN=$(echo "$CARD_VIEW" | grep -oE 'domain:\w+' | head -1 | sed 's/domain://')
 
 if [ -n "$DOMAIN" ]; then
-  # Move 0 path — check tree.json for chorus:domain-<slug> OR chorus:<slug>
-  # (Products are bare `chorus:<slug>`; Domains are `chorus:domain-<slug>`).
+  # Move 0 path — check tree.json for chorus:<slug> OR chorus:<slug>
+  # (Products are bare `chorus:<slug>`; Domains are `chorus:<slug>`).
   TREE_JSON=$(curl -s http://localhost:3340/api/athena/tree 2>/dev/null)
   if [ -z "$TREE_JSON" ]; then
     # Fallback: read from disk in canonical path
@@ -114,7 +114,7 @@ if [ -n "$DOMAIN" ]; then
 import json,sys
 d=json.load(sys.stdin)
 slug='$DOMAIN'
-candidates={f'chorus:domain-{slug}', f'chorus:{slug}'}
+candidates={f'chorus:{slug}'}
 hit = any(p['iri'] in candidates for p in d.get('products',[]))
 hit = hit or any(dm['iri'] in candidates for dm in d.get('domains',[]))
 hit = hit or any(s['iri'] in candidates for s in d.get('services',[]))
