@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tree — Athena</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px 96px; }
+  h1 { font-size: 28px; font-weight: 300; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 24px; }
+  .frame { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; font-size: 13px; line-height: 1.5; color: #444; }
+  .frame strong { color: #1a1a1a; }
+  .controls { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; flex-wrap: wrap; }
+  .controls input[type="text"] { padding: 8px 12px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px; width: 240px; }
+  .filter-label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #d0d0d0; background: #ffffff; color: #444; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .btn:hover { border-color: #4f46e5; color: #1a1a1a; }
+  .btn.active { border-color: #4f46e5; color: #ffffff; background: #4f46e5; }
+
+  /* Product node */
+  .product { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 16px; padding: 18px 22px; }
+  .product-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .product-label { font-size: 18px; font-weight: 500; color: #1a1a1a; }
+  .product-iri { font-size: 11px; color: #888; font-family: 'SF Mono', Menlo, monospace; }
+  .product-comment { font-size: 13px; color: #555; margin-bottom: 12px; line-height: 1.5; }
+
+  /* Chips */
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip { display: inline-block; padding: 2px 10px; font-size: 11px; border-radius: 12px; background: #f0f0f0; color: #555; }
+  .chip.role { background: #ede9fe; color: #5b21b6; }
+  .chip.step { background: #dbeafe; color: #1e40af; }
+  .chip.status-operating { background: #d1fae5; color: #065f46; }
+  .chip.status-building { background: #fef3c7; color: #92400e; }
+  .chip.status-exploring { background: #e0e7ff; color: #3730a3; }
+  .chip.status-retiring { background: #fee2e2; color: #991b1b; }
+
+  /* Domains under a Product */
+  .domains { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e0e0e0; }
+  .domains-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .domain { background: #fafafa; border: 1px solid #ececec; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+  .domain-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .domain-label { font-size: 14px; font-weight: 500; color: #1a1a1a; }
+  .domain-iri { font-size: 10px; color: #888; font-family: 'SF Mono', Menlo, monospace; }
+  .domain-comment { font-size: 12px; color: #555; line-height: 1.5; margin-bottom: 8px; }
+  .domain-services { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: #666; margin-top: 4px; }
+  .service-pill { background: #ffffff; border: 1px solid #d0d0d0; border-radius: 6px; padding: 2px 8px; font-family: 'SF Mono', Menlo, monospace; }
+
+  /* Touched-by (blast-radius preview) */
+  .touched { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ececec; font-size: 11px; color: #888; }
+  .touched strong { color: #4f46e5; }
+
+  /* Hidden state for filter */
+  .hidden { display: none !important; }
+  .meta { font-size: 11px; color: #888; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e0e0e0; }
+  .meta code { font-family: 'SF Mono', Menlo, monospace; }
+</style>
+</head>
+<body>
+
+<h1>Athena Tree</h1>
+<p class="subtitle">Move 0 hand-authored structural model — Products → Domains → Services. Source: <code>data/athena/tree.json</code>. <a href="#" id="reload">reload</a></p>
+
+<div class="frame">
+<strong>What this is:</strong> the canonical tree of <em>what exists</em> in the team's product world — every Product, every Domain, every Service, every ownership and value-stream placement. The substrate <code>/demo</code>, <code>/gate-product</code>, role-nudge routing, and SessionStart envelope all read from. Move 1 lands the OWL+SHACL+API on top of this same shape; Move 5 ingests this JSON.
+</div>
+
+<div class="controls">
+  <span class="filter-label">Owner</span>
+  <button class="btn owner-filter active" data-owner="all">All</button>
+  <span class="filter-label" style="margin-left:16px">What touches</span>
+  <input type="text" id="touches" placeholder="chorus:cards-service" />
+  <button class="btn" id="touches-btn">Trace</button>
+  <button class="btn" id="touches-clear">Clear</button>
+</div>
+
+<div id="tree"></div>
+
+<div class="meta">
+  Source: <code id="src">/api/athena/tree</code> · <span id="counts"></span> · Schema: <code id="ver"></code>
+</div>
+
+<script>
+const STATUS_CHIP = { operating: 'status-operating', building: 'status-building', exploring: 'status-exploring', retiring: 'status-retiring' };
+
+function strip(iri) { return (iri || '').replace(/^chorus:/, ''); }
+function roleLabel(iri, roles) { const r = roles.find(x => x.iri === iri); return r ? r.label : strip(iri); }
+function stepLabel(iri, steps) { const s = steps.find(x => x.iri === iri); return s ? s.label : strip(iri); }
+
+let TREE = null;
+let ACTIVE_OWNER = 'all';
+let TOUCHES_IRI = null;
+
+async function fetchTree() {
+  const r = await fetch('/api/athena/tree');
+  if (!r.ok) throw new Error('tree fetch failed: ' + r.status);
+  TREE = await r.json();
+  document.getElementById('counts').textContent = `${TREE.products.length} products · ${TREE.domains.length} domains · ${TREE.services.length} services`;
+  document.getElementById('ver').textContent = TREE.schemaVersion;
+  renderOwnerFilter();
+  render();
+}
+
+function renderOwnerFilter() {
+  const bar = document.querySelector('.controls');
+  const allBtn = bar.querySelector('.owner-filter');
+  // Remove any non-"all" owner buttons from prior renders
+  bar.querySelectorAll('.owner-filter:not([data-owner="all"])').forEach(b => b.remove());
+  for (const role of TREE.roles) {
+    const btn = document.createElement('button');
+    btn.className = 'btn owner-filter';
+    btn.dataset.owner = role.iri;
+    btn.textContent = role.label;
+    btn.addEventListener('click', () => { ACTIVE_OWNER = role.iri; updateOwnerFilter(); render(); });
+    allBtn.insertAdjacentElement('afterend', btn);
+  }
+  allBtn.addEventListener('click', () => { ACTIVE_OWNER = 'all'; updateOwnerFilter(); render(); });
+}
+
+function updateOwnerFilter() {
+  document.querySelectorAll('.owner-filter').forEach(b => {
+    b.classList.toggle('active', b.dataset.owner === ACTIVE_OWNER);
+  });
+}
+
+function render() {
+  const root = document.getElementById('tree');
+  root.innerHTML = '';
+  for (const product of TREE.products) {
+    if (ACTIVE_OWNER !== 'all' && product.ownedBy !== ACTIVE_OWNER) continue;
+    root.appendChild(renderProduct(product));
+  }
+}
+
+async function renderProduct(p) {
+  const card = document.createElement('div');
+  card.className = 'product';
+  card.dataset.iri = p.iri;
+
+  const head = document.createElement('div');
+  head.className = 'product-head';
+  head.innerHTML = `<span class="product-label">${p.label}</span><span class="product-iri">${p.iri}</span>`;
+  card.appendChild(head);
+
+  const comment = document.createElement('div');
+  comment.className = 'product-comment';
+  comment.textContent = p.comment;
+  card.appendChild(comment);
+
+  const chips = document.createElement('div');
+  chips.className = 'chip-row';
+  chips.innerHTML = [
+    `<span class="chip role">owner: ${roleLabel(p.ownedBy, TREE.roles)}</span>`,
+    `<span class="chip step">${stepLabel(p.atStep, TREE.valueStreamSteps)}</span>`,
+    `<span class="chip ${STATUS_CHIP[p.status] || ''}">${p.status}</span>`,
+    p.hasChild?.length ? `<span class="chip">${p.hasChild.length} child product(s)</span>` : '',
+    p.hasDomain?.length ? `<span class="chip">${p.hasDomain.length} domain(s)</span>` : '',
+    p.consumes?.length ? `<span class="chip">consumes ${p.consumes.length} service(s)</span>` : '',
+  ].filter(Boolean).join('');
+  card.appendChild(chips);
+
+  // Domains under this product
+  if (p.hasDomain?.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'domains';
+    wrap.innerHTML = '<div class="domains-label">Domains</div>';
+    for (const dIri of p.hasDomain) {
+      const d = TREE.domains.find(x => x.iri === dIri);
+      if (!d) continue;
+      wrap.appendChild(renderDomain(d));
+    }
+    card.appendChild(wrap);
+  }
+
+  // Touched-by trace (if active)
+  if (TOUCHES_IRI) {
+    const trace = await traceTouches(p.iri);
+    if (trace) {
+      const t = document.createElement('div');
+      t.className = 'touched';
+      t.innerHTML = trace;
+      card.appendChild(t);
+    }
+  }
+  return card;
+}
+
+function renderDomain(d) {
+  const el = document.createElement('div');
+  el.className = 'domain';
+  el.dataset.iri = d.iri;
+  el.innerHTML = `
+    <div class="domain-head"><span class="domain-label">${d.label}</span><span class="domain-iri">${d.iri}</span></div>
+    <div class="domain-comment">${d.comment}</div>
+    <div class="chip-row">
+      <span class="chip role">owner: ${roleLabel(d.ownedBy, TREE.roles)}</span>
+      <span class="chip step">${stepLabel(d.atStep, TREE.valueStreamSteps)}</span>
+      <span class="chip ${STATUS_CHIP[d.status] || ''}">${d.status}</span>
+    </div>
+  `;
+  if (d.hosts?.length) {
+    const svc = document.createElement('div');
+    svc.className = 'domain-services';
+    svc.innerHTML = '<span style="opacity:0.7">hosts:</span>' + d.hosts.map(s => `<span class="service-pill">${strip(s)}</span>`).join('');
+    el.appendChild(svc);
+  }
+  return el;
+}
+
+async function traceTouches(productIri) {
+  // Use the blast-radius endpoint: does this product appear in the blast-radius of TOUCHES_IRI?
+  try {
+    const r = await fetch('/api/athena/blast-radius/' + encodeURIComponent(TOUCHES_IRI));
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.consumers?.includes(productIri)) {
+      return `<strong>touched by</strong> ${TOUCHES_IRI} (consumer of impact closure)`;
+    }
+  } catch (e) {}
+  return null;
+}
+
+document.getElementById('reload').addEventListener('click', (e) => { e.preventDefault(); fetchTree(); });
+document.getElementById('touches-btn').addEventListener('click', () => {
+  const v = document.getElementById('touches').value.trim();
+  TOUCHES_IRI = v || null;
+  render();
+});
+document.getElementById('touches-clear').addEventListener('click', () => {
+  document.getElementById('touches').value = '';
+  TOUCHES_IRI = null;
+  render();
+});
+
+fetchTree().catch(err => {
+  document.getElementById('tree').innerHTML = `<div class="frame" style="color:#991b1b">Failed to load tree: ${err.message}</div>`;
+});
+</script>
+
+</body>
+</html>

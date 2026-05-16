@@ -26,6 +26,11 @@ import { resolveCardsPath } from '../cards-path';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, type LogsQueryDeps } from '../handlers/logs-query';
 import { resolveGitQueuePath } from '../git-queue-path';
 import { executeDesignRefresh } from './design-refresh';
+import {
+  loadTree as athenaLoadTree,
+  lookupOwnership as athenaLookupOwnership,
+  computeBlastRadius as athenaComputeBlastRadius,
+} from '../handlers/athena-tree';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -840,6 +845,70 @@ const LOGS_FOR_TRACE_TOOL_DEF = {
     additionalProperties: false,
   },
 } as const;
+
+// #2940 — Athena Move 0 tree-query MCP tools.
+// data/athena/tree.json is the single source-of-truth for the structural model.
+// These three tools surface it for /demo, /gate-product, role-nudge routing.
+
+const TreeGetInput = z.object({});
+
+const OwnershipLookupInput = z.object({
+  iri: z
+    .string()
+    .regex(/^chorus:[a-z0-9][a-z0-9-]*$/i, 'IRI must match chorus:<slug>')
+    .describe('IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:domain-cards'),
+});
+
+const BlastRadiusInput = z.object({
+  iri: z
+    .string()
+    .regex(/^chorus:[a-z0-9][a-z0-9-]*$/i, 'IRI must match chorus:<slug>')
+    .describe('IRI whose inferred consumers + dependents you want — Product, Domain, or Service'),
+});
+
+const TREE_GET_TOOL_DEF = {
+  name: 'chorus_tree_get',
+  description:
+    'Use this to fetch the full Athena structural tree — every Product, Domain, Service with their stored attributes (label, comment, vision, audience, status, gaps, ownership, value-stream-step, design-doc edges) and containment edges (hasChild, hasDomain, hosts, contains, consumes). Source: data/athena/tree.json (Athena Move 0 hand-authored; Move 5 ingests this into Fuseki via composite-POST). Use when you need the whole tree at once, e.g. for the rendered tree.html page or a session-start envelope. Do NOT call repeatedly per IRI — use chorus_ownership_lookup for single-IRI lookups (cheaper). Refusal taxonomy: tree-not-found | schema-violation (tree.json failed Zod parse).',
+  inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+} as const;
+
+const OWNERSHIP_LOOKUP_TOOL_DEF = {
+  name: 'chorus_ownership_lookup',
+  description:
+    'Use this to answer "who owns this IRI and where does it sit in the tree?" Returns { iri, kind: product|domain|service, owner: role-iri, product, domain, service } — the containing-path filled in for the IRI\'s kind. Source: data/athena/tree.json. Use for role-nudge routing (resolve the IRI to a role before nudging), /gate-product domain-existence checks, demo product-impact framing. Do NOT use to fetch the IRI\'s full attribute set — use chorus_tree_get for that. Refusal taxonomy: not-found (IRI not in tree) | schema-violation.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      iri: {
+        type: 'string',
+        pattern: '^chorus:[a-z0-9][a-z0-9-]*$',
+        description: 'IRI to look up — e.g., chorus:athena, chorus:cards-service, chorus:domain-cards',
+      },
+    },
+    required: ['iri'],
+    additionalProperties: false,
+  },
+} as const;
+
+const BLAST_RADIUS_TOOL_DEF = {
+  name: 'chorus_blast_radius',
+  description:
+    'Use this to compute the inferred blast-radius of an IRI — who is affected if this Product/Domain/Service changes or breaks? Returns { iri, consumers: [iris], dependents: [iris], hosts?: [iris] }. Inference walks the structural graph: for a Service, consumers = Products consuming via chorus:consumes. For a Domain, consumers = Products with hasDomain → this Domain + (recursively) consumers of the Domain\'s hosted Services. For a Product, consumers = parent Products + (recursively) consumers of its Domains. Source: data/athena/tree.json. Use for /demo product-impact answers, /gate-product cross-domain risk surfacing, post-incident reconstruction. Do NOT use as a replacement for human judgment — the graph names structural blast-radius, not semantic impact. Refusal taxonomy: not-found (IRI not in tree) | schema-violation.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      iri: {
+        type: 'string',
+        pattern: '^chorus:[a-z0-9][a-z0-9-]*$',
+        description: 'IRI whose blast-radius you want — Product / Domain / Service.',
+      },
+    },
+    required: ['iri'],
+    additionalProperties: false,
+  },
+} as const;
+
 const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
 const CARD_UNPULLED = 'card.unpulled';
 // #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
@@ -2415,6 +2484,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       LOGS_RECENT_ERRORS_TOOL_DEF,
       LOGS_FOR_CARD_TOOL_DEF,
       LOGS_FOR_TRACE_TOOL_DEF,
+      TREE_GET_TOOL_DEF,
+      OWNERSHIP_LOOKUP_TOOL_DEF,
+      BLAST_RADIUS_TOOL_DEF,
     ],
   }));
 
@@ -2632,6 +2704,107 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           ...(result.ok ? { count: result.count, truncated: result.truncated } : { reason: result.reason }),
         });
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'chorus_tree_get': {
+        const parsed = TreeGetInput.safeParse(req.params.arguments ?? {});
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        try {
+          const tree = athenaLoadTree();
+          emitSpineEvent('athena.tree.queried', { tool: 'chorus_tree_get', from, ok: true });
+          return { content: [{ type: 'text' as const, text: JSON.stringify(tree) }] };
+        } catch (err) {
+          const reason = (err as Error).message.includes('ENOENT') ? 'tree-not-found' : 'schema-violation';
+          emitSpineEvent('athena.tree.queried', {
+            tool: 'chorus_tree_get',
+            from,
+            ok: false,
+            reason,
+            error: (err as Error).message,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason, error: (err as Error).message }) }],
+          };
+        }
+      }
+      case 'chorus_ownership_lookup': {
+        const parsed = OwnershipLookupInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        try {
+          const tree = athenaLoadTree();
+          const result = athenaLookupOwnership(tree, parsed.data.iri);
+          if (!result) {
+            emitSpineEvent('athena.tree.queried', {
+              tool: 'chorus_ownership_lookup',
+              from,
+              ok: false,
+              reason: 'not-found',
+              iri: parsed.data.iri,
+            });
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason: 'not-found', iri: parsed.data.iri }) }],
+            };
+          }
+          emitSpineEvent('athena.tree.queried', { tool: 'chorus_ownership_lookup', from, ok: true, iri: parsed.data.iri });
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        } catch (err) {
+          const reason = 'schema-violation';
+          emitSpineEvent('athena.tree.queried', {
+            tool: 'chorus_ownership_lookup',
+            from,
+            ok: false,
+            reason,
+            error: (err as Error).message,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason, error: (err as Error).message }) }],
+          };
+        }
+      }
+      case 'chorus_blast_radius': {
+        const parsed = BlastRadiusInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        try {
+          const tree = athenaLoadTree();
+          const result = athenaComputeBlastRadius(tree, parsed.data.iri);
+          if (!result) {
+            emitSpineEvent('athena.tree.queried', {
+              tool: 'chorus_blast_radius',
+              from,
+              ok: false,
+              reason: 'not-found',
+              iri: parsed.data.iri,
+            });
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason: 'not-found', iri: parsed.data.iri }) }],
+            };
+          }
+          emitSpineEvent('athena.tree.queried', {
+            tool: 'chorus_blast_radius',
+            from,
+            ok: true,
+            iri: parsed.data.iri,
+            consumer_count: result.consumers.length,
+          });
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        } catch (err) {
+          const reason = 'schema-violation';
+          emitSpineEvent('athena.tree.queried', {
+            tool: 'chorus_blast_radius',
+            from,
+            ok: false,
+            reason,
+            error: (err as Error).message,
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason, error: (err as Error).message }) }],
+          };
+        }
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);

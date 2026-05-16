@@ -1639,6 +1639,37 @@ app.get('/api/athena/products', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
+// chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
+import { loadTree, lookupOwnership, computeBlastRadius } from './handlers/athena-tree';
+app.get('/api/athena/tree', (_req: Request, res: Response) => {
+  try {
+    const tree = loadTree();
+    res.status(200).json(tree);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 422;
+    res.status(code).json({ ok: false, reason: code === 404 ? 'tree-not-found' : 'schema-violation', error: (err as Error).message });
+  }
+});
+app.get('/api/athena/ownership/:iri', (req: Request, res: Response) => {
+  try {
+    const r = lookupOwnership(loadTree(), req.params.iri);
+    if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
+    res.status(200).json(r);
+  } catch (err) {
+    res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
+  }
+});
+app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
+  try {
+    const r = computeBlastRadius(loadTree(), req.params.iri);
+    if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
+    res.status(200).json(r);
+  } catch (err) {
+    res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
+  }
+});
+
 // GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093, extracted #2189)
 import { fetchChorusProducts } from './handlers/chorus-products';
 app.get('/api/chorus/products', async (_req: Request, res: Response) => {

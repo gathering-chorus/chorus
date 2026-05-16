@@ -156,11 +156,13 @@ with open(allowlist_path) as f:
     data = json.load(f)
 allowed = {e["test_id"] for e in data.get("entries", []) if e.get("framework") == framework}
 
-# jest failure line shape: "  ✕ <full test name> (Nms)" or "FAIL <test_path>"
-# We accept either formal test paths (path.test.ts > suite > case) or jest-styled "✕ name"
+# jest failure line shape: "  ✕ <full test name> (Nms)" or "FAIL <test_path> (N.NN s)"
+# We accept either formal test paths (path.test.ts > suite > case) or jest-styled "✕ name".
+# Timing suffix is stripped for both shapes (ms or seconds) so allowlist entries
+# don't have to encode wall-clock variance per run (#2940 — wren).
 fail_res = [
-    re.compile(r'^\s+✕\s+(.+?)(?:\s+\(\d+\s*ms\))?\s*$'),
-    re.compile(r'^FAIL\s+(.+)$'),
+    re.compile(r'^\s+✕\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*(?:ms|s)\))?\s*$'),
+    re.compile(r'^FAIL\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*(?:ms|s)\))?\s*$'),
 ]
 
 failures = []
