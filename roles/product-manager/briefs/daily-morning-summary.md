@@ -1,34 +1,34 @@
-# Daily Morning Summary — 2026-05-14
+# Daily Morning Summary — 2026-05-16
 
-**HEADLINE:** Quality is RED on lint (137 errors) and two broken package suites; fix these before pulling new work today.
+**HEADLINE:** CSC /tmp/ compliance is RED in 5 operational scripts, quality review is 4 days stale, and domain contexts breach the 7-day threshold today if not updated.
 
 ---
 
-**OPS:** YELLOW — No current ops review from Silas (archived copy is 2026-03-29; today's was not filed).
-From recent activity: release-trigger working for first time in 30 days post-#2870 fix; Cloudflare tunnel active;
-chorus-werk-sync retired to manual-repair-only; daemon PID verified 2026-05-10. No known infra fires.
-Top concern: ops review gap — Silas needs to file one before next session closes.
+**OPS:** YELLOW (one RED) — Silas filed 2026-05-15.
+- GREEN: git clean, CLAUDE.md fragments current
+- YELLOW: hooks 7 dead-code warnings; chorus-hooks logs to /tmp (should be ~/Library/Logs/Chorus/); kade/current-work.md 27 days stale; domain contexts 5d old → breach tonight
+- RED: hardcoded `/tmp/` in 5 operational scripts — `look.sh`, `coherence-check`, `bridge-subscriber.js`, `bedroom-heartbeat.sh`, `index-crawler-snapshots.sh`; `bridge-subscriber.js` is runtime-critical
 
-**QUALITY:** RED — Baseline review filed 2026-05-12 by Silas.
-- Passing: workflow-engine 62/62, pulse 57/57, chorus-sdk 45/45, api 1393/1394 (1 smoke failure)
-- Failing: clearing 53 tests (MODULE_NOT_FOUND — server won't start), cards 24 suites (chorus-sdk dist unlinked)
-- Lint: 137 errors / 31 warnings across workspace (floor is --max-warnings 10)
-- Coverage: chorus-sdk below floor on stmts (76.85% vs 80%) and funcs (59.25% vs 75%)
+**QUALITY:** RED — last review filed 2026-05-12 (4 days stale, no Kade review filed yesterday).
+- Tests: 1394 api (1 fail: smoke-pull-card-real), 62/62 workflow-engine, 57/57 pulse, 45/45 chorus-sdk
+- Failing: 53 clearing (MODULE_NOT_FOUND), 24 card suites (chorus-sdk dist unlinked)
+- Lint: 137 errors / 31 warnings — RED (floor: --max-warnings 10)
+- Coverage: chorus-sdk stmts 76.85% (floor 80%), funcs 59.25% (floor 75%)
 
-**YESTERDAY (May 12–13):**
-- Shipped: #2910 bouncer auto-send via pickup file + model contract (Wren)
-- Shipped: #2911 chorus_acp.alreadyMerged now uses merge-base not gh-pr-view state (Kade)
-- Shipped: #2910 demo-evidence consolidation — single source via client.comments (Kade)
-- Shipped: #2546 (Kade)
-- Silas filed baseline quality review (first run, no prior delta)
+**YESTERDAY (May 15):** High-velocity day — 11 cards shipped.
+- Silas: #2605 Infrastructure Domain service design + service-lifecycle (significant design artifact); #2927 deploy-daemon-card.sh generalized for multi-unit/per-role; #2939/#2933 building-pipeline cleanup
+- Kade: #2943 branch-close-fail typed emission + idempotent cleanup; #2941/#2931/#2930/#2926 acp; #2916 dead DEPLOY_ROLE_PREPUSH_OVERRIDE refs removed
+- Wren: #2928/#2924 acp; filed ops review
+- Key decision: deploy-daemon-card.sh now handles multi-unit deploys (architectural shift)
 
 **TODAY — recommended priorities:**
-1. Lint fix (Kade or Silas): `npm run lint:fix` clears ~137 quote errors automatically; resolve 4 step_defs warnings manually
-2. cards build: add chorus-sdk to tsconfig paths or install as dep — unblocks 24 suites and coverage collection
-3. clearing startup: diagnose MODULE_NOT_FOUND — likely chorus-sdk or workflow-engine dist not linked; fix unblocks 53 tests
-4. Silas: file current ops review before session close
-5. chorus-sdk function coverage: 59.25% vs 75% floor — needs targeted test adds (Kade's domain)
+1. Kade: file quality review for 2026-05-16 — 4-day gap is flying blind
+2. Kade or Silas: `npm run lint:fix` → clears ~137 quote errors automatically; hand-fix 4 step_defs warnings
+3. Silas: file CSC `/tmp/` sweep card; `bridge-subscriber.js` is P1 (runtime path)
+4. Kade: refresh `current-work.md` — 27 days stale
+5. Kade/Silas: update `domain-context-chorus.md` + `domain-context-infrastructure.md` before tonight
 
 **BLOCKERS (needs Jeff's attention):**
-- Lint RED + clearing broken + cards broken = CI would fail on main if these packages were in scope; treat as pre-ship gates
-- Ops review missing: Silas hasn't filed one since 2026-03-29; flying blind on infra health
+- Lint RED + clearing/cards broken = CI would fail on main; treat as pre-pull gates
+- Quality review 4 days stale — no test health signal since May 12
+- Domain context 7-day breach tonight if not refreshed today
