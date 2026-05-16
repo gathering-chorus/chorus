@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus — Product / Step / Subproduct / Domain Tree</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .open { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.86em; }
+  pre.tree { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 16px 20px; margin: 14px 0; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.85em; line-height: 1.55; white-space: pre; overflow-x: auto; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  /* Force black node text on light backgrounds, robust to Mermaid's classDef/foreignObject quirks */
+  pre.mermaid foreignObject div,
+  pre.mermaid foreignObject span,
+  pre.mermaid foreignObject p,
+  pre.mermaid text,
+  pre.mermaid text tspan,
+  pre.mermaid .nodeLabel,
+  pre.mermaid .label { color: #000 !important; fill: #000 !important; font-family: Georgia, serif !important; }
+  pre.mermaid foreignObject div { line-height: 1.45; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Chorus <span>— Product / Step / Subproduct / Domain Tree</span></h1>
+<p class="date">Wren + Jeff · 2026-05-14 · in progress · intent-set mapping (not graph-derived)</p>
+
+<div class="frame">
+Structure: <strong>Chorus product → value-stream step → subproduct → domains</strong>. The five value-stream steps (Shaping, Designing, Directing, Building, Proving) hold subproducts; each subproduct holds the domains that carry its content. <code>?</code> marks an unresolved placement.
+</div>
+
+<h2>Tree</h2>
+<pre class="tree">Chorus (product)
+├─ SHAPING
+│  └─ Loom — roles, principles, policies, practices,
+│            skills (each its own mix: claude-code / mcp / gates / hooks), decisions, rcas
+├─ DESIGNING
+│  ├─ Athena — domains, services
+│  └─ Convergence — integrations
+├─ DIRECTING
+│  ├─ /chorus — memory, knowledge, search
+│  └─ The Clearing — messages, streams, spine, cards
+├─ BUILDING
+│  └─ Werk — pipelines, version-control, code, tests
+└─ PROVING
+   └─ Borg — builds, deploys, logs, properties, alerts-monitors,
+             security-trust, time, heralds, toolchain, infrastructure,
+             analytics?, metrics?</pre>
+
+<h2>Visual</h2>
+<pre class="mermaid">
+flowchart LR
+  C[Chorus — Product]
+  C --> S[SHAPING]
+  C --> D[DESIGNING]
+  C --> Di[DIRECTING]
+  C --> B[BUILDING]
+  C --> P[PROVING]
+  S --> Loom["Loom<br/>roles · principles · policies · practices<br/>skills · decisions · rcas"]
+  D --> Athena["Athena<br/>domains · services"]
+  D --> Conv["Convergence<br/>integrations"]
+  Di --> Chorus["/chorus<br/>memory · knowledge · search"]
+  Di --> Clearing["The Clearing<br/>messages · streams · spine · cards"]
+  B --> Werk["Werk<br/>pipelines · version-control · code · tests"]
+  P --> Borg["Borg<br/>builds · deploys · logs · properties<br/>alerts-monitors · security-trust · time<br/>heralds · toolchain · infrastructure<br/>analytics? · metrics?"]
+  classDef step fill:#dbeafe,stroke:#2563eb,color:#000;
+  classDef subp fill:#f1f5f9,stroke:#64748b,color:#000;
+  classDef root fill:#e2e8f0,stroke:#475569,color:#000;
+  class C root;
+  class S,D,Di,B,P step;
+  class Loom,Athena,Conv,Chorus,Clearing,Werk,Borg subp;
+</pre>
+
+<h2>Open</h2>
+<div class="open"><code>analytics?</code> and <code>metrics?</code> under Borg are unresolved. The customer-happiness conversation raised whether measurement of customer outcome belongs under <strong>Borg</strong> (PROVING — empirical measurement) or under <strong>Loom</strong> (SHAPING — operating-model memory, "is the product working for the customer"). The tree captured the question; it has not been settled.</div>
+
+<p class="footer">Chorus product tree · Wren + Jeff · 2026-05-14 · source: <code>designing/docs/chorus-product-tree.md</code></p>
+
+</body>
+</html>
