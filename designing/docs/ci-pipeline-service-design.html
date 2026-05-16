@@ -40,32 +40,95 @@
 <h1>CI/CD Pipeline <span>— Service Design</span></h1>
 <p class="date">Kade. Related: <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS</a> · <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build+deploy</a>.</p>
 
-<!-- ===== SUMMARY BLOCK — auto-inserted by chorus_design_refresh (#2900) =====
-     Fill in the {{PLACEHOLDER}} tokens, then re-run /design-refresh. -->
 <div class="summary-block">
   <h2>At a Glance</h2>
+  <p><code>act</code> is the local CI/CD orchestrator. Every step of the /werk pipeline is a <code>workflow_dispatch</code> job dispatched by act — from /pull to post-/acp build+deploy. The /werk/* commands are the developer interface; act is the engine beneath them.</p>
 
   <pre class="mermaid">
 flowchart LR
-  COMMIT["Commit to werk branch"] --> PRE["Pre-merge — 5 surfaces<br/>hooks plus branch-check plus push-guard"]
-  PRE --> ACP["acp — PR open and merge squash"]
-  ACP --> MAIN["origin/main"]
-  MAIN --> ACT["act — workflow_dispatch<br/>chorus-werk-sync to chorus-build to chorus-deploy"]
-  MAIN --> SCHED["GHA nightly — quality.yml drift detection"]
-  SCHED --> ALERT["ci-main-red alert if drift"]
+  DEV["Developer"] -->|"/werk/pull"| ACT["act<br/>(local orchestrator)"]
+  ACT -->|"job: pull"| PULL["chorus_pull_card<br/>werk branch off origin/main"]
+  DEV -->|"/werk/build"| ACT
+  ACT -->|"job: build"| BUILD["chorus-build<br/>compile + sign + hash"]
+  DEV -->|"/werk/deploy"| ACT
+  ACT -->|"job: deploy"| DEPLOY["chorus-deploy<br/>preview instance"]
+  DEV -->|"/werk/demo"| ACT
+  ACT -->|"job: demo"| DEMO["gate chain<br/>product/code/quality/arch/ops"]
+  DEV -->|"/werk/acp"| ACT
+  ACT -->|"job: acp"| ACP["chorus_acp<br/>commit + push + PR + merge"]
+  ACP -->|"release-trigger"| POSTMERGE["act post-merge<br/>sync → build → deploy → spine"]
   </pre>
 
   <table class="gap-and-next">
-    <thead><tr><th>Surface</th><th>What it owns</th><th>State</th></tr></thead>
+    <thead><tr><th>Command</th><th>act job</th><th>What it does</th><th>Owner</th></tr></thead>
     <tbody>
-      <tr><td>Pre-merge enforcement</td><td>5 surfaces (hooks 1–4 + quality rules) refusing bad commits before they leave the werk</td><td>Shipped</td></tr>
-      <tr><td>Post-merge orchestration</td><td><code>act</code> runs <code>building-pipeline.yml</code> via launchd kickstart; sequences chorus-werk-sync → chorus-build → chorus-deploy with typed-refusal per step</td><td>Shipped (#2933, #2939)</td></tr>
-      <tr><td>Drift detection</td><td>quality.yml nightly cron on origin/main; jest + cargo required, bats + clippy continue-on-error</td><td>Shipped (DEC-2525)</td></tr>
+      <tr><td><code>/werk/pull</code></td><td>pull</td><td>act dispatches job:pull → calls <code>chorus_pull_card</code> MCP. act owns the dispatch layer; VCS owns the MCP contract (validate AC + Experience, <code>chorus-werk add</code>, branch off origin/main, emit <code>card.pulled</code>). See <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a>.</td><td>Kade (VCS)</td></tr>
+      <tr><td><code>/werk/build</code></td><td>build</td><td>cargo build + sign + cdhash in werk (pre-/acp preview)</td><td>Silas (build+deploy)</td></tr>
+      <tr><td><code>/werk/deploy</code></td><td>deploy</td><td>Deploy built artifact to preview instance; emit <code>deploy.preview.completed</code></td><td>Silas (build+deploy)</td></tr>
+      <tr><td><code>/werk/demo</code></td><td>demo</td><td>Run gate chain (gate-product / gate-code / gate-quality / gate-arch / gate-ops)</td><td>All roles</td></tr>
+      <tr><td><code>/werk/acp</code></td><td>acp</td><td>commit → push → PR → merge → cards done → release-trigger → post-merge build pipeline</td><td>Kade (VCS)</td></tr>
     </tbody>
   </table>
 
-  <p class="invariants"><strong>Invariants:</strong> every change to <code>main</code> measured by the same gates regardless of pusher. Post-merge orchestration is sequential-fail-fast: a step's failure halts the chain. Trace continuity (#2931) — ACP commit trailers <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> propagate through act into build/deploy spine events so <code>chorus_logs_for_trace</code> returns the full chain.</p>
+  <p class="invariants"><strong>Invariants:</strong> every /werk/* command is an act job — typed refusals, spine events, and trace continuity are uniform across the pipeline. Post-merge build is sequential-fail-fast: a step's failure halts the chain. Trace propagates from /acp commit trailers (<code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code>) through build/deploy spine events — <code>chorus_logs_for_trace</code> returns the full arc from pull to deploy.</p>
 </div>
+
+<h2 id="werk-pipeline">/werk pipeline — act dispatch map</h2>
+
+<p><code>act</code> runs locally under the <code>com.chorus.building-pipeline</code> LaunchAgent. Each /werk/* command invokes <code>act workflow_dispatch --job &lt;name&gt;</code>. The VCS service design's "Whole-flow CI/CD pipeline" shows the same lifecycle from the version-control perspective; this doc shows the orchestration layer that sequences it.</p>
+
+<pre class="mermaid">
+sequenceDiagram
+  participant Dev
+  participant Act as act (orchestrator)
+  participant VCS
+  participant Werk
+  participant Gates
+  participant Build
+  participant Deploy
+  participant Spine
+
+  Dev->>Act: /werk/pull
+  Act->>VCS: job:pull → chorus_pull_card
+  VCS->>Werk: chorus-werk add (branch off origin/main)
+  Werk-->>Spine: card.pulled
+
+  Note over Werk: Role writes code + tests
+
+  Dev->>Act: /werk/build
+  Act->>Build: job:build → chorus-build (in werk)
+  Build-->>Spine: build.preview.completed + cdhash
+
+  Dev->>Act: /werk/deploy
+  Act->>Deploy: job:deploy → chorus-deploy (preview instance)
+  Deploy-->>Spine: deploy.preview.completed
+
+  Dev->>Act: /werk/demo
+  Act->>Gates: job:demo → gate chain (product/code/quality/arch/ops)
+  Gates-->>Spine: gate.*.passed
+
+  Dev->>Act: /werk/acp
+  Act->>VCS: job:acp → chorus_acp
+  VCS-->>Werk: chorus-werk remove
+  VCS-->>Spine: card.accepted
+  Act->>Act: release-trigger → launchctl kickstart com.chorus.building-pipeline
+  Act->>Build: chorus-werk-sync → chorus-build → chorus-deploy
+  Build-->>Spine: build.completed + cdhash
+  Deploy-->>Spine: binary.deployed + deploy.completed
+</pre>
+
+<h3>Segment ownership</h3>
+<table>
+<tr><th>Segment</th><th>Jobs</th><th>Owner</th><th>Service design</th></tr>
+<tr><td>Version control</td><td>pull, acp</td><td>Kade</td><td><a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a></td></tr>
+<tr><td>Build + Deploy</td><td>build, deploy, post-merge pipeline</td><td>Silas</td><td><a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build+Deploy service design</a></td></tr>
+<tr><td>Gates</td><td>demo</td><td>All roles</td><td>gate scripts in <code>skills/demo/gates/</code></td></tr>
+<tr><td>Orchestration</td><td>act dispatch, typed refusals, trace</td><td>Kade (CI)</td><td>this doc</td></tr>
+</table>
+
+<h3>The /deploy gap (current vs designed)</h3>
+<p>Today: <code>/werk/build</code> and <code>/werk/deploy</code> are not yet shipped as act jobs. The build+deploy pipeline runs only post-/acp. Jeff accepts before the feature is observable in a running instance.</p>
+<p>Designed (this doc): <code>/werk/build</code> + <code>/werk/deploy</code> run in the werk pre-/acp → Jeff sees the feature running → /acp promotes the verified artifact. No post-/acp rebuild needed. See Gaps.</p>
 
 
 <h2>Promise</h2>
@@ -165,7 +228,8 @@ Every change that reaches <code>main</code> is measured by the same gates regard
 flowchart TB
   subgraph LOCAL["Pre-Merge — runs locally before push"]
     direction TB
-    EDIT[engineer edits files] --> COMMIT[git-queue.sh commit]
+    PULL["/pull — chorus-werk add<br/>branch off origin/main"] --> EDIT[role writes code + tests]
+    EDIT --> COMMIT[git-queue.sh commit]
     COMMIT --> BC[branch-check<br/>refuses cross-role]
     BC --> PC[pre-commit hook<br/>tsc, tests, lint,<br/>dup-string, cog-complexity,<br/>secrets, oversize]
     PC --> PUSH[git-queue.sh push]
@@ -195,7 +259,8 @@ flowchart TB
 flowchart TB
   subgraph LOCAL["Pre-Merge (matured)"]
     direction TB
-    EDIT[engineer edits files] --> COMMIT[git-queue.sh commit]
+    PULL["/pull — chorus-werk add<br/>branch off origin/main"] --> EDIT[role writes code + tests]
+    EDIT --> COMMIT[git-queue.sh commit]
     COMMIT --> BC[branch-check + role-prefix]
     BC --> PC[pre-commit<br/>+ KNOWN_FAILS allowlist<br/>+ ratchet drift signal<br/>+ run-tests contract]
     PC --> PUSH[git-queue.sh push]
@@ -248,9 +313,22 @@ flowchart TB
 <tr><td><code>chorus-deploy</code></td><td>build+deploy</td><td>service-not-found | bootstrap-fail | probe-fail | rollback-needed</td><td><code>chorus-deploy --rollback</code> (restore dist.prev + kickstart)</td></tr>
 </table>
 <p>Sequential-fail-fast is implicit: a step's failure halts the chain, the next step never fires. The job-level concern (act's perspective) is the union of step refusals.</p>
+<p><strong>Deploy step preview contract (designed):</strong> <code>chorus-deploy</code> runs in the werk <em>before</em> <code>/acp</code> — Jeff observes the feature in a running preview instance before accepting. This is the step's defining contract, not a downstream concern. The refusal <code>probe-fail</code> encodes it: if the surface is not observable post-deploy, the step refuses before <code>/demo</code> proceeds. <em>Current state (gap): this pre-/acp step does not exist — deploy runs only post-/acp. See /deploy gap below.</em></p>
 
-<h3>Observability contract</h3>
+<h3 id="observability-contract">Observability contract</h3>
 <p>Every act-emitted event carries the trace_id from the commit trailer, joining the ACP arc to the build/deploy arc as one chain queryable via <code>chorus_logs_for_trace</code>. On failure, the typed refusal (above) emits as <code>build.failed</code> or <code>deploy.failed</code> with <code>result=fail</code> + <code>error=</code> + structured <code>step=</code> + <code>reason=</code> fields (the #2944 ERR/EXIT trap pattern). Idempotent re-run path (#2943): re-invoke <code>chorus_acp</code> on an accepted card with an orphan branch triggers the cleanup-only path, skipping commit/push/PR.</p>
+
+<p><strong>Four step characteristics</strong> — every step in the pipeline must satisfy all four for the fitness function below to be authorable. Current status from the build+deploy domain:</p>
+<table>
+<thead><tr><th>Characteristic</th><th>What it means</th><th>Status today</th></tr></thead>
+<tbody>
+<tr><td><strong>1. Invariant execution</strong></td><td>Each step refuses loudly when its preconditions don't hold. Refusal lives in substrate (hook / wrapper / typed taxonomy), not in a single shell script.</td><td><strong>Partial.</strong> <code>chorus-build</code> Step 1 (canonical sync) is shell-script invariant. A parallel deploy path that skips chorus-build wouldn't trip a hook — no <code>canonical_must_sync_before_build</code> hook exists.</td></tr>
+<tr><td><strong>2. Traceable logs tagged with card_id</strong></td><td>Every spine event from every step carries <code>card_id</code>. Pipeline never goes anonymous — even system-emitted events tie back to the card that produced them.</td><td><strong>Broken at the launchd boundary.</strong> /acp sets <code>CHORUS_CARD_ID</code> env but the plist doesn't inherit; the workflow doesn't read it. Pipeline events fire as <code>role=system</code> with no card_id. Cross-step correlation by card is unbuildable from current data.</td></tr>
+<tr><td><strong>3. Cross-step correlation on card_id</strong></td><td>Loki query "all events for card N" returns the full pipeline trace from /acp through deploy.completed. Joining by card_id, not timestamp adjacency.</td><td><strong>Half-broken.</strong> /acp slice events carry card_id. Pipeline slice events (<code>build.artifact.hashed</code>, <code>build.completed</code>, <code>binary.deployed</code>, <code>deploy.completed</code>) do not. Joining today requires commit SHA + timestamp triangulation.</td></tr>
+<tr><td><strong>4. Started/completed/failed pair per step</strong></td><td>Each step emits <code>&lt;step&gt;.started</code> AND (<code>&lt;step&gt;.completed</code> OR <code>&lt;step&gt;.failed</code>). An incomplete pipeline is detectable as "started without completed/failed."</td><td><strong>Missing.</strong> Most steps emit only on completion or failure. No <code>build.started</code>, no <code>install.started</code>. Detection of "broke at step N for card X" requires inference from absence.</td></tr>
+</tbody>
+</table>
+
 <p><strong>Fitness function:</strong> For every commit on <code>origin/main</code>, the ordered event sequence <code>pipeline.step.started</code> + <code>pipeline.step.completed</code> must appear three times (once per step: chorus-werk-sync, chorus-build, chorus-deploy), followed by <code>pipeline.completed</code> with <code>cdhash=binary.running</code> confirming the deployed artifact matches the running process. A card_id without this complete sequence within the expected window is a pipeline gap — queryable as: <code>chorus_logs_for_trace(trace_id)</code> where the returned sequence is missing any pair or the terminal <code>pipeline.completed</code> event. Expected window: 120s per step, 600s total pipeline; absence of <code>pipeline.completed</code> beyond 600s is a hung-pipeline alert trigger regardless of whether a failure event fired.</p>
 <p>Cross-reference: the <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a>'s "Whole-flow CI/CD pipeline" mermaid shows where this orchestration receives its inputs (ACP's release-trigger) and where it hands deploy state back to the spine.</p>
 
@@ -356,7 +434,7 @@ flowchart TB
   <li>Commits service design (<code>designing/docs/commits-service-design.md</code>) — pre-merge surface sibling</li>
 </ul>
 
-<p class="footer">Last refreshed 2026-04-30 — Kade. CI/CD service design with industry-standard vocabulary, five-surface pre-merge model, retirement gates + affordance-layer refusal patterns, plain-language rewrite per #2635 wave 1+2.</p>
+<p class="footer">Last refreshed 2026-05-16 — Kade. Added /werk pipeline section (pull → build → deploy → demo → acp) with per-step owner, input, output, handoff, and refusal taxonomy. Act-as-orchestrator section with dispatch/step/observability contracts. History strip; Implementation Plan forward-looking.</p>
 
 </body>
 </html>

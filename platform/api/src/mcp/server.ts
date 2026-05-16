@@ -924,6 +924,15 @@ const FORCE_BRANCH_FLAG = '--force-branch';
 const FORCE_WITH_LEASE_FLAG = '--force-with-lease';
 const ALREADY_MERGED = 'already-merged';
 const STEP_PUSH = 'push';
+// Step-name constants — extracted to satisfy sonarjs/no-duplicate-string (threshold 5).
+const STEP_WERK_CLOSE = 'werk-close';
+const STEP_WERK_PREFLIGHT = 'werk-preflight';
+const STEP_CARDS_MOVE = 'cards-move';
+const STEP_ROLE_STATE = 'role-state';
+// Script / directory name used in path.join across pull, acp, and unpull flows.
+const CHORUS_WERK = 'chorus-werk';
+// Spine event emitted by all three athena query tools.
+const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 
 interface AcpArgs {
   role: 'kade' | 'wren' | 'silas';
@@ -1003,7 +1012,7 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
 
   return (role: 'kade' | 'wren' | 'silas'): string => {
     // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
-    const werkBase = path.join(path.dirname(canonicalRoot), 'chorus-werk');
+    const werkBase = path.join(path.dirname(canonicalRoot), CHORUS_WERK);
     let matches: string[] = [];
     try {
       matches = fs.readdirSync(werkBase, { withFileTypes: true })
@@ -1021,6 +1030,7 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
   };
 }
 
+// cog-override: commit orchestration handles multiple typed-refusal branches — structurally complex
 async function executeCommit(
   args: CommitArgs,
   boardReader: BoardReader,
@@ -1261,7 +1271,7 @@ async function executeAcp(
     const werkBase = process.env.CHORUS_WERK_BASE
       ?? acpPathBoot.join(
         acpPathBoot.dirname(process.env.CHORUS_ROOT ?? '/Users/jeffbridwell/CascadeProjects/chorus'),
-        'chorus-werk'
+        CHORUS_WERK
       );
     const cardWerk = acpPathBoot.join(werkBase, `${role}-${args.card_id}`);
     if (acpFsBoot.existsSync(cardWerk)) {
@@ -1412,11 +1422,11 @@ async function executeAcp(
 
       if (remoteHasOrphan) {
         emit('chorus_acp.idempotent-cleanup.detected', { role, card_id: cardId, branch: expectedBranch });
-        stepEmit('werk-close', 'started');
+        stepEmit(STEP_WERK_CLOSE, 'started');
         try {
-          const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+          const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
           await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
-          stepEmit('werk-close', 'completed', { branch_closed: true, idempotent_cleanup: true });
+          stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true, idempotent_cleanup: true });
           emit('chorus_acp.completed', { role, card_id: cardId, sha: 'idempotent-cleanup', pr_url: 'idempotent-cleanup', branch_closed: true });
           return {
             content: [
@@ -1425,11 +1435,11 @@ async function executeAcp(
           };
         } catch (err) {
           const stderr = extractStderr(err);
-          stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200), idempotent_cleanup: true });
+          stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200), idempotent_cleanup: true });
           emit(CHORUS_ACP_REFUSED, {
             role,
             card_id: cardId,
-            step: 'werk-close',
+            step: STEP_WERK_CLOSE,
             reason: 'branch-close-fail',
             detail: stderr.slice(0, 500),
             recoverable: true,
@@ -1584,16 +1594,16 @@ async function executeAcp(
   // dashboards/observability/operators; it does not break the contract.
   let branchClosed = false;
   if (cardId !== null) {
-    stepEmit('werk-close', 'started');
+    stepEmit(STEP_WERK_CLOSE, 'started');
     try {
-      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
       await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
       branchClosed = true;
-      stepEmit('werk-close', 'completed', { branch_closed: true });
+      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
     } catch (err) {
       // Non-fatal — branch close is hygiene; the transaction is already complete.
       const stderr = extractStderr(err);
-      stepEmit('werk-close', 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
+      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
       // #2943 — typed refusal signal (non-throwing). Mirrors the shape of
       // other CHORUS_ACP_REFUSED emits so callers handling refusal taxonomy
       // see the case. To recover: re-run /acp; the idempotent path above
@@ -1601,7 +1611,7 @@ async function executeAcp(
       emit(CHORUS_ACP_REFUSED, {
         role,
         card_id: cardId,
-        step: 'werk-close',
+        step: STEP_WERK_CLOSE,
         reason: 'branch-close-fail',
         detail: stderr.slice(0, 500),
         recoverable: true,
@@ -1725,16 +1735,16 @@ async function executePullCard(
   // false-refuse if canonical happened to be dirty).
 
   // Step 2 — cards move WIP. Idempotent on already-WIP via cards CLI's own check.
-  stepEmit('cards-move', 'started');
+  stepEmit(STEP_CARDS_MOVE, 'started');
   try {
     await execFileAsync(cardsPath, ['move', String(cardId), 'WIP'], { env, timeout: 15_000 });
-    stepEmit('cards-move', 'completed');
+    stepEmit(STEP_CARDS_MOVE, 'completed');
   } catch (err) {
     const stderr = extractStderr(err);
     if (!/already.*WIP|already in WIP/i.test(stderr)) {
-      refuse('cards-move', 'move-fail', stderr);
+      refuse(STEP_CARDS_MOVE, 'move-fail', stderr);
     }
-    stepEmit('cards-move', 'completed', { idempotent: true });
+    stepEmit(STEP_CARDS_MOVE, 'completed', { idempotent: true });
   }
 
   // Step 3 — chorus-werk add: create the card's ephemeral worktree at
@@ -1742,7 +1752,7 @@ async function executePullCard(
   // origin/main. Idempotent — a re-pull of the same card is a no-op.
   stepEmit('werk-add', 'started', { branch });
   try {
-    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
     await execFileAsync(chorusWerkPath, ['add', role, String(cardId)], { env, timeout: 30_000 });
     stepEmit('werk-add', 'completed', { branch });
   } catch (err) {
@@ -1750,14 +1760,14 @@ async function executePullCard(
   }
 
   // Step 4 — role-state declare building.
-  stepEmit('role-state', 'started');
+  stepEmit(STEP_ROLE_STATE, 'started');
   try {
-    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', 'role-state');
+    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', STEP_ROLE_STATE);
     await execFileAsync(roleStatePath, [role, 'building'], { env, timeout: 10_000 });
-    stepEmit('role-state', 'completed');
+    stepEmit(STEP_ROLE_STATE, 'completed');
   } catch {
     // Non-fatal — board state is already updated; role-state is a session-attention hint.
-    stepEmit('role-state', 'completed', { warning: 'role-state declare failed (non-fatal)' });
+    stepEmit(STEP_ROLE_STATE, 'completed', { warning: 'role-state declare failed (non-fatal)' });
   }
 
   // Step 5 — spine event card.pulled.
@@ -1775,6 +1785,7 @@ async function executePullCard(
 // Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
 // uncommitted work. Uses chorus-werk remove to tear down the card's
 // ephemeral worktree + branch + emit card.branch.closed (#2913).
+// cog-override: unpull teardown handles multiple failure modes across werk + board + branch — structurally complex
 async function executeUnpullCard(
   args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
   emit: SpineEmitter,
@@ -1840,36 +1851,36 @@ async function executeUnpullCard(
   // work — `chorus-werk remove` also refuses dirty, this surfaces it earlier
   // with a typed reason). #2913: resolveWorkingTree returns the single
   // chorus-werk/<role>-<card>/ match when the role has one card in flight.
-  stepEmit('werk-preflight', 'started');
+  stepEmit(STEP_WERK_PREFLIGHT, 'started');
   if (!fsExists(repoRoot)) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path does not exist: ${repoRoot} — the card's werk may already be removed`);
+    refuse(STEP_WERK_PREFLIGHT, 'werk-not-initialized', `werk path does not exist: ${repoRoot} — the card's werk may already be removed`);
   }
   if (!fsExists(path.join(repoRoot, '.git'))) {
-    refuse('werk-preflight', 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot}`);
+    refuse(STEP_WERK_PREFLIGHT, 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot}`);
   }
   let dirty = '';
   try {
     const r = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
     dirty = r.stdout;
   } catch (err) {
-    refuse('werk-preflight', 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
+    refuse(STEP_WERK_PREFLIGHT, 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
   }
   if (dirty.trim().length > 0) {
-    refuse('werk-preflight', 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
+    refuse(STEP_WERK_PREFLIGHT, 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
   }
-  stepEmit('werk-preflight', 'completed');
+  stepEmit(STEP_WERK_PREFLIGHT, 'completed');
 
   // Step 3 — cards move <id> Next.
-  stepEmit('cards-move', 'started');
+  stepEmit(STEP_CARDS_MOVE, 'started');
   try {
     await execFileAsync(cardsPath, ['move', String(cardId), 'Next'], { env, timeout: 15_000 });
-    stepEmit('cards-move', 'completed');
+    stepEmit(STEP_CARDS_MOVE, 'completed');
   } catch (err) {
     const stderr = extractStderr(err);
     if (!/already.*Next|already in Next/i.test(stderr)) {
-      refuse('cards-move', 'move-fail', stderr);
+      refuse(STEP_CARDS_MOVE, 'move-fail', stderr);
     }
-    stepEmit('cards-move', 'completed', { idempotent: true });
+    stepEmit(STEP_CARDS_MOVE, 'completed', { idempotent: true });
   }
 
   // Step 4 — chorus-werk remove <role> <card_id>. #2913 ephemeral model:
@@ -1879,32 +1890,32 @@ async function executeUnpullCard(
   // is belt-and-suspenders. There is no done-state check on `remove` (the
   // old `close --no-done-check` flag is gone): remove is not gated on card
   // status, it just refuses to drop uncommitted work.
-  stepEmit('werk-close', 'started');
+  stepEmit(STEP_WERK_CLOSE, 'started');
   let branchClosed = false;
   try {
-    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', 'chorus-werk');
+    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
     await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
     branchClosed = true;
-    stepEmit('werk-close', 'completed', { branch_closed: true });
+    stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
   } catch (err) {
     const stderr = extractStderr(err);
     if (/already removed/i.test(stderr)) {
       // Idempotent: worktree + branch were already torn down.
       branchClosed = true;
-      stepEmit('werk-close', 'completed', { idempotent: true });
+      stepEmit(STEP_WERK_CLOSE, 'completed', { idempotent: true });
     } else {
-      refuse('werk-close', 'branch-close-fail', stderr);
+      refuse(STEP_WERK_CLOSE, 'branch-close-fail', stderr);
     }
   }
 
   // Step 5 — role-state idle (best-effort; non-fatal).
-  stepEmit('role-state', 'started');
+  stepEmit(STEP_ROLE_STATE, 'started');
   try {
-    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', 'role-state');
+    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', STEP_ROLE_STATE);
     await execFileAsync(roleStatePath, [role, 'idle'], { env, timeout: 10_000 });
-    stepEmit('role-state', 'completed');
+    stepEmit(STEP_ROLE_STATE, 'completed');
   } catch {
-    stepEmit('role-state', 'completed', { warning: 'role-state idle failed (non-fatal)' });
+    stepEmit(STEP_ROLE_STATE, 'completed', { warning: 'role-state idle failed (non-fatal)' });
   }
 
   // Step 6 — spine event card.unpulled.
@@ -2712,11 +2723,11 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         try {
           const tree = athenaLoadTree();
-          emitSpineEvent('athena.tree.queried', { tool: 'chorus_tree_get', from, ok: true });
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, { tool: 'chorus_tree_get', from, ok: true });
           return { content: [{ type: 'text' as const, text: JSON.stringify(tree) }] };
         } catch (err) {
           const reason = (err as Error).message.includes('ENOENT') ? 'tree-not-found' : 'schema-violation';
-          emitSpineEvent('athena.tree.queried', {
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
             tool: 'chorus_tree_get',
             from,
             ok: false,
@@ -2737,7 +2748,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           const tree = athenaLoadTree();
           const result = athenaLookupOwnership(tree, parsed.data.iri);
           if (!result) {
-            emitSpineEvent('athena.tree.queried', {
+            emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
               tool: 'chorus_ownership_lookup',
               from,
               ok: false,
@@ -2748,11 +2759,11 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
               content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason: 'not-found', iri: parsed.data.iri }) }],
             };
           }
-          emitSpineEvent('athena.tree.queried', { tool: 'chorus_ownership_lookup', from, ok: true, iri: parsed.data.iri });
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, { tool: 'chorus_ownership_lookup', from, ok: true, iri: parsed.data.iri });
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
         } catch (err) {
           const reason = 'schema-violation';
-          emitSpineEvent('athena.tree.queried', {
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
             tool: 'chorus_ownership_lookup',
             from,
             ok: false,
@@ -2773,7 +2784,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           const tree = athenaLoadTree();
           const result = athenaComputeBlastRadius(tree, parsed.data.iri);
           if (!result) {
-            emitSpineEvent('athena.tree.queried', {
+            emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
               tool: 'chorus_blast_radius',
               from,
               ok: false,
@@ -2784,7 +2795,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
               content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason: 'not-found', iri: parsed.data.iri }) }],
             };
           }
-          emitSpineEvent('athena.tree.queried', {
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
             tool: 'chorus_blast_radius',
             from,
             ok: true,
@@ -2794,7 +2805,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
         } catch (err) {
           const reason = 'schema-violation';
-          emitSpineEvent('athena.tree.queried', {
+          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
             tool: 'chorus_blast_radius',
             from,
             ok: false,

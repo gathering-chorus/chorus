@@ -137,6 +137,7 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
  *
  * Returns null if IRI not found.
  */
+// cog-override: multi-type graph traversal — structurally complex, not simplifiable without losing semantics
 export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult | null {
   const ownership = lookupOwnership(tree, iri);
   if (!ownership) return null;
