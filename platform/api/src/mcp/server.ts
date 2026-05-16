@@ -345,6 +345,51 @@ const NUDGE_TOOL_DEF = {
   },
 } as const;
 
+// #2605 — service-lifecycle MCP tool defs. 6 per-verb tools wrapping
+// agent-state.sh. Pattern matches chorus_acp/chorus_pull_card/chorus_commit
+// shape (one tool = one verb = one typed-refusal taxonomy).
+const ServiceLifecycleInput = z.object({
+  service: z.string().min(1).describe('Service or crate name (e.g. chorus-api, chorus-hooks, com.chorus.api)'),
+});
+type ServiceVerb = 'status' | 'start' | 'stop' | 'restart' | 'deploy' | 'rollback';
+const SERVICE_LIFECYCLE_VERBS: ReadonlyArray<ServiceVerb> = ['status', 'start', 'stop', 'restart', 'deploy', 'rollback'];
+
+const SERVICE_STATUS_TOOL_DEF = {
+  name: 'chorus_service_status',
+  description: 'Use this to read the current launchd state of a chorus service — PID, exit code, running cdhash. Wraps `agent-state.sh status <svc>`. Refusal taxonomy: service-not-found | label-resolve-fail. Read-only verb, open to any role. Do NOT use to mutate state (start/stop/restart/deploy/rollback are write verbs) or to query historical lifecycle events (chorus_logs_for_card is the trace surface).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Service or crate name (e.g. chorus-api, chorus-hooks, com.chorus.api)' } }, required: ['service'] },
+} as const;
+
+const SERVICE_START_TOOL_DEF = {
+  name: 'chorus_service_start',
+  description: 'Use this to start a chorus service that is currently stopped — restores a daemon to running state, emits paired service.start.{started,completed,failed} for trace. Wraps `agent-state.sh start <svc>`. Refusal taxonomy: service-not-found | already-running | bootstrap-fail. Write verb gated to silas by default (DEC-022). Do NOT use to recover from a crash (launchd KeepAlive auto-restarts) or to redeploy a new binary (chorus_service_deploy is the correct verb).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Service name' } }, required: ['service'] },
+} as const;
+
+const SERVICE_STOP_TOOL_DEF = {
+  name: 'chorus_service_stop',
+  description: 'Use this to deliberately stop a chorus service — bootout the launchd job. Emits paired service.stop.{started,completed,failed}. Wraps `agent-state.sh stop <svc>`. Refusal taxonomy: service-not-found | already-stopped | bootout-fail. Write verb gated to silas. Do NOT use to kill a hung process (launchctl kickstart -k is the right primitive for restart) or as a step in a deploy (chorus_service_deploy handles the kickstart internally).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Service name' } }, required: ['service'] },
+} as const;
+
+const SERVICE_RESTART_TOOL_DEF = {
+  name: 'chorus_service_restart',
+  description: 'Use this to restart a chorus service while preserving the installed binary — stop then start, cdhash check across the transition. Emits paired service.restart.{started,completed,failed} plus service.verify.divergence on cdhash change. Wraps `agent-state.sh restart <svc>`. Refusal taxonomy: service-not-found | kickstart-fail | verify-fail. Write verb gated to silas. Do NOT use to pick up a newly-installed binary (use chorus_service_deploy which builds + installs + verifies in one flow).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Service name' } }, required: ['service'] },
+} as const;
+
+const SERVICE_DEPLOY_TOOL_DEF = {
+  name: 'chorus_service_deploy',
+  description: 'Use this to deploy a chorus crate end-to-end: chorus-deploy (build + install) + launchctl kickstart + cdhash verify in one atomic flow. Emits paired service.deploy.{started,completed,failed}. Wraps `agent-state.sh deploy <crate>`. Refusal taxonomy: service-not-found | build-fail | kickstart-fail | cdhash-divergence | verify-timeout. Write verb with per-unit authority per #2927 (chorus-api → kade, chorus-hooks → silas, cards-sdk → wren). Do NOT use as part of /acp flow (chorus_acp triggers building-pipeline which deploys via launchd) or to install without rebuilding (no such variant exists — every deploy rebuilds from current werk state).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name (chorus-api, chorus-hooks, chorus-inject)' } }, required: ['service'] },
+} as const;
+
+const SERVICE_ROLLBACK_TOOL_DEF = {
+  name: 'chorus_service_rollback',
+  description: 'Use this to roll back a chorus crate to the prior cdhash from manifest — restore the previous binary, kickstart, verify. Emits paired service.rollback.{started,completed,failed}. Wraps `agent-state.sh rollback <crate>` which invokes `chorus-deploy <crate> --rollback`. Refusal taxonomy: service-not-found | no-prior-cdhash | restore-fail | kickstart-fail | verify-fail. Write verb with per-unit authority per #2927. Do NOT use as a substitute for `git revert` (rollback only restores binary; source state stays at HEAD) or to roll back further than one step (manifest holds only the immediately-prior cdhash today).',
+  inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name to roll back' } }, required: ['service'] },
+} as const;
+
 // #2652 (AC8) — cards MCP tool defs. Each tool is a thin wrapper around the
 // canonical cards bash CLI; MCP and bash callers run the same code path.
 const CARDS_ADD_TOOL_DEF = {
@@ -2086,6 +2131,44 @@ async function appendChorusLog(event: string, role: string, fields: Record<strin
   }
 }
 
+// #2605 — service-lifecycle executor. Wraps agent-state.sh; one function serves
+// all 6 per-verb tools.
+async function executeServiceLifecycle(
+  verb: ServiceVerb,
+  service: string,
+  role: string,
+  repoRoot: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const scriptPath = pathMod.join(repoRoot, 'platform', 'scripts', 'agent-state.sh');
+  const execFileP = promisify(execFile);
+  let stdout = '';
+  let stderr = '';
+  let exitCode = 0;
+  try {
+    const result = await execFileP('bash', [scriptPath, verb, service], {
+      env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role },
+      timeout: 60000,
+      maxBuffer: 1024 * 1024,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || '';
+    stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+  }
+  if (exitCode === 0) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, verb, service, role, stdout: stdout.trim(), stderr: stderr.trim() }) }],
+    };
+  }
+  const reasonMatch = (stderr + stdout).match(/reason=([a-z0-9-]+)/);
+  const reason = reasonMatch ? reasonMatch[1] : (exitCode === 2 ? 'usage-error' : 'work-fail');
+  throw new Error(`${verb}-fail — reason=${reason} exit=${exitCode}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 200) : ''}`);
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
@@ -2302,6 +2385,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       NUDGE_TOOL_DEF,
+      SERVICE_STATUS_TOOL_DEF,
+      SERVICE_START_TOOL_DEF,
+      SERVICE_STOP_TOOL_DEF,
+      SERVICE_RESTART_TOOL_DEF,
+      SERVICE_DEPLOY_TOOL_DEF,
+      SERVICE_ROLLBACK_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -2343,6 +2432,23 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // #2804 — executeNudge POSTs to pulse instead of spawning shim.
         const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
         return executeNudge(parsed.data, from, fetchImpl, pulseUrl);
+      }
+      case 'chorus_service_status':
+      case 'chorus_service_start':
+      case 'chorus_service_stop':
+      case 'chorus_service_restart':
+      case 'chorus_service_deploy':
+      case 'chorus_service_rollback': {
+        const parsed = ServiceLifecycleInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        const verb = req.params.name.replace('chorus_service_', '') as ServiceVerb;
+        if (!SERVICE_LIFECYCLE_VERBS.includes(verb)) {
+          throw new Error(`Unknown service verb: ${verb}`);
+        }
+        const canonicalRoot = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+        return executeServiceLifecycle(verb, parsed.data.service, from, canonicalRoot);
       }
       case 'chorus_principles_list':
         return executePrinciplesList(fetchImpl, apiBase, from);

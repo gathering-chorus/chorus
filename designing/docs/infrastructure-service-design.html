@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infrastructure — Service Design (chorus)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .summary-block { background: #eef2ff; border: 2px solid #3730a3; border-radius: 6px; padding: 16px 20px; margin: 16px 0 24px; }
+  .summary-block > h2 { margin-top: 0; color: #3730a3; border-bottom: 1px solid #c7d2fe; }
+  .summary-block .invariants { background: #fff; padding: 10px 14px; border-radius: 4px; margin: 8px 0; font-size: 0.9em; }
+  .summary-block .gap-and-next { font-size: 0.85em; }
+  .summary-block .gap-and-next th { background: #c7d2fe; color: #1e3a8a; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  .section-shipped { border-left: 4px solid #059669; padding-left: 12px; }
+  .section-named { border-left: 4px solid #d4d4d8; padding-left: 12px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Infrastructure <span>— Service Design (chorus-side)</span></h1>
+<p class="date">Authored 2026-05-11 (service-lifecycle slice). Reshaped 2026-05-12 into full Infrastructure Domain. Refreshed 2026-05-15 — Silas (#2605). Chorus-side Infrastructure: compute (Library + Bedroom), network (mesh + tunnel), storage (volumes + backup), services (catalog + lifecycle), observability, security, environment. Service Lifecycle is the first shipped + designed section; other sections are named with gaps surfaced, not fully designed — pain-driven follow-on cards file when surfaced.</p>
+
+<div class="summary-block">
+  <h2>At a Glance</h2>
+
+  <pre class="mermaid">
+flowchart LR
+  Operator[Role session / Jeff] --> MCP[chorus_service_&lt;verb&gt;<br/>per-verb MCP tools]
+  Jeff[Jeff direct] --> AS[agent-state.sh]
+  MCP --> AS
+  AS -->|"resolve label"| Plist[com.chorus.&lt;svc&gt; plist]
+  AS -->|"bootstrap / bootout / kickstart"| LaunchD[launchd]
+  AS -->|"chorus-deploy + cdhash verify"| Build[building-pipeline]
+  AS --> Spine[spine: service.&lt;verb&gt;.* events]
+  LaunchD -.->|"KeepAlive auto-restart"| LaunchD
+  </pre>
+
+  <table class="gap-and-next">
+    <thead><tr><th>Section</th><th>Status</th><th>Where it lives</th></tr></thead>
+    <tbody>
+      <tr><td>Service Lifecycle</td><td>SHIPPED + DESIGNED</td><td>agent-state.sh (8 verbs incl. deploy + rollback), 6 MCP tools, 6 spine events registered — this card #2605</td></tr>
+      <tr><td>Services (catalog)</td><td>SHIPPED, NAMED</td><td>42 chorus LaunchAgents (6 core daemons, 16 probes, 17 jobs, 2 watchers, 1 build trigger) — inventoried below</td></tr>
+      <tr><td>Compute</td><td>NAMED, gaps surfaced</td><td>Library (192.168.86.36) + Bedroom (192.168.86.242); inventory in gathering-side infrastructure-service-design.html</td></tr>
+      <tr><td>Network</td><td>NAMED, gaps surfaced</td><td>LAN mesh + Cloudflare tunnel + per-service endpoints (3340 chorus-api / 3000 app / etc.)</td></tr>
+      <tr><td>Storage</td><td>NAMED, gaps surfaced</td><td>Local volumes + Fuseki datastore + manifest history; no chorus-side backup design yet</td></tr>
+      <tr><td>Observability</td><td>NAMED, gaps surfaced</td><td>Loki logs + Prometheus metrics + spine events + Grafana dashboards exist; coverage uneven</td></tr>
+      <tr><td>Security</td><td>NAMED, gaps surfaced</td><td>TCC permissions + codesign/cdhash + write-scrubber hook; no formal threat model</td></tr>
+      <tr><td>Environment</td><td>NAMED, gaps surfaced</td><td>Single environment today; no dev/prod split, no staging concept</td></tr>
+    </tbody>
+  </table>
+
+  <p class="invariants"><strong>Invariants:</strong> agent-state.sh is the single lifecycle execution surface for chorus services. Role sessions invoke via per-verb MCP tools (typed refusals, role authorization); Jeff invokes via direct shell. Both paths land on the same agent-state.sh implementation — no second mechanism. All lifecycle transitions emit a paired service.&lt;verb&gt;.{started,completed,failed} spine event with PID + cdhash so "did the daemon pick up the new binary?" is a Loki query, not a triangulation. Infrastructure is a Domain in its own right; SubProducts (including the observability subproduct) depend-on it. The doc does NOT position Infrastructure underneath any SubProduct.</p>
+</div>
+
+<div class="promise">
+<strong>Designed target state.</strong> A role session calls <code>chorus_service_deploy({ crate: "chorus-hooks" })</code>; the MCP enforces role-authorization, invokes <code>agent-state.sh chorus-hooks deploy</code>, gets a typed-refusal-or-success response, and the spine event chain (service.deploy.started → chorus-deploy.completed → kickstart → service.deploy.completed) renders as one Loki query keyed by trace_id. Cdhash divergence at any point surfaces as service.deploy.failed with reason=cdhash-divergence — the "deployed but not running" failure mode becomes observable, not silent.
+</div>
+
+<h2>Overview</h2>
+<p>Chorus today runs on two physical machines (Library + Bedroom) with 42 LaunchAgents on the Library side (6 core daemons operators interact with directly; 16 scheduled probes; 17 scheduled jobs; 2 file watchers; 1 build-pipeline trigger). Services communicate over LAN mesh and a Cloudflare tunnel for remote access. State lives on local volumes (Fuseki triplestore, SQLite indices, Loki log store) with no formal backup design yet. Observability is split across Loki (logs), Prometheus (metrics), and the spine event stream — each useful, none authoritative for cross-stream questions.</p>
+
+<p>This doc names the eight Infrastructure sections in order — compute, network, storage, services, service-lifecycle, observability, security, environment. Service-lifecycle is the only "shipped + designed" section in this card; others are "named, gaps surfaced" — they identify what exists and what's missing without proposing fixes. Cards file when the pain surfaces, not preemptively.</p>
+
+<h2>Compute</h2>
+<div class="section-named">
+<p>Two physical machines: <strong>Library</strong> (192.168.86.36, primary — runs all chorus daemons, app, fuseki, observability stack) and <strong>Bedroom</strong> (192.168.86.242, secondary — photo harvester, thumbnail pipeline, dedicated GPU work). Library is the canonical chorus host; Bedroom-side services managed via SSH + Bedroom's own local <code>agent-state.sh</code>. Hard constraints C1-C7 documented in <code>infrastructure-constraints.md</code>.</p>
+<p><strong>Gaps:</strong> no formal compute capacity model; no migration plan if Library hardware fails; Bedroom-Library coordination is ad-hoc per task (#2107 etc.); no automated failover for chorus-api.</p>
+<p><em>References gathering-side <code>infrastructure-service-design.html</code> for the broader compute model — chorus-side adapts that shape.</em></p>
+</div>
+
+<h2>Network</h2>
+<div class="section-named">
+<p>LAN mesh between Library and Bedroom (direct 192.168.86.x). Cloudflare tunnel for remote Jeff access to localhost services (configured but not always active — gap surfaced 2026-05-15 alert). Per-service endpoint table maintained in <code>TEAM_PROTOCOL.md</code> (3340 chorus-api, 3000 app, 3030 fuseki, 3100 grafana, 3102 loki, 3470 bridge, 3475 messaging, 9090 prometheus). caddy-edge fronts 3000 with localhost-only TLS.</p>
+<p><strong>Gaps:</strong> tunnel uptime alert exists but has fired twice 2026-05-15 — recovery is manual. No formal endpoint registry separate from TEAM_PROTOCOL.md prose. mDNS-style service discovery absent.</p>
+</div>
+
+<h2>Storage</h2>
+<div class="section-named">
+<p>Local volumes only. Fuseki triplestore (Library) holds the canonical OWL graph (2,562 triples 2026-05-15) plus instance data. SQLite indices for chorus search (<code>~/.chorus/index.db</code>) and cards / activity. Loki log store retains last ~30d. Manifest history under <code>~/.chorus/manifest/</code> retains prior cdhashes for rollback (#2791 shipped).</p>
+<p><strong>Gaps:</strong> no formal backup design — Time Machine on Library is the implicit answer. No volume-capacity alerts beyond the daily disk-health probe. No documented restore procedure.</p>
+</div>
+
+<h2>Services</h2>
+<p>42 LaunchAgents on Library (chorus-side). Inventory by category:</p>
+<table>
+<thead><tr><th>Category</th><th>Count</th><th>Examples</th><th>Operator interaction</th></tr></thead>
+<tbody>
+<tr><td>Core daemon</td><td>6</td><td>com.chorus.api, com.chorus.hooks, com.chorus.clearing, com.chorus.caddy, com.chorus.session-watcher, com.chorus.jeff-input-monitor</td><td>Daily — start/stop/restart/deploy</td></tr>
+<tr><td>Scheduled probe</td><td>16</td><td>heartbeat-probe, clearing-probe, alert-runner, bedroom-health, deep-health, posture-capture, etc.</td><td>Rare — runs itself; lifecycle only on bug</td></tr>
+<tr><td>Scheduled job</td><td>17</td><td>daily-review-{quality,summary,ops}, nightly-suites, context-cache-{5min,hourly,daily,weekly}, tmp-reaper, alert-notifier, etc.</td><td>Rare — runs itself; lifecycle only on bug</td></tr>
+<tr><td>File watcher</td><td>2</td><td>com.chorus.crawler-index, com.chorus.mcp-config-herald</td><td>Rare</td></tr>
+<tr><td>Build/deploy pipeline</td><td>1</td><td>com.chorus.building-pipeline</td><td>Fires on /acp release-trigger (per #2774 / #2933)</td></tr>
+</tbody>
+</table>
+<p><strong>Gaps:</strong> 12 LaunchAgents drift in <code>~/Library/LaunchAgents/</code> without canonical repo source (heartbeat-probe, alert-runner, etc.) — separate hygiene card, not in scope here.</p>
+
+<h2>Service Lifecycle (SHIPPED + DESIGNED)</h2>
+<div class="section-shipped">
+
+<h3>As-Is — 2026-05-15</h3>
+<table>
+<thead><tr><th>Concern</th><th>Today</th><th>Gap closed by this card</th></tr></thead>
+<tbody>
+<tr><td>Lifecycle verbs</td><td><strong>agent-state.sh</strong> ships 8 verbs: status / start / stop / restart / deploy / rollback / orphans / health. Short-name resolution works (api → com.chorus.api). Header documents card ref, usage, exit codes.</td><td><strong>deploy + rollback</strong> shipped this card. Cdhash verify on deploy + restart paths.</td></tr>
+<tr><td>Deploy path</td><td><code>chorus-deploy &lt;crate&gt;</code> handles build-output → installed-bin → kickstart for the 3 Rust crates + chorus-api TS. Fires via building-pipeline on /acp release-trigger. <code>agent-state.sh deploy &lt;crate&gt;</code> wraps it with cdhash verify + paired spine emit.</td><td>Operator-direct equivalent for emergencies, with verify built in.</td></tr>
+<tr><td>Spine instrumentation</td><td><code>binary.deployed</code> + <code>deploy.completed</code> emit from chorus-deploy. <code>app.service.*</code> namespace (started/stopped/restarted/rolledback) emit from gathering's app-state.sh.</td><td><code>service.deploy.{started,completed,failed}</code> + <code>service.rollback.{started,completed,failed}</code> registered + emitted from chorus-side agent-state.sh. <code>service.{start,stop,restart}.{started,completed}</code> emitted for cross-verb coherence (registration deferred — emit shape stable).</td></tr>
+<tr><td>Deployed-equals-running</td><td>Nothing asserts the running daemon's cdhash matches the just-installed cdhash. <code>commit-health</code> catches drift after-the-fact, advisory only.</td><td>Built into <code>cmd_deploy</code>: compares <code>codesign -d --verbose=4</code> CDHash of running PID's binary against installed binary. Emits <code>service.deploy.failed reason=cdhash-divergence</code> on mismatch.</td></tr>
+</tbody>
+</table>
+
+<h3>MCP registration (per-verb tools)</h3>
+<p>Role sessions invoke lifecycle via per-verb MCP tools — mirrors <code>chorus_acp</code> / <code>chorus_pull_card</code> / <code>chorus_commit</code> pattern (one tool = one verb = one typed-refusal taxonomy). Jeff retains direct shell access; MCP layer is for role sessions where typed refusals and role authorization matter.</p>
+
+<table>
+<thead><tr><th>MCP tool</th><th>Wraps</th><th>Typed refusals</th><th>Role authorization</th></tr></thead>
+<tbody>
+<tr><td><code>chorus_service_status</code></td><td><code>agent-state.sh status</code></td><td>service-not-found | label-resolve-fail</td><td>Read — any role</td></tr>
+<tr><td><code>chorus_service_start</code></td><td><code>agent-state.sh start</code></td><td>service-not-found | already-running | bootstrap-fail</td><td>Write — silas only (DEC-022)</td></tr>
+<tr><td><code>chorus_service_stop</code></td><td><code>agent-state.sh stop</code></td><td>service-not-found | already-stopped | bootout-fail</td><td>Write — silas only</td></tr>
+<tr><td><code>chorus_service_restart</code></td><td><code>agent-state.sh restart</code></td><td>service-not-found | kickstart-fail | verify-fail</td><td>Write — silas only</td></tr>
+<tr><td><code>chorus_service_deploy</code></td><td><code>agent-state.sh deploy</code></td><td>service-not-found | build-fail | kickstart-fail | cdhash-divergence | verify-timeout</td><td>Write — owner-of-deploy-unit (#2927 distribution)</td></tr>
+<tr><td><code>chorus_service_rollback</code></td><td><code>agent-state.sh rollback</code></td><td>service-not-found | no-prior-cdhash | restore-fail | kickstart-fail | verify-fail</td><td>Write — owner-of-deploy-unit</td></tr>
+</tbody>
+</table>
+
+<p>Each tool returns <code>{ service, verb, pre_pid, post_pid, pre_cdhash, post_cdhash, role }</code> on success — same shape as the paired spine emit. Refusals carry the typed reason + a recovery hint. Tool descriptions name the full refusal taxonomy verbatim so the cardinal-six audit pattern (#2941) extends here on day one.</p>
+
+<p><strong>Authorization layer.</strong> Read verb (status) opens to all roles. Write verbs (start/stop/restart) gated to silas. Deploy/rollback follow per-unit domain ownership per #2927 — cards-sdk → wren, chorus-api → kade, chorus-hooks → silas. DEC-022 narrowed: LaunchAgent lifecycle is silas-owned by default; deploy/rollback delegate by unit.</p>
+
+<h3>Conventions — Chorus .sh house style</h3>
+<p>Every shell addition to <code>agent-state.sh</code> (and sibling scripts) follows the practices established in <code>chorus-build</code>, <code>chorus-deploy</code>, <code>chorus-bin-install</code>, <code>deploy-daemon-card.sh</code>. "Conventions" here = shell-script house style. Distinct from loom-practices (Wren-owned), which names framework-level disciplines (TDD / Actor-BDD / API-first). One layer narrower, written down so the next script doesn't drift.</p>
+
+<table>
+<thead><tr><th>Convention</th><th>What it means</th><th>Precedent</th></tr></thead>
+<tbody>
+<tr><td><strong>Strict mode</strong></td><td><code>set -euo pipefail</code> at top.</td><td><code>agent-state.sh:8</code>, <code>chorus-build:30</code></td></tr>
+<tr><td><strong>Typed exit codes</strong></td><td>Documented in header. <code>0</code> success, <code>1</code> work-failure, <code>2</code> usage error.</td><td><code>chorus-build:18-22</code>, <code>chorus-deploy:21-24</code></td></tr>
+<tr><td><strong>Paired spine emit per transition</strong></td><td>Every lifecycle verb emits <code>service.&lt;verb&gt;.started</code> at entry AND (<code>service.&lt;verb&gt;.completed</code> OR <code>service.&lt;verb&gt;.failed</code>) at exit.</td><td>This card (deploy + rollback fully registered; start/stop/restart emit, registration deferred)</td></tr>
+<tr><td><strong>Role attribution</strong></td><td><code>ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"</code>; pass to chorus-log. Never hardcode.</td><td><code>agent-state.sh:23</code>, <code>chorus-build:30</code></td></tr>
+<tr><td><strong>Loud failure with diagnostic + recovery hint</strong></td><td>On non-zero exit: what failed, current state observed, recovery command. No silent failure.</td><td><code>chorus-build:53-63</code> (canonical-sync abort)</td></tr>
+<tr><td><strong>Header comment</strong></td><td>Top-of-file block: card ref, intent, usage, exit codes, dependencies.</td><td><code>chorus-build:1-22</code>, <code>agent-state.sh:1-16</code></td></tr>
+<tr><td><strong>No silent skip</strong></td><td>Skip conditions emit <code>service.&lt;verb&gt;.noop</code> with reason. "Did nothing because correct" vs "did nothing because failed silently" must be distinguishable.</td><td>Pattern emerging — named here for consistency</td></tr>
+<tr><td><strong>Trace ID inheritance</strong></td><td>Read <code>CHORUS_TRACE_ID</code> from env first; fall back to parsing the <code>Chorus-Trace-Id</code> git trailer on HEAD (written by <code>chorus_acp</code>). Pass to chorus-log so verb invocations correlate to the originating /acp run. Env wins so explicit callers can override.</td><td><code>deploy-daemon-card.sh</code> (#2927 / #2931 fold), <code>chorus_acp</code> MCP (writes trailer)</td></tr>
+</tbody>
+</table>
+
+<h3>What ships in this card</h3>
+<ol>
+  <li><strong>agent-state.sh deploy verb.</strong> <code>agent-state.sh &lt;crate&gt; deploy</code> calls <code>chorus-deploy &lt;crate&gt;</code> then <code>launchctl kickstart -k</code> then verifies running PID's cdhash matches just-installed cdhash. Emits paired <code>service.deploy.{started,completed,failed}</code> with full payload.</li>
+  <li><strong>agent-state.sh rollback verb.</strong> Invokes <code>chorus-deploy &lt;crate&gt; --rollback</code>, kickstarts, verifies. Emits paired <code>service.rollback.{started,completed,failed}</code>.</li>
+  <li><strong>Cdhash verify in deploy + restart paths.</strong> <code>codesign -d --verbose=4</code> parsed for <code>CandidateCDHash</code> line. Mismatch between pre/post cdhash on deploy = <code>service.deploy.failed reason=cdhash-divergence</code>.</li>
+  <li><strong>6 spine events registered.</strong> <code>service.deploy.{started,completed,failed}</code> + <code>service.rollback.{started,completed,failed}</code> in <code>designing/schemas/spine-events.json</code>, vertebra=operating, source=chorus-events.</li>
+  <li><strong>6 per-verb MCP tools.</strong> <code>chorus_service_{status,start,stop,restart,deploy,rollback}</code> registered on chorus-api MCP server. Each tool wraps the corresponding agent-state.sh verb, enforces the role-authorization rule, returns typed-refusal taxonomy.</li>
+  <li><strong>Lifecycle test file.</strong> <code>proving/scripts/tests/test-agent-state-lifecycle.sh</code> covers: status on running service, deploy + cdhash verify success, deploy + cdhash mismatch failure (synthetic), rollback to prior cdhash, refusal on unknown service.</li>
+</ol>
+
+<h3>Open questions (handled in implementation, surfaced for future cards)</h3>
+<ul>
+  <li><strong>Concurrent operators.</strong> Two roles invoking <code>agent-state.sh com.chorus.api restart</code> simultaneously — current behavior is last-write-wins (no lockfile). Same shape as deploy-daemon-card.sh's per-card slot isolation gap. Future card adds <code>~/.chorus/locks/&lt;svc&gt;.lock</code> with stale-lock recovery.</li>
+  <li><strong>start/stop/restart spine registration.</strong> The script emits service.{start,stop,restart}.{started,completed} but the schema only registers deploy + rollback per this card's AC4. Follow-on card registers the remaining 6 verbs so cardinal-six audit (#2941) reaches full coverage.</li>
+</ul>
+</div>
+
+<h2>Observability</h2>
+<div class="section-named">
+<p>Three streams today: <strong>Loki</strong> (logs, port 3102, ~30d retention), <strong>Prometheus</strong> (metrics, port 9090, scraped from chorus-api + node-exporter + grafana), <strong>spine events</strong> (chorus-log → chorus-hooks daemon → SQLite + Loki shadow). Grafana dashboards (port 3100) read from all three. Frame: Loki = "what happened", Prometheus = "how much", spine = "what did the team intend".</p>
+<p><strong>Gaps:</strong> no single query that joins all three across a trace_id (#2931 work points toward this); cross-stream correlation lives in Jeff's head. Dashboard coverage uneven — some surfaces (cardinal-six, deploy pipeline) have dashboards, others (alert flow, harvester health) don't.</p>
+</div>
+
+<h2>Security</h2>
+<div class="section-named">
+<p>Three primitives in place: <strong>macOS TCC</strong> (AppleEvents permissions for chorus-hooks injection, granted per-cdhash), <strong>codesign + cdhash</strong> (every chorus binary signed with local "Chorus Local Signing" identity; cdhash tracked in <code>chorus-manifest</code>), <strong>write-scrubber hook</strong> (Rust PreToolUse hook blocks credential writes to shared files). No formal threat model document; no audit of "what could an adversarial agent do" beyond the hook coverage.</p>
+<p><strong>Gaps:</strong> no documented threat model; TCC permission grants drift across cdhash churn (mitigated by #2734 atomic install but not eliminated); no rotation policy for the local signing identity; no audit of MCP tool surface for write-amplification paths.</p>
+</div>
+
+<h2>Environment</h2>
+<div class="section-named">
+<p>Single environment today: production-on-Library. No dev/prod split. No staging concept. Werks (per-card ephemeral worktrees per #2913) provide build-time isolation but not runtime — they share the same Loki, Fuseki, LaunchAgent space as production.</p>
+<p><strong>Gaps:</strong> no path to test daemon changes without affecting production (chorus-api restart during a session affects every active MCP client — observed 2026-05-15). No staging chorus-api to dry-run MCP changes. <em>$CHORUS_DEMO_BIN / $CHORUS_BIN two-slot model</em> drafted in <code>build-and-deploy-service-design.html</code> Per-card slot isolation section addresses one dimension of this.</p>
+</div>
+
+<h2>As-Is — 2026-05-15</h2>
+<p>Per-section "as-is" content lives inside each section above. This top-level row is the cross-section roll-up: what holds across Infrastructure today, and what's load-bearing for the path-to-close.</p>
+<table>
+<thead><tr><th>Surface</th><th>Today</th><th>Load-bearing for</th></tr></thead>
+<tbody>
+<tr><td>Service lifecycle</td><td>agent-state.sh 8 verbs (incl. deploy/rollback per #2605) + 6 MCP tools + 6 registered spine events</td><td>Every daemon restart, deploy, rollback. Observable via Loki query on service.* events.</td></tr>
+<tr><td>Deploy primitive</td><td>chorus-deploy + chorus-bin-install + chorus-manifest (#2774, #2734, #2791); deploy-daemon-card.sh multi-unit + per-role (#2925, #2927)</td><td>All cardinal-six /acp → build → deploy → verify flows.</td></tr>
+<tr><td>Build pipeline</td><td>building-pipeline.yml act-local (#2774) fired by launchd via workflow_dispatch (#2933); plist canonical-sync'd (#2939)</td><td>Post-/acp release-trigger chain; AC6 of #2931 trace propagation depends on it.</td></tr>
+<tr><td>Observability</td><td>Loki + Prometheus + spine events (3 streams); chorus_logs_for_card joins by card_id; #2931 added trace_id chain coverage</td><td>Cardinal-six audit (#2941); cross-stream correlation for incident response.</td></tr>
+<tr><td>Compute/Network/Storage/Security/Environment</td><td>Library + Bedroom, LAN mesh, local volumes, TCC + codesign — all named with gaps, no card commitments here</td><td>Future Infrastructure work has a home in this doc.</td></tr>
+</tbody>
+</table>
+
+<h2>Path to close</h2>
+<p>This list contains only items with cards filed. The Gaps section below names open items without cards.</p>
+<ol>
+  <li>#2605 — this card. Service-lifecycle shipped + designed; other sections named with gaps surfaced.</li>
+  <li>#2927 (Done) — deploy-daemon-card.sh multi-unit + per-role distribution. Upstream of service-lifecycle's deploy verb.</li>
+  <li>#2933 (Done) — building-pipeline trigger fix. Upstream of /acp → kickstart → building-pipeline → /deploy chain that service-lifecycle's deploy verb leverages.</li>
+  <li>#2937 (filed) — chorus-deploy silent-fail + MCP session loss on kickstart. Both touch service-lifecycle reliability.</li>
+  <li>#2941 (in-flight) — cardinal-six test-coverage gap audit. Service-lifecycle MCP tools enter the audit scope on day one.</li>
+</ol>
+
+<h2>Gaps (open, no card yet)</h2>
+<p>Observations, not commitments. Cards file when pain surfaces.</p>
+<ul>
+  <li>Concurrent-operator lockfile under <code>~/.chorus/locks/&lt;svc&gt;.lock</code>. No observed friction yet — same shape as deploy-daemon-card.sh's concurrent-demo gap.</li>
+  <li>start/stop/restart spine event registration (this card emits but doesn't register them in schema).</li>
+  <li>12 drift LaunchAgents in <code>~/Library/LaunchAgents/</code> without canonical repo source.</li>
+  <li>Cross-stream observability query (Loki + Prometheus + spine joined by trace_id).</li>
+  <li>Threat model document for chorus binaries + MCP surface.</li>
+  <li>Backup / restore procedure for Fuseki + SQLite + manifest.</li>
+  <li>Cloudflare tunnel uptime → manual recovery; alert fires but no auto-restart.</li>
+  <li>Volume-capacity alerts beyond daily disk-health probe.</li>
+  <li>dev/prod environment split (or staging chorus-api for MCP dry-run).</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li>#2605 — this card (Infrastructure Domain service design + service-lifecycle as first shipped section)</li>
+  <li><code>platform/scripts/agent-state.sh</code> — pre-existing implementation extended this card</li>
+  <li><code>platform/scripts/chorus-deploy</code> — production deploy verb (#2774 shipped)</li>
+  <li><code>platform/scripts/chorus-manifest</code> — manifest schema + history (#2791 shipped)</li>
+  <li><code>build-and-deploy-service-design.html</code> — sibling design naming the build+deploy pipeline this script invokes</li>
+  <li><code>deploy-daemon-card.sh</code> — sanctioned multi-unit deploy wrapper (#2925 + #2927)</li>
+  <li><code>infrastructure-constraints.md</code> — C1-C7 hard constraints, two-machine topology</li>
+  <li><code>TEAM_PROTOCOL.md</code> — endpoint table, service registries</li>
+  <li>gathering-side <code>infrastructure-service-design.html</code> — compute/network/storage shape precedent</li>
+  <li>#2900 — canonical service-design template</li>
+  <li>Wren's <code>domain-model-asis-tobe.html</code> — recursive-Domain restructure that this doc honors</li>
+</ul>
+
+<div class="footer">
+Authored 2026-05-11 (service-lifecycle slice); reshaped 2026-05-12 into full Infrastructure Domain doc; refreshed 2026-05-15 — Silas (#2605). Service inventory and agent-state.sh line count reverified at each refresh. Sibling designs using the same template: build-and-deploy, ci-pipeline, version-control, athena-subproduct.
+</div>
+
+</body>
+</html>

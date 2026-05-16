@@ -1577,6 +1577,97 @@
         "keystrokes_30s": "Total keystrokes in window"
       }
     },
+    "service.deploy.completed": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh deploy verb succeeded: chorus-deploy + kickstart + cdhash verify all passed. running cdhash matches just-installed cdhash. #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label",
+        "crate": "Deploy unit name",
+        "pre_pid": "Running PID before deploy",
+        "post_pid": "Running PID after deploy",
+        "pre_cdhash": "Cdhash of binary before deploy",
+        "post_cdhash": "Cdhash of binary after deploy (matches running)"
+      }
+    },
+    "service.deploy.failed": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh deploy verb failed at one of: chorus-deploy invocation, kickstart, or cdhash verification (running PID does not match just-installed cdhash). #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label",
+        "crate": "Deploy unit name",
+        "step": "Where it died: chorus-deploy / kickstart / verify",
+        "reason": "Typed reason: build-fail / install-fail / kickstart-fail / cdhash-divergence / verify-timeout",
+        "exit_code": "Non-zero exit code from the failing step"
+      }
+    },
+    "service.deploy.started": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh deploy verb invoked. Emitted before chorus-deploy + kickstart + cdhash verify. #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label, e.g. com.chorus.api",
+        "crate": "Deploy unit name (chorus-api / chorus-hooks / cards-sdk)",
+        "pre_pid": "Running PID before deploy (empty if not running)",
+        "pre_cdhash": "Cdhash of currently-installed binary before deploy"
+      }
+    },
+    "service.rollback.completed": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh rollback verb succeeded. Running cdhash matches target prior cdhash. #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label",
+        "crate": "Deploy unit name",
+        "pre_pid": "Running PID before rollback",
+        "post_pid": "Running PID after rollback",
+        "pre_cdhash": "Cdhash that was rolled back",
+        "post_cdhash": "Cdhash after rollback (matches running, matches target)"
+      }
+    },
+    "service.rollback.failed": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh rollback verb failed at one of: prior-cdhash lookup, binary restore, kickstart, or cdhash verification. #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label",
+        "crate": "Deploy unit name",
+        "step": "Where it died: lookup / restore / kickstart / verify",
+        "reason": "Typed reason: no-prior-cdhash / restore-fail / kickstart-fail / cdhash-divergence",
+        "exit_code": "Non-zero exit code from the failing step"
+      }
+    },
+    "service.rollback.started": {
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "agent-state.sh rollback verb invoked. Reads chorus-manifest for prior cdhash, restores prior binary, kickstarts, verifies. #2605.",
+      "keys": [
+        "service"
+      ],
+      "fields": {
+        "service": "Full launchd label",
+        "crate": "Deploy unit name",
+        "pre_pid": "Running PID before rollback",
+        "pre_cdhash": "Cdhash that's about to be rolled back",
+        "target_cdhash": "Prior cdhash from manifest being restored"
+      }
+    },
     "session.context.compacted": {
       "vertebra": "directing",
       "legacy_name": "session_compact",

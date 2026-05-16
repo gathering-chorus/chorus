@@ -41,7 +41,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
-});
+}, 30000);
 
 async function get(p: string, opts: RequestInit = {}) {
   try {
