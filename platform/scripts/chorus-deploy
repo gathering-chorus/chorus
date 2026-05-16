@@ -35,7 +35,9 @@ CHORUS_LOG="$SCRIPT_DIR/chorus-log"
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 # Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
-CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+# `|| true` is required (#2937 AC1): on commits without #NNNN, `grep -oE` exits non-zero, and
+# `set -o pipefail` propagates that as the script's exit code, killing the deploy silently.
+CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
