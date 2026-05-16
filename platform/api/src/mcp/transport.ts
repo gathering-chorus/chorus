@@ -129,7 +129,12 @@ export function mountMcpEndpoint(app: Application): void {
 
     if (!entry) {
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
+        // #2946 — when client provided a session-id (resurrection path after
+        // chorus-api restart), the fresh transport must adopt that id so the
+        // synthesize-init binding matches the client's subsequent calls.
+        // Without this, the transport mints a new UUID, transport.sessionId
+        // ≠ client header, real request fails with "Server not initialized".
+        sessionIdGenerator: () => sessionId || randomUUID(),
         onsessioninitialized: (newId: string) => {
           sessions.set(newId, { transport, callerRole });
           process.stderr.write(
