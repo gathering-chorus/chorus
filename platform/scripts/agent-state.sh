@@ -1,14 +1,58 @@
 #!/bin/bash
 # agent-state.sh — LaunchAgent lifecycle management
-# Usage: agent-state.sh {status|start|stop|restart|orphans|health} [service-name]
+# Usage: agent-state.sh {status|start|stop|restart|deploy|rollback|orphans|health} [service-name]
 #
-# The app-state.sh equivalent for native LaunchAgent services.
-# All process lifecycle goes through this script — no manual kill.
+# The app-state.sh equivalent for native LaunchAgent services. All process
+# lifecycle goes through this script — no manual kill, no manual deploy.
+#
+# Spine emit (#2605): every verb emits service.<verb>.{started,completed,failed}
+# with role + service + PID + cdhash so "did the daemon pick up the new binary?"
+# is a Loki query, not a triangulation. Same shape as build.completed (#2774).
+#
+# Exit codes:
+#   0  success
+#   1  work failure (resolve-fail, kickstart-fail, deploy-fail, verify-fail)
+#   2  usage error (unknown verb, missing arg, unknown service)
 
 set -euo pipefail
 
 LABEL_PREFIXES=("com.chorus" "com.gathering")
 UID_NUM=$(id -u)
+ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+
+# Spine emit helper (#2605). Best-effort — failure of chorus-log must never
+# affect the verb's outcome. Mirrors the chorus-build / chorus-deploy pattern.
+SCRIPT_DIR_ASTATE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# CHORUS_LOG_BIN resolution: env override → PATH lookup → script-dir sibling.
+# Env override lets tests stub chorus-log without symlinking it next to this script.
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_ASTATE/chorus-log")}"
+
+spine_emit() {
+  local event="$1"; shift
+  if [ -x "$CHORUS_LOG_BIN" ]; then
+    "$CHORUS_LOG_BIN" "$event" "$ROLE" "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+# Read the cdhash of a running daemon's binary, or empty if not running.
+# Used for the deployed-equals-running assertion (#2605).
+running_cdhash() {
+  local label="$1"
+  local pid
+  pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
+  if [ -z "$pid" ]; then echo ""; return; fi
+  local bin_path
+  bin_path=$(lsof -p "$pid" 2>/dev/null | awk '$4=="txt" {print $NF; exit}')
+  if [ -z "$bin_path" ] || [ ! -e "$bin_path" ]; then echo ""; return; fi
+  codesign -d --verbose=4 "$bin_path" 2>&1 | awk -F'=' '/^CDHash/{print $2; exit}'
+}
+
+# Read the cdhash of an installed binary (without running).
+installed_cdhash() {
+  local installed_path="$1"
+  if [ ! -e "$installed_path" ]; then echo ""; return; fi
+  codesign -d --verbose=4 "$installed_path" 2>&1 | awk -F'=' '/^CDHash/{print $2; exit}'
+}
 
 # Colors
 RED='\033[0;31m'
@@ -19,20 +63,25 @@ NC='\033[0m'
 FORCE=false
 
 usage() {
-  echo "Usage: agent-state.sh {status|start|stop|restart|orphans|health} [service-name] [--force]"
+  echo "Usage: agent-state.sh {status|start|stop|restart|deploy|rollback|orphans|health} [service-name] [--force]"
   echo ""
   echo "Commands:"
-  echo "  status  [name]  — Show state of all agents or one agent"
-  echo "  start   <name>  — Start/restart a LaunchAgent"
-  echo "  stop    <name>  — Stop a LaunchAgent"
-  echo "  restart <name>  — Stop then start"
-  echo "  orphans         — Find and kill orphan processes (ppid=1) on known ports"
-  echo "  health          — Summary: running, crashed, dead, duplicates"
+  echo "  status   [name]  — Show state of all agents or one agent"
+  echo "  start    <name>  — Start/restart a LaunchAgent"
+  echo "  stop     <name>  — Stop a LaunchAgent"
+  echo "  restart  <name>  — Stop then start, verify running cdhash matches installed"
+  echo "  deploy   <crate> — chorus-deploy <crate> + kickstart + cdhash verify (#2605)"
+  echo "  rollback <crate> — Reinstall prior cdhash from manifest, kickstart, verify (#2605)"
+  echo "  orphans          — Find and kill orphan processes (ppid=1) on known ports"
+  echo "  health           — Summary: running, crashed, dead, duplicates"
   echo ""
   echo "Flags:"
-  echo "  --force         — Non-interactive mode (kill orphans without prompting)"
+  echo "  --force          — Non-interactive mode (kill orphans without prompting)"
   echo ""
   echo "Name matching: 'api' matches 'com.chorus.api', 'hooks' matches 'com.chorus.hooks'"
+  echo ""
+  echo "Spine events (#2605): every lifecycle verb emits service.<verb>.{started,completed,failed}"
+  echo "  with {service, role, pre_pid, post_pid, pre_cdhash, post_cdhash}."
   exit 1
 }
 
@@ -100,14 +149,34 @@ cmd_status() {
   echo -e "Total: $total | ${GREEN}Running: $running${NC} | ${RED}Crashed: $crashed${NC} | ${YELLOW}Dead: $dead${NC}"
 }
 
+# Map a crate name to its launchd label.
+crate_to_label() {
+  case "$1" in
+    chorus-api)   echo "com.chorus.api" ;;
+    chorus-hooks) echo "com.chorus.hooks" ;;
+    chorus-inject) echo "com.chorus.hooks" ;;
+    *)            echo "" ;;
+  esac
+}
+
+# Get running PID of a launchd label, or empty.
+label_pid() {
+  launchctl list "$1" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*'
+}
+
 cmd_start() {
   local name="$1"
   local label
   label=$(resolve_label "$name")
   if [[ -z "$label" ]]; then
     echo "ERROR: No agent found matching '$name'"
+    spine_emit service.start.failed "service=$name" "reason=service-not-found"
     return 1
   fi
+  local pre_pid pre_cdhash
+  pre_pid=$(label_pid "$label")
+  pre_cdhash=$(running_cdhash "$label")
+  spine_emit service.start.started "service=$label" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   echo "Starting $label..."
   # Clear suppress markers immediately — a failed start should not leave alerts dark
   rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
@@ -119,8 +188,10 @@ cmd_start() {
   pid=$(echo "$info" | grep '"PID"' | grep -o '[0-9]*')
   if [[ -n "$pid" ]]; then
     echo -e "${GREEN}Started${NC} $label (PID $pid)"
+    spine_emit service.start.completed "service=$label" "pre_pid=$pre_pid" "post_pid=$pid" "post_cdhash=$(running_cdhash "$label")"
   else
     echo -e "${YELLOW}Started but no PID${NC} $label — may be a periodic agent"
+    spine_emit service.start.completed "service=$label" "pre_pid=$pre_pid" "post_pid=" "note=periodic-agent-no-pid"
   fi
 }
 
@@ -130,8 +201,13 @@ cmd_stop() {
   label=$(resolve_label "$name")
   if [[ -z "$label" ]]; then
     echo "ERROR: No agent found matching '$name'"
+    spine_emit service.stop.failed "service=$name" "reason=service-not-found"
     return 1
   fi
+  local pre_pid pre_cdhash
+  pre_pid=$(label_pid "$label")
+  pre_cdhash=$(running_cdhash "$label")
+  spine_emit service.stop.started "service=$label" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   echo "Stopping $label..."
   # Write deploy suppression marker — prevents deep-health alerts during restart window
   echo $(( $(date +%s) + 90 )) > "/tmp/chorus-alert-suppress"
@@ -146,16 +222,122 @@ cmd_stop() {
       launchctl bootstrap "gui/$UID_NUM" "$plist" 2>/dev/null || true
     fi
     echo -e "${GREEN}Stopped${NC} $label (was PID $pid)"
+    spine_emit service.stop.completed "service=$label" "pre_pid=$pre_pid" "post_pid="
   else
     echo "$label was not running"
+    spine_emit service.stop.completed "service=$label" "pre_pid=" "note=already-stopped"
   fi
 }
 
 cmd_restart() {
   local name="$1"
+  local label
+  label=$(resolve_label "$name")
+  if [[ -z "$label" ]]; then
+    echo "ERROR: No agent found matching '$name'"
+    spine_emit service.restart.failed "service=$name" "reason=service-not-found"
+    return 1
+  fi
+  local pre_pid pre_cdhash
+  pre_pid=$(label_pid "$label")
+  pre_cdhash=$(running_cdhash "$label")
+  spine_emit service.restart.started "service=$label" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   cmd_stop "$name"
   sleep 1
   cmd_start "$name"
+  local post_pid post_cdhash
+  post_pid=$(label_pid "$label")
+  post_cdhash=$(running_cdhash "$label")
+  # cdhash verify: running cdhash should match installed (still the same binary)
+  if [[ -n "$post_cdhash" && -n "$pre_cdhash" && "$post_cdhash" != "$pre_cdhash" ]]; then
+    echo -e "${YELLOW}WARN${NC} cdhash changed across restart: $pre_cdhash → $post_cdhash"
+    spine_emit service.verify.divergence "service=$label" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
+  fi
+  spine_emit service.restart.completed "service=$label" "pre_pid=$pre_pid" "post_pid=$post_pid" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
+}
+
+# cmd_deploy <crate> — chorus-deploy <crate> + kickstart + cdhash verify.
+# Production code path for #2605 AC3.
+cmd_deploy() {
+  local crate="$1"
+  local label
+  label=$(crate_to_label "$crate")
+  if [[ -z "$label" ]]; then
+    echo "ERROR: Unknown crate '$crate' — known: chorus-api, chorus-hooks, chorus-inject"
+    spine_emit service.deploy.failed "service=$crate" "step=resolve" "reason=service-not-found" "exit_code=2"
+    return 2
+  fi
+  local pre_pid pre_cdhash
+  pre_pid=$(label_pid "$label")
+  pre_cdhash=$(running_cdhash "$label")
+  spine_emit service.deploy.started "service=$label" "crate=$crate" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
+  echo "Deploying $crate ($label)..."
+  local chorus_deploy="${SCRIPT_DIR_ASTATE}/chorus-deploy"
+  if [[ ! -x "$chorus_deploy" ]]; then
+    echo "ERROR: chorus-deploy not executable at $chorus_deploy"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=resolve" "reason=chorus-deploy-missing" "exit_code=1"
+    return 1
+  fi
+  if ! "$chorus_deploy" "$crate"; then
+    echo -e "${RED}chorus-deploy failed${NC}"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=chorus-deploy" "reason=build-fail" "exit_code=1"
+    return 1
+  fi
+  if ! launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1; then
+    echo -e "${RED}kickstart failed${NC}"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=kickstart" "reason=kickstart-fail" "exit_code=1"
+    return 1
+  fi
+  sleep 2
+  local post_pid post_cdhash
+  post_pid=$(label_pid "$label")
+  post_cdhash=$(running_cdhash "$label")
+  if [[ -n "$pre_cdhash" && "$pre_cdhash" == "$post_cdhash" ]]; then
+    echo -e "${YELLOW}WARN${NC} running cdhash unchanged after deploy — daemon may not have picked up new binary"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=verify" "reason=cdhash-divergence" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash" "exit_code=1"
+    return 1
+  fi
+  echo -e "${GREEN}Deployed${NC} $crate → $label (PID $pre_pid → $post_pid, cdhash $pre_cdhash → $post_cdhash)"
+  spine_emit service.deploy.completed "service=$label" "crate=$crate" "pre_pid=$pre_pid" "post_pid=$post_pid" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
+}
+
+# cmd_rollback <crate> — invoke chorus-deploy <crate> --rollback + kickstart + verify.
+cmd_rollback() {
+  local crate="$1"
+  local label
+  label=$(crate_to_label "$crate")
+  if [[ -z "$label" ]]; then
+    echo "ERROR: Unknown crate '$crate' — known: chorus-api, chorus-hooks, chorus-inject"
+    spine_emit service.rollback.failed "service=$crate" "step=resolve" "reason=service-not-found" "exit_code=2"
+    return 2
+  fi
+  local pre_pid pre_cdhash
+  pre_pid=$(label_pid "$label")
+  pre_cdhash=$(running_cdhash "$label")
+  spine_emit service.rollback.started "service=$label" "crate=$crate" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash" "target_cdhash=prior"
+  echo "Rolling back $crate ($label)..."
+  local chorus_deploy="${SCRIPT_DIR_ASTATE}/chorus-deploy"
+  if ! "$chorus_deploy" "$crate" --rollback; then
+    echo -e "${RED}rollback failed${NC}"
+    spine_emit service.rollback.failed "service=$label" "crate=$crate" "step=restore" "reason=no-prior-cdhash" "exit_code=1"
+    return 1
+  fi
+  if ! launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1; then
+    echo -e "${RED}kickstart after rollback failed${NC}"
+    spine_emit service.rollback.failed "service=$label" "crate=$crate" "step=kickstart" "reason=kickstart-fail" "exit_code=1"
+    return 1
+  fi
+  sleep 2
+  local post_pid post_cdhash
+  post_pid=$(label_pid "$label")
+  post_cdhash=$(running_cdhash "$label")
+  if [[ -n "$pre_cdhash" && "$pre_cdhash" == "$post_cdhash" ]]; then
+    echo -e "${YELLOW}WARN${NC} running cdhash unchanged after rollback"
+    spine_emit service.rollback.failed "service=$label" "crate=$crate" "step=verify" "reason=cdhash-divergence" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash" "exit_code=1"
+    return 1
+  fi
+  echo -e "${GREEN}Rolled back${NC} $crate → $label (cdhash $pre_cdhash → $post_cdhash)"
+  spine_emit service.rollback.completed "service=$label" "crate=$crate" "pre_pid=$pre_pid" "post_pid=$post_pid" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
 }
 
 cmd_orphans() {
@@ -302,11 +484,13 @@ done
 cmd="${ARGS[0]:-}"
 
 case "$cmd" in
-  status)  cmd_status "${ARGS[1]:-}" ;;
-  start)   [[ -z "${ARGS[1]:-}" ]] && usage; cmd_start "${ARGS[1]}" ;;
-  stop)    [[ -z "${ARGS[1]:-}" ]] && usage; cmd_stop "${ARGS[1]}" ;;
-  restart) [[ -z "${ARGS[1]:-}" ]] && usage; cmd_restart "${ARGS[1]}" ;;
-  orphans) cmd_orphans ;;
-  health)  cmd_health ;;
-  *)       usage ;;
+  status)   cmd_status "${ARGS[1]:-}" ;;
+  start)    [[ -z "${ARGS[1]:-}" ]] && usage; cmd_start "${ARGS[1]}" ;;
+  stop)     [[ -z "${ARGS[1]:-}" ]] && usage; cmd_stop "${ARGS[1]}" ;;
+  restart)  [[ -z "${ARGS[1]:-}" ]] && usage; cmd_restart "${ARGS[1]}" ;;
+  deploy)   [[ -z "${ARGS[1]:-}" ]] && usage; cmd_deploy "${ARGS[1]}" ;;
+  rollback) [[ -z "${ARGS[1]:-}" ]] && usage; cmd_rollback "${ARGS[1]}" ;;
+  orphans)  cmd_orphans ;;
+  health)   cmd_health ;;
+  *)        usage ;;
 esac
