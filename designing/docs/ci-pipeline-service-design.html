@@ -38,7 +38,7 @@
 <body>
 
 <h1>CI/CD Pipeline <span>— Service Design</span></h1>
-<p class="date">Kade, 2026-04-25 / refreshed 2026-04-30 (vocabulary cleanup, five-surface pre-merge layer, retirement gates, affordance-layer refusal — folded subagent review corrections).</p>
+<p class="date">Kade. Related: <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS</a> · <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build+deploy</a>.</p>
 
 <!-- ===== SUMMARY BLOCK — auto-inserted by chorus_design_refresh (#2900) =====
      Fill in the {{PLACEHOLDER}} tokens, then re-run /design-refresh. -->
@@ -47,22 +47,24 @@
 
   <pre class="mermaid">
 flowchart LR
-  A[Actor or input] --> B[Domain surface]
-  B --> C[Output or effect]
-  B --> D[Spine emit]
+  COMMIT["Commit to werk branch"] --> PRE["Pre-merge — 5 surfaces<br/>hooks plus branch-check plus push-guard"]
+  PRE --> ACP["acp — PR open and merge squash"]
+  ACP --> MAIN["origin/main"]
+  MAIN --> ACT["act — workflow_dispatch<br/>chorus-werk-sync to chorus-build to chorus-deploy"]
+  MAIN --> SCHED["GHA nightly — quality.yml drift detection"]
+  SCHED --> ALERT["ci-main-red alert if drift"]
   </pre>
-  <p style="font-size:0.8em;color:#999;font-style:italic;">Replace node labels above with the real actors / surfaces / outputs / spine events for this domain.</p>
 
   <table class="gap-and-next">
-    <thead><tr><th>Status</th><th>Where</th><th>Next</th></tr></thead>
+    <thead><tr><th>Surface</th><th>What it owns</th><th>State</th></tr></thead>
     <tbody>
-      <tr><td>{{STATUS_1}}</td><td>{{WHERE_1}}</td><td>{{NEXT_1}}</td></tr>
-      <tr><td>{{STATUS_2}}</td><td>{{WHERE_2}}</td><td>{{NEXT_2}}</td></tr>
-      <tr><td>{{STATUS_3}}</td><td>{{WHERE_3}}</td><td>{{NEXT_3}}</td></tr>
+      <tr><td>Pre-merge enforcement</td><td>5 surfaces (hooks 1–4 + quality rules) refusing bad commits before they leave the werk</td><td>Shipped</td></tr>
+      <tr><td>Post-merge orchestration</td><td><code>act</code> runs <code>building-pipeline.yml</code> via launchd kickstart; sequences chorus-werk-sync → chorus-build → chorus-deploy with typed-refusal per step</td><td>Shipped (#2933, #2939)</td></tr>
+      <tr><td>Drift detection</td><td>quality.yml nightly cron on origin/main; jest + cargo required, bats + clippy continue-on-error</td><td>Shipped (DEC-2525)</td></tr>
     </tbody>
   </table>
 
-  <p class="invariants"><strong>Invariants:</strong> {{INVARIANT_PARAGRAPH}}</p>
+  <p class="invariants"><strong>Invariants:</strong> every change to <code>main</code> measured by the same gates regardless of pusher. Post-merge orchestration is sequential-fail-fast: a step's failure halts the chain. Trace continuity (#2931) — ACP commit trailers <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> propagate through act into build/deploy spine events so <code>chorus_logs_for_trace</code> returns the full chain.</p>
 </div>
 
 
