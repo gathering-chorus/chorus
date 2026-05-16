@@ -463,8 +463,19 @@ do_push() {
   local force_with_lease=""
   local push_branch=""
   local delete_branch=""
+  local allow_stale_base_deletions="false"
   while [ $# -gt 0 ]; do
     case "${1:-}" in
+      --allow-stale-base-deletions)
+        # #2944: operator-knowing-what-they're-doing override for the stale-
+        # base silent-deletion refusal. Use ONLY when you genuinely intend
+        # to delete files that landed on origin/main between your branch-
+        # cut and your push (rare — a deliberate cross-branch deletion).
+        # The normal recovery is to rebase your branch onto current origin/
+        # main, which makes the deletions explicit in your commit history.
+        allow_stale_base_deletions="true"
+        shift
+        ;;
       --force-branch)
         force_flag="--force-branch"
         shift
@@ -515,6 +526,60 @@ do_push() {
   fi
   if ! check_branch "push" "$force_flag"; then
     exit 1
+  fi
+
+  # #2944 — stale-base silent-deletion guard.
+  #
+  # Bug class (three receipts 2026-05-15/16 — #2928, #2605-first-attempt,
+  # #2940): a long-lived werk branched from origin/main at /pull time stays
+  # on its original base while peers merge cards to main. When the role
+  # pushes, git's 3-way merge treats "file present in current main, absent
+  # in branch history" as a deletion — not a conflict, no merge marker.
+  # Recent peer-merged files silently disappear from the resulting tree.
+  #
+  # The guard: compute the set of files the branch's OWN commits touched
+  # (vs the merge-base with origin/main) and the set of files the push is
+  # about to delete (vs current origin/main). Any deletion NOT in the
+  # touched set is a stale-base ghost — refuse the push and tell the
+  # operator to rebase. Uses -M so renames don't look like deletions.
+  if [ "$allow_stale_base_deletions" != "true" ]; then
+    git -C "$REPO_ROOT" fetch --quiet origin main 9>&- 2>/dev/null || true
+    local _merge_base
+    _merge_base=$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || echo "")
+    if [ -n "$_merge_base" ]; then
+      local _branch_deletions _branch_touched _silent_deletions
+      _branch_deletions=$(git -C "$REPO_ROOT" diff -M --diff-filter=D --name-only "origin/main..HEAD" 2>/dev/null | sort -u)
+      _branch_touched=$(git -C "$REPO_ROOT" diff -M --name-only "$_merge_base..HEAD" 2>/dev/null | sort -u)
+      # Files this branch is "deleting" against current main that the
+      # branch's own commits never touched = stale-base ghosts.
+      _silent_deletions=$(comm -23 <(printf '%s\n' "$_branch_deletions") <(printf '%s\n' "$_branch_touched") | grep -v '^$' || true)
+      if [ -n "$_silent_deletions" ]; then
+        local _count
+        _count=$(printf '%s\n' "$_silent_deletions" | wc -l | tr -d ' ')
+        # Find recent commits on origin/main that introduced or modified
+        # these files — points the operator at the merges they'd silently
+        # revert.
+        local _likely_lost
+        _likely_lost=$(git -C "$REPO_ROOT" log --oneline -5 --diff-filter=AM "$_merge_base..origin/main" -- $(printf '%s\n' "$_silent_deletions") 2>/dev/null | head -5)
+        echo "BLOCKED: stale-base silent deletions — your branch will delete ${_count} file(s) your commits never touched." >&2
+        echo "" >&2
+        echo "Files about to be silently deleted (peer-merged since your /pull):" >&2
+        printf '  %s\n' $_silent_deletions >&2
+        echo "" >&2
+        if [ -n "$_likely_lost" ]; then
+          echo "Likely-lost commits on origin/main (touched those files since your merge-base $(echo $_merge_base | cut -c1-8)):" >&2
+          printf '  %s\n' "$_likely_lost" >&2
+          echo "" >&2
+        fi
+        echo "Fix: rebase your branch onto current origin/main, then re-push:" >&2
+        echo "  git fetch origin && git rebase origin/main && git-queue.sh push <args>" >&2
+        echo "" >&2
+        echo "Override (use ONLY for deliberate cross-branch deletions):" >&2
+        echo "  git-queue.sh push --allow-stale-base-deletions <args>" >&2
+        log_event "git_queue.push.refused" "reason=stale-base-deletions count=${_count} files=$(printf '%s\n' $_silent_deletions | tr '\n' ',')"
+        exit 1
+      fi
+    fi
   fi
 
   # #2876: stamp card_id on build.push.* / build.delete.* events
