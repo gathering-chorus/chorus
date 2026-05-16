@@ -228,51 +228,45 @@ flowchart TB
 </ul>
 <p>What stays the same: scheduled-only main re-run; no per-PR matrix unless pre-merge maturity proves insufficient and Jeff reinstates required checks.</p>
 
+<h2>Act as orchestrator</h2>
+<p>CI's orchestration primitive is <a href="https://github.com/nektos/act"><code>act</code></a> running <code>building-pipeline.yml</code> under the <code>com.chorus.building-pipeline</code> LaunchAgent. <code>chorus_acp</code>'s <code>release-trigger</code> step kickstarts that agent post-merge; <code>act</code> sequences the post-merge chain. Three contracts make the orchestration legible to consumers.</p>
+
+<h3>Dispatch contract</h3>
+<p><strong>What kicks <code>act</code>:</strong> <code>launchctl kickstart gui/$UID/com.chorus.building-pipeline</code>, fired by <code>chorus_acp</code>'s release-trigger step on every accepted card. Post-#2933 the workflow trigger is <code>on: [workflow_dispatch]</code> — act dispatches the event locally; GHA stays quiet.</p>
+<p><strong>Env carried in:</strong> <code>CHORUS_TRACE_ID</code> + <code>CHORUS_CARD_ID</code> propagate via the commit's <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> git trailers (#2931). Build scripts inherit by reading trailers at entry; <code>chorus-log</code>'s env-bridge (#2857) tags every downstream <code>build.*</code> / <code>deploy.*</code> event with the same trace.</p>
+<p><strong>Signal back:</strong> Job-conclusion state (success / failure / cancelled) is observable via <code>launchctl print</code> exit code and the <code>build.completed</code> / <code>build.failed</code> spine events. No async webhook; observers query the spine.</p>
+
+<h3>Step contract</h3>
+<p>Three named jobs run in sequence; each has a typed-refusal taxonomy mirroring the #2941 contract on MCP tools.</p>
+<table>
+<tr><th>Step</th><th>Owner</th><th>Refusal taxonomy</th><th>Recovery</th></tr>
+<tr><td><code>chorus-werk-sync</code></td><td>VCS</td><td>ff-only-fail | dirty-tree | detached-head</td><td><code>chorus-werk-sync repair</code> (re-attach HEAD, fast-forward, align tree)</td></tr>
+<tr><td><code>chorus-build</code></td><td>build+deploy</td><td>cargo-fail | codesign-fail | cdhash-drift | warn-baseline-breach</td><td>fix code, re-trigger via <code>workflow_dispatch</code></td></tr>
+<tr><td><code>chorus-deploy</code></td><td>build+deploy</td><td>service-not-found | bootstrap-fail | probe-fail | rollback-needed</td><td><code>chorus-deploy --rollback</code> (restore dist.prev + kickstart)</td></tr>
+</table>
+<p>Sequential-fail-fast is implicit: a step's failure halts the chain, the next step never fires. The job-level concern (act's perspective) is the union of step refusals.</p>
+
+<h3>Observability contract</h3>
+<p>Every act-emitted event carries the trace_id from the commit trailer, joining the ACP arc to the build/deploy arc as one chain queryable via <code>chorus_logs_for_trace</code>. On failure, the typed refusal (above) emits as <code>build.failed</code> or <code>deploy.failed</code> with <code>result=fail</code> + <code>error=</code> + structured <code>step=</code> + <code>reason=</code> fields (the #2944 ERR/EXIT trap pattern). Idempotent re-run path (#2943): re-invoke <code>chorus_acp</code> on an accepted card with an orphan branch triggers the cleanup-only path, skipping commit/push/PR.</p>
+<p>Cross-reference: the <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a>'s "Whole-flow CI/CD pipeline" mermaid shows where this orchestration receives its inputs (ACP's release-trigger) and where it hands deploy state back to the spine.</p>
+
 <h2>Implementation Plan</h2>
-<p>Done across today's session and the prior arc:</p>
+<h3>Shipped</h3>
 <ul>
-  <li>Pre-merge surfaces 1–4 — #2580, #2597, #2598, #2625 ✓</li>
-  <li>Pre-merge surface 5 quality rules — #2603, #2627 ✓</li>
-  <li>Affordance-layer refusal pattern — #2467 + #2629 ✓</li>
-  <li>Retirement-gate pattern — #2467 + #2632 ✓</li>
-  <li>Cost-stop / schedule-only retreat — #2600 ✓ (with DEC-2525 + #2526)</li>
-  <li>Lock-file policy + Dependabot monthly — ADR-026 §c ✓</li>
-  <li>Reactive red-main alert — <code>ci-main-red.yml</code> ✓</li>
+  <li>Pre-merge surfaces 1–4 — #2580, #2597, #2598, #2625</li>
+  <li>Pre-merge surface 5 quality rules — #2603, #2627</li>
+  <li>Affordance-layer refusal pattern — #2467 + #2629</li>
+  <li>Retirement-gate pattern — #2467 + #2632</li>
+  <li>Cost-stop / schedule-only retreat — #2600 (with DEC-2525 + #2526)</li>
+  <li>Lock-file policy + Dependabot monthly — ADR-026 §c</li>
+  <li>Reactive red-main alert — <code>ci-main-red.yml</code></li>
+  <li>Orchestration: <code>act</code> via <code>workflow_dispatch</code> + launchd kickstart — #2933 / #2939 (workflow + plist alignment)</li>
+  <li>Trace propagation: ACP commit trailers → build/deploy events — #2931</li>
+  <li>Step traps + typed refusal: ERR / EXIT trap on build-signed.sh + deploy-daemon-card.sh — #2944 (silent-deletion at VCS push) + #2941 (cardinal-six audit) + #2943 (branch-close-fail idempotent re-run)</li>
 </ul>
 
-<h3>Phase A — pre-merge maturity (close the bypassable-fifth-surface gap)</h3>
-<ol>
-  <li><strong>#2529 run-tests contract</strong> — load-bearing interface between CI substrate and tests substrate. Promoted to Phase A per subagent review: if it's load-bearing, it can't be deferred behind drift-lane work</li>
-  <li><strong>#2497 KNOWN_FAILS allowlist</strong> — codifies the <code>--no-verify</code> + <code>#NNNN</code> trace convention so commits referencing carded test failures pass while uncarded <code>--no-verify</code> is refused</li>
-  <li><strong>#2496 Ratchet baseline drift signal</strong> — surface when a per-rule baseline can shrink instead of letting accretion sit silent</li>
-  <li><strong>#2491 chorus-hooks/inject test isolation</strong> — remove hardcoded <code>/Users/jeffbridwell</code> paths so tests run on any clone</li>
-  <li><strong>#2493 sessions.test.ts pre-existing fail</strong> — small fix, just unblock</li>
-  <li><strong>No-warn-tier self-audit</strong> (no card yet) — pre-commit check that fails if <code>eslint.config.js</code> adds a <code>warn</code>-tier rule. Pattern noted as gap by subagent review</li>
-  <li><strong>Daemon-during-rebase race fix</strong> (no card yet) — surfaced 2026-04-30 when <code>git-queue.sh</code>'s stash-pull-pop dance raced with <code>claudemd-gen</code> daemon writing to <code>manifest.json</code>. Worth pattern-naming (substrate-daemon-vs-rebase-race) before filing</li>
-</ol>
-
-<h3>Phase B — wire post-merge witnesses (the real fix for schedule-only's 24h latency)</h3>
-<ol start="8">
-  <li><strong>#2528 Sensor consumer registry</strong> — defines the routing contract first so subsequent emitters land in named slots. Order corrected per subagent review: registry before drift lane</li>
-  <li><strong>#2527 Nightly drift lane</strong> — slow signals run on schedule, file cards on red, never block</li>
-  <li><strong>#2530 Flake quarantine mechanism</strong> — registry + TTL + auto-promote-to-card on expiry. Depends on #2528</li>
-</ol>
-
-<h3>Phase C — observability</h3>
-<ol start="11">
-  <li><strong>#2591 GHA org-billing alert</strong> — recurring quota wedge guardrail. Independent</li>
-  <li><strong>#2200 Cross-language contract tests</strong> — TS↔Rust divergence observability beyond <code>.protocol_test_vectors.json</code>. Today's #2634 fixture refresh is the smell</li>
-</ol>
-
-<h3>Phase D — operational + graph-queryability</h3>
-<ol start="13">
-  <li><strong>#2333 Post-restart smoke</strong> — assert <code>/api/flow</code> first card has <code>sequences[]</code> after LaunchAgent kickstart</li>
-  <li><strong>#2589 chorus-hooks git-spawn env-scrub</strong> — migrate 3 known sites + audit. Hardening of the shim binary</li>
-  <li><strong>#2599 Sweep remaining 24 chorus scripts to source-from-substrate</strong> — eliminate-runtime-dep applied to script bootstrap</li>
-  <li><strong>#2152 Harvest DEC-NNN + ADR-NNN into loom-decisions</strong> — ADR-026, DEC-2525, #2600 currently not graph-queryable</li>
-  <li><strong>#2499 Demo skill — infra/CI cards adapt 'show'</strong> — demo-shape gap for non-user-facing changes</li>
-  <li><strong>#2500 Required-checks drift detector</strong> — applies when required-checks come back; less urgent today since both branch-protection and Ruleset are empty</li>
-</ol>
+<h3>Open work</h3>
+<p>Open cards in this surface are tracked on the board; this list is regenerated by <code>chorus_design_refresh</code> against current card statuses rather than maintained by hand. To browse: <code>cards mine kade</code> filtered to <code>domain:chorus</code> + <code>sequence:werk</code>, or query the references section below.</p>
 
 <h2>Sub-Domain Interaction Model</h2>
 <p>CI/CD today fires on schedule and produces a build verdict that alerts Silas if red. The per-PR threat model has moved entirely to the five pre-merge surfaces.</p>
@@ -328,6 +322,12 @@ flowchart TB
 <div class="gap"><strong>15. Trust audit for pre-merge maturity</strong> (no card yet) — claim "trust burden moves to pre-merge" needs a check that pre-merge isn't quietly weakening</div>
 
 <h2>Not in scope</h2>
+<p>Belongs in a sibling cardinal-six service design:</p>
+<ul>
+  <li><strong>Git layer — commit / push / werk lifecycle / branches / trailers / stale-base enforcement</strong> → <a href="http://localhost:3340/designing/docs/version-control-service-design.html">version-control-service-design.html</a>. CI consumes the VCS surface (trailer reads, ACP release-trigger) but does not define it.</li>
+  <li><strong>Binary build mechanics — cdhash discipline, signing, <code>chorus-bin-install</code>, deploy lifecycle, rollback</strong> → <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a>. CI sequences the build + deploy steps but does not specify how cdhash is computed or how rollback restores <code>dist.prev</code>.</li>
+</ul>
+<p>Rejected approaches (not returning without naming why):</p>
 <ul>
   <li>Gathering app's CI (lives in <code>jeff-bridwell-personal-site</code> repo). Smoke check is its problem, per ADR-026 addendum</li>
   <li>Production deploy automation — chorus runs natively on Library/Bedroom; <code>werk</code> handles canonical deploys</li>
