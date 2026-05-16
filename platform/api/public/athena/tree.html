@@ -122,12 +122,12 @@ function updateOwnerFilter() {
   });
 }
 
-function render() {
+async function render() {
   const root = document.getElementById('tree');
   root.innerHTML = '';
   for (const product of TREE.products) {
     if (ACTIVE_OWNER !== 'all' && product.ownedBy !== ACTIVE_OWNER) continue;
-    root.appendChild(renderProduct(product));
+    root.appendChild(await renderProduct(product));
   }
 }
 

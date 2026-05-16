@@ -42,7 +42,7 @@ const RoleKind = z.enum(['human', 'agent']);
 const ValueStreamStep = z.object({
   iri: Iri,
   label: z.string().min(1),
-  inStream: Iri,
+  inStream: Iri.optional(),
 });
 
 const Role = z.object({
@@ -52,53 +52,55 @@ const Role = z.object({
   emoji: z.string().optional(),
 });
 
+// Lean shape per chorus-product-tree.html (2026-05-14). Required: iri, label,
+// ownedBy, containment edges. Rich fields optional until Move 1's SHACL enforces.
 const ProductSchema = z.object({
   iri: Iri,
   label: z.string().min(1),
-  comment: z.string().min(1),
-  vision: z.string().min(1),
-  valueProposition: z.string().min(1),
-  audience: z.array(Iri).min(1),
-  status: Status,
-  gaps: z.array(z.string().min(1)).min(1),
   ownedBy: Iri,
-  atStep: Iri,
-  hasDesignDoc: z.array(Iri).min(1),
-  // Containment edges stored on Product side
+  atStep: Iri.optional(),
   hasChild: z.array(Iri).default([]),
   hasDomain: z.array(Iri).default([]),
-  consumes: z.array(Iri).default([]),
+  // Optional rich fields (Move 1+):
+  comment: z.string().optional(),
+  vision: z.string().optional(),
+  valueProposition: z.string().optional(),
+  audience: z.array(Iri).optional(),
+  status: Status.optional(),
+  gaps: z.array(z.string()).optional(),
+  hasDesignDoc: z.array(Iri).optional(),
+  consumes: z.array(Iri).optional(),
 });
 
 const DomainSchema = z.object({
   iri: Iri,
   label: z.string().min(1),
-  comment: z.string().min(1),
-  ownedBy: Iri,
-  atStep: Iri,
-  status: Status,
-  gaps: z.array(z.string().min(1)).min(1),
-  hasDesignDoc: z.array(Iri).min(1),
-  // Containment edges stored on Domain side
-  hosts: z.array(Iri).default([]),
-  contains: z.array(Iri).default([]), // cookbook req-1: every Domain links records via chorus:contains
-  hasChild: z.array(Iri).default([]),
+  ownedBy: Iri.optional(),
+  atStep: Iri.optional(),
+  placement: z.string().optional(),
+  comment: z.string().optional(),
+  status: Status.optional(),
+  gaps: z.array(z.string()).optional(),
+  hasDesignDoc: z.array(Iri).optional(),
+  hosts: z.array(Iri).optional(),
+  contains: z.array(Iri).optional(),
+  hasChild: z.array(Iri).optional(),
 });
 
 const ServiceSchema = z.object({
   iri: Iri,
   label: z.string().min(1),
-  overview: z.string().min(1),
-  ownedBy: Iri,
-  atStep: Iri,
-  status: Status,
-  asIs: z.string().min(1),
-  toBe: z.string().min(1),
-  implementationPlan: z.string().min(1),
-  pathToClose: z.string().min(1),
-  gaps: z.array(z.string().min(1)).min(1),
-  notInScope: z.array(z.string().min(1)).min(1),
-  hasDesignDoc: z.array(Iri).min(1),
+  ownedBy: Iri.optional(),
+  atStep: Iri.optional(),
+  overview: z.string().optional(),
+  status: Status.optional(),
+  asIs: z.string().optional(),
+  toBe: z.string().optional(),
+  implementationPlan: z.string().optional(),
+  pathToClose: z.string().optional(),
+  gaps: z.array(z.string()).optional(),
+  notInScope: z.array(z.string()).optional(),
+  hasDesignDoc: z.array(Iri).optional(),
 });
 
 export const TreeSchema = z.object({

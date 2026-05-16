@@ -99,21 +99,21 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
     return {
       iri,
       kind: 'domain',
-      owner: domain.ownedBy,
+      owner: domain.ownedBy ?? '',
       product: owningProduct?.iri,
       domain: iri,
     };
   }
   const service = tree.services.find((s) => s.iri === iri);
   if (service) {
-    const hostingDomain = tree.domains.find((d) => d.hosts.includes(iri));
+    const hostingDomain = tree.domains.find((d) => (d.hosts ?? []).includes(iri));
     const owningProduct = hostingDomain
       ? tree.products.find((p) => p.hasDomain.includes(hostingDomain.iri))
       : undefined;
     return {
       iri,
       kind: 'service',
-      owner: service.ownedBy,
+      owner: service.ownedBy ?? '',
       product: owningProduct?.iri,
       domain: hostingDomain?.iri,
       service: iri,
@@ -145,7 +145,7 @@ export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult |
 
   if (ownership.kind === 'service') {
     for (const p of tree.products) {
-      if (p.consumes.includes(iri)) consumers.add(p.iri);
+      if ((p.consumes ?? []).includes(iri)) consumers.add(p.iri);
     }
     return { iri, consumers: [...consumers], dependents: [], hosts: [] };
   }
@@ -155,7 +155,7 @@ export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult |
       if (p.hasDomain.includes(iri)) consumers.add(p.iri);
     }
     const domain = tree.domains.find((d) => d.iri === iri);
-    const hosts = domain?.hosts ?? [];
+    const hosts = (domain?.hosts ?? []) as string[];
     for (const serviceIri of hosts) {
       const inner = computeBlastRadius(tree, serviceIri);
       if (inner) for (const c of inner.consumers) consumers.add(c);
@@ -182,8 +182,8 @@ export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult |
 export function ownershipMap(tree: Tree): Record<string, string> {
   const map: Record<string, string> = {};
   for (const p of tree.products) map[p.iri] = p.ownedBy;
-  for (const d of tree.domains) map[d.iri] = d.ownedBy;
-  for (const s of tree.services) map[s.iri] = s.ownedBy;
+  for (const d of tree.domains) if (d.ownedBy) map[d.iri] = d.ownedBy;
+  for (const s of tree.services) if (s.ownedBy) map[s.iri] = s.ownedBy;
   return map;
 }
 
