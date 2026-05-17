@@ -429,4 +429,10 @@ if [ "$VERBOSE" -eq 1 ] || [ "$FAIL_COUNT" -gt 0 ] || [ "$WARN_COUNT" -gt 0 ]; t
   done
 fi
 
-[ "$FAIL_COUNT" -gt 0 ] && exit 1 || exit 0
+if [ "$FAIL_COUNT" -gt 0 ]; then
+  OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
+  MSG="chorus-health: ${FAIL_COUNT} failure(s) — $(IFS=,; echo "${FAIL_NAMES[*]}")"
+  [ -x "$OPS_NUDGE" ] && "$OPS_NUDGE" silas "$MSG" 2>/dev/null || true
+  exit 1
+fi
+exit 0
