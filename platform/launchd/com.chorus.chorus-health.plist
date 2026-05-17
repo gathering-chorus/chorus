@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.chorus.chorus-health — runs chorus-health every 15 minutes.
+
+  #2952: top-level Chorus operational fitness function. Assembles
+  pipeline/VCS, runtime/ops, and interaction checks into a single
+  PASS/FAIL answer, emits chorus.health spine event, appends to log.
+
+  Runs every 15 minutes (900s). Result queryable from non-localhost
+  device via Grafana/Loki — chorus.health spine events land in Loki
+  and the log at StandardOutPath is readable via Caddy.
+
+  Install:
+    cp platform/launchd/com.chorus.chorus-health.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chorus.chorus-health.plist
+
+  Stop:
+    launchctl bootout gui/$(id -u)/com.chorus.chorus-health
+
+  One-shot manual run:
+    launchctl kickstart -k gui/$(id -u)/com.chorus.chorus-health
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.chorus-health</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-health</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-health.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-health.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>DEPLOY_ROLE</key>
+    <string>system</string>
+  </dict>
+</dict>
+</plist>
