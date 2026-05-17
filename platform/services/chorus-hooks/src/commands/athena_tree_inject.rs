@@ -14,8 +14,11 @@
 //! the operational tree has settled (per the cookbook's "let data settle then
 //! refactor signals" pattern, two-phase model).
 //!
-//! Signal weights live in `data/athena/session-start-signals.json` (data, not
-//! code — weight tuning is a JSON edit per AC7).
+//! Signal scoring is hardcoded below (active_score_status + structural-density
+//! for active; status × gap-count × design-doc-presence for needs-work). An
+//! earlier external tuning-file approach was retired in #2959 — the file was
+//! never read; the claim that it was tunable was decorative. If real tuning
+//! becomes a requirement, ship it as a code change here, not as a data file.
 //!
 //! Graceful degradation: any I/O or parse failure injects a one-line "athena
 //! tree unavailable" note rather than failing the entire session boot. Boot
