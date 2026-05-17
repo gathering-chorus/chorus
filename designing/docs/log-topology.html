@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Log Topology</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Fira Code', monospace; padding: 24px; }
+  h1 { font-size: 20px; color: #58a6ff; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #8b949e; margin-bottom: 24px; }
+
+  .layer { margin-bottom: 28px; }
+  .layer-title {
+    font-size: 14px; font-weight: 600; color: #f0883e;
+    border-bottom: 1px solid #21262d; padding-bottom: 6px; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .layer-title .count {
+    background: #21262d; color: #8b949e; font-size: 11px;
+    padding: 1px 6px; border-radius: 10px; font-weight: 400;
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+
+  .log-card {
+    background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+    padding: 12px 14px; position: relative; transition: border-color 0.2s;
+  }
+  .log-card:hover { border-color: #30363d; }
+
+  .log-name { font-size: 13px; font-weight: 600; color: #e6edf3; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .log-path { font-size: 11px; color: #6e7681; margin-bottom: 8px; word-break: break-all; }
+
+  .meta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .meta { font-size: 11px; color: #8b949e; }
+  .meta strong { color: #c9d1d9; }
+
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 1px 6px; border-radius: 10px; text-transform: uppercase;
+  }
+  .badge-hot { background: #1a3a1a; color: #3fb950; }
+  .badge-warm { background: #2a2a1a; color: #d29922; }
+  .badge-cold { background: #1a1a2a; color: #6e7681; }
+  .badge-dead { background: #2a1a1a; color: #f85149; }
+
+  .format-tag {
+    font-size: 10px; color: #58a6ff; background: #0d2137;
+    padding: 1px 5px; border-radius: 3px;
+  }
+
+  .writers, .readers { font-size: 11px; margin-top: 4px; }
+  .writers { color: #d2a8ff; }
+  .readers { color: #79c0ff; }
+  .label { color: #8b949e; }
+
+  .arrow-section { margin: 20px 0; padding: 16px; background: #161b22; border: 1px solid #21262d; border-radius: 8px; }
+  .arrow-title { font-size: 13px; font-weight: 600; color: #58a6ff; margin-bottom: 12px; }
+
+  .flow { display: flex; flex-direction: column; gap: 6px; }
+  .flow-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+  .flow-source { color: #d2a8ff; min-width: 180px; }
+  .flow-arrow { color: #6e7681; }
+  .flow-dest { color: #79c0ff; min-width: 140px; }
+  .flow-via { color: #8b949e; font-size: 11px; }
+
+  .legend {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 20px; padding: 10px 14px;
+    background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8b949e; }
+
+  .summary-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  .summary-table th { text-align: left; font-size: 11px; color: #8b949e; padding: 4px 8px; border-bottom: 1px solid #21262d; }
+  .summary-table td { font-size: 12px; padding: 4px 8px; border-bottom: 1px solid #161b22; }
+  .summary-table tr:hover td { background: #1c2128; }
+  .right { text-align: right; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Chorus Log Topology</h1>
+<p class="subtitle">All logging destinations across Library Mac &middot; Updated 2026-03-03 (post-Silas fixes)</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="badge badge-hot">hot</span> Active today, high volume</div>
+  <div class="legend-item"><span class="badge badge-warm">warm</span> Active today, low volume</div>
+  <div class="legend-item"><span class="badge badge-cold">cold</span> Days since last write</div>
+  <div class="legend-item"><span class="badge badge-dead">dead</span> Empty or missing</div>
+</div>
+
+<!-- ───────────── SPINE LOGS (team repo, git-tracked) ───────────── -->
+<div class="layer">
+  <div class="layer-title">Spine Logs <span class="count">messages/logs/ &middot; git-tracked</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> chorus.log</div>
+      <div class="log-path">messages/logs/chorus.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>9,574</strong> lines</span>
+        <span class="meta">Last: now</span>
+        <span class="format-tag">JSONL</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> chorus-log.sh (all roles), werk-init.sh, git-queue.sh, defect-poller, ops-agent, hooks</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki, werk-init.sh (boot), Grafana dashboards</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> permission-prompts.log</div>
+      <div class="log-path">messages/logs/permission-prompts.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>8,954</strong> lines</span>
+        <span class="meta">Last: now</span>
+        <span class="format-tag">JSONL</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> permission-logger-hook.sh (every tool call approval)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki, attention analytics, jeff-intensity.sh</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> command-errors.log</div>
+      <div class="log-path">messages/logs/command-errors.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>594</strong> lines</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">JSONL</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> command-outcome-hook.sh (on Bash failures)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki, defect-poller.sh (fingerprint + auto-card), werk-init.sh (recurring error detection)</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> handoffs.log</div>
+      <div class="log-path">messages/logs/handoffs.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>401</strong> lines</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">JSONL</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> handoff-logger-hook.sh (brief writes detected by Write hook)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki, handoff-check.sh, werk-init.sh (pending brief count)</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── BOARD SNAPSHOTS ───────────── -->
+<div class="layer">
+  <div class="layer-title">Board Snapshots <span class="count">messages/logs/ &middot; git-tracked</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> board-snapshot-gathering-*.json</div>
+      <div class="log-path">messages/logs/board-snapshot-gathering-{wren,silas,kade}.json</div>
+      <div class="meta-row">
+        <span class="meta"><strong>~2,950</strong> lines each</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">JSON</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> werk-init.sh (session boot, per-role snapshot)</div>
+      <div class="readers"><span class="label">Readers:</span> werk-init.sh (board diff detection), board audit</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> board-snapshot-chorus-*.json</div>
+      <div class="log-path">messages/logs/board-snapshot-chorus-{wren,silas,kade}.json</div>
+      <div class="meta-row">
+        <span class="meta"><strong>683</strong> lines each</span>
+        <span class="meta">Last: Feb 23 (8d)</span>
+        <span class="format-tag">JSON</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> werk-init.sh (Chorus board snapshot — separate project)</div>
+      <div class="readers"><span class="label">Readers:</span> Same as above. Stale — Chorus board less active.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── TEAM STATE FILES (log-like) ───────────── -->
+<div class="layer">
+  <div class="layer-title">Team State Files <span class="count">messages/ &middot; git-tracked &middot; append-style</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> activity.md</div>
+      <div class="log-path">messages/activity.md</div>
+      <div class="meta-row">
+        <span class="meta"><strong>652</strong> lines &middot; 92K</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">Markdown</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> All 3 roles (append on action — briefs, decisions, deploys)</div>
+      <div class="readers"><span class="label">Readers:</span> All 3 roles (session start scan), Jeff (manual)</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> cost-log.md</div>
+      <div class="log-path">messages/cost-log.md</div>
+      <div class="meta-row">
+        <span class="meta"><strong>22</strong> lines &middot; 4K</span>
+        <span class="meta">Last: Feb 25 (6d)</span>
+        <span class="format-tag">Markdown</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> Roles at session close (when /cost run)</div>
+      <div class="readers"><span class="label">Readers:</span> Grafana cost dashboard, werk-init.sh (staleness check)</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── LAUNCHAGENT LOGS (/tmp) ───────────── -->
+<div class="layer">
+  <div class="layer-title">LaunchAgent Logs <span class="count">/tmp/ &middot; ephemeral &middot; lost on reboot</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> ops-agent.log <span class="badge badge-hot" style="font-size:9px">COLLECTED</span></div>
+      <div class="log-path">/tmp/ops-agent.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>2,597</strong> lines &middot; 272K</span>
+        <span class="meta">Last: now</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.ops-agent (KeepAlive, runs ops-agent.sh)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki (job: daemon-logs) — added 2026-03-03</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> node-exporter.err <span class="badge badge-hot" style="font-size:9px">FIXED</span></div>
+      <div class="log-path">/tmp/node-exporter.err</div>
+      <div class="meta-row">
+        <span class="meta"><strong>~0</strong> lines (was 9,557 / 2MB)</span>
+        <span class="meta">Thermal collector disabled</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.gathering.node-exporter (stderr — noise eliminated 2026-03-03)</div>
+      <div class="readers"><span class="label">Readers:</span> Manual only. No longer noisy.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> defect-poller.log <span class="badge badge-hot" style="font-size:9px">COLLECTED</span></div>
+      <div class="log-path">/tmp/defect-poller.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>426</strong> lines &middot; 24K</span>
+        <span class="meta">Last: now</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.defect-poller (KeepAlive, polls container logs)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki (job: daemon-logs) — added 2026-03-03. Also feeds findings → chorus.log + auto-cards.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> fuseki-perf.log <span class="badge badge-hot" style="font-size:9px">COLLECTED</span></div>
+      <div class="log-path">/tmp/fuseki-perf.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>665</strong> lines &middot; 36K</span>
+        <span class="meta">Last: today 07:56</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.fuseki-perf (KeepAlive, SPARQL benchmark)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki (job: daemon-logs) — added 2026-03-03. Also Prometheus textfile collector (metrics).</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> chorus-api.log</div>
+      <div class="log-path">/tmp/chorus-api.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>14</strong> lines &middot; 4K</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.api (KeepAlive, HTTP API for chorus index)</div>
+      <div class="readers"><span class="label">Readers:</span> Manual only</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> fuseki-compact.log</div>
+      <div class="log-path">/tmp/fuseki-compact.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>48</strong> lines &middot; 4K</span>
+        <span class="meta">Last: Feb 28 (3d)</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.fuseki-compact (weekly, Saturday 1am)</div>
+      <div class="readers"><span class="label">Readers:</span> Manual only</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> alert-notifier.log</div>
+      <div class="log-path">/tmp/alert-notifier.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>6</strong> lines &middot; 4K</span>
+        <span class="meta">Last: Mar 2</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.alert-notifier (KeepAlive, alert-notifier.py)</div>
+      <div class="readers"><span class="label">Readers:</span> Manual only</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> andon-enrich.log</div>
+      <div class="log-path">/tmp/andon-enrich.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>0</strong> lines (interval poller)</span>
+        <span class="meta">Working — emits to other channels</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.andon-enrich (interval poller, not KeepAlive)</div>
+      <div class="readers"><span class="label">Readers:</span> None. Daemon output goes elsewhere, log file is incidental.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> jeff-input-monitor.log</div>
+      <div class="log-path">/tmp/jeff-input-monitor.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>0</strong> lines (interval poller)</span>
+        <span class="meta">Working — binary emits elsewhere</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.jeff-input-monitor (interval poller)</div>
+      <div class="readers"><span class="label">Readers:</span> None. Binary logs to its own data files.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> andon-light.log</div>
+      <div class="log-path">/tmp/andon-light.log</div>
+      <div class="meta-row">
+        <span class="meta">Interval poller</span>
+        <span class="meta">Working — no stdout output by design</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.andon-light (interval poller)</div>
+      <div class="readers"><span class="label">Readers:</span> None. Controls hardware LED — no log output expected.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> docker-startup.log</div>
+      <div class="log-path">/tmp/docker-startup.log</div>
+      <div class="meta-row">
+        <span class="meta">Run-once at boot</span>
+        <span class="meta">Working — only runs on Mac boot</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.docker-services (run-once at boot)</div>
+      <div class="readers"><span class="label">Readers:</span> Manual only. Ephemeral — only relevant at Mac startup.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> node-exporter.log</div>
+      <div class="log-path">/tmp/node-exporter.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>0</strong> lines</span>
+        <span class="meta">stdout unused — stderr was the issue (now fixed)</span>
+        <span class="format-tag">—</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.gathering.node-exporter (stdout — all output goes to stderr)</div>
+      <div class="readers"><span class="label">Readers:</span> None.</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-cold">cold</span> harvest-exporter.err</div>
+      <div class="log-path">/tmp/harvest-exporter.err</div>
+      <div class="meta-row">
+        <span class="meta"><strong>0</strong> lines (interval poller)</span>
+        <span class="meta">Working — emits metrics, not log output</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.harvest-exporter (interval poller)</div>
+      <div class="readers"><span class="label">Readers:</span> None. Exports metrics to Prometheus textfile collector.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── CHORUS INDEX ───────────── -->
+<div class="layer">
+  <div class="layer-title">Chorus Index <span class="count">~/.chorus/ &middot; SQLite &middot; persistent</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> index.db</div>
+      <div class="log-path">~/.chorus/index.db</div>
+      <div class="meta-row">
+        <span class="meta"><strong>44,497</strong> messages &middot; 50MB</span>
+        <span class="meta">Sources: claude (41K), slack (1.8K), brief (782), clearing (745), decision (67)</span>
+        <span class="format-tag">SQLite</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> session-watcher (ambient indexer), chorus-api intake</div>
+      <div class="readers"><span class="label">Readers:</span> /chorus search, werk-init.sh, chorus-api HTTP</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> watcher.log</div>
+      <div class="log-path">~/.chorus/watcher.log</div>
+      <div class="meta-row">
+        <span class="meta"><strong>508</strong> lines &middot; 20K</span>
+        <span class="meta">Last: today</span>
+        <span class="format-tag">Text</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> com.chorus.session-watcher</div>
+      <div class="readers"><span class="label">Readers:</span> Manual debugging</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-warm">warm</span> intake/</div>
+      <div class="log-path">~/.chorus/intake/*.json</div>
+      <div class="meta-row">
+        <span class="meta"><strong>17</strong> pending files</span>
+        <span class="meta">Queued for indexing</span>
+        <span class="format-tag">JSON</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> Claude sessions (session transcripts)</div>
+      <div class="readers"><span class="label">Readers:</span> session-watcher (processes → index.db)</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── APP LOGS ───────────── -->
+<div class="layer">
+  <div class="layer-title">App / Docker Logs <span class="count">via Docker API + Loki &middot; ephemeral</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> Docker container stdout/stderr</div>
+      <div class="log-path">Docker API → Promtail → Loki</div>
+      <div class="meta-row">
+        <span class="meta"><strong>16</strong> containers running</span>
+        <span class="meta">6 collected (app, fuseki, css, navidrome, wordpress, vikunja)</span>
+        <span class="format-tag">JSON (Docker)</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> All app containers on observability-network</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki → Grafana. 10 excluded (infra containers).</div>
+    </div>
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> SOLID Audit Logs</div>
+      <div class="log-path">jeff-bridwell-personal-site/data/audit/audit-YYYY-MM-DD.jsonl</div>
+      <div class="meta-row">
+        <span class="meta"><strong>24</strong> daily files &middot; 5.8MB total</span>
+        <span class="meta">Last: Mar 2</span>
+        <span class="format-tag">JSONL</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> Express app (pod access events — login, read, write)</div>
+      <div class="readers"><span class="label">Readers:</span> Promtail → Loki (via bind mount), Grafana audit dashboard</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── METRICS (not logs but part of observability) ───────────── -->
+<div class="layer">
+  <div class="layer-title">Metrics Pipeline <span class="count">Prometheus + Grafana &middot; time-series</span></div>
+  <div class="grid">
+
+    <div class="log-card">
+      <div class="log-name"><span class="badge badge-hot">hot</span> Prometheus TSDB</div>
+      <div class="log-path">Prometheus container volume</div>
+      <div class="meta-row">
+        <span class="meta">34 alert rules (app:19, infra:14, home:1)</span>
+        <span class="meta">Scrape: 15s</span>
+        <span class="format-tag">TSDB</span>
+      </div>
+      <div class="writers"><span class="label">Writers:</span> node-exporter, app /metrics, fuseki-perf textfile, blackbox-exporter</div>
+      <div class="readers"><span class="label">Readers:</span> Grafana (10+ dashboards), Alertmanager → alert-notifier</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ───────────── FLOW DIAGRAM ───────────── -->
+<div class="arrow-section">
+  <div class="arrow-title">Data Flow: Who writes → Where it lands → Who reads</div>
+  <div class="flow">
+    <div class="flow-row">
+      <span class="flow-source">Claude roles (hooks)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">chorus.log</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki → Grafana</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Claude roles (tool calls)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">permission-prompts.log</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki, jeff-intensity.sh</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Bash failures (hook)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">command-errors.log</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki, defect-poller → auto-cards</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Brief writes (hook)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">handoffs.log</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki, handoff-check.sh</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Docker containers</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Docker API</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki → Grafana</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Express app</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">audit-YYYY-MM-DD.jsonl</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Promtail → Loki → Grafana</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Key LaunchAgent daemons</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">/tmp/{ops-agent,defect-poller,fuseki-perf}.log</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest" style="color: #3fb950;">Promtail → Loki (job: daemon-logs) — added 2026-03-03</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Other LaunchAgent daemons</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">/tmp/*.log (remaining)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest" style="color: #6e7681;">Manual only (interval pollers — low-value logs)</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Claude sessions</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">~/.chorus/intake/</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">session-watcher → index.db → /chorus search</span>
+    </div>
+    <div class="flow-row">
+      <span class="flow-source">Prometheus scrapers</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">TSDB</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-dest">Grafana dashboards, Alertmanager → banner notifications</span>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────── OBSERVATIONS ───────────── -->
+<div class="arrow-section">
+  <div class="arrow-title">Observations</div>
+  <table class="summary-table">
+    <tr><th>Finding</th><th>Status</th></tr>
+    <tr>
+      <td><strong style="color: #3fb950;">3 key daemon logs now flow to Loki.</strong> ops-agent, defect-poller, fuseki-perf collected via Promtail job: daemon-logs. Blind spot closed.</td>
+      <td style="color: #3fb950;">FIXED 2026-03-03</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #3fb950;">node-exporter.err noise eliminated.</strong> Thermal collector disabled. 9,624 noise lines → 0.</td>
+      <td style="color: #3fb950;">FIXED 2026-03-03</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #3fb950;">"Dead" daemons are interval pollers.</strong> andon-enrich, jeff-input-monitor, andon-light, docker-startup, harvest-exporter — all working correctly. Empty logs are by design (output goes to other channels). CLAUDE.md registry was stale.</td>
+      <td style="color: #3fb950;">RESOLVED 2026-03-03</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #3fb950;">Spine → Loki pipeline works well.</strong> All 4 spine logs (chorus, permissions, errors, handoffs) are structured JSONL, collected by Promtail, queryable in Grafana. This is the gold standard.</td>
+      <td style="color: #3fb950;">Healthy</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #3fb950;">Chorus index healthy.</strong> 44,497 messages, 50MB, actively indexed.</td>
+      <td style="color: #3fb950;">Healthy</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #d29922;">cost-log.md stale (6 days).</strong> Last entry Feb 25. werk-init flags this at boot but nobody acts on it.</td>
+      <td style="color: #d29922;">Open</td>
+    </tr>
+    <tr>
+      <td><strong style="color: #6e7681;">Remaining /tmp logs uncollected.</strong> chorus-api, fuseki-compact, alert-notifier, watcher.log — low volume, low value. Not worth adding to Promtail.</td>
+      <td style="color: #6e7681;">Accepted</td>
+    </tr>
+  </table>
+</div>
+
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

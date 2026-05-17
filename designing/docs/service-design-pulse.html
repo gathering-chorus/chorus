@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Service Design — Pulse</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px 1in; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.4rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 0.95rem; color: #4a5568; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 10px; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.84rem; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78rem; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .exp { font-size: 1.05rem; font-style: italic; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .path { display: flex; align-items: center; gap: 0; margin: 16px 0; flex-wrap: wrap; }
+  .pn { background: #eef2ff; border: 1px solid #c7d2fe; padding: 8px 14px; border-radius: 6px; font-size: 0.82rem; font-weight: 500; }
+  .pn small { display: block; font-size: 0.68rem; color: #6b21a8; }
+  .pa { color: #6366f1; font-size: 1.2rem; padding: 0 6px; }
+  .note { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .note b { color: #3b82f6; }
+  .fail { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .fail b { color: #dc2626; }
+  .ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .ok b { color: #16a34a; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+  .col { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+  .col h3 { margin-top: 0; }
+  ul { margin: 8px 0 12px 20px; font-size: 0.84rem; }
+  li { margin-bottom: 4px; }
+  @media print { body { padding: 20px 1in; } .two-col { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Service Design — Pulse</h1>
+<p class="subtitle">DRAFT &bull; Owner: Wren (design) / Silas (implementation) &bull; Domain: observability &bull; From Jeff's metaphor (2026-03-31)</p>
+
+<!-- 1. EXPERIENCE -->
+<h2>1. Experience</h2>
+
+<div class="exp">I glance at the Clearing and see the system's heartbeat. Cards moving, roles building, alerts firing — not because I asked, but because the system circulates. Like a pulse. I check it the way you check a pulse — am I alive? Is anything stuck? Is something spiking?</div>
+
+<p>Pulse is the name for all system circulation — both the steady heartbeat signals (periodic health checks, daily reviews) and the nerve impulse signals (card pulled, seed arrived, alert fired). It's the short-term memory of the system, visible on the Clearing, searchable in Chorus.</p>
+
+<!-- 2. IDENTITY -->
+<h2>2. Identity</h2>
+
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td><strong>Name</strong></td><td>Pulse</td></tr>
+  <tr><td><strong>Metaphor</strong></td><td>Heart pulse (periodic) + nerve pulse (event-driven). Both rhythms.</td></tr>
+  <tr><td><strong>Domain</strong></td><td>Observability (Chorus sub-domain)</td></tr>
+  <tr><td><strong>Emitter</strong></td><td><code>chorus-log.sh</code> → Loki</td></tr>
+  <tr><td><strong>Display</strong></td><td>The Clearing (:3470) — ambient events panel</td></tr>
+  <tr><td><strong>Storage</strong></td><td>Loki (short/medium-term) → Chorus index (long-term)</td></tr>
+  <tr><td><strong>Owner</strong></td><td>Silas (infrastructure) / Wren (product definition)</td></tr>
+</table>
+
+<!-- 3. TWO RHYTHMS -->
+<h2>3. Two Rhythms</h2>
+
+<div class="two-col">
+  <div class="col">
+    <h3>Heartbeat (periodic)</h3>
+    <p>Steady signals that prove the system is alive. If a heartbeat stops, something is down.</p>
+    <table>
+      <tr><th>Signal</th><th>Cadence</th><th>Source</th></tr>
+      <tr><td>Daily review — ops</td><td>6:00am</td><td>com.chorus.daily-review-ops</td></tr>
+      <tr><td>Daily review — quality</td><td>6:00am</td><td>com.chorus.daily-review-quality</td></tr>
+      <tr><td>Daily review — summary</td><td>6:00am</td><td>com.chorus.daily-review-summary</td></tr>
+      <tr><td>Ops agent health</td><td>Every 15min</td><td>com.chorus.ops-agent</td></tr>
+      <tr><td>Defect poller</td><td>Every 5min</td><td>com.chorus.defect-poller</td></tr>
+      <tr><td>Fuseki perf baseline</td><td>Nightly</td><td>com.chorus.fuseki-perf</td></tr>
+      <tr><td>Fuseki compact</td><td>Saturday 1am</td><td>com.chorus.fuseki-compact</td></tr>
+      <tr><td>Session watcher</td><td>Continuous</td><td>com.chorus.session-watcher</td></tr>
+    </table>
+    <div class="note"><b>Detection:</b> If a heartbeat doesn't fire by expected time + 30min, emit <code>pulse.heartbeat.missed</code>. Alert rule: daily review didn't fire by 6:30am (#1807 AC4).</div>
+  </div>
+  <div class="col">
+    <h3>Nerve Impulse (event-driven)</h3>
+    <p>Signals that fire when something happens. Immediate, unpredictable, information-carrying.</p>
+    <table>
+      <tr><th>Signal</th><th>Trigger</th><th>Event</th></tr>
+      <tr><td>Card pulled</td><td>Role starts work</td><td><code>card.pulled</code></td></tr>
+      <tr><td>Card accepted</td><td>Jeff/Wren accepts</td><td><code>card.accepted</code></td></tr>
+      <tr><td>Card rejected</td><td>Jeff/Wren rejects</td><td><code>card.rejected</code></td></tr>
+      <tr><td>Demo started</td><td>Builder demos</td><td><code>card.demo.started</code></td></tr>
+      <tr><td>Seed received</td><td>Jeff texts</td><td><code>seed.received</code></td></tr>
+      <tr><td>Seed routed</td><td>Auto-classification</td><td><code>seed.routed</code></td></tr>
+      <tr><td>Nudge delivered</td><td>Role nudges role</td><td><code>nudge.delivered</code></td></tr>
+      <tr><td>Role state change</td><td>building/blocked/idle</td><td><code>role.state.changed</code></td></tr>
+      <tr><td>Pattern detected</td><td>Wren classifies</td><td><code>interaction.pattern.detected</code></td></tr>
+      <tr><td>Hook blocked</td><td>Gate denies action</td><td><code>hook.blocked</code></td></tr>
+      <tr><td>Circuit break</td><td>Hook auto-disabled</td><td><code>hook.circuit_break</code></td></tr>
+      <tr><td>Deploy completed</td><td>app-state.sh deploy</td><td><code>deploy.completed</code></td></tr>
+      <tr><td>Alert fired</td><td>Alertmanager</td><td><code>alert.fired</code></td></tr>
+      <tr><td>Session started</td><td>Role boots</td><td><code>session.role.started</code></td></tr>
+      <tr><td>Session ended</td><td>Role closes</td><td><code>session.role.ended</code></td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 4. WHAT IS NOT PULSE -->
+<h2>4. What Is NOT Pulse</h2>
+
+<table>
+  <tr><th>Not Pulse</th><th>Why</th><th>What it is instead</th></tr>
+  <tr><td>Chorus search queries</td><td>Memory retrieval, not circulation</td><td>Long-term memory</td></tr>
+  <tr><td>File edits, git commits</td><td>Work output, not system signal</td><td>Build artifacts</td></tr>
+  <tr><td>Jeff's typing</td><td>Input, not system state</td><td>Interaction</td></tr>
+  <tr><td>Tool call logs (Read, Glob, Grep)</td><td>Too noisy, no signal</td><td>Debug telemetry</td></tr>
+  <tr><td>Nudge content</td><td>That's conversation, not state change</td><td>Messaging</td></tr>
+</table>
+
+<div class="note"><b>The rule:</b> Pulse events answer "what state did the system just enter?" not "what action did someone perform?" A card being pulled changes system state. A file being read does not.</div>
+
+<!-- 5. THREE MEMORY LAYERS -->
+<h2>5. Three Memory Layers</h2>
+
+<p>Pulse is the short-term memory. It fits into a larger memory architecture:</p>
+
+<div class="path">
+  <div class="pn">Team-scan (Clearing)<small>Short-term: what's happening now</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Bridge events<small>Medium-term: what happened recently</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Chorus search<small>Long-term: what happened ever</small></div>
+</div>
+
+<table>
+  <tr><th>Layer</th><th>Metaphor</th><th>Retention</th><th>Access</th><th>Signal type</th></tr>
+  <tr><td><strong>Short-term</strong></td><td>Nervous system reflex</td><td>Current prompt cycle</td><td>team-scan hook (automatic)</td><td>Pulse events + role activity</td></tr>
+  <tr><td><strong>Medium-term</strong></td><td>Working memory</td><td>Current session</td><td>Clearing ambient panel (visual)</td><td>Card lifecycle + nudges + alerts</td></tr>
+  <tr><td><strong>Long-term</strong></td><td>Episodic memory</td><td>Permanent</td><td>Chorus search (on demand)</td><td>Everything indexed</td></tr>
+</table>
+
+<div class="note"><b>Jeff's formulation (2026-03-31):</b> "Clearing events via team-scan = short term memory. Chorus search = long term memory." The medium-term bridge layer is what was broken today — card events weren't flowing to the Clearing. #1887 fixed it.</div>
+
+<!-- 6. SIGNAL HIERARCHY -->
+<h2>6. Signal Hierarchy</h2>
+
+<p>Not all signals deserve the same delivery urgency:</p>
+
+<table>
+  <tr><th>Urgency</th><th>Delivery</th><th>Examples</th></tr>
+  <tr><td><strong>Critical</strong></td><td>Nudge (osascript inject)</td><td>Circuit break, service down, deploy failure, alert firing</td></tr>
+  <tr><td><strong>Important</strong></td><td>Bridge ambient event</td><td>Card pulled, card accepted, demo started, role state change</td></tr>
+  <tr><td><strong>Informational</strong></td><td>Chorus log only</td><td>Seed received, pattern detected, hook allowed, heartbeat OK</td></tr>
+</table>
+
+<div class="fail"><b>The focus problem (2026-03-31):</b> Jeff: "Every time you fire off a nudge while I am typing you steal my focus." Nudge delivery (osascript) steals Terminal focus. Critical alerts justify this. Normal card moves do not. Signal hierarchy prevents attention theft.</div>
+
+<!-- 7. INTEGRATION PATH -->
+<h2>7. Integration Path</h2>
+
+<h3>Event emission (all pulse events)</h3>
+<div class="path">
+  <div class="pn">Something happens<small>card.pulled, seed.received, etc.</small></div>
+  <span class="pa">→</span>
+  <div class="pn">chorus-log.sh<small>Structured JSON → Loki</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Loki ingestion<small>Indexed, queryable, retained</small></div>
+</div>
+
+<h3>Short-term display (Clearing)</h3>
+<div class="path">
+  <div class="pn">chorus-log.sh</div>
+  <span class="pa">→</span>
+  <div class="pn">Bridge POST<small>POST :3470/api/message</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Clearing ambient panel<small>Visible to Jeff without action</small></div>
+</div>
+
+<h3>Short-term injection (team-scan)</h3>
+<div class="path">
+  <div class="pn">Messaging tier<small>:3475 — queued messages</small></div>
+  <span class="pa">→</span>
+  <div class="pn">UserPromptSubmit hook<small>Drains queue into role context</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Role sees events<small>In team-scan block, every prompt</small></div>
+</div>
+
+<h3>Long-term retrieval</h3>
+<div class="path">
+  <div class="pn">Loki</div>
+  <span class="pa">→</span>
+  <div class="pn">Chorus API search<small>GET /api/chorus/search</small></div>
+  <span class="pa">→</span>
+  <div class="pn">Role or Jeff queries<small>"What happened with seeds yesterday?"</small></div>
+</div>
+
+<!-- 8. CURRENT STATE -->
+<h2>8. Current State</h2>
+
+<table>
+  <tr><th>Component</th><th>Status</th><th>Gap</th></tr>
+  <tr><td>chorus-log.sh emission</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>—</td></tr>
+  <tr><td>Loki ingestion</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>—</td></tr>
+  <tr><td>Bridge POST (medium-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Fixed today (#1887)</b></td><td>Card lifecycle events now flow</td></tr>
+  <tr><td>team-scan injection (short-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>Shows nudges + role activity, not card events</td></tr>
+  <tr><td>Chorus search (long-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>97K messages indexed</td></tr>
+  <tr><td>Heartbeat monitoring</td><td class="fail" style="border:none; padding:4px 12px;"><b>Partial</b></td><td>Daily review agents run but no missed-heartbeat alert yet</td></tr>
+  <tr><td>Signal hierarchy enforcement</td><td class="fail" style="border:none; padding:4px 12px;"><b>Not built</b></td><td>All nudges use osascript; no critical vs informational distinction</td></tr>
+  <tr><td>Pulse dashboard</td><td class="fail" style="border:none; padding:4px 12px;"><b>Not built</b></td><td>No unified view of heartbeats + nerve impulses</td></tr>
+</table>
+
+<!-- 9. OPEN QUESTIONS -->
+<h2>9. Open Questions (for team review)</h2>
+
+<table>
+  <tr><td><strong>Q1</strong></td><td>Should team-scan show card events (short-term) or just role activity? Currently it shows commands and file edits but not "Silas pulled #1884."</td></tr>
+  <tr><td><strong>Q2</strong></td><td>Should there be a pulse API endpoint? <code>GET /api/chorus/pulse</code> returning recent events by urgency level — critical, important, informational.</td></tr>
+  <tr><td><strong>Q3</strong></td><td>Heartbeat missed-detection: who monitors the monitors? If the ops agent itself goes down, who notices?</td></tr>
+  <tr><td><strong>Q4</strong></td><td>Should the Clearing show a literal pulse visualization — a heartbeat line that flatlines when no events flow? Jeff checks it like checking a patient's vitals.</td></tr>
+  <tr><td><strong>Q5</strong></td><td>How does pulse relate to the Borg? Borg observes patterns across sessions. Pulse is the raw signal Borg reasons over. Is Borg the brain interpreting the pulse?</td></tr>
+</table>
+
+<!-- 10. DESIGN GATE -->
+<h2>10. Design Gate</h2>
+
+<ul style="list-style: none; margin: 12px 0;">
+  <li style="padding: 6px 0;">&#9745; Experience statement written</li>
+  <li style="padding: 6px 0;">&#9745; Two rhythms defined (heartbeat + nerve impulse)</li>
+  <li style="padding: 6px 0;">&#9745; Event catalog (8 heartbeat, 15 nerve impulse)</li>
+  <li style="padding: 6px 0;">&#9745; Not-pulse boundary defined</li>
+  <li style="padding: 6px 0;">&#9745; Three memory layers mapped</li>
+  <li style="padding: 6px 0;">&#9745; Signal hierarchy defined (critical / important / informational)</li>
+  <li style="padding: 6px 0;">&#9745; Integration paths documented (4 flows)</li>
+  <li style="padding: 6px 0;">&#9745; Current state + gaps documented</li>
+  <li style="padding: 6px 0;">&#9744; Open questions resolved with team</li>
+  <li style="padding: 6px 0;">&#9744; Signal hierarchy enforced in nudge.sh</li>
+  <li style="padding: 6px 0;">&#9744; Pulse API endpoint built</li>
+  <li style="padding: 6px 0;">&#9744; Pulse visualization on Clearing</li>
+</ul>
+
+<p class="meta">Service Design — Pulse &bull; Wren &bull; 2026-03-31 &bull; DRAFT — awaiting team review via /chat</p>
+
+</body>
+</html>

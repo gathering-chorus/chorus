@@ -60,6 +60,10 @@ interface SourceDir {
   urlPrefix: string;
   source: string;
   defaultGroup: string;
+  // #2969: opt-in recursion for trees whose docs live one level down (e.g.,
+  // skills/<name>/SKILL.md). Default false preserves existing flat-scan
+  // behavior for the legacy 15 SOURCE_DIRS.
+  recursive?: boolean;
 }
 
 interface RegisteredDoc { filePath: string; href: string; group?: string; }
@@ -96,6 +100,9 @@ const SOURCE_DIRS: SourceDir[] = [
   { root: 'chorus', dir: 'designing/docs', urlPrefix: '/designing/docs/', source: 'designing/docs', defaultGroup: G_ARCH_SYSTEM },
   { root: 'chorus', dir: 'designing/decisions', urlPrefix: '/designing/decisions/', source: 'designing/decisions', defaultGroup: G_ARCH },
   { root: 'chorus', dir: 'docs/diagrams', urlPrefix: '/diagrams/', source: 'docs/diagrams', defaultGroup: G_ARCH },
+  // #2969: surface SKILL.md files so /pull /demo /acp /gate-* etc. are catalogued.
+  // Default group reflects coordination concerns; per-skill metadata can refine via registry overrides.
+  { root: 'chorus', dir: 'skills', urlPrefix: '/skills/', source: 'skills', defaultGroup: 'Chorus & Team Coordination', recursive: true },
 ];
 
 function rootPath(root: 'gathering' | 'chorus'): string {
@@ -216,17 +223,45 @@ function scanDirectory(sd: SourceDir): DocEntry[] {
   const absDir = path.join(rootPath(sd.root), sd.dir);
   if (!fs.existsSync(absDir)) return [];
   const entries: DocEntry[] = [];
-  const files = fs.readdirSync(absDir).filter(f => f.endsWith('.html') || f.endsWith('.md'));
-  for (const f of files) {
-    const filePath = path.join(absDir, f);
+
+  // #2969: recursive scan walks subdirectories so trees like skills/<name>/SKILL.md
+  // are discoverable. Returns relative paths from absDir so href construction is
+  // unchanged for the flat case.
+  const docFiles: Array<{ relPath: string; absPath: string }> = [];
+  if (sd.recursive) {
+    const stack: string[] = [''];
+    while (stack.length > 0) {
+      const rel = stack.pop()!;
+      const here = path.join(absDir, rel);
+      let entries: fs.Dirent[];
+      try { entries = fs.readdirSync(here, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const childRel = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          stack.push(childRel);
+        } else if (e.isFile() && (e.name.endsWith('.html') || e.name.endsWith('.md'))) {
+          docFiles.push({ relPath: childRel, absPath: path.join(here, e.name) });
+        }
+      }
+    }
+  } else {
+    const files = fs.readdirSync(absDir).filter(f => f.endsWith('.html') || f.endsWith('.md'));
+    for (const f of files) {
+      docFiles.push({ relPath: f, absPath: path.join(absDir, f) });
+    }
+  }
+
+  for (const { relPath, absPath } of docFiles) {
+    const filename = path.basename(relPath);
     let stat: fs.Stats;
-    try { stat = fs.statSync(filePath); } catch { continue; }
-    const title = extractTitle(filePath, f);
+    try { stat = fs.statSync(absPath); } catch { continue; }
+    const title = extractTitle(absPath, filename);
     const isSlugRoute = sd.urlPrefix === '/system/docs/' || sd.urlPrefix === '/docs/';
-    const slugPart = isSlugRoute ? f.replace(/\.(md|html)$/i, '') : f;
+    const slugPart = isSlugRoute ? relPath.replace(/\.(md|html)$/i, '') : relPath;
     const href = sd.urlPrefix + slugPart;
-    const group = classifyGroup(title, f);
-    const artifactType = classifyArtifactType(title, f);
+    const group = classifyGroup(title, filename);
+    const artifactType = classifyArtifactType(title, filename);
     const date = stat.mtime.toISOString().slice(0, 10);
     const sizeKB = Math.round(stat.size / 1024) || null;
     entries.push({ title, href, source: sd.source, group, artifactType, date, sizeKB });
@@ -310,11 +345,27 @@ function collectFromRegistry(coll: DocCollector): void {
   }
 }
 
+// #2969: registry takes precedence over scan. When a registered entry shares
+// an href with a scan entry, the registry's curated metadata (manual source,
+// user-specified group, registry title) wins. Scan remains the fallback for
+// un-curated content. Without this, registered entries for hrefs the scan
+// already discovered were silently suppressed and showed the scan defaults.
+function applyRegistryOverrides(allDocs: DocEntry[]): DocEntry[] {
+  const registered = loadRegistered();
+  if (registered.length === 0) return allDocs;
+  const overrides = new Map<string, DocEntry>();
+  for (const reg of registered) {
+    const entry = registeredToEntry(reg);
+    if (entry) overrides.set(reg.href, entry);
+  }
+  return allDocs.map(d => overrides.get(d.href) ?? d);
+}
+
 function collectDocs(sourceDirs: SourceDir[] = SOURCE_DIRS): DocEntry[] {
   const coll: DocCollector = { allDocs: [], seenHref: new Set(), seenTitle: new Map() };
   collectFromScan(coll, sourceDirs);
   collectFromRegistry(coll);
-  return coll.allDocs;
+  return applyRegistryOverrides(coll.allDocs);
 }
 
 // --- Pure functions (testable, no Express) ---

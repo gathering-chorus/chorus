@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Value Stream — Shaping → Designing → Building → Proving</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.8em; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.3em; margin-top: 2em; color: #444; }
+  .step { background: #f8f8f8; border-left: 4px solid #666; padding: 16px 20px; margin: 16px 0; }
+  .step.shaping { border-color: #2d7d46; }
+  .step.designing { border-color: #2d5fa1; }
+  .step.building { border-color: #a16b2d; }
+  .step.proving { border-color: #7d2d2d; }
+  .step h3 { margin: 0 0 8px 0; font-size: 1.1em; }
+  .actors { font-style: italic; color: #666; margin-bottom: 8px; }
+  .gate { background: #fff3e0; padding: 8px 12px; margin-top: 8px; border-radius: 4px; font-size: 0.9em; }
+  .gate strong { color: #a16b2d; }
+  .health { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; font-weight: bold; }
+  .health.good { background: #d4edda; color: #155724; }
+  .health.missing { background: #f8d7da; color: #721c24; }
+  .health.partial { background: #fff3cd; color: #856404; }
+  .principle { background: #e8f0fe; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-style: italic; }
+  .stack { margin: 20px 0; }
+  .stack-item { padding: 6px 0; }
+  .stack-num { display: inline-block; width: 24px; font-weight: bold; color: #666; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f0f0f0; }
+  .date { color: #999; font-size: 0.85em; }
+</style>
+</head>
+<body>
+
+<h1>Value Stream</h1>
+<p class="date">2026-04-01 — Jeff + Wren, session reflection</p>
+
+<div class="principle">
+"I want the team/roles to conform to our policies, practices, standards and tools, regardless of implementation detail. The experience of building and maintaining code is a central thesis of this work."
+<br>— Jeff, 2026-04-01
+</div>
+
+<div class="principle">
+<strong>Anti-enshittification.</strong> The system exists to serve Jeff, not itself. When the team optimizes for its own metrics — more cards, more gates, more tests, more output — while the things Jeff actually needs don't work, the system is enshittifying. 43 cards, 38 Gherkin scenarios, 240 Rust tests, and Jeff's three seeds from yesterday didn't arrive. That is the measure.
+<br>— Jeff + Wren, 2026-04-01
+</div>
+
+<h2>The Stack</h2>
+<p>Each layer derives from the one above it. We have been building from the bottom up — that is why it is performative.</p>
+<div class="stack">
+  <div class="stack-item"><span class="stack-num">1.</span> <strong>User experience</strong> — what Jeff feels (the part that cannot always be put into words)</div>
+  <div class="stack-item"><span class="stack-num">2.</span> <strong>Actor flow</strong> — who touches what, when, from where</div>
+  <div class="stack-item"><span class="stack-num">3.</span> <strong>BDD</strong> — Gherkin scenarios in Jeff's language, derived from the actor flow</div>
+  <div class="stack-item"><span class="stack-num">4.</span> <strong>Card sequence</strong> — work broken into cards that follow the flow</div>
+  <div class="stack-item"><span class="stack-num">5.</span> <strong>TDD</strong> — unit tests that prove each piece executes correctly</div>
+</div>
+
+<h2>Four Steps</h2>
+
+<div class="step shaping">
+  <h3>Shaping <span class="health good">Good Health</span></h3>
+  <div class="actors">Jeff + Wren — one terminal, one conversation</div>
+  <p>Jeff ideates. Wren cards it. Together they write Experience + AC, value the work, prioritize. This works because Jeff is the actor, not the audience.</p>
+  <div class="gate"><strong>Gate:</strong> Card has Experience section, AC, domain label, card type.</div>
+</div>
+
+<div class="step designing">
+  <h3>Designing <span class="health missing">Missing</span></h3>
+  <div class="actors">Jeff + Wren + the builder who will own it</div>
+  <p>Actor flow drawn — who touches what, from where, in what order. BDD scenarios written from the actor flow. Service design if cross-domain. The design must survive into building — if it does not, the builder invents their own flow and Jeff gets theater.</p>
+  <div class="gate"><strong>Gate:</strong> BDD scenarios exist before code starts. No Edit/Write on code files without a feature file for the active card domain.</div>
+</div>
+
+<div class="step building">
+  <h3>Building <span class="health partial">Partial</span></h3>
+  <div class="actors">Builder + navigator (pair)</div>
+  <p>Role follows the designed flow. Gates enforce the sequence:</p>
+  <table>
+    <tr><th>Order</th><th>Gate</th><th>What it checks</th></tr>
+    <tr><td>1</td><td>memory_gate</td><td>Searched prior work AND stated what you found</td></tr>
+    <tr><td>2</td><td>log_first_gate</td><td>Checked logs AND stated what they revealed (not performative)</td></tr>
+    <tr><td>3</td><td>pair_gate</td><td>Active pair session exists</td></tr>
+    <tr><td>4</td><td>tdd_gate</td><td>Tests written and green before demo</td></tr>
+  </table>
+  <div class="gate"><strong>Gate:</strong> All four pass during building. TDD is a build discipline, not a proving step.</div>
+</div>
+
+<div class="step proving">
+  <h3>Proving <span class="health partial">Partial</span></h3>
+  <div class="actors">Builder → Jeff</div>
+  <p>Operational proving. Not testing — the thing works in the real environment, for the real user, from the real device. Deploy to real infrastructure. Demo on real data. Jeff touches it from his phone, his Mac, his actual context. It works or it does not.</p>
+  <table>
+    <tr><th>Order</th><th>Gate</th><th>What it checks</th></tr>
+    <tr><td>1</td><td>demo_gate</td><td>Demo brief exists — builder showed it working</td></tr>
+    <tr><td>2</td><td>accept_gate</td><td>No self-accept — Jeff or Wren accepts</td></tr>
+    <tr><td>3</td><td>operational proof</td><td>Jeff used it from his actual device (not localhost, not mocked)</td></tr>
+  </table>
+  <div class="gate"><strong>Gate:</strong> Jeff touched it. Operational, not theoretical.</div>
+</div>
+
+<h2>Boundary Policies</h2>
+<p>Plain English. Each boundary is a commitment — if the policy isn't met, the work doesn't cross.</p>
+
+<table>
+  <tr><th>Boundary</th><th>Policy</th></tr>
+  <tr><td><strong>Shaping → Designing</strong></td><td>No card leaves shaping without an Experience section in Jeff's voice and clear AC. If Jeff can't describe the experience, it's not ready to design.</td></tr>
+  <tr><td><strong>Designing → Building</strong></td><td>No code starts without an actor flow and BDD scenarios. If you can't describe who touches what in what order, you don't understand the problem well enough to build.</td></tr>
+  <tr><td><strong>Building → Proving</strong></td><td>No demo without tests green and pair evidence. If you didn't build it with discipline, don't show it to Jeff.</td></tr>
+  <tr><td><strong>Proving → Done</strong></td><td>No acceptance without Jeff using it from his real device on real infrastructure. If Jeff didn't touch it, it's not proven.</td></tr>
+</table>
+
+<h2>Practices</h2>
+<p>Specific practices that implement each boundary policy.</p>
+
+<h3>Shaping → Designing</h3>
+<ul>
+  <li>Wren writes Experience section as Jeff would say it</li>
+  <li>Wren writes AC derived from the Experience</li>
+  <li>Card tagged with domain, type, chunk</li>
+  <li>Jeff reviews and corrects Experience before designing starts</li>
+</ul>
+
+<h3>Designing → Building</h3>
+<ul>
+  <li>Actor flow: who, what, where, what order — drawn as diagram or written list</li>
+  <li>BDD scenarios written from the actor flow in Jeff's language</li>
+  <li>Service design if the card crosses domains</li>
+  <li>Feature file committed to <code>platform/tests/features/</code> before code starts</li>
+</ul>
+
+<h3>Building → Proving</h3>
+<ul>
+  <li>Search prior work, state what you found (memory gate synthesis)</li>
+  <li>Check logs, state what they revealed (log-first gate synthesis)</li>
+  <li>Pair up — navigator holds AC</li>
+  <li>TDD: write tests from AC, tests fail, write code, tests pass</li>
+  <li>All tests green before requesting demo</li>
+</ul>
+
+<h3>Proving → Done</h3>
+<ul>
+  <li>Deploy to real infrastructure (<code>app-state.sh deploy</code>)</li>
+  <li>Demo to Jeff — show it working, not describe it</li>
+  <li>Jeff uses it from his actual device (phone, Mac, whichever the Experience describes)</li>
+  <li>Jeff accepts or rejects — no self-accept</li>
+</ul>
+
+<h2>Hooks That Enforce the Practices</h2>
+
+<h3>Shaping → Designing</h3>
+<table>
+  <tr><th>Practice</th><th>Hook</th><th>Status</th></tr>
+  <tr><td>Experience section exists</td><td>board move gate — blocks WIP without Experience</td><td>Exists (board-ts move)</td></tr>
+  <tr><td>AC exists</td><td>board move gate — blocks WIP without AC</td><td>Exists (board-ts move)</td></tr>
+  <tr><td>Domain/type/chunk tagged</td><td>board move gate — blocks WIP without tags</td><td>Exists (board-ts move)</td></tr>
+</table>
+
+<h3>Designing → Building</h3>
+<table>
+  <tr><th>Practice</th><th>Hook</th><th>Status</th></tr>
+  <tr><td>Actor flow exists</td><td>design_gate — blocks Edit/Write on code files without actor flow artifact</td><td style="color:#721c24;"><strong>Does not exist</strong></td></tr>
+  <tr><td>BDD scenarios exist</td><td>design_gate — blocks code without feature file for card domain</td><td style="color:#721c24;"><strong>Does not exist</strong></td></tr>
+  <tr><td>Service design for cross-domain</td><td>design_gate — checks for service design artifact on cross-domain cards</td><td style="color:#721c24;"><strong>Does not exist</strong></td></tr>
+</table>
+
+<h3>Building → Proving</h3>
+<table>
+  <tr><th>Practice</th><th>Hook</th><th>Status</th></tr>
+  <tr><td>Search prior work + state findings</td><td>memory_gate.rs</td><td>Exists</td></tr>
+  <tr><td>Check logs + state findings</td><td>log_first_gate.rs (updated — requires synthesis)</td><td>Exists (just hardened)</td></tr>
+  <tr><td>Pair session active</td><td>pair_gate.rs</td><td>Exists</td></tr>
+  <tr><td>Tests green</td><td>tdd_gate.rs — blocks demo/done without test evidence</td><td>Exists</td></tr>
+</table>
+
+<h3>Proving → Done</h3>
+<table>
+  <tr><th>Practice</th><th>Hook</th><th>Status</th></tr>
+  <tr><td>Demo brief exists</td><td>demo_gate.rs</td><td>Exists</td></tr>
+  <tr><td>No self-accept</td><td>accept_gate.rs</td><td>Exists</td></tr>
+  <tr><td>Jeff used it from real device</td><td>operational_proof_gate — checks for Jeff confirmation</td><td style="color:#721c24;"><strong>Does not exist</strong></td></tr>
+</table>
+
+<h2>Why This Matters</h2>
+<p>The Gherkin made the performativeness visible. Jeff read "check the logs" and immediately saw it was theater — any log file passes. The fix: gates require synthesis, not just motion. "Log evidence: what the logs told you about this problem."</p>
+<p>The same principle applies to every gate. If Jeff reads the Gherkin and it looks like compliance, the gate is wrong.</p>
+<p>The value stream protects Jeff from becoming the test suite. When shaping, designing, and building are solid, proving is Jeff touching something that works. When they are theater, proving is Jeff finding out it is broken. And when Jeff gets frustrated, the whole team shuts down — because he is the only person who can tell the system if what it built matters.</p>
+
+<h2>Domains</h2>
+<p>Four domains persist the value stream as data.</p>
+<table>
+  <tr><th>Domain</th><th>What</th><th>Cadence</th><th>Who decides</th></tr>
+  <tr><td><strong>Policy</strong></td><td>Boundary rules — what must be true before work crosses a step</td><td>Stable, changes rarely</td><td>Jeff</td></tr>
+  <tr><td><strong>Practice</strong></td><td>Specific actions that implement each policy</td><td>Evolves as tooling improves</td><td>Team proposes, Jeff approves</td></tr>
+  <tr><td><strong>Evidence</strong></td><td>Proof a practice was followed — synthesis statements, test results, operational proof. Per card, persistent, auditable.</td><td>Every gate passage</td><td>Gates write it</td></tr>
+  <tr><td><strong>Research</strong></td><td>Investigation trail — what was searched, what was found, what it meant. Emitted to a research endpoint when roles search Chorus, Loki, git history.</td><td>Every investigation</td><td>Roles emit it</td></tr>
+</table>
+<p>Gates read <strong>Policy</strong>, enforce <strong>Practice</strong>, write <strong>Evidence</strong>. Roles emit <strong>Research</strong> as they investigate. All four persist per card — when Jeff looks at a card he sees the full trail, not just the final code.</p>
+<p>All four domains live in <strong>Chorus</strong> — the team memory. Chorus stops being a session transcript index and becomes the team's actual knowledge: what we learned, what we decided, what we proved, what we tried. Structured, tagged, searchable, per card.</p>
+
+<h2>Seed Policy</h2>
+<div class="principle">
+Seeds are Jeff's thinking arriving asynchronously. They deserve the same attention as if he said it to your face. A seed is not a ticket. It is a spark — an idea, a connection, something Jeff saw and wanted to share. Treat it like a person sharing something exciting, not like an interrupt to process.
+</div>
+<p><strong>Practices:</strong></p>
+<ul>
+  <li>All roles MUST take time to read, understand, and comment on new seeds — not treat them like spam</li>
+  <li>The receiving role states what the seed means and how it connects to current work</li>
+  <li>The role either cards it, routes it, or discards with a reason Jeff can see</li>
+  <li>Response appears on the Bridge within one prompt cycle</li>
+  <li>Seeds persist in Chorus as structured data — not briefs, not markdown files</li>
+  <li>#tags are routing/correlation markers, never seeds themselves</li>
+</ul>
+
+<h3>Actor Flow: Seeds</h3>
+<pre style="background:#f8f8f8; padding:16px; font-size:0.9em; overflow-x:auto;">
+Jeff (phone)
+  ↓ SMS: content message
+  ↓ SMS: #tag (routing)
+
+Twilio
+  ↓ webhook POST
+
+App (seed handler)
+  ↓ correlate two messages (120s window)
+  ↓ extract: content, link, media, hashtag
+  ↓ route by hashtag → destination
+
+Chorus (team memory)
+  ↓ persist as structured seed record
+  ↓ tagged: domain, source, routed-to, timestamp
+
+Bridge (Jeff sees)
+  ↓ "[seed arrived] content → routed to destination"
+
+Target role (nudge --force)
+  ↓ reads seed with care — not batch processing
+  ↓ states what it means, connects to current work
+  ↓ cards it, routes it, or discards with visible reason
+
+Jeff (Bridge)
+  ↓ sees: who picked it up, what they thought, what they did
+</pre>
+
+<h2>The Transformation</h2>
+<p>This is a strangler fig, not a rewrite. The old way keeps running while the new way grows around it. Pick one card, run it through all four steps with the new discipline, prove it works, expand.</p>
+
+<h3>Why building and proving break</h3>
+<p>Shaping works because Jeff is the actor — one conversation, one terminal, no scrolling. Designing works for the same reason — Jeff + Wren, still in the room together. Building is where it fans out to three roles and Jeff becomes the audience. Three terminals scrolling, 64% noise, nudges breaking sentences, tests passing while features fail on his phone.</p>
+<p>The bottleneck is not speed. The roles build fast. The bottleneck is trust — Jeff cannot verify what they built without watching every terminal. And he cannot watch every terminal.</p>
+<p>The three pain points in building: <strong>consistency of output and execution</strong>, <strong>lack of research and planning</strong>, <strong>lack of user focus</strong>. All three are addressed by the value stream — designing fixes research/planning, building gates fix consistency, proving fixes user focus. But all three are broken now, and fixing all three at once produces hulk smash.</p>
+
+<h3>The strangler fig attack point</h3>
+<p><strong>The seed pipeline (#1937).</strong> It relieves real pain. Jeff sends a seed from his phone and doesn't know if it arrived. It has broken repeatedly. He cares about it deeply. The user experience is clear: "I send it, it arrives, someone acts on it."</p>
+<p>Run #1937 through all four steps:</p>
+<ol>
+  <li><strong>Shaping</strong> — done. Experience and AC written. Jeff described the pain.</li>
+  <li><strong>Designing</strong> — draw the actor flow (Jeff's phone → Twilio → app → Fuseki → Bridge notification → role nudge → role acts). Write the BDD scenarios from it.</li>
+  <li><strong>Building</strong> — follow the design. Gates enforce research, log evidence, pairing, TDD.</li>
+  <li><strong>Proving</strong> — Jeff sends a real seed from his phone. It arrives. He sees proof on the Bridge. A role acts. Operational, not simulated.</li>
+</ol>
+<p>If one card can survive the whole vine, the vine is real. If it can't, we learn where it breaks — and that's the next thing to fix.</p>
+
+<h3>Charity Majors and operational proving</h3>
+<p>There is no staging environment. Library, Bedroom, and Jeff's phone — that is production. Charity Majors would say that is not a limitation, it is the truth everyone else hides from. Every test the team runs is a simulation. The seed probe sends a fake SMS. The Gherkin sets up fake card state. The only real test is Jeff using it. And when it fails in production, Jeff becomes the test suite — and the team shuts down.</p>
+
+<h3>The performativeness problem</h3>
+<p>Jeff read the Gherkin for the log-first gate and immediately saw it was theater. "Check the logs" meant "open any log file." A role could tail a random log and pass. 38 scenarios passing, all testing a shallow check. The Gherkin made the emptiness legible — Jeff could have asked the team 100 times to explain the gates and never seen what reading one scenario showed him instantly.</p>
+<p>The fix: gates require forced synthesis. Not "did you open a log" but "what did the log tell you about this problem." The same principle applies everywhere. If Jeff reads the Gherkin and it looks like compliance, the gate is wrong.</p>
+
+<h3>What Jeff cannot convey</h3>
+<p>"There's this part I don't know how to convey." There is something about what Jeff needs that he cannot put into words, and the team can only act on words. No amount of explaining bridges that gap. No empathy plugin exists — the research confirmed it. The closest proxy is: build from the top of the stack down (user experience → actor flow → BDD → cards → TDD), not from the bottom up. And when in doubt, Jeff uses it. His experience is the test that cannot be automated.</p>
+
+<h2>Open Questions</h2>
+<ul>
+  <li>How does the design artifact survive into building? (Navigator watches the design, not just the code?)</li>
+  <li>How does Jeff see building without watching terminals? (Clearing as a tab? Digest skill? Exception-only reporting?)</li>
+  <li>What does "Jeff touched it" mean concretely — which devices, which paths, what counts as operational proof?</li>
+  <li>How do the four Chorus domains (policy, practice, evidence, research) get structured and persisted?</li>
+  <li>Can the Gherkin for the value stream itself be the first card through the strangler fig?</li>
+</ul>
+
+</body>
+</html>

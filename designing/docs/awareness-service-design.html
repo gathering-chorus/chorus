@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Awareness — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #2d4a7a; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Shared Awareness <span>— Service Design</span></h1>
+<p class="date">2026-04-04 — Wren (driver) + Silas (navigator), pair on #2022. Source: Jeff's graph-paper sketch + deployment inventory.</p>
+
+<div class="promise">
+Any role can answer "who is active, what are they doing, and when did they last emit?" without asking Jeff. When this breaks, Jeff becomes the monitoring system. That is the highest-cost failure mode.
+</div>
+
+<h2>Overview</h2>
+<p>L2 in the Protocol Stack. Five components from Jeff's sketch: Time, Pulse, Memory, Knowledge, System Context. Each component below shows what's deployed (services, APIs, data, tests, docs, UIs) and what's missing.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
+<tr><td>Time</td><td><span class="tag-real">REAL</span></td><td>wall-clock.sh, chorus prompt</td><td><span class="tag-none">NONE</span></td><td>No tests</td></tr>
+<tr><td>Pulse</td><td><span class="tag-real">REAL</span></td><td>watchdog, seed-probe, infra-alert, heartbeat</td><td>14 tests</td><td>False alerts fixed today (#2033)</td></tr>
+<tr><td>Memory</td><td><span class="tag-partial">PARTIAL</span></td><td>session-watcher, Chorus API search</td><td>BDD</td><td>Indexer lags minutes</td></tr>
+<tr><td>Knowledge</td><td><span class="tag-real">REAL</span></td><td>chorus-hooks (compound loop), context cache</td><td>BDD</td><td>Invisible — no UI to verify</td></tr>
+<tr><td>System Context</td><td><span class="tag-real">REAL</span></td><td>team-scan, role-state, ops-state</td><td>5 tests</td><td>Staleness detection just shipped (#2031)</td></tr>
+</table>
+
+<!-- ==================== TIME ==================== -->
+<div class="component">
+<h3>🕐 Time <span class="tag-real">REAL</span></h3>
+<p>Accurate clock on every event and transition. When timestamps drift, escalation decisions go wrong (#1559).</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong><code>wall-clock.sh</code> — Boston TZ<br/>Chorus prompt refresh every response</div>
+  <div class="section-box"><strong>APIs</strong>None dedicated — <code>TZ=America/New_York date</code> baked into hooks</div>
+  <div class="section-box"><strong>Data</strong><code>/tmp/claude-team-scan/{role}-declared.json</code> (ts field)<br/>chorus.log timestamps</div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span></div>
+  <div class="section-box"><strong>Docs</strong>DEC-1571 (clock sync)<br/><code>feedback_clock_sync.md</code></div>
+  <div class="section-box"><strong>UIs</strong>Bridge timestamp on every message</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No tests for clock accuracy. If wall-clock.sh breaks, no alert fires.</div>
+</div>
+
+<!-- ==================== PULSE ==================== -->
+<div class="component">
+<h3>💓 Pulse <span class="tag-real">REAL</span></h3>
+<p>Heartbeat of system activity. Events flowing, probes checking, alerts firing. The system's vital signs.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.chorus.watchdog</code> (60s)<br/>
+    <code>com.chorus.seed-probe</code> (30min)<br/>
+    <code>com.gathering.infra-alert</code> (5min)<br/>
+    <code>com.chorus.clearing-probe</code><br/>
+    <code>com.chorus.heartbeat</code>
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>localhost:3470/health</code> (Clearing)<br/>
+    <code>localhost:3000/health</code> (App)<br/>
+    <code>localhost:3030/$/ping</code> (Fuseki)
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>/tmp/watchdog/{role}.state</code><br/>
+    <code>~/Library/Logs/Chorus/alert-runner.log</code>
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    <code>alert-nudge.test.sh</code> (9)<br/>
+    <code>watchdog-false-alerts.test.sh</code> (5)
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    <code>alerting/*.yml</code> (6 rules)
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Grafana <code>localhost:3100</code>
+  </div>
+</div>
+</div>
+
+<!-- ==================== MEMORY ==================== -->
+<div class="component">
+<h3>🧠 Memory <span class="tag-partial">PARTIAL</span></h3>
+<p>Prior context available without re-searching. Sessions, decisions, stories — indexed and searchable.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.chorus.session-watcher</code><br/>
+    Chorus API search
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>/api/chorus/search</code><br/>
+    <code>/api/chorus/conversations</code><br/>
+    <code>/api/chorus/card-story/{id}</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>~/.chorus/index.db</code> (SQLite)<br/>
+    <code>~/.chorus/lance/</code> (LanceDB vectors)
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>BDD scenarios in <code>platform/tests/features/</code></div>
+  <div class="section-box"><strong>Docs</strong><code>skill/chorus/</code> (search skill)</div>
+  <div class="section-box"><strong>UIs</strong><code>/chorus search</code> in terminal</div>
+</div>
+<div class="gap"><strong>Gap:</strong> Indexer lags minutes behind live sessions. Real-time indexing (fs.watch on JSONL) would close this — same pattern as ICD watcher (#1904).</div>
+</div>
+
+<!-- ==================== KNOWLEDGE ==================== -->
+<div class="component">
+<h3>💡 Knowledge <span class="tag-real">REAL</span></h3>
+<p>Semantic understanding, not just keyword match. The compound loop injects prior context into every prompt — zero discretion.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>chorus-hooks</code> binary (Rust)<br/>
+    Session-start hook<br/>
+    After-prompt hook<br/>
+    Team-scan hook
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    None — hooks inject via<br/>
+    PreToolUse / PostToolUse /<br/>
+    UserPromptSubmit
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>/tmp/session-start-{role}.md</code> (340 lines)<br/>
+    <code>/tmp/session-context-{role}.md</code>
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>BDD in <code>platform/tests/features/awareness/</code></div>
+  <div class="section-box"><strong>Docs</strong><code>architect/system-architecture.md</code></div>
+  <div class="section-box"><strong>UIs</strong><span class="tag-none">NONE</span> — invisible infrastructure</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No UI to verify what the compound loop injected. Jeff can't tell if context was fresh or stale without reading the session file.</div>
+</div>
+
+<!-- ==================== SYSTEM CONTEXT ==================== -->
+<div class="component">
+<h3>📡 System Context <span class="tag-real">REAL</span></h3>
+<p>Infrastructure state + code + tests visible without checking. The ops layer that surfaces degradation.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    Team-scan hook (UserPromptSubmit)<br/>
+    Role-state declarations<br/>
+    Ops-state hook (PostToolUse)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>/api/chorus/roles</code> (role state)<br/>
+    Vikunja board API via <code>cards</code> CLI
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>/tmp/claude-team-scan/{role}-declared.json</code><br/>
+    Board snapshots in <code>platform/logs/</code>
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><code>watchdog-false-alerts.test.sh</code> (validates state reading)</div>
+  <div class="section-box"><strong>Docs</strong><code>team-architecture.md</code></div>
+  <div class="section-box"><strong>UIs</strong>Clearing tiles (<code>localhost:3470</code> role status)</div>
+</div>
+</div>
+
+<h2>Forcing Functions</h2>
+<p>Components that fire mechanically — no opt-in required.</p>
+<table>
+<tr><th>Forcing Function</th><th>Trigger</th><th>What it does</th></tr>
+<tr><td>Compound loop</td><td>Every UserPromptSubmit</td><td>Hybrid search + memory scan, inject context. Role doesn't choose to search.</td></tr>
+<tr><td>Ops awareness</td><td>Every PostToolUse</td><td>Check API health, hook server PID. Surface degradation or stay silent.</td></tr>
+<tr><td>Team scan</td><td>Every UserPromptSubmit</td><td>Inject other roles' state and queued messages. No role is blind.</td></tr>
+<tr><td>Alert runner</td><td>Every 60 seconds</td><td>Check tunnel, daily review, hook server. Fire to Bridge AND terminal (#2037).</td></tr>
+<tr><td>Watchdog</td><td>Every 60 seconds</td><td>Check role staleness. Flag if no state change in threshold (#2033 fixed today).</td></tr>
+</table>
+
+<h2>Gaps Summary</h2>
+<table>
+<tr><th>Gap</th><th>Impact</th><th>Fix</th></tr>
+<tr><td>Memory indexer lag</td><td>Search returns stale results for recent sessions</td><td>fs.watch on JSONL, same pattern as ICD watcher</td></tr>
+<tr><td>Knowledge has no UI</td><td>Jeff can't verify context injection quality</td><td>Compound loop debug endpoint or session-start preview</td></tr>
+<tr><td>Time has no tests</td><td>Clock drift undetected</td><td>Test that wall-clock output matches system clock</td></tr>
+<tr><td>No unified timeline</td><td>History is git log + Chorus index, not one view</td><td>Timeline API composing multiple sources</td></tr>
+</table>
+
+<h2>Architecture Reference</h2>
+<p>See <a href="/gathering-docs/protocol-stack.html">Protocol Stack</a> L2 section. See <a href="/gathering-docs/domain-context-awareness.html">Shared Awareness domain page</a> for context diagram and actor flows. See <a href="/gathering-docs/chorus-domain-decomposition.html">Domain Decomposition</a> for layer placement.</p>
+
+</body>
+</html>

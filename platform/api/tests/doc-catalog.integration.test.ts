@@ -152,6 +152,108 @@ describe('doc-catalog (#2445 — relocated from gathering)', () => {
     }
   });
 
+  // #2969 — recursive opt-in on SourceDir surfaces nested docs (skills/<name>/SKILL.md pattern)
+  test('recursive SourceDir: scans subdirectories one level deep', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-catalog-recursive-'));
+    fs.mkdirSync(path.join(tmpDir, 'skill-a'));
+    fs.mkdirSync(path.join(tmpDir, 'skill-b'));
+    fs.writeFileSync(path.join(tmpDir, 'skill-a', 'SKILL.md'), '# Skill A\n\nBody.');
+    fs.writeFileSync(path.join(tmpDir, 'skill-b', 'SKILL.md'), '# Skill B\n\nBody.');
+    fs.writeFileSync(path.join(tmpDir, 'top-level.md'), '# Top Level\n\nShould also appear.');
+    try {
+      const fixtureDirs: SourceDir[] = [
+        { root: 'gathering', dir: '.', urlPrefix: '/recursive/', source: 'recursive-fixture',
+          defaultGroup: 'Test Fixture', recursive: true },
+      ];
+      const prev = process.env.GATHERING_REPO;
+      process.env.GATHERING_REPO = tmpDir;
+      try {
+        const result = buildDocCatalog(fixtureDirs);
+        const titles = result.groups.flatMap(g => g.docs.map(d => d.title)).sort();
+        expect(titles).toContain('Skill A');
+        expect(titles).toContain('Skill B');
+        expect(titles).toContain('Top Level');
+        // Hrefs preserve relative paths
+        const hrefs = result.groups.flatMap(g => g.docs.map(d => d.href));
+        expect(hrefs).toContain('/recursive/skill-a/SKILL.md');
+        expect(hrefs).toContain('/recursive/skill-b/SKILL.md');
+      } finally {
+        if (prev) process.env.GATHERING_REPO = prev; else delete process.env.GATHERING_REPO;
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  test('non-recursive SourceDir (default): does NOT scan subdirectories', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-catalog-flat-'));
+    fs.mkdirSync(path.join(tmpDir, 'nested'));
+    fs.writeFileSync(path.join(tmpDir, 'nested', 'buried.md'), '# Buried\n\nShould not appear.');
+    fs.writeFileSync(path.join(tmpDir, 'visible.md'), '# Visible\n\nShould appear.');
+    try {
+      const fixtureDirs: SourceDir[] = [
+        { root: 'gathering', dir: '.', urlPrefix: '/flat/', source: 'flat-fixture',
+          defaultGroup: 'Test Fixture' },
+      ];
+      const prev = process.env.GATHERING_REPO;
+      process.env.GATHERING_REPO = tmpDir;
+      try {
+        const result = buildDocCatalog(fixtureDirs);
+        const titles = result.groups.flatMap(g => g.docs.map(d => d.title));
+        expect(titles).toContain('Visible');
+        expect(titles).not.toContain('Buried');
+      } finally {
+        if (prev) process.env.GATHERING_REPO = prev; else delete process.env.GATHERING_REPO;
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // #2969 — registry takes precedence over scan: when both produce the same href,
+  // the registered entry's curated metadata wins. Pre-#2969 the scan entry won
+  // silently which made the bulk-register-40 work invisible to the catalog.
+  test('registry-takes-precedence: registered entry overrides scan metadata for same href', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-catalog-prec-'));
+    const tmpFile = path.join(tmpDir, 'precedence.html');
+    fs.writeFileSync(tmpFile, '<html><head><title>Scan Title</title></head></html>');
+    const uniqueHref = `/fixture/precedence.html`;
+    const registryPath = path.join(
+      process.env.CHORUS_REPO || '/Users/jeffbridwell/CascadeProjects/chorus',
+      'platform', 'api', 'data', 'doc-catalog-registry.json',
+    );
+    const originalRegistry = fs.readFileSync(registryPath, 'utf-8');
+    try {
+      // Inject a registry entry that points at the same file but declares a curated group
+      const registry = JSON.parse(originalRegistry) as Array<{ filePath: string; href: string; group?: string }>;
+      registry.push({ filePath: tmpFile, href: uniqueHref, group: 'Curated Override Group' });
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+
+      const fixtureDirs: SourceDir[] = [
+        { root: 'gathering', dir: '.', urlPrefix: '/fixture/', source: 'scan-source',
+          defaultGroup: 'Scan Default Group' },
+      ];
+      const prev = process.env.GATHERING_REPO;
+      process.env.GATHERING_REPO = tmpDir;
+      try {
+        const result = buildDocCatalog(fixtureDirs);
+        // Find the doc by href and check its group is the curated one, not the scan default
+        const allDocs = result.groups.flatMap(g => g.docs.map(d => ({ ...d, _groupName: g.name })));
+        const doc = allDocs.find(d => d.href === uniqueHref);
+        expect(doc).toBeDefined();
+        // Registry source wins, group is curated
+        expect(doc!.source).toBe('manual');
+        expect(doc!._groupName).toBe('Curated Override Group');
+      } finally {
+        if (prev) process.env.GATHERING_REPO = prev; else delete process.env.GATHERING_REPO;
+      }
+    } finally {
+      // Always restore registry
+      fs.writeFileSync(registryPath, originalRegistry);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   test('relocation contract: buildDocCatalog returns same shape for repeated calls', () => {
     // Snapshot test — calling twice with no changes should produce identical
     // shape. Catches drift in classifier rules across the cutover from gathering

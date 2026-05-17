@@ -198,6 +198,17 @@ const DesignRefreshInput = z.object({
   design_name: z.string().min(1).describe('Filename stem (or basename) of the service design HTML, e.g. "build-and-deploy-service-design". Looked up under designing/docs/<name>.html.'),
 }).strict();
 
+// #2969 — chorus_doc_catalog_add input. Registers a doc in the catalog so it
+// surfaces in the Athena UI. Thin typed wrapper around POST /api/doc-catalog/add
+// → registerDoc() in handlers/doc-catalog.ts (the canonical writer to the
+// registry JSON). Closes the no-typed-surface gap that drove the canonical
+// JSON-edit bypass demonstrated on 2026-05-17.
+const DocCatalogAddInput = z.object({
+  filePath: z.string().min(1).describe('Absolute path to the .html or .md file to register. Must exist on disk; the handler refuses with file-not-found otherwise.'),
+  href: z.string().min(1).describe('Public href the Athena UI uses to reach the doc (e.g., "/gathering-docs/awareness-service-design.html" or "/loom/principles.html"). Must be unique in the registry; refuses with already-registered on duplicate.'),
+  group: z.string().optional().describe('Optional logical grouping label (free text). Used by the UI for visual clustering; not load-bearing.'),
+}).strict();
+
 // #2759 — chorus_unpull_card atomic teardown input. /pull's natural inverse.
 // Role + card_id; same shape as pull. Refuses if card isn't WIP-owned-by-role
 // or werk has uncommitted work (don't lose work).
@@ -722,6 +733,33 @@ const DESIGN_REFRESH_TOOL_DEF = {
       },
     },
     required: ['role', 'design_name'],
+    additionalProperties: false,
+  },
+} as const;
+
+const DOC_CATALOG_ADD_TOOL_DEF = {
+  name: 'chorus_doc_catalog_add',
+  description:
+    'Register a doc (.html or .md) in the Chorus doc-catalog so it surfaces in the Athena UI. Use this when a new design doc, ADR, or service-design lands and should be discoverable team-wide. Required: filePath (absolute, must exist) + href (public path the UI uses, must be unique). Optional: group (free-text cluster label). Returns the registered entry on success. Refusals (each maps to an HTTP status from registerDoc): invalid-input (missing filePath/href, status 400) | file-not-found (path does not exist, 404) | invalid-extension (not .html or .md, 400) | already-registered (href collision, 409). Do NOT use to update an existing entry — there is no update path; remove + re-add via the same flow if needed. Do NOT use to bulk-import without checking duplicates first — already-registered is per-href and will refuse 1 entry at a time. The HTTP endpoint POST /api/doc-catalog/add is the same code path; agents should prefer this MCP tool over bash-curl from a role session.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      filePath: {
+        type: 'string',
+        minLength: 1,
+        description: 'Absolute path to the .html or .md file to register. Must exist on disk.',
+      },
+      href: {
+        type: 'string',
+        minLength: 1,
+        description: 'Public href the Athena UI uses to reach the doc (e.g., "/gathering-docs/foo.html"). Must be unique.',
+      },
+      group: {
+        type: 'string',
+        description: 'Optional logical grouping label for UI clustering.',
+      },
+    },
+    required: ['filePath', 'href'],
     additionalProperties: false,
   },
 } as const;
@@ -2059,6 +2097,47 @@ async function executePrinciplesCreate(
   return { content: [{ type: 'text', text: `principle created: ${id}` }] };
 }
 
+// #2969 — chorus_doc_catalog_add: POST to /api/doc-catalog/add, which delegates
+// to registerDoc() in handlers/doc-catalog.ts. Same code path the HTTP endpoint
+// uses; this is the typed agent-facing surface. Refusal taxonomy mirrors
+// registerDoc's HTTP status codes: 400/404/409.
+async function executeDocCatalogAdd(
+  args: { filePath: string; href: string; group?: string },
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  from: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.doc_catalog.add.invoked', tool: 'chorus_doc_catalog_add', from, href: args.href, ts: new Date().toISOString() }) + '\n');
+  const url = `${apiBase}/api/doc-catalog/add`;
+  const body: Record<string, string> = { filePath: args.filePath, href: args.href };
+  if (args.group) body.group = args.group;
+  const resp = await fetchImpl(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const status = resp.status ?? 0;
+    let errMsg = `doc-catalog add failed (status ${status})`;
+    try {
+      const errBody = (await resp.json()) as { error?: string };
+      if (errBody.error) errMsg = `${errMsg}: ${errBody.error}`;
+    } catch {
+      // body wasn't JSON; keep the status-only message
+    }
+    if (status === 400) throw new Error(`invalid-input — ${errMsg}`);
+    if (status === 404) throw new Error(`file-not-found — ${errMsg}`);
+    if (status === 409) throw new Error(`already-registered — ${errMsg}`);
+    throw new Error(errMsg);
+  }
+  const result = (await resp.json()) as { registered?: { filePath: string; href: string; group?: string } };
+  const reg = result.registered;
+  const summary = reg
+    ? `registered: ${reg.href} → ${reg.filePath}${reg.group ? ` [group: ${reg.group}]` : ''}`
+    : 'registered (response missing registered field)';
+  return { content: [{ type: 'text', text: summary }] };
+}
+
 interface DecisionRecord {
   id: string;
   label?: string;
@@ -2491,6 +2570,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
       DESIGN_REFRESH_TOOL_DEF,
+      DOC_CATALOG_ADD_TOOL_DEF,
       LOGS_QUERY_TOOL_DEF,
       LOGS_RECENT_ERRORS_TOOL_DEF,
       LOGS_FOR_CARD_TOOL_DEF,
@@ -2676,6 +2756,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           // refusal; rethrow so the MCP surface returns an error response.
           throw err;
         }
+      }
+      case 'chorus_doc_catalog_add': {
+        const parsed = DocCatalogAddInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeDocCatalogAdd(parsed.data, fetchImpl, apiBase, from);
       }
       // #2840 — typed agent surface for log + error investigation. Each
       // handler emits a chorus_logs.queried event so investigation paths

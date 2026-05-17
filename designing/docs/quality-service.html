@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quality Service — Test Pyramid</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:24px 1in;color:#1a1a1a;line-height:1.6;background:#fafafa}
+h1{font-size:1.8em;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:4px}
+h2{font-size:1.3em;margin-top:2em;color:#2c5282}
+.subtitle{color:#666;font-size:.9em;margin-bottom:24px}
+.total{font-size:2.4em;font-weight:700;color:#2563eb;margin:16px 0 4px}
+.total-label{color:#888;font-size:.85em}
+
+/* Pyramid */
+.pyramid{display:flex;flex-direction:column;align-items:center;margin:24px 0 32px;gap:2px}
+.pyramid-row{display:flex;align-items:center;gap:8px}
+.pyramid-bar{height:36px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:.8em;letter-spacing:.5px;min-width:60px;transition:all .2s;cursor:pointer}
+.pyramid-bar:hover{filter:brightness(1.15);transform:scaleX(1.02)}
+.pyramid-label{font-size:.75em;color:#666;width:90px;text-align:right}
+.pyramid-count{font-size:.75em;color:#666;width:90px}
+
+/* Repo tiles */
+.repos{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0}
+.repo{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.repo h3{margin-top:0;font-size:1.1em;border-bottom:1px solid #eee;padding-bottom:6px}
+.repo-count{font-size:1.8em;font-weight:700;margin:4px 0}
+.gathering .repo-count{color:#059669}
+.chorus .repo-count{color:#7c3aed}
+
+/* Layer bars */
+.layer{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:.85em}
+.layer-bar{height:22px;border-radius:3px;display:flex;align-items:center;padding:0 8px;color:#fff;font-weight:500;font-size:.75em;min-width:30px}
+.layer-name{width:80px;text-align:right;color:#555;font-size:.8em}
+.layer-count{color:#888;font-size:.8em;width:50px}
+
+/* Health indicators */
+.health{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+.health-good{background:#059669}
+.health-warn{background:#d97706}
+.health-gap{background:#dc2626}
+
+/* Foldable test details */
+details{margin:4px 0;font-size:.85em}
+details summary{cursor:pointer;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;font-weight:500;color:#334155;list-style:none;display:flex;align-items:center;gap:6px}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:">";font-size:.7em;color:#94a3b8;transition:transform .15s;display:inline-block;width:12px}
+details[open] summary::before{transform:rotate(90deg)}
+details summary:hover{background:#f1f5f9}
+.detail-count{margin-left:auto;color:#94a3b8;font-size:.8em}
+.test-list{padding:8px 12px;margin:0;background:#fff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 4px 4px;font-size:.9em;color:#475569}
+.test-list li{margin:2px 0;padding:2px 0}
+.test-file{color:#2563eb;font-weight:500}
+.test-cases{color:#94a3b8;font-size:.85em}
+
+/* Gap cards */
+.gaps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:16px 0}
+.gap{background:#fff8f0;border:1px solid #fed7aa;border-radius:6px;padding:12px;font-size:.85em}
+.gap-title{font-weight:600;color:#c2410c;margin-bottom:4px}
+.gap-detail{color:#666}
+
+/* Next steps */
+.next-steps{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.step{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:16px;font-size:.85em}
+.step-priority{font-size:.7em;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.step-p1{color:#dc2626}
+.step-p2{color:#d97706}
+.step-p3{color:#2563eb}
+.step-title{font-weight:600;color:#1a1a1a;margin-bottom:6px}
+.step-detail{color:#666;line-height:1.5}
+.step-metric{color:#059669;font-weight:500}
+
+/* Coverage heatmap */
+.coverage{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin:12px 0}
+.cov-cell{height:24px;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:.6em;color:#fff;font-weight:500}
+.cov-full{background:#059669}
+.cov-partial{background:#d97706}
+.cov-none{background:#fca5a5;color:#991b1b}
+
+/* Verdict */
+.verdict{background:#f0f4ff;border:1px solid #bfdbfe;border-radius:8px;padding:20px;margin:20px 0}
+.verdict h3{margin-top:0;color:#1e40af}
+.finding{margin:12px 0;padding-left:16px;border-left:3px solid #93c5fd}
+.finding-label{font-weight:600;color:#1e40af;font-size:.9em}
+.finding-detail{color:#475569;font-size:.9em;margin-top:2px}
+
+footer{margin-top:3em;padding-top:1em;border-top:1px solid #ddd;font-size:.8em;color:#888}
+</style>
+</head>
+<body>
+
+<h1>Quality Service</h1>
+<div class="subtitle">Test pyramid health across Gathering and Chorus — updated 2026-04-06</div>
+
+<div class="total">8,465</div>
+<div class="total-label">total tests across two repos, five languages (TypeScript, Rust, Bash, Gherkin, Playwright)</div>
+
+<!-- PYRAMID -->
+<div class="pyramid">
+  <div class="pyramid-row">
+    <div class="pyramid-label">E2E</div>
+    <div class="pyramid-bar" style="width:120px;background:#dc2626">193</div>
+    <div class="pyramid-count">Playwright, 32 specs</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Page Smoke</div>
+    <div class="pyramid-bar" style="width:40px;background:#f97316">22</div>
+    <div class="pyramid-count">of ~60 pages</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Security</div>
+    <div class="pyramid-bar" style="width:50px;background:#ea580c">46</div>
+    <div class="pyramid-count">5 dedicated files</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">BDD</div>
+    <div class="pyramid-bar" style="width:80px;background:#d97706">145</div>
+    <div class="pyramid-count">22 feature files</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">API Regression</div>
+    <div class="pyramid-bar" style="width:30px;background:#dc2626;border:2px solid #991b1b">~10</div>
+    <div class="pyramid-count" style="color:#dc2626;font-weight:700">of 310 routes — 3% coverage</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Integration</div>
+    <div class="pyramid-bar" style="width:55px;background:#0891b2">91</div>
+    <div class="pyramid-count">BATS + flow tests</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">BATS Ops Gates</div>
+    <div class="pyramid-bar" style="width:45px;background:#0e7490">76</div>
+    <div class="pyramid-count">pre-deploy + nightly + on-demand</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Page Render</div>
+    <div class="pyramid-bar" style="width:180px;background:#2563eb">50 handlers</div>
+    <div class="pyramid-count">test res.render()</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">TS Unit</div>
+    <div class="pyramid-bar" style="width:460px;background:#1d4ed8">4,150</div>
+    <div class="pyramid-count">189 test files</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Rust Unit</div>
+    <div class="pyramid-bar" style="width:420px;background:#7c3aed">3,730</div>
+    <div class="pyramid-count">26 source files</div>
+  </div>
+  <div class="pyramid-row">
+    <div class="pyramid-label">Performance</div>
+    <div class="pyramid-bar" style="width:20px;background:#9ca3af">13</div>
+    <div class="pyramid-count">gallery, load</div>
+  </div>
+</div>
+
+<!-- REPO TILES WITH FOLDABLE TEST LISTS -->
+<div class="repos">
+  <div class="repo gathering">
+    <h3>Gathering App</h3>
+    <div class="repo-count">3,931</div>
+
+    <details>
+      <summary>Unit Tests <span class="detail-count">3,664 cases / 189 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">Handlers (66 files)</span> <span class="test-cases">— about, analytics, book, cards, chorus, collection, cooking, doc-catalog, document, face-cluster, flow, garden, glimmer, graph, harvest, health, idea, intention, knowledge-graph, login, login-page, loom, music, note, photo, property, reading, search, seed, self-ai, session-replay, sexuality, skills, static-page, story, team, todo, watchlist + more</span></li>
+        <li><span class="test-file">Services (66 files)</span> <span class="test-cases">— acl, analytics, board-sdk, cards, collection-visibility, document-routing, face-cluster, fuseki-sync, harvest, knowledge-graph, link-inference, monitoring, music-query, people-query, photo-pipeline, photo-query, search-index, seed-pod, skills, sparql + more</span></li>
+        <li><span class="test-file">Middleware (11 files)</span> <span class="test-cases">— auth, compression, cors, csp-nonce, csrf, pod-storage, service-token, traffic-tracker, twilio-auth, webhook-auth, collection-visibility</span></li>
+        <li><span class="test-file">Config/Utils (7 files)</span> <span class="test-cases">— authorized-users, solid-auth, app bootstrap (24 variants)</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>E2E Tests <span class="detail-count">193 cases / 32 specs</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">CRUD</span> <span class="test-cases">— books, collections, ideas, glimmers, profiles, properties, roles, seeds</span></li>
+        <li><span class="test-file">Features</span> <span class="test-cases">— login, landing, dashboard, navbar, search, seed-triage, admin-crud</span></li>
+        <li><span class="test-file">Domain</span> <span class="test-cases">— lightlife, music-collection, photos-collection</span></li>
+        <li><span class="test-file">Security</span> <span class="test-cases">— csrf, write-denial, visibility, visibility-transitions</span></li>
+        <li><span class="test-file">Content</span> <span class="test-cases">— high-use-pages, site-coherence, structural-gaps, visual-regression</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Security Tests <span class="detail-count">46 cases / 5 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">basic-security.test.js</span></li>
+        <li><span class="test-file">network-boundary.test.ts</span> <span class="test-cases">— access control boundaries</span></li>
+        <li><span class="test-file">rate-limiting.test.ts</span></li>
+        <li><span class="test-file">security-headers.test.ts</span></li>
+        <li><span class="test-file">self-domain-security.test.ts</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Integration Tests <span class="detail-count">15 cases / 12 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">convergence-page.test.ts</span> <span class="test-cases">— page rendering</span></li>
+        <li><span class="test-file">domain-api.test.ts</span> <span class="test-cases">— API integration</span></li>
+        <li><span class="test-file">deploy-pipeline-flow.test.ts</span> <span class="test-cases">— deployment flow</span></li>
+        <li><span class="test-file">page-render-flow.test.ts</span> <span class="test-cases">— SPARQL boundary, cache, partials</span></li>
+        <li><span class="test-file">seed-routing-flow.test.ts</span> <span class="test-cases">— triage destinations, lineage</span></li>
+        <li><span class="test-file">shared-partials-flow.test.ts</span> <span class="test-cases">— 8 EJS partials consistent</span></li>
+        <li><span class="test-file">+ 6 more</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Performance Tests <span class="detail-count">13 cases / 3 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">gallery-performance.test.ts</span></li>
+        <li><span class="test-file">load-test.test.ts</span></li>
+        <li><span class="test-file">sexuality-performance.test.ts</span></li>
+      </ul>
+    </details>
+
+    <div style="margin-top:12px;font-size:.8em;color:#666">
+      <span class="health health-good"></span> 66/66 handlers tested &nbsp;
+      <span class="health health-good"></span> 66/83 services (79%) &nbsp;
+      <span class="health health-good"></span> Coverage enforced: 80/75/60
+    </div>
+  </div>
+
+  <div class="repo chorus">
+    <h3>Chorus Platform</h3>
+    <div class="repo-count">4,534</div>
+
+    <details>
+      <summary>Rust Unit Tests <span class="detail-count">3,730 cases / 26 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">Input classification</span> <span class="test-cases">— intent, questions, directives</span></li>
+        <li><span class="test-file">Gate logic (12+ gates)</span> <span class="test-cases">— accept, quality, demo, TDD, memory-first, search-hierarchy, infra-guardrails, pair, log-first, session-init, sensitive-paths, CSC guard</span></li>
+        <li><span class="test-file">Memory operations</span> <span class="test-cases">— search, recall, embedding</span></li>
+        <li><span class="test-file">Seed processing</span> <span class="test-cases">— validation, routing, media</span></li>
+        <li><span class="test-file">Bridge + session</span> <span class="test-cases">— message handling, state mgmt</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Board-Client TS <span class="detail-count">290 cases / 19 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">client.test.ts</span> <span class="test-cases">— 28 cases: list, view, mine, snapshot</span></li>
+        <li><span class="test-file">card-lifecycle-flow.test.ts</span> <span class="test-cases">— 27 cases</span></li>
+        <li><span class="test-file">jdi-gate-flow.test.ts</span> <span class="test-cases">— 46 cases (most complex)</span></li>
+        <li><span class="test-file">Pipeline flows</span> <span class="test-cases">— brief, demo, nudge, seed, clearing (78 cases)</span></li>
+        <li><span class="test-file">card-gates-bdd.test.ts</span> <span class="test-cases">— 10 cases</span></li>
+        <li><span class="test-file">spine-event-gaps.test.ts</span> <span class="test-cases">— 10 cases</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>BDD / Gherkin <span class="detail-count">145 scenarios / 22 features</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">Gates (10 features, ~95 scenarios)</span> <span class="test-cases">— accept, demo, quality, TDD, memory, memory-first, log-first, pair, compound-search, stop-on-error</span></li>
+        <li><span class="test-file">Awareness (3 features)</span> <span class="test-cases">— team-awareness, chat-flow, clearing-access</span></li>
+        <li><span class="test-file">Memory (3 features)</span> <span class="test-cases">— card-story, conversation-recall, domain-crawler</span></li>
+        <li><span class="test-file">Seeds (3 features)</span> <span class="test-cases">— seed-alert, seed-media, seed-pipeline</span></li>
+        <li><span class="test-file">Policy (1 feature)</span> <span class="test-cases">— jeff-contracts</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Clearing TS <span class="detail-count">135 cases / 7 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">clearing-ui.test.ts</span> <span class="test-cases">— 52 cases (most complex)</span></li>
+        <li><span class="test-file">bridge-integration.test.ts</span> <span class="test-cases">— 30 cases: attribution, delivery, filtering</span></li>
+        <li><span class="test-file">nudge-integration.test.ts</span> <span class="test-cases">— 24 cases</span></li>
+        <li><span class="test-file">domain-fold, flow-determinism, session-tailer, socket-ack</span> <span class="test-cases">— 29 cases</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>BATS Ops Safety Net <span class="detail-count">76 cases / 12 files</span></summary>
+      <ul class="test-list">
+        <li style="font-weight:600;color:#0e7490">Pre-deploy gates:</li>
+        <li><span class="test-file">deep-health.bats</span> <span class="test-cases">— 13-point system check before any deploy</span></li>
+        <li><span class="test-file">standards-gen.bats</span> <span class="test-cases">— generation script produces valid output</span></li>
+        <li style="font-weight:600;color:#0e7490;margin-top:6px">Nightly crons:</li>
+        <li><span class="test-file">daily-signal-scan.bats</span> <span class="test-cases">— 6am health report</span></li>
+        <li><span class="test-file">standards-surface-cron.bats</span> <span class="test-cases">— 5:30am compliance regen</span></li>
+        <li><span class="test-file">index-freshness-alert.bats</span> <span class="test-cases">— session index staleness</span></li>
+        <li style="font-weight:600;color:#0e7490;margin-top:6px">On-demand / continuous:</li>
+        <li><span class="test-file">bridge-delivery.bats</span> <span class="test-cases">— message fidelity</span></li>
+        <li><span class="test-file">session-health.bats, session-indexer.bats</span> <span class="test-cases">— session tracking</span></li>
+        <li><span class="test-file">session-watcher.bats</span> <span class="test-cases">— fswatch observability</span></li>
+        <li><span class="test-file">pulse-bar.bats</span> <span class="test-cases">— enforcement metrics</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Workflow + SDK <span class="detail-count">96 cases / 6 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">engine.test.ts</span> <span class="test-cases">— 44 cases: core workflow execution</span></li>
+        <li><span class="test-file">emit-metadata.test.ts</span> <span class="test-cases">— 29 cases: metadata handling</span></li>
+        <li><span class="test-file">brief.test.ts, config.test.ts</span> <span class="test-cases">— 17 cases</span></li>
+        <li><span class="test-file">emit.test.ts, search.test.ts</span> <span class="test-cases">— 6 cases</span></li>
+      </ul>
+    </details>
+
+    <div style="margin-top:12px;font-size:.8em;color:#666">
+      <span class="health health-good"></span> 22 Gherkin features &nbsp;
+      <span class="health health-good"></span> 12 BATS gates &nbsp;
+      <span class="health health-good"></span> 26/54 Rust files tested &nbsp;
+      <span class="health health-gap"></span> No E2E layer
+    </div>
+  </div>
+</div>
+
+<!-- PAGE & API REGRESSION SCOPE -->
+<h2>Regression Scope — Pages & APIs</h2>
+<p style="font-size:.85em;color:#555">Beyond the pyramid layers — how many pages and API endpoints have regression coverage?</p>
+
+<div class="repos">
+  <div class="repo gathering">
+    <h3>Page Rendering (50 handlers)</h3>
+    <div class="repo-count" style="color:#059669">50 / 66</div>
+    <div style="font-size:.8em;color:#666;margin-bottom:8px">76% of handlers test res.render() — page actually renders without error</div>
+    <details>
+      <summary>Page render handlers <span class="detail-count">50 files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">Collection pages</span> <span class="test-cases">— book, cooking, glimmer, idea, intention, music, notes, photo, reading, seed, sexuality, socialpost, stories, todo, watching</span></li>
+        <li><span class="test-file">Navigation</span> <span class="test-cases">— home, about, about-profile, login, login-page, dashboard</span></li>
+        <li><span class="test-file">System</span> <span class="test-cases">— flow, cost, hooks, fitness-functions, decisions, docs, ontology-view, session-replay</span></li>
+        <li><span class="test-file">Domain</span> <span class="test-cases">— self-ai, self-domain, gallery, gardening, network, property, profile, pod-data</span></li>
+        <li><span class="test-file">Team</span> <span class="test-cases">— team, jeff, search, face-cluster, document, collection</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Smoke Check — Live Pages <span class="detail-count">22 pages</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">Public (4)</span> <span class="test-cases">— /, /about, /login, /health</span></li>
+        <li><span class="test-file">Auth-gated (18)</span> <span class="test-cases">— /music, /music/artists, /photos, /people, /books, /reading, /cooking, /todo, /blog, /seeds, /ideas, /stories, /notes, /glimmers, /sexuality, /practice-spine, /flow, /cost</span></li>
+        <li style="color:#d97706"><span class="test-file">Gap</span> <span class="test-cases">— ~40 pages not in smoke check (admin, system, chorus surfaces)</span></li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="repo chorus">
+    <h3>API Endpoints</h3>
+    <div class="repo-count" style="color:#7c3aed">310 routes</div>
+    <div style="font-size:.8em;color:#666;margin-bottom:8px">310 API routes in app.ts — how many have regression tests?</div>
+    <details>
+      <summary>API handler tests <span class="detail-count">9 files test JSON responses</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">cards.handler.test.ts</span> <span class="test-cases">— /api/chorus/cards, /enriched, /metrics, /:id, /domain/:domain</span></li>
+        <li><span class="test-file">doc-catalog.handler.test.ts</span> <span class="test-cases">— /api/chorus/doc-catalog</span></li>
+        <li><span class="test-file">icd.handler.test.ts</span> <span class="test-cases">— /api/chorus/icd</span></li>
+        <li><span class="test-file">knowledge-graph.handler.test.ts</span> <span class="test-cases">— /api/knowledge-graph</span></li>
+        <li><span class="test-file">codebase-graph.handler.test.ts</span> <span class="test-cases">— /api/codebase-graph</span></li>
+        <li><span class="test-file">analytics (jeff, roles, pairs, pipeline)</span> <span class="test-cases">— /api/analytics/*</span></li>
+        <li style="color:#dc2626"><span class="test-file">Gap: ~300 API routes without dedicated tests</span></li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Integration API tests <span class="detail-count">19 supertest files</span></summary>
+      <ul class="test-list">
+        <li><span class="test-file">domain-api.test.ts</span> <span class="test-cases">— skills, domain endpoints</span></li>
+        <li><span class="test-file">icd-api.test.ts, icd-sync.test.ts</span> <span class="test-cases">— ICD pipeline</span></li>
+        <li><span class="test-file">pod-integration.test.ts</span> <span class="test-cases">— SOLID pod operations</span></li>
+        <li><span class="test-file">seed-routing, seed-webhook</span> <span class="test-cases">— SMS pipeline</span></li>
+        <li><span class="test-file">namespace-consistency.test.ts</span> <span class="test-cases">— URI consistency</span></li>
+      </ul>
+    </details>
+  </div>
+</div>
+
+<!-- HANDLER COVERAGE HEATMAP -->
+<h2>Handler Coverage Heatmap — Gathering</h2>
+<p style="font-size:.8em;color:#666">Each cell = one handler. All 66 have dedicated test files.</p>
+<div class="coverage">
+  <div class="cov-cell cov-full">about</div>
+  <div class="cov-cell cov-full">analytics</div>
+  <div class="cov-cell cov-full">book</div>
+  <div class="cov-cell cov-full">cards</div>
+  <div class="cov-cell cov-full">chorus</div>
+  <div class="cov-cell cov-full">collection</div>
+  <div class="cov-cell cov-full">cooking</div>
+  <div class="cov-cell cov-full">doc-catalog</div>
+  <div class="cov-cell cov-full">document</div>
+  <div class="cov-cell cov-full">face-cluster</div>
+  <div class="cov-cell cov-full">flow</div>
+  <div class="cov-cell cov-full">garden</div>
+  <div class="cov-cell cov-full">glimmer</div>
+  <div class="cov-cell cov-full">graph</div>
+  <div class="cov-cell cov-full">harvest</div>
+  <div class="cov-cell cov-full">health</div>
+  <div class="cov-cell cov-full">idea</div>
+  <div class="cov-cell cov-full">intention</div>
+  <div class="cov-cell cov-full">knowledge</div>
+  <div class="cov-cell cov-full">login</div>
+  <div class="cov-cell cov-full">loom</div>
+  <div class="cov-cell cov-full">music</div>
+  <div class="cov-cell cov-full">note</div>
+  <div class="cov-cell cov-full">photo</div>
+  <div class="cov-cell cov-full">reading</div>
+  <div class="cov-cell cov-full">search</div>
+  <div class="cov-cell cov-full">seed</div>
+  <div class="cov-cell cov-full">self-ai</div>
+  <div class="cov-cell cov-full">session</div>
+  <div class="cov-cell cov-full">sexuality</div>
+  <div class="cov-cell cov-full">skills</div>
+  <div class="cov-cell cov-full">static</div>
+  <div class="cov-cell cov-full">story</div>
+  <div class="cov-cell cov-full">team</div>
+  <div class="cov-cell cov-full">todo</div>
+  <div class="cov-cell cov-full">watchlist</div>
+</div>
+
+<!-- GAPS -->
+<h2>Pyramid Gaps</h2>
+<div class="gaps">
+  <div class="gap">
+    <div class="gap-title"><span class="health health-gap"></span> Integration Layer</div>
+    <div class="gap-detail">15 tests in Gathering. Cross-service bugs slip here — service A calls service B, both unit tests pass, the interaction breaks. Thinnest layer in the pyramid.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-gap"></span> Chorus E2E</div>
+    <div class="gap-detail">Zero user-journey tests. Can Jeff open Bridge and send a message? Can Clearing start a session? Nobody tests the full path.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-warn"></span> 17 Services Uncovered</div>
+    <div class="gap-detail">19% of Gathering services have no unit tests. These include query services, sync services, and pipeline utilities.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-warn"></span> Performance</div>
+    <div class="gap-detail">13 tests total. No latency baselines, no load regression detection, no SPARQL query time budgets.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-warn"></span> Chorus Security</div>
+    <div class="gap-detail">Gathering has 46 explicit security tests. Chorus relies on Rust's type system — no CSP, header, or auth boundary tests.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-warn"></span> Visual Regression</div>
+    <div class="gap-detail">1 Playwright spec covers high-use pages. No systematic visual baseline for 60+ pages.</div>
+  </div>
+  <div class="gap">
+    <div class="gap-title"><span class="health health-gap"></span> Board-Client Test Debt</div>
+    <div class="gap-detail">53 failing tests in board-client suite (#2118). This is test debt, not coverage — existing tests that broke and were never fixed. Different problem, same urgency.</div>
+  </div>
+</div>
+
+<!-- DEEP VERDICT -->
+<div class="verdict">
+  <h3>Verdict — Bimodal, Not Inverted</h3>
+
+  <div class="finding">
+    <div class="finding-label">The shape is wrong in the middle</div>
+    <div class="finding-detail">7,394 unit tests (strong base). 193 E2E tests (decent top). <strong>15 integration tests</strong> (collapse in the middle). The pyramid looks like an hourglass — heavy at both ends, hollow where service interactions happen. This is where "it works in my test" meets "it breaks in production."</div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-label">Rust compensates for Chorus's missing layers</div>
+    <div class="finding-detail">3,730 Rust unit tests + Rust's type system + 145 BDD scenarios effectively replace integration and E2E for the hooks layer. This works because the Rust core is a pure function pipeline — inputs in, decisions out. But the JS orchestration layer (Bridge, Clearing, board-client) has no equivalent safety net.</div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-label">Coverage thresholds are enforced but misleading</div>
+    <div class="finding-detail">Jest enforces 80/75/60 (lines/functions/branches). This catches coverage regressions but doesn't measure test quality. A handler with 90% coverage and zero integration tests is "passing" but fragile. The threshold prevents going backwards — it doesn't push forward.</div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-label">The E2E layer is well-scoped</div>
+    <div class="finding-detail">32 Playwright specs covering CRUD, auth, visibility, security, and content coherence. These test what Jeff sees. The gap is Chorus — Bridge, Clearing, and Werk have zero E2E coverage. Jeff uses these daily.</div>
+  </div>
+
+  <div class="finding">
+    <div class="finding-label">Performance is a blindspot</div>
+    <div class="finding-detail">13 tests across everything. No SPARQL query time budgets (despite 23M triples in Fuseki). No page load regression. No API latency SLAs. When things get slow, Jeff notices before the system does.</div>
+  </div>
+</div>
+
+<!-- NEXT STEPS -->
+<h2>Next Steps</h2>
+<div class="next-steps">
+  <div class="step">
+    <div class="step-priority step-p1">P1 — Fill the middle</div>
+    <div class="step-title">Gathering integration tests: 15 → 50</div>
+    <div class="step-detail">Target the hot paths: SPARQL → handler → view, seed pipeline end-to-end, harvest → sync → search index. These are the interactions that break silently. <span class="step-metric">Goal: 50 integration tests covering the 10 highest-churn service pairs.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p1">P1 — Chorus E2E</div>
+    <div class="step-title">Bridge + Clearing user journey tests</div>
+    <div class="step-detail">Jeff opens Bridge → sends message → message appears for role. Jeff opens Clearing → starts session → roles join. These are daily workflows with zero test coverage. <span class="step-metric">Goal: 10 Playwright specs for Chorus surfaces.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p2">P2 — Service coverage floor</div>
+    <div class="step-title">17 uncovered services → 0</div>
+    <div class="step-detail">Close the 19% gap. Prioritize by churn — services touched in the last 30 days without tests are the highest risk. <span class="step-metric">Goal: 100% service test coverage.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p2">P2 — Performance baselines</div>
+    <div class="step-title">SPARQL query budgets + page load SLAs</div>
+    <div class="step-detail">Set time budgets for the top 10 SPARQL queries. Measure page load for the 5 heaviest pages. Run nightly, alert on regression. Jeff shouldn't discover slowness before the system does. <span class="step-metric">Goal: 20 perf tests with baseline + alerting.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p2">P2 — API regression coverage</div>
+    <div class="step-title">310 routes, ~10 tested — close the gap on hot APIs</div>
+    <div class="step-detail">Only 9 handler test files verify JSON responses. 300+ API routes have no dedicated regression test. Prioritize by traffic: /api/chorus/cards, /api/search, /api/loom-metrics, /api/interaction-patterns are daily-use. <span class="step-metric">Goal: top 30 API routes with response shape + status code tests.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p2">P2 — Smoke check expansion</div>
+    <div class="step-title">22 pages checked, ~40 missing</div>
+    <div class="step-detail">Smoke check covers 22 pages but misses admin, system, and Chorus surfaces. Jeff uses /loom, /werk, /chorus, /jeff daily — none are in the smoke check. <span class="step-metric">Goal: all authenticated pages in smoke check (60+ pages).</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p3">P3 — Visual regression baseline</div>
+    <div class="step-title">Screenshot comparison for 60+ pages</div>
+    <div class="step-detail">Extend the single visual-regression.spec.ts to cover all collection pages, admin surfaces, and Chorus pages. Detect layout breaks before Jeff does. <span class="step-metric">Goal: visual baseline for all authenticated pages.</span></div>
+  </div>
+
+  <div class="step">
+    <div class="step-priority step-p3">P3 — Chorus security layer</div>
+    <div class="step-title">Explicit security tests for Bridge + Clearing</div>
+    <div class="step-detail">Auth boundaries, message injection, session hijacking, WebSocket auth. Gathering has 46 security tests — Chorus has zero. <span class="step-metric">Goal: 20 security tests for team-facing surfaces.</span></div>
+  </div>
+</div>
+
+<footer>
+Generated by Kade | 2026-04-06 | Five languages: TypeScript, Rust, Bash, Gherkin, Playwright<br>
+Data source: filesystem scan of jeff-bridwell-personal-site + chorus repos
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain — Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .stage { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
+  .status-ok { color: #16a34a; font-weight: 600; }
+  .status-partial { color: #d97706; font-weight: 600; }
+  .status-gap { color: #dc2626; font-weight: 600; }
+  .concept { color: #6b7280; font-style: italic; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Domain — Loom</h1>
+<p class="subtitle"><span class="stage">Chorus</span> &bull; How the team operates &bull; Toyota loom, jidoka, lean (DEC-041)</p>
+
+<p>Loom is the organizational backbone — the structures that make the team legible to itself. Named after Toyota's automatic loom that stops when a thread breaks (jidoka). Eight sub-domains covering how the team decides, tracks, practices, depends, governs, staffs, skills, and serves.</p>
+
+<h2>Sub-Domains</h2>
+
+<table>
+  <tr><th>Sub-Domain</th><th>What It Covers</th><th>UI / Surface</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Decisions</strong></td>
+    <td>108 decisions logged. DEC-001 through DEC-109. Product + architecture.</td>
+    <td><code>/decisions</code> page, decisions.md</td>
+    <td class="status-ok">Built — 108 logged</td>
+  </tr>
+  <tr>
+    <td><strong>Cards</strong></td>
+    <td>Board state, WIP limits, card lifecycle, quality gates</td>
+    <td><code>/flow</code>, <code>/werk</code>, <code>cards</code> CLI</td>
+    <td class="status-ok">Built — 1800+ cards</td>
+  </tr>
+  <tr>
+    <td><strong>Practices</strong></td>
+    <td>Interaction patterns, pair programming, gemba, demo protocol</td>
+    <td>Nine patterns instrumented via spine events</td>
+    <td class="status-ok">Built — 9 patterns</td>
+  </tr>
+  <tr>
+    <td><strong>Dependencies</strong></td>
+    <td>Cross-domain blast radius, WIP overlap detection, card blocking</td>
+    <td>Blast radius auto-generated on WIP entry</td>
+    <td class="status-partial">Partial — blast radius exists, dependency graph not</td>
+  </tr>
+  <tr>
+    <td><strong>Policy</strong></td>
+    <td>CLAUDE.md rules, DECs, hooks that enforce behavior</td>
+    <td>CLAUDE.md (generated from fragments), hooks binary</td>
+    <td class="status-ok">Built — 33 hook modules enforce policy</td>
+  </tr>
+  <tr>
+    <td><strong>Roles</strong></td>
+    <td>Wren/Silas/Kade ownership, andon state, attention contract</td>
+    <td><code>/loom</code>, role-state.sh, team-scan</td>
+    <td class="status-ok">Built</td>
+  </tr>
+  <tr>
+    <td><strong>Skills</strong></td>
+    <td>/pull, /demo, /acp, /clearing, /gemba, /pair, /reboot</td>
+    <td>~/.claude/skills/ (symlinked from chorus)</td>
+    <td class="status-ok">Built — 10+ skills</td>
+  </tr>
+  <tr>
+    <td><strong>Services</strong></td>
+    <td>LaunchAgents, ports, health, lifecycle management</td>
+    <td><code>GET /api/chorus/services</code>, app-state.sh</td>
+    <td class="status-ok">Built</td>
+  </tr>
+</table>
+
+<h2>Quality Criteria</h2>
+<table>
+  <tr><th>Quality</th><th>Loom Score</th></tr>
+  <tr><td><strong>Observability</strong></td><td class="status-ok">Board, roles, services all queryable via API</td></tr>
+  <tr><td><strong>Transparency</strong></td><td class="status-ok">Decisions logged with rationale. Cards have Experience sections.</td></tr>
+  <tr><td><strong>Auditing</strong></td><td class="status-partial">Spine events trace card moves, not all decision rationale</td></tr>
+  <tr><td><strong>Monitoring</strong></td><td class="status-partial">Team-scan shows role state, but stale andon is a known bug (#1878)</td></tr>
+  <tr><td><strong>Testimony</strong></td><td class="status-gap">Conceptual — roles can't explain why they made a choice</td></tr>
+  <tr><td><strong>Accountability</strong></td><td class="status-ok">Card ownership, proving gate, /acp attribution</td></tr>
+  <tr><td><strong>Testability</strong></td><td class="status-partial">Hook tests exist (225+), board tests exist, integration tests sparse</td></tr>
+</table>
+
+<h2>Still Forming</h2>
+<p class="concept">From Jeff's drawing, additional Loom concepts not yet implemented: Dominances (what patterns dominate team behavior), Stories (team narratives as operating input). These are conceptual — they describe what the system should eventually capture, not what currently exists.</p>
+
+<p class="meta">Domain — Loom &bull; From Jeff's handwritten taxonomy &bull; Wren &bull; 2026-03-30 &bull; Still forming</p>
+</body>
+</html>

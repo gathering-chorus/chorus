@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interaction Pattern History</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:24px 1in;color:#1a1a1a;line-height:1.6}
+h1{font-size:1.6em;border-bottom:2px solid #333;padding-bottom:8px}
+h2{font-size:1.2em;margin-top:2em;color:#2c5282}
+.date{color:#888;font-size:.85em;margin-bottom:20px}
+.pattern-bar{display:flex;height:32px;border-radius:4px;overflow:hidden;margin:12px 0;background:#f3f4f6}
+.pattern-bar div{height:100%}
+.bar-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8em;margin-bottom:24px}
+.bar-legend span{display:flex;align-items:center;gap:4px}
+.dot{display:inline-block;width:12px;height:12px;border-radius:2px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.9em}
+th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}
+th{background:#f0f0f0;font-weight:600}
+.insight{background:#f0f4ff;border:1px solid #cde;padding:12px 16px;border-radius:4px;margin:16px 0;font-size:.9em}
+.warn{background:#fff8f0;border:1px solid #e8c;padding:12px 16px;border-radius:4px;margin:16px 0;font-size:.9em}
+footer{margin-top:3em;padding-top:1em;border-top:1px solid #ddd;font-size:.85em;color:#666}
+</style>
+</head>
+<body>
+
+<h1>Interaction Pattern History</h1>
+<div class="date">Card #2122 — how Jeff spends attention across sessions. Data from spine events (interaction.pattern.detected). 16 events since March 30.</div>
+
+<h2>All-Time Distribution (16 events)</h2>
+<div class="pattern-bar">
+  <div style="background:#2563eb;width:62.5%" title="direction: 10 (63%)"></div>
+  <div style="background:#6d28d9;width:18.75%" title="reflection: 3 (19%)"></div>
+  <div style="background:#7c3aed;width:6.25%" title="ideation: 1 (6%)"></div>
+  <div style="background:#059669;width:6.25%" title="demo: 1 (6%)"></div>
+  <div style="background:#b45309;width:6.25%" title="story: 1 (6%)"></div>
+</div>
+<div class="bar-legend">
+  <span><span class="dot" style="background:#2563eb"></span> direction (10)</span>
+  <span><span class="dot" style="background:#6d28d9"></span> reflection (3)</span>
+  <span><span class="dot" style="background:#7c3aed"></span> ideation (1)</span>
+  <span><span class="dot" style="background:#059669"></span> demo (1)</span>
+  <span><span class="dot" style="background:#b45309"></span> story (1)</span>
+  <span><span class="dot" style="background:#ea580c"></span> triage (0)</span>
+  <span><span class="dot" style="background:#dc2626"></span> swat (0)</span>
+  <span><span class="dot" style="background:#0891b2"></span> gemba (0)</span>
+  <span><span class="dot" style="background:#4f46e5"></span> clearing (0)</span>
+</div>
+
+<div class="insight">
+<strong>Reactive (direction + triage + swat):</strong> 63% | <strong>Creative (ideation + reflection + story):</strong> 31%<br>
+<span style="color:#dc2626">Reactive patterns dominate — Jeff is steering more than creating.</span>
+</div>
+
+<h2>By Date</h2>
+<table>
+<thead><tr><th>Date</th><th>Events</th><th>Dominant</th><th>Breakdown</th></tr></thead>
+<tbody>
+<tr><td>2026-04-05</td><td>6</td><td><strong>direction</strong> (2)</td><td>direction:2, reflection:2, demo:1, story:1</td></tr>
+<tr><td>2026-04-04</td><td>1</td><td><strong>direction</strong> (1)</td><td>direction:1</td></tr>
+<tr><td>2026-04-03</td><td>4</td><td><strong>direction</strong> (4)</td><td>direction:4</td></tr>
+<tr><td>2026-04-02</td><td>1</td><td><strong>direction</strong> (1)</td><td>direction:1</td></tr>
+<tr><td>2026-04-01</td><td>1</td><td><strong>direction</strong> (1)</td><td>direction:1</td></tr>
+<tr><td>2026-03-30</td><td>3</td><td><strong>direction</strong> (1)</td><td>direction:1, ideation:1, reflection:1</td></tr>
+</tbody>
+</table>
+
+<h2>Pattern Definitions</h2>
+<table>
+<tr><th>Pattern</th><th>Signal</th><th>What it means</th></tr>
+<tr><td style="color:#2563eb;font-weight:600">Direction</td><td>Short imperative</td><td>Jeff is giving specific commands — "do X", "move Y". Operational mode.</td></tr>
+<tr><td style="color:#7c3aed;font-weight:600">Ideation</td><td>Rapid-fire ideas</td><td>Jeff is exploring — "what if", "imagine". Creative mode. Don't interrupt.</td></tr>
+<tr><td style="color:#059669;font-weight:600">Demo</td><td>"Show me"</td><td>Jeff wants to see the thing working. Stakes first, mechanics second.</td></tr>
+<tr><td style="color:#ea580c;font-weight:600">Triage</td><td>"What's stuck"</td><td>Jeff is scanning the board for blockers. Surface problems, not status.</td></tr>
+<tr><td style="color:#dc2626;font-weight:600">SWAT</td><td>Urgent, "broken"</td><td>Something is down. Drop everything. Fix first, card later.</td></tr>
+<tr><td style="color:#0891b2;font-weight:600">Gemba</td><td>Observing work</td><td>Jeff is watching a role work. Commentary, not silence.</td></tr>
+<tr><td style="color:#4f46e5;font-weight:600">Clearing</td><td>All-role alignment</td><td>Multi-party conversation. Decisions get marked.</td></tr>
+<tr><td style="color:#b45309;font-weight:600">Story</td><td>Personal memory</td><td>Jeff is sharing experience. Receive it. Don't deflect into product talk.</td></tr>
+<tr><td style="color:#6d28d9;font-weight:600">Reflection</td><td>Meta-process</td><td>Jeff is thinking about how the team works. Match depth, don't rush.</td></tr>
+</table>
+
+<div class="warn">
+<strong>Data quality note:</strong> Only 16 events recorded since March 30. Today's session (April 6) had extensive story, reflection, and direction patterns not fully captured. The auto-detection needs to emit more consistently — especially for story and reflection which are the patterns Jeff values most.
+</div>
+
+<footer>
+Generated by Wren for #2122 | Data: ~/Library/Logs/Gathering/hooks.log | Reference: <a href="/about/INTERACTION_PATTERNS">INTERACTION_PATTERNS.md</a>
+</footer>
+
+</body>
+</html>

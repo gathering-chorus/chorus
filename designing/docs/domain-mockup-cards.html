@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cards — Domain View</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #3b82f6; }
+  .page-container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+  .back-link { color: #3b82f6; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stat { background: #13131a; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .stat-value.owner { font-size: 18px; }
+  .stat-value.step { font-size: 16px; }
+  .stat .step-badge { display: inline-block; padding: 4px 12px; border-radius: 10px; font-size: 13px; }
+  .step-directing { background: #fef3c7; color: #92400e; }
+  .step-proving { background: #fce7f3; color: #9d174d; }
+  .step-building { background: #d1fae5; color: #065f46; }
+  .step-shaping { background: #fef9c3; color: #854d0e; }
+  .step-designing { background: #e0e7ff; color: #3730a3; }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 13px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; }
+  .full-width { grid-column: 1 / -1; }
+
+  /* Owner */
+  .owner-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .owner-dot.wren { background: #4ade80; }
+  .owner-dot.silas { background: #60a5fa; }
+  .owner-dot.kade { background: #fb923c; }
+  .owner-dot.jeff { background: #e6edf3; }
+
+  /* Lists */
+  .item-list { list-style: none; }
+  .item-list li { padding: 10px 0; border-bottom: 1px solid #1a1a2a; display: flex; align-items: center; justify-content: space-between; }
+  .item-list li:last-child { border-bottom: none; }
+  .item-name { font-size: 14px; color: #fff; font-weight: 500; }
+  .item-meta { font-size: 11px; color: #888; }
+  .item-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; }
+  .badge-protocol { background: #1e3a5f; color: #60a5fa; }
+  .badge-infra { background: #3a1a2a; color: #f87171; }
+  .badge-consumes { background: #1a2a1a; color: #4ade80; }
+
+  /* Blast radius */
+  .blast { background: #1a0a0a; border: 1px solid #3a1a1a; border-radius: 12px; padding: 24px; }
+  .blast h2 { color: #f87171; }
+  .blast-item { padding: 8px 0; border-bottom: 1px solid #2a1a1a; }
+  .blast-item:last-child { border-bottom: none; }
+  .blast-name { font-size: 14px; color: #fff; }
+  .blast-desc { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* AX */
+  .ax-status { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .ax-clean { background: #1a2a1a; color: #4ade80; border: 1px solid #2a4a2a; }
+  .ax-raw { background: #2a2a1a; color: #fbbf24; border: 1px solid #4a4a2a; }
+  .ax-none { background: #2a1a1a; color: #f87171; border: 1px solid #4a2a2a; }
+
+  /* Properties table */
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; color: #ccc; }
+  .prop-name { color: #3b82f6; font-family: 'SF Mono', monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page-container">
+
+<a href="#" class="back-link">&larr; All Domains</a>
+
+<h1>Cards</h1>
+<p class="subtitle">Sub-Domain &middot; <span>Protocol Service</span> &middot; Vikunja board + board-ts CLI</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value owner"><span class="owner-dot wren"></span> Wren</div>
+    <div class="stat-label">Owner</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value step"><span class="step-badge step-directing">Directing</span></div>
+    <div class="stat-label">Primary Step</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">3</div>
+    <div class="stat-label">Consumers</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">3</div>
+    <div class="stat-label">Dependencies</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value"><span class="ax-status ax-clean">Clean API</span></div>
+    <div class="stat-label">Agent Experience</div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Consumed By -->
+  <div class="section">
+    <h2>Consumed By (3 sub-products)</h2>
+    <ul class="item-list">
+      <li>
+        <div><span class="item-name">Loom</span><div class="item-meta"><span class="owner-dot jeff"></span>Jeff</div></div>
+        <span class="item-badge badge-consumes">consumes</span>
+      </li>
+      <li>
+        <div><span class="item-name">The Clearing</span><div class="item-meta"><span class="owner-dot wren"></span>Wren</div></div>
+        <span class="item-badge badge-consumes">consumes</span>
+      </li>
+      <li>
+        <div><span class="item-name">Werk</span><div class="item-meta"><span class="owner-dot wren"></span>Wren</div></div>
+        <span class="item-badge badge-consumes">consumes</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Dependencies -->
+  <div class="section">
+    <h2>Depends On (3 services)</h2>
+    <ul class="item-list">
+      <li>
+        <div><span class="item-name">Observability</span><div class="item-meta"><span class="owner-dot silas"></span>Silas &middot; Proving</div></div>
+        <span class="item-badge badge-infra">infra</span>
+      </li>
+      <li>
+        <div><span class="item-name">Infrastructure</span><div class="item-meta"><span class="owner-dot silas"></span>Silas &middot; Proving</div></div>
+        <span class="item-badge badge-infra">infra</span>
+      </li>
+      <li>
+        <div><span class="item-name">Spine</span><div class="item-meta"><span class="owner-dot silas"></span>Silas &middot; Shaping</div></div>
+        <span class="item-badge badge-protocol">protocol</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Blast Radius -->
+  <div class="blast full-width">
+    <h2>Blast Radius &mdash; If Cards Fails</h2>
+    <div class="blast-item">
+      <div class="blast-name">Loom</div>
+      <div class="blast-desc">Operating model loses board access &mdash; can't create cards, move work, run workflows</div>
+    </div>
+    <div class="blast-item">
+      <div class="blast-name">The Clearing</div>
+      <div class="blast-desc">Multi-party alignment can't reference cards or track decisions</div>
+    </div>
+    <div class="blast-item">
+      <div class="blast-name">Werk</div>
+      <div class="blast-desc">Workflow engine can't sequence steps or assign work to roles</div>
+    </div>
+  </div>
+
+  <!-- Properties -->
+  <div class="section">
+    <h2>Service Properties</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Value</th></tr>
+      <tr><td class="prop-name">runsOn</td><td>Library</td></tr>
+      <tr><td class="prop-name">port</td><td>3456 (Vikunja)</td></tr>
+      <tr><td class="prop-name">cli</td><td>board-ts (cards)</td></tr>
+      <tr><td class="prop-name">primaryStep</td><td>Directing</td></tr>
+      <tr><td class="prop-name">product</td><td>Chorus</td></tr>
+      <tr><td class="prop-name">type</td><td>Protocol Service</td></tr>
+    </table>
+  </div>
+
+  <!-- Agent Experience -->
+  <div class="section">
+    <h2>Agent Experience</h2>
+    <table class="prop-table">
+      <tr><th>Capability</th><th>Status</th><th>Path</th></tr>
+      <tr><td>CLI</td><td><span class="ax-status ax-clean" style="font-size:10px;padding:2px 6px;">Clean</span></td><td style="font-size:12px;color:#888;">board-ts / cards</td></tr>
+      <tr><td>API</td><td><span class="ax-status ax-clean" style="font-size:10px;padding:2px 6px;">Clean</span></td><td style="font-size:12px;color:#888;">localhost:3456/api/v1/*</td></tr>
+      <tr><td>Tests</td><td><span class="ax-status ax-clean" style="font-size:10px;padding:2px 6px;">Clean</span></td><td style="font-size:12px;color:#888;">261 pass, 34 skip</td></tr>
+      <tr><td>Logs</td><td><span class="ax-status ax-raw" style="font-size:10px;padding:2px 6px;">Raw</span></td><td style="font-size:12px;color:#888;">docker logs vikunja</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">CMDB Domain View &middot; Cards &middot; Mockup</p>
+</div>
+</body>
+</html>
