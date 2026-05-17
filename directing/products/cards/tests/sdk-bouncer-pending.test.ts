@@ -105,3 +105,145 @@ describe('writePendingApprovalArtifacts (#2924 AC3 bridge)', () => {
     expect(fs.existsSync(nested)).toBe(true);
   });
 });
+
+// ---- #2964 dedupe + retry refusal ----
+
+import { findExistingPendingByTitle, PendingRetryTooSoonError } from '../src/sdk';
+
+describe('writePendingApprovalArtifacts dedupe + retry refusal (#2964)', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wren-2964-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('agent retry within 30s with same title throws PendingRetryTooSoonError; no duplicate file written', () => {
+    const writeArgs = {
+      pendingDir: tmpDir,
+      role: 'wren',
+      nudge: 'n',
+      title: 'Same title — retry test',
+      cardOpts: { owner: 'wren' },
+    };
+    // First attempt: succeeds, one file on disk
+    writePendingApprovalArtifacts({ ...writeArgs, stamp: 'first' });
+    const filesAfterFirst = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.argv.json'));
+    expect(filesAfterFirst).toHaveLength(1);
+    // Second attempt with same title, fresh stamp: bouncer should refuse.
+    expect(() =>
+      writePendingApprovalArtifacts({ ...writeArgs, stamp: 'second' }),
+    ).toThrow(PendingRetryTooSoonError);
+    // Still only one .argv.json file on disk — no duplicate.
+    const filesAfterRetry = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.argv.json'));
+    expect(filesAfterRetry).toHaveLength(1);
+  });
+
+  test('within dedupe window (>30s, <10min) overwrites the existing payload in place', () => {
+    const writeArgs = {
+      pendingDir: tmpDir,
+      role: 'wren',
+      nudge: 'first-nudge',
+      title: 'Same title — dedupe test',
+      cardOpts: { owner: 'wren', priority: 'P3' },
+    };
+    const first = writePendingApprovalArtifacts({ ...writeArgs, stamp: 'first' });
+    // Push the existing file's mtime back so retry-refusal does not fire,
+    // but dedupe still does (older than 30s, younger than 10min).
+    const oldMtime = Date.now() - 60_000; // 60s ago
+    fs.utimesSync(first.argvPath, oldMtime / 1000, oldMtime / 1000);
+    // Second attempt with a different stamp + nudge + opts — should overwrite.
+    const second = writePendingApprovalArtifacts({
+      ...writeArgs,
+      stamp: 'second',
+      nudge: 'second-nudge',
+      cardOpts: { owner: 'wren', priority: 'P1' },
+    });
+    expect(second.argvPath).toBe(first.argvPath);
+    expect(second.txtPath).toBe(first.txtPath);
+    const all = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.argv.json'));
+    expect(all).toHaveLength(1);
+    // The overwrite should reflect the second call's content.
+    const parsed = JSON.parse(fs.readFileSync(second.argvPath, 'utf-8'));
+    expect(parsed.opts.priority).toBe('P1');
+    expect(fs.readFileSync(second.txtPath, 'utf-8')).toBe('second-nudge');
+  });
+
+  test('different titles for same role write distinct payloads — no false dedupe', () => {
+    writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'wren',
+      stamp: 'a',
+      nudge: 'n',
+      title: 'Title A',
+      cardOpts: { owner: 'wren' },
+    });
+    writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'wren',
+      stamp: 'b',
+      nudge: 'n',
+      title: 'Title B',
+      cardOpts: { owner: 'wren' },
+    });
+    const all = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.argv.json'));
+    expect(all).toHaveLength(2);
+  });
+
+  test('different roles + same title write distinct payloads', () => {
+    writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'wren',
+      stamp: 'a',
+      nudge: 'n',
+      title: 'Shared title',
+      cardOpts: { owner: 'wren' },
+    });
+    writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'silas',
+      stamp: 'b',
+      nudge: 'n',
+      title: 'Shared title',
+      cardOpts: { owner: 'silas' },
+    });
+    const wrenFiles = fs.readdirSync(tmpDir).filter((f) => f.startsWith('wren-'));
+    const silasFiles = fs.readdirSync(tmpDir).filter((f) => f.startsWith('silas-'));
+    expect(wrenFiles).toHaveLength(2); // .txt + .argv.json
+    expect(silasFiles).toHaveLength(2);
+  });
+
+  test('findExistingPendingByTitle returns null on missing pending dir', () => {
+    const missing = path.join(tmpDir, 'does-not-exist');
+    expect(findExistingPendingByTitle(missing, 'wren', 'anything')).toBeNull();
+  });
+
+  test('findExistingPendingByTitle returns matching path + age', () => {
+    const w = writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'wren',
+      stamp: 'live',
+      nudge: 'n',
+      title: 'Searchable title',
+      cardOpts: { owner: 'wren' },
+    });
+    const found = findExistingPendingByTitle(tmpDir, 'wren', 'Searchable title');
+    expect(found).not.toBeNull();
+    expect(found!.path).toBe(w.argvPath);
+    expect(found!.ageMs).toBeGreaterThanOrEqual(0);
+    expect(found!.ageMs).toBeLessThan(5_000); // just-written
+  });
+
+  test('findExistingPendingByTitle ignores other-role files with same title', () => {
+    writePendingApprovalArtifacts({
+      pendingDir: tmpDir,
+      role: 'silas',
+      stamp: 'live',
+      nudge: 'n',
+      title: 'Shared title',
+      cardOpts: { owner: 'silas' },
+    });
+    expect(findExistingPendingByTitle(tmpDir, 'wren', 'Shared title')).toBeNull();
+  });
+});
