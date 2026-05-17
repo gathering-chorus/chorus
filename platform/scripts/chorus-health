@@ -67,8 +67,11 @@ skip()  { record "$1" "SKIP" "$2"; }
 bp_launchctl=$(launchctl list 2>/dev/null | grep "com.chorus.building-pipeline" || true)
 if [ -n "$bp_launchctl" ]; then
   bp_state=$(echo "$bp_launchctl" | awk '{print $1}')
-  if [ "$bp_state" = "-" ]; then
-    warn "building-pipeline-loaded" "LaunchAgent registered but not running (pid=-)"
+  bp_exit=$(echo "$bp_launchctl" | awk '{print $2}')
+  if [ "$bp_state" = "-" ] && [ "$bp_exit" = "0" ]; then
+    pass "building-pipeline-loaded" "registered, idle between runs (last exit 0)"
+  elif [ "$bp_state" = "-" ]; then
+    fail "building-pipeline-loaded" "LaunchAgent registered but last exit=${bp_exit} (not 0)"
   else
     pass "building-pipeline-loaded" "pid=$bp_state"
   fi
@@ -309,7 +312,7 @@ except Exception as e:
 PYEOF
 )
 
-running_cdhash=$(codesign -dvv ~/.chorus/bin/chorus-hooks 2>&1 | grep "CDHash=" | cut -d= -f2 | tr -d ' ' || echo "unknown")
+running_cdhash=$(codesign -d --verbose=4 ~/.chorus/bin/chorus-hooks 2>&1 | grep "CandidateCDHash sha256=" | awk '{print $NF}' | cut -d= -f2 || echo "unknown")
 
 if [ "$deployed_cdhash" = "unknown" ] || [ "$deployed_cdhash" = "no-deploy-ev" ] || [ "$deployed_cdhash" = "no-deploy-event" ] || [ "$deployed_cdhash" = "error" ]; then
   warn "deployed-equals-running" "no binary.deployed spine event for chorus-hooks — cannot verify"
