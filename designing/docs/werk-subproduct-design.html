@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Werk — Subproduct Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  h4 { font-size: 0.92em; margin-top: 1em; color: #5b21b6; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #ede9fe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-size: 0.9em; }
+  .promise { background: #f5f3ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-op { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-bld { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-exp { background: #dbeafe; color: #1e3a8a; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Werk <span>— Subproduct Design</span></h1>
+<p class="date">Kade · 2026-05-16 · subproduct-design doc, peer to <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a> and <a href="/designing/docs/loom-subproduct-design.html"><code>loom-subproduct-design.html</code></a>. Werk is the engineering pipeline — the line that turns "card in Next" into "running code on origin/main with a coherent receipt."</p>
+
+<div class="frame">
+This doc consumes:
+<strong>(1) <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a></strong> (Kade) — the source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers;
+<strong>(2) <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a></strong> (Kade) — the orchestration slice: <code>act</code> as local runner, /werk/* dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry;
+<strong>(3) <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a></strong> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention);
+<strong>(4) <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a></strong> (Wren, 2026-05-15) — the structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines;
+<strong>(5)</strong> the work-as-product reframe — every card is a SKU, /demo is try-before-buy, /acp is the purchase, the spine is the receipt ledger;
+<strong>(6) <a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a></strong> (Silas) — sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.
+</div>
+
+<div class="promise">
+<strong>Werk is the engineering pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. Its promise: every card that enters Werk leaves as merged source on <code>origin/main</code> with a coherent receipt — card_id and trace_id propagated through every step from /pull to deployed cdhash. Four Domains compose it (code, tests, version-control, ci-cd) sharing one discipline: typed contracts at every boundary, refuse early, emit observable events. Werk does not build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> domain, handed off at the post-/acp release-trigger.
+</div>
+
+<div class="frame" style="border-left-color:#0ea5e9;background:#eff6ff">
+<strong>Two pipelines, one product.</strong> Werk runs two state machines in parallel from a single source of truth (the card and its commits):
+<ul>
+  <li><em>The card pipeline</em> — what Jeff sees Werk doing. States: <code>Next → WIP → Demo → Done</code>. Transitions emit spine events (<code>card.pulled</code>, <code>card.demoed</code>, <code>card.accepted</code>) and are gated by the five role gates and the five pre-merge surfaces. This is the assembly line.</li>
+  <li><em>The artifact lifecycle</em> — what Werk leaves behind, governed by Athena. States: <code>exploring → building → operating → retiring</code> on the Service or Domain the card touched. This is the product on the shelf.</li>
+</ul>
+Werk's load-bearing claim: every accepted card advances both pipelines coherently. A card that ships code without advancing the artifact's status is incomplete — the artifact lifecycle is part of the deliverable, not a follow-up.
+</div>
+
+<h2>What Werk is</h2>
+<p>The <strong>engineering pipeline subproduct</strong> of Chorus, at the <strong>Building</strong> value-stream step. Composed of four child Domains. Owner: Kade. The /werk/* commands (<code>/pull</code>, <code>/build</code>, <code>/deploy</code>, <code>/demo</code>, <code>/acp</code>) are its developer interface; <code>act</code> is the runner beneath them; chorus_commit / chorus_acp are the MCP write-paths at the boundary; the five pre-merge hooks plus the five role gates are the refusal surfaces.</p>
+
+<h2>Structure — up and down</h2>
+<p><strong>UP:</strong> single inbound edge — <code>chorus-product hasChild werk-product</code> (transitionally <code>hasSubProduct</code> in AS-IS graph, per Athena's named collapse).</p>
+
+<pre class="mermaid">
+flowchart TD
+  Chorus["Chorus — Product"] -->|hasChild| Werk["Werk — Subproduct<br/>(child of Chorus)<br/>owned by Kade · Building step"]
+  Werk -->|hasDomain| Pipelines["pipelines<br/>act runner, /werk/* dispatch,<br/>pre-merge 5, schedule + drift lane"]
+  Werk -->|hasDomain| VCS["version-control<br/>chorus_commit/acp, git-queue,<br/>werks, pre-merge 1–4, trailers"]
+  Werk -->|hasDomain| Code["code<br/>quality rules, lint, complexity,<br/>dup-string, no-warn-tier"]
+  Werk -->|hasDomain| Tests["tests<br/>TDD discipline, hermetic-by-default,<br/>integration-gated-explicitly"]
+  Werk -.->|consumes| BD["build+deploy<br/>(sibling — Silas)"]
+  Pipelines -->|hosts| ActSvc["act-service"]
+  VCS -->|hosts| GitQueueSvc["git-queue-service"]
+  VCS -->|hosts| WerkSvc["werks-service<br/>(chorus-werk add/remove)"]
+  Code -->|hosts| LintSvc["quality-service<br/>(lint + complexity gates)"]
+  Tests -->|hosts| TestRunnerSvc["test-runner-service<br/>(hermetic + integration tiers)"]
+  classDef op fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef bld fill:#fef9c3,stroke:#854d0e,color:#854d0e;
+  classDef anchor fill:#ede9fe,stroke:#7c3aed,color:#5b21b6;
+  classDef sibling fill:#e0e7ff,stroke:#3730a3,color:#3730a3;
+  class Chorus,Werk anchor;
+  class VCS,CICD op;
+  class Code,Tests bld;
+  class BD sibling;
+</pre>
+<p class="caption">Werk → four Domains via <code>hasDomain</code>. Each Domain <code>hosts</code> the Services where its code lives. Werk <code>consumes</code> Build+Deploy across the post-/acp boundary (dashed — cross-cutting dependency, not containment). Purple = subproduct anchor · green = operating · yellow = building.</p>
+
+<h2>The four Domains</h2>
+
+<h3>pipelines <span class="t-bld">BUILDING</span></h3>
+<p><strong>Promise:</strong> every /werk/* command is an <code>act</code> job; typed refusals, spine events, and trace continuity are uniform across the pipeline; post-merge build chain is sequential-fail-fast with one observable trace from /acp to deployed cdhash.</p>
+<p><strong>Owner:</strong> Kade (orchestration). <strong>Service hosted:</strong> act-runner (local LaunchAgent <code>com.chorus.building-pipeline</code>). <strong>Design doc:</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a>.</p>
+<p><strong>Shipped:</strong> orchestration via <code>act</code> + <code>workflow_dispatch</code> + launchd kickstart (#2933, #2939); pre-merge surface 5 (pre-commit) wired; cost-stop / schedule-only main re-run (#2600, DEC-2525); ci-main-red reactive alert.</p>
+<p><strong>Gaps (headline, in product-frame):</strong></p>
+<ul>
+  <li><strong>Can't try before you buy.</strong> /werk/build and /werk/deploy as pre-/acp act jobs are designed but not shipped — Jeff accepts before the feature is observable in a running instance. This is the customer-facing #1 gap, not item 6 on a punch list.</li>
+  <li><strong>Receipts don't reconcile.</strong> card_id is set in env by /acp but lost across the launchd boundary — pipeline events fire as <code>role=system</code> with no card_id. Cross-step correlation by card is unbuildable from current data. (Build+Deploy doc names the same gap from the other side as P1 #1.)</li>
+  <li><strong>No deployed-equals-running assertion.</strong> Spine says <code>binary.deployed</code>; nothing today proves the deployed cdhash matches the running PID's cdhash. The brand promise of invariance isn't measurable yet.</li>
+</ul>
+<p>Downstream gaps tracked: drift lane (#2527), sensor consumer registry (#2528), run-tests contract (#2529), KNOWN_FAILS allowlist (#2497), ratchet drift signal (#2496), GHA org-billing alert (#2591), infra-card demo adapter (#2499).</p>
+
+<h3>version-control <span class="t-op">OPERATING</span></h3>
+<p><strong>Promise:</strong> source state on <code>origin/main</code> is the only truth; every mutation is a typed MCP call (chorus_commit, chorus_acp) carrying card_id + trace_id; werks are ephemeral per-card worktrees, never branch-swapped in place; cross-role contamination is refused at four distinct surfaces.</p>
+<p><strong>Owner:</strong> Kade. <strong>Services hosted:</strong> git-queue (mutex-locked wrapper, branch-check), werks (<code>chorus-werk add/remove</code>), chorus-hook-shim (PreToolUse refusals). <strong>Design doc:</strong> <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a>.</p>
+<p><strong>Shipped:</strong> chorus_commit / chorus_acp MCPs with verify-after sequenced steps (#2782); ephemeral per-card worktrees replacing persistent per-role mutation (#2735, #2913); pre-merge surfaces 1–4 (wrong-branch, raw push, dangerous git, cross-worktree contamination — #2580, #2598, #2625); trace propagation through commit trailers (#2931); idempotent /acp re-run path on orphan branches (#2943); pre-push refusal on stale-base silent deletions (#2944).</p>
+<p><strong>Gaps:</strong> three-domain rollback across version-control / build / deploy (named in Build+Deploy doc as structurally hard, no card). Shared-HEAD race on canonical accepted-residual (#2706, path-to-close open). Same-role wrong-card commit-time defense was filed as #2641 but declined Won't-Do in favor of the #2625 PreToolUse worktree-contamination guard plus chorus_commit_status pre-flight.</p>
+
+<h3>code <span class="t-bld">BUILDING</span></h3>
+<p><strong>Promise:</strong> staged code that reaches a commit is type-clean, lint-clean below thresholds, free of duplicate-string accretion (≥5), and below cognitive-complexity 12 — refused at the pre-commit boundary, not at review.</p>
+<p><strong>Owner:</strong> Kade. <strong>Service:</strong> quality (gates + lint rules). <strong>Design doc:</strong> <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a>.</p>
+<p><strong>Shipped:</strong> sonarjs error tier wired in pre-commit (no-duplicate-string threshold 5, cognitive-complexity threshold 12), magic-comment override (<code>// cog-override: &lt;reason&gt;</code>) emits audit event (#2603, #2627). No-warn-tier convention asserted.</p>
+<p><strong>Gaps:</strong> no-warn-tier convention is not self-enforced — nothing today refuses a contributor adding a <code>warn</code>-tier rule. Trust audit for pre-merge maturity (claim that "trust burden moved to pre-merge" needs a check that pre-merge isn't quietly weakening) is uncarded. Ratchet drift signal (#2496) still planned — baseline accretion only caught via manual audit.</p>
+
+<h3>tests <span class="t-bld">BUILDING</span></h3>
+<p><strong>Promise:</strong> tests describe the experience the card was filed to fix, not internal state; pre-commit runs hermetic tier only; integration tier is explicitly gated and runs in /demo. AC items become test cases before code. (DEC-1674.)</p>
+<p><strong>Owner:</strong> Kade. <strong>Service:</strong> test-runner. <strong>Design doc:</strong> not yet authored as a service-design — currently lives across <code>TESTING.md</code>, <code>test-categorization.html</code>, <code>ICD_TEST_STRATEGY.html</code>, <code>zero-test-subdomain-triage.md</code>. <strong>Gap:</strong> tests has no canonical service-design doc; this is the first thing the domain needs.</p>
+<p><strong>Shipped:</strong> hermetic-by-default discipline named as principle and enforced in pre-commit (cargo test --lib --bins / jest scope). Integration tests gated in /demo. TDD discipline written into CLAUDE.md (DEC-1674).</p>
+<p><strong>Gaps:</strong> no run-tests contract (#2529) — the load-bearing CI ↔ tests interface is unnamed. Hermetic/integration tagging on individual tests is partial (some bats files marked, most TS tests rely on filename convention). chorus-hooks/inject test isolation (#2491) has hardcoded paths in some tests. sessions.test.ts pre-existing fail (#2493).</p>
+
+<h2>Two pipelines reconciled</h2>
+<p>The card pipeline and the artifact lifecycle share one source-of-truth (the card + its commits), but they observe different state and emit different events.</p>
+
+<table>
+<tr><th>Stage</th><th>Card pipeline state</th><th>Artifact lifecycle event (Athena status)</th><th>Spine events Werk emits</th></tr>
+<tr><td>/pull</td><td>Next → WIP</td><td>artifact: no change (still <code>exploring</code> or <code>building</code>)</td><td><code>card.pulled</code></td></tr>
+<tr><td>code + tests</td><td>WIP</td><td>—</td><td><code>commit.queued</code>, <code>commit.completed</code> (per commit)</td></tr>
+<tr><td>/build + /deploy (designed)</td><td>WIP</td><td>—</td><td><code>build.preview.completed</code>, <code>deploy.preview.completed</code></td></tr>
+<tr><td>/demo</td><td>WIP → Demo</td><td>—</td><td><code>gate.*.passed</code>, <code>card.demoed</code></td></tr>
+<tr><td>/acp</td><td>Demo → Done</td><td>artifact: <code>building</code> → <code>operating</code> (if card declares it)</td><td><code>card.accepted</code>, <code>release.triggered</code></td></tr>
+<tr><td>post-merge</td><td>Done</td><td>artifact status now in effect</td><td><code>build.completed</code>, <code>binary.deployed</code>, <code>deploy.completed</code></td></tr>
+</table>
+
+<p><strong>The coherence claim:</strong> a card that touches a Service (e.g., quality-service, version-control-service) must declare whether its acceptance advances that Service's <code>chorus:status</code>. If the card is moving <code>building → operating</code>, /acp writes that triple through the Athena API as part of the commit. If the card doesn't move status, that's stated explicitly (a maintenance card on an <code>operating</code> service stays operating). Today: no enforcement — artifact status drifts behind reality. Path to close named below.</p>
+
+<h2>Coherence findings — synthesis</h2>
+<div class="finding"><strong>1. Two of the four Domains have service-designs; two don't.</strong> Version-control and pipelines have canonical docs and graph instances. Code has a markdown service-design that lags behind the wired pre-commit rules. Tests has no service-design at all — its substance is spread across four markdown files. The next service-design Werk needs is <code>tests-service-design.html</code>.</div>
+<div class="finding"><strong>2. Werk-the-subproduct is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Both pipelines need to advance per accepted card or the graph drifts behind reality.</div>
+<div class="finding"><strong>3. The pipelines's biggest gaps are product gaps, not infrastructure gaps.</strong> Reframed: customers can't try before they buy (#/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
+<div class="finding"><strong>4. Werk does not own build+deploy.</strong> The post-/acp release-trigger is the handoff line. Build+Deploy is a sibling subproduct under Silas. Werk's responsibility ends at "card accepted, commit on origin/main, trace_id propagating into the build pipeline."</div>
+
+<h2>OWL + SHACL — conformance to Athena v2</h2>
+<p>This subproduct adds no new structural classes. It uses Athena's <code>chorus:Product</code> / <code>chorus:Domain</code> / <code>chorus:Service</code> with the recursive containment model. The Werk-specific shape is:</p>
+
+<pre><code># Werk SubProduct instance (TO-BE; uses Athena schema)
+chorus:werk-product
+  a chorus:Product ;
+  chorus:label "Werk" ;
+  chorus:comment "The engineering pipeline — card in Next to merged source on origin/main." ;
+  chorus:ownedBy chorus:kade ;
+  chorus:vision "Typed contracts at every boundary; every card a coherent SKU." ;
+  chorus:valueProposition "Every accepted card advances both card-pipeline and artifact-lifecycle coherently, with one trace from /pull to deployed cdhash." ;
+  chorus:audience "roles building Chorus and Gathering" , "Jeff (customer of accepted work)" ;
+  chorus:status "building" ;
+  chorus:atStep chorus:building-step ;
+  chorus:hasDesignDoc chorus:werk-subproduct-design ;
+  chorus:hasDomain chorus:pipelines ,
+                   chorus:version-control ,
+                   chorus:code ,
+                   chorus:tests ;
+  chorus:consumes chorus:build-and-deploy-service ;
+  chorus:gaps
+    "Code-domain service-design lags wired rules" ,
+    "Tests-domain has no service-design" ,
+    "/werk/build + /werk/deploy as pre-/acp dispatch unshipped" ,
+    "card_id lost across launchd boundary in post-merge pipeline" ,
+    "No deployed-equals-running assertion" ,
+    "Artifact-status advance on /acp not enforced (graph drifts behind reality)" .</code></pre>
+
+<p>Athena's invariant-rendering claim ("every stored attribute required, no conditional show-if-defined branches") is the design-time twin of Werk's runtime fitness function ("for every commit on origin/main, all step pairs emit started+completed with same card_id"). Same posture, different layer. Werk satisfies Athena's SHACL at write time; Werk's own pipeline satisfies its fitness function at run time. Both gates refuse early.</p>
+
+<h2>Path to close</h2>
+<ol>
+  <li><strong>tests-service-design.html.</strong> Werk's only Domain without a canonical service-design. Consolidates TESTING.md / test-categorization.html / ICD_TEST_STRATEGY.html / zero-test-subdomain-triage.md. Headline contract: hermetic-by-default with explicit integration gating, AC → tests → code (DEC-1674), run-tests contract (#2529) named as the load-bearing CI↔tests interface.</li>
+  <li><strong>Card-driven artifact-status advance.</strong> When /acp accepts a card that touches a Service, write the artifact-status transition (<code>chorus:status</code>) through the Athena API as part of the commit. Without this, the artifact lifecycle drifts behind reality and Athena's "graph is whole" claim fails.</li>
+  <li><strong>/werk/build + /werk/deploy as pre-/acp act jobs.</strong> The "try before you buy" gap. Designed in ci-pipeline doc, shipped only post-/acp today. This is the single highest-impact change to Werk-the-product experience.</li>
+  <li><strong>card_id across the launchd boundary.</strong> Plist env override on the kickstart, OR pipeline-side manifest read. Until this lands, post-/acp events fire as <code>role=system</code> and cross-step correlation by card is unbuildable. (Same gap Build+Deploy names as P1 #1.)</li>
+  <li><strong>Werk-domain instances in Athena.</strong> The four Domain instances and their hosted Service instances need to be authored under the recursive-Domain model — today the graph has <code>SubDomain</code> instances mis-typed per Athena's audit. Migration sequenced behind Athena's type-migration card.</li>
+</ol>
+
+<h2>Not in scope</h2>
+<ul>
+  <li><strong>Build + Deploy</strong> (Silas, sibling subproduct) — the artifact-production-to-running-state vertical. Werk consumes; doesn't own.</li>
+  <li><strong>Athena schema itself</strong> — Werk conforms to Athena v2, doesn't redefine. The recursive-Domain model and SHACL shapes are upstream decisions.</li>
+  <li><strong>The card system</strong> — Vikunja + cards CLI + the card lifecycle states are Wren's. Werk consumes the card-pipeline state-machine; doesn't define it.</li>
+  <li><strong>Gathering's CI</strong> — lives in <code>jeff-bridwell-personal-site</code> repo; smoke check is its problem (ADR-026 addendum).</li>
+  <li><strong>Quality at runtime</strong> — observability of the running system is Borg's substrate, not Werk's.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> — Kade. The VCS slice.</li>
+  <li><a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> — Kade. The orchestration slice.</li>
+  <li><a href="/designing/docs/quality-service-design.md">quality-service-design.md</a> — code reference.</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling subproduct; the post-/acp handoff.</li>
+  <li><a href="/designing/docs/athena-subproduct-design.html">athena-subproduct-design.html</a> — Wren. Structural / SHACL substrate.</li>
+  <li><a href="/designing/docs/loom-subproduct-design.html">loom-subproduct-design.html</a> — Wren. Sibling subproduct (principles / practices / decisions / policies).</li>
+  <li>DEC-1674 — TDD discipline (AC → tests → code).</li>
+  <li>ADR-026 — CI architecture + lock-file policy.</li>
+  <li>DEC-2525 — required-checks governance.</li>
+  <li>#2913 — ephemeral per-card worktrees (replaced persistent per-role model).</li>
+  <li>#2931 — trace propagation through commit trailers.</li>
+  <li>#2941, #2943, #2944 — typed-refusal / idempotent /acp / pre-push silent-deletion (recent VCS hardening).</li>
+</ul>
+
+<p class="footer">Draft 2026-05-16 — Kade. Sketch in /tmp; not yet landed canonically. Once Jeff signs off on the shape, this lands under a /pull at <code>designing/docs/werk-subproduct-design.html</code>.</p>
+
+</body>
+</html>
