@@ -63,6 +63,15 @@ pub fn hash_path(role: &str) -> String {
     format!("/tmp/session-start-{}-principles.hash", role)
 }
 
+/// #2964 (Silas chorus-health ask): retry policy for the principles fetch.
+/// Without retries, transient MCP errors at session boot (chorus-api restarts,
+/// slow startup races) silently flip the inject to Stale fallback. Loki shows
+/// 67+ stale events in a 24h window before the fix. Retrying with backoff
+/// closes most of those — only genuinely unreachable API still falls back.
+const MAX_FETCH_RETRIES: u32 = 3;
+const INITIAL_BACKOFF_MS: u64 = 200;
+const BACKOFF_MULTIPLIER: u64 = 2;
+
 pub fn fetch() -> FetchResult {
     if let Ok(path) = std::env::var("CHORUS_PRINCIPLES_FIXTURE_FILE") {
         match fs::read_to_string(&path) {
@@ -71,33 +80,65 @@ pub fn fetch() -> FetchResult {
         }
     }
 
-    // #2477 — typed MCP surface replaces direct HTTP. Falls back to cache on
-    // MCP unreachable / parse error (same fold as the prior HTTP path).
+    // #2477 — typed MCP surface replaces direct HTTP.
+    // #2964 — wrap the MCP path in a retry-with-backoff loop. Transient errors
+    // (init failure, call_tool failure) are common at session boot when the
+    // chorus-api process is restarting or slow to bind. Single-attempt → cache
+    // produces Stale events that pollute Jeff's signal channel.
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "shim".to_string());
     let mcp_base = std::env::var("CHORUS_MCP_BASE_URL")
         .unwrap_or_else(|_| "http://localhost:3340".to_string());
 
-    let session = match crate::mcp_client::init_session(&mcp_base, &role) {
-        Ok(s) => s,
-        Err(e) => return fallback_to_cache(format!("mcp init: {}", e)),
-    };
+    let mut last_error: Option<String> = None;
+    let mut backoff_ms = INITIAL_BACKOFF_MS;
 
-    // #2477 — spine emit at the caller layer (mcp_client is dep-light by design).
+    for attempt in 0..MAX_FETCH_RETRIES {
+        match try_fetch_once(&mcp_base, &role) {
+            Ok(result) => return result,
+            Err(e) => {
+                last_error = Some(e.clone());
+                // Final attempt — no point sleeping again before falling to cache.
+                if attempt + 1 == MAX_FETCH_RETRIES {
+                    break;
+                }
+                // Spine event for visibility — operators can see retry pressure
+                // without it polluting the stale-event count.
+                let _ = crate::chorus_log::run_silent(&[
+                    "session.principles.retry".to_string(),
+                    role.clone(),
+                    format!("attempt={}", attempt + 1),
+                    format!("error={}", e),
+                ]);
+                std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                backoff_ms = backoff_ms.saturating_mul(BACKOFF_MULTIPLIER);
+            }
+        }
+    }
+
+    // All retries exhausted — fall back to cache + emit Stale.
+    fallback_to_cache(last_error.unwrap_or_else(|| "unknown".to_string()))
+}
+
+/// One attempt at the full MCP fetch path. Returns Ok(FetchResult) on success
+/// (either Fresh or EmptyFromApi — both are non-error terminal outcomes), or
+/// Err(reason) on failure that should trigger a retry. #2964 retry-with-backoff.
+fn try_fetch_once(mcp_base: &str, role: &str) -> Result<FetchResult, String> {
+    let session = crate::mcp_client::init_session(mcp_base, role)
+        .map_err(|e| format!("mcp init: {}", e))?;
+
     let _ = crate::chorus_log::run_silent(&[
         "mcp.tool.invoked".to_string(),
-        role.clone(),
+        role.to_string(),
         "tool=chorus_principles_list".to_string(),
         "source=shim".to_string(),
     ]);
 
-    let result = match crate::mcp_client::call_tool(
+    let result = crate::mcp_client::call_tool(
         &session,
         "chorus_principles_list",
         serde_json::json!({}),
-    ) {
-        Ok(r) => r,
-        Err(e) => return fallback_to_cache(format!("mcp call_tool: {}", e)),
-    };
+    )
+    .map_err(|e| format!("mcp call_tool: {}", e))?;
 
     // The chorus_principles_list tool returns a text content block; parse it
     // back into the canonical envelope so the rest of principles_inject works
@@ -111,7 +152,7 @@ pub fn fetch() -> FetchResult {
 
     let principles = parse_tool_text(text);
     if principles.is_empty() {
-        return FetchResult::EmptyFromApi;
+        return Ok(FetchResult::EmptyFromApi);
     }
 
     // Update cache with a JSON-shaped representation for the existing
@@ -122,7 +163,7 @@ pub fn fetch() -> FetchResult {
     })) {
         let _ = fs::write(cache_path(), envelope);
     }
-    FetchResult::Fresh(principles)
+    Ok(FetchResult::Fresh(principles))
 }
 
 /// Parse the chorus_principles_list tool's text output back into structured
