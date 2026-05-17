@@ -215,7 +215,7 @@ else
 fi
 
 # Clearing external reachability (from network perspective — bind check)
-clearing_result=$(curl -s --max-time 5 --interface "" "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
 if [ "$clearing_result" = "200" ] || [ "$clearing_result" = "301" ] || [ "$clearing_result" = "302" ]; then
   pass "clearing-external" "http://192.168.86.36:${CLEARING_PORT}/ → ${clearing_result}"
 else
@@ -248,7 +248,7 @@ try:
             try:
                 ev = json.loads(line)
                 binary = ev.get('binary', '')
-                if binary in ('chorus-hooks', 'chorus-hook-shim') and 'fixture' not in binary:
+                if binary in ('chorus-hooks', 'chorus-hook-shim'):
                     deploys.append((ts, ev.get('cdhash', 'unknown')))
             except:
                 pass
@@ -352,9 +352,9 @@ else
   complete=$(echo "$lifecycle_result" | cut -d: -f1)
   total=$(echo "$lifecycle_result" | cut -d: -f2)
   if [ "${total:-0}" -eq 0 ]; then
-    warn "card-lifecycle-trace" "no card events found in 7 days"
+    warn "card-lifecycle-trace" "no card events found in 2 days"
   elif [ "${complete:-0}" -gt 0 ]; then
-    pass "card-lifecycle-trace" "${complete}/${total} cards have full transition sequence in 7d"
+    pass "card-lifecycle-trace" "${complete}/${total} cards have full transition sequence in 2d"
   else
     fail "card-lifecycle-trace" "0/${total} cards have full pull→demo→accept sequence"
   fi
@@ -429,4 +429,10 @@ if [ "$VERBOSE" -eq 1 ] || [ "$FAIL_COUNT" -gt 0 ] || [ "$WARN_COUNT" -gt 0 ]; t
   done
 fi
 
-[ "$FAIL_COUNT" -gt 0 ] && exit 1 || exit 0
+if [ "$FAIL_COUNT" -gt 0 ]; then
+  OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
+  MSG="chorus-health: ${FAIL_COUNT} failure(s) — $(IFS=,; echo "${FAIL_NAMES[*]}")"
+  [ -x "$OPS_NUDGE" ] && "$OPS_NUDGE" silas "$MSG" 2>/dev/null || true
+  exit 1
+fi
+exit 0
