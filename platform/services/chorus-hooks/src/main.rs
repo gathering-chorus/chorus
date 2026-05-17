@@ -672,7 +672,7 @@ async fn user_prompt_submit(
     tokio::spawn(async move {
         use crate::state::chorus_log;
         use hooks::card_approval_responder::{
-            detect_approval_signal, handle_approval_request, sweep_stale_pending,
+            detect_approval_signal, handle_approval_request_all, sweep_stale_pending,
             ApprovalOutcome,
         };
         use std::path::PathBuf;
@@ -697,10 +697,15 @@ async fn user_prompt_submit(
             None => return,
         };
 
+        // #2964: drain ALL queued pending payloads for the role on a single
+        // approve keystroke. Each outcome emits its own spine event so the
+        // log surface shows "Filed #2959, #2960, #2961" instead of one
+        // event per approve. Today's failure cycle (10 approves → 3 cards
+        // filed) was the most-recent-only behavior; this loops over all.
         let role_for_blocking = approval_role.clone();
         let pending_dir_for_blocking = pending_dir.clone();
-        let outcome = tokio::task::spawn_blocking(move || {
-            handle_approval_request(
+        let outcomes = tokio::task::spawn_blocking(move || {
+            handle_approval_request_all(
                 &role_for_blocking,
                 signal,
                 &pending_dir_for_blocking,
@@ -724,49 +729,51 @@ async fn user_prompt_submit(
             )
         })
         .await
-        .unwrap_or(ApprovalOutcome::SpawnFailed);
+        .unwrap_or_else(|_| vec![ApprovalOutcome::SpawnFailed]);
 
-        match outcome {
-            ApprovalOutcome::Approved { title } => {
-                chorus_log(
-                    "card.approval.granted",
-                    "jeff",
-                    &[("role", approval_role.as_str()), ("title", title.as_str())],
-                )
-                .await;
-            }
-            ApprovalOutcome::Denied { title } => {
-                chorus_log(
-                    "card.approval.denied",
-                    "jeff",
-                    &[("role", approval_role.as_str()), ("title", title.as_str())],
-                )
-                .await;
-            }
-            ApprovalOutcome::TimedOut => {
-                chorus_log(
-                    "card.approval.timeout",
-                    "system",
-                    &[("role", approval_role.as_str()), ("reason", "matched-but-stale")],
-                )
-                .await;
-            }
-            ApprovalOutcome::NoPending => { /* keyword fired with no pending — silent */ }
-            ApprovalOutcome::ReadFailed
-            | ApprovalOutcome::ParseFailed
-            | ApprovalOutcome::SpawnFailed => {
-                let reason = match outcome {
-                    ApprovalOutcome::ReadFailed => "read-failed",
-                    ApprovalOutcome::ParseFailed => "parse-failed",
-                    ApprovalOutcome::SpawnFailed => "spawn-failed",
-                    _ => "unknown",
-                };
-                chorus_log(
-                    "card.approval.failed",
-                    "system",
-                    &[("role", approval_role.as_str()), ("reason", reason)],
-                )
-                .await;
+        for outcome in outcomes {
+            match outcome {
+                ApprovalOutcome::Approved { title } => {
+                    chorus_log(
+                        "card.approval.granted",
+                        "jeff",
+                        &[("role", approval_role.as_str()), ("title", title.as_str())],
+                    )
+                    .await;
+                }
+                ApprovalOutcome::Denied { title } => {
+                    chorus_log(
+                        "card.approval.denied",
+                        "jeff",
+                        &[("role", approval_role.as_str()), ("title", title.as_str())],
+                    )
+                    .await;
+                }
+                ApprovalOutcome::TimedOut => {
+                    chorus_log(
+                        "card.approval.timeout",
+                        "system",
+                        &[("role", approval_role.as_str()), ("reason", "matched-but-stale")],
+                    )
+                    .await;
+                }
+                ApprovalOutcome::NoPending => { /* keyword fired with no pending — silent */ }
+                ApprovalOutcome::ReadFailed
+                | ApprovalOutcome::ParseFailed
+                | ApprovalOutcome::SpawnFailed => {
+                    let reason = match outcome {
+                        ApprovalOutcome::ReadFailed => "read-failed",
+                        ApprovalOutcome::ParseFailed => "parse-failed",
+                        ApprovalOutcome::SpawnFailed => "spawn-failed",
+                        _ => "unknown",
+                    };
+                    chorus_log(
+                        "card.approval.failed",
+                        "system",
+                        &[("role", approval_role.as_str()), ("reason", reason)],
+                    )
+                    .await;
+                }
             }
         }
     });

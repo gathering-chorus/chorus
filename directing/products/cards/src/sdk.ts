@@ -765,6 +765,62 @@ async function applyDynamicLabel(
  * `cards add` with DEPLOY_ROLE=jeff (bypasses the bouncer cleanly). The .txt
  * remains for human inspection.
  */
+/** #2964: dedupe window — within this many ms, an existing pending payload
+ *  for the same role+title is overwritten in place instead of producing a
+ *  fresh stamped file. Mirrors the responder's PENDING_TIMEOUT_SECS (10 min). */
+export const PENDING_DEDUPE_WINDOW_MS = 600_000; // 10 minutes
+
+/** #2964: retry-refusal window — within this many ms of a previous write for
+ *  the same role+title, refuse the new attempt outright. Prevents agents from
+ *  flood-retrying the gated path. */
+export const PENDING_RETRY_REFUSAL_MS = 30_000; // 30 seconds
+
+/**
+ * #2964: thrown by writePendingApprovalArtifacts when an agent retries the
+ * same role+title within PENDING_RETRY_REFUSAL_MS. The bouncer caller catches
+ * this and exits with a clear "already-pending" message instead of stacking
+ * a duplicate payload onto Jeff's queue.
+ */
+export class PendingRetryTooSoonError extends Error {
+  constructor(public ageMs: number, public existingPath: string) {
+    super(`pending-retry-too-soon: same-role+title written ${ageMs}ms ago at ${existingPath}`);
+    this.name = 'PendingRetryTooSoonError';
+  }
+}
+
+/** #2964: find an existing pending payload for the same role+title. Returns
+ *  the path + mtime-age if any matching `<role>-*.argv.json` file holds the
+ *  same title, otherwise null. Bouncer uses this for dedupe + retry refusal. */
+export function findExistingPendingByTitle(
+  pendingDir: string, role: string, title: string,
+): { path: string; ageMs: number } | null {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(pendingDir);
+  } catch {
+    return null;
+  }
+  const prefix = `${role}-`;
+  const now = Date.now();
+  for (const name of entries) {
+    if (!name.startsWith(prefix) || !name.endsWith('.argv.json')) continue;
+    const path = `${pendingDir}/${name}`;
+    let raw: string;
+    try { raw = fs.readFileSync(path, 'utf-8'); } catch { continue; }
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && parsed.title === title) {
+        let mtime: number;
+        try { mtime = fs.statSync(path).mtimeMs; } catch { continue; }
+        // Clamp at 0 — on some filesystems mtime can be slightly larger than
+        // Date.now() (sub-millisecond rounding); a negative age is meaningless.
+        return { path, ageMs: Math.max(0, now - mtime) };
+      }
+    } catch { continue; }
+  }
+  return null;
+}
+
 export function writePendingApprovalArtifacts(args: {
   pendingDir: string;
   role: string;
@@ -775,6 +831,29 @@ export function writePendingApprovalArtifacts(args: {
   cardOpts: any;
 }): { txtPath: string; argvPath: string } {
   fs.mkdirSync(args.pendingDir, { recursive: true });
+
+  // #2964: dedupe + retry refusal. If we've written a pending payload for the
+  // same role+title recently, decide what to do based on age. This stops the
+  // bouncer from piling 24 duplicates on Jeff's queue when an agent retries.
+  const existing = findExistingPendingByTitle(args.pendingDir, args.role, args.title);
+  if (existing) {
+    if (existing.ageMs < PENDING_RETRY_REFUSAL_MS) {
+      throw new PendingRetryTooSoonError(existing.ageMs, existing.path);
+    }
+    if (existing.ageMs < PENDING_DEDUPE_WINDOW_MS) {
+      // Overwrite the existing payload in place so we don't accumulate
+      // duplicates. Use the same stem so the responder treats this as one
+      // pending payload, not a queue depth of two.
+      const argvPath = existing.path;
+      const txtPath = argvPath.replace(/\.argv\.json$/, '.txt');
+      fs.writeFileSync(txtPath, args.nudge);
+      fs.writeFileSync(argvPath, JSON.stringify({ title: args.title, opts: args.cardOpts }, null, 2));
+      return { txtPath, argvPath };
+    }
+    // Stale (> dedupe window) — fall through to new-stamp write. Responder's
+    // sweep_stale_pending will clean up the old one on the next pass.
+  }
+
   const txtPath = `${args.pendingDir}/${args.role}-${args.stamp}.txt`;
   const argvPath = `${args.pendingDir}/${args.role}-${args.stamp}.argv.json`;
   fs.writeFileSync(txtPath, args.nudge);
@@ -882,26 +961,22 @@ async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise
   const scope = section(/##\s*scope\s+of\s+impact\b/i);
   const experience = section(/##\s*experience\b/i);
 
+  // #2964: label-anchored format. Each section is one line starting with an
+  // ALLCAPS label so visual structure survives newline-flattening (osascript
+  // keystroke injection, model re-rendering one-paragraph). Long sections
+  // are truncated to ~220 chars with an ellipsis — full text is in the pickup
+  // file if Jeff wants depth. Approve/deny line is last and explicit.
+  const trunc = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
   const nudge = `[card-approval] ${role} → jeff
-
-I need you to approve a card before I file it.
-
-Title: ${title}
-Owner: ${opts.owner || '(unset)'}   Priority: ${opts.priority || '(unset)'}   Type: ${opts.type || '(unset)'}   Domain: ${opts.domain || '(unset)'}   Sequence: ${opts.sequence || '(unset)'}
-
-Description (what changes): ${experience}
-
-Why this matters: ${whyMatters}
-
-Why it helps Chorus: ${whyHelpsChorus}
-
-Why it's not gold plating or a nit: ${whyNotGold}
-
-Dependencies: ${deps}
-
-Scope of impact: ${scope}
-
-Waiting for your yes. I won't file or proceed until you respond. If you approve, file the card yourself from your terminal — DEPLOY_ROLE=jeff bypasses this gate cleanly.`;
+TITLE:    ${title}
+OWNER:    ${opts.owner || '(unset)'}    PRIO: ${opts.priority || '(unset)'}    TYPE: ${opts.type || '(unset)'}    DOMAIN: ${opts.domain || '(unset)'}    SEQ: ${opts.sequence || '(unset)'}
+CHANGE:   ${trunc(experience, 240)}
+WHY:      ${trunc(whyMatters, 240)}
+HELPS:    ${trunc(whyHelpsChorus, 240)}
+NOT-NIT:  ${trunc(whyNotGold, 200)}
+DEPS:     ${trunc(deps, 200)}
+SCOPE:    ${trunc(scope, 220)}
+APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards add … in your terminal bypasses cleanly. Full description in the pickup file.`;
 
   // #2910: write the composed ask to a pickup file so the model can surface it
   // in its next response to Jeff. Previous design relied on the model reading
@@ -919,7 +994,18 @@ Waiting for your yes. I won't file or proceed until you respond. If you approve,
     console.log(`[card-approval pickup written: ${txtPath}]`);
     console.log(`[card-approval argv sidecar written: ${argvPath}  — read by the AC3 UserPromptSubmit responder on approve]`);
   } catch (err) {
-    // Best-effort write; failure logs but doesn't block the refusal exit.
+    // #2964: retry-too-soon — agent flood-retrying the gated path. Refuse
+    // outright with the existing pending path so the agent can see its prior
+    // attempt is still queued, and exit non-zero so the retry counts as a
+    // refusal (not a silent success).
+    if (err instanceof PendingRetryTooSoonError) {
+      console.error(`---`);
+      console.error(`REFUSED: retry-too-soon. Same role+title was queued ${Math.round(err.ageMs / 1000)}s ago at ${err.existingPath}.`);
+      console.error(`The bouncer has NOT written a duplicate. The original pending payload is still active and will be processed when Jeff approves.`);
+      console.error(`If you're trying to reshape the card, wait at least ${Math.ceil((PENDING_RETRY_REFUSAL_MS - err.ageMs) / 1000)}s and try again.`);
+      process.exit(1);
+    }
+    // Other write failures: log but proceed to the standard refusal exit.
     console.error(`WARN: failed to write pickup artifacts under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
   }
 
