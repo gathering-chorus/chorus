@@ -216,7 +216,8 @@ flowchart TD
 <div class="phase">
 <h3>Phase 0 — Prerequisites (Silas + Kade, parallel)</h3>
 <p><strong>Cards:</strong> P1, P2, P3 (Silas — build-and-deploy); P4, P5, P6, P7, P8 (Kade — werk scaffolding).</p>
-<p><strong>Fitness function:</strong> <code>launchctl kickstart</code> with CHORUS_CARD_ID env passes the var; act jobs emit events with that card_id. <code>chorus:pipelines</code> renders eight Service instances. chorus_push MCP refuses with typed errors on push-fail; chorus_approve MCP refuses with auth-fail when DEPLOY_ROLE != jeff.</p>
+<p><strong>Important: Silas-side and Kade-side prereqs do NOT block each other.</strong> P4 (werk-pipeline.yml scaffold) is independent of P1/P2/P3 — it unblocks Kade-side cutover cards <strong>C3 (/werk/commit)</strong> and <strong>C6 (/werk/pull)</strong> as soon as P4 lands. Kade can begin cutover without waiting for Silas. Only the build/deploy-touching cutovers (<strong>C1 /werk/build</strong>, <strong>C2 /werk/deploy</strong>) need P1/P2/P3 first. /werk/demo (C7) and /werk/acp (C8) need both sides converged.</p>
+<p><strong>Fitness function:</strong> <code>launchctl kickstart</code> with CHORUS_CARD_ID env passes the var; act jobs emit events with that card_id. <code>chorus:pipelines</code> renders eight Service instances. chorus_push MCP refuses with typed errors on push-fail; chorus_approve MCP refuses with auth-fail when DEPLOY_ROLE != jeff. <strong>P3.5 — werk-event-pairs chorus-health check:</strong> for every <code>werk.*.started</code> event in the last hour, a matching <code>werk.*.completed</code> or <code>werk.*.failed</code> lands within 10-minute job TTL. Orphaned started events = act job crashed without cleanup (this is the recovery instrumentation for OQ2). Silas authors this check once P3's started/completed pairs ship in chorus-build/deploy.</p>
 <p><strong>Rollback / off-switch:</strong> additive only.</p>
 </div>
 
@@ -293,6 +294,7 @@ flowchart TD
 <tr><td>P1</td><td>card_id + trace_id env propagation across launchctl kickstart boundary</td><td>0</td><td>Silas</td><td>none</td></tr>
 <tr><td>P2</td><td>Two-slot deploy model ($CHORUS_BIN / $CHORUS_DEMO_BIN) ship</td><td>0</td><td>Silas</td><td>none</td></tr>
 <tr><td>P3</td><td>Six started/completed/failed event pairs in chorus-build / chorus-deploy</td><td>0</td><td>Silas</td><td>P1</td></tr>
+<tr><td>P3.5</td><td>chorus-health werk-event-pairs check (OQ2 recovery instrumentation)</td><td>0</td><td>Silas</td><td>P3</td></tr>
 <tr><td>P4</td><td>werk-pipeline.yml scaffold + act dispatch from roles</td><td>0</td><td>Kade</td><td>none</td></tr>
 <tr><td>P5</td><td>Athena Service instances for the eight /werk/* commands</td><td>0</td><td>Kade</td><td>none</td></tr>
 <tr><td>P6</td><td>icd-instance-pipelines.ttl provider entries</td><td>0</td><td>Kade</td><td>P5</td></tr>
@@ -314,7 +316,7 @@ flowchart TD
 <h2>Risks and open questions</h2>
 <ul>
   <li><strong>OQ1 — RESOLVED.</strong> /werk/acp is an orchestrator over decomposed steps. Jeff signed off on the decomposition 2026-05-17 evening.</li>
-  <li><strong>OQ2 — act runner reliability.</strong> If act crashes mid-job, what's the recovery path? Today the post-merge pipeline crashes are caught by Silas's chorus-health; the pre-merge lane needs similar instrumentation. Likely a Phase 1 sub-card.</li>
+  <li><strong>OQ2 — RESOLVED.</strong> Per Silas's 2026-05-17 evening review: chorus-health gains a new <code>werk-event-pairs</code> check that queries Loki for <code>werk.*.started</code> events in the last hour and confirms each has a matching <code>werk.*.completed</code> or <code>werk.*.failed</code> within 10-minute job TTL. Orphaned started events = act crashed without cleanup. Silas authors the check once P3 ships started/completed pairs. Tracked as P3.5 in Phase 0 fitness function.</li>
   <li><strong>OQ3 — multi-role concurrent /werk/build.</strong> Two-slot model is per-card; verify chorus_pull_card refuses concurrent pulls of the same card. Verify before C1.</li>
   <li><strong>OQ4 — chorus_acp retirement after C8.</strong> Recommend keeping as the inner-most atomic implementation behind a runtime flag — orchestrator-vs-monolith becomes config not code deletion. Confirm with Silas + Wren.</li>
   <li><strong>OQ5 — /werk/approve's interaction with the existing bouncer (#2964).</strong> The bouncer handles cards-add Jeff-approval today via the pickup-file substrate. /werk/approve is the per-card-acceptance Jeff-approval. They're different states but use the same DEPLOY_ROLE=jeff discipline. Wren should review whether the two should share an MCP (chorus_approve generalizes) or stay as two paths (one for cards-add, one for card-accept).</li>
