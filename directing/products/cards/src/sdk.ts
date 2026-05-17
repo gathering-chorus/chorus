@@ -844,6 +844,17 @@ export function writePendingApprovalArtifacts(args: {
       // Overwrite the existing payload in place so we don't accumulate
       // duplicates. Use the same stem so the responder treats this as one
       // pending payload, not a queue depth of two.
+      //
+      // Semantics note (#2964 Kade gate:quality feedback): the dedupe keys on
+      // role+title only. If a second call inside the dedupe window arrives
+      // with different cardOpts (e.g., priority P1 → P2, description edits,
+      // a renamed owner), THIS PATH ABSORBS the new opts silently. That is
+      // deliberate — "one pending per role+title" is the right invariant; the
+      // alternative (refuse the second call's edits, keep stale opts) is
+      // worse. But it means an agent reshaping a card mid-window will see the
+      // new opts land in Jeff's queue without a new approval-ask firing.
+      // Future-Wren: if cardOpts-drift becomes a real surface, surface a
+      // "payload updated" event here so Jeff can see the change.
       const argvPath = existing.path;
       const txtPath = argvPath.replace(/\.argv\.json$/, '.txt');
       fs.writeFileSync(txtPath, args.nudge);
