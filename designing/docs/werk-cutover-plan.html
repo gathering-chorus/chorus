@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Werk Cutover Plan — bare skills → /werk/* act jobs</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.4em; color: #5b21b6; }
+  h4 { font-size: 0.92em; margin-top: 1em; color: #4c1d95; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 14px; margin: 10px 0; font-size: 0.82em; overflow-x: auto; }
+  .frame { background: #ede9fe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-size: 0.9em; }
+  .promise { background: #f5f3ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-style: italic; font-size: 0.9em; }
+  .warn { background: #fef9c3; padding: 10px 14px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.86em; }
+  .warn strong { color: #854d0e; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .ok { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .ok strong { color: #065f46; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-ship { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-design { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-gap { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  .phase { background: #faf5ff; border-left: 4px solid #7c3aed; padding: 14px 18px; margin: 16px 0; border-radius: 0 4px 4px 0; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Werk Cutover Plan <span>— bare skills → /werk/* act jobs</span></h1>
+<p class="date">Kade · 2026-05-17 · sequences the migration named in <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> and <a href="/designing/docs/werk-subproduct-design.html"><code>werk-subproduct-design.html</code></a>. <strong>Revised 2026-05-17 evening</strong> — Jeff pushed back on the original Option A recommendation; /acp is now an orchestrator over decomposed /werk/commit, /werk/push, /werk/approve.</p>
+
+<div class="frame">
+This doc consumes:
+<strong>(1) <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a></strong> — names the target state: /werk/* commands as <code>act</code> jobs;
+<strong>(2) <a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a></strong> — the sibling subproduct; the post-/acp boundary is sacred (this plan never crosses it);
+<strong>(3) <a href="/designing/docs/werk-subproduct-design.html"><code>werk-subproduct-design.html</code></a></strong> — names "can't try before you buy" as the #1 product gap; this plan closes it;
+<strong>(4) <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a></strong> — the VCS-side contracts /werk/commit, /werk/push, and /acp's orchestrator step calls must honor;
+<strong>(5) Explore-agent inventory (2026-05-17)</strong> — what each skill actually does today, what act / launchd actually do today, what's in the graph today.
+
+Live AS-IS evidence: skill markdown at <code>~/.claude/skills/{pull,demo,acp}/SKILL.md</code>; act runner at <code>/opt/homebrew/bin/act</code> v0.2.88; LaunchAgent <code>com.chorus.building-pipeline</code> installed; <code>chorus:pipelines</code> registered as Domain under <code>chorus:werk</code> with status <code>operating</code>, zero Service instances.
+</div>
+
+<div class="promise">
+<strong>This plan sequences the migration of three bare skills (/pull, /demo, /acp) into eight act-dispatched jobs (/werk/pull, /werk/build, /werk/deploy, /werk/demo, /werk/commit, /werk/push, /werk/approve, /werk/acp-orchestrator) without breaking the team's ability to ship cards mid-cutover.</strong> Output: a sequenced backlog of execution cards in dependency order plus a master sequencing card, each with explicit input, output, rollback, and fitness function. Closes the "can't try before you buy" gap (Jeff sees the feature running in a preview before /acp), the "receipts don't reconcile" gap (card_id propagates across the launchd boundary), and the "approve is buried in a transaction" gap (Jeff's approval becomes a first-class named state, not four different invocation paths).
+</div>
+
+<h2>Two trigger models — name the boundary first</h2>
+<p>The ci-pipeline service-design conflates two distinct trigger models. Naming them is prerequisite for everything below.</p>
+
+<table>
+<tr><th>Model</th><th>Triggered by</th><th>Today</th><th>Target</th></tr>
+<tr><td><strong>Post-merge auto-deploy</strong></td><td>launchd kickstart from chorus_acp's orchestrator</td><td>building-pipeline.yml <code>build-and-deploy</code> job runs hooks/inject/api crates sequentially</td><td>unchanged; this is Silas's Build+Deploy domain</td></tr>
+<tr><td><strong>Pre-merge developer commands</strong></td><td>role's session — typed by Kade/Wren/Silas, OR Jeff for /werk/approve</td><td>/pull and /acp are thin MCP wrappers (chorus_pull_card, chorus_acp); /demo is a heavy in-skill orchestrator with no MCP</td><td>/werk/pull, /werk/build, /werk/deploy, /werk/demo, /werk/commit, /werk/push, /werk/approve invoked as act jobs from sessions via <code>act workflow_dispatch --job &lt;name&gt;</code>. /werk/acp becomes a thin orchestrator that walks the sequence.</td></tr>
+</table>
+
+<div class="warn"><strong>Boundary rule:</strong> the post-merge auto-deploy pipeline is <em>untouched</em> by this cutover. Build+Deploy stays under Silas. This plan only adds the pre-merge developer-command lane. The two lanes share <code>act</code> as the runner but not the workflow file — pre-merge lives in a new <code>werk-pipeline.yml</code>, post-merge stays in <code>building-pipeline.yml</code>.</div>
+
+<h2>The /acp decomposition — why it's the right call</h2>
+<p>Today /acp is a single atomic MCP call (chorus_acp) that does: commit → push → PR open → PR merge → cards-done → werk-close → release-trigger. The atomicity was earned through #2750 and #2782 and is real — partial-success states would re-introduce the failure modes those cards closed.</p>
+
+<p><strong>But the atomicity being defended is atomicity-as-single-MCP-call, which is substrate convenience, not customer value.</strong> Atomicity of the mechanical sequence is preserved at the orchestrator level either way — chorus_acp keeps its rollback semantics; the orchestrator just calls smaller MCPs in sequence with the same rollback contract.</p>
+
+<p>What the decomposition buys:</p>
+<ul>
+  <li><strong>/werk/approve becomes a first-class state.</strong> Today "Jeff approves" happens four different ways: typing "approve" in chat (UserPromptSubmit hook responds); clicking accept in some UI surface; typing <code>cards add ... --owner X</code> with DEPLOY_ROLE=jeff; or saying /acp. Making approve a named primitive disambiguates all of them and creates one approval-token surface that /werk/acp's orchestrator checks before running mechanical steps.</li>
+  <li><strong>/werk/commit and /werk/push can be invoked alone.</strong> Useful when substrate is degraded — this morning's messaging-API outage + Vikunja-auth failure + orphan-branches accumulation chain would have benefited from "commit my work without trying to do the whole arc."</li>
+  <li><strong>Step-level fitness function becomes authorable.</strong> Today chorus_acp emits one outer-bracket event arc; if commit succeeds but push fails, the spine tells you, but the role's experience is "the whole thing failed at step N." Decomposed steps give per-step started/completed pairs the chorus-health canary can walk for parity.</li>
+  <li><strong>Maps to how production CI/CD actually works.</strong> PR review → approve → merge. Approve is a state, not a transaction step.</li>
+</ul>
+
+<p>Cost honestly named: three new skills (/werk/commit, /werk/push, /werk/approve) plus two new MCPs (chorus_push, chorus_approve — chorus_commit already exists). /werk/acp becomes an orchestrator that calls them in sequence with rollback semantics on failure. More surface than the wrapper-pattern, but each surface is small and the mental model is cleaner.</p>
+
+<h2>Inventory — current behavior vs. target</h2>
+
+<h3>/werk/build — net-new — closes "can't try before you buy"</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Build the changed crate to a per-card preview slot</td><td>Doesn't exist. Roles run <code>cargo build</code> manually if at all</td><td>New: <code>act workflow_dispatch --job build --var card_id=&lt;id&gt;</code> compiles into <code>$CHORUS_DEMO_BIN</code> per the two-slot model from build-and-deploy-service-design; emits <code>werk.build.started</code> + <code>werk.build.completed</code> with card_id</td></tr>
+<tr><td>cdhash + sign</td><td>Only happens post-merge in building-pipeline</td><td>Optional in preview slot; required at /werk/acp's post-merge build step</td></tr>
+</table>
+
+<h3>/werk/deploy — net-new — closes "can't try before you buy"</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Deploy the per-card preview binary into a running preview instance</td><td>Doesn't exist</td><td>New: <code>act workflow_dispatch --job deploy --var card_id=&lt;id&gt;</code>; resolves <code>$CHORUS_DEMO_BIN</code> via env, kickstarts a per-card service variant, probes the running surface; emits <code>werk.deploy.started</code> + <code>werk.deploy.completed</code></td></tr>
+<tr><td>Production deploy</td><td>building-pipeline does it post-merge</td><td>Unchanged; /werk/deploy is preview-only</td></tr>
+</table>
+
+<h3>/werk/commit — wraps chorus_commit (MCP already exists)</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Stage + commit + emit commit.completed</td><td>chorus_commit MCP (called by /acp today; also callable directly by roles)</td><td>Act job wraps chorus_commit; emits <code>werk.commit.started</code> + <code>werk.commit.completed</code> in addition to existing chorus_commit events</td></tr>
+<tr><td>Pre-commit hook chain</td><td>Fires automatically on commit</td><td>Unchanged</td></tr>
+</table>
+<p>Smallest cutover of the eight. chorus_commit already does the heavy lifting; the act job is a thin event-emission wrapper.</p>
+
+<h3>/werk/push — wraps new chorus_push MCP</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Push branch to origin + open PR + merge PR</td><td>Bundled inside chorus_acp; no standalone surface</td><td>New chorus_push MCP that does push + PR-open + PR-merge with typed refusal (push-fail, pr-create-fail, pr-merge-fail); act job wraps it; emits <code>werk.push.started</code> + <code>werk.push.completed</code></td></tr>
+<tr><td>Standalone push without PR</td><td>Blocked by chorus-hook-shim PreToolUse hook today; no agent path</td><td>Available via /werk/push without the PR merge step (flag-controlled): <code>act workflow_dispatch --job push --var merge=false</code> for code review before merge</td></tr>
+</table>
+<p>The PR-without-immediate-merge flag is the small unlock — today roles cannot get code in front of reviewers without also merging it. Useful for the rare case Wren or Silas want code review before /werk/acp finalizes.</p>
+
+<h3>/werk/approve — net-new — Jeff-only first-class state</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Approval marker for a card</td><td>Implicit: Jeff types "approve" / "ship" / "/acp" / runs DEPLOY_ROLE=jeff command. No named state.</td><td>New chorus_approve MCP that takes a card_id and writes an approval marker (spine event <code>card.approved</code> + a queryable approval state on the card); validates DEPLOY_ROLE=jeff; refuses if AC unchecked or any gate FAIL on the card</td></tr>
+<tr><td>Who can invoke</td><td>Anyone (substrate doesn't distinguish Jeff from agent-spoofed approve)</td><td>DEPLOY_ROLE=jeff only; refuses otherwise. The bouncer pattern Wren shipped in #2964 is the prior art — same approval discipline, one named primitive.</td></tr>
+</table>
+<p>Biggest mental-model win. Today's "did Jeff actually approve, or did an agent infer his consent from a chat phrase?" becomes "the spine has a card.approved event signed by DEPLOY_ROLE=jeff or it doesn't." The approval-token then unlocks /werk/acp's orchestrator step.</p>
+
+<h3>/werk/pull — thin today, thin tomorrow</h3>
+<table>
+<tr><th>Behavior</th><th>Today</th><th>Target</th></tr>
+<tr><td>Validate card + move to WIP + werk add + role-state + card.pulled spine event</td><td>chorus_pull_card MCP (atomic)</td><td>Act job wraps chorus_pull_card; emits <code>werk.pull.started</code> + <code>werk.pull.completed</code> in addition to existing <code>card.pulled</code></td></tr>
+</table>
+
+<h3>/werk/demo — heavy today, decomposes tomorrow</h3>
+<table>
+<tr><th>Behavior</th><th>Today (in-skill markdown)</th><th>Target (act job)</th></tr>
+<tr><td>Validate + AC pre-flight</td><td>Model executes skill markdown</td><td>act job runs validate.sh → typed refusal</td></tr>
+<tr><td>Gate chain (5 gates)</td><td>Model nudges gate owners + waits for comments</td><td>act job invokes each gate as a sub-job; refuses on FAIL</td></tr>
+<tr><td>Smoke check</td><td>Model invokes smoke-check.sh inline</td><td>act job runs smoke-check.sh as a step</td></tr>
+<tr><td>Stakes brief</td><td>Model writes structured prose; another model role-plays the anti-pattern check</td><td>act job writes brief; stakes-gate moves to a dedicated linter</td></tr>
+<tr><td>Signal (cards demo + spine + Bridge post + feedback nudges)</td><td>Model orchestrates via cards CLI + MCP nudge</td><td>act job invokes signal.sh as a step</td></tr>
+</table>
+<div class="warn"><strong>Risk:</strong> /demo is the most complex skill and highest-traffic. Cutover semantics must be parallel-run (old skill stays operational; new act job runs in shadow mode emitting events; cut over only after 10 consecutive demos produce identical outputs). Big-bang cutover risks blocking all card acceptance.</div>
+
+<h3>/werk/acp — orchestrator over decomposed steps</h3>
+<table>
+<tr><th>Behavior</th><th>Today (chorus_acp MCP)</th><th>Target (act-job orchestrator)</th></tr>
+<tr><td>Commit + push + PR + merge + cards-done + werk-close + release-trigger</td><td>All inside chorus_acp atomic MCP</td><td>Orchestrator calls /werk/commit → /werk/push → checks approval-token via /werk/approve marker → cards-done MCP → werk-close MCP → release-trigger. Atomicity preserved by orchestrator: failure at any step rolls back forward state (e.g., commit landed but push failed = retry-able idempotent; push landed but cards-done failed = chorus_acp idempotent re-run pattern from #2943)</td></tr>
+<tr><td>Approval discipline</td><td>Implicit (whoever calls /acp)</td><td>Explicit: orchestrator refuses if no <code>card.approved</code> spine event for the card_id signed by DEPLOY_ROLE=jeff</td></tr>
+</table>
+
+<h2>Prerequisites — the dependency graph</h2>
+<p>Structural prerequisites that must close before any /werk/* cutover step can advance.</p>
+
+<table>
+<tr><th>Prereq</th><th>Why it blocks</th><th>Status</th><th>Owner</th></tr>
+<tr><td><strong>P1. card_id + trace_id across the launchd boundary</strong></td><td>act jobs invoked via <code>launchctl kickstart</code> inherit no env. CHORUS_CARD_ID + CHORUS_TRACE_ID must reach each act job. Without this, /werk/* events fire as <code>role=system</code> with no card_id.</td><td><span class="t-gap">OPEN</span></td><td>Silas</td></tr>
+<tr><td><strong>P2. Two-slot deploy model (<code>$CHORUS_BIN</code> / <code>$CHORUS_DEMO_BIN</code>)</strong></td><td>Pre-merge preview builds need per-card isolation. Single-slot dist.prev model clobbers under concurrent multi-role demos.</td><td><span class="t-design">DESIGNED</span></td><td>Silas</td></tr>
+<tr><td><strong>P3. Six started/completed/failed event pairs in chorus-build / chorus-deploy</strong></td><td>The fitness function requires symmetric pairs per step. Most steps today emit only on completion or failure.</td><td><span class="t-gap">OPEN</span></td><td>Silas</td></tr>
+<tr><td><strong>P4. werk-pipeline.yml workflow file scaffold</strong></td><td>act dispatch needs a target workflow file. Today only building-pipeline.yml exists (post-merge).</td><td><span class="t-gap">OPEN</span></td><td>Kade</td></tr>
+<tr><td><strong>P5. <code>chorus:Service</code> instances for the eight /werk/* commands in Athena</strong></td><td>Per Athena v2 + ADR-028, every Service needs a graph instance with status / asIs / toBe / pathToClose populated. Today <code>chorus:pipelines</code> has <code>services: []</code> empty.</td><td><span class="t-gap">OPEN</span></td><td>Kade</td></tr>
+<tr><td><strong>P6. ICD provider entries for /werk/* surfaces</strong></td><td>DEC-095 ICD gate refuses harvester / service code without matching ICD provider sections. No <code>icd-instance-pipelines.ttl</code> today.</td><td><span class="t-gap">OPEN</span></td><td>Kade</td></tr>
+<tr><td><strong>P7. chorus_push MCP</strong></td><td>/werk/push needs a typed MCP behind it. Today push is bundled inside chorus_acp; no standalone surface. P7 splits push + PR-open + PR-merge with typed refusals (push-fail, pr-create-fail, pr-merge-fail) and an optional merge=false flag for code-review-before-merge.</td><td><span class="t-gap">OPEN</span></td><td>Kade</td></tr>
+<tr><td><strong>P8. chorus_approve MCP</strong></td><td>/werk/approve needs a typed MCP that refuses DEPLOY_ROLE != jeff, validates the card has all 5 gates passed, writes the <code>card.approved</code> spine event, and updates the card's approval state. The bouncer pattern in #2964 is the prior art.</td><td><span class="t-gap">OPEN</span></td><td>Kade</td></tr>
+</table>
+
+<pre class="mermaid">
+flowchart TD
+  P1["P1: card_id + trace_id<br/>across launchd"] --> Build["C1: /werk/build"]
+  P1 --> Deploy["C2: /werk/deploy"]
+  P1 --> Commit["C3: /werk/commit"]
+  P1 --> Push["C4: /werk/push"]
+  P1 --> Approve["C5: /werk/approve"]
+  P1 --> Pull["C6: /werk/pull"]
+  P1 --> Demo["C7: /werk/demo"]
+  P1 --> Acp["C8: /werk/acp<br/>orchestrator"]
+  P2["P2: two-slot model"] --> Build
+  P2 --> Deploy
+  P3["P3: step pairs in<br/>chorus-build/deploy"] --> Build
+  P3 --> Deploy
+  P4["P4: werk-pipeline.yml<br/>scaffold"] --> Build
+  P4 --> Deploy
+  P4 --> Commit
+  P4 --> Push
+  P4 --> Approve
+  P4 --> Pull
+  P4 --> Demo
+  P4 --> Acp
+  P5["P5: Athena Service<br/>instances (8)"] --> Build
+  P6["P6: ICD provider<br/>entries"] --> Build
+  P7["P7: chorus_push MCP"] --> Push
+  P8["P8: chorus_approve MCP"] --> Approve
+  Build --> Deploy
+  Deploy --> Demo
+  Commit --> Push
+  Pull --> Demo
+  Demo --> Approve
+  Approve --> Acp
+  Commit --> Acp
+  Push --> Acp
+  classDef prereq fill:#fee2e2,stroke:#991b1b,color:#991b1b;
+  classDef cutover fill:#ede9fe,stroke:#5b21b6,color:#5b21b6;
+  classDef orch fill:#fde68a,stroke:#92400e,color:#92400e;
+  class P1,P2,P3,P4,P5,P6,P7,P8 prereq;
+  class Build,Deploy,Commit,Push,Approve,Pull,Demo cutover;
+  class Acp orch;
+</pre>
+<p class="caption">Cutover graph. Red = prerequisite. Purple = cutover card. Amber = orchestrator (depends on the others). P1–P3 are Silas's. P4–P8 are Kade's.</p>
+
+<h2>Cutover sequence — eight phases</h2>
+
+<div class="phase">
+<h3>Phase 0 — Prerequisites (Silas + Kade, parallel)</h3>
+<p><strong>Cards:</strong> P1, P2, P3 (Silas — build-and-deploy); P4, P5, P6, P7, P8 (Kade — werk scaffolding).</p>
+<p><strong>Fitness function:</strong> <code>launchctl kickstart</code> with CHORUS_CARD_ID env passes the var; act jobs emit events with that card_id. <code>chorus:pipelines</code> renders eight Service instances. chorus_push MCP refuses with typed errors on push-fail; chorus_approve MCP refuses with auth-fail when DEPLOY_ROLE != jeff.</p>
+<p><strong>Rollback / off-switch:</strong> additive only.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 1 — /werk/build (Kade)</h3>
+<p><strong>Card:</strong> C1. Add <code>build</code> job to <code>werk-pipeline.yml</code>; create <code>/werk/build</code> skill; act job invokes <code>chorus-build &lt;crate&gt;</code> against two-slot model.</p>
+<p><strong>Cutover semantics:</strong> additive. No replacement of any existing skill.</p>
+<p><strong>Fitness function:</strong> 10 consecutive /werk/build invocations across 3 roles produce 10 <code>werk.build.completed</code> events all carrying card_id.</p>
+<p><strong>Rollback:</strong> remove the build job + skill. Off-switch: roles fall back to manual <code>cargo build</code>.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 2 — /werk/deploy (Kade)</h3>
+<p><strong>Card:</strong> C2. Adds deploy job + skill; probe-fail refusal if surface not observable.</p>
+<p><strong>Cutover semantics:</strong> additive.</p>
+<p><strong>Fitness function:</strong> 10 consecutive /werk/build + /werk/deploy pairs result in 10 running preview instances responding ok on health probe; probe-fail correctly triggers on a synthetic broken build.</p>
+<p><strong>Rollback:</strong> remove job + skill. Off-switch: documented fallback to manual app-state.sh deploy.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 3 — /werk/commit (Kade)</h3>
+<p><strong>Card:</strong> C3. Adds commit job that wraps chorus_commit MCP; emits werk.commit.* event pairs.</p>
+<p><strong>Cutover semantics:</strong> additive. Roles can keep calling chorus_commit MCP directly during cutover; /werk/commit is the new event-emitting wrapper.</p>
+<p><strong>Fitness function:</strong> for every chorus_commit call across 3 roles for 1 week, both <code>commit.completed</code> AND <code>werk.commit.completed</code> events emit with same card_id.</p>
+<p><strong>Rollback:</strong> remove job + skill. Off-switch: direct chorus_commit MCP invocation remains available.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 4 — /werk/push (Kade)</h3>
+<p><strong>Card:</strong> C4. Adds push job that wraps the new chorus_push MCP (P7). Supports <code>--var merge=false</code> for code-review-before-merge.</p>
+<p><strong>Cutover semantics:</strong> additive. chorus_acp keeps its bundled push behavior; /werk/push is the standalone surface.</p>
+<p><strong>Fitness function:</strong> 5 /werk/push invocations with merge=true land on origin and merge cleanly; 3 with merge=false land on origin but stay un-merged with a PR opened.</p>
+<p><strong>Rollback:</strong> remove job + skill. Off-switch: /acp's chorus_acp still bundles push so the orchestrator path is unaffected.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 5 — /werk/approve (Kade)</h3>
+<p><strong>Card:</strong> C5. Adds approve job that wraps the new chorus_approve MCP (P8). DEPLOY_ROLE=jeff only.</p>
+<p><strong>Cutover semantics:</strong> additive but with a coordination requirement — once C5 lands, /werk/acp's orchestrator can begin checking for the approval-token; until C8 (orchestrator cutover), the marker exists but isn't gating anything.</p>
+<p><strong>Fitness function:</strong> 5 /werk/approve calls by Jeff produce 5 <code>card.approved</code> spine events; 5 attempts by Kade (DEPLOY_ROLE=kade) all refused with auth-fail; 1 attempt against a card with unchecked AC refused with ac-incomplete; 1 attempt against a card with gate:product-fail refused with gate-fail.</p>
+<p><strong>Rollback:</strong> remove job + skill. Off-switch: orchestrator (C8) skips approval-token check via env flag during rollback window.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 6 — /werk/pull (Kade)</h3>
+<p><strong>Card:</strong> C6. Adds pull job wrapping chorus_pull_card. Rewrites /pull skill to dispatch via act.</p>
+<p><strong>Cutover semantics:</strong> wrapper. Atomic transaction preserved.</p>
+<p><strong>Fitness function:</strong> for every /pull invocation for 1 week, both <code>card.pulled</code> AND <code>werk.pull.completed</code> events emit with same card_id and trace correlation.</p>
+<p><strong>Rollback:</strong> revert /pull skill to thin MCP wrapper. Off-switch: <code>CHORUS_WERK_DISPATCH=off</code> env makes skill call chorus_pull_card directly.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 7 — /werk/demo with shadow-mode parallel-run (Kade + Wren + Silas)</h3>
+<p><strong>Cards:</strong> C7a (shadow-mode build), C7b (cutover-flip after 10 clean shadow runs).</p>
+<p>C7a: build the /werk/demo act job; wire it to run alongside today's /demo skill in shadow mode — both execute, both emit events, both produce a stakes brief, but only the old skill's output is shown to Jeff. Compare events for parity.</p>
+<p>C7b: once shadow-mode produces identical event streams + identical stakes briefs for 10 consecutive demos, flip the skill to invoke /werk/demo as primary; old skill stays as fallback.</p>
+<p><strong>Cutover semantics:</strong> parallel-run then flag-flip. Longest and most cautious of the eight.</p>
+<p><strong>Fitness function:</strong> 10 consecutive demos across 3 roles emit complete werk.demo.* event arc with same card_id; stakes brief content matches old skill byte-for-byte (modulo timestamps).</p>
+<p><strong>Rollback:</strong> <code>WERK_DEMO_DISPATCH=off</code> falls back to inline orchestration.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 8 — /werk/acp orchestrator (Kade, with Silas review on release-trigger)</h3>
+<p><strong>Card:</strong> C8. Rewrites /acp skill to invoke an orchestrator act job that walks: /werk/commit → /werk/push → check approval-token (must have <code>card.approved</code> from Jeff) → cards-done → werk-close → release-trigger. Each step has typed refusal; failures roll forward state idempotently per #2943's re-run pattern.</p>
+<p><strong>Cutover semantics:</strong> the big switch. Before C8: chorus_acp is the atomic MCP that does the whole arc. After C8: chorus_acp's responsibilities decompose into the orchestrator + the smaller MCPs. The orchestrator preserves the atomic-rollback contract at a higher level.</p>
+<p><strong>Fitness function:</strong> 10 consecutive /acp invocations produce the event arc <code>werk.acp.started</code> → <code>werk.commit.*</code> → <code>werk.push.*</code> → <code>card.approved</code> → <code>cards.done</code> → <code>werk.close</code> → <code>release.triggered</code> → <code>werk.acp.completed</code>, all with same card_id and trace_id; <code>chorus_logs_for_trace</code> returns the complete arc. Failure-injection test: kill the push step mid-arc; verify orchestrator retries via #2943 idempotent path and produces a clean second-attempt arc.</p>
+<p><strong>Rollback:</strong> revert /acp skill to direct chorus_acp MCP. Off-switch: <code>CHORUS_WERK_ACP_ORCHESTRATOR=off</code>.</p>
+<p><strong>Open question for this phase:</strong> does chorus_acp MCP retire after C8, or stay as the inner-most atomic implementation that the orchestrator's <em>fallback</em> path calls? Recommend keeping it — the orchestrator-vs-monolith decision becomes a runtime config, not a code deletion.</p>
+</div>
+
+<h2>Execution cards proposed</h2>
+<table>
+<tr><th>Card</th><th>Title</th><th>Phase</th><th>Owner</th><th>Depends on</th></tr>
+<tr><td>P1</td><td>card_id + trace_id env propagation across launchctl kickstart boundary</td><td>0</td><td>Silas</td><td>none</td></tr>
+<tr><td>P2</td><td>Two-slot deploy model ($CHORUS_BIN / $CHORUS_DEMO_BIN) ship</td><td>0</td><td>Silas</td><td>none</td></tr>
+<tr><td>P3</td><td>Six started/completed/failed event pairs in chorus-build / chorus-deploy</td><td>0</td><td>Silas</td><td>P1</td></tr>
+<tr><td>P4</td><td>werk-pipeline.yml scaffold + act dispatch from roles</td><td>0</td><td>Kade</td><td>none</td></tr>
+<tr><td>P5</td><td>Athena Service instances for the eight /werk/* commands</td><td>0</td><td>Kade</td><td>none</td></tr>
+<tr><td>P6</td><td>icd-instance-pipelines.ttl provider entries</td><td>0</td><td>Kade</td><td>P5</td></tr>
+<tr><td>P7</td><td>chorus_push MCP — push + PR-open + PR-merge with typed refusal + optional merge=false</td><td>0</td><td>Kade</td><td>none</td></tr>
+<tr><td>P8</td><td>chorus_approve MCP — DEPLOY_ROLE=jeff only; gates + AC check; card.approved spine event</td><td>0</td><td>Kade</td><td>none</td></tr>
+<tr><td>C1</td><td>/werk/build skill + act job (preview compile to $CHORUS_DEMO_BIN)</td><td>1</td><td>Kade</td><td>P1, P2, P3, P4, P5, P6</td></tr>
+<tr><td>C2</td><td>/werk/deploy skill + act job (preview deploy with probe-fail refusal)</td><td>2</td><td>Kade</td><td>C1</td></tr>
+<tr><td>C3</td><td>/werk/commit skill + act job (wraps chorus_commit, emits werk.commit.*)</td><td>3</td><td>Kade</td><td>P4</td></tr>
+<tr><td>C4</td><td>/werk/push skill + act job (wraps chorus_push, supports merge=false flag)</td><td>4</td><td>Kade</td><td>P7</td></tr>
+<tr><td>C5</td><td>/werk/approve skill + act job (wraps chorus_approve, DEPLOY_ROLE=jeff)</td><td>5</td><td>Kade</td><td>P8</td></tr>
+<tr><td>C6</td><td>/werk/pull skill rewrite + act job wrapper</td><td>6</td><td>Kade</td><td>P4</td></tr>
+<tr><td>C7a</td><td>/werk/demo shadow-mode parallel-run</td><td>7</td><td>Kade</td><td>C1, C2, C6</td></tr>
+<tr><td>C7b</td><td>/werk/demo cutover-flip after 10 clean shadow runs</td><td>7</td><td>Kade</td><td>C7a</td></tr>
+<tr><td>C8</td><td>/werk/acp orchestrator — walks commit→push→approve-check→cards-done→werk-close→release-trigger</td><td>8</td><td>Kade</td><td>C3, C4, C5, C7b</td></tr>
+<tr><td>M</td><td>Master sequencing card — tracks Phase 0–8 progress, owns rollback decision authority</td><td>—</td><td>Kade</td><td>links all above</td></tr>
+</table>
+<p>18 cards total (8 prerequisites + 9 cutover + 1 master). Three Silas-owned (P1, P2, P3); fifteen Kade-owned.</p>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li><strong>OQ1 — RESOLVED.</strong> /werk/acp is an orchestrator over decomposed steps. Jeff signed off on the decomposition 2026-05-17 evening.</li>
+  <li><strong>OQ2 — act runner reliability.</strong> If act crashes mid-job, what's the recovery path? Today the post-merge pipeline crashes are caught by Silas's chorus-health; the pre-merge lane needs similar instrumentation. Likely a Phase 1 sub-card.</li>
+  <li><strong>OQ3 — multi-role concurrent /werk/build.</strong> Two-slot model is per-card; verify chorus_pull_card refuses concurrent pulls of the same card. Verify before C1.</li>
+  <li><strong>OQ4 — chorus_acp retirement after C8.</strong> Recommend keeping as the inner-most atomic implementation behind a runtime flag — orchestrator-vs-monolith becomes config not code deletion. Confirm with Silas + Wren.</li>
+  <li><strong>OQ5 — /werk/approve's interaction with the existing bouncer (#2964).</strong> The bouncer handles cards-add Jeff-approval today via the pickup-file substrate. /werk/approve is the per-card-acceptance Jeff-approval. They're different states but use the same DEPLOY_ROLE=jeff discipline. Wren should review whether the two should share an MCP (chorus_approve generalizes) or stay as two paths (one for cards-add, one for card-accept).</li>
+  <li><strong>R1 — /demo shadow-mode complexity.</strong> Highest-risk cutover. 10-demo parity threshold mitigation.</li>
+  <li><strong>R2 — claudemd-gen regeneration on skill changes.</strong> Each new /werk/* skill triggers per-role CLAUDE.md regeneration. Confirm regen path handles 8 new skills gracefully.</li>
+  <li><strong>R3 — backwards compatibility with existing /pull, /demo, /acp invocations.</strong> Cards in flight mid-cutover. Mitigation: wrapper pattern preserves skill names; dispatch moves underneath.</li>
+  <li><strong>R4 — approval-token state location.</strong> Where does the <code>card.approved</code> marker live so /werk/acp can check it? Three options: spine event only (queryable but no fast lookup); card metadata field (fast lookup, requires schema update); cards comment with structured prefix (cheapest, follows existing demo:preflight-pass pattern). Recommend cards comment with prefix <code>approved-by-jeff: card=&lt;id&gt; ts=&lt;iso&gt; trace=&lt;id&gt;</code>.</li>
+</ul>
+
+<h2>Not in scope</h2>
+<ul>
+  <li><strong>Build+Deploy post-merge pipeline</strong> — Silas's domain. This plan never crosses the post-/acp boundary.</li>
+  <li><strong>chorus_acp retirement</strong> — covered by OQ4; recommend keep as fallback.</li>
+  <li><strong>tests-service-design.html</strong> — named in werk-subproduct-design as a separate path-to-close item; a sibling card.</li>
+  <li><strong>card-driven artifact-status advance on /acp</strong> — also from werk-subproduct-design path-to-close; sibling card.</li>
+  <li><strong>Gathering app's CI</strong> — separate repo.</li>
+  <li><strong>Generalizing chorus_approve for non-card-acceptance approvals</strong> (cards-add bouncer, deploy freeze, etc.) — OQ5 scope; if pursued, separate card.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li><a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> — names the target state this plan executes against</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — sibling subproduct; P1, P2, P3 are Silas's surface</li>
+  <li><a href="/designing/docs/werk-subproduct-design.html">werk-subproduct-design.html</a> — frames Werk-as-product; names "can't try before you buy" as the #1 gap this plan closes</li>
+  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> — the VCS contracts /werk/commit, /werk/push, and /werk/acp's orchestrator honor</li>
+  <li><a href="/designing/docs/athena-subproduct-design.html">athena-subproduct-design.html</a> — Service shape P5 conforms to</li>
+  <li>ADR-028 — substrate-class domain completeness; ICD gate (DEC-095) is P6's input</li>
+  <li>#2750, #2782 — chorus_acp atomic transaction (preserved by orchestrator-level atomicity in C8)</li>
+  <li>#2913, #2931, #2943, #2944 — version-control hardening; #2943 idempotent re-run pattern is what C8's orchestrator uses for forward-state recovery</li>
+  <li>#2964 — Wren's bouncer-flow fix; prior art for /werk/approve's DEPLOY_ROLE=jeff discipline</li>
+  <li>#2529, #2499 — nearby gaps; not blockers but worth flagging during execution</li>
+</ul>
+
+<p class="footer">Draft 2026-05-17 evening — Kade. Revised after Jeff pushed back on the original Option A recommendation. /acp is now an orchestrator over named primitives (/werk/commit, /werk/push, /werk/approve) — approval becomes a first-class state, not buried in a transaction. Built from Explore-agent inventory (skills + act/launchd runtime + Athena graph). Awaiting Wren + Silas review on OQ2 (act crash recovery), OQ3 (concurrent /werk/build), OQ4 (chorus_acp retirement), OQ5 (chorus_approve generalization) before C1 opens for pull.</p>
+
+</body>
+</html>
