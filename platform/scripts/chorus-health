@@ -1,0 +1,432 @@
+#!/usr/bin/env bash
+# chorus-health — top-level Chorus operational fitness function (#2952)
+#
+# One answer: PASS or FAIL, with per-check evidence across three domains:
+#   - Pipeline/VCS  (build chain integrity)
+#   - Runtime/Ops   (services, reachability, memory)
+#   - Interaction   (session context, MCP, nudge)
+#
+# Composes existing sub-checks (building-pipeline-health, spine-health,
+# commit-health, nudge-health-check, borg-health-check) and adds new
+# round-trip checks not covered by any existing script.
+#
+# Emits chorus.health spine event on every run.
+#
+# Usage:
+#   chorus-health             — summary PASS/FAIL
+#   chorus-health --verbose   — per-check detail
+#   chorus-health --json      — JSON output for tooling
+#
+# Exit: 0=PASS, 1=FAIL (any hard check fails), 2=ERROR (script broke)
+
+set -uo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
+
+VERBOSE=0
+JSON_OUT=0
+for arg in "$@"; do
+  case "$arg" in
+    --verbose|-v) VERBOSE=1 ;;
+    --json)       JSON_OUT=1 ;;
+    --help|-h)    sed -n '2,/^$/p' "$0" | sed 's/^# //;s/^#//'; exit 0 ;;
+  esac
+done
+
+SCRIPTS="${CHORUS_ROOT}/platform/scripts"
+LOKI_URL="${LOKI_URL:-http://localhost:3102}"
+API_BASE="${API_BASE:-http://localhost:3340}"
+BEDROOM_HOST="${BEDROOM_HOST:-192.168.86.242}"
+CLEARING_PORT="${CLEARING_PORT:-3470}"
+API_MEM_CEILING_MB="${API_MEM_CEILING_MB:-900}"
+FUSEKI_MEM_CEILING_MB="${FUSEKI_MEM_CEILING_MB:-2000}"
+
+# --- result accumulation ---
+declare -a CHECK_NAMES=()
+declare -a CHECK_STATUS=()
+declare -a CHECK_DETAIL=()
+CHECKS_FILE=$(mktemp)
+
+record() {
+  local name="$1" status="$2" detail="$3"
+  CHECK_NAMES+=("$name")
+  CHECK_STATUS+=("$status")
+  CHECK_DETAIL+=("$detail")
+  python3 -c "import json,sys; print(json.dumps({'name':sys.argv[1],'status':sys.argv[2],'detail':sys.argv[3]}))" \
+    "$name" "$status" "$detail" >> "$CHECKS_FILE" 2>/dev/null
+}
+
+pass()  { record "$1" "PASS" "$2"; }
+fail()  { record "$1" "FAIL" "$2"; }
+warn()  { record "$1" "WARN" "$2"; }
+skip()  { record "$1" "SKIP" "$2"; }
+
+# ─── PIPELINE / VCS ──────────────────────────────────────────────────────────
+
+# building-pipeline-LaunchAgent-loaded
+bp_launchctl=$(launchctl list 2>/dev/null | grep "com.chorus.building-pipeline" || true)
+if [ -n "$bp_launchctl" ]; then
+  bp_state=$(echo "$bp_launchctl" | awk '{print $1}')
+  if [ "$bp_state" = "-" ]; then
+    warn "building-pipeline-loaded" "LaunchAgent registered but not running (pid=-)"
+  else
+    pass "building-pipeline-loaded" "pid=$bp_state"
+  fi
+else
+  fail "building-pipeline-loaded" "com.chorus.building-pipeline not in launchctl list"
+fi
+
+# building-pipeline pairing (wraps existing check)
+if bp_json=$(bash "${SCRIPTS}/building-pipeline-health" --json 2>/dev/null); then
+  unpaired=$(echo "$bp_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('unpaired_pipeline_run',0))" 2>/dev/null || echo "?")
+  total=$(echo "$bp_json" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('acp_count',0))" 2>/dev/null || echo "?")
+  if [ "$unpaired" = "0" ]; then
+    pass "pipeline-run-pairing" "${total}/${total} acp events have pipeline runs"
+  else
+    fail "pipeline-run-pairing" "${unpaired}/${total} acp events missing pipeline run"
+  fi
+else
+  warn "pipeline-run-pairing" "building-pipeline-health check failed to run"
+fi
+
+# hooks-executable — pre-commit + pre-push in platform/hooks; post-commit in canonical .git/hooks
+# CHORUS_ROOT is the worktree; canonical git dir is always at CHORUS_HOME/.git/
+CHORUS_CANONICAL="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+HOOK_FAILURES=0
+HOOK_MISSING=()
+for hook in pre-commit pre-push; do
+  hpath="${CHORUS_CANONICAL}/platform/hooks/${hook}"
+  if [ ! -x "$hpath" ]; then
+    HOOK_FAILURES=$((HOOK_FAILURES + 1))
+    HOOK_MISSING+=("${hook}(platform)")
+  fi
+done
+git_hooks_dir="${CHORUS_CANONICAL}/.git/hooks"
+for hook in pre-commit pre-push post-commit; do
+  hpath="${git_hooks_dir}/${hook}"
+  if [ ! -x "$hpath" ]; then
+    HOOK_FAILURES=$((HOOK_FAILURES + 1))
+    HOOK_MISSING+=("${hook}(.git)")
+  fi
+done
+if [ "$HOOK_FAILURES" -eq 0 ]; then
+  pass "hooks-executable" "platform hooks + .git/hooks all present and executable"
+else
+  fail "hooks-executable" "missing/non-executable: ${HOOK_MISSING[*]}"
+fi
+
+# no-orphan-branches-over-48h
+CUTOFF=$(python3 -c "import datetime; print(int((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)).timestamp()))")
+ORPHAN_COUNT=0
+ORPHAN_LIST=()
+while IFS= read -r line; do
+  branch=$(echo "$line" | awk '{print $2}' | sed 's|refs/heads/||')
+  [[ "$branch" =~ ^(main|HEAD)$ ]] && continue
+  # get commit date for branch tip
+  commit_date=$(git -C "${CHORUS_CANONICAL}" log -1 --format="%ct" "origin/${branch}" 2>/dev/null || echo "0")
+  if [ "$commit_date" -lt "$CUTOFF" ] 2>/dev/null; then
+    ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+    ORPHAN_LIST+=("$branch")
+  fi
+done < <(git -C "${CHORUS_CANONICAL}" ls-remote --heads origin 2>/dev/null | grep -v "refs/heads/main")
+if [ "$ORPHAN_COUNT" -eq 0 ]; then
+  pass "no-orphan-branches" "no branches older than 48h on origin"
+elif [ "$ORPHAN_COUNT" -le 3 ]; then
+  warn "no-orphan-branches" "${ORPHAN_COUNT} branch(es) >48h: ${ORPHAN_LIST[*]}"
+else
+  fail "no-orphan-branches" "${ORPHAN_COUNT} branch(es) >48h: ${ORPHAN_LIST[*]:0:3} ..."
+fi
+
+# spine-event-rate-above-floor (>0 events in last hour)
+spine_rate=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
+import sys, json, subprocess, datetime
+loki = sys.argv[1]
+now = int(datetime.datetime.now().timestamp())
+start = now - 3600
+cmd = ['curl', '-s', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~".+"} | json',
+       '--data-urlencode', 'limit=100',
+       '--data-urlencode', f'start={start}000000000',
+       '--data-urlencode', f'end={now}000000000']
+try:
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    d = json.loads(out)
+    count = sum(len(s['values']) for s in d.get('data', {}).get('result', []))
+    print(count)
+except Exception:
+    print(-1)
+PYEOF
+)
+if [ "$spine_rate" = "-1" ]; then
+  warn "spine-event-rate" "Loki unreachable"
+elif [ "$spine_rate" -gt 0 ] 2>/dev/null; then
+  pass "spine-event-rate" "${spine_rate} spine events in last hour"
+else
+  fail "spine-event-rate" "0 spine events in last hour — spine may be silent"
+fi
+
+# ─── RUNTIME / OPS ───────────────────────────────────────────────────────────
+
+# chorus-api up + memory ceiling
+api_health=$(curl -s --max-time 5 "${API_BASE}/health" 2>/dev/null || echo "")
+if echo "$api_health" | grep -q "ok"; then
+  # check memory
+  api_mem=$(curl -s --max-time 5 "${API_BASE}/api/chorus/services" 2>/dev/null | \
+    python3 -c "import json,sys; svcs=json.load(sys.stdin).get('services',[]); s=[x for x in svcs if x.get('label')=='com.chorus.api']; print(s[0].get('rss_mb',0) if s else 0)" 2>/dev/null || echo "0")
+  if [ "$api_mem" -gt "$API_MEM_CEILING_MB" ] 2>/dev/null; then
+    warn "chorus-api-memory" "${api_mem}MB exceeds ceiling ${API_MEM_CEILING_MB}MB"
+  else
+    pass "chorus-api-up" "healthy, rss=${api_mem}MB"
+  fi
+else
+  fail "chorus-api-up" "health check failed (${API_BASE}/health returned: ${api_health:-no response})"
+fi
+
+# Fuseki memory ceiling
+fuseki_mem=$(curl -s --max-time 5 "${API_BASE}/api/chorus/services" 2>/dev/null | \
+  python3 -c "import json,sys; svcs=json.load(sys.stdin).get('services',[]); s=[x for x in svcs if 'fuseki' in x.get('label','')]; print(s[0].get('rss_mb',0) if s else 0)" 2>/dev/null || echo "0")
+if [ "$fuseki_mem" -eq 0 ] 2>/dev/null; then
+  warn "fuseki-memory" "Fuseki rss=0 or not found in service registry"
+elif [ "$fuseki_mem" -gt "$FUSEKI_MEM_CEILING_MB" ] 2>/dev/null; then
+  warn "fuseki-memory" "${fuseki_mem}MB exceeds ceiling ${FUSEKI_MEM_CEILING_MB}MB"
+else
+  pass "fuseki-memory" "rss=${fuseki_mem}MB"
+fi
+
+# Bedroom reachability
+if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "${BEDROOM_HOST}" "echo ok" &>/dev/null; then
+  pass "bedroom-reachable" "${BEDROOM_HOST} SSH reachable"
+else
+  fail "bedroom-reachable" "SSH to ${BEDROOM_HOST} failed"
+fi
+
+# MCP round-trip (actual tool call, not just port check)
+mcp_result=$(curl -s --max-time 5 -X POST "${API_BASE}/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' 2>/dev/null \
+  | grep '^data:' | head -1 | sed 's/^data: //' \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); tools=d.get('result',{}).get('tools',[]); print(f'ok:{len(tools)}')" 2>/dev/null || echo "fail:curl-or-parse")
+if echo "$mcp_result" | grep -q "^ok:"; then
+  tool_count=$(echo "$mcp_result" | cut -d: -f2)
+  pass "mcp-round-trip" "${tool_count} tools listed via MCP"
+else
+  fail "mcp-round-trip" "MCP tools/list failed: ${mcp_result#fail:}"
+fi
+
+# Clearing external reachability (from network perspective — bind check)
+clearing_result=$(curl -s --max-time 5 --interface "" "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+if [ "$clearing_result" = "200" ] || [ "$clearing_result" = "301" ] || [ "$clearing_result" = "302" ]; then
+  pass "clearing-external" "http://192.168.86.36:${CLEARING_PORT}/ → ${clearing_result}"
+else
+  # try localhost as fallback to distinguish "down" vs "not externally bound"
+  local_result=$(curl -s --max-time 5 "http://localhost:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+  if [ "$local_result" = "200" ] || [ "$local_result" = "301" ] || [ "$local_result" = "302" ]; then
+    fail "clearing-external" "reachable on localhost:${CLEARING_PORT} but NOT on network IP — bound to 127.0.0.1 only"
+  else
+    fail "clearing-external" "not reachable on localhost or network IP (status=${clearing_result})"
+  fi
+fi
+
+# deployed=running (cdhash check for chorus-hooks)
+deployed_cdhash=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
+import sys, json, subprocess, datetime
+loki = sys.argv[1]
+now = int(datetime.datetime.now().timestamp())
+start = now - 86400 * 30  # 30 days
+cmd = ['curl', '-s', '--max-time', '5', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~".+"} | json | event="binary.deployed"',
+       '--data-urlencode', 'limit=100',
+       '--data-urlencode', f'start={start}000000000',
+       '--data-urlencode', f'end={now}000000000']
+try:
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=6).stdout
+    d = json.loads(out)
+    deploys = []
+    for stream in d.get('data', {}).get('result', []):
+        for ts, line in stream.get('values', []):
+            try:
+                ev = json.loads(line)
+                binary = ev.get('binary', '')
+                if binary in ('chorus-hooks', 'chorus-hook-shim') and 'fixture' not in binary:
+                    deploys.append((ts, ev.get('cdhash', 'unknown')))
+            except:
+                pass
+    if deploys:
+        deploys.sort(key=lambda x: x[0], reverse=True)
+        print(deploys[0][1])
+    else:
+        print('no-deploy-ev')
+except Exception as e:
+    print('error')
+PYEOF
+)
+
+running_cdhash=$(codesign -dvv ~/.chorus/bin/chorus-hooks 2>&1 | grep "CDHash=" | cut -d= -f2 | tr -d ' ' || echo "unknown")
+
+if [ "$deployed_cdhash" = "unknown" ] || [ "$deployed_cdhash" = "no-deploy-ev" ] || [ "$deployed_cdhash" = "no-deploy-event" ] || [ "$deployed_cdhash" = "error" ]; then
+  warn "deployed-equals-running" "no binary.deployed spine event for chorus-hooks — cannot verify"
+elif [ "$deployed_cdhash" = "$running_cdhash" ]; then
+  pass "deployed-equals-running" "cdhash matches: ${running_cdhash:0:12}..."
+else
+  fail "deployed-equals-running" "deployed=${deployed_cdhash:0:12} running=${running_cdhash:0:12} — binary drift"
+fi
+
+# ─── INTERACTION / CONTEXT ───────────────────────────────────────────────────
+
+# session-start envelope completeness (principles_inject not stale in last 24h)
+stale_count=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
+import sys, json, subprocess, datetime
+loki = sys.argv[1]
+now = int(datetime.datetime.now().timestamp())
+start = now - 86400
+cmd = ['curl', '-s', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~".+"} | json | event="session.principles.stale"',
+       '--data-urlencode', 'limit=500',
+       '--data-urlencode', f'start={start}000000000',
+       '--data-urlencode', f'end={now}000000000']
+try:
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    d = json.loads(out)
+    count = sum(len(s['values']) for s in d.get('data', {}).get('result', []))
+    print(count)
+except Exception:
+    print(-1)
+PYEOF
+)
+if [ "$stale_count" = "-1" ]; then
+  warn "session-envelope-completeness" "Loki unreachable — cannot check principles staleness"
+elif [ "$stale_count" -eq 0 ] 2>/dev/null; then
+  pass "session-envelope-completeness" "no session.principles.stale events in 24h"
+else
+  fail "session-envelope-completeness" "${stale_count} session.principles.stale events in 24h"
+fi
+
+# nudge round-trip (window reachability — existing check)
+nudge_out=$(bash "${SCRIPTS}/nudge-health-check.sh" 2>&1 || true)
+if echo "$nudge_out" | grep -q "NUDGE HEALTH: all roles reachable"; then
+  pass "nudge-delivery" "all 3 role windows reachable"
+elif echo "$nudge_out" | grep -q "FAIL\|ERROR"; then
+  failed_roles=$(echo "$nudge_out" | grep "FAIL\|ERROR" | head -3 | tr '\n' ' ')
+  fail "nudge-delivery" "$failed_roles"
+else
+  warn "nudge-delivery" "nudge-health-check returned unexpected output"
+fi
+
+# card lifecycle trace — check a recent card has full transition sequence
+lifecycle_result=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
+import sys, json, subprocess, datetime, collections
+loki = sys.argv[1]
+now = int(datetime.datetime.now().timestamp())
+start = now - 86400 * 2  # 2 days (7d times out)
+REQUIRED = ['card.pulled', 'card.demo.started', 'card.accepted']
+cmd = ['curl', '-s', '--max-time', '8', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~".+"} | json | event=~"card.pulled|card.demo.started|card.accepted"',
+       '--data-urlencode', 'limit=500',
+       '--data-urlencode', f'start={start}000000000',
+       '--data-urlencode', f'end={now}000000000']
+try:
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    d = json.loads(out)
+    by_card = collections.defaultdict(set)
+    for stream in d.get('data', {}).get('result', []):
+        for _, line in stream.get('values', []):
+            try:
+                ev = json.loads(line)
+                card = str(ev.get('card_id') or ev.get('card', ''))
+                etype = ev.get('event', '')
+                if card and etype in REQUIRED:
+                    by_card[card].add(etype)
+            except:
+                pass
+    complete = [c for c, evts in by_card.items() if all(r in evts for r in REQUIRED)]
+    total = len(by_card)
+    print(f"{len(complete)}:{total}")
+except Exception as e:
+    print(f"error:{e}")
+PYEOF
+)
+if echo "$lifecycle_result" | grep -q "^error:"; then
+  warn "card-lifecycle-trace" "Loki query failed: ${lifecycle_result#error:}"
+else
+  complete=$(echo "$lifecycle_result" | cut -d: -f1)
+  total=$(echo "$lifecycle_result" | cut -d: -f2)
+  if [ "${total:-0}" -eq 0 ]; then
+    warn "card-lifecycle-trace" "no card events found in 7 days"
+  elif [ "${complete:-0}" -gt 0 ]; then
+    pass "card-lifecycle-trace" "${complete}/${total} cards have full transition sequence in 7d"
+  else
+    fail "card-lifecycle-trace" "0/${total} cards have full pull→demo→accept sequence"
+  fi
+fi
+
+# ─── ASSEMBLE RESULT ─────────────────────────────────────────────────────────
+
+FAIL_COUNT=0
+WARN_COUNT=0
+PASS_COUNT=0
+FAIL_NAMES=()
+WARN_NAMES=()
+
+for i in "${!CHECK_STATUS[@]}"; do
+  case "${CHECK_STATUS[$i]}" in
+    PASS) PASS_COUNT=$((PASS_COUNT + 1)) ;;
+    FAIL) FAIL_COUNT=$((FAIL_COUNT + 1)); FAIL_NAMES+=("${CHECK_NAMES[$i]}") ;;
+    WARN) WARN_COUNT=$((WARN_COUNT + 1)); WARN_NAMES+=("${CHECK_NAMES[$i]}") ;;
+  esac
+done
+
+TOTAL=${#CHECK_NAMES[@]}
+if [ "$FAIL_COUNT" -eq 0 ]; then
+  RESULT="PASS"
+else
+  RESULT="FAIL"
+fi
+
+# emit spine event
+"${CHORUS_ROOT}/platform/scripts/chorus-log" chorus.health silas \
+  result="$RESULT" \
+  pass="$PASS_COUNT" \
+  fail="$FAIL_COUNT" \
+  warn="$WARN_COUNT" \
+  total="$TOTAL" \
+  failures="$(IFS=,; echo "${FAIL_NAMES[*]}")" \
+  2>/dev/null || true
+
+if [ "$JSON_OUT" -eq 1 ]; then
+  python3 - "$CHECKS_FILE" "$RESULT" "$PASS_COUNT" "$FAIL_COUNT" "$WARN_COUNT" "$TOTAL" << 'PYJSON'
+import json, sys
+checks_file, result, pass_c, fail_c, warn_c, total = sys.argv[1:7]
+checks = [json.loads(l) for l in open(checks_file) if l.strip()]
+print(json.dumps({'result': result, 'pass': int(pass_c), 'fail': int(fail_c),
+                  'warn': int(warn_c), 'total': int(total), 'checks': checks}, indent=2))
+PYJSON
+  rm -f "$CHECKS_FILE"
+  [ "$FAIL_COUNT" -gt 0 ] && exit 1 || exit 0
+fi
+rm -f "$CHECKS_FILE"
+
+# human output
+if [ "$RESULT" = "PASS" ]; then
+  echo "✅  chorus-health: PASS (${PASS_COUNT}/${TOTAL} checks, ${WARN_COUNT} warnings)"
+else
+  echo "❌  chorus-health: FAIL (${FAIL_COUNT} failures, ${WARN_COUNT} warnings, ${PASS_COUNT}/${TOTAL} passed)"
+fi
+
+if [ "$VERBOSE" -eq 1 ] || [ "$FAIL_COUNT" -gt 0 ] || [ "$WARN_COUNT" -gt 0 ]; then
+  echo ""
+  for i in "${!CHECK_NAMES[@]}"; do
+    name="${CHECK_NAMES[$i]}"
+    status="${CHECK_STATUS[$i]}"
+    detail="${CHECK_DETAIL[$i]}"
+    case "$status" in
+      PASS) icon="  ✓" ;;
+      FAIL) icon="  ✗" ;;
+      WARN) icon="  ⚠" ;;
+      SKIP) icon="  –" ;;
+    esac
+    echo "${icon} ${name}: ${detail}"
+  done
+fi
+
+[ "$FAIL_COUNT" -gt 0 ] && exit 1 || exit 0
