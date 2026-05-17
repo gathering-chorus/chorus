@@ -43,6 +43,55 @@ CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | h
 # default don't drift. Add new targets here once.
 KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api"
 
+# #2993: gate chorus-api deploy.completed on a real MCP-init smoke. Without
+# this gate, `launchctl kickstart -k` returns immediately and deploy.completed
+# fires before the new node process has bound + initialized MCP middleware —
+# producing a 5-15s window where session-starts get "no session id header"
+# failures. Silas's Loki audit: 245 session.principles.stale events/24h, 46%
+# concentrated in deploy windows.
+#
+# Smoke: POST a real JSON-RPC initialize request. Success = the SSE body
+# contains "protocolVersion" inside a "result" field — the unambiguous signal
+# that the MCP middleware processed the request and answered as a valid server
+# (not an error wrapper, not a generic 200 from the wrong handler). Poll at
+# 250ms intervals up to CHORUS_MCP_SMOKE_TIMEOUT_S (default 30s).
+#
+# Override via env for tests; expose the function for the rollback path too.
+CHORUS_MCP_SMOKE_TIMEOUT_S="${CHORUS_MCP_SMOKE_TIMEOUT_S:-30}"
+CHORUS_MCP_SMOKE_URL="${CHORUS_MCP_SMOKE_URL:-http://localhost:3340/mcp}"
+
+wait_for_chorus_api_mcp_ready() {
+  local deadline=$(( $(date +%s) + CHORUS_MCP_SMOKE_TIMEOUT_S ))
+  local body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chorus-deploy-smoke","version":"1.0"}}}'
+  # Parse SSE body with python3 (already used elsewhere in chorus scripts) so
+  # the smoke survives a server-side switch to pretty-printed JSON-RPC.
+  # Silas gate:arch #2993 robustness note 2026-05-17: line-based grep is
+  # brittle to formatting changes. python3 reads stdin, extracts the SSE
+  # data: line, parses it as JSON, exits 0 iff result.protocolVersion is set.
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if curl -s -m 2 -X POST "$CHORUS_MCP_SMOKE_URL" \
+        -H 'Accept: application/json, text/event-stream' \
+        -H 'Content-Type: application/json' \
+        -d "$body" 2>/dev/null \
+        | python3 -c '
+import json, sys
+for line in sys.stdin:
+    if line.startswith("data:"):
+        try:
+            d = json.loads(line[5:].strip())
+            if d.get("result", {}).get("protocolVersion"):
+                sys.exit(0)
+        except Exception:
+            pass
+sys.exit(1)
+' 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
   echo "Usage: chorus-deploy <${KNOWN_CRATES}> [--rollback]" >&2
   exit 2
@@ -81,6 +130,20 @@ if [ "$CRATE" = "chorus-api" ]; then
       echo "chorus-deploy: WARN — launchctl kickstart com.chorus.api failed during rollback" >&2
     else
       echo "chorus-deploy: kickstarted com.chorus.api (rollback)"
+    fi
+    # #2993: rollback also waits for MCP smoke before declaring success. Same
+    # deploy.completed-lies-during-gap failure mode applies to rollback restarts.
+    echo "chorus-deploy: waiting for chorus-api MCP smoke (rollback, deadline ${CHORUS_MCP_SMOKE_TIMEOUT_S}s)"
+    if ! wait_for_chorus_api_mcp_ready; then
+      END_TS=$(date +%s)
+      DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+      if [ -x "$CHORUS_LOG" ]; then
+        "$CHORUS_LOG" deploy.failed "$ROLE" \
+          "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+          "reason=mcp-smoke-timeout-rollback" "card=$CARD_ID" >/dev/null 2>&1 || true
+      fi
+      echo "chorus-deploy: $CRATE rollback MCP smoke timed out after ${CHORUS_MCP_SMOKE_TIMEOUT_S}s" >&2
+      exit 1
     fi
     END_TS=$(date +%s)
     DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
@@ -121,6 +184,22 @@ if [ "$CRATE" = "chorus-api" ]; then
     echo "chorus-deploy: WARN — launchctl kickstart com.chorus.api failed" >&2
   else
     echo "chorus-deploy: kickstarted com.chorus.api"
+  fi
+  # #2993: wait for the new node process to bind and initialize MCP middleware
+  # before declaring deploy.completed. Without this gate the spine claims the
+  # API is ready while session-starts in the gap window get "no session id
+  # header" failures. Smoke timeout → emit deploy.failed instead.
+  echo "chorus-deploy: waiting for chorus-api MCP smoke (deadline ${CHORUS_MCP_SMOKE_TIMEOUT_S}s)"
+  if ! wait_for_chorus_api_mcp_ready; then
+    END_TS=$(date +%s)
+    DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+    if [ -x "$CHORUS_LOG" ]; then
+      "$CHORUS_LOG" deploy.failed "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        "reason=mcp-smoke-timeout" "card=$CARD_ID" >/dev/null 2>&1 || true
+    fi
+    echo "chorus-deploy: $CRATE MCP smoke timed out after ${CHORUS_MCP_SMOKE_TIMEOUT_S}s — deploy.failed emitted" >&2
+    exit 1
   fi
   END_TS=$(date +%s)
   DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
