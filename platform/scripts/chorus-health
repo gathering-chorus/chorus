@@ -167,6 +167,53 @@ fi
 
 # ─── RUNTIME / OPS ───────────────────────────────────────────────────────────
 
+# service-health — all registered endpoints respond
+declare -a SVC_FAIL=()
+for ep in \
+  "http://localhost:3000|caddy-edge" \
+  "http://localhost:2019/config/|caddy-admin" \
+  "http://localhost:3002|gathering-app" \
+  "http://localhost:3340/|chorus-landing" \
+  "http://localhost:3340/borg/|borg-landing" \
+  "http://localhost:3340/borg/assessment|borg-assessment" \
+  "http://localhost:3340/borg/instance-explorer/|borg-instance-explorer" \
+  "http://localhost:3340/borg/patterns/|borg-patterns" \
+  "http://localhost:3340/borg/jeff/|borg-jeff" \
+  "http://localhost:3340/borg/replay/|borg-replay" \
+  "http://localhost:3340/borg/quality/|borg-quality" \
+  "http://localhost:3340/borg/fitness/|borg-fitness" \
+  "http://localhost:3340/borg/cost/|borg-cost" \
+  "http://localhost:3340/borg/hooks/|borg-hooks"; do
+  url="${ep%%|*}"; name="${ep##*|}"
+  code=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null) || code="000"
+  [[ "$code" =~ ^(200|204|301|302|308)$ ]] || SVC_FAIL+=("${name}:${code}")
+done
+if [ ${#SVC_FAIL[@]} -eq 0 ]; then
+  pass "service-health" "all 14 endpoints responding"
+else
+  fail "service-health" "down: $(IFS=,; echo "${SVC_FAIL[*]}")"
+fi
+
+# rollback-path — prior commit reachable
+rollback_sha=$(git -C "${CHORUS_CANONICAL}" log --oneline -2 2>/dev/null | tail -1 | awk '{print $1}')
+if [ -n "$rollback_sha" ]; then
+  pass "rollback-path" "rollback target ${rollback_sha}"
+else
+  fail "rollback-path" "no prior commit found"
+fi
+
+# disk-health — DEC-022 thresholds (warn 90%, fail 95%)
+disk_pct=$(df -h /System/Volumes/Data 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+if [ -z "$disk_pct" ]; then
+  warn "disk-health" "could not read disk usage"
+elif [ "$disk_pct" -ge 95 ] 2>/dev/null; then
+  fail "disk-health" "disk at ${disk_pct}% — critical"
+elif [ "$disk_pct" -ge 90 ] 2>/dev/null; then
+  warn "disk-health" "disk at ${disk_pct}% — warning threshold"
+else
+  pass "disk-health" "disk at ${disk_pct}%"
+fi
+
 # chorus-api up + memory ceiling
 api_health=$(curl -s --max-time 5 "${API_BASE}/health" 2>/dev/null || echo "")
 if echo "$api_health" | grep -q "ok"; then

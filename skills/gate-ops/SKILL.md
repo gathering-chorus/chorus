@@ -39,108 +39,18 @@ Read the card with `cards view <card-id>`. Check the card type label.
 
 If skipped, emit: `gate.ops.skipped` spine event. Exit.
 
-## Automated Checks (run all, collect results)
+## Automated Checks
 
-### 1. Service health
-
-```bash
-# Check all registered service endpoints respond.
-# Includes the Chorus product surface (#2099): landing + /borg/* nine pages.
-ENDPOINTS=(
-  "http://localhost:3000|caddy-edge"
-  "http://localhost:2019/config/|caddy-admin"
-  "http://localhost:3002|gathering-app"
-  "http://localhost:3030/\$/ping|fuseki"
-  "http://localhost:3340/api/athena/health|chorus-api"
-  "http://localhost:3340/|chorus-landing"
-  "http://localhost:3340/borg/|borg-landing"
-  "http://localhost:3340/borg/assessment|borg-assessment"
-  "http://localhost:3340/borg/instance-explorer/|borg-instance-explorer"
-  "http://localhost:3340/borg/patterns/|borg-patterns"
-  "http://localhost:3340/borg/jeff/|borg-jeff"
-  "http://localhost:3340/borg/replay/|borg-replay"
-  "http://localhost:3340/borg/quality/|borg-quality"
-  "http://localhost:3340/borg/fitness/|borg-fitness"
-  "http://localhost:3340/borg/cost/|borg-cost"
-  "http://localhost:3340/borg/hooks/|borg-hooks"
-  "http://localhost:3102/ready|loki"
-  "http://localhost:3470/health|bridge"
-)
-for EP in "${ENDPOINTS[@]}"; do
-  URL="${EP%%|*}"
-  NAME="${EP##*|}"
-  CODE=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null)
-  [ -z "$CODE" ] && CODE="000"
-  if [[ "$CODE" =~ ^(200|204|301|302|308)$ ]]; then
-    echo "PASS: $NAME ($CODE)"
-  else
-    echo "FAIL: $NAME ($CODE)"
-  fi
-done
-```
-
-**Pass:** All endpoints respond with 2xx or 3xx.
-**Fail:** Any endpoint unreachable or 4xx/5xx — list the failing services.
-
-### 2. Loki log flow
+Run `chorus-health` — it is the canonical ops fitness function (#2952). All checks live there.
 
 ```bash
-# Check if logs are flowing — query Loki for recent entries
-NOW=$(date +%s)
-START=$(( NOW - 300 ))
-RESULT=$(curl -sf --max-time 5 -G "http://localhost:3102/loki/api/v1/query_range" \
-  --data-urlencode 'query={job=~"gathering.*"}' \
-  --data-urlencode "start=${START}000000000" \
-  --data-urlencode "end=${NOW}000000000" \
-  --data-urlencode "limit=1" 2>/dev/null)
-COUNT=$(echo "$RESULT" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-print(sum(len(r.get('values',[])) for r in d.get('data',{}).get('result',[])))
-" 2>/dev/null || echo "0")
-if [[ "$COUNT" -gt 0 ]]; then
-  echo "PASS: logs flowing ($COUNT entries in last 5min)"
-else
-  echo "WARN: no logs in Loki for last 5min — check log pipeline"
-fi
+bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-health --verbose
 ```
 
-**Pass:** Recent log entries exist.
-**Warn:** No entries — advisory, not blocking (cadence gaps possible).
+chorus-health covers: service-health (caddy-edge, caddy-admin, gathering-app, chorus-landing, 10 borg pages, fuseki, chorus-api, loki, bridge), rollback-path, disk-health, spine-event-rate, MCP round-trip, Bedroom reachability, nudge-delivery, and more.
 
-### 3. Rollback path
-
-```bash
-# Verify the previous commit exists and is reachable
-cd /Users/jeffbridwell/CascadeProjects/chorus
-PREV=$(git log --oneline -2 | tail -1 | awk '{print $1}')
-if [ -n "$PREV" ]; then
-  echo "PASS: rollback target $PREV"
-else
-  echo "FAIL: no prior commit for rollback"
-fi
-```
-
-**Pass:** Prior commit exists (can `git revert` if needed).
-**Fail:** No prior commit.
-
-### 4. Disk health
-
-```bash
-# Check disk usage — DEC-022 thresholds
-USAGE=$(df -h /System/Volumes/Data 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
-if [ "$USAGE" -lt 90 ]; then
-  echo "PASS: disk at ${USAGE}%"
-elif [ "$USAGE" -lt 95 ]; then
-  echo "WARN: disk at ${USAGE}% — warning threshold"
-else
-  echo "FAIL: disk at ${USAGE}% — critical, blocks deploy"
-fi
-```
-
-**Pass:** Under 90%.
-**Warn:** 90-95%.
-**Fail:** Over 95% — critical, blocks deploy.
+**Pass:** chorus-health exits 0 (no FAIL checks).
+**Fail:** chorus-health exits 1 — print the failing checks from its output.
 
 ## No Manual Confirms
 
@@ -153,10 +63,7 @@ Print summary:
 ```
 ## /gate-ops #<card-id>
 
-  Service health:   PASS | FAIL (services listed)
-  Loki log flow:    PASS | WARN
-  Rollback path:    PASS | FAIL
-  Disk health:      PASS | WARN | FAIL (usage%)
+  chorus-health: PASS | FAIL (N failures listed)
 
   VERDICT: PASS | FAIL
 ```
