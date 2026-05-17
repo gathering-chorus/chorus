@@ -188,7 +188,10 @@ git-queue.sh — FIFO commit lock for multi-role team repo
 
 Commands:
   commit <files...> -- -m "message"   Acquire lock, stage, commit, release
-  rebase [--onto <ref>]               Rebase current branch onto upstream (default origin/main)
+  rebase [--onto <ref>] [--accept-theirs <path>]
+                                      Rebase current branch onto upstream (default origin/main).
+                                      --accept-theirs auto-resolves conflicts on listed paths
+                                      by accepting the upstream version (repeat for multiple paths).
   status                              Show lock holder or "free"
   help                                This message
 
@@ -892,11 +895,21 @@ do_pull() {
 # the current branch onto an upstream (default origin/main).
 #
 # Usage:
-#   git-queue.sh rebase                    # rebase onto origin/main (default)
-#   git-queue.sh rebase --onto <ref>       # rebase onto a specific ref
+#   git-queue.sh rebase                            # rebase onto origin/main (default)
+#   git-queue.sh rebase --onto <ref>               # rebase onto a specific ref
+#   git-queue.sh rebase --accept-theirs <path>     # auto-resolve conflicts on this path
+#                                                  # by accepting the upstream version
+#                                                  # (repeat flag for multiple paths)
 #
-# On conflict: aborts cleanly so the working tree returns to pre-rebase
-# state. Caller resolves the conflict, re-commits, retries.
+# --accept-theirs is the auto-regen escape hatch: when a rebase conflicts on
+# a file that's always machine-generated (e.g. designing/claudemd/manifest.json)
+# the upstream version is always correct and the local version is stale. Listing
+# the path lets the rebase auto-resolve and continue instead of aborting. Loop
+# is bounded — if a conflict appears on a path NOT in the accept-theirs list,
+# the rebase aborts cleanly per the default contract.
+#
+# On unhandled conflict: aborts cleanly so the working tree returns to
+# pre-rebase state. Caller resolves and retries (or extends --accept-theirs).
 do_rebase() {
   local force_flag=""
   if [ "${1:-}" = "--force-branch" ]; then
@@ -905,9 +918,11 @@ do_rebase() {
   fi
 
   local onto_arg="origin/main"
+  local accept_theirs_paths=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --onto) onto_arg="$2"; shift 2 ;;
+      --accept-theirs) accept_theirs_paths+=("$2"); shift 2 ;;
       *) shift ;;
     esac
   done
@@ -922,7 +937,7 @@ do_rebase() {
     exit 75
   fi
   write_meta
-  log_event "build.rebase.started" "onto=${onto_arg}"
+  log_event "build.rebase.started" "onto=${onto_arg} accept_theirs_count=${#accept_theirs_paths[@]}"
 
   local fetch_exit=0
   git -C "$REPO_ROOT" fetch origin 9>&- 2>&1 | tail -3 || fetch_exit=$?
@@ -936,19 +951,77 @@ do_rebase() {
   local exit_code=0
   git -C "$REPO_ROOT" rebase "$onto_arg" 9>&- || exit_code=$?
 
+  # Auto-resolve loop: while rebase is paused on a conflict AND every
+  # conflicted file is in --accept-theirs, checkout theirs + continue.
+  # Bounded by max iterations to prevent infinite loops on weird states.
+  local auto_resolve_iter=0
+  local max_iter=50
+  while [ $exit_code -ne 0 ] && [ $auto_resolve_iter -lt $max_iter ]; do
+    # Are we mid-rebase?
+    local rebase_dir
+    rebase_dir=$(git -C "$REPO_ROOT" rev-parse --git-path rebase-merge 2>/dev/null)
+    if [ ! -d "$rebase_dir" ]; then
+      rebase_dir=$(git -C "$REPO_ROOT" rev-parse --git-path rebase-apply 2>/dev/null)
+    fi
+    [ -d "$rebase_dir" ] || break
+
+    # If no --accept-theirs paths configured, no auto-resolve possible.
+    [ ${#accept_theirs_paths[@]} -gt 0 ] || break
+
+    # Get the conflicted files (unmerged paths).
+    local conflicted
+    conflicted=$(git -C "$REPO_ROOT" diff --name-only --diff-filter=U 2>/dev/null)
+    [ -n "$conflicted" ] || break
+
+    # Check each conflicted file against the accept-theirs list.
+    local all_resolvable=1
+    local resolved_count=0
+    while IFS= read -r conflict_path; do
+      [ -z "$conflict_path" ] && continue
+      local matched=0
+      for accept_path in "${accept_theirs_paths[@]}"; do
+        if [ "$conflict_path" = "$accept_path" ]; then
+          matched=1
+          break
+        fi
+      done
+      if [ $matched -eq 1 ]; then
+        git -C "$REPO_ROOT" checkout --theirs -- "$conflict_path" 2>/dev/null
+        git -C "$REPO_ROOT" add -- "$conflict_path" 2>/dev/null
+        resolved_count=$((resolved_count + 1))
+      else
+        all_resolvable=0
+        break
+      fi
+    done <<< "$conflicted"
+
+    if [ $all_resolvable -eq 0 ]; then
+      echo "git-queue: rebase conflict on unhandled path(s) — auto-resolve cannot continue" >&2
+      break
+    fi
+
+    echo "git-queue: auto-resolved ${resolved_count} conflict(s) via --accept-theirs; continuing rebase" >&2
+    log_event "build.rebase.auto_resolved" "count=${resolved_count}"
+    exit_code=0
+    git -C "$REPO_ROOT" -c core.editor=true rebase --continue 9>&- || exit_code=$?
+    auto_resolve_iter=$((auto_resolve_iter + 1))
+  done
+
+  # Final cleanup: if rebase is still mid-flight (unhandled conflict or
+  # iter limit), abort cleanly per the default contract.
   if [ $exit_code -ne 0 ]; then
     if git -C "$REPO_ROOT" rev-parse --git-path rebase-merge 2>/dev/null | xargs -I {} test -d {} 2>/dev/null \
        || git -C "$REPO_ROOT" rev-parse --git-path rebase-apply 2>/dev/null | xargs -I {} test -d {} 2>/dev/null; then
       git -C "$REPO_ROOT" rebase --abort 2>/dev/null || true
-      echo "git-queue: rebase conflict detected onto ${onto_arg} — aborted cleanly. Resolve manually and retry." >&2
+      echo "git-queue: rebase conflict detected onto ${onto_arg} — aborted cleanly. Resolve manually or extend --accept-theirs and retry." >&2
     fi
   fi
 
   clear_meta
-  log_event "build.rebase.completed" "exit_code=${exit_code} onto=${onto_arg}"
+  log_event "build.rebase.completed" "exit_code=${exit_code} onto=${onto_arg} auto_resolve_iter=${auto_resolve_iter}"
 
   if [ $exit_code -eq 0 ]; then
-    echo "git-queue: rebased onto ${onto_arg}" >&2
+    echo "git-queue: rebased onto ${onto_arg} (auto-resolved ${auto_resolve_iter} conflict round(s))" >&2
   else
     echo "git-queue: rebase failed (exit ${exit_code})" >&2
   fi
