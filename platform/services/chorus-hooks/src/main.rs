@@ -663,6 +663,52 @@ async fn user_prompt_submit(
         hooks::jdi_detector::check(&input_clone, &state_clone).await;
     });
 
+    // Card-directive detector (#2964) — mirror image of the approval responder:
+    // detect "make a card" / "file a card" / "create a card" / "add a card" in
+    // Jeff's prompt and write a fresh marker so the bouncer can skip on the
+    // next agent `cards add`. Fire-and-forget. Substrate-enforced attribution
+    // rule — moves the "Jeff directed → no bouncer" rule out of agent CLAUDE.md
+    // (where agents disregarded it the moment it was tested) and into the
+    // substrate (where prompt pattern matches → marker fires → bouncer reads).
+    let directive_role = input.role().as_str().to_string();
+    let directive_prompt = input.prompt.clone().unwrap_or_default();
+    tokio::spawn(async move {
+        use crate::state::chorus_log;
+        use hooks::card_directive_detector::{detect_directive_signal, write_directive_marker};
+        use std::path::PathBuf;
+        if !detect_directive_signal(&directive_prompt) {
+            return;
+        }
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+        let pending_dir = PathBuf::from(format!("{}/.chorus/pending-directives", home));
+        let now = std::time::SystemTime::now();
+        let role_for_blocking = directive_role.clone();
+        let prompt_for_blocking = directive_prompt.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            write_directive_marker(&pending_dir, &role_for_blocking, &prompt_for_blocking, now)
+        })
+        .await;
+        match result {
+            Ok(Ok(_)) => {
+                chorus_log(
+                    "card.directive.detected",
+                    "jeff",
+                    &[("role", directive_role.as_str())],
+                )
+                .await;
+            }
+            Ok(Err(e)) => {
+                chorus_log(
+                    "card.directive.write_failed",
+                    "system",
+                    &[("role", directive_role.as_str()), ("error", &e.to_string())],
+                )
+                .await;
+            }
+            Err(_) => { /* join error — silent */ }
+        }
+    });
+
     // Card-approval responder (#2924 AC3/AC4) — detect `approve`/`deny` in
     // Jeff's prompt and either replay or cancel the most-recent pending
     // bouncer-refused card. Fire-and-forget. The subprocess invocation
