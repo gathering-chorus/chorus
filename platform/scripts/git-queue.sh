@@ -188,6 +188,7 @@ git-queue.sh — FIFO commit lock for multi-role team repo
 
 Commands:
   commit <files...> -- -m "message"   Acquire lock, stage, commit, release
+  rebase [--onto <ref>]               Rebase current branch onto upstream (default origin/main)
   status                              Show lock holder or "free"
   help                                This message
 
@@ -881,6 +882,79 @@ do_pull() {
   return $exit_code
 }
 
+# --- Rebase (#2966) ---
+# Closes the contradictory-hook stall: pre-push hook tells the agent to
+# `git rebase origin/main`, but the PreToolUse chorus-hook-shim blocks
+# raw `git rebase` from agent sessions (#2598 family). Without a sanctioned
+# path, /acp gets stuck on stale-base silent-deletion refusals with no
+# agent-accessible recovery. This subcommand provides the sanctioned path:
+# same lock + branch-check + auto-abort discipline as do_pull, but rebases
+# the current branch onto an upstream (default origin/main).
+#
+# Usage:
+#   git-queue.sh rebase                    # rebase onto origin/main (default)
+#   git-queue.sh rebase --onto <ref>       # rebase onto a specific ref
+#
+# On conflict: aborts cleanly so the working tree returns to pre-rebase
+# state. Caller resolves the conflict, re-commits, retries.
+do_rebase() {
+  local force_flag=""
+  if [ "${1:-}" = "--force-branch" ]; then
+    force_flag="--force-branch"
+    shift
+  fi
+
+  local onto_arg="origin/main"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --onto) onto_arg="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! check_branch "rebase" "$force_flag"; then
+    exit 1
+  fi
+
+  exec 9>"$LOCK_FILE"
+  if ! lockf -t "$LOCK_TIMEOUT" 9; then
+    echo "git-queue: timeout after ${LOCK_TIMEOUT}s — another git op is holding the lock" >&2
+    exit 75
+  fi
+  write_meta
+  log_event "build.rebase.started" "onto=${onto_arg}"
+
+  local fetch_exit=0
+  git -C "$REPO_ROOT" fetch origin 9>&- 2>&1 | tail -3 || fetch_exit=$?
+  if [ $fetch_exit -ne 0 ]; then
+    clear_meta
+    log_event "build.rebase.completed" "exit_code=${fetch_exit} stage=fetch"
+    echo "git-queue: rebase aborted — fetch origin failed (exit ${fetch_exit})" >&2
+    return $fetch_exit
+  fi
+
+  local exit_code=0
+  git -C "$REPO_ROOT" rebase "$onto_arg" 9>&- || exit_code=$?
+
+  if [ $exit_code -ne 0 ]; then
+    if git -C "$REPO_ROOT" rev-parse --git-path rebase-merge 2>/dev/null | xargs -I {} test -d {} 2>/dev/null \
+       || git -C "$REPO_ROOT" rev-parse --git-path rebase-apply 2>/dev/null | xargs -I {} test -d {} 2>/dev/null; then
+      git -C "$REPO_ROOT" rebase --abort 2>/dev/null || true
+      echo "git-queue: rebase conflict detected onto ${onto_arg} — aborted cleanly. Resolve manually and retry." >&2
+    fi
+  fi
+
+  clear_meta
+  log_event "build.rebase.completed" "exit_code=${exit_code} onto=${onto_arg}"
+
+  if [ $exit_code -eq 0 ]; then
+    echo "git-queue: rebased onto ${onto_arg}" >&2
+  else
+    echo "git-queue: rebase failed (exit ${exit_code})" >&2
+  fi
+  return $exit_code
+}
+
 # --- Checkout / switch / branch (#2710) ---
 # Candidate A from #2706 Mode-A close: serialize working-tree mutation through
 # the canonical adapter so concurrent peers can't bump HEAD mid-session-read.
@@ -1009,6 +1083,7 @@ case "$cmd" in
   commit)   do_commit "$@" ;;
   push)     do_push "$@" ;;
   pull)     do_pull "$@" ;;
+  rebase)   do_rebase "$@" ;;
   checkout) do_checkout "$@" ;;
   switch)   do_switch "$@" ;;
   branch)   do_branch "$@" ;;
