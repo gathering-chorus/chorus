@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Next Queue — Sequenced Slices</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f8fafc;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #4f46e5;
+    --green: #059669;
+    --amber: #d97706;
+    --red: #dc2626;
+    --blue: #2563eb;
+    --purple: #7c3aed;
+    --pink: #db2777;
+    --wren: #16a34a;
+    --silas: #d97706;
+    --kade: #2563eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .pipeline { display: flex; flex-direction: column; gap: 2rem; position: relative; }
+  .pipeline::before {
+    content: '';
+    position: absolute;
+    left: 1.5rem;
+    top: 2.5rem;
+    bottom: 1rem;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--accent), var(--purple), var(--green));
+    opacity: 0.3;
+  }
+  .slice { position: relative; padding-left: 3.5rem; }
+  .slice-dot {
+    position: absolute;
+    left: 0.85rem;
+    top: 0.6rem;
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 50%;
+    border: 2px solid;
+    background: var(--bg);
+    z-index: 1;
+  }
+  .slice-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .slice-num {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .slice-name { font-size: 1.1rem; font-weight: 700; }
+  .slice-why { color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem; font-style: italic; }
+  .cards { display: flex; flex-direction: column; gap: 0.5rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    display: grid;
+    grid-template-columns: 2.5rem 1fr auto auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card.done { opacity: 0.55; background: #f0fdf4; border-color: var(--green); }
+  .card.done .card-title { text-decoration: line-through; text-decoration-color: var(--green); }
+  .card.done .card-order { color: var(--green); }
+  .card.done::after { content: '✓'; color: var(--green); font-weight: 700; font-size: 1.1rem; }
+  .card.wont-do { opacity: 0.4; background: #fef2f2; border-color: var(--red); }
+  .card.wont-do .card-title { text-decoration: line-through; text-decoration-color: var(--red); }
+  .card.wont-do .card-order { color: var(--red); }
+  .card.wont-do::after { content: '✗'; color: var(--red); font-weight: 700; font-size: 1.1rem; }
+  .card.wip { border-left: 3px solid var(--amber); }
+  .card-order {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-align: center;
+  }
+  .card-title { font-size: 0.85rem; font-weight: 500; }
+  .card-id { color: var(--accent); font-weight: 600; margin-right: 0.25rem; }
+  .owner {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .owner-wren { background: rgba(22,163,74,0.15); color: var(--wren); }
+  .owner-silas { background: rgba(217,119,6,0.15); color: var(--silas); }
+  .owner-kade { background: rgba(37,99,235,0.15); color: var(--kade); }
+  .size {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .depends {
+    font-size: 0.7rem;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .arrow { color: var(--accent); margin: 0 0.15rem; }
+  .deferred {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-left: 3.5rem;
+    opacity: 0.5;
+  }
+  .deferred-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .deferred-list { font-size: 0.8rem; color: var(--muted); line-height: 1.8; }
+  .deferred-list span { margin-right: 0.5rem; }
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+  .legend-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; }
+  .context-diagram {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2.5rem;
+    overflow-x: auto;
+  }
+  .context-diagram h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 1rem;
+  }
+  .context-diagram .mermaid {
+    display: flex;
+    justify-content: center;
+  }
+  .mermaid svg { background: transparent !important; }
+  .mermaid .cluster rect { fill: #f8fafc !important; stroke: #cbd5e1 !important; rx: 8 !important; }
+  .mermaid .cluster span { color: #1e293b !important; }
+  .mermaid .edgeLabel { background: #ffffff !important; }
+  .mermaid .marker { fill: #4f46e5 !important; stroke: #4f46e5 !important; }
+  .mermaid rect.basic { fill: #f1f5f9 !important; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Next Queue — Sequenced Slices</h1>
+<p class="subtitle">Each slice is a coherent increment. Earlier slices enable later ones. 2026-03-08</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--wren)"></div> Wren</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--silas)"></div> Silas</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--kade)"></div> Kade</div>
+</div>
+
+<div class="context-diagram">
+  <h2>Dependency Flow — Slices 1 → 7</h2>
+  <pre class="mermaid">
+graph TD
+    subgraph S1["Slice 1: Memory Foundation ✓"]
+        A["1100 Stories sync ✓"]
+        B["1090 Embedding spike ✓"]
+        C["1095 Unified memory surface ✓"]
+        D["939 Self memory partition ✓"]
+    end
+
+    subgraph S2["Slice 2: Data Coherence ✓"]
+        E["1092 Music hardening ✓"]
+        F["1093 Photos hardening ✓"]
+        G["1009 Activity tab ✓"]
+        G2["1103 Navbar dropdowns ✓"]
+    end
+
+    subgraph S3["Slice 3: Process Gates ✓"]
+        H["1098 Blast radius ✓"]
+        I["1010 Decision gate ✓"]
+        J["981 Re-prompt rate ✓"]
+        J2["1085 Capture gate ✓"]
+        J3["1086 WIP entry gate ✓"]
+        J4["1083 Lifecycle hardening ✓"]
+        J5["1117 Tune demo pattern ✓"]
+    end
+
+    subgraph S4["Slice 4: Jeff's State"]
+        K["1097 Idle tracking ✓"]
+        L["1091 Multi-signal andon ✓"]
+        L2["1124 Session tempo ✓"]
+        L3["1105 Jeff ops dashboard ✓"]
+        L4["1127 Practice overlay"]
+        L5["1116 Session replay ✓"]
+        L6["1134 Fitness functions 🔨"]
+    end
+
+    subgraph S4b["Slice 4b: Legibility"]
+        M["1126 Decision log surface ✓"]
+        M2["1106 Role journaling"]
+    end
+
+    subgraph S5["Slice 5: Voice / Desk Freedom"]
+        N["547 /listen ✓"]
+        N2["1099 Voice-to-session ✓"]
+        N3["269 /talk"]
+        N4["619 Voice analytics→Reflect 🔨"]
+    end
+
+    subgraph S6["Slice 6: Chorus Product ✓"]
+        O["972 Chorus SDK ✓"]
+        O2["973 Demo SDK ✓"]
+        O3["177 The nudge ✓"]
+    end
+
+    subgraph S7["Slice 7: Hardening"]
+        P["1153 Hook dashboard 🔨"]
+        P2["1108 Demo scroll 🔨"]
+        P3["451 Ontology modeling"]
+        P4["579 Reflect services"]
+        P5["537 Node 22 upgrade"]
+    end
+
+    DONE["842 ✓ Codebase graph"]
+
+    A -->|feeds| C
+    B -->|feeds| C
+    C -->|enables| D
+    C -.->|enables| E
+    C -.->|enables| F
+    C -.->|enables| G
+    E -.->|informs| I
+    F -.->|informs| I
+    G -.->|informs| J
+    J2 -->|enables| J3
+    J2 & J3 -->|enables| J4
+    K -->|enables| L
+    L -->|enables| L2
+    L -->|enables| L3
+    L2 -->|enables| L4
+    L3 -->|enables| L6
+    N2 -->|enables| N3
+    N2 -->|enables| N4
+    O -->|enables| O2
+    DONE -->|enables| H
+
+    classDef wip fill:#fffbeb,stroke:#d97706,color:#78350f,stroke-width:2px,stroke-dasharray: 5 5
+    classDef shipped fill:#dcfce7,stroke:#059669,color:#064e3b,stroke-width:2px
+    classDef done fill:#f1f5f9,stroke:#94a3b8,color:#64748b,stroke-width:1px
+    classDef pending fill:#f1f5f9,stroke:#cbd5e1,color:#475569,stroke-width:1px
+
+    class A,B,C,D shipped
+    class E,F,G,G2 shipped
+    class H,I,J,J2,J3,J4,J5 shipped
+    class K,L,L2,L3,L5,M shipped
+    class N,N2,O,O2,O3 shipped
+    class L6,N4,P,P2 wip
+    class L4,M2,N3,P3,P4,P5 pending
+    class DONE done
+  </pre>
+</div>
+
+<div class="pipeline">
+
+  <!-- Slice 1 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--accent);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 1</span>
+      <span class="slice-name">Memory Foundation</span>
+    </div>
+    <div class="slice-why">Everything else depends on this. Search, embeddings, unified memory.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">1</div>
+        <div class="card-title"><span class="card-id">#1100</span> Stories sync to Chorus — index on session start</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">2</div>
+        <div class="card-title"><span class="card-id">#1090</span> Local embedding chain spike — Ollama + LanceDB on Bedroom Mac</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">3</div>
+        <div class="card-title"><span class="card-id">#1095</span> Unified memory surface — SPARQL + logs + search + embeddings</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">large</span>
+        <span class="depends"><span class="arrow">←</span> #1090</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">4</div>
+        <div class="card-title"><span class="card-id">#939</span> Self memory partition — read-only Chorus API for local AI</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"><span class="arrow">←</span> #1095</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 2 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--green);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 2</span>
+      <span class="slice-name">Data Coherence</span>
+    </div>
+    <div class="slice-why">Memory surface is only as good as the data in it.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">5</div>
+        <div class="card-title"><span class="card-id">#1092</span> Music hardening — UX, performance, data coherence</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">6</div>
+        <div class="card-title"><span class="card-id">#1093</span> Photos hardening — UX, performance, data coherence</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">7</div>
+        <div class="card-title"><span class="card-id">#1009</span> Activity tab redesign — meaningful data lifecycle events</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card shipped">
+        <div class="card-order">8</div>
+        <div class="card-title"><span class="card-id">#1103</span> Navbar dropdown menus — spoke pages match mind map hierarchy ✓</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 3 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--amber);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 3</span>
+      <span class="slice-name">Process Gates</span>
+    </div>
+    <div class="slice-why">Data and memory solid — now harden how work flows through.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">8</div>
+        <div class="card-title"><span class="card-id">#1098</span> Automated blast radius — codebase graph generates what-it-touches</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #842 ✓</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">9</div>
+        <div class="card-title"><span class="card-id">#1010</span> Pre-response decision gate — check against Jeff's known preferences</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">10</div>
+        <div class="card-title"><span class="card-id">#981</span> Re-prompt rate metric — track when Jeff repeats himself</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">11</div>
+        <div class="card-title"><span class="card-id">#1085</span> Capture gate — cards require AC before entering Building</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">12</div>
+        <div class="card-title"><span class="card-id">#1086</span> WIP entry gate — blast radius check enforced</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"><span class="arrow">←</span> #1085</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">13</div>
+        <div class="card-title"><span class="card-id">#1083</span> Card lifecycle hardening — enforce gates at every vertebra</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1085, #1086</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">14</div>
+        <div class="card-title"><span class="card-id">#1117</span> Tune demo pattern — builder opens, explains, waits for Jeff</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 4 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--purple);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 4</span>
+      <span class="slice-name">Jeff's State</span>
+    </div>
+    <div class="slice-why">The mood ring. Self-observability for Jeff, awareness for the team.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">15</div>
+        <div class="card-title"><span class="card-id">#1097</span> Andon idle + break tracking — idle duration, last break</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">16</div>
+        <div class="card-title"><span class="card-id">#1091</span> Multi-signal andon — mouse, posture, prompt sentiment</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1097</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">17</div>
+        <div class="card-title"><span class="card-id">#1124</span> Session tempo dashboard — prompt rate, sentiment, turn duration</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1091</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">18</div>
+        <div class="card-title"><span class="card-id">#1105</span> Jeff operations dashboard — state, energy, connections, practices</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">large</span>
+        <span class="depends"><span class="arrow">←</span> #1091</span>
+      </div>
+      <div class="card">
+        <div class="card-order">19</div>
+        <div class="card-title"><span class="card-id">#1127</span> Practice calendar overlay — daily habits on session tempo chart</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1124</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">20</div>
+        <div class="card-title"><span class="card-id">#1116</span> Session replay translator — text action log for AI role review</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card wip">
+        <div class="card-order">21</div>
+        <div class="card-title"><span class="card-id">#1134</span> V1 fitness functions dashboard — graph, process, and Jeff health metrics</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1105</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 4b: Legibility -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--purple); background: var(--surface);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 4b</span>
+      <span class="slice-name">Legibility</span>
+    </div>
+    <div class="slice-why">The system explains itself. Decisions, reflections, and governance become browsable.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">22</div>
+        <div class="card-title"><span class="card-id">#1126</span> Decision log surface — legible, auditable, browsable decisions</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card">
+        <div class="card-order">23</div>
+        <div class="card-title"><span class="card-id">#1106</span> Role journaling — reflective entry beyond procedural close-out</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 5 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--blue);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 5</span>
+      <span class="slice-name">Voice / Desk Freedom</span>
+    </div>
+    <div class="slice-why">Depends on memory foundation. Voice input needs somewhere to land.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">24</div>
+        <div class="card-title"><span class="card-id">#547</span> /listen — receive mode for Jeff thinking out loud</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">25</div>
+        <div class="card-title"><span class="card-id">#1099</span> Voice-to-session — transcribe, route to active session</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">large</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card">
+        <div class="card-order">26</div>
+        <div class="card-title"><span class="card-id">#269</span> /talk — floating voice input for hands-free direction</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">large</span>
+        <span class="depends"><span class="arrow">←</span> #1099</span>
+      </div>
+      <div class="card wip">
+        <div class="card-order">27</div>
+        <div class="card-title"><span class="card-id">#619</span> Feed voice analytics into Reflect — tone trends as context for local AI</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"><span class="arrow">←</span> #1099</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slice 6 -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--pink);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 6</span>
+      <span class="slice-name">Chorus Product</span>
+    </div>
+    <div class="slice-why">Foundation solid — make it shareable.</div>
+    <div class="cards">
+      <div class="card done">
+        <div class="card-order">28</div>
+        <div class="card-title"><span class="card-id">#972</span> Chorus SDK — Minimum Viable Spine implementation</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card done">
+        <div class="card-order">29</div>
+        <div class="card-title"><span class="card-id">#973</span> Demo Chorus SDK — end-to-end walkthrough for Jeff</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"><span class="arrow">←</span> #972</span>
+      </div>
+      <div class="card done">
+        <div class="card-order">30</div>
+        <div class="card-title"><span class="card-id">#177</span> The nudge — mid-session cross-role signaling</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+  <!-- Slice 7: Hardening -->
+  <div class="slice">
+    <div class="slice-dot" style="border-color: var(--red);"></div>
+    <div class="slice-header">
+      <span class="slice-num">Slice 7</span>
+      <span class="slice-name">Hardening & Foundation</span>
+    </div>
+    <div class="slice-why">Active WIP and Next — strengthen what's shipped, close structural gaps.</div>
+    <div class="cards">
+      <div class="card wip">
+        <div class="card-order">31</div>
+        <div class="card-title"><span class="card-id">#1153</span> Hook activity dashboard — forcing function enforcement visibility</div>
+        <span class="owner owner-kade">Kade</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card wip">
+        <div class="card-order">32</div>
+        <div class="card-title"><span class="card-id">#1108</span> Demo scroll — osascript Chrome scroll for /demo walkthroughs</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">small</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card">
+        <div class="card-order">33</div>
+        <div class="card-title"><span class="card-id">#451</span> Model Seeds, Glimmers, Ideas, Projects in ontology — close left-side value stream gap</div>
+        <span class="owner owner-wren">Wren</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card">
+        <div class="card-order">34</div>
+        <div class="card-title"><span class="card-id">#579</span> Reflect tool services — offload retrieval from local model to dedicated endpoints</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+      <div class="card">
+        <div class="card-order">35</div>
+        <div class="card-title"><span class="card-id">#537</span> Upgrade Node 20 → 22 LTS — Dockerfile base image + dependency verification</div>
+        <span class="owner owner-silas">Silas</span>
+        <span class="size">medium</span>
+        <span class="depends"></span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Deferred -->
+<div class="deferred" style="margin-top: 1.5rem;">
+  <div class="deferred-title">Deferred — pull when a slot opens</div>
+  <div class="deferred-list">
+    <span style="text-decoration:line-through;opacity:0.4">#407 CMDB (won't do)</span> ·
+    <span style="text-decoration:line-through;opacity:0.4">#195 Seed/Glimmer (won't do — merged into #451)</span> ·
+    <span style="text-decoration:line-through;opacity:0.4">#265 Clearing voice (done)</span> ·
+    <span>#272 Clearing guest</span> ·
+    <span>#1096 Borg methodology</span> ·
+    <span>#945 Passwords</span> ·
+    <span>#1109 Album reviews</span>
+  </div>
+</div>
+
+<script src="/js/vendor/mermaid.min.js"></script>
+<script src="/gathering-docs/next-sequence-live.js"></script>
+<footer style="margin-top:2rem;padding:1rem 1in;border-top:1px solid #e2e8f0;color:#64748b;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

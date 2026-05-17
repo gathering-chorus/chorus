@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Protocol Stack — Five Layers of Team Coordination</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad: true, theme: 'neutral', securityLevel: 'loose'});</script>
+<style>
+  :root {
+    --bg: #fff;
+    --surface: #f5f5f5;
+    --accent: #2471a3;
+    --accent2: #c0392b;
+    --text: #1a1a2e;
+    --muted: #555;
+    --green: #27ae60;
+    --yellow: #d4a017;
+    --red: #c0392b;
+    --border: #ccc;
+    --l1: #1a5276;
+    --l2: #1e8449;
+    --l3: #b9770e;
+    --l4: #6c3483;
+    --l5: #c0392b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); line-height: 1.7; padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 2rem; color: var(--accent); margin-bottom: 0.25rem; }
+  h1 + .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 2.5rem; }
+  h2 { font-size: 1.4rem; color: var(--accent2); margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; color: var(--accent); margin: 1.5rem 0 0.75rem; }
+  p, li { font-size: 0.95rem; margin-bottom: 0.75rem; }
+  ul, ol { padding-left: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { padding: 0.5rem 0.7rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--accent); font-size: 0.75rem; text-transform: uppercase; background: var(--surface); }
+  .callout { background: var(--surface); border-left: 3px solid var(--accent); padding: 1rem 1.25rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout.warn { border-left-color: var(--red); }
+  .callout.green { border-left-color: var(--green); }
+  code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem; }
+  .mermaid { background: #fafafa; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+  .principle { background: #f0f4f8; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; border-left: 4px solid var(--accent); }
+  .principle strong { color: var(--accent2); }
+  .anti { background: #fdf2f2; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; border-left: 4px solid var(--red); }
+  .anti strong { color: var(--red); }
+
+  /* Stack visualization */
+  .stack { max-width: 700px; margin: 2rem auto; }
+  .stack-layer {
+    padding: 1.2rem 1.5rem;
+    border: 2px solid;
+    margin-bottom: -2px;
+    position: relative;
+  }
+  .stack-layer:first-child { border-radius: 8px 8px 0 0; }
+  .stack-layer:last-child { border-radius: 0 0 8px 8px; }
+  .stack-num {
+    position: absolute;
+    left: -2.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .stack-name { font-weight: 700; font-size: 1rem; }
+  .stack-guarantee { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
+  .stack-analogy { font-size: 0.72rem; color: var(--muted); font-style: italic; float: right; margin-top: -1.2rem; }
+
+  .l5 { border-color: var(--l5); background: rgba(192,57,43,0.05); }
+  .l5 .stack-name { color: var(--l5); }
+  .l4 { border-color: var(--l4); background: rgba(108,52,131,0.05); }
+  .l4 .stack-name { color: var(--l4); }
+  .l3 { border-color: var(--l3); background: rgba(185,119,14,0.05); }
+  .l3 .stack-name { color: var(--l3); }
+  .l2 { border-color: var(--l2); background: rgba(30,132,73,0.05); }
+  .l2 .stack-name { color: var(--l2); }
+  .l1 { border-color: var(--l1); background: rgba(26,82,118,0.05); }
+  .l1 .stack-name { color: var(--l1); }
+
+  /* Status badges */
+  .status { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .status.shipped { background: #d5f5e3; color: #1e8449; }
+  .status.designed { background: #fef9e7; color: #b9770e; }
+  .status.gap { background: #fdedec; color: #c0392b; }
+  .status.rich { background: #e8daef; color: #6c3483; }
+
+  @media print { body { padding: 0.5rem; font-size: 10pt; } }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Chorus Protocol Stack</h1>
+<p class="subtitle">Five layers of team coordination &mdash; each layer provides guarantees to the layer above it &middot; Wren, 2026-03-21 &middot; Derived from session with Jeff</p>
+
+<div class="callout">
+<strong>Core insight (Jeff):</strong> "Time awareness &rarr; team awareness &rarr; team communication &rarr; team interactions &mdash; they build on each other." Like TCP/IP, each layer depends on the one below. Rich interaction protocols (pair, demo, gemba) are application-layer constructs. They fail when the transport is unreliable.
+</div>
+
+<!-- ============================================================ -->
+<h2>1. The Stack</h2>
+
+<div class="stack">
+  <div class="stack-layer l5">
+    <span class="stack-num">L5</span>
+    <span class="stack-analogy">Application</span>
+    <div class="stack-name">Work</div>
+    <div class="stack-guarantee">Cards flow, value ships, Jeff stays in creative flow</div>
+  </div>
+  <div class="stack-layer l4">
+    <span class="stack-num">L4</span>
+    <span class="stack-analogy">Transport</span>
+    <div class="stack-name">Interactions</div>
+    <div class="stack-guarantee">Patterns, gates, protocols &mdash; pair, demo, gemba, clearing</div>
+  </div>
+  <div class="stack-layer l3">
+    <span class="stack-num">L3</span>
+    <span class="stack-analogy">Network</span>
+    <div class="stack-name">Communication</div>
+    <div class="stack-guarantee">Reliable message delivery between any two roles</div>
+  </div>
+  <div class="stack-layer l2">
+    <span class="stack-num">L2</span>
+    <span class="stack-analogy">Data Link</span>
+    <div class="stack-name">Team Awareness</div>
+    <div class="stack-guarantee">Who's here, what state they're in, what they're working on</div>
+  </div>
+  <div class="stack-layer l1">
+    <span class="stack-num">L1</span>
+    <span class="stack-analogy">Physical</span>
+    <div class="stack-name">Time</div>
+    <div class="stack-guarantee">Accurate clock, synchronized across all roles</div>
+  </div>
+</div>
+
+<p>Each layer provides a <strong>guarantee</strong> to the layer above it. When a guarantee breaks, everything above it degrades &mdash; not always visibly. A pair session (L4) with unreliable nudge delivery (L3) becomes directive-and-execute. A nudge (L3) to a role whose state is unknown (L2) becomes fire-and-pray. Awareness of a role (L2) with a stale timestamp (L1) becomes a lie.</p>
+
+<div class="principle">
+<strong>The rule:</strong> No layer may assume a guarantee from the layer below unless that guarantee is mechanically enforced. "Roles should check the clock" is not a guarantee. A Rust hook that injects the clock on every emission boundary is.
+</div>
+
+<!-- ============================================================ -->
+<h2>2. Layer by Layer</h2>
+
+<!-- L1 -->
+<h3 style="color:var(--l1)">Layer 1: Time <span class="status shipped">Shipped</span></h3>
+
+<p><strong>Guarantee:</strong> Every event, message, and state transition carries an accurate wall-clock timestamp in <code>America/New_York</code>.</p>
+
+<p><strong>Why it's the foundation:</strong> Stale timestamps cascade. A role that thinks it's 2:30 when it's 3:15 will miss escalation windows, report wrong durations, and produce spine events that confuse Borg. Jeff caught this with #1559 &mdash; roles were caching timestamps from session start and never refreshing.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Enforcement</th></tr>
+<tr><td>Clock sync via Rust hook (#1559)</td><td style="color:var(--green)">Shipped</td><td>Rust <code>PostToolUse</code> injects current time at emission boundary</td></tr>
+<tr><td>Chorus prompt refresh</td><td style="color:var(--green)">Shipped</td><td>CLAUDE.md mandates <code>wall-clock.sh</code> every response</td></tr>
+<tr><td>Spine event timestamps</td><td style="color:var(--green)">Shipped</td><td><code>chorus-log.sh</code> uses system clock, not passed-in time</td></tr>
+<tr><td>Duration validation</td><td style="color:var(--yellow)">Gap</td><td>Nothing validates that a role's self-reported duration matches wall clock</td></tr>
+</table>
+
+<div class="callout green">
+<strong>Feedback that drove this:</strong> <code>feedback_clock_sync.md</code> &mdash; "all roles must use real system clock for durations. No tick counting, no cached timestamps. Fake precision cascades into wrong escalation decisions."
+</div>
+
+<!-- L2 -->
+<h3 style="color:var(--l2)">Layer 2: Team Awareness <span class="status gap">Gap</span></h3>
+
+<p><strong>Guarantee:</strong> Any role can answer "who is active, what are they doing, and when did they last emit?" without interrupting anyone.</p>
+
+<p><strong>Why it matters:</strong> Communication (L3) requires knowing who to talk to and whether they can receive. You don't send TCP packets to a host that's down. Today, a role trying to answer "what is Kade doing right now?" has three bad options: check git (lagging), tail chorus.log (expensive), or ask Jeff (the relay anti-pattern).</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>What's needed</th></tr>
+<tr><td>Role state declarations</td><td style="color:var(--green)">Shipped</td><td><code>role-state.sh</code> emits <code>building</code>, <code>blocked</code>, <code>idle</code>, <code>observing</code>, <code>waiting</code></td></tr>
+<tr><td>State file persistence</td><td style="color:var(--green)">Shipped</td><td><code>/tmp/role-state-{role}.json</code> written on every transition</td></tr>
+<tr><td>State query API</td><td style="color:var(--red)">Missing</td><td>No endpoint or CLI to ask "what state is Silas in right now?"</td></tr>
+<tr><td>Last-seen tracking</td><td style="color:var(--red)">Missing</td><td>No mechanism to know when a role last emitted anything</td></tr>
+<tr><td>Heartbeat / liveness</td><td style="color:var(--red)">Missing</td><td>No way to distinguish "idle" from "session crashed"</td></tr>
+<tr><td>WIP card visibility</td><td style="color:var(--yellow)">Partial</td><td>Board shows WIP, but roles don't pull it before communicating</td></tr>
+</table>
+
+<div class="mermaid">
+graph LR
+    subgraph "What L2 should provide"
+        Q["Role asks:<br/>'Is Kade available?'"] --> R["Read /tmp/role-state-kade.json"]
+        R --> S{"State?"}
+        S -->|"building #1556<br/>last_emit: 2m ago"| A["Available but busy.<br/>Queue message."]
+        S -->|"idle<br/>last_emit: 45m ago"| B["Likely no session.<br/>Queue + wake."]
+        S -->|"blocked<br/>last_emit: 5m ago"| C["Active but stuck.<br/>Nudge immediately."]
+    end
+</div>
+
+<p><strong>The L2 contract:</strong> A role state file must contain: <code>state</code> (enum), <code>card</code> (if building), <code>last_emit</code> (wall clock of last spine event or tool use), <code>session_alive</code> (boolean, heartbeat-derived). Communication decisions at L3 depend on all four fields.</p>
+
+<div class="anti">
+<strong>Today's failure:</strong> Silas nudged Wren. Nudge was queued because Wren had no active session. But the nudge system didn't know Wren was offline &mdash; it tried delivery, failed silently, then fell back to queue. A proper L2 would have routed to queue immediately, and optionally triggered a wake.
+</div>
+
+<!-- L3 -->
+<h3 style="color:var(--l3)">Layer 3: Communication <span class="status designed">Designed</span></h3>
+
+<p><strong>Guarantee:</strong> A message sent from Role A reaches Role B, and Role A knows whether it was received and processed.</p>
+
+<p><strong>Why it matters:</strong> Interaction protocols (L4) are conversations. Pair sessions require navigator-to-driver directions. Gemba requires observer-to-navigator nudges. Pipeline advance requires completion signals. All of these are messages. If messages drop silently, the protocols degrade into Jeff relaying between roles.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Design</th></tr>
+<tr><td>Message transport</td><td style="color:var(--yellow)">Designed</td><td>Unix socket via Rust hook service. Role calls <code>nudge &lt;target&gt; &lt;msg&gt;</code>, CLI writes to socket, service routes to queue.</td></tr>
+<tr><td>Delivery states</td><td style="color:var(--yellow)">Designed</td><td>Three spine events: <code>nudge.sent</code> &rarr; <code>nudge.received</code> &rarr; <code>nudge.processed</code></td></tr>
+<tr><td>Session input queue</td><td style="color:var(--yellow)">Designed</td><td><code>/tmp/chorus-mq/&lt;role&gt;/inbox</code> &mdash; Rust service writes, idle hook reads</td></tr>
+<tr><td>Delivery routing</td><td style="color:var(--red)">Not designed</td><td>Should use L2 state to decide: inject immediately (active) vs. queue + wake (idle) vs. queue only (no session)</td></tr>
+<tr><td>Brief delivery</td><td style="color:var(--yellow)">Working (files)</td><td>File-based briefs work but have no delivery confirmation</td></tr>
+<tr><td>Clipboard/AppleScript</td><td style="color:var(--red)">Deprecated</td><td>DEC-100: two stacks (Rust + TypeScript), not bash clipboard hacks</td></tr>
+</table>
+
+<div class="principle">
+<strong>The L3 contract:</strong> Every message has three states. The sender gets <code>sent</code> immediately. The recipient's session emits <code>received</code> when dequeued. The recipient emits <code>processed</code> when they act on it. Pipeline advance checks <code>processed</code>, not <code>sent</code>. This eliminates the "delivered" lie &mdash; today's nudge reports delivery when it writes to a file, not when the recipient reads it.
+</div>
+
+<div class="callout">
+<strong>L3 depends on L2:</strong> The delivery router must read role state before choosing a delivery path. "Send to Kade" requires knowing: Is Kade's session alive? Is Kade building (busy) or idle? This is why L2 must be built first or concurrently.
+</div>
+
+<!-- L4 -->
+<h3 style="color:var(--l4)">Layer 4: Interactions <span class="status rich">Rich</span></h3>
+
+<p><strong>Guarantee:</strong> Multi-role coordination follows named patterns with defined gates, and every transition emits spine events.</p>
+
+<p><strong>Why it matters:</strong> This is where the work happens. Jeff talks, Wren detects a pattern (one of nine), the pattern activates card gates, gates emit to the spine, Borg reads the spine and surfaces what the data says. This is the control plane for the team.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Notes</th></tr>
+<tr><td>Nine interaction patterns</td><td style="color:var(--green)">Named + documented</td><td>Direction, Ideation, Demo, Triage, SWAT, Gemba, Clearing, Story, Reflection</td></tr>
+<tr><td>Pattern detection</td><td style="color:var(--green)">In CLAUDE.md</td><td>Wren detects from Jeff's intent, emits spine event</td></tr>
+<tr><td>Pattern &rarr; gate mapping</td><td style="color:var(--green)">Documented</td><td>Interaction Architecture doc maps each pattern to card gates</td></tr>
+<tr><td>Skills (pair, demo, gemba, clearing)</td><td style="color:var(--green)">Implemented</td><td>Multi-role protocols with defined flows</td></tr>
+<tr><td>Scratch file (shared state)</td><td style="color:var(--green)">Designed</td><td>Pull-based coordination for pair/gemba sessions</td></tr>
+<tr><td>Reliable delivery of L4 signals</td><td style="color:var(--red)">Depends on L3</td><td>Navigator directions, observer nudges, pipeline ticks &mdash; all need L3</td></tr>
+</table>
+
+<div class="callout warn">
+<strong>The hollow middle problem:</strong> L4 is the most built layer. Nine patterns, rich skills, detailed protocols. But it sits on top of L3 (unreliable communication) and L2 (no awareness). A gemba observer writes to scratch but can't confirm the navigator read it. A pipeline <code>/nudge</code> fires but can't distinguish "role is busy" from "role is dead." The richness of L4 makes the gaps in L2/L3 invisible until something fails &mdash; then Jeff becomes the transport layer.
+</div>
+
+<!-- L5 -->
+<h3 style="color:var(--l5)">Layer 5: Work <span class="status shipped">Shipped</span></h3>
+
+<p><strong>Guarantee:</strong> Cards flow from idea to done, value ships, Jeff stays in creative flow.</p>
+
+<p><strong>Why it matters:</strong> This is the reason the stack exists. Everything below serves this. The measure of the stack is not protocol elegance &mdash; it's whether Jeff can step away from the computer and the work continues, whether he can ideate without coordinating, whether three roles can build concurrently without stepping on each other.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Notes</th></tr>
+<tr><td>Board + card flow</td><td style="color:var(--green)">Shipped</td><td><code>board-ts</code>, Vikunja, WIP limits, proving gate</td></tr>
+<tr><td>Werk value stream</td><td style="color:var(--green)">Shipped</td><td>Directing &rarr; Designing &rarr; Building &rarr; Proving</td></tr>
+<tr><td>Concurrent role operation</td><td style="color:var(--yellow)">Partial</td><td>Works when Jeff is present. Degrades when Jeff steps away (L3/L2 gaps).</td></tr>
+<tr><td>Desk freedom</td><td style="color:var(--red)">Not yet</td><td>"Can Jeff step away and the work continues?" The answer is still no.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>3. The Dependency Chain</h2>
+
+<div class="mermaid">
+graph TD
+    L5["L5: Work<br/>Cards flow, value ships"] --> L4
+    L4["L4: Interactions<br/>Patterns, gates, protocols"] --> L3
+    L3["L3: Communication<br/>Reliable message delivery"] --> L2
+    L2["L2: Team Awareness<br/>Who, what, when"] --> L1
+    L1["L1: Time<br/>Synchronized clock"]
+
+    L5 -.->|"degrades to"| F5["Jeff coordinates manually"]
+    L4 -.->|"degrades to"| F4["Directive-and-execute"]
+    L3 -.->|"degrades to"| F3["Jeff relays messages"]
+    L2 -.->|"degrades to"| F2["Ask Jeff who's online"]
+    L1 -.->|"degrades to"| F1["Wrong escalation timing"]
+
+    style L5 fill:#fdf2f2,stroke:#c0392b,stroke-width:2px,color:#1a1a2e
+    style L4 fill:#f5eef8,stroke:#6c3483,stroke-width:2px,color:#1a1a2e
+    style L3 fill:#fef9e7,stroke:#b9770e,stroke-width:2px,color:#1a1a2e
+    style L2 fill:#eafaf1,stroke:#1e8449,stroke-width:2px,color:#1a1a2e
+    style L1 fill:#eaf2f8,stroke:#1a5276,stroke-width:2px,color:#1a1a2e
+
+    style F5 fill:#fff,stroke:#ccc,stroke-dasharray:5,color:#999
+    style F4 fill:#fff,stroke:#ccc,stroke-dasharray:5,color:#999
+    style F3 fill:#fff,stroke:#ccc,stroke-dasharray:5,color:#999
+    style F2 fill:#fff,stroke:#ccc,stroke-dasharray:5,color:#999
+    style F1 fill:#fff,stroke:#ccc,stroke-dasharray:5,color:#999
+</div>
+
+<p>Each degradation pushes load onto Jeff. When L1 fails, roles make wrong timing decisions. When L2 fails, Jeff answers "is Kade online?" When L3 fails, Jeff carries messages between roles. When L4 fails, Jeff directs each step instead of setting direction. The degradation is cumulative &mdash; a team with broken L2 and L3 puts all coordination load on Jeff, even if L4 skills are beautifully designed.</p>
+
+<!-- ============================================================ -->
+<h2>4. Current State</h2>
+
+<div class="stack">
+  <div class="stack-layer l5">
+    <span class="stack-name">L5: Work</span>
+    <span class="status shipped">shipped</span>
+    <div class="stack-guarantee">Board, cards, WIP limits, proving gate, value stream. Solid.</div>
+  </div>
+  <div class="stack-layer l4">
+    <span class="stack-name">L4: Interactions</span>
+    <span class="status rich">rich but floating</span>
+    <div class="stack-guarantee">Nine patterns, five skills, gate mapping, spine events. All assume L3 works.</div>
+  </div>
+  <div class="stack-layer l3">
+    <span class="stack-name">L3: Communication</span>
+    <span class="status designed">designed not built</span>
+    <div class="stack-guarantee">Unix socket + tri-state delivery designed today. Clipboard/AppleScript deprecated. Briefs work (files). Nudge unreliable.</div>
+  </div>
+  <div class="stack-layer l2">
+    <span class="stack-name">L2: Team Awareness</span>
+    <span class="status gap">gap</span>
+    <div class="stack-guarantee">Role state files exist but no query API, no liveness, no last-seen. Roles can't answer "is Kade alive?" without asking Jeff.</div>
+  </div>
+  <div class="stack-layer l1">
+    <span class="stack-name">L1: Time</span>
+    <span class="status shipped">shipped</span>
+    <div class="stack-guarantee">Rust clock sync, wall-clock.sh, chorus prompt refresh. Minor gap: duration validation.</div>
+  </div>
+</div>
+
+<p>We built L1 (foundation) and L4 (rich protocols), with a hollow middle at L2 and L3. This is like building HTTP on unreliable UDP with no ARP &mdash; it works in demo conditions but fails under real coordination load.</p>
+
+<!-- ============================================================ -->
+<h2>5. Build Sequence</h2>
+
+<p>Bottom-up. No layer ships until the layer below it provides its guarantee mechanically.</p>
+
+<table>
+<tr><th>Phase</th><th>Layer</th><th>Work</th><th>Card</th><th>Depends On</th></tr>
+<tr><td><strong>0</strong></td><td style="color:var(--l1)">L1: Time</td><td>Duration validation &mdash; verify self-reported durations against wall clock</td><td>Minor &mdash; fold into existing ops</td><td>Done (shipped)</td></tr>
+<tr><td><strong>1</strong></td><td style="color:var(--l2)">L2: Awareness</td><td>State query API, last-seen tracking, heartbeat/liveness detection</td><td><strong>New card needed</strong></td><td>L1 (clock sync)</td></tr>
+<tr><td><strong>2</strong></td><td style="color:var(--l3)">L3: Communication</td><td>Unix socket transport, tri-state delivery, session input queues, L2-aware routing</td><td>#1591 (nudge wake) + interaction system redesign</td><td>L2 (state query)</td></tr>
+<tr><td><strong>3</strong></td><td style="color:var(--l4)">L4: Interactions</td><td>Wire skills to use L3 transport. Scratch file notifications. Reliable pipeline ticks.</td><td>Existing skills, incremental</td><td>L3 (reliable delivery)</td></tr>
+<tr><td><strong>4</strong></td><td style="color:var(--l5)">L5: Work</td><td>Desk freedom &mdash; roles coordinate without Jeff present</td><td>The goal, not a card</td><td>L2 + L3 + L4</td></tr>
+</table>
+
+<div class="principle">
+<strong>Phase 1 is the critical path.</strong> L2 (team awareness) is the only layer with no card, no design, and no implementation. L3 has a design (today's brief). L4 is rich. L1 is shipped. L2 is the gap that makes everything above it fragile.
+</div>
+
+<!-- ============================================================ -->
+<h2>6. How This Relates to the Other Architecture Docs</h2>
+
+<p>This document is the <strong>dependency model</strong> that connects the other three:</p>
+
+<table>
+<tr><th>Document</th><th>Stack Layer</th><th>What It Defines</th></tr>
+<tr><td><strong>Attention Architecture</strong><br/>(Silas, 2026-03-18)</td><td>L4 + L2</td><td>Three loops (Observer/Navigator/Driver) are L4 protocols. "GET CURRENT TIME on every cycle" is an L1 requirement. Scratch file is an L4 shared-state mechanism that assumes L3 notifications.</td></tr>
+<tr><td><strong>Interaction Architecture</strong><br/>(Wren, pre-2026-03-21)</td><td>L4 + L5</td><td>Nine patterns are L4 constructs. Pattern &rarr; gate mapping connects L4 to L5. Spine events are L4 instrumentation. The "desk freedom test" is an L5 aspiration that requires L2 + L3.</td></tr>
+<tr><td><strong>Memory Architecture</strong><br/>(Wren, pre-2026-03-21)</td><td>Cross-cutting</td><td>Personal memory layers inform L5 (what work matters). Team memory layers map to L2 (Contextual), L4 (Relational), and spine (Operational). The retrieval stack is an L2 implementation pattern.</td></tr>
+<tr><td><strong>This document</strong><br/>(Wren, 2026-03-21)</td><td>All</td><td>The dependency model. Names the layers, defines the guarantees, identifies the gaps, sequences the build.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>7. The TCP/IP Analogy</h2>
+
+<p>Jeff named the pattern: "almost like a network protocol stack &mdash; maybe TCP/IP." The analogy is precise:</p>
+
+<table>
+<tr><th>TCP/IP</th><th>Chorus</th><th>Guarantee</th><th>Failure Mode</th></tr>
+<tr><td>Physical</td><td style="color:var(--l1)"><strong>Time</strong></td><td>Bits arrive at the right moment</td><td>Clock skew &rarr; wrong sequencing</td></tr>
+<tr><td>Data Link</td><td style="color:var(--l2)"><strong>Awareness</strong></td><td>Frames reach the right neighbor</td><td>No ARP &rarr; can't find the host</td></tr>
+<tr><td>Network</td><td style="color:var(--l3)"><strong>Communication</strong></td><td>Packets route to any host</td><td>No routing &rarr; messages drop</td></tr>
+<tr><td>Transport</td><td style="color:var(--l4)"><strong>Interactions</strong></td><td>Reliable streams between endpoints</td><td>No TCP &rarr; best-effort only</td></tr>
+<tr><td>Application</td><td style="color:var(--l5)"><strong>Work</strong></td><td>Apps communicate meaningfully</td><td>No HTTP &rarr; raw bytes</td></tr>
+</table>
+
+<p>We built HTTP (rich interaction skills) on top of UDP (fire-and-forget nudges) with no ARP (can't discover who's online). The protocol stack framing makes the build sequence obvious: ARP before TCP, TCP before HTTP.</p>
+
+<div class="callout green">
+<strong>What changes:</strong> Every future infrastructure card gets a layer tag. "What layer does this serve?" If a card touches L4 but L3 isn't stable, that's a dependency violation &mdash; the card is building on sand. The stack is the sequencing discipline.
+</div>
+
+<!-- ============================================================ -->
+<h2>8. Desk Freedom as the Integration Test</h2>
+
+<p>The Interaction Architecture defined the "desk freedom test": can Jeff step away from the computer and the roles keep working? This is the integration test for the entire stack.</p>
+
+<ul>
+<li><strong>L1 passes</strong> if roles report accurate time while Jeff is away</li>
+<li><strong>L2 passes</strong> if roles can detect each other's presence and state without Jeff</li>
+<li><strong>L3 passes</strong> if a role can send a message to another role and confirm delivery without Jeff</li>
+<li><strong>L4 passes</strong> if two roles can complete a pair session or pipeline handoff without Jeff relaying</li>
+<li><strong>L5 passes</strong> if a card moves from WIP to Done while Jeff is away from the desk</li>
+</ul>
+
+<p>Today, L1 passes. L2 through L5 do not. The stack tells us exactly why and in what order to fix it.</p>
+
+<hr style="border-color:var(--border); margin: 3rem 0 1rem;">
+<p style="color:var(--muted); font-size:0.8rem;">
+  Wren (Product Manager) &middot; 2026-03-21 &middot; Derived from session with Jeff.
+  References: TCP/IP model, Attention Architecture (Silas, 2026-03-18), Interaction Architecture, Memory Architecture, Interaction System Redesign brief (Silas &rarr; Wren, 2026-03-21).
+  Prior art: Bridwell patent US9552400B2 (workflow gates as protocol layers).
+</p>
+
+</body>
+</html>

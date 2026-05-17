@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roles — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #e11d48; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #ffe4e6; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #e11d48; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ffe4e6; color: #9f1239; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #9f1239; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+  pre { background: #f4f4f4; padding: 12px; border-radius: 4px; font-size: 0.78em; overflow-x: auto; margin: 10px 0; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Roles <span>— Service Design</span></h1>
+<p class="date">2026-04-17 — Wren. Source: CLAUDE.md fragments, permissions profiles, state declaration files, observer inference (#2120), board ownership, skill scoping, memory system.</p>
+
+<div class="promise">
+Every role is a coherent, accountable agent: known identity, current charter, bounded permissions, legible state, durable memory. When Roles is healthy, Jeff gets predictable partners whose capabilities, tone, and responsibilities are reliably specified and visible. When Roles drifts, agents lose coherence in isolation and Jeff becomes the charter-keeper — correcting tone, assigning ownership, auditing memory, re-explaining context every session.
+</div>
+
+<h2>Overview</h2>
+<p>Roles is the identity layer of Chorus. It manages who each agent is (identity), what they know (charter), what they can do (permissions), how they hold state (observation + declaration), and what persists across sessions (memory, next-session handoff). It composes ten sub-components into three role-specific configurations (Wren, Silas, Kade) at build time and at runtime.</p>
+
+<p><strong>Roles also depends on four external substrates that give each agent a coherent stance:</strong> Principles (durable commitments), Practices (how principles enact as behavior), Policies (binary rules derived from principles), and Decisions (point-in-time choices that cite principles/practices/policies as rationale). These live in their own sub-domains of the chorus ontology — they are imported, not owned, by Roles. See the Dependencies section below.</p>
+
+<p>Currently three roles — Wren (coordination), Silas (observation/ops), Kade (presentation/code). Each role's runtime configuration comes from a combination of build-time fragments + runtime state + external dependency references. The system is load-bearing across every Chorus sub-product: Pulse reads role state, Clearing renders role tiles, Observer infers role behavior, Board routes card ownership, Gates filter by role, Skills scope invocation.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Source</th><th>Gap</th></tr>
+<tr><td>Identity</td><td><span class="tag-real">REAL</span></td><td>title + principles + tone fragments → composed CLAUDE.md</td><td>None</td></tr>
+<tr><td>Charter</td><td><span class="tag-partial">PARTIAL</span></td><td>designing/claudemd/ shared + role fragments → manifest.json → roles/{role}/CLAUDE.md</td><td>Wren missing working-with-jeff.md; portfolio/tone duplication; no drift detection</td></tr>
+<tr><td>Permissions</td><td><span class="tag-real">REAL</span></td><td>config/profiles/{role}.json + base.json</td><td>None known</td></tr>
+<tr><td>State declaration</td><td><span class="tag-real">REAL</span></td><td>/tmp/claude-team-scan/{role}-declared.json via role-state script</td><td>Manual; decays without explicit transitions</td></tr>
+<tr><td>State inference</td><td><span class="tag-real">REAL</span></td><td>observer.rs reads tool calls → writes declared.json when divergence detected (#2120, shipped today)</td><td>Precedence tuning (#2140 60s/120s override)</td></tr>
+<tr><td>Memory</td><td><span class="tag-real">REAL</span></td><td>~/.claude/projects/.../memory/ per role</td><td>No cross-role visibility; no governance on accretion</td></tr>
+<tr><td>Working directory</td><td><span class="tag-real">REAL</span></td><td>roles/{role}/ — briefs/, next-session.md, state files, activity</td><td>None</td></tr>
+<tr><td>Skills</td><td><span class="tag-real">REAL</span></td><td>platform/skills/ + skill-level owner checks</td><td>Some drift in skill/role coupling</td></tr>
+<tr><td>Session continuity</td><td><span class="tag-real">REAL</span></td><td>next-session.md written at close, consumed at open</td><td>Consumption is manual — no verification it's read</td></tr>
+<tr><td>Accountability</td><td><span class="tag-partial">PARTIAL</span></td><td>spine events tag role; Board assigns owner; gates filter by role</td><td>Owner defaults to filer → wrong-owner bugs (observed today)</td></tr>
+</table>
+
+<!-- ==================== SUB-DOMAIN INTERACTIONS ==================== -->
+<h2>Sub-Domain Interaction Model</h2>
+<p>Roles provides the identity surface; other sub-products read or write against it. The core pattern: Roles doesn't dictate behavior; it supplies identity and state that other sub-products act on. Consistent with Pulse's "assembler not generator" shape — Roles is the <em>source</em> of identity, not the enforcer of it.</p>
+
+<table>
+<tr><th>Trigger</th><th>Produces</th><th>Consumed By</th><th>Surface</th></tr>
+<tr><td>Role declares state</td><td>declared.json update</td><td>Pulse, Clearing, watchdog</td><td><code>/tmp/claude-team-scan/{role}-declared.json</code></td></tr>
+<tr><td>Role runs a tool</td><td>observer writes inferred card</td><td>Pulse (divergence), Clearing (tile)</td><td>declared.json (merged)</td></tr>
+<tr><td>Card moves to WIP with owner</td><td>Board ownership signal</td><td>Observer (precedence), Pulse (wip_cards)</td><td>Vikunja + board-wip-snapshot.json</td></tr>
+<tr><td>Session closes</td><td>next-session.md written</td><td>Next session's boot synthesis</td><td><code>roles/{role}/next-session.md</code></td></tr>
+<tr><td>Session starts</td><td>session-start-{role}.md generated</td><td>Role's first response</td><td><code>/tmp/session-start-{role}.md</code></td></tr>
+<tr><td>Role saves memory</td><td>Memory file updated</td><td>Role's future sessions only</td><td><code>~/.claude/projects/.../memory/</code></td></tr>
+<tr><td>Spine event emitted</td><td>Event tagged with role</td><td>Loki, Chorus search, nightly quality</td><td><code>chorus.log</code></td></tr>
+<tr><td>Card gated</td><td>Gate filtered by role</td><td>Owner role runs gate</td><td>Skill invocation (gate-product=Wren, gate-code=Kade, gate-arch=Silas)</td></tr>
+<tr><td>Skill invoked</td><td>Skill checks owner role</td><td>Skill runs or refuses</td><td>Skill tool invocation</td></tr>
+</table>
+
+<!-- ==================== DEPENDENCIES ==================== -->
+<h2>Dependencies — the four substrates</h2>
+<p>Per Jeff's 4-layer decomposition (2026-04-17): roles depend on four external substrates for the stance they operate from. Each lives in its own sub-domain of the chorus ontology.</p>
+
+<table>
+<tr><th>Dependency</th><th>Sub-domain</th><th>Status</th><th>Instances</th><th>Notes</th></tr>
+<tr><td>Principles (durable commitments)</td><td><code>loom-principles</code></td><td><span class="tag-real">POPULATED</span></td><td>10</td><td>3 added 2026-04-17: focus-is-infrastructure, quality-at-source, speed-and-quality-correlate</td></tr>
+<tr><td>Practices (how principles enact)</td><td><code>loom-practices</code></td><td><span class="tag-real">POPULATED</span></td><td>7</td><td>actor-bdd, domain-first, service-next, product-owner-aligned, tdd, production-ready, api-first</td></tr>
+<tr><td>Policies (binary rules)</td><td><code>loom-policies</code></td><td><span class="tag-none">MISSING</span></td><td>—</td><td>Sub-domain does not exist; blocked on #2151 stand-up</td></tr>
+<tr><td>Decisions (point-in-time choices)</td><td><code>loom-decisions</code></td><td><span class="tag-partial">SHELL</span></td><td>0</td><td>Sub-domain exists but empty; blocked on #2152 harvest of ~200 DEC-NNN + ~25 ADR-NNN</td></tr>
+</table>
+
+<p><strong>Why dependencies matter to Roles:</strong> a role's identity is coherent because it stands on stable principles, enacts them via practices, bounds itself with policies, and cites decisions as the audit trail for why it acts the way it does. When any layer drifts (principle redefined but practices unchanged; decision made but not broadcast), roles operate inconsistently and Jeff becomes the layer-reconciler.</p>
+
+<p><strong>Charter vs team principles.</strong> Each role has role-specific operating principles in its CLAUDE.md charter fragment (<code>wren/principles.md</code>, etc.) — those are role-scoped emphasis. The team-wide 10 principles in <code>loom-principles</code> are the shared doctrine. Both exist; they don't compete. Charter fragments should cite team principles where applicable rather than paraphrase them.</p>
+
+<!-- ==================== IDENTITY ==================== -->
+<div class="component">
+<h3>Identity <span class="tag-real">REAL</span></h3>
+<p>Each role has three constitutive fragments composing who the agent is: name + purpose, operating principles, communication style.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>designing/claudemd/roles/{role}/</code><br/>
+    title.md, principles.md, tone.md
+  </div>
+  <div class="section-box"><strong>Fields</strong>
+    role name, emoji, one-sentence purpose, core principles, communication style
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    Manual edit → manifest version bump → composed CLAUDE.md regenerated
+  </div>
+</div>
+<div class="resolved"><strong>Working:</strong> All three roles have complete identity fragments. Composed CLAUDE.md regenerates cleanly on version bump.</div>
+</div>
+
+<!-- ==================== CHARTER ==================== -->
+<div class="component">
+<h3>Charter (CLAUDE.md composition) <span class="tag-partial">PARTIAL</span></h3>
+<p>Shared disciplines + role-specific fragments composed by manifest.json into the role's authoritative CLAUDE.md. Canonical + role overlay pattern (per Silas, 2026-04-17): shared-fragment + role-hook fragment in listed order, declarative, no templating.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>designing/claudemd/shared/*.md</code><br/>
+    <code>designing/claudemd/roles/{role}/*.md</code><br/>
+    <code>designing/claudemd/manifest.json</code>
+  </div>
+  <div class="section-box"><strong>Output</strong>
+    <code>roles/{role}/CLAUDE.md</code><br/>
+    Currently manifest v164 (auto-bumps on fragment change)
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    On fragment edit, auto-bump version; rebuild per-role CLAUDE.md
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Wren missing <code>working-with-jeff.md</code> that Silas and Kade both have — asymmetric charter. portfolio.md ~90% duplicated across roles; tone.md ~70% overlap. No automated drift detection (#2150 will add a lint-fragments.sh with 6 fitness rules).</div>
+</div>
+
+<!-- ==================== PERMISSIONS ==================== -->
+<div class="component">
+<h3>Permissions <span class="tag-real">REAL</span></h3>
+<p>Per-role permission profiles control which tools and paths each role can touch. Enforced by the hooks system at PreToolUse time.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>config/profiles/{role}.json</code><br/>
+    <code>config/profiles/base.json</code>
+  </div>
+  <div class="section-box"><strong>Fields</strong>
+    Allowed/denied tool names, path patterns, env var names (never values — data safety)
+  </div>
+  <div class="section-box"><strong>Enforcement</strong>
+    chorus-hooks PreToolUse evaluates profile on every tool call
+  </div>
+</div>
+<div class="resolved"><strong>Working:</strong> All three roles have profiles. Base profile shared; role profiles layer on top.</div>
+</div>
+
+<!-- ==================== STATE DECLARATION ==================== -->
+<div class="component">
+<h3>State Declaration <span class="tag-real">REAL</span></h3>
+<p>Each role declares its state via the <code>role-state</code> script. Declared state is what the role is claiming it's doing. Reads: Pulse, Clearing, watchdog.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>/tmp/claude-team-scan/{role}-declared.json</code><br/>
+    Written by <code>platform/scripts/role-state</code>
+  </div>
+  <div class="section-box"><strong>States</strong>
+    building, blocked, waiting, observing, idle
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    On transitions — pull, accept, pair start/end, idle
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Manual declaration decays when role forgets to transition. Today's Kade rotation to #2119 without re-declaring #1718 was the motivating incident for #2120 inference. Observer now backstops; declaration alone no longer authoritative.</div>
+</div>
+
+<!-- ==================== STATE INFERENCE ==================== -->
+<div class="component">
+<h3>State Inference <span class="tag-real">REAL</span> (shipped 2026-04-17, #2120)</h3>
+<p>Observer parses each tool call for card evidence, reconciles against board ownership, writes inferred card alongside declared. Divergence surfaces visibly on Pulse + Clearing (tile flips orange with "#declared → #inferred" tooltip).</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>platform/services/chorus-hooks/src/hooks/observer.rs</code><br/>
+    Parses: cards CLI calls, commit messages, chat topics, brief paths
+  </div>
+  <div class="section-box"><strong>Precedence</strong>
+    (1) Board WIP ownership = authoritative<br/>
+    (2) Tool-call regex patterns<br/>
+    (3) Fall through to declared
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    Inline in observer hook, subsecond
+  </div>
+</div>
+<div class="resolved"><strong>Working:</strong> Divergence-as-feature replaces silent-lie. 60s manual-override preserves human intent when declaring; ship-and-observe window may need tuning to 120s (#2140).</div>
+</div>
+
+<!-- ==================== MEMORY ==================== -->
+<div class="component">
+<h3>Memory <span class="tag-real">REAL</span></h3>
+<p>Each role has a persistent memory directory with typed memory files: user, feedback, project, reference. MEMORY.md indexes the directory. Loaded into role context on every session.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>~/.claude/projects/{project}/memory/MEMORY.md</code><br/>
+    Plus typed memory files (feedback_*.md, project_*.md, etc.)
+  </div>
+  <div class="section-box"><strong>Types</strong>
+    user (who Jeff is), feedback (rules), project (ongoing work), reference (pointers)
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    On role-triggered save — new memories, updates, removals
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> No cross-role visibility — Wren's memory is invisible to Silas and Kade. No schema enforcement. No audit trail of memory edits. Memory accretion can become performative (observed 2026-04-17: writing a memory as a stand-in for behavior change).</div>
+</div>
+
+<!-- ==================== WORKING DIRECTORY ==================== -->
+<div class="component">
+<h3>Working Directory <span class="tag-real">REAL</span></h3>
+<p>Filesystem presence per role: composed CLAUDE.md, inbox, self-handoff, state files, archives.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>roles/{role}/</code>
+  </div>
+  <div class="section-box"><strong>Contents</strong>
+    CLAUDE.md (composed), briefs/, next-session.md, state files, archives/
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    Continuous — briefs arrive, state files update, CLAUDE.md rebuilds on bump
+  </div>
+</div>
+<div class="resolved"><strong>Working:</strong> Convention stable. Brief routing writes to recipient's directory (not sender's).</div>
+</div>
+
+<!-- ==================== SKILLS ==================== -->
+<div class="component">
+<h3>Skills <span class="tag-real">REAL</span></h3>
+<p>Skills are invocation units with owner checks. Role calls <code>/{skill-name}</code>; skill runtime checks role identity in the SKILL.md header before executing.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>platform/skills/{skill-name}/SKILL.md</code><br/>
+    Owner declared in front-matter
+  </div>
+  <div class="section-box"><strong>Role scoping</strong>
+    gate-product = Wren only<br/>
+    gate-code, gate-quality = Kade only<br/>
+    gate-arch, gate-ops = Silas only
+  </div>
+  <div class="section-box"><strong>Enforcement</strong>
+    Skill runtime owner check; refuses with "owned by X" message
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Some drift in skill/role coupling — skills can accumulate, and role ownership in SKILL.md isn't surfaced anywhere queryable (like a skill registry). #1576 open for skill registry API.</div>
+</div>
+
+<!-- ==================== SESSION CONTINUITY ==================== -->
+<div class="component">
+<h3>Session Continuity <span class="tag-real">REAL</span></h3>
+<p>Self-handoff mechanism: at session close, role writes what next session needs to know; at session open, synthesizer reads it into the session-start file.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Source</strong>
+    <code>roles/{role}/next-session.md</code><br/>
+    Read by <code>context_cache.rs</code> at session start
+  </div>
+  <div class="section-box"><strong>Output</strong>
+    <code>/tmp/session-start-{role}.md</code><br/>
+    Loaded as first-response context
+  </div>
+  <div class="section-box"><strong>Update Frequency</strong>
+    Written at close-out (MANDATORY in charter); consumed at open
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Consumption is not verified. next-session.md gets read into session-start, but there's no check that the role actually opened the session-start file. Trust gap on self-handoff.</div>
+</div>
+
+<!-- ==================== ACCOUNTABILITY ==================== -->
+<div class="component">
+<h3>Accountability <span class="tag-partial">PARTIAL</span></h3>
+<p>Three accountability substrates: spine events tag emitting role; Board cards have a single owner; Gates filter by role. Together: who did what, who owns what, who's accountable.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Spine</strong>
+    <code>chorus.log</code> every event has a role field
+  </div>
+  <div class="section-box"><strong>Board</strong>
+    Vikunja card owner + board-wip-snapshot.json
+  </div>
+  <div class="section-box"><strong>Gates</strong>
+    Each gate declares its owner role; refuses if wrong role invokes
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Owner defaults to filer in cards CLI. Wrong-owner bugs observed repeatedly on 2026-04-17 (Wren defaulting own product to Kade; then filing Silas-domain work to self). No intent check at card creation — "is this owner correct?" doesn't surface.</div>
+</div>
+
+<!-- ==================== SURFACES ==================== -->
+<h2>Surfaces</h2>
+<p>Roles exposes no API of its own. It contributes to other APIs and surfaces.</p>
+<ul style="font-size: 0.88em; margin-left: 20px; margin-bottom: 10px;">
+  <li><code>/tmp/pulse-latest.json</code> → <code>roles.{role}.*</code> (state, inferred/declared card, age, staleness)</li>
+  <li><code>GET /api/chorus/pulse/latest</code> → same, served via HTTP</li>
+  <li>The Clearing tiles (<code>directing/clearing/public/index.html</code>) — per-role tile with state, card, divergence indicator</li>
+  <li>Chorus search → events filtered by role</li>
+  <li>Gates → each gate enforces role ownership on invocation</li>
+</ul>
+
+<!-- ==================== CONSUMERS ==================== -->
+<h2>Consumers</h2>
+<table>
+<tr><th>Consumer</th><th>Uses Roles For</th><th>Status</th></tr>
+<tr><td>Pulse</td><td>roles.{role} state for snapshot</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>The Clearing</td><td>Role tiles + state + divergence</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Observer</td><td>declared.json write; board ownership read</td><td><span class="tag-real">WIRED</span> (shipped today)</td></tr>
+<tr><td>Board</td><td>Card owner filter</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Gates</td><td>Role owner check</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Session boot</td><td>CLAUDE.md + session-start + pulse read</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Skills</td><td>Owner check</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Watchdog</td><td>Detect role staleness</td><td><span class="tag-none">NOT WIRED</span> — follow-on</td></tr>
+<tr><td>Cross-role memory search</td><td>Shared memory index</td><td><span class="tag-none">NOT WIRED</span> — follow-on</td></tr>
+</table>
+
+<!-- ==================== GAPS ==================== -->
+<h2>Gaps</h2>
+<div class="gap"><strong>1. Charter drift detection.</strong> No linter exists. Asymmetry (Wren missing working-with-jeff.md) and duplication (portfolio 90%, tone 70%) only found via manual audit.</div>
+<div class="gap"><strong>2. Charter coherence.</strong> Canonical + role overlay pattern not yet expressed in manifest; shared-with-tint cases are duplicated instead of extracted.</div>
+<div class="gap"><strong>3. Manual state decay.</strong> Declared state can go stale if role doesn't transition explicitly. #2120 observer now backstops this; 60s/120s override still tuning (#2140).</div>
+<div class="gap"><strong>4. Memory governance.</strong> Each role accretes memory independently; no cross-role visibility, no schema enforcement, no audit trail of changes. Memories can become performative (observed today) without structural check.</div>
+<div class="gap"><strong>5. Session continuity trust.</strong> next-session.md is written and consumed, but no verification the next session actually reads it. Close-out is MANDATORY in charter; consumption is not.</div>
+<div class="gap"><strong>6. Accountability at card-create.</strong> Owner defaults to filer in cards CLI. Wrong-owner bugs happen; no intent check at card creation.</div>
+<div class="gap"><strong>7. Roles sub-product not in Athena.</strong> chorus domain in Athena is 50% complete; services section empty. Roles should be first-class alongside Pulse, Observer, Scrubber, Context Cache, Stop-the-line.</div>
+<div class="gap"><strong>8. Dependency chain half-populated.</strong> Roles depend on principles + practices + policies + decisions (see Dependencies). Only principles + practices are populated. <code>loom-policies</code> is missing entirely (#2151). <code>loom-decisions</code> is an empty shell — ~225 DEC-NNN and ADR-NNN entries haven't been harvested (#2152). Roles can't formally cite its full substrate until these are filled.</div>
+<div class="gap"><strong>9. No <code>dependsOn</code> edge in the graph.</strong> The four-layer dependency is described in this doc but not yet expressed as a formal ontology relationship. Should be a <code>chorus:dependsOn</code> edge from the Roles sub-product to each of the four sub-domains so the dependency is queryable, not just documented.</div>
+
+<!-- ==================== NEXT STEPS ==================== -->
+<h2>Next Steps</h2>
+<table>
+<tr><th>#</th><th>Action</th><th>Impact</th><th>Owner</th><th>Status</th></tr>
+<tr><td>1</td><td>Populate Athena chorus-domain services section with Roles + siblings</td><td>Taxonomy lives in the graph, not in heads</td><td>Wren</td><td>In-progress (3 principles landed 2026-04-17)</td></tr>
+<tr><td>2</td><td>#2150 fragment streamlining, informed by this design (asymmetry + overlay + linter)</td><td>Closes Wren asymmetry, extracts duplication, adds drift detection</td><td>Wren (Silas contributes)</td><td>Later (parked pending this design)</td></tr>
+<tr><td>3</td><td>#2151 stand up <code>loom-policies</code> sub-domain</td><td>Completes the 4-layer dependency substrate</td><td>Wren</td><td>Next</td></tr>
+<tr><td>4</td><td>#2152 harvest DEC-NNN + ADR-NNN into <code>loom-decisions</code></td><td>Fills the empty decisions shell; makes ~225 decisions queryable</td><td>Wren</td><td>Next</td></tr>
+<tr><td>5</td><td>Express Roles → {Principles, Practices, Policies, Decisions} as formal <code>chorus:dependsOn</code> edge in the ontology</td><td>Dependency chain becomes graph-queryable, not just doc-described</td><td>Wren</td><td>Unfiled</td></tr>
+<tr><td>6</td><td>Memory governance — cross-role visibility, schema, audit trail</td><td>Removes performativity incentive; makes memory a team asset</td><td>Unfiled</td><td>—</td></tr>
+<tr><td>7</td><td>Owner-intent check at card creation — intent-vs-default-to-filer</td><td>Removes wrong-owner bugs at source</td><td>Unfiled</td><td>—</td></tr>
+<tr><td>8</td><td>Session continuity verification — mark consumed, spine event on first read</td><td>Closes trust gap on self-handoff</td><td>Unfiled</td><td>—</td></tr>
+<tr><td>9</td><td>Roles product page at 3340/chorus (post #2116 migration)</td><td>Public surface for the sub-product; parallel to eventual Pulse page</td><td>Unfiled</td><td>—</td></tr>
+</table>
+
+<!-- ==================== OUT OF SCOPE ==================== -->
+<h2>Not In Scope</h2>
+<ul style="font-size: 0.88em; margin-left: 20px; margin-bottom: 10px;">
+  <li><strong>Behavioral decay</strong> in chartered disciplines (role not practicing what CLAUDE.md says). Roles defines the charter, doesn't enforce practice. Enforcement mechanisms (gates, fitness functions, #2145 stop-the-line hook) are other sub-products.</li>
+  <li><strong>Adding new roles.</strong> This design assumes three; extending to N roles is a capacity conversation, not a product-shape one.</li>
+  <li><strong>Replacing Vikunja</strong> with a Chorus-native board. Board is a consumer of Roles owner info; different product, different card.</li>
+</ul>
+
+</body>
+</html>

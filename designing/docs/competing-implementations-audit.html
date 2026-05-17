@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Competing Implementations — As-Is vs To-Be</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; max-width: 1100px; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #0d9488; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.3em; margin-top: 2.5em; color: #1a1a1a; border-bottom: 2px solid #0d9488; padding-bottom: 6px; }
+  h3 { font-size: 1em; margin-top: 1.4em; color: #444; }
+  p { margin-bottom: 10px; font-size: 0.9em; }
+  .promise { background: #ccfbf1; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #0d9488; font-style: italic; font-size: 0.9em; }
+  .thesis { background: #ecfeff; border: 1px solid #67e8f9; border-radius: 6px; padding: 14px 18px; margin: 16px 0; font-size: 0.92em; }
+  .thesis strong { color: #155e75; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.86em; }
+  .gap strong { color: #dc2626; }
+  .change { background: #f0fdf4; padding: 10px 14px; margin: 10px 0; border-radius: 4px; font-size: 0.86em; border-left: 3px solid #16a34a; }
+  .change strong { color: #15803d; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.84em; }
+  th { text-align: left; padding: 6px 10px; background: #ccfbf1; color: #115e59; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .mermaid { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 18px; margin: 14px 0; overflow-x: auto; }
+  .diagram-caption { font-size: 0.8em; color: #666; font-style: italic; margin: -6px 0 18px 4px; }
+  .service-block { margin-top: 40px; padding: 20px 24px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+  .service-block h2 { margin-top: 0; }
+  .diagram-label { font-size: 0.88em; font-weight: 600; color: #115e59; margin: 18px 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { curve: 'basis', padding: 12 } });</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Competing Implementations <span>— As-Is vs To-Be Across Services</span></h1>
+<p class="date">2026-04-21 — Silas. Input to #2437. Three services audited: Nudge, Spine, Chorus (product level). Same pattern as #2280 pulse: one concept, multiple implementations that drift.</p>
+
+<p class="promise">One concept, one canonical surface. Every other representation is a derived projection, never a competing source of truth. When an agent wants "current state of X," there's one answer — not four, not filtered, not synthesized in middleware.</p>
+
+<div class="thesis">
+<strong>The pattern in plain language:</strong> every stateful signal in Chorus today has two or more places that claim to own it. A nudge exists in Bridge API + queue file + spine events. Role state exists in <code>declared.json</code> + <code>inferred.json</code> + spine + pulse + Clearing tile. Board state exists in Vikunja + <code>board-wip-snapshot.json</code> + pulse + Chorus index. These surfaces drift. Middleware filters one to match another. Agents form claims on whichever surface they happened to read. The remedy is structural: pick the canonical surface per concern, derive the rest.
+</div>
+
+<!-- ==================== NUDGE ==================== -->
+<div class="service-block">
+<h2>1. Nudge</h2>
+
+<p>A single <code>nudge</code> invocation today writes to <strong>three</strong> persistence surfaces. Two of them are redundant with the spine; one of them (the queue file) is semantically a delivery-failure fallback but behaves like a parallel store when drained.</p>
+
+<div class="diagram-label">As-Is</div>
+<div class="mermaid">
+flowchart LR
+  subgraph P["Source"]
+    CLI["nudge CLI<br/>(role sessions, skills, hooks)"]
+  end
+
+  subgraph SURF["Three persistence surfaces — competing"]
+    BRI["Bridge API POST /api/nudge :3475<br/>→ messages.db"]
+    QUE["/tmp/voice-inbox/&lt;role&gt;/pending-inject.txt<br/>(queue file)"]
+    SPN["chorus.log spine events<br/>nudge.persisted<br/>nudge.delivered<br/>nudge.failed"]
+  end
+
+  subgraph DEL["Delivery"]
+    INJ["chorus-inject<br/>osascript → Terminal"]
+    DRN["UserPromptSubmit drain<br/>reads queue file, injects, deletes"]
+  end
+
+  subgraph CONS["Consumers"]
+    TERM["Role Terminal<br/>(primary target)"]
+    CLEAR["Clearing UI<br/>messages surface"]
+    AUD["Audit / history"]
+  end
+
+  CLI --> BRI
+  CLI --> SPN
+  CLI --> INJ
+  INJ -. "on inject fail" .-> QUE
+  QUE --> DRN
+  DRN --> TERM
+  INJ --> TERM
+  BRI --> CLEAR
+  BRI --> AUD
+  SPN --> AUD
+
+  classDef competing fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class BRI,QUE,SPN competing
+</div>
+<p class="diagram-caption">Red = three surfaces claiming to record "a nudge happened." They can and do disagree — Bridge API could be down while spine records the emit; queue file could persist after a successful inject if delivery logic mis-branches (prior bug).</p>
+
+<div class="diagram-label">To-Be</div>
+<div class="mermaid">
+flowchart LR
+  subgraph P["Source"]
+    CLI["nudge CLI"]
+  end
+
+  subgraph REG["Event registry"]
+    TYPES["nudge.emitted<br/>nudge.delivered<br/>nudge.failed<br/>SHACL-validated"]
+  end
+
+  subgraph CAN["Canonical store"]
+    SPN["chorus.log spine events<br/>ONE source of truth"]
+  end
+
+  subgraph DEL["Delivery — no new state"]
+    INJ["chorus-inject<br/>osascript"]
+    DRN["Drain = fold over<br/>nudge.emitted minus nudge.delivered"]
+  end
+
+  subgraph DER["Derived projections — read-only"]
+    CLEAR["Clearing messages index<br/>(fold over nudge.* events)"]
+    PEND["Pending-delivery projection<br/>(what's unacked)"]
+  end
+
+  subgraph CONS["Consumers"]
+    TERM["Role Terminal"]
+    CLUI["Clearing UI"]
+  end
+
+  CLI -- "emit nudge.emitted" --> SPN
+  REG -. validates .-> SPN
+  SPN --> INJ
+  INJ --> TERM
+  INJ -- "emit nudge.delivered / nudge.failed" --> SPN
+  SPN --> CLEAR
+  SPN --> PEND
+  PEND --> DRN
+  DRN --> TERM
+  CLEAR --> CLUI
+
+  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef derived fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+  class SPN,REG canon
+  class CLEAR,PEND derived
+</div>
+<p class="diagram-caption">Green = canonical. Blue = derived projections that never own state. Queue file retires entirely — "pending delivery" is a fold (<code>nudge.emitted</code> with no matching <code>nudge.delivered</code>), not a separate file. messages.db becomes a derived Clearing index, not a write target.</p>
+
+<div class="change"><strong>What changes:</strong> Bridge API /api/nudge becomes a thin wrapper that emits a spine event (no more messages.db as primary). Queue file goes away. Delivery drain reads the pending-delivery projection. <code>--dry-run</code> becomes "emit but skip inject" — still one event type, one path.</div>
+</div>
+
+<!-- ==================== SPINE ==================== -->
+<div class="service-block">
+<h2>2. Spine</h2>
+
+<p>Spine today is a single file (<code>chorus.log</code>) with ad-hoc event shapes. No registry. No validation. Workflow events and telemetry events interleave. No retention policy — #2323 swat had to purge 24k <code>search.query.executed</code> rows the FTS was eating. The file is canonical in spirit but not in contract.</p>
+
+<div class="diagram-label">As-Is</div>
+<div class="mermaid">
+flowchart LR
+  subgraph WR["Writers — no registry"]
+    CLSH["chorus-log shell script"]
+    RUST["chorus-hooks Rust emit"]
+    SCR["Scripts that tail + re-emit"]
+  end
+
+  subgraph LOG["chorus.log"]
+    LINES["JSONL append-only<br/>event shapes ad-hoc<br/>no schema validation<br/>no retention policy"]
+  end
+
+  subgraph MIX["Tiers interleaved"]
+    WF["Workflow events<br/>card.pulled, nudge.*, gate.*"]
+    TEL["Telemetry events<br/>search.query.executed<br/>hook.invoked"]
+    AUD["Audit events<br/>acp.committed, deploy.*"]
+  end
+
+  subgraph RE["Readers"]
+    BSUB["bridge-subscriber<br/>tail + filter"]
+    OBS["observer.rs<br/>per-role read"]
+    API["/api/chorus/spine/tail"]
+    INDEX["Chorus FTS index<br/>ingests all events"]
+    SCAN["Ad-hoc scanners"]
+  end
+
+  WR --> LINES
+  LINES --- WF
+  LINES --- TEL
+  LINES --- AUD
+  LINES --> BSUB
+  LINES --> OBS
+  LINES --> API
+  LINES --> INDEX
+  LINES --> SCAN
+
+  classDef problem fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class LINES,INDEX problem
+</div>
+<p class="diagram-caption">Red = no schema, no tier separation, no retention. FTS indexing all events is how #2323 happened — telemetry flooded workflow search.</p>
+
+<div class="diagram-label">To-Be</div>
+<div class="mermaid">
+flowchart LR
+  subgraph WRT["Writers"]
+    PROD["Producers emit<br/>typed events"]
+  end
+
+  subgraph REG["Event-type registry (Fuseki)"]
+    TTL["event-types.ttl<br/>one schema per type<br/>SHACL-validated"]
+    CLASS["Tier classification<br/>workflow / telemetry / audit"]
+  end
+
+  subgraph STORES["Tiered storage"]
+    WFLOG["workflow.log<br/>retained, canonical"]
+    TELOG["telemetry.log<br/>rotated, sampled"]
+    AUDLOG["audit.log<br/>retained long"]
+  end
+
+  subgraph RE["Typed consumers"]
+    FOLDS["Fold functions<br/>current-state projections<br/>(pulse, role state, board)"]
+    SUBS["Typed subscribers<br/>filter by event type"]
+    FTS["FTS index<br/>workflow-only"]
+  end
+
+  PROD -- "validated emit" --> REG
+  REG --> WFLOG
+  REG --> TELOG
+  REG --> AUDLOG
+  WFLOG --> FOLDS
+  WFLOG --> SUBS
+  WFLOG --> FTS
+
+  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef derived fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+  class REG,WFLOG,AUDLOG canon
+  class FOLDS,FTS derived
+</div>
+<p class="diagram-caption">Green = canonical + registry. Blue = derived. Event registry lives in Fuseki (already our ontology surface); emit is validated at write. Tiering keeps telemetry from polluting workflow and FTS.</p>
+
+<div class="change"><strong>What changes:</strong> <code>chorus-log</code> becomes a thin wrapper that looks up the event type in the registry, validates the payload, routes by tier. Unregistered event types fail fast (or warn to a quarantine stream). FTS index stops ingesting telemetry — the #2323 class of bug is impossible by construction. Fold functions become the single read-path for projections (pulse, role state, board snapshot).</div>
+</div>
+
+<!-- ==================== CHORUS PRODUCT ==================== -->
+<div class="service-block">
+<h2>3. Chorus (product level)</h2>
+
+<p>At the product level, the competing-implementations pattern shows as <strong>the same signal living in multiple stores across multiple APIs with no clear canonical surface per concern</strong>. Role state lives in five places. Board state lives in four. Nudge state lives in three. Each API surfaces whichever store it grew up around. The detector this generates is: "does this signal have more than one write path?"</p>
+
+<div class="diagram-label">As-Is</div>
+<div class="mermaid">
+flowchart TB
+  subgraph APIS["APIs — no tier, overlapping concerns"]
+    G3000["gathering-app :3000"]
+    C3340["chorus-api :3340"]
+    B3475["bridge :3475"]
+    M3470["messaging :3470"]
+    F3030["fuseki :3030"]
+    L3102["loki :3102"]
+  end
+
+  subgraph STORES["Stores — no canonical designation"]
+    VK["Vikunja (cards)"]
+    FU["Fuseki (ontology)"]
+    SPNL["chorus.log (events)"]
+    MDB["messages.db (nudges + chat)"]
+    LDB["LanceDB (embeddings)"]
+    TMP["/tmp/* cache files"]
+    RS["role state files"]
+    IDX["Chorus index SQLite FTS"]
+  end
+
+  subgraph SIGS["Same signals, multiple stores"]
+    ROLE["Role state:<br/>declared.json + inferred.json + spine + pulse + Clearing tile"]
+    BOARD["Board state:<br/>Vikunja + board-wip-snapshot.json + pulse + Chorus index"]
+    NUDGE["Nudge:<br/>Bridge API + messages.db + queue file + spine"]
+    ALERT["Alert:<br/>/tmp/alert-* + Grafana + pulse + spine"]
+  end
+
+  APIS --> STORES
+  STORES --> SIGS
+
+  classDef problem fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class SIGS,ROLE,BOARD,NUDGE,ALERT problem
+</div>
+<p class="diagram-caption">Red = four concrete instances of the pattern at product scale. Each row is a concept with no canonical surface. Every consumer must choose one; they choose different ones; drift follows.</p>
+
+<div class="diagram-label">To-Be</div>
+<div class="mermaid">
+flowchart TB
+  subgraph CAN["Canonical stores — one per concern"]
+    VK["Vikunja → cards (board truth)"]
+    FU["Fuseki → ontology + event registry + principles"]
+    SPN["chorus.log → events (role, nudge, alert, gate, deploy...)"]
+  end
+
+  subgraph DER["Derived projections — read-only, re-buildable"]
+    PROJ["pulse (state fold)<br/>messages index<br/>role-state projection<br/>board snapshot<br/>alert-status projection<br/>Chorus FTS index<br/>LanceDB embeddings"]
+  end
+
+  subgraph APIS["APIs — thin adapters"]
+    A1["gathering-app :3000<br/>UI routes + static"]
+    A2["chorus-api :3340<br/>canonical reads + projection serves"]
+    A3["bridge :3475<br/>event publisher (wraps emit)"]
+  end
+
+  subgraph UI["Consumers"]
+    CL["Clearing"]
+    GA["gathering-app views"]
+    AGT["Agents"]
+  end
+
+  CAN --> DER
+  CAN --> APIS
+  DER --> APIS
+  APIS --> CL
+  APIS --> GA
+  APIS --> AGT
+
+  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
+  classDef derived fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+  classDef api fill:#fef3c7,stroke:#d97706,color:#78350f
+  class CAN canon
+  class DER derived
+  class APIS api
+</div>
+<p class="diagram-caption">Green = three canonical stores, each owning one concern exclusively. Blue = derived projections that read from canonical, never write. Amber = APIs as thin adapters — they don't own state, they serve it. Every signal has exactly one write path.</p>
+
+<div class="change"><strong>What changes at the product level:</strong> every signal gets a canonical store designation. Stores that currently act as primary for their concern but shouldn't (messages.db for nudges, <code>/tmp/*</code> for role state) get demoted to derived projections or retired. APIs get re-scoped — <code>bridge :3475</code> becomes "event publisher endpoint," <code>chorus-api :3340</code> becomes "canonical-read + projection-serve," <code>gathering-app :3000</code> becomes "UI routes + static assets" and stops holding state. The ontology-aware write-gate blocks new stores from claiming ownership that already has a canonical home.</div>
+</div>
+
+<!-- ==================== WHAT THE DETECTOR DOES ==================== -->
+<h2>What the detector does, given this map</h2>
+
+<p>With the canonical surfaces named, a write-gate can ask three questions against the ontology at emission time:</p>
+
+<ol style="margin-left: 24px; font-size: 0.88em;">
+<li><strong>New event type?</strong> Emission of an event name not in <code>event-types.ttl</code> → block or warn loudly.</li>
+<li><strong>New state file?</strong> A write to <code>/tmp/*.json</code> that isn't a known derived-projection path → flag as a candidate competing implementation.</li>
+<li><strong>Cross-store write?</strong> A handler that writes to more than one canonical store in the same operation → suspicious; audit whether one of the writes should be a derived projection instead.</li>
+</ol>
+
+<p>None of these detections need to be perfect — they need to raise architect visibility before a new competing surface lands. The registry is the shared prior knowledge the detector enforces; the audit (#2437) populates the registry; the to-be diagrams here are the target the registry encodes.</p>
+
+<h2>Next moves</h2>
+
+<table>
+<tr><th>Step</th><th>Card / artifact</th><th>Why this order</th></tr>
+<tr><td>1. Inventory</td><td>#2437 (filed) — audit every signal, classify canonical vs derived</td><td>Can't write a detector without knowing the target; can't cut over without knowing what's dual-written.</td></tr>
+<tr><td>2. Event registry</td><td>TBD — populate <code>event-types.ttl</code> from inventory</td><td>Registry is the detector's reference.</td></tr>
+<tr><td>3. Write-gate prototype</td><td>TBD — ontology-aware PreToolUse hook, starts as warn-only</td><td>Warn-only gives us signal on false-positive rate before we block.</td></tr>
+<tr><td>4. Per-service cutover</td><td>One card per service from inventory</td><td>Each cutover is bounded work once target is named.</td></tr>
+<tr><td>5. Loom-principle</td><td>"No competing implementations — one canonical surface per signal"</td><td>Codifies the rule so future services don't re-accrete.</td></tr>
+</table>
+
+<p style="font-size: 0.72em; color: #555; margin-top: 40px; text-align: center; padding-top: 20px; border-top: 1px solid #ddd;">
+Source: #2280 pulse design &bull; Parent card: #2437 &bull; Related: "No competing implementations" principle (existing)
+</p>
+
+</body>
+</html>

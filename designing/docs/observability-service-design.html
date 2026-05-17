@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observability — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #dc2626; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #fee2e2; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #dc2626; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #fee2e2; color: #991b1b; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #991b1b; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Observability <span>— Service Design</span></h1>
+<p class="date">2026-04-06 — Silas (#2273). Source: shared-observability repo + chorus alerting scripts + deep-health inventory.</p>
+
+<div class="promise">
+Silas can diagnose any infrastructure failure without asking Jeff. A role can determine "is the system healthy?" from any session. Alerts route to roles, never to Jeff. When observability is down, the team is blind.
+</div>
+
+<h2>Overview</h2>
+<p>Six components across two repos. Each component below shows what's deployed, what's tested, and what's missing.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
+<tr><td>Metrics</td><td><span class="tag-real">REAL</span></td><td>Prometheus, Node Exporter, Blackbox, MySQL Exporter</td><td><span class="tag-none">NONE</span></td><td>No metric accuracy tests</td></tr>
+<tr><td>Logs</td><td><span class="tag-real">REAL</span></td><td>Loki, Promtail, structured JSON</td><td><span class="tag-none">NONE</span></td><td>No log completeness tests</td></tr>
+<tr><td>Alerts</td><td><span class="tag-real">REAL</span></td><td>Alertmanager, Alert Runner, 14 rule files</td><td>9 tests</td><td>No E2E alert delivery test</td></tr>
+<tr><td>Health Checks</td><td><span class="tag-real">REAL</span></td><td>deep-health.sh (13 checks), ops awareness hook</td><td>3 test files</td><td>perf-baseline percentUsed broken</td></tr>
+<tr><td>Dashboards</td><td><span class="tag-partial">PARTIAL</span></td><td>Grafana (13 JSON files)</td><td><span class="tag-none">NONE</span></td><td>No freshness checks, no content tests</td></tr>
+<tr><td>Instrumentation</td><td><span class="tag-partial">PARTIAL</span></td><td>Hooks pulse log, spine events</td><td><span class="tag-none">NONE</span></td><td>No queryable API, file parsing only</td></tr>
+</table>
+
+<!-- ==================== METRICS ==================== -->
+<div class="component">
+<h3>Metrics <span class="tag-real">REAL</span></h3>
+<p>Continuous numeric measurement of system state. Prometheus scrapes every 15 seconds.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.gathering.prometheus</code> (:9090)<br/>
+    <code>com.gathering.node-exporter</code> (:9101)<br/>
+    <code>com.gathering.blackbox-exporter</code> (:9115)<br/>
+    <code>com.gathering.mysqld-exporter</code> (:9104)
+  </div>
+  <div class="section-box"><strong>Config</strong>
+    <code>shared-observability/config/prometheus/prometheus.yml</code><br/>
+    Scrape targets: node, blackbox, loki, mysqld<br/>
+    Native macOS variant available
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Prometheus TSDB (15-day retention)<br/>
+    <code>shared-observability/data/prometheus/</code><br/>
+    Host metrics: CPU, memory, disk, network
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span></div>
+  <div class="section-box"><strong>Docs</strong><code>shared-observability/README.md</code><br/><code>docs/ONBOARDING.md</code></div>
+  <div class="section-box"><strong>UIs</strong>Prometheus UI (:9090)<br/>Grafana node-metrics dashboard</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No tests for metric accuracy. perf-baseline.sh disk percentUsed broken (reports 2%, actual ~51%). Node exporter is correct but the script isn't.</div>
+</div>
+
+<!-- ==================== LOGS ==================== -->
+<div class="component">
+<h3>Logs <span class="tag-real">REAL</span></h3>
+<p>Structured event streams from all services. Loki stores, Promtail ships, Grafana queries.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.gathering.loki</code> (:3102)<br/>
+    <code>com.gathering.promtail</code><br/>
+    Bedroom Promtail (remote)
+  </div>
+  <div class="section-box"><strong>Config</strong>
+    <code>shared-observability/config/loki/loki-config.yaml</code><br/>
+    <code>shared-observability/config/promtail/promtail-config.yaml</code><br/>
+    7-day retention
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Loki chunks + index<br/>
+    <code>shared-observability/data/loki/</code><br/>
+    JSON format required (<code>docs/LOG_FORMAT.md</code>)
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span></div>
+  <div class="section-box"><strong>Docs</strong><code>docs/LOG_FORMAT.md</code> (required schema)<br/><code>docs/ONBOARDING.md</code></div>
+  <div class="section-box"><strong>UIs</strong>Grafana logs-explorer dashboard<br/>LogQL queries in any dashboard</div>
+</div>
+<div class="resolved"><strong>Resolved:</strong> Log paths migrated from /tmp to ~/Library/Logs/ (#1757). Promtail JSON parsing fixed (#1864).</div>
+</div>
+
+<!-- ==================== ALERTS ==================== -->
+<div class="component">
+<h3>Alerts <span class="tag-real">REAL</span></h3>
+<p>Two complementary mechanisms: Prometheus rules for metric-based alerts, shell scripts for application-level checks.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Prometheus Rules</strong>
+    7 files in <code>shared-observability/config/prometheus/rules/</code><br/>
+    ServiceDown, HighErrorRate, DiskSpaceLow, CloudflareTunnelDown, Fuseki perf, harvest jobs
+  </div>
+  <div class="section-box"><strong>Shell Rules</strong>
+    7 files in <code>chorus/alerting/</code><br/>
+    App down, tunnel down, hook server, seed writes, startup sync, daily review, stale nudges
+  </div>
+  <div class="section-box"><strong>Grafana Alerts</strong>
+    3 groups in <code>chorus-alerts.yaml</code><br/>
+    Team health (48h no sessions), gate failures, NiFi health
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Routing</strong>Alertmanager: critical→#all-gathering, warning→#silas<br/>Shell rules: nudge Silas + post to Bridge</div>
+  <div class="section-box"><strong>Tests</strong><code>alert-nudge.test.sh</code> (9 tests)<br/><code>watchdog-false-alerts.test.sh</code> (5 tests)</div>
+  <div class="section-box"><strong>Docs</strong><code>shared-observability/docs/ALERTING.md</code><br/><code>docs/FAILURE-PLAYBOOK.md</code><br/><code>docs/RUNBOOKS.md</code> — per-alert remediation (46 alerts)</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No E2E alert delivery test (fire alert → verify it arrives at Bridge).</div>
+</div>
+
+<!-- ==================== HEALTH CHECKS ==================== -->
+<div class="component">
+<h3>Health Checks <span class="tag-real">REAL</span></h3>
+<p>Subprocess-level liveness, not just "is the wrapper alive." deep-health.sh runs 13 checks every 5 minutes.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.chorus.deep-health</code> (5min cron)<br/>
+    <code>ops_awareness</code> hook (every PostToolUse)<br/>
+    <code>com.chorus.watchdog</code> (60s)
+  </div>
+  <div class="section-box"><strong>Checks (13)</strong>
+    fswatch alive, hooks binary fresh, log freshness (3 tiers), Loki tunnel (auto-heal), session index timestamps, Cloudflare tunnel, Chorus API, Gathering app, nudge binary, 18 critical services, 14 HTTP endpoints, standards surface staleness
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    <code>~/Library/Logs/Chorus/deep-health.log</code><br/>
+    <code>/tmp/claude-team-scan/{role}-declared.json</code><br/>
+    Spine events: <code>ops.health.*</code>
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    <code>deep-health-test.sh</code><br/>
+    <code>deep-health.bats</code><br/>
+    <code>index-freshness-alert.bats</code> (7 tests, #2270)
+  </div>
+  <div class="section-box"><strong>Docs</strong>See <a href="/gathering-docs/domain-context-observability.html">domain page</a></div>
+  <div class="section-box"><strong>UIs</strong><code>agent-state.sh health</code> (CLI)<br/>API: <code>localhost:3340/api/chorus/health</code></div>
+</div>
+<div class="resolved"><strong>Resolved 2026-04-06:</strong> Session index freshness uses actual DB timestamps, not file mtime (#2270). Stale lock recovery prevents 3-day blind spots (#2227).</div>
+</div>
+
+<!-- ==================== DASHBOARDS ==================== -->
+<div class="component">
+<h3>Dashboards <span class="tag-partial">PARTIAL</span></h3>
+<p>Visual surfaces for metrics and logs. 13 dashboards deployed, no freshness or content verification.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>com.gathering.grafana</code> (:3100)<br/>
+    Auto-provisioned from <code>shared-observability/dashboards/</code>
+  </div>
+  <div class="section-box"><strong>Dashboards (13)</strong>
+    chorus-activity, alerts-overview, app-operations, node-metrics, docker-containers, home-network, home-cloud, data-center, cost-dashboard, service-overview, logs-explorer, nifi-bedroom, session-tempo
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    JSON definitions in <code>shared-observability/dashboards/</code><br/>
+    Stale copy: <code>chorus/proving/dashboards/</code> (Mar 29)
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span></div>
+  <div class="section-box"><strong>Docs</strong>No dashboard guide — what each panel represents is undocumented</div>
+  <div class="section-box"><strong>UIs</strong>Grafana at <code>localhost:3100</code></div>
+</div>
+<div class="gap"><strong>Gap:</strong> No automated dashboard freshness test. No content validation (do panels render data?). No dashboard guide.</div>
+</div>
+
+<!-- ==================== INSTRUMENTATION ==================== -->
+<div class="component">
+<h3>Instrumentation <span class="tag-partial">PARTIAL</span></h3>
+<p>Application-level telemetry — hook decisions, spine events, gate enforcement rates. Rich data, poor accessibility.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Sources</strong>
+    Hooks pulse log: <code>~/Library/Logs/Gathering/hooks.log</code> (62K+ lines)<br/>
+    Spine events: <code>~/Library/Logs/Chorus/chorus.log</code><br/>
+    Node perf_hooks: event loop lag, memory (#2260)
+  </div>
+  <div class="section-box"><strong>Consumers</strong>
+    <code>generate-standards-surface.sh</code> — parses pulse log for compliance metrics<br/>
+    <code>deep-health.sh</code> — reads log freshness<br/>
+    Grafana — queries Loki for spine events
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Pulse log format: <code>timestamp | hook_type | tool | role | module | decision | duration | session_id | context</code><br/>
+    14 enforcing modules, 3,300+ denies/week
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong><span class="tag-none">NONE</span></div>
+  <div class="section-box"><strong>Docs</strong><a href="/gathering-docs/chorus-hook-architecture.html">Hook Architecture</a><br/><a href="/gathering-docs/chorus-standards.html">Standards Surface</a></div>
+  <div class="section-box"><strong>UIs</strong>Standards Surface (generated HTML)<br/>No real-time instrumentation dashboard</div>
+</div>
+<div class="gap"><strong>Gap:</strong> No queryable API for hook telemetry. Standards generation script parses files directly. No correlation between hook decisions and outcomes.</div>
+</div>
+
+<h2>Gaps Summary</h2>
+<table>
+<tr><th>Gap</th><th>Impact</th><th>Severity</th></tr>
+<tr><td>No repo sync</td><td>Chorus copies of dashboards/alerts drift from canonical</td><td>Medium — manual sync works but risks staleness</td></tr>
+<tr><td>No hooks telemetry API</td><td>Compliance metrics require file parsing, not queries</td><td>Medium — works but brittle</td></tr>
+<tr><td>No E2E alert delivery test</td><td>Can't verify alerts actually reach roles</td><td>High — silent alert failure = blind system</td></tr>
+<tr><td>No dashboard content tests</td><td>Panels could render empty without detection</td><td>Low — visual inspection catches this</td></tr>
+<tr><td>perf-baseline disk metric broken</td><td>Confuses automated disk reporting</td><td>Medium — node exporter is correct, script isn't</td></tr>
+<tr><td>No event correlation</td><td>Can't trace cause→effect across services</td><td>Low — manual investigation works for now</td></tr>
+</table>
+
+<h2>Architecture Reference</h2>
+<p>See <a href="/gathering-docs/domain-context-observability.html">Observability domain page</a> for the two-repo architecture, service inventory, and alert rules catalog. See <a href="/gathering-docs/domain-context-awareness.html">Shared Awareness</a> for the parent capability that consumes observability signals. See <a href="https://github.com/WJeffBridwell/shared-observability">shared-observability repo</a> for canonical configs.</p>
+
+</body>
+</html>

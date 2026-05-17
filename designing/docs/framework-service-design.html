@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Framework — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #ea580c; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #fff7ed; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #ea580c; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #fff7ed; color: #9a3412; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #1e1e2e; color: #cdd6f4; padding: 14px 16px; border-radius: 6px; font-size: 0.78em; overflow-x: auto; margin: 10px 0; line-height: 1.5; }
+  pre .keyword { color: #89b4fa; }
+  pre .uri { color: #a6e3a1; }
+  pre .var { color: #f9e2af; }
+  pre .comment { color: #6c7086; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #9a3412; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-new { background: #fff7ed; color: #9a3412; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-bridge { background: #ede9fe; color: #5b21b6; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+  .entity-diagram { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; }
+  .entity-node { border: 2px solid; border-radius: 8px; padding: 8px 14px; text-align: center; font-size: 0.82em; font-weight: 600; min-width: 90px; }
+  .entity-node.borg { border-color: #60a5fa; background: #eff6ff; color: #1e40af; }
+  .entity-node.chorus { border-color: #a78bfa; background: #f5f3ff; color: #5b21b6; }
+  .entity-node.jb { border-color: #4ade80; background: #f0fdf4; color: #166534; }
+  .entity-node.fw { border-color: #ea580c; background: #fff7ed; color: #9a3412; }
+  .entity-arrow { color: #9ca3af; font-size: 1.2em; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Framework <span>— Service Design</span></h1>
+<p class="date">2026-04-07 — Silas + Wren (#2300). Source: chorus.ttl v0.2.0, library-topology.ttl, domain-registry.md.</p>
+
+<p class="promise">The contracts layer. Framework defines what data looks like (ICDs), what services do (service designs), and what the current truth is (domain pages) — all enforced by BDD gates. Framework reads from the OWL/RDF semantic layer above it to answer: "What services does Photos depend on? Who owns them? What gates protect them?" One SPARQL query, not four separate tools.</p>
+
+<!-- ==================== ENTITY MODEL ==================== -->
+<h2>Entity Model</h2>
+
+<p>Six entity kinds, inspired by <a href="https://backstage.io/docs/features/software-catalog/system-model">Backstage.io</a> but mapped onto OWL connected to Fuseki. Each kind either reuses an existing class (via <code>owl:equivalentClass</code>) or is new to the bridge layer.</p>
+
+<div class="entity-diagram">
+  <div class="entity-node fw">Domain</div>
+  <span class="entity-arrow">&larr; servesDomain &mdash;</span>
+  <div class="entity-node borg">Service</div>
+  <span class="entity-arrow">&mdash; protectedBy &rarr;</span>
+  <div class="entity-node chorus">Gate</div>
+  <span class="entity-arrow">&mdash; gatekeeper &rarr;</span>
+  <div class="entity-node chorus">Role</div>
+</div>
+
+<div class="component">
+<h3>Entity Kinds</h3>
+<table>
+<tr><th>Kind</th><th>Source</th><th>Class</th><th>Description</th></tr>
+<tr><td><strong>Service</strong></td><td><span class="tag-real">borg</span></td><td><code>fw:Service ≡ borg:Service</code></td><td>Managed service — port, host, lifecycle, dependencies</td></tr>
+<tr><td><strong>Domain</strong></td><td><span class="tag-new">new</span></td><td><code>fw:Domain</code></td><td>Bounded context — links jb: collection classes to services and gates</td></tr>
+<tr><td><strong>Gate</strong></td><td><span class="tag-real">chorus</span></td><td><code>fw:Gate ≡ chorus:Gate</code></td><td>Quality gate — Pass/Fail/Override, enforced by Rust hooks</td></tr>
+<tr><td><strong>Role</strong></td><td><span class="tag-real">chorus</span></td><td><code>fw:Role ≡ chorus:Role</code></td><td>Persistent perspective — human or agent, owns entities</td></tr>
+<tr><td><strong>API</strong></td><td><span class="tag-new">new</span></td><td><code>fw:API</code></td><td>HTTP endpoint or CLI verb — the contract surface</td></tr>
+<tr><td><strong>Artifact</strong></td><td><span class="tag-real">chorus</span></td><td><code>fw:Artifact ≡ chorus:ArtifactType</code></td><td>Work product — card, brief, commit, decision</td></tr>
+</table>
+</div>
+
+<div class="component">
+<h3>Relationship Types</h3>
+<table>
+<tr><th>Property</th><th>Domain</th><th>Range</th><th>Notes</th></tr>
+<tr><td><code>fw:ownedBy</code></td><td>Service, Domain, Gate, API</td><td>Role</td><td>Who is responsible</td></tr>
+<tr><td><code>fw:dependsOn</code></td><td>Service</td><td>Service</td><td>Transitive — cascading failures visible</td></tr>
+<tr><td><code>fw:servesDomain</code></td><td>Service</td><td>Domain</td><td>What domain does this service support</td></tr>
+<tr><td><code>fw:protectedBy</code></td><td>Service, Domain</td><td>Gate</td><td>What gate guards this entity</td></tr>
+<tr><td><code>fw:providesAPI</code></td><td>Service</td><td>API</td><td>What endpoints does a service expose</td></tr>
+<tr><td><code>fw:containsClass</code></td><td>Domain</td><td>owl:Class</td><td>Links domain to jb: collection types</td></tr>
+<tr><td><code>fw:hostedOn</code></td><td>Service</td><td>borg:Host</td><td>Physical machine (≡ borg:hostedOn)</td></tr>
+</table>
+</div>
+
+<!-- ==================== SEMANTIC LAYER (reads from) ==================== -->
+<h2>Semantic Layer (OWL/RDF)</h2>
+
+<p>Framework reads from the OWL/RDF semantic layer — it does not contain it. The semantic layer sits above Framework in the <a href="chorus-context-diagram-v2.html">reference model</a>, giving signals meaning that Framework tooling acts on.</p>
+
+<div class="component">
+<h3>Three Ontologies, Bridged <span class="tag-bridge">BRIDGE</span></h3>
+<div class="section-grid-3">
+  <div class="section-box"><strong>borg:</strong><code>urn:borg:ontology/</code><br/>Infrastructure: Service, Host, dependsOn, hostedOn. 8 service instances.</div>
+  <div class="section-box"><strong>chorus:</strong><code>jeffbridwell.com/chorus#</code><br/>Coordination: Role, Gate, Vertebra, Tool, Artifact. Spine + trust metrics.</div>
+  <div class="section-box"><strong>jb:</strong><code>jeffbridwell.com/ontology#</code><br/>Domain data: Photo, Track, Story, Person, Note, Book, Seed. 14 classes, 15M+ triples.</div>
+</div>
+<p><code>framework.ttl</code> uses <code>owl:equivalentClass</code> and <code>owl:equivalentProperty</code> to bridge all three without duplicating. Loaded in Fuseki as <code>urn:chorus:framework</code> (220 triples). Framework tooling — ICDs, domain pages, the domain crawler — queries this graph to discover what exists.</p>
+<p><strong>Source:</strong> <code>chorus/platform/roles/silas/ontology/framework.ttl</code> · <strong>Graph:</strong> <code>urn:chorus:framework</code></p>
+</div>
+
+<div class="component">
+<h3>Domain Instances <span class="tag-new">11 DOMAINS</span></h3>
+<table>
+<tr><th>Domain</th><th>Collection Classes</th><th>Owner</th><th>Services</th></tr>
+<tr><td>Photos</td><td>jb:Photo, jb:SourcePhoto</td><td>Kade</td><td>Fuseki, Gathering App, NiFi</td></tr>
+<tr><td>Music</td><td>jb:Track, jb:Album, jb:Artist</td><td>Kade</td><td>Fuseki, Gathering App, NiFi</td></tr>
+<tr><td>Stories</td><td>jb:Story</td><td>Kade</td><td>Fuseki, Gathering App</td></tr>
+<tr><td>People</td><td>jb:Person</td><td>Kade</td><td>Fuseki, Gathering App</td></tr>
+<tr><td>Documents</td><td>jb:Document, jb:Note</td><td>Kade</td><td>Fuseki, Gathering App</td></tr>
+<tr><td>Books</td><td>jb:Book</td><td>Kade</td><td>Fuseki, Gathering App</td></tr>
+<tr><td>Seeds</td><td>jb:Seed</td><td>Wren</td><td>Fuseki, Gathering App, Chorus API</td></tr>
+<tr><td>Property</td><td>jb:Zone, jb:Bed, jb:Planting</td><td>Kade</td><td>Fuseki, Gathering App</td></tr>
+<tr><td>Sexuality</td><td>—</td><td>Kade</td><td>Fuseki</td></tr>
+<tr><td>Infrastructure</td><td>—</td><td>Silas</td><td>Grafana, Loki</td></tr>
+<tr><td>Chorus</td><td>—</td><td>Wren</td><td>Chorus API, Bridge, Vikunja</td></tr>
+</table>
+</div>
+
+<!-- ==================== DOMAIN CRAWLER ==================== -->
+<h2>Domain Crawler Integration</h2>
+
+<div class="component">
+<h3>How It Connects <span class="tag-real">LIVE</span></h3>
+<p>The domain crawler (#1956) already queries 7 sources per domain. The framework ontology makes the crawler's implicit model explicit:</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Crawler does today</strong>Queries Fuseki counts, checks service health, reads ICD, scans harvest state — per domain</div>
+  <div class="section-box"><strong>Framework adds</strong>The relationships are in the graph, not in crawler code. Which services serve Photos? Query <code>fw:servesDomain</code>. Who owns them? Query <code>fw:ownedBy</code>.</div>
+</div>
+<p>Future: crawler reads <code>framework.ttl</code> to discover domains and their service dependencies instead of hardcoding them.</p>
+</div>
+
+<!-- ==================== GATE ENFORCEMENT ==================== -->
+<h2>Gate Enforcement</h2>
+
+<div class="component">
+<h3>Gates in the Graph <span class="tag-real">ENFORCED</span></h3>
+<p>Chorus already has 4 gates (Direction, Design, Build, Proving) enforced by Rust hooks. The framework maps which domains and services are protected by which gates.</p>
+<table>
+<tr><th>Gate</th><th>From → To</th><th>Gatekeeper</th><th>Protects</th></tr>
+<tr><td>Direction Gate</td><td>Directing → Designing</td><td>Jeff</td><td>Seeds domain (intake quality)</td></tr>
+<tr><td>Design Gate</td><td>Designing → Building</td><td>Silas</td><td>Chorus, Infrastructure domains</td></tr>
+<tr><td>Build Gate</td><td>Building → Proving</td><td>Kade</td><td>Photos, Stories domains (data quality)</td></tr>
+<tr><td>Proving Gate</td><td>Proving → Done</td><td>Jeff</td><td>Photos, Stories domains (acceptance)</td></tr>
+</table>
+<p>Gate enforcement is mechanical (Rust hooks), not behavioral. The framework makes enforcement queryable: "Show me all domains with no gate protection" is a SPARQL query, not a manual audit.</p>
+</div>
+
+<!-- ==================== SPARQL ==================== -->
+<h2>Example Query</h2>
+
+<div class="component">
+<h3>AC6: Domain → Services → Gates → Roles <span class="tag-new">NEW</span></h3>
+<p>One query that traces the full chain for any domain:</p>
+<pre><span class="keyword">PREFIX</span> <span class="uri">fw: &lt;https://jeffbridwell.com/framework#&gt;</span>
+<span class="keyword">PREFIX</span> <span class="uri">chorus: &lt;https://jeffbridwell.com/chorus#&gt;</span>
+<span class="keyword">PREFIX</span> <span class="uri">borg: &lt;urn:borg:ontology/&gt;</span>
+<span class="keyword">PREFIX</span> <span class="uri">rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt;</span>
+
+<span class="keyword">SELECT</span> <span class="var">?domain ?service ?gate ?gatekeeper ?owner</span>
+<span class="keyword">WHERE</span> {
+  <span class="var">?domain</span> a fw:Domain ;
+           rdfs:label <span class="var">?domainLabel</span> .
+  <span class="var">?service</span> fw:servesDomain <span class="var">?domain</span> ;
+            rdfs:label <span class="var">?serviceLabel</span> .
+  <span class="keyword">OPTIONAL</span> { <span class="var">?domain</span> fw:protectedBy <span class="var">?gate</span> .
+             <span class="var">?gate</span> chorus:gatekeeper <span class="var">?gatekeeper</span> . }
+  <span class="keyword">OPTIONAL</span> { <span class="var">?service</span> fw:ownedBy <span class="var">?owner</span> . }
+  <span class="keyword">FILTER</span>(<span class="var">?domainLabel</span> = "Photos")
+}
+<span class="keyword">ORDER BY</span> <span class="var">?serviceLabel</span></pre>
+<p>Returns: Photos → Fuseki (Silas), Gathering App (Kade), NiFi (Silas) + Build Gate (Kade), Proving Gate (Jeff).</p>
+</div>
+
+<!-- ==================== GAPS ==================== -->
+<h2>Gaps</h2>
+
+<div class="resolved"><strong>Resolved:</strong> framework.ttl loaded into Fuseki as <code>urn:chorus:framework</code> (220 triples). jb-ontology.ttl loaded as <code>urn:jb:ontology</code> (47 triples, 14 classes). Duplicate <code>urn:framework:bridge</code> graph dropped.</div>
+
+<div class="gap"><strong>Gap:</strong> Domain crawler still hardcodes domain-service relationships. Needs to read from <code>fw:servesDomain</code> instead.</div>
+
+<div class="gap"><strong>Gap:</strong> API instances are minimal (5 endpoints). Full coverage requires mapping all 147 app endpoints into the graph.</div>
+
+<div class="gap"><strong>Gap:</strong> Gate→domain protection is hand-mapped. Should be derived from hook telemetry — which hooks fire on which file paths tells you which gates protect which domains.</div>
+
+<div class="gap"><strong>Gap:</strong> library-topology.ttl still shows Docker lifecycle for Grafana, Loki, Vikunja — all are native LaunchAgents now.</div>
+
+<!-- ==================== RELATED ==================== -->
+<h2>Service Design Family</h2>
+
+<div class="section-grid-3">
+  <div class="section-box"><strong>Infrastructure</strong><a href="infrastructure-service-design.html">infrastructure-service-design.html</a><br/>Compute, storage, constraints, backup</div>
+  <div class="section-box"><strong>Observability</strong><a href="observability-service-design.html">observability-service-design.html</a><br/>Monitoring stack, alerts, dashboards</div>
+  <div class="section-box"><strong>Awareness</strong><a href="awareness-service-design.html">awareness-service-design.html</a><br/>Compound loop, context injection</div>
+  <div class="section-box"><strong>Clearing</strong><a href="clearing-service-design.html">clearing-service-design.html</a><br/>Multi-party chat, real-time alignment</div>
+  <div class="section-box"><strong>Loom</strong><a href="loom-service-design.html">loom-service-design.html</a><br/>Team coordination surface</div>
+  <div class="section-box"><strong>Home Cloud</strong><a href="home-cloud.html">home-cloud.html</a><br/>Full topology — network, machines, services, storage</div>
+</div>
+
+<h2>Source</h2>
+<div class="section-grid">
+  <div class="section-box"><strong>Bridge Ontology</strong><code>chorus/platform/roles/silas/ontology/framework.ttl</code></div>
+  <div class="section-box"><strong>Context Diagram</strong><a href="chorus-context-diagram-v2.html">chorus-context-diagram-v2.html</a></div>
+</div>
+
+</body>
+</html>

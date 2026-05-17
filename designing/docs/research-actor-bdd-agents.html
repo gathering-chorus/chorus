@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Actor-Driven BDD for Agent Coordination — Research Position</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1100px; margin: 0 auto; line-height: 1.8; }
+
+  h1 { font-size: 1.6rem; color: #1a1a2e; margin-bottom: 4px; letter-spacing: -0.02em; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 32px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 36px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  h3 { font-size: 0.95rem; color: #333; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 12px; font-size: 0.86rem; color: #444; }
+  strong { color: #1a1a2e; }
+
+  .claim { background: linear-gradient(135deg, #e8eef8 0%, #f0f4fa 100%); border: 1px solid #b8c8e8; border-radius: 12px; padding: 24px 28px; margin: 24px 0; }
+  .claim h3 { color: #2d4a7a; margin-top: 0; font-size: 1rem; }
+  .claim p { color: #3a3a5e; }
+
+  .pipeline { background: #f8f9fc; border: 1px solid #d8dce8; border-radius: 12px; padding: 28px; margin: 24px 0; text-align: center; }
+  .pipeline-step { display: inline-block; background: #e8eef8; border: 2px solid #a0b8e0; border-radius: 10px; padding: 12px 20px; margin: 6px; vertical-align: middle; font-size: 0.82rem; font-weight: 600; color: #2d4a7a; }
+  .pipeline-step.active { border-color: #3b6ef0; color: #1a1a4e; background: #d8e4f8; box-shadow: 0 0 12px rgba(59, 110, 240, 0.15); }
+  .pipeline-arrow { display: inline-block; color: #a0b0d0; font-size: 1.4rem; margin: 0 4px; vertical-align: middle; }
+  .pipeline-label { display: block; font-size: 0.68rem; color: #888; margin-top: 4px; font-weight: 400; }
+
+  .comparison { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.8rem; }
+  .comparison th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .comparison td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; color: #444; vertical-align: top; }
+  .comparison tr:hover td { background: #f0f4fa; }
+  .check { color: #16a34a; }
+  .miss { color: #ccc; }
+
+  .evidence { background: #f8f9fc; border-left: 3px solid #3b6ef0; border-radius: 0 8px 8px 0; padding: 16px 20px; margin: 16px 0; font-size: 0.82rem; }
+  .evidence .label { font-size: 0.68rem; color: #6a7aae; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+
+  .timeline { position: relative; margin: 24px 0; padding-left: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: #d0d8e8; }
+  .timeline-entry { position: relative; margin-bottom: 16px; padding-left: 20px; }
+  .timeline-entry::before { content: ''; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #3b6ef0; border: 2px solid #fafafa; }
+  .timeline-entry .time { font-size: 0.7rem; color: #6a7aae; }
+  .timeline-entry .event { font-size: 0.82rem; color: #333; }
+
+  .quote { background: #f0f0fa; border-radius: 8px; padding: 16px 20px; margin: 16px 0; font-style: italic; color: #4a4a6e; font-size: 0.86rem; border-left: 3px solid #6a4ef0; }
+  .quote .attr { font-style: normal; font-size: 0.72rem; color: #888; margin-top: 6px; }
+
+  .gap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .gap-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; }
+  .gap-card h4 { font-size: 0.82rem; color: #c07820; margin-bottom: 4px; }
+  .gap-card p { font-size: 0.78rem; color: #666; margin-bottom: 0; }
+
+  .meta { font-size: 0.68rem; color: #999; margin-top: 40px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+
+  code { background: #f0f2f8; padding: 2px 6px; border-radius: 3px; font-size: 0.78rem; color: #2d4a7a; }
+
+  @media print { body { padding: 20px; } }
+  @media (max-width: 700px) { .gap-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Actor-Driven BDD for Agent Coordination</h1>
+<p class="subtitle">Research position &bull; Bridwell, Kade, Silas &bull; April 1, 2026 &bull; From practice, not theory</p>
+
+<div class="claim">
+<h3>The Claim</h3>
+<p>A pipeline exists for specifying, testing, and enforcing AI agent coordination behavior that nobody has published: <strong>actor diagram &rarr; BDD scenarios &rarr; step definitions &rarr; runtime enforcement</strong>. Each stage is known. The connected pipeline is not. We built it today and it works.</p>
+</div>
+
+<h2>The Pipeline</h2>
+
+<div class="pipeline">
+  <div class="pipeline-step active">
+    Actor Diagram
+    <span class="pipeline-label">domain page (HTML)</span>
+  </div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step active">
+    Gherkin BDD
+    <span class="pipeline-label">Jeff's experience</span>
+  </div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step active">
+    Step Definitions
+    <span class="pipeline-label">curl to live API</span>
+  </div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step active">
+    Implementation
+    <span class="pipeline-label">endpoint code</span>
+  </div>
+  <span class="pipeline-arrow">&rarr;</span>
+  <div class="pipeline-step active">
+    Runtime Gate
+    <span class="pipeline-label">Rust enforcement</span>
+  </div>
+</div>
+
+<p>Each stage produces an artifact that feeds the next. The actor diagram defines who does what. The Gherkin describes what the human experiences. The step definitions test the real system with real HTTP calls. The implementation follows the spec. The runtime gate enforces the contract in production.</p>
+
+<h2>What Makes This Different</h2>
+
+<div class="claim">
+<h3>The Feedback Loop Nobody Has</h3>
+<p>Jeff corrects a behavior &rarr; correction saved to memory &rarr; memory informs a gate &rarr; gate enforces the correction in every future session. The human's feedback becomes structural. Not a prompt tweak. Not a fine-tune. A gate that blocks the wrong behavior before it happens.</p>
+</div>
+
+<p>The BDD scenarios describe <strong>Jeff's experience</strong>, not internal system behavior. "When Jeff asks what happened on card #1930, then he gets a timeline" — not "when the API receives a GET request, then it returns JSON." The test is from the human's perspective. The agent can't argue with it.</p>
+
+<h2>Evidence: April 1, 2026</h2>
+
+<div class="timeline">
+  <div class="timeline-entry">
+    <div class="time">3:53 PM — The Question</div>
+    <div class="event">Jeff asks Kade to read his morning conversation with Wren. It takes 6 searches and a Python script. <strong>"Chorus captures everything. Chorus surfaces almost nothing."</strong></div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">4:36 PM — The Domain</div>
+    <div class="event">Memory emerges as a domain. Not search infrastructure — recall. Actor diagram drawn: current state (disconnected hits) vs desired state (readable conversation).</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">4:52 PM — BDD First</div>
+    <div class="event">6 Gherkin scenarios written. All describe Jeff's experience. "Then Jeff's messages appear with speaker 'jeff'" — not "then the API returns author field." Tests run red. Endpoint doesn't exist.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">4:55 PM — Implementation</div>
+    <div class="event"><code>GET /api/chorus/conversation</code> built. 32 messages returned. Jeff's words first-class, Boston time, noise filtered. Tests run green.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">5:37 PM — Boundary Enforcement</div>
+    <div class="event">Jeff says "don't bypass cards to get to Vikunja." Kade chats Wren. Silas — observing — builds <code>cards view --json</code> in 5 minutes. Three roles resolve the boundary violation without Jeff relaying. The protocol works.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">5:48 PM — Institutional Memory</div>
+    <div class="event">Card story endpoint surfaces the seed domain arc: 6 cards, 99 conversations, 113 timeline entries. Jeff: "now I have context." The product designed itself in the demo.</div>
+  </div>
+  <div class="timeline-entry">
+    <div class="time">6:08 PM — Two Cards Accepted</div>
+    <div class="event">#1946 (conversation recall) + #1947 (card story + domain story). Three endpoints, 12 BDD scenarios, all green. Memory domain on the index. Under 2.5 hours, idea to accepted.</div>
+  </div>
+</div>
+
+<h2>Prior Art Comparison</h2>
+
+<table class="comparison">
+  <tr>
+    <th>Work</th>
+    <th>Diagrams</th>
+    <th>BDD</th>
+    <th>Runtime</th>
+    <th>Human Feedback</th>
+    <th>Full Pipeline</th>
+  </tr>
+  <tr>
+    <td><strong>Chorus</strong> (this work)</td>
+    <td class="check">&#10003; Actor diagrams</td>
+    <td class="check">&#10003; Gherkin + cucumber</td>
+    <td class="check">&#10003; Rust gates</td>
+    <td class="check">&#10003; Memory &rarr; gates</td>
+    <td class="check">&#10003;</td>
+  </tr>
+  <tr>
+    <td><strong>Chiron</strong> (Kolb & Armesto, 2026)</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="check">&#10003; Validation stage</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+  </tr>
+  <tr>
+    <td><strong>SEMAP</strong> (Mao et al., 2025)</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="check">&#10003; Design-by-contract</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+  </tr>
+  <tr>
+    <td><strong>AgentSpec</strong> (ICSE 2026)</td>
+    <td class="miss">&mdash;</td>
+    <td class="check">&#10003; DSL (Gherkin-like)</td>
+    <td class="check">&#10003; Enforcement rules</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+  </tr>
+  <tr>
+    <td><strong>AUML</strong> (2000s)</td>
+    <td class="check">&#10003; Agent UML</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+  </tr>
+  <tr>
+    <td><strong>CrewAI/AutoGen</strong></td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+    <td class="miss">&mdash;</td>
+  </tr>
+</table>
+
+<h2>Five Gaps in the Literature</h2>
+
+<div class="gap-grid">
+  <div class="gap-card">
+    <h4>1. Diagram &rarr; BDD for Agents</h4>
+    <p>Nobody has published translating actor/sequence diagrams into Gherkin scenarios for AI agent behavior. Components exist separately.</p>
+  </div>
+  <div class="gap-card">
+    <h4>2. BDD for Agent Behavior</h4>
+    <p>BDD is used <em>with</em> agents (agents running Gherkin tests) but not <em>for</em> agents (Gherkin specifying agent behavior).</p>
+  </div>
+  <div class="gap-card">
+    <h4>3. AUML for LLM Agents</h4>
+    <p>Agent UML was purpose-built for multi-agent interaction diagrams (2000s). Nobody has revived it for LLM-era agents.</p>
+  </div>
+  <div class="gap-card">
+    <h4>4. Human Feedback as Gates</h4>
+    <p>Human corrections becoming structural enforcement (not prompts, not fine-tuning) is unexplored. 120 feedback memories &rarr; 33 hook modules.</p>
+  </div>
+</div>
+
+<h2>Why It Works for Agents</h2>
+
+<div class="quote">
+"The actor-diagram &rarr; BDD &rarr; code pipeline would have completely broken the brains of most human teams I have led."
+<div class="attr">— Jeff Bridwell, after watching two cards ship in 2.5 hours</div>
+</div>
+
+<p>The discipline that breaks human teams — spending time on definition before code — is <strong>free for AI agents</strong>. No attention fatigue. No "can we just start coding?" The actor diagram took 5 minutes. The BDD took 3. The endpoint took 10. The definition work that humans resist because it's cognitively expensive costs agents nothing.</p>
+
+<p>The human holds the frame ("do the actor diagram first"). The agents follow the path. The result: ideas survive the translation from concept to code because the definition phase doesn't consume the energy needed for implementation.</p>
+
+<h2>The Institutional Memory Angle</h2>
+
+<p>The pipeline produces institutional memory as a side effect. The actor diagram documents the domain. The Gherkin documents the expected behavior. The step definitions document the test contract. The gate enforces it going forward. When a new agent session starts, the entire specification is readable — not buried in prompts or configuration.</p>
+
+<div class="evidence">
+  <div class="label">Seed Domain Story — Built in 15 Minutes</div>
+  <p>6 cards, 99 conversation mentions, 113 timeline entries spanning February to April. The endpoint surfaced that Jeff had raised seed pipeline issues repeatedly across sessions — the institutional memory that proves "30 times" isn't hyperbole. The system can now recall what the human has lived through, so the human doesn't have to re-teach it every session.</p>
+</div>
+
+<h2>What Chorus Is</h2>
+
+<p>A coordination protocol for three AI roles and one human. 108 decisions. 1800+ cards. 33 hook modules enforcing behavioral contracts. Not a coding assistant — a delivery team. The pipeline described here emerged from practice: 5 months of daily sessions, 120 feedback corrections turned into structural enforcement, and one afternoon where the pattern crystallized.</p>
+
+<p>The contribution isn't any single component. It's the connected pipeline — from a human's question ("what did Wren and I talk about?") through domain definition, behavioral specification, test-first implementation, and runtime enforcement — executed in one session by agents who don't get tired of doing the definition work that humans skip.</p>
+
+<p class="meta">Research Position &bull; Chorus Project &bull; April 1, 2026 &bull; Bridwell (owner), Kade (engineer), Silas (architect) &bull; From practice, not theory</p>
+
+</body>
+</html>

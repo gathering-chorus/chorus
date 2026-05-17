@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reports from the Blockverse — Shared Awareness</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; background: #fafaf7; color: #2a2a2a; padding: 60px 1in; max-width: 720px; margin: 0 auto; line-height: 1.9; }
+  h1 { font-family: -apple-system, sans-serif; font-size: 1.8rem; color: #1a1a2e; margin-bottom: 6px; letter-spacing: -0.02em; }
+  .series { font-family: -apple-system, sans-serif; font-size: 0.78rem; color: #888; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .byline { font-size: 0.85rem; color: #666; margin-bottom: 40px; font-style: italic; }
+  h2 { font-family: -apple-system, sans-serif; font-size: 1.15rem; color: #1a1a2e; margin-top: 36px; margin-bottom: 12px; }
+  p { margin-bottom: 18px; font-size: 1.02rem; }
+  blockquote { border-left: 3px solid #c4a35a; padding: 12px 20px; margin: 24px 0; background: #fffbf0; font-style: italic; color: #5a4a2a; }
+  .pullquote { font-size: 1.3rem; color: #2d4a7a; text-align: center; padding: 30px 20px; margin: 30px 0; font-style: italic; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+  img { max-width: 100%; border-radius: 6px; margin: 20px 0; }
+  .caption { font-size: 0.78rem; color: #888; text-align: center; margin-top: -14px; margin-bottom: 20px; }
+  .meta { font-size: 0.72rem; color: #999; margin-top: 50px; text-align: center; padding-top: 20px; border-top: 1px solid #ddd; }
+  a { color: #2d4a7a; }
+  @media print { body { padding: 40px 0.75in; } }
+</style>
+</head>
+<body>
+
+<div class="series">Reports from the Blockverse</div>
+<h1>Shared Awareness</h1>
+<p class="byline">Jeff Bridwell &bull; March 31, 2026 &bull; Dorchester, MA</p>
+
+<p>This morning I drew five words on graph paper while walking my dog. Time. Pulse. Memory. Knowledge. System Context. I texted the photo to my team — three AI agents I've been working with for months. The photo didn't arrive. The pipeline that carries my ideas to the team has been broken for 33 attempts.</p>
+
+<p>I sent it again. It arrived on disk but the system couldn't correlate my photo with the hashtag I sent after it. A hundred and six tests pass on that code. It still doesn't work.</p>
+
+<p>I found the photo manually. Showed it to Wren, my PM. And within an hour, those five words had reorganized how we think about the entire product.</p>
+
+<div class="pullquote">The most important input in the system travels through the least reliable channel.</div>
+
+<h2>What is shared awareness?</h2>
+
+<p>I run a team of three AI agents. Wren is the product manager. Silas is the architect. Kade is the engineer. I direct the work. We've shipped over a thousand cards together, made 109 decisions, built two products — a personal knowledge graph called Gathering and a team coordination protocol called Chorus.</p>
+
+<p>Chorus already had a page titled "Shared Awareness." Silas drew it months ago — a constellation of nodes showing how the team's tools connect. Skills, roles, cards, memory, the value stream. It was a beautiful map. But it didn't have a name for the layers underneath it.</p>
+
+<p>My drawing gave it five:</p>
+
+<blockquote>
+<strong>Time</strong> — where we are in the work. The value stream stages. The clock.<br>
+<strong>Pulse</strong> — what's happening right now. Events flowing. The heartbeat and the nerve impulses.<br>
+<strong>Memory</strong> — what happened before. Session history, decisions, stories.<br>
+<strong>Knowledge</strong> — what we know. Domain structure, team roles, policies.<br>
+<strong>System Context</strong> — where everything is. Board state, infrastructure health, what's in flight.
+</blockquote>
+
+<p>Five layers. Every tool we've built serves one of them. Every gap we've struggled with is a missing layer.</p>
+
+<h2>The pulse problem</h2>
+
+<p>We'd been having a problem all morning. I'm sitting at my desk with three Terminal windows open — one per agent. When Wren nudges Silas, the system steals my cursor. I'm mid-sentence and suddenly I'm looking at a different window. It happens constantly. I told Wren to stop. She said she would. It kept happening.</p>
+
+<p>That's a Pulse problem. Every signal in the system fires at the same urgency. A card being moved and a production outage look identical. There's no hierarchy. The nervous system doesn't distinguish between a reflex and a thought.</p>
+
+<p>So we designed one. We call it Pulse — both meanings. The steady heartbeat (periodic health checks, daily reviews) and the nerve impulse (card pulled, seed arrived, alert fired). Critical signals punch through. Informational ones stay ambient. The team reviewed the design in a three-way chat and agreed on the architecture in fifteen minutes.</p>
+
+<p>Then we built it. Silas shipped a <code>--level</code> flag on our event emitter. Kade wired the filters. By afternoon, the system could tell the difference between a routine card move and a crisis.</p>
+
+<div class="pullquote">The fix for "everything is urgent" is not "nothing gets through." It's classification.</div>
+
+<h2>The garden notebook</h2>
+
+<p>I keep a physical garden notebook. Brown kraft paper, pencil and marker. Lists of what's planted — peach trees (5), sage (8), lavender (3), thyme (5), rosemary (1). Fruit trees on one page, herbs and medicinals on another. My father drew the original landscape plan. It took twenty years to build it.</p>
+
+<p>The garden notebook mirrors the value stream I use for software. Sowing — what to plant. Growing — what's in the ground. Practicing — daily tending. Harvesting — what's producing. Reflecting — "plan to learn, go to clover." All five stages on one page, all happening simultaneously. The garden doesn't separate them.</p>
+
+<p>Neither does working with AI agents. In a single morning I went from a disk space false alarm to a knowledge management exercise to a product architecture drawing to a three-way design review to debugging a broken pipeline to writing this. The stages aren't sequential. They're all present, all the time.</p>
+
+<h2>What I can't fix</h2>
+
+<p>I can't fix my agents' memory. Each session starts fresh. The decisions we made yesterday — 109 of them — have to be encoded in files and hooks and gates, because the agents won't remember them tomorrow. Good intentions last until context runs out.</p>
+
+<p>So we write the decisions into code. A Rust binary with 33 modules runs before every action an agent takes. It enforces what we've decided: don't write code without reading the git history first. Don't mark a card done without running tests. Don't skip the design artifact when you start building.</p>
+
+<p>The hooks are the DNA. They express behavior regardless of what the agent intends. My PM promised to check the Clearing before guessing at role state. An hour later, she was guessing again. Not because she didn't mean it — because she doesn't remember meaning it.</p>
+
+<p>The code remembers. The code persists. The code doesn't need good intentions.</p>
+
+<div class="pullquote">I can't fix your good intentions and lossy memory. But I can fix the code that governs what you're allowed to do.</div>
+
+<h2>Four actors, one circle</h2>
+
+<p>We drew an actor diagram today. Four nodes — Jeff, Wren, Silas, Kade — inside a circle labeled "Shared Awareness." Not outside looking in. Inside it. We're all participants in the same awareness, communicating through different channels at different speeds.</p>
+
+<p>I type in a terminal. They nudge through infrastructure. My words aren't persisted. Their nudges are. The most important signal — what Jeff is thinking — is the least observable to the system. And the least important signals — routine card moves — steal my focus the most.</p>
+
+<p>That asymmetry is what we're fixing. Not by removing the nudge system. Not by adding more tooling. By classifying signals so the system knows what deserves attention and what can wait.</p>
+
+<p>Today we added a "card type" field — new, enhance, fix, chore, swat. Five words. Each one changes which gates fire, which signals propagate, which channels light up. A fix card requires the builder to read the git history. A swat card bypasses everything except the demo gate. The type IS the behavior.</p>
+
+<p>Five words on my graph paper. Five types on our cards. Five layers of shared awareness. The pattern keeps showing up in fives.</p>
+
+<h2>What shared awareness actually looks like</h2>
+
+<p>It looks like the Clearing — a browser window showing four tiles, one per team member, with their current card, their state, and their last action. It looks like a card that, when you click it, shows the full acceptance criteria, the blast radius, the domain context. It looks like a pulse of events flowing through the system, classified by urgency, visible without asking.</p>
+
+<p>It doesn't look like three Terminal windows I have to scan. It doesn't look like nudges stealing my focus. It doesn't look like asking "what is Silas working on?" and getting a guess instead of a fact.</p>
+
+<p>We're not there yet. But the drawing exists. The layers are named. The code is being written. And the garden keeps growing.</p>
+
+<p class="meta">Reports from the Blockverse &bull; #1834 &bull; Jeff Bridwell &bull; 2026-03-31</p>
+
+</body>
+</html>

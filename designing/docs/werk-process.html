@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Werk Process — Card Lifecycle</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  h1 { color: #58a6ff; font-size: 1.4rem; margin-bottom: 0.5rem; }
+  .subtitle { color: #8b949e; font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .flow { display: flex; gap: 0; margin: 2rem 0; }
+  .step { flex: 1; text-align: center; padding: 1.2rem 0.5rem; position: relative; border: 2px solid; }
+  .step::after { content: '→'; position: absolute; right: -14px; top: 50%; transform: translateY(-50%); color: #8b949e; font-size: 1.4rem; z-index: 1; }
+  .step:last-child::after { display: none; }
+  .step-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+  .step-owner { font-size: 0.75rem; opacity: 0.7; }
+
+  .capturing { background: #1a1231; border-color: #8b5cf6; color: #c4b5fd; border-radius: 8px 0 0 8px; }
+  .directing { background: #1a1a0e; border-color: #f59e0b; color: #fcd34d; }
+  .designing { background: #0d1a2e; border-color: #3b82f6; color: #93c5fd; }
+  .building { background: #0d1f17; border-color: #10b981; color: #6ee7b7; }
+  .proving { background: #1a0d14; border-color: #ec4899; color: #f9a8d4; border-radius: 0 8px 8px 0; }
+
+  .section { margin: 2.5rem 0; }
+  .section h2 { color: #58a6ff; font-size: 1.1rem; border-bottom: 1px solid #21262d; padding-bottom: 0.5rem; }
+
+  .lifecycle { display: grid; grid-template-columns: 1fr; gap: 0; margin: 1.5rem 0; }
+  .phase { display: grid; grid-template-columns: 200px 60px 1fr; align-items: center; padding: 1rem; border-left: 3px solid #21262d; }
+  .phase:hover { background: #161b22; }
+  .phase-label { font-weight: 700; font-size: 0.9rem; }
+  .phase-arrow { color: #8b949e; text-align: center; }
+  .phase-detail { font-size: 0.85rem; color: #8b949e; }
+  .phase-trigger { color: #f0883e; font-weight: 600; font-size: 0.8rem; }
+
+  .phase.active { border-left-color: #f59e0b; }
+  .phase.auto { border-left-color: #10b981; }
+  .phase.manual { border-left-color: #8b949e; }
+
+  .legend { display: flex; gap: 1.5rem; margin: 1rem 0; font-size: 0.8rem; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-dot.jeff { background: #f59e0b; }
+  .legend-dot.auto { background: #10b981; }
+  .legend-dot.role { background: #8b949e; }
+
+  .note { background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 1rem; margin: 1rem 0; font-size: 0.85rem; color: #8b949e; }
+  .note strong { color: #c9d1d9; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 1rem 0; }
+  th { text-align: left; color: #8b949e; font-weight: 600; padding: 8px; border-bottom: 2px solid #21262d; }
+  td { padding: 8px; border-bottom: 1px solid #21262d; }
+  .col-jeff { color: #f59e0b; }
+  .col-auto { color: #10b981; }
+  .col-role { color: #c9d1d9; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Werk Process — Card Lifecycle</h1>
+<p class="subtitle">How work flows from idea to done. DEC-040: roles own vertebrae, not tech layers.</p>
+
+<div class="flow">
+  <div class="step capturing"><div class="step-name">Capturing</div><div class="step-owner">Wren</div></div>
+  <div class="step directing"><div class="step-name">Directing</div><div class="step-owner">Wren</div></div>
+  <div class="step designing"><div class="step-name">Designing</div><div class="step-owner">Wren</div></div>
+  <div class="step building"><div class="step-name">Building</div><div class="step-owner">Kade</div></div>
+  <div class="step proving"><div class="step-name">Proving</div><div class="step-owner">Silas</div></div>
+</div>
+
+<div class="section">
+<h2>Card Lifecycle — Step by Step</h2>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot jeff"></div> Jeff action</div>
+  <div class="legend-item"><div class="legend-dot auto"></div> Automatic</div>
+  <div class="legend-item"><div class="legend-dot role"></div> Role action</div>
+</div>
+
+<div class="lifecycle">
+  <div class="phase manual">
+    <div class="phase-label">Card created</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Lands in <strong>Later</strong> or <strong>Next</strong>. Created by Jeff or any role.<br><span class="phase-trigger">board-ts add "title" --owner X --priority P1</span></div>
+  </div>
+
+  <div class="phase active">
+    <div class="phase-label">Jeff moves to Now</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail"><strong>Jeff is the pull signal.</strong> Moving to Now = "I want this worked on."<br><span class="phase-trigger">board-ts move &lt;id&gt; Now</span></div>
+  </div>
+
+  <div class="phase auto">
+    <div class="phase-label">Manifest auto-created</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">WorkflowEngine creates a 2-step manifest: owner builds, reviewer verifies. Brief auto-written to owner's inbox.<br><span class="phase-trigger">Automatic — triggers on move to Now (C#52)</span></div>
+  </div>
+
+  <div class="phase auto">
+    <div class="phase-label">Session start detects</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Next time the assigned role starts a session, <strong>session-start.sh</strong> surfaces the pending workflow step.<br><span class="phase-trigger">Automatic — workflow.sh pending &lt;role&gt;</span></div>
+  </div>
+
+  <div class="phase manual">
+    <div class="phase-label">Role moves to WIP</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Role starts working. Card moves from Now → <strong>WIP</strong>. Now = Jeff pulled it. WIP = role is active.<br><span class="phase-trigger">board-ts move &lt;id&gt; WIP</span></div>
+  </div>
+
+  <div class="phase manual">
+    <div class="phase-label">Role works the card</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Code, architecture, product work — whatever the card requires. Role owns execution in their vertebra.</div>
+  </div>
+
+  <div class="phase manual">
+    <div class="phase-label">Role advances workflow</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Step 1 complete. Workflow engine marks step done, makes step 2 ready.<br><span class="phase-trigger">workflow.sh advance WF-NNN --notes "..." --artifacts "..."</span></div>
+  </div>
+
+  <div class="phase auto">
+    <div class="phase-label">Handoff brief sent</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Auto-generated brief lands in reviewer's <strong>briefs/</strong> directory with context, artifacts, and instructions.<br><span class="phase-trigger">Automatic — workflow engine writes brief on advance</span></div>
+  </div>
+
+  <div class="phase manual">
+    <div class="phase-label">Reviewer verifies</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Reviewer picks up brief on next session start, reviews work, advances workflow step 2.<br><span class="phase-trigger">workflow.sh advance WF-NNN --notes "verified"</span></div>
+  </div>
+
+  <div class="phase auto">
+    <div class="phase-label">Workflow archived</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">All steps done → manifest moves from <strong>active/</strong> to <strong>archive/</strong>. Cycle time measured.<br><span class="phase-trigger">Automatic — on final step completion</span></div>
+  </div>
+
+  <div class="phase manual">
+    <div class="phase-label">Card moved to Done</div>
+    <div class="phase-arrow">→</div>
+    <div class="phase-detail">Role (or Jeff) marks card Done. Visible on Value Stream page as completed.<br><span class="phase-trigger">board-ts done &lt;id&gt;</span></div>
+  </div>
+</div>
+</div>
+
+<div class="section">
+<h2>Board Columns → Meaning</h2>
+<table>
+  <tr><th>Column</th><th>Who acts</th><th>Meaning</th></tr>
+  <tr><td><strong>Later</strong></td><td class="col-role">Anyone</td><td>Backlog — exists but not prioritized</td></tr>
+  <tr><td><strong>Next</strong></td><td class="col-role">Anyone</td><td>Prioritized — ready when Jeff pulls</td></tr>
+  <tr><td><strong>Now</strong></td><td class="col-jeff">Jeff</td><td>Jeff pulled it — waiting for a role to pick up</td></tr>
+  <tr><td><strong>WIP</strong></td><td class="col-role">Role</td><td>Role is actively working this</td></tr>
+  <tr><td><strong>Blocked</strong></td><td class="col-role">Role</td><td>Can't proceed — reason logged</td></tr>
+  <tr><td><strong>Done</strong></td><td class="col-role">Role / Jeff</td><td>Complete — workflow archived, cycle time measured</td></tr>
+  <tr><td><strong>Jeff Tickets</strong></td><td class="col-jeff">Jeff</td><td>Jeff's personal action items</td></tr>
+  <tr><td><strong>Tech Debt</strong></td><td class="col-role">Role</td><td>Known debt — tracked, not urgent</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <strong>Key principle:</strong> Jeff is the pull signal, not the relay. He moves a card to Now → the system takes over → roles pick up → flows to Done. The workflow engine holds state and auto-routes handoff briefs. Jeff observes and directs, he doesn't carry context between roles.
+</div>
+
+<div class="section">
+<h2>What's Automatic vs Manual</h2>
+<table>
+  <tr><th>Action</th><th>Type</th><th>Mechanism</th></tr>
+  <tr><td>Card creation</td><td class="col-role">Manual</td><td>board-ts add</td></tr>
+  <tr><td>Move to Now</td><td class="col-jeff">Jeff (manual)</td><td>board-ts move &lt;id&gt; Now</td></tr>
+  <tr><td>Manifest creation</td><td class="col-auto">Automatic</td><td>WorkflowEngine on Now trigger</td></tr>
+  <tr><td>Brief to owner</td><td class="col-auto">Automatic</td><td>Workflow engine writes to briefs/</td></tr>
+  <tr><td>Session start detection</td><td class="col-auto">Automatic</td><td>session-start.sh → workflow.sh pending</td></tr>
+  <tr><td>Move to WIP</td><td class="col-role">Manual (role)</td><td>board-ts move &lt;id&gt; WIP</td></tr>
+  <tr><td>Advance workflow</td><td class="col-role">Manual (role)</td><td>workflow.sh advance</td></tr>
+  <tr><td>Handoff brief</td><td class="col-auto">Automatic</td><td>Workflow engine on advance</td></tr>
+  <tr><td>Workflow archive</td><td class="col-auto">Automatic</td><td>On final step completion</td></tr>
+  <tr><td>Move to Done</td><td class="col-role">Manual (role)</td><td>board-ts done &lt;id&gt;</td></tr>
+  <tr><td>Chorus indexing</td><td class="col-auto">Automatic</td><td>fswatch daemon, &lt;3s latency</td></tr>
+  <tr><td>Board audit</td><td class="col-auto">Automatic</td><td>session-start.sh runs audit-start</td></tr>
+</table>
+</div>
+
+<script src="/gathering-docs/doc-chrome.js"></script>
+</body>
+</html>

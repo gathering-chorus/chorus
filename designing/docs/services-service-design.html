@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Services — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #e11d48; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #ffe4e6; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #e11d48; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .resolved { background: #d1fae5; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .resolved strong { color: #059669; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ffe4e6; color: #9f1239; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #9f1239; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-spike { background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  pre { background: #f4f4f4; padding: 12px; border-radius: 4px; font-size: 0.78em; overflow-x: auto; margin: 10px 0; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Services <span>— Service Design</span></h1>
+<p class="date">2026-04-22 — Wren. Draft. Source: chorus.ttl (authorization graph merged via #2348), roles-service-design.md (2026-04-17), pulse-service-design.md (2026-04-20), borg-service-design.md (2026-04-15), #2452 MCP spike, athena-subdomain-completeness.ts, observed running services.</p>
+
+<div class="promise">
+Every Chorus service declares itself once in the graph: <code>chorus:Service</code> instance with label, implementedIn, exposesVia, healthAt, ownedBy, dependsOn, consumes, consumedBy. Two surfaces generate automatically — HTTP for humans and browsers (existing shape), MCP for agents (native discovery). A role or external MCP client enumerates the registry and knows what exists with typed schemas, without URL-guessing or source-grepping. When Services is healthy, adding a new service = declaring in graph → appearing in both surfaces on next reload. When it drifts, agents and humans rediscover the same system differently, consumers hard-code URLs that rot, and Jeff becomes the registry every time.
+</div>
+
+<h2>Overview</h2>
+
+<p>Services is the capability-exposure layer of Chorus. Every running service, hook, daemon, or API is an instance; every consumer reads through the registry rather than hard-coded knowledge. It depends on Fuseki for the graph, chorus-api for the generator, and #2442-style event-bus cache for invalidation.</p>
+
+<p><strong>Second finalizable substrate domain.</strong> Principles is the first (#2447-#2451 sequence). Services is the natural second: low-dependency (no external substrate), internal to Chorus, same 7-MUST-haves template applies. Closes Gap 7 from roles-service-design ("chorus domain services section empty").</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Source</th><th>Gap</th></tr>
+<tr><td><code>chorus:Service</code> class + object properties</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>Class not declared in chorus.ttl; <code>exposesVia</code> / <code>healthAt</code> / <code>dependsOn</code> properties don't exist yet</td></tr>
+<tr><td>Service instances populated</td><td><span class="tag-none">MISSING</span></td><td>Services exist in reality; not in graph</td><td>~15 running services (chorus-api, chorus-hooks, pulse, nudge, observer, clearing, messaging, mcp-registry, Fuseki, deep-health, watchdog, session-indexer, ...) with ad-hoc declarations scattered across plists, scripts, bats tests</td></tr>
+<tr><td>HTTP registry surface</td><td><span class="tag-partial">PARTIAL</span></td><td><code>/api/chorus/*</code>, <code>/api/loom/*</code>, <code>/api/athena/*</code> exist</td><td>No introspection endpoint; no <code>exposesVia</code> metadata; browsers know URLs by convention</td></tr>
+<tr><td>MCP registry surface</td><td><span class="tag-spike">SPIKE</span></td><td><code>platform/spikes/mcp-registry/</code> (#2452)</td><td>Proof-of-concept works end-to-end (45 tools generated from graph); no generator in production; stdio transport only</td></tr>
+<tr><td>Generator (graph → surfaces)</td><td><span class="tag-spike">SPIKE</span></td><td><code>generator.mjs</code> in spike</td><td>Hand-declared today in production; spike proves pattern with fail-loud on missing <code>implementedIn</code>; extraction card pending</td></tr>
+<tr><td>Cache + invalidation</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>Will need event-bus cache per Silas's #2452 feedback; reload-hook on <code>/api/athena/reload</code> is the trigger (same shape as #2442 pulse sidecar)</td></tr>
+<tr><td>Auth / role-scoping</td><td><span class="tag-partial">PARTIAL</span></td><td>CLAUDE.md prose scopes <code>/gate-product</code> to Wren, etc.; no code enforcement</td><td>Per-role filtering on MCP <code>listTools</code>/<code>callTool</code> needs trusted side-channel identity (UDS peer-cred or harness-injected env)</td></tr>
+<tr><td>Health signals per service</td><td><span class="tag-partial">PARTIAL</span></td><td>deep-health.sh per machine; pulse snapshots</td><td>Not queryable per-service; no alert on service disappearing from registry</td></tr>
+<tr><td>Services domain page</td><td><span class="tag-none">MISSING</span></td><td>Gap 7 in roles-service-design: "chorus domain services section empty"</td><td>Services section renders nothing; no honest-fold label on empty state</td></tr>
+</table>
+
+<h2>Sub-Domain Interaction Model</h2>
+
+<p>Services provides the registry surface; every other sub-product reads (or will read) through it. Core pattern: Services doesn't enforce behavior; it <strong>surfaces truth</strong> about what capabilities exist. Two surfaces, one source. Same family as Pulse's event-bus-cache shape.</p>
+
+<table>
+<tr><th>Trigger</th><th>Produces</th><th>Consumed By</th><th>Surface</th></tr>
+<tr><td>Service declared in graph</td><td><code>chorus:Service</code> instance + edges in <code>urn:chorus:ontology</code></td><td>Generator (next reload), domain page (integrations), MCP clients</td><td>chorus.ttl → Fuseki</td></tr>
+<tr><td><code>/api/athena/reload</code> fires</td><td>Generator rebuilds registry cache</td><td>MCP registry, HTTP route table</td><td>cache invalidation event</td></tr>
+<tr><td>Consumer calls <code>listTools</code>/<code>listResources</code> (MCP)</td><td>Registry entries filtered by caller identity</td><td>Agents, external MCP clients</td><td><code>chorus://*</code> URIs + tool schemas</td></tr>
+<tr><td>Consumer calls <code>/api/chorus/*</code> (HTTP)</td><td>Data per existing envelope</td><td>Browsers, human tooling</td><td>HTTPS</td></tr>
+<tr><td>Service health probe (<code>healthAt</code>) fails</td><td>Alert + status update in graph</td><td>Pulse, deep-health, Borg observability</td><td>spine event</td></tr>
+<tr><td>Service renamed or retired</td><td>Graph instance updated or marked with retire-edge</td><td>Both surfaces regenerate; honest-fold renders "retired" explicitly</td><td>reload event</td></tr>
+<tr><td>New skill or gate declared (#2348 pattern)</td><td><code>chorus:Skill</code> or <code>chorus:Gate</code> instance with <code>implementedIn</code></td><td>Generator emits MCP tool declaration</td><td>same graph, same generator</td></tr>
+</table>
+
+<h2>Dependencies</h2>
+
+<p>Formal <code>chorus:dependsOn</code> edges (Gap 9 pattern from roles-service-design, <strong>#2448</strong> covers the shape).</p>
+
+<table>
+<tr><th>Dependency</th><th>Subdomain</th><th>Why</th></tr>
+<tr><td>Graph (Fuseki)</td><td>loom-ontology / chorus:ontology</td><td>Registry source — services declare here</td></tr>
+<tr><td>Authorization graph</td><td>loom-skills, loom-gates</td><td>Skills + Gates are service-shaped capabilities; same generator enumerates them</td></tr>
+<tr><td>chorus-api</td><td>platform services</td><td>Hosts both HTTP endpoints and (future) MCP server</td></tr>
+<tr><td>Pulse</td><td>Directing / Pulse</td><td>Cache-invalidation signal; registry surfaces service-state on pulse</td></tr>
+<tr><td>Reload endpoint</td><td>Convergence / Athena</td><td><code>/api/athena/reload</code> triggers generator refresh</td></tr>
+</table>
+
+<h2>Components</h2>
+
+<div class="component">
+<h3><code>chorus:Service</code> class (new)</h3>
+<p>Class declaration in chorus.ttl: <code>chorus:Service a owl:Class ; rdfs:label "Service" ; rdfs:comment "A running capability that exposes itself via one or more surfaces..."</code></p>
+</div>
+
+<div class="component">
+<h3><code>chorus:Surface</code> class + individuals (new, per Silas amendment 1)</h3>
+<p>Surface is a declared class with individuals, not a string enum — preserves graph queryability (same pattern as <code>chorus:UtilitySkill</code>).</p>
+<ul style="font-size:0.88em; margin-left:20px;">
+<li><code>chorus:Surface a owl:Class ; rdfs:label "Surface"</code> — the kind-of-access-surface concept</li>
+<li>Individuals: <code>chorus:surface-http</code>, <code>chorus:surface-mcp</code>, <code>chorus:surface-internal</code></li>
+<li>Enables: <code>SELECT ?s WHERE { ?s chorus:exposesVia chorus:surface-mcp }</code></li>
+</ul>
+</div>
+
+<div class="component">
+<h3>Object + datatype properties</h3>
+<p><strong>New (2):</strong></p>
+<ul style="font-size:0.88em; margin-left:20px;">
+<li><code>chorus:exposesVia</code> — domain <code>chorus:Service</code>, <strong>range <code>chorus:Surface</code></strong> (not xsd:string)</li>
+<li><code>chorus:healthAt</code> — domain <code>chorus:Service</code>, range <code>xsd:string</code> (URL/endpoint)</li>
+</ul>
+<p><strong>Existing, reused at service scope:</strong></p>
+<ul style="font-size:0.88em; margin-left:20px;">
+<li><code>chorus:dependsOn</code> — #2448 pattern; service→service + service→substrate edges</li>
+<li><code>chorus:consumes</code>, <code>chorus:consumedBy</code> — service-level read/write</li>
+<li><code>chorus:implementedIn</code> — #2348; file path</li>
+</ul>
+</div>
+
+<div class="component">
+<h3>Service instances (target v1 population)</h3>
+<table>
+<tr><th>Service</th><th>implementedIn</th><th>exposesVia</th><th>healthAt</th></tr>
+<tr><td>chorus-api</td><td>platform/api/src/server.ts</td><td>both</td><td>GET /api/chorus/health</td></tr>
+<tr><td>chorus-hooks</td><td>platform/services/chorus-hooks/src/main.rs</td><td>internal</td><td>launchctl status</td></tr>
+<tr><td>pulse</td><td>pulse.rs in chorus-hooks</td><td>internal</td><td>/tmp/pulse-latest.json freshness</td></tr>
+<tr><td>nudge</td><td>platform/services/messaging</td><td>http</td><td>GET /api/messaging/health</td></tr>
+<tr><td>observer</td><td>platform/services/chorus-hooks/src/observer.rs</td><td>internal</td><td>declared.json freshness</td></tr>
+<tr><td>clearing</td><td>directing/clearing/src/server.ts</td><td>http</td><td>GET /health</td></tr>
+<tr><td>mcp-registry (future)</td><td>platform/spikes/mcp-registry/server.mjs</td><td>mcp</td><td>MCP ping</td></tr>
+<tr><td>Fuseki</td><td>external</td><td>internal</td><td>GET $/ping on :3030</td></tr>
+<tr><td>deep-health</td><td>platform/scripts/deep-health.sh</td><td>internal</td><td>launchd status</td></tr>
+<tr><td>watchdog</td><td>platform/services/watchdog</td><td>internal</td><td>spine event freshness</td></tr>
+<tr><td>session-indexer</td><td>platform/services/chorus-hooks</td><td>internal</td><td>index.db mtime</td></tr>
+</table>
+<p style="font-size:0.82em; color:#666;">Populate incrementally. Each service gets one TTL declaration; no mass migration required.</p>
+</div>
+
+<div class="component">
+<h3>Generator</h3>
+<p>SPARQL over <code>urn:chorus:ontology</code> returning every <code>chorus:Service</code>, <code>chorus:Skill</code>, <code>chorus:Gate</code>, <code>chorus:Endpoint</code>. Output: MCP tool/resource declarations + HTTP route metadata. Runs on chorus-api startup + on <code>/api/athena/reload</code>. <strong>Fail-loud</strong> if any Service/Skill/Gate has missing <code>implementedIn</code> — honest-fold at the registry level per Silas's #2452 feedback. Spike already proved this catches real drift (4 gate superclass instances).</p>
+</div>
+
+<div class="component">
+<h3>Registry cache</h3>
+<p>In-memory on chorus-api process. Event-bus shape (same as #2442 pulse sidecar). Invalidated by <code>/api/athena/reload</code>. Serves both MCP <code>listTools</code> and HTTP introspection endpoints cheaply.</p>
+</div>
+
+<div class="component">
+<h3>Two surfaces</h3>
+<ul style="font-size:0.88em; margin-left:20px;">
+<li><strong>HTTP (existing + augmented):</strong> <code>/api/chorus/*</code>, <code>/api/loom/*</code>, <code>/api/athena/*</code> keep serving today's shape; one new introspection endpoint <code>/api/chorus/services</code> returns the registry for browsers.</li>
+<li><strong>MCP (new, generated):</strong> stdio for spike; HTTP+SSE for production (per Silas). Caller identity via trusted side-channel (UDS peer-cred or harness-injected env). Per-role filtering on <code>listTools</code>.</li>
+</ul>
+</div>
+
+<h2>Surfaces</h2>
+<table>
+<tr><th>Surface</th><th>Consumers</th><th>Transport</th><th>Status</th></tr>
+<tr><td>HTTP (existing routes)</td><td>Browsers, human tooling, curl</td><td>HTTPS on :3340</td><td><span class="tag-real">REAL</span></td></tr>
+<tr><td>HTTP introspection</td><td>Same</td><td><code>/api/chorus/services</code> (new)</td><td><span class="tag-none">MISSING</span></td></tr>
+<tr><td>MCP registry</td><td>Agents (wren/silas/kade), external MCP clients, portable-Chorus (#1842)</td><td>stdio (spike), HTTP+SSE (target)</td><td><span class="tag-spike">SPIKE (#2452)</span></td></tr>
+</table>
+
+<h2>Consumers</h2>
+<table>
+<tr><th>Consumer</th><th>Reads</th><th>Status</th></tr>
+<tr><td>Agent session boot</td><td>Would query registry on start; today reads CLAUDE.md inlined</td><td><span class="tag-none">NOT WIRED</span></td></tr>
+<tr><td>Domain page (integrations section)</td><td>Would populate from <code>chorus:Service</code> + <code>exposesVia</code> edges</td><td><span class="tag-none">NOT WIRED — Gap 7</span></td></tr>
+<tr><td>Pulse</td><td>Service state summary</td><td><span class="tag-partial">PARTIAL (deep-health snapshot only)</span></td></tr>
+<tr><td>Borg observability</td><td>Per-service health + coverage</td><td><span class="tag-partial">PARTIAL (per-machine, not per-service)</span></td></tr>
+<tr><td>External MCP clients</td><td>Enumerate + call</td><td><span class="tag-none">NOT WIRED (spike only)</span></td></tr>
+<tr><td>Doc-catalog</td><td>Link to each service's source</td><td><span class="tag-partial">PARTIAL (manual registration)</span></td></tr>
+<tr><td><code>/pull</code> skill</td><td>Domain context query</td><td><span class="tag-partial">WIRED (partial — queries subdomain, not service directly)</span></td></tr>
+</table>
+
+<h2>Gaps</h2>
+
+<div class="gap"><strong>1.</strong> No <code>chorus:Service</code> class in ontology. Every service today is ad-hoc prose in a plist, script, or CLAUDE.md reference.</div>
+<div class="gap"><strong>2.</strong> Services section of every domain page is empty. Gap 7 from roles-service-design (2026-04-17) — chorus domain renders no services despite ~15 running services.</div>
+<div class="gap"><strong>3.</strong> No <code>exposesVia</code> edge. HTTP-vs-MCP surface attribution isn't queryable; consumers can't ask "what's available via MCP?" without reading prose.</div>
+<div class="gap"><strong>4.</strong> No generator in production. Both surfaces (HTTP today, MCP target) are hand-maintained. Adding a service means editing server.ts, updating plists, maintaining CLAUDE.md — four surfaces for one concept. Competing-implementations pattern (#2437).</div>
+<div class="gap"><strong>5.</strong> No cache invalidation on service state changes. Registry (if it existed) would drift silently.</div>
+<div class="gap"><strong>6.</strong> Auth mapping undefined. Per-role scoping works by convention for skills (Wren runs gate-product); no code enforcement for MCP <code>listTools</code> filtering by caller identity.</div>
+<div class="gap"><strong>7.</strong> Health signal per service missing. deep-health tracks machine-level; no per-service alert on "service disappeared from registry" or "service declared but unreachable."</div>
+<div class="gap"><strong>8.</strong> No formal retire-edge. When a service is retired (#2283 nudge consolidation removed paths), the graph should carry <code>chorus:retiredAt</code> + <code>chorus:supersededBy</code>. Today retirement is prose + code-removal.</div>
+<div class="gap"><strong>9.</strong> No domain page render for services section. Honest-fold discipline not applied — absence renders nothing rather than "0 services declared (query-empty)".</div>
+<div class="gap"><strong>10.</strong> <code>chorus:dependsOn</code> edges at service level not declared. The substrate pattern (#2448) extends down — service-A-dependsOn-service-B for lifecycle coupling.</div>
+
+<h2>Next Steps</h2>
+<table>
+<tr><th>#</th><th>Action</th><th>Impact</th><th>Owner</th><th>Depends</th></tr>
+<tr><td>1</td><td>Declare <code>chorus:Service</code> class + <code>exposesVia</code>/<code>healthAt</code> properties in chorus.ttl</td><td>Schema ready for instance population</td><td>Wren + Silas review</td><td>—</td></tr>
+<tr><td>2</td><td>Populate ~15 service instances (one-pass, minimal envelope)</td><td>Services domain has real data; Gap 7 closes</td><td>Wren</td><td>#1</td></tr>
+<tr><td>3</td><td>Generator (SPARQL → MCP tool/resource + HTTP route metadata) with fail-loud</td><td>Both surfaces live from graph; no hand-maintenance</td><td>Wren (conceptual) + whoever-builds</td><td>#2; extracts from #2452 spike</td></tr>
+<tr><td>4</td><td>Event-bus cache + <code>/api/athena/reload</code> invalidation hook</td><td>Registry stays fresh at scale; same shape as #2442 pulse</td><td>Silas</td><td>#3</td></tr>
+<tr><td>5</td><td>Auth: trusted side-channel caller identity; per-role filtering on MCP listTools/callTool</td><td>Secure adoption of agent surface</td><td>Silas</td><td>#4</td></tr>
+<tr><td>6</td><td>Transport: HTTP+SSE on chorus-api replacing stdio</td><td>Production-ready multi-client</td><td>Silas</td><td>#5</td></tr>
+<tr><td>7</td><td>Invocation safety: MCP tool calls delegate to chorus-hook-shim with existing gate chain</td><td>Real tool invocation possible</td><td>Silas + Wren pair</td><td>#6</td></tr>
+<tr><td>8</td><td>Domain page services section renders honest-fold from registry</td><td>Gap 7 closes visibly</td><td>Wren (conceptual)</td><td>#3</td></tr>
+<tr><td>9</td><td>Retire-edge (<code>chorus:retiredAt</code>, <code>chorus:supersededBy</code>) + retirement-gate</td><td>Competing-implementations #2437 closes structurally for services</td><td>Silas</td><td>— (parallel)</td></tr>
+</table>
+
+<p style="font-size:0.82em; color:#666;">Implementation cards per Next Step, not one mega-card. Each Step is one pull's worth of work.</p>
+
+<h2>Not in Scope</h2>
+
+<ul style="font-size:0.88em; margin-left:20px;">
+<li>Migrating all HTTP endpoints to MCP-only (collapse-to-MCP question is open; spike was explicit). Two surfaces coexist until a separate design decision says otherwise.</li>
+<li>Moving services to a different repo (body-burial work is #2041/#2291/#2445 family; this design assumes current repo topology).</li>
+<li>New services (this design names the shape for services that exist; adding new ones follows the shape but is per-service cards).</li>
+<li>Cross-machine registry federation (Bedroom services observable via deep-health; federating service-registry is follow-on).</li>
+<li>Performance tuning (32 skills today; re-evaluate when service count crosses ~100).</li>
+<li><strong>Client-layer consolidation (per Silas amendment 2).</strong> This design covers the <em>declaration</em> layer. It does NOT cover the <em>client-layer consolidation</em> (cards-CLI + chorus-api both with independent Vikunja clients — Jeff's 2026-04-23 direction). "Two surfaces, one source" only holds if consumers delegate to one shared client per capability. Needs own design + DEC before step-1 implementation card ships. Referenced explicitly so it doesn't go silent.</li>
+</ul>
+
+</body>
+</html>

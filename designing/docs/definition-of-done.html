@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Definition of Done — Gathering &amp; Chorus</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 28px; }
+  h2 { font-size: 1.15rem; color: #2d4a7a; margin-top: 32px; margin-bottom: 12px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 0.95rem; color: #4a5568; margin-top: 20px; margin-bottom: 8px; }
+  p { margin-bottom: 12px; font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.84rem; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.78rem; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .principle { font-size: 1.05rem; font-style: italic; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .gate { background: #fef3c7; border-left: 3px solid #d97706; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .gate b { color: #d97706; }
+  .fail { background: #fef2f2; border-left: 3px solid #dc2626; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .fail b { color: #dc2626; }
+  .ok { background: #f0fdf4; border-left: 3px solid #16a34a; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .ok b { color: #16a34a; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.82rem; }
+  .checklist { list-style: none; margin: 12px 0; padding: 0; }
+  .checklist li { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; font-size: 0.86rem; display: flex; align-items: flex-start; gap: 10px; }
+  .checklist li::before { content: "☐"; font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+  .enforced::before { content: "🔒"; }
+  .manual::before { content: "☐"; }
+  .section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-top: 20px; margin-bottom: 6px; }
+  .incident { background: #fefce8; border-left: 3px solid #ca8a04; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.84rem; }
+  .incident b { color: #ca8a04; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Definition of Done</h1>
+<p class="subtitle">What "done" means on this team &bull; Wren &bull; 2026-03-30 &bull; Born from 108 decisions and a lot of hard lessons</p>
+
+<div class="principle">Done means Jeff can use it, not that the builder finished working on it. The card is done when the experience described in the Experience section is real — not when the code compiles, the tests pass, or the PR merges.</div>
+
+<!-- WHY THIS EXISTS -->
+<h2>Why This Exists</h2>
+
+<p>We've shipped cards that weren't done. Tests passed but the pipeline was broken (#1770 — three bugs in one day). Code was deployed but the endpoint wasn't in the API table (#1869 — seeds invisible to roles). Features worked locally but Jeff couldn't find them (#1867 — 63 HTML artifacts with no catalog). Cards marked Done with 15 of 18 AC items complete.</p>
+
+<p>"Done" is not a feeling. It's a checklist. If any item below is unchecked, the card is not done.</p>
+
+<!-- THE CHECKLIST -->
+<h2>The Checklist</h2>
+
+<p class="section-label">Before Building (WIP Entry)</p>
+<ul class="checklist">
+  <li class="enforced"><strong>Experience section exists</strong> — 2-5 sentences in Jeff's voice. What he sees, feels, gets. Hook-enforced on WIP entry.</li>
+  <li class="enforced"><strong>AC derives from experience</strong> — every AC item traceable to the experience statement.</li>
+  <li class="manual"><strong>Design artifact linked</strong> — if a service design, sequence diagram, or assessment exists for this domain, it's referenced in the card.</li>
+  <li class="enforced"><strong>Blast radius documented</strong> — files and domains this card touches. Hook-enforced.</li>
+</ul>
+
+<p class="section-label">During Building</p>
+<ul class="checklist">
+  <li class="enforced"><strong>Tests written first</strong> — TDD (DEC-1674). Tests describe Jeff's experience, not implementation. Red before green. Hook blocks Done without test runs.</li>
+  <li class="manual"><strong>All AC items complete</strong> — not 15 of 18. All of them. If scope grew, split the card. No partial acceptance.</li>
+  <li class="manual"><strong>No new lint warnings</strong> — ceiling is a ratchet (DEC-085). Only moves down.</li>
+  <li class="manual"><strong>Design artifact updated</strong> — if the implementation diverged from the design, update the design. Don't leave a stale blueprint.</li>
+</ul>
+
+<p class="section-label">Before Demo (Proving Gate — DEC-048)</p>
+<ul class="checklist">
+  <li class="enforced"><strong>Deployed</strong> — code is running, not just committed. <code>app-state.sh deploy</code> for TS changes.</li>
+  <li class="enforced"><strong>Smoke check passes</strong> — <code>smoke-check.sh --all</code> exits zero. Hook-enforced.</li>
+  <li class="manual"><strong>Happy path verified</strong> — the builder has manually confirmed the feature works as described in the Experience section.</li>
+  <li class="manual"><strong>Visual validation</strong> — for front-end cards, <code>/lc</code> screenshot before sign-off. Tests passing ≠ renders correctly.</li>
+</ul>
+
+<p class="section-label">Demo</p>
+<ul class="checklist">
+  <li class="enforced"><strong>Demo to Jeff</strong> — no self-service Done on code cards. Jeff sees every demo. Hook-enforced.</li>
+  <li class="manual"><strong>Show, don't tell</strong> — open the page, hit the endpoint, run the command. Jeff sees the thing working, not a summary of it.</li>
+  <li class="manual"><strong>Demo brief generated</strong> — auto-generated by /demo skill. Proves demo happened.</li>
+</ul>
+
+<p class="section-label">After Demo (Acceptance)</p>
+<ul class="checklist">
+  <li class="manual"><strong>Jeff or Wren accepts</strong> — /acp. The builder cannot accept their own work.</li>
+  <li class="manual"><strong>Spine event emitted</strong> — <code>card.accepted</code> logged.</li>
+  <li class="manual"><strong>State files updated</strong> — projects.md, backlog.md if affected.</li>
+  <li class="manual"><strong>Committed and pushed</strong> — via git-queue.sh.</li>
+</ul>
+
+<p class="section-label">The Final Test</p>
+<ul class="checklist">
+  <li class="manual"><strong>The experience is real</strong> — re-read the Experience section. Is that what Jeff now sees? If not, the card is not done.</li>
+</ul>
+
+<!-- ENFORCED vs MANUAL -->
+<h2>Enforced vs Manual</h2>
+
+<table>
+  <tr><th>Gate</th><th>Enforcement</th><th>What happens if skipped</th></tr>
+  <tr><td>Experience section</td><td>🔒 Hook on WIP entry</td><td>Card can't enter WIP</td></tr>
+  <tr><td>Blast radius</td><td>🔒 Hook on WIP entry</td><td>Card can't enter WIP</td></tr>
+  <tr><td>TDD — tests run</td><td>🔒 Hook on <code>cards done</code></td><td>Can't mark Done without test runs</td></tr>
+  <tr><td>Smoke check</td><td>🔒 Hook on /demo</td><td>Demo blocked</td></tr>
+  <tr><td>Demo happened</td><td>🔒 Hook on <code>cards done</code></td><td>Can't mark Done without demo brief</td></tr>
+  <tr><td>All AC complete</td><td>Manual — Wren/Jeff checks</td><td>Card accepted incomplete → trust erodes</td></tr>
+  <tr><td>Design updated</td><td>Manual — no hook</td><td>Stale blueprints → next builder misled</td></tr>
+  <tr><td>Visual validation</td><td>Manual — /lc reminder</td><td>Tests pass but page broken</td></tr>
+  <tr><td>Experience is real</td><td>Manual — final human check</td><td>Card "done" but Jeff can't use it</td></tr>
+</table>
+
+<div class="gate"><b>KEY INSIGHT (from Kade's red pen, 2026-03-30):</b> The manual has 9 gates listed, the codebase has 33 hook modules. 24 undocumented, 2 documented gates don't exist as described. The gap between "documented" and "enforced" is where quality leaks.</div>
+
+<!-- WHAT DONE IS NOT -->
+<h2>What Done Is Not</h2>
+
+<div class="fail"><b>"Tests pass."</b> Seed pipeline has 106 tests. Photo delivery is broken. Tests passing is necessary but not sufficient. The system must work end-to-end as Jeff experiences it.</div>
+
+<div class="fail"><b>"Code is committed."</b> Committed ≠ deployed. Deployed ≠ working. Working ≠ findable. #1869: seeds endpoint worked but wasn't in the API table — roles couldn't see it.</div>
+
+<div class="fail"><b>"15 of 18 AC items complete."</b> No partial acceptance. All AC or split the card. Every time we accept at 85%, the remaining 15% becomes invisible tech debt.</div>
+
+<div class="fail"><b>"I told Jeff about it."</b> Telling is not showing. A demo is Jeff seeing the thing work, not hearing about it. /demo → show → pause → Jeff reacts.</div>
+
+<div class="fail"><b>"The endpoint returns 200."</b> 200 OK with empty data is not done. The data Jeff expects must be there. The seed endpoint returned 200 while photos were silently dropped.</div>
+
+<!-- INCIDENTS THAT SHAPED THIS -->
+<h2>Incidents That Shaped This Definition</h2>
+
+<div class="incident"><b>#1770 (2026-03-28):</b> Seed pipeline "fixed" three times in one day. Each fix passed unit tests but failed live. Bug 1: URL regex. Bug 2: hashtag stripping. Bug 3: photo content detection. Bug 4: Cloudflare tunnel stale. → Led to: "unit tests necessary but not sufficient" and end-to-end verification requirement.</div>
+
+<div class="incident"><b>#1869 (2026-03-30):</b> Seeds endpoint built on Chorus API but not added to endpoint table. Roles couldn't check seeds from terminal. Jeff discovered photos weren't arriving — the team couldn't even see the problem. → Led to: "observability is part of done" — if the team can't verify it, it's not done.</div>
+
+<div class="incident"><b>#1867 (2026-03-30):</b> 63 HTML artifacts across 5 directories. Doc-catalog only read from one. Jeff asked for diagrams all morning and couldn't find them. → Led to: "findable is part of done" — if Jeff can't get to it, it doesn't exist.</div>
+
+<div class="incident"><b>#1836 (2026-03-29–30):</b> Gemba scripts built and working but card still in WIP. PM didn't know it was done. → Led to: "if the card isn't moved, it isn't done" — status must reflect reality.</div>
+
+<div class="incident"><b>The Lobotomy (2026-03-26):</b> Grep hook broke all 3 roles for 2 days. Nobody reported it. → Led to: circuit breaker (#1858) and "the system must detect failures before Jeff does."</div>
+
+<div class="incident"><b>Seed trust deficit (recurring):</b> Jeff sends something, it doesn't arrive, he discovers it, he tells us, we card it. Every time. → Led to: "Jeff is not the test suite" and synthetic monitoring requirement.</div>
+
+<!-- DECISIONS REFERENCED -->
+<h2>Decisions Referenced</h2>
+
+<table>
+  <tr><th>DEC</th><th>Principle</th></tr>
+  <tr><td>048</td><td>Proving gate — deploy, demo, accept. No self-service Done.</td></tr>
+  <tr><td>050</td><td>Demo quality — AC before Building, smoke check, Jeff sees every demo.</td></tr>
+  <tr><td>069</td><td>Intellectual honesty — say "I don't know" when true.</td></tr>
+  <tr><td>085</td><td>Lint ceiling is a ratchet — only moves down.</td></tr>
+  <tr><td>095</td><td>Mapper before harvest — ICD gate enforcement.</td></tr>
+  <tr><td>108</td><td>Drop chunk taxonomy — domain + sequence only.</td></tr>
+  <tr><td>1674</td><td>TDD — tests describe experience, not implementation.</td></tr>
+</table>
+
+<div class="ok"><b>THE STANDARD:</b> When Jeff reads the Experience section and then uses the feature, they should be the same thing. If there's daylight between the description and the reality, the card is not done.</div>
+
+<p class="meta">Definition of Done &bull; Wren &bull; 2026-03-30 &bull; Gathering &amp; Chorus</p>
+
+</body>
+</html>

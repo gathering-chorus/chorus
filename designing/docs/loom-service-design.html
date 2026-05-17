@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loom — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #dbeafe; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #2d4a7a; }
+  .tag-real { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-partial { background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .tag-none { background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: 600; }
+  .section-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .section-box { background: #f8f8f8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 10px; font-size: 0.82em; }
+  .section-box strong { font-size: 0.75em; text-transform: uppercase; color: #666; display: block; margin-bottom: 4px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Loom <span>— Service Design</span></h1>
+<p class="date">2026-04-05 — Wren, from deployment inventory. Loom = team coordination layer. 23% reactive (healthy).</p>
+
+<div class="promise">
+Three AI roles and one human coordinate without Jeff becoming the relay. Briefs route directly, cards flow through gates, skills encode repeatable actions, decisions persist as governance. When this breaks, Jeff becomes a switchboard operator.
+</div>
+
+<h2>Overview</h2>
+<p>Layer 6 in the dependency stack. Nine components: Roles, Clearing, Interactions, Briefs, Cards, Skills, Decisions, Practices, Policy. Each component below shows what's deployed and what's missing.</p>
+
+<table>
+<tr><th>Component</th><th>Status</th><th>Services</th><th>Tests</th><th>Gap</th></tr>
+<tr><td>Roles</td><td><span class="tag-real">REAL</span></td><td>3 role dirs, session hooks, role-state CLI</td><td>Integration + 1 BDD</td><td>No role health dashboard</td></tr>
+<tr><td>Clearing</td><td><span class="tag-real">REAL</span></td><td>Socket.IO server (port 3460), LaunchAgent</td><td>3 unit + 1 BDD</td><td>Mobile UX issues persist</td></tr>
+<tr><td>Interactions</td><td><span class="tag-real">REAL</span></td><td>Heuristic detector + input_classifier.rs hook</td><td>1 BDD</td><td>No pattern history dashboard</td></tr>
+<tr><td>Briefs</td><td><span class="tag-real">REAL</span></td><td>1,391 briefs, handoff logger, pipeline</td><td>BDD gate tests</td><td>Stale brief accumulation</td></tr>
+<tr><td>Cards</td><td><span class="tag-real">REAL</span></td><td>board-ts CLI (2,986 LOC), Vikunja backend</td><td>17 test files</td><td>34 failing board-client tests</td></tr>
+<tr><td>Skills</td><td><span class="tag-real">REAL</span></td><td>26 skill definitions, CLI-driven</td><td>Integration via BDD</td><td>No skill registry API</td></tr>
+<tr><td>Decisions</td><td><span class="tag-real">REAL</span></td><td>218 decisions (DEC-*), 18 ADRs</td><td><span class="tag-none">NONE</span></td><td>No validation that decisions are enforced</td></tr>
+<tr><td>Practices</td><td><span class="tag-real">REAL</span></td><td>TDD gate, pair skill, demo gate</td><td>9 gate features, 6 step defs</td><td>Gate false positives erode trust</td></tr>
+<tr><td>Policy</td><td><span class="tag-real">REAL</span></td><td>PreToolUse hooks (Rust), permission profiles</td><td>1 BDD (contracts)</td><td>Profiles not fully exercised</td></tr>
+</table>
+
+<!-- ==================== ROLES ==================== -->
+<div class="component">
+<h3>Roles <span class="tag-real">REAL</span></h3>
+<p>Three persistent AI roles — Wren (PM), Silas (Architect), Kade (Engineer) — with session lifecycle, state tracking, and CLAUDE.md governance.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>role-state</code> CLI (Rust shim)<br/>
+    <code>session-start-thin</code> / <code>session-close-thin</code><br/>
+    Context cache builder (parallel threads)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>localhost:3340/api/chorus/domain/chorus</code> (role cards)<br/>
+    State files: <code>/tmp/claude-team-scan/{role}-declared.json</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    CLAUDE.md per role (252-322 lines)<br/>
+    Session files: <code>/tmp/session-start-{role}.md</code><br/>
+    Next-session.md per role dir
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    <code>test-role-state-spine.sh</code><br/>
+    Role state integration in chorus-hooks
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    CLAUDE.md (canonical)<br/>
+    team-architecture.md<br/>
+    TEAM_PROTOCOL.md
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Bridge tiles (role status)<br/>
+    Clearing role indicators<br/>
+    Werk dashboard
+  </div>
+</div>
+</div>
+
+<!-- ==================== CLEARING ==================== -->
+<div class="component">
+<h3>Clearing <span class="tag-real">REAL</span></h3>
+<p>Real-time multi-party chat — browser-based, Socket.IO, with session tailing and transcript capture. For when async briefs are too slow.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    Express + Socket.IO server (:3470, 2,412 LOC)<br/>
+    LaunchAgent: <code>com.chorus.clearing</code><br/>
+    <code>com.chorus.clearing-probe</code> (health)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>localhost:3470</code> (main)<br/>
+    <code>POST /api/sessions</code> (create)<br/>
+    <code>GET /</code> (health)
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Transcripts indexed into Chorus<br/>
+    Session context auto-assembled<br/>
+    DECISION: prefix auto-captured
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    135 test cases across 7 files<br/>
+    <code>clearing-ui.test.ts</code> (53 cases)<br/>
+    <code>bridge-integration.test.ts</code> (30 cases)<br/>
+    BDD: <code>clearing-access.feature</code>
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    SKILL.md (clearing skill)<br/>
+    DEC-107 (nudge delivery)<br/>
+    Clearing service design (#2287)
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    <code>localhost:3470</code> — browser chat<br/>
+    Mobile responsive (5G via tunnel)<br/>
+    Domain card panels with fold
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Mobile UX still has friction — Enter sends instead of newline. Role-state tiles were stale after acceptance (#2286, fixed). Bridge echo noise (#2284, fixed).</div>
+</div>
+
+<!-- ==================== INTERACTIONS ==================== -->
+<div class="component">
+<h3>Interactions <span class="tag-real">REAL</span></h3>
+<p>Nine interaction patterns detected from Jeff's intent — Direction, Ideation, Demo, Triage, SWAT, Gemba, Clearing, Story, Reflection. Detection feeds spine events for Borg.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    Heuristic detector in Wren CLAUDE.md<br/>
+    <code>input_classifier.rs</code> hook (chorus-hooks)<br/>
+    Spine event emission per pattern
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>chorus-log interaction.pattern.detected</code><br/>
+    <code>/api/chorus/interaction-patterns</code> (Loki query)
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Spine events in chorus.log<br/>
+    Pattern history page (#2122) queries Loki
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    BDD: <code>team-awareness.feature</code><br/>
+    <code>interaction-patterns-api.test.ts</code>
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    INTERACTION_PATTERNS.md<br/>
+    9 patterns documented in CLAUDE.md
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    <code>interaction-pattern-history.html</code> (#2122)
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Pattern emission is manual — only 8 events in 7 days. Auto-emit hook carded (#2282). Context-aware hooks (#1863) would let pattern feed into gate urgency.</div>
+</div>
+
+<!-- ==================== BRIEFS ==================== -->
+<div class="component">
+<h3>Briefs <span class="tag-real">REAL</span></h3>
+<p>Primary mechanism for cross-role work exchange. Write to recipient's directory, not your own. Include question, context, constraints, response needed.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    Brief directories per role<br/>
+    Handoff logger (chorus-hooks)<br/>
+    Workflow engine (brief lifecycle)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    Handoff log: <code>proving/logs/handoffs.log</code><br/>
+    Activity log: <code>activity.md</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    1,391 brief files across all roles<br/>
+    JSON handoff events<br/>
+    Staleness tracking in context cache
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    <code>brief.test.ts</code> (workflow engine)<br/>
+    BDD gate tests for handoff
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    TEAM_PROTOCOL.md (brief routing)<br/>
+    CLAUDE.md (brief conventions)
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Session-start context includes recent briefs<br/>
+    No dedicated brief inbox UI
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Stale briefs accumulate — 7+ day old briefs not auto-archived. Handoff checker had 69 false stale alerts (#1962). No inbox UI — briefs only visible in session-start context.</div>
+</div>
+
+<!-- ==================== CARDS ==================== -->
+<div class="component">
+<h3>Cards <span class="tag-real">REAL</span></h3>
+<p>Kanban board with CLI. All board ops through <code>cards</code> — never call Vikunja API directly. No work without a card.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    <code>cards</code> CLI (board-ts, 2,986 LOC)<br/>
+    Vikunja backend (LaunchAgent)<br/>
+    Blast radius auto-generation<br/>
+    Origin labels (reflective/reactive)
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>localhost:3456</code> (Vikunja REST)<br/>
+    CLI: list, view, move, add, update, done<br/>
+    set: domain, chunk, sequence, type, origin
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    2,078 cards (project 2)<br/>
+    48 cards (project 4: Chorus)<br/>
+    14 cards (project 5: Self)<br/>
+    108 labels across 8 categories
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    17 test files in board-client/tests/<br/>
+    <code>single-pass-validation.sh</code><br/>
+    <code>origin-labels.test.ts</code> (5 tests)<br/>
+    <strong style="color:#dc2626">53 failing tests</strong>
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    CLI --help (30 commands)<br/>
+    cards domain service design<br/>
+    DEC-049, DEC-051 (WSJF, WIP limits)
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    <code>localhost:3456</code> (Vikunja web)<br/>
+    Clearing domain panels<br/>
+    Werk dashboard tabs
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> 34 failing board-client tests — test suite degraded, needs stabilization before new features. Bulk operations caused data duplication in past (#feedback). Won't Do column has test artifact noise (48 cards).</div>
+</div>
+
+<!-- ==================== SKILLS ==================== -->
+<div class="component">
+<h3>Skills <span class="tag-real">REAL</span></h3>
+<p>Repeatable actions encoded as skill definitions. CLI-driven, symlinked to <code>~/.claude/skills/</code>. Any role can invoke.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    30 skill definitions (SKILL.md), 27 skill dirs<br/>
+    Shell scripts + CLI interfaces<br/>
+    Symlinked to ~/.claude/skills/
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    No skill registry API<br/>
+    Invocation via <code>/skill-name</code> in terminal
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Skill usage tracked in spine events<br/>
+    Demo seeds captured per skill
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    Integration tested via BDD scenarios<br/>
+    No dedicated skill test suite
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    SKILL.md per skill (26 files)<br/>
+    Skill list in CLAUDE.md
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    <span class="tag-none">NONE</span> — no skill catalog UI
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> No skill registry API — skills are file-based, not queryable. No catalog UI for Jeff to browse available skills. Skill invocation not validated (malformed calls pass through).</div>
+</div>
+
+<!-- ==================== DECISIONS ==================== -->
+<div class="component">
+<h3>Decisions <span class="tag-real">REAL</span></h3>
+<p>218 decisions recorded as DEC-* entries. Governance as narrative — context, rationale, enforcement notes. ADRs for architecture-level choices.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    decisions.md (910 lines, 109 decisions)<br/>
+    18 ADRs in archive<br/>
+    DEC numbering auto-incremented
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    <code>/chorus search DEC-NNN</code><br/>
+    No structured decision API
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Decisions in markdown (searchable)<br/>
+    Referenced in CLAUDE.md per role<br/>
+    Indexed in Chorus search
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    <span class="tag-none">NONE</span> — no automated decision enforcement tests
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    decisions.md (canonical)<br/>
+    Key DECs in CLAUDE.md<br/>
+    DECISIONS.md in about/
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Gathering docs: decisions page<br/>
+    Clearing domain panels reference DECs
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> No validation that decisions are actually enforced. DEC-107 (nudge delivery) was broken for weeks without detection. Decisions are narrative, not executable — hooks encode some, but many are convention-only.</div>
+</div>
+
+<!-- ==================== PRACTICES ==================== -->
+<div class="component">
+<h3>Practices <span class="tag-real">REAL</span></h3>
+<p>TDD discipline, pair programming, demo/proving gate. The behaviors that make building reliable — encoded as gates, skills, and decisions.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    TDD gate, pair gate, demo gate, accept gate<br/>
+    Autonomy guard, session init gate, log-first gate<br/>
+    Memory gate, search hierarchy gate<br/>
+    /pair, /demo, /acp skills
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    Gates fire via PreToolUse hook<br/>
+    <code>chorus-log build.test.completed</code><br/>
+    <code>chorus-log smoke.check.completed</code>
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    Gate decisions logged in hooks.log<br/>
+    Demo briefs auto-generated<br/>
+    Accept/reject events in spine
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    13 gate BDD features (22 total BDD across all domains)<br/>
+    6 step definition files<br/>
+    331 test files across codebase
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    DEC-1674 (TDD discipline)<br/>
+    DEC-048 (proving gate)<br/>
+    Skill docs (pair, demo, acp)
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Demo brief appears in inbox<br/>
+    Gate blocks appear in terminal<br/>
+    No practice metrics dashboard
+  </div>
+</div>
+<div class="gap"><strong>Gap:</strong> Gate false positives erode trust — TDD gate fires on non-code files, context synthesis blocks new files, pair gate blocks CSS. Each false positive teaches roles to work around gates instead of through them. Framework sequence (#2076-#2081) is addressing root causes.</div>
+</div>
+
+<!-- ==================== POLICY ==================== -->
+<div class="component">
+<h3>Policy <span class="tag-real">REAL</span></h3>
+<p>Access control and governance encoded as PreToolUse hooks. Blocks prohibited commands, enforces app-state.sh, scrubs credentials from shared files.</p>
+<div class="section-grid">
+  <div class="section-box"><strong>Services</strong>
+    chorus-hooks (Rust, 36 hook modules)<br/>
+    Permission profiles (base, per-role)<br/>
+    Write scrubber, sensitive paths blocker<br/>
+    infra_guardrails, sparql_guard, csc_guard<br/>
+    bedroom_nfs_guard, nifi_discipline<br/>
+    memory_first, nudge_blast_radius, icd_write_gate
+  </div>
+  <div class="section-box"><strong>APIs</strong>
+    Unix socket: <code>/tmp/chorus-hooks.sock</code><br/>
+    PreToolUse / PostToolUse / Stop hooks
+  </div>
+  <div class="section-box"><strong>Data</strong>
+    hooks.log (pulse logging)<br/>
+    Circuit breaker state (in-memory)<br/>
+    Data classification policy doc
+  </div>
+</div>
+<div class="section-grid">
+  <div class="section-box"><strong>Tests</strong>
+    BDD: <code>jeff-contracts.feature</code><br/>
+    186 Rust tests in chorus-hooks<br/>
+    Circuit breaker pattern (fail-open, 3-strike disable)
+  </div>
+  <div class="section-box"><strong>Docs</strong>
+    Data classification policy<br/>
+    Permission profiles in config/<br/>
+    CLAUDE.md enforcement rules
+  </div>
+  <div class="section-box"><strong>UIs</strong>
+    Gate blocks visible in terminal<br/>
+    Bridge alerts on circuit breaker trips<br/>
+    No policy dashboard
+  </div>
+</div>
+</div>
+
+<h2>Stabilization Priority</h2>
+<p>Loom is 23% reactive overall — healthy. The gaps that matter most:</p>
+<ol style="font-size:0.88em; margin: 10px 0 10px 20px;">
+<li><strong>Cards: 53 failing tests.</strong> Board-client test suite must stabilize before new card features. This is the board Kade needs to fix.</li>
+<li><strong>Gate false positives.</strong> Framework sequence (#2076-#2081) is the fix. Once gates stop crying wolf, practices become trustworthy.</li>
+<li><strong>Decision enforcement gap.</strong> 218 decisions exist as narrative. The ones that matter most need hooks — DEC-107 was broken for weeks undetected.</li>
+<li><strong>Brief inbox.</strong> 1,391 briefs with no UI and stale accumulation. Functional but invisible.</li>
+</ol>
+
+<p class="footer">Generated by Wren | April 5, 2026 | Source: deployment inventory across chorus + gathering repos</p>
+
+</body>
+</html>

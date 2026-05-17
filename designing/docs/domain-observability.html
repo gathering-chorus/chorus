@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Domain — Observability</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.7; }
+  h1 { font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.74rem; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .stage { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
+  .status-ok { color: #16a34a; font-weight: 600; }
+  .status-partial { color: #d97706; font-weight: 600; }
+  .status-gap { color: #dc2626; font-weight: 600; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .meta { font-size: 0.68rem; color: #555; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+
+<h1>Domain — Observability</h1>
+<p class="subtitle"><span class="stage">Chorus</span> &bull; "Can we see what's happening?" &bull; From Jeff's handwritten taxonomy (2026-03-30)</p>
+
+<p>Observability is the parent domain for everything that makes the system visible to itself and to Jeff. Seven sub-domains, each needing an endpoint. Jeff's drawing highlighted ENDPOINT next to each one — the contract is: if you can't query it, you can't observe it.</p>
+
+<h2>Sub-Domains</h2>
+
+<table>
+  <tr><th>Sub-Domain</th><th>What It Covers</th><th>UI</th><th>API / Endpoint</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Logs</strong></td>
+    <td>All structured logs — app, hooks, services, spine events</td>
+    <td>Grafana → Loki dashboards</td>
+    <td>Loki query API at <code>:3102</code></td>
+    <td class="status-ok">Built</td>
+  </tr>
+  <tr>
+    <td><strong>Alerts</strong></td>
+    <td>34 alert rules, severity routing, notification</td>
+    <td>Grafana alerts, Alertmanager UI</td>
+    <td>Alertmanager API at <code>:9093</code></td>
+    <td class="status-ok">Built</td>
+  </tr>
+  <tr>
+    <td><strong>Code</strong></td>
+    <td>Codebase graph, dependencies, blast radius</td>
+    <td><code>/gathering-chorus-system-graph</code></td>
+    <td><code>/api/codebase/graph</code></td>
+    <td class="status-ok">Built</td>
+  </tr>
+  <tr>
+    <td><strong>Cards</strong></td>
+    <td>Board state, WIP, card lifecycle, flow metrics</td>
+    <td><code>/flow</code>, <code>/werk</code></td>
+    <td><code>GET /api/chorus/cards</code> at <code>:3340</code></td>
+    <td class="status-ok">Built</td>
+  </tr>
+  <tr>
+    <td><strong>Tool Chain</strong></td>
+    <td>Hooks, gates, fitness functions, governance</td>
+    <td><code>/hooks</code>, <code>/fitness-functions</code></td>
+    <td>No API — hooks.log only</td>
+    <td class="status-partial">Partial — no endpoint</td>
+  </tr>
+  <tr>
+    <td><strong>Pulse</strong></td>
+    <td>Hook invocation telemetry — who fired, what decided, how long</td>
+    <td>hooks.log tail</td>
+    <td>No API — file-based only</td>
+    <td class="status-partial">Partial — no endpoint</td>
+  </tr>
+  <tr>
+    <td><strong>Chorus Search / Memory + Context</strong></td>
+    <td>Context index, semantic search, session history</td>
+    <td><code>/chorus</code></td>
+    <td><code>GET /api/chorus/search</code> at <code>:3340</code></td>
+    <td class="status-ok">Built</td>
+  </tr>
+</table>
+
+<h2>Quality Criteria</h2>
+<p>From Jeff's drawing — the qualities every domain should deliver:</p>
+<table>
+  <tr><th>Quality</th><th>Definition</th><th>Observability Domain Score</th></tr>
+  <tr><td><strong>Observability</strong></td><td>Can we see what's happening?</td><td class="status-ok">5/7 sub-domains queryable</td></tr>
+  <tr><td><strong>Transparency</strong></td><td>Can we understand why it happened?</td><td class="status-partial">Logs have context, hooks don't always explain decisions</td></tr>
+  <tr><td><strong>Auditing</strong></td><td>Can we trace who did what when?</td><td class="status-partial">Spine events have role + timestamp, not all actions traced</td></tr>
+  <tr><td><strong>Monitoring</strong></td><td>Are we alerted when things go wrong?</td><td class="status-ok">34 alert rules, ops agent every 15min</td></tr>
+  <tr><td><strong>Testimony</strong></td><td>Can the system explain itself?</td><td class="status-gap">Conceptual — no self-explanation capability</td></tr>
+  <tr><td><strong>Accountability</strong></td><td>Can we attribute outcomes to actions?</td><td class="status-partial">Card → role attribution exists, not all outcomes traced</td></tr>
+  <tr><td><strong>Testability</strong></td><td>Can we verify it works without Jeff?</td><td class="status-partial">Unit tests yes, synthetic monitoring partial (#1800)</td></tr>
+</table>
+
+<h2>Gaps</h2>
+<ul style="margin: 8px 0 12px 20px; font-size: 0.84rem;">
+  <li><strong>Tool Chain + Pulse need endpoints</strong> — file-based only, not queryable from API</li>
+  <li><strong>Testimony is conceptual</strong> — the system can't explain why a hook fired or why a card moved</li>
+  <li><strong>Cross-domain tracing</strong> — correlation IDs exist (#1809) but not wired through all paths</li>
+</ul>
+
+<p class="meta">Domain — Observability &bull; From Jeff's handwritten taxonomy &bull; Wren &bull; 2026-03-30</p>
+</body>
+</html>

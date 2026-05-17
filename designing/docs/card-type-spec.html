@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Card Type Specification</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px 1in; max-width: 1100px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 1.4rem; color: #1a1a2e; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 24px; }
+  h2 { font-size: 1.1rem; color: #2d4a7a; margin-top: 28px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.86rem; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.82rem; }
+  th { text-align: left; padding: 8px 12px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76rem; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .type-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.74rem; font-weight: 600; }
+  .type-new { background: #dcfce7; color: #166534; }
+  .type-enhance { background: #dbeafe; color: #1e40af; }
+  .type-fix { background: #fef2f2; color: #991b1b; }
+  .type-chore { background: #f1f5f9; color: #475569; }
+  .type-swat { background: #fef3c7; color: #92400e; }
+  .exp { font-size: 1.0rem; font-style: italic; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .note { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 8px 0; font-size: 0.82rem; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .meta { font-size: 0.68rem; color: #6b7280; margin-top: 30px; text-align: center; padding-top: 16px; border-top: 1px solid #ddd; }
+  @media print { body { padding: 20px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>Card Type Specification</h1>
+<p class="subtitle">The behavioral trigger for gates, signals, and flow metrics &bull; #1909 &bull; Wren &bull; 2026-03-31</p>
+
+<div class="exp">I create a card and the first thing I choose is what kind of work it is. That choice drives everything: which gates fire, what level of research is required, how urgently the signal propagates, and how the work shows up in flow metrics.</div>
+
+<h2>Five Types</h2>
+
+<table>
+  <tr><th>Type</th><th>When to use</th><th>Example</th></tr>
+  <tr><td><span class="type-badge type-new">new</span></td><td>Building something that doesn't exist. New page, new endpoint, new service, new artifact.</td><td>#1877 Doc-catalog live service</td></tr>
+  <tr><td><span class="type-badge type-enhance">enhance</span></td><td>Improving something that works. Better UX, more data, additional filters, performance.</td><td>#1882 Doc-catalog filters</td></tr>
+  <tr><td><span class="type-badge type-fix">fix</span></td><td>Something is broken. Bug, regression, data loss, incorrect behavior.</td><td>#1868 Disk check false 96%</td></tr>
+  <tr><td><span class="type-badge type-chore">chore</span></td><td>Maintenance. Cleanup, migration, dedup, documentation, tech debt.</td><td>#1866 Remove stale Docker references</td></tr>
+  <tr><td><span class="type-badge type-swat">swat</span></td><td>Crisis. Something is down, data is being lost, Jeff can't work.</td><td>#1869 Seeds invisible to roles</td></tr>
+</table>
+
+<h2>Gate Behavior by Type</h2>
+
+<table>
+  <tr><th>Gate</th><th><span class="type-badge type-new">new</span></th><th><span class="type-badge type-enhance">enhance</span></th><th><span class="type-badge type-fix">fix</span></th><th><span class="type-badge type-chore">chore</span></th><th><span class="type-badge type-swat">swat</span></th></tr>
+  <tr><td>Experience section</td><td>Required</td><td>Required</td><td>Required</td><td>Optional</td><td>Optional</td></tr>
+  <tr><td>Chorus search</td><td>Skip</td><td>Required</td><td>Required</td><td>Skip</td><td>Skip</td></tr>
+  <tr><td>Git log on file</td><td>Skip</td><td>Skip</td><td><strong>Required</strong></td><td>Skip</td><td>Skip</td></tr>
+  <tr><td>Loki log inspection</td><td>Skip</td><td>Skip</td><td><strong>Required</strong></td><td>Skip</td><td>Skip</td></tr>
+  <tr><td>Context synthesis</td><td>Own-domain pass</td><td>Required</td><td><strong>Required</strong></td><td>Skip</td><td>Skip</td></tr>
+  <tr><td>TDD (tests first)</td><td>Required</td><td>Required</td><td>Required</td><td>Skip</td><td>Skip</td></tr>
+  <tr><td>Demo to Jeff</td><td>Required</td><td>Required</td><td>Required</td><td>Skip</td><td>Required</td></tr>
+  <tr><td>Blast radius</td><td>Required</td><td>Required</td><td>Required</td><td>Optional</td><td>Skip</td></tr>
+  <tr><td>Smoke check</td><td>Required</td><td>Required</td><td>Required</td><td>Skip</td><td>Exempt</td></tr>
+</table>
+
+<div class="note"><b>Key insight:</b> Fix cards get the most gates — git log, Loki logs, synthesis, TDD, demo. This is because fixes are where the team keeps repeating mistakes (seed pipeline: 18 commits, still broken). New features get the least friction — trust the builder in their own domain.</div>
+
+<h2>Signal Level by Type</h2>
+
+<table>
+  <tr><th>Type</th><th>Default pulse level</th><th>Nudge behavior</th></tr>
+  <tr><td><span class="type-badge type-new">new</span></td><td>info</td><td>Clearing ambient</td></tr>
+  <tr><td><span class="type-badge type-enhance">enhance</span></td><td>info</td><td>Clearing ambient</td></tr>
+  <tr><td><span class="type-badge type-fix">fix</span></td><td>warn</td><td>Clearing + team-scan prominent</td></tr>
+  <tr><td><span class="type-badge type-chore">chore</span></td><td>info</td><td>Clearing ambient</td></tr>
+  <tr><td><span class="type-badge type-swat">swat</span></td><td>critical</td><td>osascript inject to Jeff</td></tr>
+</table>
+
+<h2>Flow Metrics</h2>
+
+<p>Card type enables tracking:</p>
+<ul style="margin: 8px 0 12px 20px; font-size: 0.84rem;">
+  <li><strong>Fix:Feature ratio</strong> — high fix ratio = quality problem</li>
+  <li><strong>Chore load</strong> — too many chores = tech debt accumulating</li>
+  <li><strong>SWAT frequency</strong> — frequent crises = systemic instability</li>
+  <li><strong>Enhancement velocity</strong> — how fast we improve what exists</li>
+  <li><strong>New feature rate</strong> — how fast we expand capability</li>
+</ul>
+
+<h2>CLI Usage</h2>
+
+<p><code>cards add "title" --type fix --owner silas --priority P1 --domain chorus</code></p>
+<p><code>cards add "title" --type new --owner kade --priority P2 --domain photos</code></p>
+<p>Type is required on creation. No default — forces the choice.</p>
+
+<h2>Replaces</h2>
+
+<table>
+  <tr><th>Current mechanism</th><th>Replaced by</th></tr>
+  <tr><td><code>is_defect_fix()</code> keyword matching in memory_gate.rs</td><td>Card type = fix check</td></tr>
+  <tr><td><code>[swat]</code> tag on card title</td><td>Card type = swat</td></tr>
+  <tr><td>Implicit "this is a chore" from title</td><td>Card type = chore</td></tr>
+  <tr><td>Demo skip heuristic for non-code cards</td><td>Card type = chore → demo skip</td></tr>
+</table>
+
+<p class="meta">Card Type Specification &bull; #1909 &bull; Wren &bull; 2026-03-31 &bull; Drives gate behavior, signal level, flow metrics</p>
+
+</body>
+</html>

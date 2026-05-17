@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observability — Chorus Domain</title>
+<style>
+  body { font-family: Georgia, serif; margin: 40px 1in; padding: 0; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.8em; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  h2 { font-size: 1.3em; margin-top: 2em; color: #444; }
+  h3 { font-size: 1.1em; color: #555; margin-top: 1.5em; }
+  .policy { background: #fee2e2; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-style: italic; border-left: 4px solid #dc2626; }
+  .forcing { background: #fef3cd; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #d4a017; }
+  .forcing strong { color: #856404; }
+  .gap { background: #f8d7da; padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+  .gap strong { color: #721c24; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 0.9em; }
+  th { background: #f0f0f0; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  .date { color: #999; font-size: 0.85em; }
+</style>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Observability</h1>
+<p class="date">2026-04-06 — Silas (#2273). Two repos, two alert mechanisms, one picture.</p>
+
+<div class="policy">
+Alerts are for roles, not Jeff. Silas owns infrastructure health. When observability breaks, Jeff discovers problems by watching screens instead of building. That is the highest-cost failure mode.
+</div>
+
+<h2>Key Documents</h2>
+<table>
+<tr><th>Document</th><th>What it covers</th></tr>
+<tr><td><a href="/gathering-docs/observability-service-design.html">Service Design</a></td><td>Component breakdown — Metrics, Logs, Alerts, Health Checks, Dashboards, Instrumentation. Status, services, gaps.</td></tr>
+<tr><td><a href="https://github.com/WJeffBridwell/shared-observability">shared-observability repo</a></td><td>Canonical deployment source — Prometheus, Grafana, Loki, Alertmanager configs, 13 dashboards.</td></tr>
+<tr><td><a href="/gathering-docs/chorus-hook-architecture.html">Hook Architecture</a></td><td>36-hook execution model — hooks log decisions to the pulse log, which feeds observability.</td></tr>
+<tr><td><a href="/gathering-docs/chorus-standards.html">Standards Surface</a></td><td>Policy compliance metric — 38% gate-enforced, generated from hook pulse data.</td></tr>
+</table>
+
+<h2>Purpose</h2>
+<p>Observability is the system's ability to expose its internal state through external signals. It spans two repos and two mechanisms:</p>
+<ul>
+<li><strong>shared-observability/</strong> — canonical deployment source. Prometheus scrape targets, Grafana dashboards, Loki log aggregation, Alertmanager routing. Docker Compose stack, 7 services.</li>
+<li><strong>chorus/alerting/</strong> — 7 shell-based alert rules running as cron jobs. Different mechanism, complementary coverage. These check application-level health (app down, tunnel down, hook server dead, seed write failures).</li>
+</ul>
+<p>Together they answer: <strong>Is the system healthy? If not, what's broken and who should fix it?</strong></p>
+
+<h2>Two-Repo Architecture</h2>
+<table>
+<tr><th>What</th><th>Canonical Source</th><th>Status</th></tr>
+<tr><td>Prometheus configs + alert rules</td><td><code>shared-observability/config/prometheus/</code></td><td>7 rule files, active</td></tr>
+<tr><td>Grafana dashboards</td><td><code>shared-observability/dashboards/</code></td><td>13 JSON files</td></tr>
+<tr><td>Grafana-native alerts</td><td><code>shared-observability/config/grafana/provisioning/alerting/</code></td><td>3 groups (team health, log metrics, NiFi)</td></tr>
+<tr><td>Loki + Promtail configs</td><td><code>shared-observability/config/loki/</code></td><td>7-day retention</td></tr>
+<tr><td>Alertmanager routing</td><td><code>shared-observability/config/alertmanager/</code></td><td>Critical→#all-gathering, Warning→#silas</td></tr>
+<tr><td>Shell-based alert rules</td><td><code>chorus/alerting/</code></td><td>7 rules, cron-driven</td></tr>
+<tr><td>Deep health checks</td><td><code>chorus/platform/scripts/deep-health.sh</code></td><td>13 checks, 5-min cron</td></tr>
+</table>
+
+<div class="gap"><strong>Resolved (#2275):</strong> Stale copies in <code>chorus/proving/alerting/</code> and <code>chorus/proving/dashboards/</code> deleted. All observability configs now live exclusively in <code>shared-observability/</code>. 25 uncommitted changes committed. One canonical source, no duplicates.</div>
+
+<h2>Services</h2>
+<table>
+<tr><th>Service</th><th>Port</th><th>LaunchAgent</th><th>Owner</th><th>What it does</th></tr>
+<tr><td>Prometheus</td><td>9090</td><td><code>com.gathering.prometheus</code></td><td>Silas</td><td>Metrics TSDB — scrapes exporters, evaluates alert rules, 15-day retention</td></tr>
+<tr><td>Grafana</td><td>3100</td><td><code>com.gathering.grafana</code></td><td>Silas</td><td>Dashboards + alert UI — 13 dashboards, 3 Grafana-native alert groups</td></tr>
+<tr><td>Loki</td><td>3102</td><td><code>com.gathering.loki</code></td><td>Silas</td><td>Log aggregation — structured JSON logs from all services, 7-day retention</td></tr>
+<tr><td>Promtail</td><td>—</td><td><code>com.gathering.promtail</code></td><td>Silas</td><td>Log shipper — auto-discovers services, ships to Loki</td></tr>
+<tr><td>Alertmanager</td><td>9093</td><td><code>com.gathering.alertmanager</code></td><td>Silas</td><td>Alert routing — dedup, group, route to Slack channels by severity</td></tr>
+<tr><td>Blackbox Exporter</td><td>9115</td><td><code>com.gathering.blackbox-exporter</code></td><td>Silas</td><td>HTTP/ICMP probes — endpoint health from outside</td></tr>
+<tr><td>Node Exporter</td><td>9101</td><td><code>com.gathering.node-exporter</code></td><td>Silas</td><td>Host metrics — CPU, memory, disk, network (APFS-aware)</td></tr>
+<tr><td>MySQL Exporter</td><td>9104</td><td><code>com.gathering.mysqld-exporter</code></td><td>Silas</td><td>WordPress DB metrics</td></tr>
+<tr><td>Alert Runner</td><td>—</td><td><code>com.chorus.alert-runner</code></td><td>Silas</td><td>Shell-based alert rules — 60s cycle, fires to Bridge + nudge</td></tr>
+<tr><td>Deep Health</td><td>—</td><td><code>com.chorus.deep-health</code></td><td>Silas</td><td>13 subprocess-level checks every 5 min</td></tr>
+</table>
+
+<h2>Alert Rules — Dual Mechanism</h2>
+<h3>Prometheus Rules (shared-observability)</h3>
+<table>
+<tr><th>Rule File</th><th>Alerts</th></tr>
+<tr><td>common-alerts.yml</td><td>ServiceDown, HighErrorRate, HighLatency, HighMemory, HighCPU, DiskSpaceLow, ContainerRestarting</td></tr>
+<tr><td>external-traffic-alerts.yml</td><td>CloudflareTunnelDown, ExternalTrafficSpike, HighExternalErrorRate</td></tr>
+<tr><td>home-network-alerts.yml</td><td>LAN device probes</td></tr>
+<tr><td>deploy-sla-alerts.yml</td><td>Deployment duration, failure rate</td></tr>
+<tr><td>fuseki-perf-alerts.yml</td><td>Fuseki query latency, memory</td></tr>
+<tr><td>harvest-alerts.yml</td><td>Harvest job monitoring</td></tr>
+<tr><td>uptime-recording.yml</td><td>Recording rules for uptime metrics</td></tr>
+</table>
+
+<h3>Shell-Based Rules (chorus/alerting/)</h3>
+<table>
+<tr><th>Rule</th><th>Checks</th><th>Cooldown</th></tr>
+<tr><td>app-down.yml</td><td>localhost:3000/health every 2min</td><td>Critical, nudge Silas</td></tr>
+<tr><td>tunnel-down.yml</td><td>Cloudflare + auto-restart</td><td>3-retry sustained</td></tr>
+<tr><td>hook-server-down.yml</td><td>chorus-hooks PID + socket</td><td>1/hour</td></tr>
+<tr><td>seed-write-failure.yml</td><td>Loki query for SPARQL write errors</td><td>Critical</td></tr>
+<tr><td>startup-sync-failure.yml</td><td>App SMS sync on boot</td><td>5min</td></tr>
+<tr><td>daily-review-missing.yml</td><td>Spine event after 6:30am</td><td>1/day</td></tr>
+<tr><td>nudge-stale.yml</td><td>Unacknowledged nudges >10min</td><td>Warning</td></tr>
+</table>
+
+<h2>Forcing Functions</h2>
+
+<div class="forcing">
+<strong>Deep health (5min cron):</strong> 13 checks fire every 5 minutes. Subprocess liveness, log freshness, HTTP endpoints, session index timestamps, standards surface staleness. Failures nudge Silas with diagnostic context.
+</div>
+
+<div class="forcing">
+<strong>Alert runner (60s cron):</strong> Shell-based rules check application health continuously. Auto-heal where possible (tunnel restart, stale SSH kill). Fire to Bridge so Jeff sees it without checking.
+</div>
+
+<div class="forcing">
+<strong>Prometheus (15s scrape):</strong> Metrics collection is continuous and automatic. Alert rules evaluate every cycle. No opt-in required.
+</div>
+
+<div class="forcing">
+<strong>Ops awareness hook:</strong> Fires on every PostToolUse (Bash/Read). If the API is down or alerts fired, the active role sees it immediately. 60-second cooldown prevents spam.
+</div>
+
+<h2>UIs</h2>
+<table>
+<tr><th>Surface</th><th>URL</th><th>What Jeff sees</th></tr>
+<tr><td>Grafana</td><td><code>localhost:3100</code></td><td>13 dashboards — activity, alerts, app ops, node metrics, logs, cost, NiFi, sessions</td></tr>
+<tr><td>Prometheus</td><td><code>localhost:9090</code></td><td>Raw metrics, alert rule status, target health</td></tr>
+<tr><td>Alertmanager</td><td><code>localhost:9093</code></td><td>Active alerts, silences, routing</td></tr>
+<tr><td>Bridge</td><td><code>localhost:3470</code></td><td>Alert messages appear in activity stream</td></tr>
+</table>
+
+<h2>Dashboards (13)</h2>
+<table>
+<tr><th>Dashboard</th><th>Purpose</th></tr>
+<tr><td>chorus-activity.json</td><td>Team activity timeline — role events from Loki</td></tr>
+<tr><td>alerts-overview.json</td><td>Alert history and active alerts</td></tr>
+<tr><td>app-operations.json</td><td>Application health, deploy events, error rates</td></tr>
+<tr><td>node-metrics.json</td><td>CPU, memory, disk, network for Library Mac</td></tr>
+<tr><td>docker-containers.json</td><td>Container health (legacy — 3 containers remain)</td></tr>
+<tr><td>home-network.json</td><td>LAN device availability</td></tr>
+<tr><td>home-cloud.json</td><td>Home infrastructure overview</td></tr>
+<tr><td>data-center.json</td><td>Cross-machine data view</td></tr>
+<tr><td>cost-dashboard.json</td><td>API cost tracking</td></tr>
+<tr><td>service-overview.json</td><td>Service health summary</td></tr>
+<tr><td>logs-explorer.json</td><td>Loki log search and analysis</td></tr>
+<tr><td>nifi-bedroom.json</td><td>NiFi pipeline health on Bedroom Mac</td></tr>
+<tr><td>session-tempo.json</td><td>Session timing and prompt rates</td></tr>
+</table>
+
+<h2>Open Questions</h2>
+<ul>
+<li><strong>Repo sync:</strong> No automated sync between shared-observability and chorus copies. 13 uncommitted changes in shared-observability. Manual copy-paste is the current method.</li>
+<li><strong>Hooks telemetry endpoint:</strong> Hook decisions log to ~/Library/Logs/Gathering/hooks.log but there's no queryable API. Standards generation script parses the file directly.</li>
+<li><strong>Correlation:</strong> Events across services aren't linked. Can't answer "which nudge caused this alert?" without manual investigation.</li>
+<li><strong>Disk metrics:</strong> perf-baseline.sh percentUsed is broken (shows 2%, actual ~51%). Node exporter reports correctly but the script doesn't.</li>
+</ul>
+
+</body>
+</html>

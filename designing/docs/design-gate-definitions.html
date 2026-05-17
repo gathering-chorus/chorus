@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card Completion Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 920px; margin: 0 auto; padding: 2rem 1.5rem; color: #1a1a1a; line-height: 1.6; background: #fafafa; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+  .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.2rem; margin: 2.5rem 0 0.75rem; border-bottom: 2px solid #e0e0e0; padding-bottom: 0.25rem; }
+  p { margin-bottom: 0.75rem; }
+  .insight { background: #f8f6f0; border-left: 3px solid #ccc; padding: 0.75rem 1rem; margin: 1rem 0; font-size: 0.9rem; }
+
+  /* Pipeline */
+  .pipeline { display: flex; align-items: stretch; gap: 0; margin: 2rem 0; overflow-x: auto; }
+  .stage { flex: 1; min-width: 100px; padding: 0.75rem 0.5rem; text-align: center; position: relative; border-top: 3px solid; border-bottom: 1px solid #ddd; background: #fff; }
+  .stage:first-child { border-radius: 8px 0 0 8px; border-left: 1px solid #ddd; }
+  .stage:last-child { border-radius: 0 8px 8px 0; border-right: 1px solid #ddd; }
+  .stage::after { content: "→"; position: absolute; right: -8px; top: 50%; transform: translateY(-50%); color: #bbb; font-size: 1rem; z-index: 1; }
+  .stage:last-child::after { content: ""; }
+  .stage-name { font-weight: 600; font-size: 0.8rem; margin-bottom: 0.15rem; }
+  .stage-owner { font-size: 0.7rem; color: #888; }
+  .stage.wren { border-top-color: #f9ab00; }
+  .stage.kade { border-top-color: #34a853; }
+  .stage.silas { border-top-color: #ea4335; }
+  .stage.jeff { border-top-color: #4285f4; }
+  .stage.neutral { border-top-color: #999; }
+
+  /* Stage detail cards */
+  .stage-detail { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; border-left: 4px solid; }
+  .stage-detail.wren { border-left-color: #f9ab00; }
+  .stage-detail.kade { border-left-color: #34a853; }
+  .stage-detail.silas { border-left-color: #ea4335; }
+  .stage-detail.jeff { border-left-color: #4285f4; }
+  .detail-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+  .detail-title { font-weight: 600; }
+  .detail-owner { font-size: 0.8rem; color: #888; }
+  .detail-question { font-style: italic; color: #555; font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .rules-list { list-style: none; padding: 0; }
+  .rules-list li { padding: 0.25rem 0; padding-left: 1.25rem; position: relative; font-size: 0.85rem; }
+  .rules-list li::before { content: ""; position: absolute; left: 0; top: 0.5rem; width: 10px; height: 10px; border: 1.5px solid #bbb; border-radius: 2px; }
+  .gate-badge { display: inline-block; font-size: 0.7rem; font-family: monospace; background: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; padding: 0.1rem 0.4rem; color: #555; margin-top: 0.4rem; }
+  .detail-meta { display: flex; gap: 1rem; align-items: center; margin-top: 0.4rem; }
+  .fires-at { font-size: 0.8rem; color: #666; }
+
+  /* Applicability */
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th { text-align: left; padding: 0.5rem; border-bottom: 2px solid #ddd; font-weight: 600; }
+  td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #eee; }
+  td.check { text-align: center; }
+  th.wren-col { color: #e37400; }
+  th.kade-col { color: #1e8e3e; }
+  th.silas-col { color: #c5221f; }
+
+  /* BDD */
+  .scenario { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
+  .scenario-title { font-weight: 600; margin-bottom: 0.5rem; color: #333; }
+  .gherkin { font-family: 'SF Mono', Menlo, monospace; font-size: 0.78rem; line-height: 1.8; }
+  .gherkin .kw { color: #0d47a1; font-weight: 600; }
+  .feature-header { font-family: 'SF Mono', Menlo, monospace; font-size: 0.85rem; font-weight: 600; color: #0d47a1; margin-bottom: 0.25rem; }
+  .feature-desc { font-family: 'SF Mono', Menlo, monospace; font-size: 0.8rem; color: #666; margin-bottom: 1.5rem; line-height: 1.6; }
+
+  .resolved { color: #888; font-size: 0.85rem; }
+  .resolved strong { color: #333; }
+  .open { font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<h1>Card Completion Pipeline</h1>
+<p class="subtitle">Design — 2026-04-08 · Practices domain · Kade + Silas input</p>
+
+<h2>Problem</h2>
+<p>"Done" is one gate today. In practice it's five different checks owned by three different roles. Cards get stuck in "not done yet" with no clarity on which stage failed or who unblocks it. Roles push Jeff for ACP before the work is actually complete — sometimes when it merely compiles.</p>
+
+<div class="insight">A card is a unit of work moving through a pipeline. Each stage has rules (what "pass" means) and a gate (who signs off). No stage can be skipped. No promotion without sign-off. Jeff touches the card twice: entry and exit.</div>
+
+<h2>The Pipeline</h2>
+
+<div class="pipeline">
+  <div class="stage neutral"><div class="stage-name">Pull</div><div class="stage-owner">entry</div></div>
+  <div class="stage kade"><div class="stage-name">Build</div><div class="stage-owner">Kade</div></div>
+  <div class="stage wren"><div class="stage-name">Product</div><div class="stage-owner">Wren</div></div>
+  <div class="stage kade"><div class="stage-name">Code</div><div class="stage-owner">Kade</div></div>
+  <div class="stage kade"><div class="stage-name">Quality</div><div class="stage-owner">Kade</div></div>
+  <div class="stage silas"><div class="stage-name">Arch</div><div class="stage-owner">Silas</div></div>
+  <div class="stage silas"><div class="stage-name">Ops</div><div class="stage-owner">Silas</div></div>
+  <div class="stage jeff"><div class="stage-name">Accept</div><div class="stage-owner">Jeff</div></div>
+</div>
+
+<h2>Stages</h2>
+
+<div class="stage-detail neutral" style="border-left-color:#999;">
+  <div class="detail-header">
+    <span class="detail-title">1. Pull</span>
+    <span class="detail-owner">Wren writes AC · Kade pulls card</span>
+  </div>
+  <div class="detail-question">Card enters the pipeline.</div>
+  <ul class="rules-list">
+    <li>AC written and attached to card</li>
+    <li>Card moved to WIP</li>
+    <li>Applicable stages tagged</li>
+  </ul>
+</div>
+
+<div class="stage-detail kade">
+  <div class="detail-header">
+    <span class="detail-title">2. Build</span>
+    <span class="detail-owner">Kade</span>
+  </div>
+  <div class="detail-question">Implementation. TDD cycle: AC → tests (red) → code → tests (green).</div>
+</div>
+
+<div class="stage-detail wren">
+  <div class="detail-header">
+    <span class="detail-title">3. Product</span>
+    <span class="detail-owner">Wren</span>
+  </div>
+  <div class="detail-question">"Did we build what was asked?"</div>
+  <ul class="rules-list">
+    <li>Every AC item demonstrably met</li>
+    <li>Demo script runs, Jeff sees the outcome</li>
+    <li>User-facing docs / help text updated if applicable</li>
+    <li>Card description matches what was actually built</li>
+  </ul>
+  <div class="detail-meta">
+    <span class="gate-badge">gate:product-pass</span>
+    <span class="fires-at">Fires at: feature-complete</span>
+  </div>
+</div>
+
+<div class="stage-detail kade">
+  <div class="detail-header">
+    <span class="detail-title">4. Code</span>
+    <span class="detail-owner">Kade</span>
+  </div>
+  <div class="detail-question">"Is the code solid?"</div>
+  <ul class="rules-list">
+    <li>Tests written before code (TDD)</li>
+    <li>Tests green — unit + integration</li>
+    <li>Matches existing code patterns</li>
+    <li>No unlogged tech debt introduced</li>
+    <li>Build clean, no warnings promoted</li>
+  </ul>
+  <div class="detail-meta">
+    <span class="gate-badge">gate:code-pass</span>
+    <span class="fires-at">Fires at: code-complete</span>
+  </div>
+</div>
+
+<div class="stage-detail kade">
+  <div class="detail-header">
+    <span class="detail-title">5. Quality</span>
+    <span class="detail-owner">Kade</span>
+  </div>
+  <div class="detail-question">"Does it meet the standard?"</div>
+  <ul class="rules-list">
+    <li>Hooks pass (write scrubber, infra guardrails, ICD gate)</li>
+    <li>No regression in adjacent domains</li>
+    <li>Observability: logs structured, metrics emitting</li>
+    <li>Error handling tested at boundaries</li>
+  </ul>
+  <div class="detail-meta">
+    <span class="gate-badge">gate:quality-pass</span>
+    <span class="fires-at">Fires at: code-complete</span>
+  </div>
+</div>
+
+<div class="stage-detail silas">
+  <div class="detail-header">
+    <span class="detail-title">6. Architecture</span>
+    <span class="detail-owner">Silas</span>
+  </div>
+  <div class="detail-question">"Does it fit the system?"</div>
+  <ul class="rules-list">
+    <li>Architecture review — fits the domain map</li>
+    <li>No cross-domain violations</li>
+    <li>Consistent with ICD contracts</li>
+    <li>Namespace / URI conventions followed</li>
+    <li>No unreviewed structural changes</li>
+  </ul>
+  <div class="detail-meta">
+    <span class="gate-badge">gate:arch-pass</span>
+    <span class="fires-at">Fires at: code-complete</span>
+  </div>
+</div>
+
+<div class="stage-detail silas">
+  <div class="detail-header">
+    <span class="detail-title">7. Ops</span>
+    <span class="detail-owner">Silas</span>
+  </div>
+  <div class="detail-question">"Can we run it safely?"</div>
+  <ul class="rules-list">
+    <li>Deploys via app-state.sh without manual steps</li>
+    <li>Health checks pass post-deploy</li>
+    <li>Logs flowing to Loki, queryable</li>
+    <li>Rollback path verified</li>
+    <li>No deploy-freeze violation</li>
+  </ul>
+  <div class="detail-meta">
+    <span class="gate-badge">gate:ops-pass</span>
+    <span class="fires-at">Fires at: deploy time</span>
+  </div>
+</div>
+
+<div class="stage-detail jeff">
+  <div class="detail-header">
+    <span class="detail-title">8. Accept</span>
+    <span class="detail-owner">Jeff</span>
+  </div>
+  <div class="detail-question">All applicable gates passed. ACP runs. Card exits the pipeline.</div>
+  <ul class="rules-list">
+    <li>All required gate labels present</li>
+    <li>Jeff accepts — commit + push</li>
+  </ul>
+</div>
+
+<h2>Applicability by Card Type</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Card type</th>
+      <th class="check wren-col">Product</th>
+      <th class="check kade-col">Code</th>
+      <th class="check kade-col">Quality</th>
+      <th class="check silas-col">Arch</th>
+      <th class="check silas-col">Ops</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Feature</td><td class="check">•</td><td class="check">•</td><td class="check">•</td><td class="check">•</td><td class="check">•</td></tr>
+    <tr><td>Bug fix</td><td class="check">•</td><td class="check">•</td><td class="check">•</td><td class="check"></td><td class="check"></td></tr>
+    <tr><td>Script / hook</td><td class="check">•</td><td class="check">•</td><td class="check">•</td><td class="check">•</td><td class="check">*</td></tr>
+    <tr><td>Doc-only</td><td class="check">•</td><td class="check"></td><td class="check"></td><td class="check"></td><td class="check"></td></tr>
+    <tr><td>Infra</td><td class="check"></td><td class="check"></td><td class="check"></td><td class="check">•</td><td class="check">•</td></tr>
+    <tr><td>Board / process</td><td class="check">•</td><td class="check"></td><td class="check"></td><td class="check"></td><td class="check"></td></tr>
+  </tbody>
+</table>
+
+<p style="font-size:0.85rem; color:#666;">Tag applicable stages when the card is pulled. Stages not tagged are skipped — the pipeline still runs in order.<br>* = conditional: when script/hook touches LaunchAgents or deploy tooling.</p>
+
+<h2>Behavior Specifications</h2>
+
+<div class="feature-header">Feature: Card completion pipeline</div>
+<div class="feature-desc">
+  As Jeff<br>
+  I want cards to pass through a staged pipeline before acceptance<br>
+  So that "done" means every applicable domain has signed off
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Pipeline ordering</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Stages must pass in order<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a feature card is in the Build stage<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade attempts to apply "gate:code-pass"<br>
+    &nbsp;&nbsp;<span class="kw">But</span> "gate:product-pass" has not been applied<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the label is rejected<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the message "Product stage must pass first" is shown
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Product stage</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Wren verifies AC and promotes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has completed the Build stage<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all AC items are demonstrably met<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the demo script runs successfully<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Wren applies "gate:product-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is promoted to the Code stage
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Code stage</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Kade verifies code solidity and promotes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has "gate:product-pass"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> tests were written before code<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all tests are green<br>
+    &nbsp;&nbsp;<span class="kw">And</span> code matches existing patterns<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade applies "gate:code-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is promoted to the Quality stage
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Quality stage</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Kade verifies quality standards and promotes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has "gate:code-pass"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all hooks pass<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no regression in adjacent domains<br>
+    &nbsp;&nbsp;<span class="kw">And</span> observability is in place<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade applies "gate:quality-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is promoted to the Architecture stage
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Architecture stage</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Silas verifies system fit and promotes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has "gate:quality-pass"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the change fits the domain map<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no cross-domain violations exist<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Silas applies "gate:arch-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is promoted to the Ops stage
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Ops stage</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Silas verifies deploy safety and promotes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has "gate:arch-pass"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> deploy runs via app-state.sh<br>
+    &nbsp;&nbsp;<span class="kw">And</span> health checks pass<br>
+    &nbsp;&nbsp;<span class="kw">And</span> logs flow to Loki<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Silas applies "gate:ops-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is eligible for Accept
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Stage owner enforcement</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Only the stage owner can apply the gate label<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card is at the Architecture stage<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade attempts to apply "gate:arch-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the label is rejected<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the message "Only Silas can sign off on Architecture" is shown
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">ACP blocked on incomplete pipeline</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Cannot accept a card with missing stages<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a feature card with "gate:product-pass" and "gate:code-pass"<br>
+    &nbsp;&nbsp;<span class="kw">But</span> "gate:quality-pass" has not been applied<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Jeff runs ACP<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> ACP is blocked<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the message "Pipeline incomplete — missing: quality, arch, ops" is shown
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Skipped stages for card type</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Doc-only card skips non-applicable stages<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a doc-only card tagged with applicable stages: [product]<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Wren applies "gate:product-pass"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> Jeff runs ACP<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> ACP succeeds<br>
+    &nbsp;&nbsp;<span class="kw">And</span> code, quality, arch, and ops stages are not required
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Clean pipeline exit</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> All stages passed — card exits pipeline<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a feature card with all five gate labels applied<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Jeff runs ACP<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the card is accepted, committed, and pushed<br>
+    &nbsp;&nbsp;<span class="kw">And</span> Jeff touched the card exactly twice: pull and accept
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">No premature ACP pressure</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Roles do not prompt Jeff for ACP until pipeline completes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card has passed the Code stage but not later stages<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade completes the Quality stage<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> Kade nudges Silas for Architecture review<br>
+    &nbsp;&nbsp;<span class="kw">And</span> Kade does not nudge Jeff for ACP
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Pipeline promotion nudges</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Completing a stage nudges the next stage owner<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Wren applies "gate:product-pass"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> Kade is nudged to begin the Code stage<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the card's pipeline status is visible on the board
+  </div>
+</div>
+
+<h2>Open Questions</h2>
+
+<p class="resolved">1. <s>Does /demo become the Product stage gate check?</s> — <strong>Resolved:</strong> yes, /demo = Product gate. Wren slims gate scripts to product-only concerns (Wren, 2026-04-08)</p>
+<p class="resolved">2. <s>Code + Quality collapse for small cards?</s> — <strong>Resolved:</strong> separate definitions, single-pass labeling allowed for small cards (Wren, 2026-04-08)</p>
+<p class="resolved">3. <s>Board visibility?</s> — <strong>Resolved:</strong> card labels (Silas, 2026-04-08)</p>
+<p class="resolved">4. <s>Sign-off mechanism?</s> — <strong>Resolved:</strong> <code>gate:*-pass</code> labels (Silas, 2026-04-08)</p>
+<p class="resolved">5. <s>Quality vs Ops: one or two?</s> — <strong>Resolved:</strong> separate stages, distinct timing (Silas, 2026-04-08)</p>
+<p class="resolved">6. <s>Ownership?</s> — <strong>Resolved:</strong> Kade = code + quality, Silas = arch + ops (Jeff, 2026-04-08)</p>
+
+<h2>Skill Architecture — Four Skills, Not One</h2>
+
+<div class="insight">Each role owns their gate skill. No routing logic. Automated checks run first, 1-2 manual confirms max. On pass, nudge the next owner. On fail, stop. Pilot mode: observe before enforce.</div>
+
+<table>
+  <thead>
+    <tr><th>Skill</th><th>Owner</th><th>Fires at</th><th>Auto checks</th><th>Manual confirms</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>/gate-product</code></td><td>Wren</td><td>feature-complete</td><td>AC item count, smoke check passes</td><td>demo performed, description matches, docs updated</td></tr>
+    <tr><td><code>/gate-code</code></td><td>Kade</td><td>code-complete</td><td>test runner, build, lint, warning count diff</td><td>none</td></tr>
+    <tr><td><code>/gate-quality</code></td><td>Kade</td><td>code-complete</td><td>hooks pass, regression suite, console.log→logger check</td><td>debt introduced?</td></tr>
+    <tr><td><code>/gate-arch</code></td><td>Silas</td><td>code-complete</td><td>namespace check, ICD query, domain boundary</td><td>structural fit?</td></tr>
+    <tr><td><code>/gate-ops</code></td><td>Silas</td><td>deploy</td><td>app-state status, health endpoint, Loki query</td><td>none</td></tr>
+  </tbody>
+</table>
+
+<h2>Actor Diagram</h2>
+
+<div style="background:#fff; border:1px solid #e0e0e0; border-radius:8px; padding:1.5rem; margin:1.5rem 0;">
+  <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; font-size:0.8rem;">
+    <span style="padding:0.2rem 0.5rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;">Automated check</span>
+    <span style="padding:0.2rem 0.5rem; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px;">Manual confirm</span>
+    <span style="padding:0.2rem 0.5rem; background:#e3f2fd; border:1px solid #90caf9; border-radius:4px;">Nudge</span>
+    <span style="padding:0.2rem 0.5rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:4px;">Decision</span>
+  </div>
+
+  <!-- Kade: build complete -->
+  <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px dashed #e0e0e0;">
+    <span style="min-width:60px; font-weight:600; font-size:0.85rem; color:#1e8e3e;">Kade</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">finishes build</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; font-size:0.78rem;">nudges Wren</span>
+  </div>
+
+  <!-- Wren: /gate-product -->
+  <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px dashed #e0e0e0; flex-wrap:wrap;">
+    <span style="min-width:60px; font-weight:600; font-size:0.85rem; color:#e37400;">Wren</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/gate-product</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">AC items</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px; font-size:0.78rem;">demo ran?</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:6px; font-size:0.78rem;">PASS/FAIL</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; font-size:0.78rem;">nudges Kade</span>
+  </div>
+
+  <!-- Kade: /gate-code + /gate-quality -->
+  <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px dashed #e0e0e0; flex-wrap:wrap;">
+    <span style="min-width:60px; font-weight:600; font-size:0.85rem; color:#1e8e3e;">Kade</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/gate-code</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">tests</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">build</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">lint</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">warning diff</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:6px; font-size:0.78rem;">PASS/FAIL</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/gate-quality</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">hooks</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">regression</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">console.log check</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px; font-size:0.78rem;">debt?</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:6px; font-size:0.78rem;">PASS/FAIL</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; font-size:0.78rem;">nudges Silas</span>
+  </div>
+
+  <!-- Silas: /gate-arch + /gate-ops -->
+  <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:1rem; padding-bottom:1rem; border-bottom:1px dashed #e0e0e0; flex-wrap:wrap;">
+    <span style="min-width:60px; font-weight:600; font-size:0.85rem; color:#c5221f;">Silas</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/gate-arch</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">namespace</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">ICD</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">domain boundary</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fff3e0; border:1px solid #ffcc80; border-radius:6px; font-size:0.78rem;">structural fit?</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:6px; font-size:0.78rem;">PASS/FAIL</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/gate-ops (after deploy)</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">app-state</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">health</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; font-size:0.78rem;">Loki</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#fce4ec; border:1px solid #ef9a9a; border-radius:6px; font-size:0.78rem;">PASS/FAIL</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#e3f2fd; border:1px solid #90caf9; border-radius:6px; font-size:0.78rem;">nudges Jeff: pipeline complete</span>
+  </div>
+
+  <!-- Jeff: ACP -->
+  <div style="display:flex; align-items:center; gap:0.5rem;">
+    <span style="min-width:60px; font-weight:600; font-size:0.85rem; color:#4285f4;">Jeff</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">/acp</span>
+    <span style="color:#999;">&rarr;</span>
+    <span style="padding:0.3rem 0.6rem; background:#f5f5f5; border:1px solid #ddd; border-radius:6px; font-size:0.78rem;">card exits pipeline</span>
+  </div>
+</div>
+
+<h2>Gate Skill BDD</h2>
+
+<div class="feature-header">Feature: Gate skill — role-scoped pipeline checks</div>
+<div class="feature-desc">
+  As a role completing my pipeline stage<br>
+  I run my gate skill to verify my checks pass<br>
+  So the next stage owner is nudged automatically and Jeff only touches the card at ACP
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Automated checks run first</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Gate runs automated checks before manual confirms<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Silas runs /gate-arch 1814<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> namespace check runs (exit code)<br>
+    &nbsp;&nbsp;<span class="kw">And</span> ICD consistency query runs (exit code)<br>
+    &nbsp;&nbsp;<span class="kw">And</span> domain boundary scan runs (exit code)<br>
+    &nbsp;&nbsp;<span class="kw">And</span> only after all automated checks pass does the manual confirm appear
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Automated failure blocks manual confirms</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Failed automated check skips manual step<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Silas runs /gate-arch 1814<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the namespace check fails<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the gate reports FAIL with the failing item<br>
+    &nbsp;&nbsp;<span class="kw">And</span> the manual "structural fit?" confirm is not shown<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no nudge is sent forward
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">All pass nudges next owner</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Passing all checks nudges the next stage owner<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Kade runs /gate-quality 1814<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all automated checks pass<br>
+    &nbsp;&nbsp;<span class="kw">And</span> Kade confirms "no new debt"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> gate reports PASS<br>
+    &nbsp;&nbsp;<span class="kw">And</span> Silas is nudged "gate:quality passed on #1814 — run /gate-arch"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> a spine event is emitted: gate.quality.passed
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Manual confirm rejected</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Role rejects a manual confirm<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Silas runs /gate-arch 1814<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all automated checks pass<br>
+    &nbsp;&nbsp;<span class="kw">But</span> Silas answers "no" to "structural fit?"<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> gate reports FAIL with reason<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no nudge is sent forward
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Wrong role runs gate</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Role runs a gate they don't own<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Kade runs /gate-arch 1814<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the skill says "Arch gate is owned by Silas"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no checks run
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Non-applicable card type</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Doc-only card skips code gates<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a doc-only card<br>
+    &nbsp;&nbsp;<span class="kw">When</span> Kade runs /gate-code on it<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the skill reports SKIP (not applicable for this card type)<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no checks run, no nudge sent
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Ops gate fires at deploy, not code-complete</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Arch passes but ops waits for deploy<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Silas runs /gate-arch 1814 and it passes<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the nudge says "arch passed — run /gate-ops after deploy"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> /gate-ops is not auto-triggered<br>
+    &nbsp;&nbsp;<span class="kw">Because</span> ops checks require a running deploy to verify
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Final gate signals Jeff</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Last applicable gate passes<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> Silas runs /gate-ops 1814 and it passes<br>
+    &nbsp;&nbsp;<span class="kw">And</span> all prior gates already passed<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> Jeff is nudged "Pipeline complete on #1814 — all gates passed, ready for /acp"<br>
+    &nbsp;&nbsp;<span class="kw">And</span> no role nudges Jeff before all applicable gates pass
+  </div>
+</div>
+
+<div class="scenario">
+  <div class="scenario-title">Pilot mode — observe, not enforce</div>
+  <div class="gherkin">
+    <span class="kw">Scenario:</span> Role skips their gate<br>
+    &nbsp;&nbsp;<span class="kw">Given</span> a card reaches ACP without gate spine events<br>
+    &nbsp;&nbsp;<span class="kw">Then</span> the gap is visible in the pipeline log<br>
+    &nbsp;&nbsp;<span class="kw">But</span> ACP is not blocked<br>
+    &nbsp;&nbsp;<span class="kw">Because</span> pilot mode observes compliance before enforcing it
+  </div>
+</div>
+
+<h2>Resolved: Skill Open Questions</h2>
+
+<p class="resolved">1. <s>How does /gate-product relate to /demo?</s> — <strong>Resolved:</strong> /gate-product wraps /demo, not replaces. Demo is the show, gate-product is the checklist. (Kade, 2026-04-08)</p>
+<p class="resolved">2. <s>Gate result persistence?</s> — <strong>Resolved:</strong> both card comments (visibility) and spine events (queryable). Comments are cheap. (Kade, 2026-04-08)</p>
+<p class="resolved">3. <s>Retroactive or forward-only?</s> — <strong>Resolved:</strong> new cards only. Retroactive would be noisy and the data isn't there. (Kade, 2026-04-08)</p>
+
+</body>
+</html>
