@@ -6,6 +6,28 @@
 
 import express, { Application, Request, Response } from 'express';
 import { mountMcpEndpoint } from './transport';
+import { execFileSync } from 'child_process';
+
+// #3000 — process-level error capture. Emit mcp.process.error to spine
+// before exit so a crash is observable to ops, not silent. Uses sync exec
+// because the process is on its way out.
+function emitProcessError(kind: string, err: unknown): void {
+  try {
+    const msg = err instanceof Error ? err.message : String(err);
+    execFileSync(
+      'chorus-log',
+      [
+        'mcp.process.error',
+        process.env.CHORUS_ROLE || 'chorus-mcp',
+        `kind=${kind}`,
+        `error_message=${msg.slice(0, 500)}`,
+      ],
+      { timeout: 2000, stdio: 'ignore' },
+    );
+  } catch {
+    // best-effort
+  }
+}
 
 const PORT = parseInt(process.env.CHORUS_MCP_PORT || '3341', 10);
 
@@ -34,8 +56,18 @@ app.listen(PORT, () => {
 });
 
 process.on('uncaughtException', (err) => {
+  // #3000 — emit to spine before logging + exit so the crash is observable
+  // to chorus-health rather than silent.
+  emitProcessError('uncaughtException', err);
   // eslint-disable-next-line no-console
   console.error('[chorus-mcp] FATAL uncaughtException:', err.message);
   console.error(err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  emitProcessError('unhandledRejection', reason);
+  // eslint-disable-next-line no-console
+  console.error('[chorus-mcp] FATAL unhandledRejection:', reason);
   process.exit(1);
 });

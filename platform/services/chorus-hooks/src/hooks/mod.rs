@@ -33,7 +33,8 @@ pub mod pair_gate;
 pub mod demo_gate;
 pub mod context_inject;
 pub mod stop_on_error;
-pub mod mcp_health_gate;
+// #3000 — mcp_health_gate retired (wrong-layer, never fired for MCP tools).
+// Server-side capture in chorus-mcp replaces it. Source file deleted.
 pub mod log_first_gate;
 pub mod quality_gate;
 pub mod memory_first;

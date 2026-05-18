@@ -2590,7 +2590,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // per-case zod parsing branches. Acceptable concentration of complexity.
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const from = getCallerRole();
-    switch (req.params.name) {
+    // #3000 — wrap the per-tool dispatch in try/catch + isError check so
+    // every error path emits a typed mcp.tool.error spine event. Closes
+    // the "MCP errors vaporize behind the boundary" gap named 2026-05-18.
+    const errorToolName = req.params.name;
+    const errorTraceId = mintTraceIdV7();
+    try {
+      const result = await (async () => { switch (req.params.name) {
       case 'chorus_nudge_message': {
         const parsed = NudgeInput.safeParse(req.params.arguments);
         if (!parsed.success) {
@@ -2910,6 +2916,35 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       }
       default:
         throw new Error(`Unknown tool: ${req.params.name}`);
+    } })();
+      // #3000 — isError-true detection. JSON-RPC tools can return an error
+      // envelope (isError: true) without throwing. Treat the same as a throw
+      // for spine-emit purposes.
+      const r = result as { isError?: boolean; content?: Array<{ type: string; text: string }> };
+      if (r && r.isError === true) {
+        const msg = r.content?.[0]?.text ?? 'isError response without content';
+        await appendChorusLog('mcp.tool.error', from, {
+          tool: errorToolName,
+          from,
+          error_type: 'is-error',
+          error_message: msg.slice(0, 500),
+          trace_id: errorTraceId,
+        });
+      }
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorType = /reason=[a-z-]+/.test(errorMessage)
+        ? 'subprocess-exit-nonzero'
+        : 'throw';
+      await appendChorusLog('mcp.tool.error', from, {
+        tool: errorToolName,
+        from,
+        error_type: errorType,
+        error_message: errorMessage.slice(0, 500),
+        trace_id: errorTraceId,
+      });
+      throw err; // preserve caller-visible error
     }
   });
 

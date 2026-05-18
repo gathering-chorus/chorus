@@ -24,6 +24,26 @@
 import type { Application, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildMcpServer } from './server';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+// #3000 — transport-level error capture. Emit typed mcp.transport.error
+// spine events on non-2xx /mcp responses + connection-level failures.
+// Closes the "behind MCP boundary errors vaporize" gap at the transport
+// layer (per-tool errors are captured inside server.ts's dispatch wrap).
+const execFileAsync = promisify(execFile);
+async function emitTransportError(fields: Record<string, unknown>): Promise<void> {
+  try {
+    const args = ['mcp.transport.error', String(fields['from'] ?? 'unknown')];
+    for (const [k, v] of Object.entries(fields)) {
+      if (k === 'from') continue;
+      args.push(`${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
+    }
+    await execFileAsync('chorus-log', args, { timeout: 2000 });
+  } catch {
+    // best-effort; chorus-log failure must not affect the HTTP response
+  }
+}
 
 function resolveCallerRole(req: Request): string {
   const headerRole = req.header('X-Chorus-Role');
@@ -40,10 +60,45 @@ function resolveCallerRole(req: Request): string {
 export function mountMcpEndpoint(app: Application): void {
   app.post('/mcp', async (req: Request, res: Response) => {
     const callerRole = resolveCallerRole(req);
-    const transport = new StreamableHTTPServerTransport({});
-    const server = buildMcpServer(() => callerRole);
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    // #3000 — capture transport-level errors. Listen for response 'finish'
+    // (non-2xx) and connection 'close'/'error' (mid-stream client drop).
+    res.on('finish', () => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        // Fire-and-forget; emitTransportError is best-effort.
+        void emitTransportError({
+          from: callerRole,
+          method: 'POST',
+          path: '/mcp',
+          status: res.statusCode,
+        });
+      }
+    });
+    req.on('aborted', () => {
+      void emitTransportError({
+        from: callerRole,
+        method: 'POST',
+        path: '/mcp',
+        kind: 'client-aborted',
+      });
+    });
+    try {
+      const transport = new StreamableHTTPServerTransport({});
+      const server = buildMcpServer(() => callerRole);
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      void emitTransportError({
+        from: callerRole,
+        method: 'POST',
+        path: '/mcp',
+        kind: 'handler-throw',
+        error_message: errorMessage.slice(0, 500),
+      });
+      if (!res.headersSent) {
+        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: errorMessage } });
+      }
+    }
   });
 
   // GET /mcp is used by the SDK for SSE notification streams. In stateless
