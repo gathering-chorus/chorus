@@ -30,10 +30,13 @@ type SparqlBinding = Record<string, { value: string; type?: string; datatype?: s
 const app = express();
 app.use(express.json());
 
-// #2472 — MCP transport. Mount before static file routes so POST/GET/DELETE
-// /mcp are handled by the Streamable HTTP transport, not 404'd by static.
-import { mountMcpEndpoint } from './mcp/transport';
-mountMcpEndpoint(app);
+// #2998 — MCP transport REMOVED from chorus-api. /mcp now served by the
+// chorus-mcp daemon on :3341 (separate LaunchAgent com.chorus.mcp). Decouples
+// MCP from chorus-api's deploy lifecycle so chorus-api redeploys no longer
+// kill role-session MCP transports. See #2997 for the daemon stand-up.
+// platform/api/src/mcp/ stays in the tree for now — chorus-mcp consumes a
+// copy in platform/mcp-server/. Removing this dir is a separate retirement
+// card after the source-of-truth swap is verified stable.
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';

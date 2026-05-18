@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 # Hermetic test for #2476 — three principles MCP tools (list/get/create).
-# Tests against running chorus-api at :3340. Streamable HTTP transport
-# requires session-init handshake before tools/list / tools/call.
+# #2998: MCP moved from chorus-api:3340 to chorus-mcp:3341. Streamable HTTP
+# transport requires session-init handshake before tools/list / tools/call.
 
-MCP_URL="${MCP_URL:-http://localhost:3340/mcp}"
+MCP_URL="${MCP_URL:-http://localhost:3341/mcp}"
 
 init_session() {
   curl -s -i -X POST "$MCP_URL" \
