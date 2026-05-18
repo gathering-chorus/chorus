@@ -69,6 +69,23 @@ app.use('/designing/schemas', express.static(path.join(chorusRepoRoot, 'designin
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
+// #2994 — additional role mounts. doc-catalog registered these paths but
+// chorus-api had no static mounts; files exist on disk, hrefs 404'd.
+app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));
+app.use('/roles/wren/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'artifacts'), { extensions: ['html', 'md'] }));
+app.use('/roles/wren/docs', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'docs'), { extensions: ['html', 'md'] }));
+app.use('/roles/wren/decisions', express.static(path.join(chorusRepoRoot, 'roles', 'wren', 'decisions'), { extensions: ['html', 'md'] }));
+// #2994 — /skills/<name>/SKILL.md routing. #2969 doc-catalog-add registered
+// 40+ skill SKILL.md hrefs as /skills/<name>/SKILL.md, but chorus-api had no
+// static mount serving them; they 404'd and inflated broken-hrefs to 68.
+// Same pattern as the /designing/{decisions,claudemd,domain-context,schemas}
+// fix in #2704: routes are the gap, not the catalog. Canonical skills tree
+// is at chorus/skills (matches doc-catalog.ts scan dir at line 105).
+app.use('/skills', express.static(path.join(chorusRepoRoot, 'skills'), { extensions: ['md', 'html'] }));
+// #2994 — /diagrams/* mount. doc-catalog.ts line 105 registers urlPrefix
+// '/diagrams/' for files in docs/diagrams; the mount was missing. Catches
+// chorus-c4.html, skills-hooks-mapping.html, etc.
+app.use('/diagrams', express.static(path.join(chorusRepoRoot, 'docs', 'diagrams'), { extensions: ['html', 'md'] }));
 
 // #2445 wave 2 — chorus-api serves catalog HTML. Static routes try chorus
 // designing/docs first (where 43 misfiled docs were relocated post-#2510),

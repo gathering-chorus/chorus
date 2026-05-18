@@ -413,7 +413,7 @@ Two products: **Gathering** (app, `../jeff-bridwell-personal-site`) and **Chorus
 <div style="margin-top:6px; font-weight:600;">Infrastructure Operations (MANDATORY)</div>
 <details><summary>show content (545 chars)</summary><pre>## Infrastructure Operations (MANDATORY)
 
-All service lifecycle through `app-state.sh`. Never kill PIDs manually. Views/CSS are bind-mounted (no deploy). TypeScript changes need `app-state.sh deploy`. Logs via Loki (`localhost:3102`), not `docker logs`.
+Two apps, two lifecycle paths — do not mix them. **Chorus services** (`com.chorus.*`): `agent-state.sh` for lifecycle, `chorus-deploy <crate>` for binary deploys. **Gathering personal-site** (`com.gathering.*`): `app-state.sh`. Never kill PIDs manually. Views/CSS are bind-mounted (no deploy). TypeScript changes need a `deploy` verb on the appropriate script. Logs via Loki (`localhost:3102`), not `docker logs`.
 
 All shared scripts: `../../scripts/`. Commits to team repo use `git-queue.sh`. Full reference: `../../../TEAM_PROTOCOL.md`
 

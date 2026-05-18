@@ -42,7 +42,7 @@ No formal ICD — infrastructure is operational, not a data domain. Governed by:
 
 ## Constraints
 
-- **All service lifecycle through `app-state.sh`.** Never kill PIDs manually. Never `launchctl unload` without `app-state.sh`.
+- **Service lifecycle uses the right script per app.** `agent-state.sh` for chorus services (`com.chorus.*`), `chorus-deploy <crate>` for chorus binary deploys (handles `launchctl kickstart com.chorus.api` and similar), `app-state.sh` for the gathering personal-site stack (`com.gathering.*`). Never kill PIDs manually. Never `launchctl unload` without going through one of these scripts. Do not call `app-state.sh` for chorus services — it is hardcoded to `com.gathering.*`.
 - **Library disk at 71%.** Warning at 90%, critical at 95%. Every new service or data store needs a disk impact estimate.
 - **Bedroom is storage and media serving, not compute.** Don't run Gathering app services there. NiFi is the exception (governed data pipelines).
 - **NiFi binds to machine IP (192.168.86.242:8443), not localhost.** Go's pure-Go networking can't reach cross-machine HTTP — use reverse SSH tunnel for Promtail→Loki.

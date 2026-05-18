@@ -52,26 +52,44 @@ BASENAME_DUP_GROUPS=$(echo "$BASENAME_DUPES" | grep -c . | tr -d ' ')
 [ "$BASENAME_DUPES" = "" ] && BASENAME_DUP_GROUPS=0
 
 # Broken hrefs (live probe, skip if SKIP_HREF_PROBE=1)
+#
+# #2994: CHORUS_API_HOST env override lets pre-commit point the probe at a
+# side-port chorus-api (built from werk dist) instead of canonical :3340.
+# Closes the chicken-egg where a card adds new static-mount routes — the
+# routes can't be probed against canonical because canonical is running the
+# pre-card dist. Default unchanged: localhost:3340 + fallback localhost:3000.
 BROKEN_HREFS=""
 BROKEN_COUNT=0
+PROBE_HOST="${CHORUS_API_HOST:-localhost:3340}"
+FALLBACK_HOST="${CHORUS_FALLBACK_HOST:-localhost:3000}"
+# #2994: pre-/acp side-port auto-detect. If CHORUS_API_HOST is unset and a
+# side-port chorus-api is up on 3345 (the pre-/acp verify port — Wren and Silas
+# both use this), prefer it. This lets the ratchet see the werk dist's routes
+# before the deploy lands. After /acp the side-port goes idle and the next
+# coherence run falls through to canonical :3340.
+if [ -z "${CHORUS_API_HOST:-}" ]; then
+  if curl -s -o /dev/null --max-time 1 -w "%{http_code}" "http://localhost:3345/api/chorus/health" 2>/dev/null | grep -q "^200$"; then
+    PROBE_HOST="localhost:3345"
+  fi
+fi
 if [ "$SKIP_HREF_PROBE" != "1" ]; then
   # Pull catalog hrefs from chorus-api (#2445 wave 3 — was :3000 gathering).
-  CATALOG_JSON=$(curl -s --max-time 5 "http://localhost:3340/api/doc-catalog" 2>/dev/null)
+  CATALOG_JSON=$(curl -s --max-time 5 "http://$PROBE_HOST/api/doc-catalog" 2>/dev/null)
   if [ -n "$CATALOG_JSON" ]; then
     # Extract hrefs, probe in parallel (xargs), collect non-2xx
     HREFS=$(echo "$CATALOG_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(doc['href'] for g in d['groups'] for doc in g['docs']))" 2>/dev/null)
     if [ -n "$HREFS" ]; then
-      BROKEN_HREFS=$(echo "$HREFS" | xargs -I{} -P 16 -n 1 sh -c '
-        # Catalog hrefs are served by chorus-api (3340) for chorus-side content and
-        # Gathering app (3000) for gathering/public/ content. Probe 3340 first; on
-        # 404 fall through to 3000 before reporting broken. 200 + redirect codes
-        # (301/302/308) all count as fine — 308 is permanent redirect used by ADR
-        # migration paths.
-        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3340$1" 2>/dev/null)
+      BROKEN_HREFS=$(echo "$HREFS" | PROBE_HOST="$PROBE_HOST" FALLBACK_HOST="$FALLBACK_HOST" xargs -I{} -P 16 -n 1 sh -c '
+        # Catalog hrefs are served by chorus-api ($PROBE_HOST) for chorus-side
+        # content and Gathering app ($FALLBACK_HOST) for gathering/public/
+        # content. Probe primary first; on 404 fall through to fallback before
+        # reporting broken. 200 + redirect codes (301/302/308) all count as
+        # fine — 308 is permanent redirect used by ADR migration paths.
+        code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://$PROBE_HOST$1" 2>/dev/null)
         case "$code" in
           200|301|302|308) : ;;
           404)
-            code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:3000$1" 2>/dev/null)
+            code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://$FALLBACK_HOST$1" 2>/dev/null)
             case "$code2" in 200|301|302|308) : ;; *) echo "$code2 $1" ;; esac
             ;;
           *) echo "$code $1" ;;
