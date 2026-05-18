@@ -1,0 +1,22 @@
+{
+  "name": "chorus-mcp",
+  "version": "0.1.0",
+  "description": "Standalone MCP server for Chorus — separated from chorus-api so chorus-api redeploys do not kill role-session MCP transports (#2997).",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "^4.21.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

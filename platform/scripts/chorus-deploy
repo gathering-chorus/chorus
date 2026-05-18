@@ -41,7 +41,7 @@ CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | h
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
-KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api"
+KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp"
 
 # #2993: gate chorus-api deploy.completed on a real MCP-init smoke. Without
 # this gate, `launchctl kickstart -k` returns immediately and deploy.completed
@@ -59,6 +59,39 @@ KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api"
 # Override via env for tests; expose the function for the rollback path too.
 CHORUS_MCP_SMOKE_TIMEOUT_S="${CHORUS_MCP_SMOKE_TIMEOUT_S:-30}"
 CHORUS_MCP_SMOKE_URL="${CHORUS_MCP_SMOKE_URL:-http://localhost:3340/mcp}"
+# #2997: chorus-mcp smoke URL (separate daemon on 3341).
+CHORUS_MCP_DAEMON_SMOKE_URL="${CHORUS_MCP_DAEMON_SMOKE_URL:-http://localhost:3341/mcp}"
+
+# #2997: shared smoke routine — takes a URL, polls real MCP initialize until
+# protocolVersion comes back in result, or timeout. Used by both chorus-api
+# (3340/mcp) and chorus-mcp (3341/mcp) deploy paths.
+wait_for_mcp_ready_at() {
+  local url="$1"
+  local deadline=$(( $(date +%s) + CHORUS_MCP_SMOKE_TIMEOUT_S ))
+  local body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chorus-deploy-smoke","version":"1.0"}}}'
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if curl -s -m 2 -X POST "$url" \
+        -H 'Accept: application/json, text/event-stream' \
+        -H 'Content-Type: application/json' \
+        -d "$body" 2>/dev/null \
+        | python3 -c '
+import json, sys
+for line in sys.stdin:
+    if line.startswith("data:"):
+        try:
+            d = json.loads(line[5:].strip())
+            if d.get("result", {}).get("protocolVersion"):
+                sys.exit(0)
+        except Exception:
+            pass
+sys.exit(1)
+' 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
 
 wait_for_chorus_api_mcp_ready() {
   local deadline=$(( $(date +%s) + CHORUS_MCP_SMOKE_TIMEOUT_S ))
@@ -206,6 +239,104 @@ if [ "$CRATE" = "chorus-api" ]; then
   if [ -x "$CHORUS_LOG" ]; then
     "$CHORUS_LOG" deploy.completed "$ROLE" \
       "commit=$COMMIT" "crate=$CRATE" "target=$API_DIR/dist/server.js" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
+      >/dev/null 2>&1 || true
+  fi
+  echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT)"
+  exit 0
+fi
+
+# #2997: chorus-mcp is the second TS daemon, sibling to chorus-api. Same shape
+# as the chorus-api branch above (npm build + dist swap + kickstart + MCP-smoke
+# gate), targeting :3341 instead of :3340. Decouples MCP from chorus-api's
+# deploy lifecycle so chorus-api redeploys no longer kill role-session MCP
+# transports (the daily-failure-class Jeff named 2026-05-18).
+if [ "$CRATE" = "chorus-mcp" ]; then
+  COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  START_TS=$(date +%s)
+  MCP_DIR="$ROOT/platform/mcp-server"
+  if [ ! -d "$MCP_DIR" ]; then
+    echo "chorus-deploy: chorus-mcp dir not found at $MCP_DIR" >&2
+    exit 1
+  fi
+
+  if [ "$MODE" = "--rollback" ]; then
+    PREV_DIR="$MCP_DIR/dist.prev"
+    if [ ! -d "$PREV_DIR" ]; then
+      echo "chorus-deploy: no dist.prev to rollback to ($PREV_DIR not found)" >&2
+      exit 1
+    fi
+    rm -rf "$MCP_DIR/dist"
+    mv "$PREV_DIR" "$MCP_DIR/dist"
+    if ! launchctl kickstart -k "gui/$(id -u)/com.chorus.mcp" 2>/dev/null; then
+      echo "chorus-deploy: WARN — launchctl kickstart com.chorus.mcp failed during rollback" >&2
+    else
+      echo "chorus-deploy: kickstarted com.chorus.mcp (rollback)"
+    fi
+    echo "chorus-deploy: waiting for chorus-mcp smoke (rollback, deadline ${CHORUS_MCP_SMOKE_TIMEOUT_S}s)"
+    if ! wait_for_mcp_ready_at "$CHORUS_MCP_DAEMON_SMOKE_URL"; then
+      END_TS=$(date +%s)
+      DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+      if [ -x "$CHORUS_LOG" ]; then
+        "$CHORUS_LOG" deploy.failed "$ROLE" \
+          "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+          "reason=mcp-smoke-timeout-rollback" "card=$CARD_ID" >/dev/null 2>&1 || true
+      fi
+      echo "chorus-deploy: $CRATE rollback MCP smoke timed out after ${CHORUS_MCP_SMOKE_TIMEOUT_S}s" >&2
+      exit 1
+    fi
+    END_TS=$(date +%s)
+    DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+    if [ -x "$CHORUS_LOG" ]; then
+      "$CHORUS_LOG" deploy.rolled_back "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
+        >/dev/null 2>&1 || true
+    fi
+    echo "chorus-deploy: $CRATE rolled back in ${DURATION_MS}ms"
+    exit 0
+  fi
+
+  if [ -d "$MCP_DIR/dist" ]; then
+    rm -rf "$MCP_DIR/dist.prev"
+    mv "$MCP_DIR/dist" "$MCP_DIR/dist.prev"
+  fi
+  echo "chorus-deploy: npm run build in $MCP_DIR"
+  if ! (cd "$MCP_DIR" && npm run build); then
+    echo "chorus-deploy: npm run build failed" >&2
+    if [ -d "$MCP_DIR/dist.prev" ]; then
+      rm -rf "$MCP_DIR/dist"
+      mv "$MCP_DIR/dist.prev" "$MCP_DIR/dist"
+    fi
+    if [ -x "$CHORUS_LOG" ]; then
+      END_TS=$(date +%s)
+      DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+      "$CHORUS_LOG" deploy.failed "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        "reason=npm-build-fail" "card=$CARD_ID" >/dev/null 2>&1 || true
+    fi
+    exit 1
+  fi
+  if ! launchctl kickstart -k "gui/$(id -u)/com.chorus.mcp" 2>/dev/null; then
+    echo "chorus-deploy: WARN — launchctl kickstart com.chorus.mcp failed" >&2
+  else
+    echo "chorus-deploy: kickstarted com.chorus.mcp"
+  fi
+  echo "chorus-deploy: waiting for chorus-mcp smoke (deadline ${CHORUS_MCP_SMOKE_TIMEOUT_S}s)"
+  if ! wait_for_mcp_ready_at "$CHORUS_MCP_DAEMON_SMOKE_URL"; then
+    END_TS=$(date +%s)
+    DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+    if [ -x "$CHORUS_LOG" ]; then
+      "$CHORUS_LOG" deploy.failed "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "duration_ms=$DURATION_MS" \
+        "reason=mcp-smoke-timeout" "card=$CARD_ID" >/dev/null 2>&1 || true
+    fi
+    echo "chorus-deploy: $CRATE MCP smoke timed out after ${CHORUS_MCP_SMOKE_TIMEOUT_S}s — deploy.failed emitted" >&2
+    exit 1
+  fi
+  END_TS=$(date +%s)
+  DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+  if [ -x "$CHORUS_LOG" ]; then
+    "$CHORUS_LOG" deploy.completed "$ROLE" \
+      "commit=$COMMIT" "crate=$CRATE" "target=$MCP_DIR/dist/main.js" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
       >/dev/null 2>&1 || true
   fi
   echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT)"
