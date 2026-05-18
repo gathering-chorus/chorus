@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.mcp</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-wrapper.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/mcp-server</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-mcp.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-mcp.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_MCP_PORT</key>
+    <string>3341</string>
+    <key>CHORUS_API_URL</key>
+    <string>http://localhost:3340</string>
+  </dict>
+</dict>
+</plist>
