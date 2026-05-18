@@ -257,6 +257,16 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
+            // #2998 — MCP health gate. Hard-block mcp__chorus-api__* calls
+            // when chorus-mcp daemon at :3341 is unreachable. Substrate
+            // outages get surfaced loud to the role's session, not silent
+            // retry. Jeff 2026-05-18: "i just need to have mcp outages
+            // heard loud and blocking."
+            _last_module = "mcp_health_gate".into(); let r = hooks::mcp_health_gate::check(input);
+            if r.stderr.is_some() {
+                return (_last_module.clone(), r);
+            }
+
             // Chrome tab gate (#1775, DEC-090) — block role-initiated 'open http'
             _last_module = "chrome_tab_gate".into(); let r = hooks::chrome_tab_gate::check(input).await;
             if r.stderr.is_some() {

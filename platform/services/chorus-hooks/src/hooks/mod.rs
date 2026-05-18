@@ -33,6 +33,7 @@ pub mod pair_gate;
 pub mod demo_gate;
 pub mod context_inject;
 pub mod stop_on_error;
+pub mod mcp_health_gate;
 pub mod log_first_gate;
 pub mod quality_gate;
 pub mod memory_first;
