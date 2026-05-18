@@ -66,14 +66,14 @@ Errors surface in Claude Code's tool-output panel via the JSON-RPC error envelop
 
 - Unit tests: `platform/api/tests/mcp-nudge.test.ts` — 4 cases (tools/list shape, unknown-tool rejection, invalid-args rejection, empty-message rejection).
 - Live end-to-end: `platform/tests/mcp-nudge.test.sh` — initialize → tools/list → tools/call → spine event check.
-- Manual probe (2026-04-25): `silas` session POSTed `chorus_nudge_message(to=silas, message=...)` via curl to `http://localhost:3340/mcp` with `X-Chorus-Role: silas`. Nudge delivered to silas's terminal within 3s via existing spine-tick-poller path. End-to-end MCP→spine→inject verified working.
+- Manual probe (2026-04-25): `silas` session POSTed `chorus_nudge_message(to=silas, message=...)` via curl to `http://localhost:3341/mcp` with `X-Chorus-Role: silas`. Nudge delivered to silas's terminal within 3s via existing spine-tick-poller path. End-to-end MCP→spine→inject verified working.
 
 ## Files
 
 - `platform/api/src/mcp/server.ts` — `buildMcpServer(getCallerRole)` returns a configured MCP `Server` with one tool.
 - `platform/api/src/mcp/transport.ts` — `mountMcpEndpoint(app)` mounts Streamable HTTP at `/mcp`, manages session map.
 - `platform/api/src/server.ts` — imports + calls `mountMcpEndpoint(app)` early in setup.
-- `.mcp.json` (repo root) — Claude Code config pointing at `http://localhost:3340/mcp` with per-role `${CHORUS_ROLE}` header expansion.
+- `.mcp.json` (repo root) — Claude Code config pointing at `http://localhost:3341/mcp` with per-role `${CHORUS_ROLE}` header expansion.
 - `platform/api/tests/mcp-nudge.test.ts` — Jest unit tests.
 - `platform/tests/mcp-nudge.test.sh` — Bats hermetic end-to-end test.
 

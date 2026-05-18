@@ -570,7 +570,7 @@ jobs:
         run: |
           for i in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' \
-              -X POST http://localhost:3340/mcp \
+              -X POST http://localhost:3341/mcp \
               -H 'Content-Type: application/json' \
               -H 'Accept: application/json, text/event-stream' \
               -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' || echo 000)
@@ -583,7 +583,7 @@ jobs:
 
       - name: Run MCP round-trip bats
         env:
-          MCP_URL: http://localhost:3340/mcp
+          MCP_URL: http://localhost:3341/mcp
           CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
         run: |
           bats platform/tests/mcp-nudge.test.sh

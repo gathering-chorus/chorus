@@ -17,7 +17,7 @@ check: |
   # rejects with 406, which would fire as a false positive.
   PAYLOAD='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"alert-probe","version":"1.0"}}}'
   CODE=$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' \
-    -X POST "http://localhost:3340/mcp" \
+    -X POST "http://localhost:3341/mcp" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -d "$PAYLOAD" 2>/dev/null)
