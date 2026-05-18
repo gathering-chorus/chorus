@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
-    "dev": "tsx src/main.ts"
+    "dev": "tsx src/main.ts",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

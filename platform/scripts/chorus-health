@@ -266,6 +266,38 @@ else
   fail "mcp-round-trip" "MCP tools/list failed: ${mcp_result#fail:}"
 fi
 
+# #3000 — mcp-error-rate: count typed MCP error events in last hour. Any
+# non-zero count is a fail (substrate degradation is loud, not background).
+# Event types: mcp.tool.error (per-tool throw/isError/subprocess-exit-nonzero),
+# mcp.transport.error (non-2xx /mcp + client abort + handler-throw),
+# mcp.process.error (uncaughtException / unhandledRejection before exit).
+mcp_error_count=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
+import sys, json, subprocess, datetime
+loki = sys.argv[1]
+now = int(datetime.datetime.now().timestamp())
+start = now - 3600
+cmd = ['curl', '-s', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~".+"} |~ "mcp\\\\.(tool|transport|process)\\\\.error"',
+       '--data-urlencode', 'limit=500',
+       '--data-urlencode', f'start={start}000000000',
+       '--data-urlencode', f'end={now}000000000']
+try:
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    d = json.loads(out)
+    count = sum(len(s['values']) for s in d.get('data', {}).get('result', []))
+    print(count)
+except Exception:
+    print(-1)
+PYEOF
+)
+if [ "$mcp_error_count" = "-1" ]; then
+  fail "mcp-error-rate" "Loki unreachable — cannot check MCP error rate"
+elif [ "$mcp_error_count" -eq 0 ] 2>/dev/null; then
+  pass "mcp-error-rate" "0 mcp.*.error events in last hour"
+else
+  fail "mcp-error-rate" "${mcp_error_count} mcp.*.error events in last hour — MCP substrate degraded"
+fi
+
 # Clearing external reachability (from network perspective — bind check)
 clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
 if [ "$clearing_result" = "200" ] || [ "$clearing_result" = "301" ] || [ "$clearing_result" = "302" ]; then
