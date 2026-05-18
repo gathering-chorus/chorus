@@ -250,8 +250,10 @@ else
   fail "bedroom-reachable" "SSH to ${BEDROOM_HOST} failed"
 fi
 
-# MCP round-trip (actual tool call, not just port check)
-mcp_result=$(curl -s --max-time 5 -X POST "${API_BASE}/mcp" \
+# #2998: MCP round-trip now hits chorus-mcp on :3341, not chorus-api on :3340.
+# chorus-api no longer hosts /mcp after the cutover.
+MCP_BASE="${MCP_BASE:-http://localhost:3341}"
+mcp_result=$(curl -s --max-time 5 -X POST "${MCP_BASE}/mcp" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' 2>/dev/null \

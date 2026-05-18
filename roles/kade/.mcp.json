@@ -3,7 +3,7 @@
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:3340/mcp",
+      "url": "http://localhost:3341/mcp",
       "headers": {
         "X-Chorus-Role": "kade"
       }

@@ -58,9 +58,13 @@ KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp"
 #
 # Override via env for tests; expose the function for the rollback path too.
 CHORUS_MCP_SMOKE_TIMEOUT_S="${CHORUS_MCP_SMOKE_TIMEOUT_S:-30}"
-CHORUS_MCP_SMOKE_URL="${CHORUS_MCP_SMOKE_URL:-http://localhost:3340/mcp}"
-# #2997: chorus-mcp smoke URL (separate daemon on 3341).
+# #2998: chorus-api no longer hosts /mcp — MCP lives in chorus-mcp on :3341.
+# The chorus-api deploy smoke is now a plain health-check on :3340 (not /mcp);
+# the chorus-mcp daemon smoke at :3341/mcp is used only by chorus-deploy's
+# chorus-mcp branch. CHORUS_MCP_SMOKE_URL kept as a back-compat alias.
 CHORUS_MCP_DAEMON_SMOKE_URL="${CHORUS_MCP_DAEMON_SMOKE_URL:-http://localhost:3341/mcp}"
+CHORUS_MCP_SMOKE_URL="${CHORUS_MCP_SMOKE_URL:-$CHORUS_MCP_DAEMON_SMOKE_URL}"
+CHORUS_API_HEALTH_URL="${CHORUS_API_HEALTH_URL:-http://localhost:3340/api/chorus/health}"
 
 # #2997: shared smoke routine — takes a URL, polls real MCP initialize until
 # protocolVersion comes back in result, or timeout. Used by both chorus-api
@@ -93,31 +97,14 @@ sys.exit(1)
   return 1
 }
 
+# #2998: chorus-api no longer serves /mcp — the deploy smoke for chorus-api is
+# now a plain health-check on :3340/api/chorus/health, not an MCP initialize.
+# The MCP daemon smoke (wait_for_mcp_ready_at) is used only for the chorus-mcp
+# crate's deploy path.
 wait_for_chorus_api_mcp_ready() {
   local deadline=$(( $(date +%s) + CHORUS_MCP_SMOKE_TIMEOUT_S ))
-  local body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chorus-deploy-smoke","version":"1.0"}}}'
-  # Parse SSE body with python3 (already used elsewhere in chorus scripts) so
-  # the smoke survives a server-side switch to pretty-printed JSON-RPC.
-  # Silas gate:arch #2993 robustness note 2026-05-17: line-based grep is
-  # brittle to formatting changes. python3 reads stdin, extracts the SSE
-  # data: line, parses it as JSON, exits 0 iff result.protocolVersion is set.
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl -s -m 2 -X POST "$CHORUS_MCP_SMOKE_URL" \
-        -H 'Accept: application/json, text/event-stream' \
-        -H 'Content-Type: application/json' \
-        -d "$body" 2>/dev/null \
-        | python3 -c '
-import json, sys
-for line in sys.stdin:
-    if line.startswith("data:"):
-        try:
-            d = json.loads(line[5:].strip())
-            if d.get("result", {}).get("protocolVersion"):
-                sys.exit(0)
-        except Exception:
-            pass
-sys.exit(1)
-' 2>/dev/null; then
+    if curl -s -m 2 "$CHORUS_API_HEALTH_URL" 2>/dev/null | grep -q '"status":"healthy"'; then
       return 0
     fi
     sleep 0.25
