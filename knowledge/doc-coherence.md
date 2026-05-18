@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-05-07 10:40
+# Doc coherence report — 2026-05-18 18:04
 
 content-dup-groups: 13
 basename-dup-groups: 37
-broken-hrefs: 19
+broken-hrefs: 1
 
 ## Content-hash duplicates
 
@@ -169,23 +169,5 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 Catalog hrefs returning non-2xx / non-302:
 
 ```
-404 /diagrams/chorus-c4.html
-404 /roles/silas/docs/CONCEPTUAL_ARCHITECTURE.md
-404 /roles/wren/artifacts/ontology-migration-pattern.md
-404 /roles/silas/docs/merge-specification-photos.html
-404 /roles/silas/docs/demo-as-is.html
-404 /roles/wren/docs/gemba-as-is.md
-404 /roles/wren/artifacts/book-sequence.html
-404 /roles/silas/docs/nifi-photos-flow-spec.md
 404 /designing/docs/.mermaid-loader.html
-404 /roles/wren/decisions/board-api-verb-model.md
-404 /roles/wren/artifacts/chorus-toc.html
-404 /roles/wren/decisions/DEC-1674-tdd-discipline.md
-404 /roles/silas/docs/demo-as-is.md
-404 /roles/wren/artifacts/domain-policy.html
-404 /roles/wren/decisions/poppendieck-ch2-chorus-analysis.md
-404 /roles/wren/artifacts/roles-domain-design.html
-404 /roles/wren/docs/seed-pipeline-criteria.md
-404 /roles/wren/artifacts/book-outline.html
-404 /roles/wren/artifacts/wren-claudemd-annotated.html
 ```
