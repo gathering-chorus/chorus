@@ -267,6 +267,161 @@ fn guard_active_regardless_of_feature_flag() {
     std::env::remove_var("CHORUS_WERK_ENABLE");
 }
 
+// --- #3003: no-WIP /reboot role-state allowlist -----------------------------
+//
+// /reboot with no WIP card writes role-state files to canonical
+// (roles/<role>/next-session.md, current-work.md, tech-debt.md, briefs/*).
+// Before #3003 the guard refused these writes with a fabricated redirect path
+// (#2913 retired the persistent per-role werk model, so there is no werk to
+// redirect to). The fix: allowlist these specific role-state paths when
+// <ROLE>_WERK is empty. When <ROLE>_WERK IS set (WIP in flight), existing
+// redirect behavior is preserved — the werk's role-state mirror is the right
+// target during an active card.
+
+/// Helper for no-WIP cases: set CHORUS_HOME + CHORUS_ROLE + CHORUS_WERK_BASE
+/// but NOT <ROLE>_WERK. Mirrors what chorus-env-setup.sh does when zero werks
+/// match `<role>-*` (no-WIP /reboot or no card pulled this session).
+fn with_no_wip_env<F: FnOnce()>(canonical: &str, role: &str, werk_base: &str, body: F) {
+    let role_var = format!("{}_WERK", role.to_uppercase());
+    std::env::set_var("CHORUS_HOME", canonical);
+    std::env::set_var("CHORUS_ROLE", role);
+    std::env::set_var("CHORUS_WERK_BASE", werk_base);
+    std::env::remove_var(&role_var);
+    body();
+    std::env::remove_var("CHORUS_HOME");
+    std::env::remove_var("CHORUS_ROLE");
+    std::env::remove_var("CHORUS_WERK_BASE");
+}
+
+#[test]
+fn no_wip_reboot_allows_next_session_md_to_canonical() {
+    with_no_wip_env(
+        "/Users/jeff/CascadeProjects/chorus",
+        "silas",
+        "/Users/jeff/CascadeProjects/chorus-werk",
+        || {
+            let input =
+                write_input("/Users/jeff/CascadeProjects/chorus/roles/silas/next-session.md");
+            let r = canonical_write_guard::check(&input);
+            assert!(
+                r.stdout.is_none(),
+                "no-WIP /reboot must allow role-state write to canonical; got refusal: {:?}",
+                r.stdout
+            );
+        },
+    );
+}
+
+#[test]
+fn no_wip_reboot_allows_full_role_state_allowlist() {
+    let cases = [
+        "roles/kade/next-session.md",
+        "roles/kade/next-session.md.consumed",
+        "roles/kade/current-work.md",
+        "roles/kade/tech-debt.md",
+        "roles/kade/stories.md",
+        "roles/kade/decisions.md",
+        "roles/kade/briefs/incoming-from-wren.md",
+        "roles/kade/briefs/sub/dir/note.md",
+    ];
+    for rel in cases {
+        with_no_wip_env(
+            "/Users/jeff/CascadeProjects/chorus",
+            "kade",
+            "/Users/jeff/CascadeProjects/chorus-werk",
+            || {
+                let path = format!("/Users/jeff/CascadeProjects/chorus/{rel}");
+                let input = write_input(&path);
+                let r = canonical_write_guard::check(&input);
+                assert!(
+                    r.stdout.is_none(),
+                    "no-WIP allowlist file {rel} must allow; got refusal: {:?}",
+                    r.stdout
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn no_wip_reboot_refuses_non_allowlist_canonical_write() {
+    with_no_wip_env(
+        "/Users/jeff/CascadeProjects/chorus",
+        "kade",
+        "/Users/jeff/CascadeProjects/chorus-werk",
+        || {
+            let input =
+                write_input("/Users/jeff/CascadeProjects/chorus/platform/scripts/foo.sh");
+            let r = canonical_write_guard::check(&input);
+            assert!(
+                r.stdout.is_some(),
+                "no-WIP must STILL refuse arbitrary canonical writes — allowlist is narrow"
+            );
+        },
+    );
+}
+
+#[test]
+fn no_wip_reboot_refuses_other_role_state_write() {
+    with_no_wip_env(
+        "/Users/jeff/CascadeProjects/chorus",
+        "kade",
+        "/Users/jeff/CascadeProjects/chorus-werk",
+        || {
+            let input =
+                write_input("/Users/jeff/CascadeProjects/chorus/roles/wren/next-session.md");
+            let r = canonical_write_guard::check(&input);
+            assert!(
+                r.stdout.is_some(),
+                "kade writing wren's role-state must refuse — allowlist is per-role"
+            );
+        },
+    );
+}
+
+#[test]
+fn no_wip_reboot_refuses_non_allowlist_file_under_own_role_dir() {
+    with_no_wip_env(
+        "/Users/jeff/CascadeProjects/chorus",
+        "kade",
+        "/Users/jeff/CascadeProjects/chorus-werk",
+        || {
+            let input =
+                write_input("/Users/jeff/CascadeProjects/chorus/roles/kade/scratch.md");
+            let r = canonical_write_guard::check(&input);
+            assert!(
+                r.stdout.is_some(),
+                "non-allowlisted file under role dir must refuse — allowlist is filename-strict"
+            );
+        },
+    );
+}
+
+#[test]
+fn wip_in_flight_role_state_still_redirects_to_werk() {
+    // AC3 regression check: when <ROLE>_WERK is set, writes to canonical
+    // role-state still redirect to the werk's mirror.
+    with_env(
+        "/Users/jeff/CascadeProjects/chorus",
+        "kade",
+        "/Users/jeff/CascadeProjects/chorus-werk/kade-3003",
+        || {
+            let input =
+                write_input("/Users/jeff/CascadeProjects/chorus/roles/kade/next-session.md");
+            let r = canonical_write_guard::check(&input);
+            assert!(
+                r.stdout.is_some(),
+                "WIP-in-flight role-state write must still refuse + redirect; got allow"
+            );
+            let msg = r.stdout.unwrap_or_default();
+            assert!(
+                msg.contains("/chorus-werk/kade-3003/roles/kade/next-session.md"),
+                "refusal must redirect to werk mirror; got: {msg}"
+            );
+        },
+    );
+}
+
 #[test]
 fn cross_role_write_refused_regardless_of_flag() {
     // Companion to guard_active_regardless_of_feature_flag — cross-role

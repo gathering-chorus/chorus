@@ -108,6 +108,28 @@ pub fn check(input: &HookInput) -> HookResponse {
         return HookResponse::allow();
     }
 
+    // #3003: role-state allowlist for no-WIP /reboot.
+    //
+    // /reboot with no WIP card writes roles/<role>/{next-session.md,
+    // next-session.md.consumed, current-work.md, tech-debt.md, briefs/*} to
+    // canonical. Pre-#3003 the guard refused with a fabricated redirect path
+    // — #2913 retired the persistent per-role werk, so there is nothing to
+    // redirect to. Allow these writes when <ROLE>_WERK is empty (no WIP card,
+    // or ambiguous because the role has 2+ cards in flight — chorus-env-setup
+    // leaves the var unset in both cases).
+    //
+    // When <ROLE>_WERK IS set (single WIP card), this allowlist is skipped —
+    // falls through to the existing redirect, which correctly targets the
+    // werk's roles/<role>/ mirror. Mid-card /reboot writes land in the werk,
+    // preserving the existing per-card-werk behavior (AC3 regression check).
+    let own_role_prefix = format!("{}/roles/{}/", canonical, role);
+    if own_werk.is_empty() && file_path.starts_with(&own_role_prefix) {
+        let rel = &file_path[own_role_prefix.len()..];
+        if is_role_state_allowlisted(rel) {
+            return HookResponse::allow();
+        }
+    }
+
     // Canonical check: if writing under $CHORUS_HOME, refuse with a redirect
     // suggestion pointing at the same relative path under $<ROLE>_WERK.
     if file_path.starts_with(&format!("{}/", canonical)) || file_path == canonical {
@@ -132,4 +154,19 @@ pub fn check(input: &HookInput) -> HookResponse {
     }
 
     HookResponse::allow()
+}
+
+/// #3003: role-state files /reboot writes to canonical when no WIP card is in
+/// flight. Filename-strict — adding new files here is a deliberate decision,
+/// not a side effect. `rel` is the path inside `roles/<role>/`.
+fn is_role_state_allowlisted(rel: &str) -> bool {
+    matches!(
+        rel,
+        "next-session.md"
+            | "next-session.md.consumed"
+            | "current-work.md"
+            | "tech-debt.md"
+            | "stories.md"
+            | "decisions.md"
+    ) || rel.starts_with("briefs/")
 }
