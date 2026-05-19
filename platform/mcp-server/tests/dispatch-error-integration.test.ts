@@ -20,12 +20,19 @@ function setupCapture(): { logPath: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'mcp-3000-integration-'));
   const logPath = join(dir, 'chorus.log');
   const origEnv = process.env.CHORUS_LOG_FILE;
+  const origPulse = process.env.CHORUS_PULSE_URL;
   process.env.CHORUS_LOG_FILE = logPath;
+  // #3001 — point pulse URL at a closed port so notifySilasOfMcpError fails
+  // silently. Without this, tests fire real nudges to silas's terminal
+  // every time they trigger an MCP error in test.
+  process.env.CHORUS_PULSE_URL = 'http://localhost:1/api/nudge';
   return {
     logPath,
     cleanup: () => {
       if (origEnv === undefined) delete process.env.CHORUS_LOG_FILE;
       else process.env.CHORUS_LOG_FILE = origEnv;
+      if (origPulse === undefined) delete process.env.CHORUS_PULSE_URL;
+      else process.env.CHORUS_PULSE_URL = origPulse;
       if (existsSync(logPath)) unlinkSync(logPath);
     },
   };
