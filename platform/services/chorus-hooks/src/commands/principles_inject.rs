@@ -19,6 +19,11 @@ use std::fs;
 
 const DEFAULT_API_URL: &str = "http://localhost:3340/api/loom/principles";
 const DEFAULT_CACHE_PATH: &str = "/tmp/principles-cache.json";
+// #3007 — MCP transport moved off chorus-api (:3340) to chorus-mcp (:3341) in
+// #2998. Default must target the dedicated server; the chorus-api /mcp mount
+// returns 404 and every session-start falls into Stale fallback. The constant
+// is named so a future port move is a one-line edit + one-line test update.
+const DEFAULT_MCP_BASE: &str = "http://localhost:3341";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Principle {
@@ -87,7 +92,7 @@ pub fn fetch() -> FetchResult {
     // produces Stale events that pollute Jeff's signal channel.
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "shim".to_string());
     let mcp_base = std::env::var("CHORUS_MCP_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:3340".to_string());
+        .unwrap_or_else(|_| DEFAULT_MCP_BASE.to_string());
 
     let mut last_error: Option<String> = None;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
@@ -298,4 +303,17 @@ pub fn render_unavailable_banner(reason: &str) -> String {
 
 pub fn write_hash(role: &str, hash: &str) -> std::io::Result<()> {
     fs::write(hash_path(role), hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // #3007 regression pin: chorus-mcp split off chorus-api in #2998. If this
+    // default drifts back to :3340, every session-start emits
+    // session.principles.stale on the 404 from chorus-api's removed /mcp mount.
+    #[test]
+    fn default_mcp_base_points_to_chorus_mcp_port_3341() {
+        assert_eq!(DEFAULT_MCP_BASE, "http://localhost:3341");
+    }
 }
