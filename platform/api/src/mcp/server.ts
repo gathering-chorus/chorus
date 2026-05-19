@@ -114,25 +114,6 @@ const CardsAddInput = z.object({
   subdomain: z.string().optional().describe('Subdomain — Athena subdomain id, refused-at-source against live /api/athena/subdomains (#2652 AC1)'),
 });
 
-// #2996: dedicated Jeff-initiated card-add. Same shape as CardsAddInput, no
-// `role` param. Spawned with DEPLOY_ROLE=jeff hardcoded so the bouncer's
-// `isAgent` check returns false and the card lands without an approval ask.
-// Only `/card` skill should call this; the bouncer-protected `chorus_cards_add`
-// remains the agent-initiated path.
-const CardAddJeffInput = z.object({
-  title: z.string().min(1).describe('Short imperative card title'),
-  owner: z.enum(['wren', 'silas', 'kade', 'jeff']).describe('Owner role'),
-  priority: z.enum(['P1', 'P2', 'P3']).describe('Priority — P1 highest'),
-  domain: z.string().min(1).describe('Domain label (e.g., chorus, photos, seeds)'),
-  type: z.enum(['new', 'enhance', 'fix', 'chore', 'swat']).describe('Card type'),
-  origin: z.enum(['reflective', 'reactive']).describe('Origin — reflective=chosen, reactive=responding to breakage'),
-  desc: z.string().optional().describe('Optional card description (Jeff-initiated cards skip the six-section bouncer gate)'),
-  sequence: z.string().optional().describe('Sequence label'),
-  chunk: z.string().optional().describe('Optional chunk'),
-  subproduct: z.enum(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']).optional().describe('Subproduct'),
-  subdomain: z.string().optional().describe('Subdomain — Athena subdomain id'),
-});
-
 const CardsMoveInput = z.object({
   id: z.number().int().positive().describe('Card id'),
   status: z.enum(['Now', 'Next', 'Later', 'WIP', 'Blocked', 'Done', 'Won\'t Do', 'Harvesting', 'SWAT']).describe('New status'),
@@ -450,33 +431,11 @@ const CARDS_ADD_TOOL_DEF = {
   },
 } as const;
 
-// #2996: dedicated Jeff-initiated card-add. ONLY `/card` skill should call this.
-// Hardcodes DEPLOY_ROLE=jeff so the bouncer's `isAgent` check returns false and
-// the card lands without an approval ask. No `role` param — Jeff is the only
-// attribution. `desc` is optional because Jeff-initiated cards skip the
-// six-section bouncer gate (--quick equivalent).
-const CARD_ADD_JEFF_TOOL_DEF = {
-  name: 'chorus_card_add_jeff',
-  description:
-    'Use this ONLY when invoked by the `/card` skill on Jeff\'s direct request. Files a Jeff-attributed card by spawning `cards add --quick` with DEPLOY_ROLE=jeff hardcoded — bouncer\'s isAgent check returns false, card lands directly with no approval-ask payload. The /card skill invocation IS the authorization. Do NOT use for agent-initiated cards (own observation, peer follow-on, demo seed) — use chorus_cards_add instead so the bouncer\'s six-section gate fires and Jeff sees the proposal. Do NOT call this to bypass a bouncer refusal on your own work; the bouncer is intentional. (#2996 retires the old natural-language detector + freshness-marker path in favor of this single typed tool.)',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      title: { type: 'string', minLength: 1, description: 'Short imperative card title — what to do, not why' },
-      owner: { type: 'string', enum: ['wren', 'silas', 'kade', 'jeff'], description: 'Owning role — pick one (wren=PM/loom, silas=ops/observe, kade=engineer/frontend, jeff=human)' },
-      priority: { type: 'string', enum: ['P1', 'P2', 'P3'], description: 'Priority lane — pick one (P1=urgent/blocking, P2=soon, P3=eventual; default P3 if Jeff didn\'t signal urgency)' },
-      domain: { type: 'string', minLength: 1, description: 'Domain label (e.g. chorus, gathering)' },
-      type: { type: 'string', enum: ['new', 'enhance', 'fix', 'chore', 'swat'], description: 'Card type — pick one (new=feature, enhance=improve existing, fix=bug, chore=housekeeping, swat=crisis)' },
-      origin: { type: 'string', enum: ['reflective', 'reactive'], description: 'Origin — pick one (reflective=chosen, reactive=in response to breakage)' },
-      desc: { type: 'string', description: 'Optional description (Jeff-initiated cards skip the six-section gate)' },
-      sequence: { type: 'string', description: 'Sequence label' },
-      chunk: { type: 'string', description: 'Chunk label' },
-      subproduct: { type: 'string', enum: ['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing'], description: 'Subproduct — pick one (athena=KG, loom=principles, werk=execution, borg=monitoring, convergence=NiFi-pipeline, clearing=multi-role-chat)' },
-      subdomain: { type: 'string', description: 'Subdomain — Athena subdomain id' },
-    },
-    required: ['title', 'owner', 'priority', 'domain', 'type', 'origin'],
-  },
-} as const;
+// #2996: chorus_card_add_jeff was briefly defined here, but the agent-facing MCP
+// server is platform/mcp-server (:3341) — what .mcp.json's "chorus-api" entry
+// targets. The tool now lives there. This server (chorus-api :3340) is not the
+// agent MCP path, so a copy here would be a dead, duplicate Jeff-attribution
+// surface. Single canonical location: platform/mcp-server/src/server.ts.
 
 const CARDS_MOVE_TOOL_DEF = {
   name: 'chorus_cards_move',
@@ -2478,31 +2437,6 @@ async function executeCardsAdd(
   return { content: [{ type: 'text', text: out }] };
 }
 
-// #2996: Jeff-initiated card add. Forces DEPLOY_ROLE=jeff and --quick. Bouncer's
-// isAgent check returns false on DEPLOY_ROLE=jeff so no approval-ask fires.
-async function executeCardAddJeff(
-  args: z.infer<typeof CardAddJeffInput>,
-  execFileAsync: ExecFileAsync,
-  cardsPath: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const argv = [
-    args.title,
-    '--owner', args.owner,
-    '--priority', args.priority,
-    '--domain', args.domain,
-    '--type', args.type,
-    '--origin', args.origin,
-    '--quick',
-  ];
-  if (args.desc) argv.push('--desc', args.desc);
-  if (args.sequence) argv.push('--sequence', args.sequence);
-  if (args.chunk) argv.push('--chunk', args.chunk);
-  if (args.subproduct) argv.push('--subproduct', args.subproduct);
-  if (args.subdomain) argv.push('--subdomain', args.subdomain);
-  const out = await execCardsCli('add', argv, 'jeff', execFileAsync, cardsPath, 'chorus_card_add_jeff');
-  return { content: [{ type: 'text', text: out }] };
-}
-
 async function executeCardsMove(
   args: z.infer<typeof CardsMoveInput>,
   from: string,
@@ -2630,7 +2564,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       SUBDOMAINS_LIST_TOOL_DEF,
       SUBDOMAINS_GET_TOOL_DEF,
       CARDS_ADD_TOOL_DEF,
-      CARD_ADD_JEFF_TOOL_DEF,
       CARDS_MOVE_TOOL_DEF,
       CARDS_DONE_TOOL_DEF,
       CARDS_TAG_TOOL_DEF,
@@ -2726,13 +2659,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCardsAdd(parsed.data, from, execFileAsync, cardsPath);
-      }
-      case 'chorus_card_add_jeff': {
-        const parsed = CardAddJeffInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        return executeCardAddJeff(parsed.data, execFileAsync, cardsPath);
       }
       case 'chorus_cards_move': {
         const parsed = CardsMoveInput.safeParse(req.params.arguments);
