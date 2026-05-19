@@ -112,15 +112,49 @@ wait_for_chorus_api_mcp_ready() {
   return 1
 }
 
+# #2995 — --target werk|canonical. canonical (default) preserves the existing
+# behavior: install to ~/.chorus/bin/ + kickstart the daemon. werk installs
+# to $WERK_<ROLE>_BIN (the role's per-werk slot) and skips kickstart — the
+# role's session resolves the new binary via PATH-prefix, no daemon restart
+# needed. /acp's promote step (chorus_acp MCP) moves the werk slot's contents
+# into canonical and fires the kickstart at acceptance time.
+DEPLOY_TARGET="canonical"
+PARSED_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --target)
+      DEPLOY_TARGET="${2:-}"
+      case "$DEPLOY_TARGET" in
+        werk|canonical) ;;
+        *) echo "chorus-deploy: --target must be 'werk' or 'canonical' (got '$DEPLOY_TARGET')" >&2; exit 2 ;;
+      esac
+      shift 2
+      ;;
+    *)
+      PARSED_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${PARSED_ARGS[@]+"${PARSED_ARGS[@]}"}"
+
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "Usage: chorus-deploy <${KNOWN_CRATES}> [--rollback]" >&2
+  echo "Usage: chorus-deploy [--target werk|canonical] <${KNOWN_CRATES}> [--rollback]" >&2
   exit 2
 fi
 
 CRATE="$1"
 MODE="${2:-deploy}"
 if [ "$MODE" != "deploy" ] && [ "$MODE" != "--rollback" ]; then
-  echo "Usage: chorus-deploy <${KNOWN_CRATES}> [--rollback]" >&2
+  echo "Usage: chorus-deploy [--target werk|canonical] <${KNOWN_CRATES}> [--rollback]" >&2
+  exit 2
+fi
+
+# #2995 — TS daemons (chorus-api, chorus-mcp) don't yet support --target werk
+# (their dist/ tree isn't routed through chorus-bin-install). Refuse loudly
+# until that's wired up rather than silently dropping the request.
+if [ "$DEPLOY_TARGET" = "werk" ] && { [ "$CRATE" = "chorus-api" ] || [ "$CRATE" = "chorus-mcp" ]; }; then
+  echo "chorus-deploy: --target werk is not yet supported for TS daemons ($CRATE); only Rust crates (chorus-hooks, chorus-inject). File a follow-on if needed." >&2
   exit 2
 fi
 
@@ -369,7 +403,14 @@ if [ ! -x "$INSTALL" ]; then
 fi
 
 # Install each binary. chorus-bin-install emits binary.deployed per binary.
+# #2995 — target=werk → pass --target werk to chorus-bin-install (installs to
+# the role's per-werk bin slot) and skip kickstart (session PATH-prefix
+# resolves the new binary without a daemon restart).
 INSTALLED_CDHASH=""
+INSTALL_TARGET_FLAGS=()
+if [ "$DEPLOY_TARGET" = "werk" ]; then
+  INSTALL_TARGET_FLAGS=(--target werk)
+fi
 for bin in "${BINARIES[@]}"; do
   src="$CRATE_DIR/target/release/$bin"
   if [ ! -f "$src" ]; then
@@ -377,41 +418,64 @@ for bin in "${BINARIES[@]}"; do
     emit_deploy_failed "binary-missing"
     exit 1
   fi
-  if ! "$INSTALL" "$src" "$bin"; then
+  if ! "$INSTALL" ${INSTALL_TARGET_FLAGS[@]+"${INSTALL_TARGET_FLAGS[@]}"} "$src" "$bin"; then
     echo "chorus-deploy: install failed for $bin" >&2
     emit_deploy_failed "install-fail"
     exit 1
   fi
   # Capture cdhash from the deployed binary (last one wins; primary recorded
-  # for the spine event payload).
+  # for the spine event payload). #2995: resolve install dir to match target.
   if command -v codesign >/dev/null 2>&1; then
-    INSTALLED_CDHASH=$(codesign -dvvv "$HOME/.chorus/bin/$bin" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+    if [ "$DEPLOY_TARGET" = "werk" ]; then
+      case "$ROLE" in
+        kade)  __cdh_dir="${WERK_KADE_BIN:-}"  ;;
+        wren)  __cdh_dir="${WERK_WREN_BIN:-}"  ;;
+        silas) __cdh_dir="${WERK_SILAS_BIN:-}" ;;
+        *)     __cdh_dir=""                    ;;
+      esac
+    else
+      __cdh_dir="$HOME/.chorus/bin"
+    fi
+    if [ -n "$__cdh_dir" ]; then
+      INSTALLED_CDHASH=$(codesign -dvvv "$__cdh_dir/$bin" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+    fi
   fi
 done
 
-# #2823: kickstart the launchd-managed service after atomic mv. WatchPaths-
-# only-restart doesn't work with KeepAlive=true (launchd no-ops WatchPaths
-# events when the job is already running); we need explicit kickstart.
-# chorus-hooks: kickstart com.chorus.hooks (now a real plist post-#2823;
-# pre-#2823 this WARNed because no plist was loaded).
-# chorus-inject: spawn-on-demand by pulse worker — no kickstart.
-if [ -n "$KICKSTART_SERVICE" ]; then
+# #2823: kickstart the launchd-managed service after atomic mv. Skipped on
+# --target werk (#2995): the binary lives in the role's per-werk slot and is
+# resolved via session PATH-prefix; canonical-bound daemons keep running the
+# pre-werk-build canonical binary, undisturbed. Kickstart fires at /acp's
+# promote step instead, when the werk slot is moved into canonical.
+if [ "$DEPLOY_TARGET" = "canonical" ] && [ -n "$KICKSTART_SERVICE" ]; then
   if launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
     echo "chorus-deploy: kickstarted $KICKSTART_SERVICE"
   else
     echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE failed (service may not be loaded)" >&2
   fi
+elif [ "$DEPLOY_TARGET" = "werk" ]; then
+  echo "chorus-deploy: target=werk — skipped kickstart of ${KICKSTART_SERVICE:-<none>}; role session PATH-prefix resolves the new binary"
 fi
 
-# deploy.completed spine event per crate.
+# deploy.completed spine event per crate. target field distinguishes werk
+# (preview-in-session) from canonical (production-bound).
 END_TS=$(date +%s)
 DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
-TARGET="$HOME/.chorus/bin/${BINARIES[0]}"
+if [ "$DEPLOY_TARGET" = "werk" ]; then
+  case "$ROLE" in
+    kade)  TARGET="${WERK_KADE_BIN:-}/${BINARIES[0]}"  ;;
+    wren)  TARGET="${WERK_WREN_BIN:-}/${BINARIES[0]}"  ;;
+    silas) TARGET="${WERK_SILAS_BIN:-}/${BINARIES[0]}" ;;
+    *)     TARGET="<unknown-role>/${BINARIES[0]}"      ;;
+  esac
+else
+  TARGET="$HOME/.chorus/bin/${BINARIES[0]}"
+fi
 
 if [ -x "$CHORUS_LOG" ]; then
   "$CHORUS_LOG" deploy.completed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
+    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "deploy_target=$DEPLOY_TARGET" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
     >/dev/null 2>&1 || echo "chorus-deploy: WARN — deploy.completed emit failed (non-fatal)" >&2
 fi
 
-echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT cdhash=$INSTALLED_CDHASH)"
+echo "chorus-deploy: $CRATE deployed in ${DURATION_MS}ms (commit=$COMMIT cdhash=$INSTALLED_CDHASH target=$DEPLOY_TARGET)"

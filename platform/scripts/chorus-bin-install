@@ -38,6 +38,22 @@ Installs a built+signed binary to ~/.chorus/bin/<installed-name>.
 EOF
 }
 
+# #2995 — --target werk|canonical. Default canonical (existing behavior).
+# werk: install to the role's per-werk bin slot ($WERK_<ROLE>_BIN). Used by
+# /werk/build + /werk/deploy + /demo so the role's session resolves the
+# in-flight binary before /acp; /acp's promote step moves the slot's
+# contents into canonical. The .werk-bin/ dir is inside the role's werk and
+# tears down with it on /unpull or /acp.
+TARGET="canonical"
+if [ "${1:-}" = "--target" ]; then
+  TARGET="${2:-}"
+  shift 2
+  case "$TARGET" in
+    werk|canonical) ;;
+    *) echo "chorus-bin-install: --target must be 'werk' or 'canonical' (got '$TARGET')" >&2; exit 2 ;;
+  esac
+fi
+
 if [ $# -lt 2 ]; then
   usage
   exit 2
@@ -56,7 +72,26 @@ if [ ! -x "$SRC" ]; then
   exit 4
 fi
 
-BIN_DIR="$HOME/.chorus/bin"
+# #2995 — resolve install target. canonical = $HOME/.chorus/bin (existing).
+# werk = $WERK_<ROLE>_BIN, exported by chorus-env-setup.sh whenever the role
+# has an active werk. Refuse on werk-without-env: the caller asked for the
+# slot but env-setup didn't expose it (no role, no active werk, multi-werk
+# ambiguity), so falling back to canonical would silently corrupt the
+# /acp promote contract.
+if [ "$TARGET" = "werk" ]; then
+  case "${CHORUS_ROLE:-}" in
+    kade)  BIN_DIR="${WERK_KADE_BIN:-}"  ;;
+    wren)  BIN_DIR="${WERK_WREN_BIN:-}"  ;;
+    silas) BIN_DIR="${WERK_SILAS_BIN:-}" ;;
+    *)     BIN_DIR=""                    ;;
+  esac
+  if [ -z "$BIN_DIR" ]; then
+    echo "chorus-bin-install: --target werk requires WERK_<ROLE>_BIN exported (CHORUS_ROLE=${CHORUS_ROLE:-<unset>}); source chorus-env-setup.sh from a role+werk context" >&2
+    exit 7
+  fi
+else
+  BIN_DIR="$HOME/.chorus/bin"
+fi
 DEST="$BIN_DIR/$NAME"
 DEST_TMP="$DEST.tmp.$$"
 
@@ -89,13 +124,17 @@ ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
 # Emit spine event. Test fixture overrides via $CHORUS_BIN_SPINE_LOG so we
 # don't depend on a working chorus-log in the test temp $HOME.
+# #2995 — target=werk/canonical tagged on the event so consumers can
+# distinguish "shipped to werk slot for live demo" from "promoted to
+# canonical at /acp." chorus-health's deployed-equals-running check (which
+# matches against canonical) ignores werk-targeted installs.
 if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
-  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT card=$CARD_ID" >> "$CHORUS_BIN_SPINE_LOG"
+  echo "binary.deployed | $ROLE binary=$NAME cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET" >> "$CHORUS_BIN_SPINE_LOG"
 elif command -v chorus-log >/dev/null 2>&1; then
-  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" >/dev/null 2>&1 || true
+  chorus-log binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" >/dev/null 2>&1 || true
 elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
   "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" >/dev/null 2>&1 || true
+    binary.deployed "$ROLE" "binary=$NAME" "cdhash=$CDHASH" "commit=$COMMIT" "card=$CARD_ID" "target=$TARGET" >/dev/null 2>&1 || true
 fi
 
-echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID)"
+echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET)"

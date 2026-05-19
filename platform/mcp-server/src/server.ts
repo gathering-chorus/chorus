@@ -1624,6 +1624,66 @@ async function executeAcp(
   // Step 5 — spine event card.accepted.
   emit(CARD_ACCEPTED, { role, card: cardId });
 
+  // Step 5.5 — #2995: promote werk-bin to canonical. If the role's werk has
+  // a .werk-bin/ directory with installed binaries (the "preview slot"
+  // populated by chorus-deploy --target werk during the build phase), move
+  // each binary into ~/.chorus/bin/ atomically and emit binary.promoted per
+  // binary. This is the moment werk-scoped code becomes canonical for the
+  // whole team. Kickstart fires once per known service after promotion so
+  // running daemons pick up the new code.
+  //
+  // Best-effort and non-fatal: a card with no werk-bin contents (TS-only,
+  // doc-only, etc.) is a no-op. A promotion failure logs the issue, emits
+  // a typed refusal note, but does NOT throw — card.accepted already fired,
+  // and the operator can re-promote with chorus-bin-install directly if
+  // needed.
+  if (cardId !== null) {
+    const fsBoot = require('node:fs') as typeof import('node:fs');
+    const pathBoot = require('node:path') as typeof import('node:path');
+    const werkBinDir = pathBoot.join(repoRoot, '.werk-bin');
+    if (fsBoot.existsSync(werkBinDir)) {
+      stepEmit('promote-werk-bin', 'started', { werk_bin_dir: werkBinDir });
+      const canonicalBinDir = pathBoot.join(process.env.HOME ?? '', '.chorus', 'bin');
+      const binaries: string[] = [];
+      try {
+        for (const entry of fsBoot.readdirSync(werkBinDir, { withFileTypes: true })) {
+          if (entry.isFile() && !entry.name.startsWith('.')) binaries.push(entry.name);
+        }
+      } catch { /* unreadable — falls through to completed-with-zero */ }
+
+      const promoted: string[] = [];
+      const promoteFailed: Array<{ name: string; error: string }> = [];
+      for (const name of binaries) {
+        const src = pathBoot.join(werkBinDir, name);
+        try {
+          await execFileAsync(pathBoot.join(repoRoot, 'platform', 'scripts', 'chorus-bin-install'), [src, name], { env, timeout: 15_000 });
+          promoted.push(name);
+          emit('binary.promoted', { role, card_id: cardId, binary: name, from: 'werk', to: 'canonical', canonical_path: pathBoot.join(canonicalBinDir, name) });
+        } catch (err) {
+          promoteFailed.push({ name, error: extractStderr(err).slice(0, 200) });
+        }
+      }
+      stepEmit('promote-werk-bin', 'completed', { promoted, failed: promoteFailed });
+
+      // Kickstart known services for the promoted binaries. chorus-hooks
+      // binaries → com.chorus.hooks; chorus-inject → spawn-on-demand, no
+      // kickstart. Map kept in sync with chorus-deploy's KICKSTART_SERVICE
+      // resolution.
+      const kickstartTargets = new Set<string>();
+      for (const name of promoted) {
+        if (name === 'chorus-hooks' || name === 'chorus-hook-shim') kickstartTargets.add('com.chorus.hooks');
+      }
+      for (const svc of kickstartTargets) {
+        try {
+          await execFileAsync('launchctl', ['kickstart', '-k', `gui/${process.getuid?.() ?? 0}/${svc}`], { env, timeout: 5_000 });
+          emit('chorus_acp.promote-kickstart.completed', { role, card_id: cardId, service: svc });
+        } catch (err) {
+          emit('chorus_acp.promote-kickstart.failed', { role, card_id: cardId, service: svc, error: extractStderr(err).slice(0, 200) });
+        }
+      }
+    }
+  }
+
   // Step 6 — chorus-werk remove (best-effort; doesn't fail the transaction).
   // #2943: when this step fails, emit BOTH the existing werk-close.completed
   // (with branch_closed: false for backward-compat observability) AND the
