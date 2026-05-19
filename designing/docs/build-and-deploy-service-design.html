@@ -238,6 +238,13 @@ flowchart LR
 </div>
 
 <div class="component">
+<h3>Self-modifying enforcement — intentional, bounded</h3>
+<p>A subtlety worth naming (Wren, #2995 review): when a role's session loads its own werk's <code>chorus-hooks</code> binary via PATH-prefix, and that binary changes guard rules (e.g., <code>canonical_write_guard.rs</code>), the role's session is enforcing its-own-werk's-version of the rules on its own writes. The team-wide "canonical guard enforces equally on everyone" assumption breaks for the duration of that role's card.</p>
+<p>This is intentional — try-before-buy on hook changes is exactly the point. The asymmetry is bounded in three dimensions: <strong>time</strong> (only between the role's <code>/pull</code> and <code>/acp</code>; promote-to-canonical restores equal enforcement), <strong>scope</strong> (only the role's own session; other roles' guards stay canonical), and <strong>self-equivalence</strong> (same asymmetry as "a role can change its own code by editing files in its werk" — the binary path just extends that to runtime enforcement, not a new privilege class).</p>
+<p>Risk class: a role could ship a card that intentionally weakens its own guard, and the weakening wouldn't be caught at <code>/demo</code> because the role's own session is the test surface. Counter-mitigation lives at the gate layer: <code>/gate-arch</code> on hook-changing cards requires peer review of guard-rule diffs, not just builder-self-review. The structural asymmetry is fine; the gate-level discipline closes the residual.</p>
+</div>
+
+<div class="component">
 <h3>What this gives Jeff</h3>
 <ul>
   <li><strong>Demo = look at the role exercising the change.</strong> No "let me deploy first then verify" dance. The role's session is already running the new code by the time the role finishes <code>build</code>.</li>

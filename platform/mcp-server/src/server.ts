@@ -1627,16 +1627,24 @@ async function executeAcp(
   // Step 5.5 — #2995: promote werk-bin to canonical. If the role's werk has
   // a .werk-bin/ directory with installed binaries (the "preview slot"
   // populated by chorus-deploy --target werk during the build phase), move
-  // each binary into ~/.chorus/bin/ atomically and emit binary.promoted per
-  // binary. This is the moment werk-scoped code becomes canonical for the
-  // whole team. Kickstart fires once per known service after promotion so
-  // running daemons pick up the new code.
+  // each binary into ~/.chorus/bin/ and emit binary.promoted per binary.
+  // This is the moment werk-scoped code becomes canonical for the team.
+  // Kickstart fires once per known service after promotion.
   //
-  // Best-effort and non-fatal: a card with no werk-bin contents (TS-only,
-  // doc-only, etc.) is a no-op. A promotion failure logs the issue, emits
-  // a typed refusal note, but does NOT throw — card.accepted already fired,
-  // and the operator can re-promote with chorus-bin-install directly if
-  // needed.
+  // Idempotency (Kade #2995 review): for each binary, compare its cdhash to
+  // the canonical-installed binary's cdhash. If equal, the promotion has
+  // already happened (either earlier in this run, or a prior /acp partial
+  // that landed promote but failed werk-close); skip without re-installing
+  // or re-emitting binary.promoted. Required so /acp re-run after a
+  // werk-close failure is safe under #3012's werk-close-must-succeed
+  // invariant.
+  //
+  // Failure semantics: if any binary fails to PROMOTE (not skip — actual
+  // install failure), throw. This refuses werk-close entirely and leaves
+  // the operator with werk intact + canonical state partial; recovery is
+  // re-run /acp once the promote issue is fixed. Pre-fix this was
+  // non-throwing best-effort, which produced orphan canonical state with
+  // werk already torn down (the failure mode Kade flagged).
   if (cardId !== null) {
     const fsBoot = require('node:fs') as typeof import('node:fs');
     const pathBoot = require('node:path') as typeof import('node:path');
@@ -1651,21 +1659,62 @@ async function executeAcp(
         }
       } catch { /* unreadable — falls through to completed-with-zero */ }
 
+      // Compute cdhash via codesign; returns empty on any failure (test
+      // fixtures, missing codesign, unsigned binary). Empty values mean
+      // "no equality" so the binary promotes normally.
+      const cdhashFor = async (binPath: string): Promise<string> => {
+        try {
+          const { stdout, stderr } = await execFileAsync('codesign', ['-dvvv', binPath], { env, timeout: 5_000 });
+          const match = `${stdout}\n${stderr}`.match(/^CDHash=([0-9a-f]+)/m);
+          return match ? match[1] : '';
+        } catch { return ''; }
+      };
+
       const promoted: string[] = [];
+      const skipped: string[] = [];
       const promoteFailed: Array<{ name: string; error: string }> = [];
       for (const name of binaries) {
         const src = pathBoot.join(werkBinDir, name);
+        const dest = pathBoot.join(canonicalBinDir, name);
+
+        // Idempotency check: if canonical already has matching cdhash, skip.
+        if (fsBoot.existsSync(dest)) {
+          const srcHash = await cdhashFor(src);
+          const destHash = await cdhashFor(dest);
+          if (srcHash !== '' && destHash !== '' && srcHash === destHash) {
+            skipped.push(name);
+            continue;
+          }
+        }
+
         try {
           await execFileAsync(pathBoot.join(repoRoot, 'platform', 'scripts', 'chorus-bin-install'), [src, name], { env, timeout: 15_000 });
           promoted.push(name);
-          emit('binary.promoted', { role, card_id: cardId, binary: name, from: 'werk', to: 'canonical', canonical_path: pathBoot.join(canonicalBinDir, name) });
+          emit('binary.promoted', { role, card_id: cardId, binary: name, from: 'werk', to: 'canonical', canonical_path: dest });
         } catch (err) {
           promoteFailed.push({ name, error: extractStderr(err).slice(0, 200) });
         }
       }
-      stepEmit('promote-werk-bin', 'completed', { promoted, failed: promoteFailed });
+      stepEmit('promote-werk-bin', 'completed', { promoted, skipped, failed: promoteFailed });
 
-      // Kickstart known services for the promoted binaries. chorus-hooks
+      // Hard refuse if ANY binary failed to promote. Leaves werk intact so
+      // /acp re-run picks up where this one stopped (already-promoted
+      // binaries skip via cdhash equality; failed ones retry).
+      if (promoteFailed.length > 0) {
+        emit(CHORUS_ACP_REFUSED, {
+          role,
+          card_id: cardId,
+          step: 'promote-werk-bin',
+          reason: 'promote-fail',
+          detail: promoteFailed.map((f) => `${f.name}: ${f.error}`).join('; ').slice(0, 500),
+          recoverable: true,
+          recovery_hint: `fix the underlying install failure, then re-run \`/acp ${cardId}\` — already-promoted binaries are skipped via cdhash match`,
+        });
+        throw new Error(`chorus_acp refused: promote-fail — ${promoteFailed.map((f) => f.name).join(', ')}`);
+      }
+
+      // Kickstart known services for promoted binaries only (skipped binaries
+      // mean canonical already has them — already running). chorus-hooks
       // binaries → com.chorus.hooks; chorus-inject → spawn-on-demand, no
       // kickstart. Map kept in sync with chorus-deploy's KICKSTART_SERVICE
       // resolution.
