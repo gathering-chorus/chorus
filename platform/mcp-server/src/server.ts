@@ -1608,23 +1608,25 @@ async function executeAcp(
     stepEmit('pr-merge', 'completed', { idempotent: true, reason: ALREADY_MERGED });
   }
 
-  // Step 4 — cards done.
-  if (cardId !== null) {
-    stepEmit('cards-done', 'started');
-    try {
-      await execFileAsync(cardsPath, ['done', String(cardId)], { env, timeout: 15_000 });
-      stepEmit('cards-done', 'completed');
-    } catch (err) {
-      const stderr = extractStderr(err);
-      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
-      throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
-    }
-  }
+  // #3012 — REORDER: substrate-clean steps (promote-werk-bin, werk-close)
+  // run BEFORE cards-done + card.accepted. The card is not actually
+  // "accepted" until the substrate is back to clean main state for the
+  // next pull. If any substrate step throws, the card stays WIP and /acp
+  // re-runs idempotently (promote-werk-bin via cdhash-equality skip;
+  // werk-close via its own re-attempt).
+  //
+  // Order (per Silas #2995 + Kade #3012 alignment):
+  //   PR-merge → promote-werk-bin (throws) → werk-close (throws) →
+  //   cards-done → card.accepted
+  //
+  // Reverses #2943's non-throwing branch-close-fail decision. Receipt:
+  // 5 abandoned werks accumulated on disk because the old order moved
+  // cards to Done while leaving werks live. Roles never re-ran /acp
+  // because cards looked accepted; werks leaked silently. The resolver
+  // then fell back to canonical on ambiguous-multiple werks, firing
+  // dirty-tree refusals on subsequent git ops.
 
-  // Step 5 — spine event card.accepted.
-  emit(CARD_ACCEPTED, { role, card: cardId });
-
-  // Step 5.5 — #2995: promote werk-bin to canonical. If the role's werk has
+  // Step 4 — #2995: promote werk-bin to canonical. If the role's werk has
   // a .werk-bin/ directory with installed binaries (the "preview slot"
   // populated by chorus-deploy --target werk during the build phase), move
   // each binary into ~/.chorus/bin/ and emit binary.promoted per binary.
@@ -1733,16 +1735,10 @@ async function executeAcp(
     }
   }
 
-  // Step 6 — chorus-werk remove (best-effort; doesn't fail the transaction).
-  // #2943: when this step fails, emit BOTH the existing werk-close.completed
-  // (with branch_closed: false for backward-compat observability) AND the
-  // typed CHORUS_ACP_REFUSED with reason: 'branch-close-fail' so the taxonomy
-  // contract documented on the tool description is honest. We do NOT throw —
-  // card.accepted has already fired, the transaction is materially complete,
-  // and an orphan remote branch is recoverable via the idempotent re-run
-  // path (above) that detects the accepted-card + orphan-branch state and
-  // runs werk-close alone. The refusal event is the typed signal for
-  // dashboards/observability/operators; it does not break the contract.
+  // Step 5 — #3012: chorus-werk remove (throws on failure). Werks must not
+  // persist beyond /acp. If werk-close fails, refuse with werk-close-fail;
+  // card stays WIP; cards-done is NOT called below; card.accepted is NOT
+  // emitted. Re-run /acp after fixing the underlying cause.
   let branchClosed = false;
   if (cardId !== null) {
     stepEmit(STEP_WERK_CLOSE, 'started');
@@ -1752,24 +1748,36 @@ async function executeAcp(
       branchClosed = true;
       stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
     } catch (err) {
-      // Non-fatal — branch close is hygiene; the transaction is already complete.
       const stderr = extractStderr(err);
       stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
-      // #2943 — typed refusal signal (non-throwing). Mirrors the shape of
-      // other CHORUS_ACP_REFUSED emits so callers handling refusal taxonomy
-      // see the case. To recover: re-run /acp; the idempotent path above
-      // detects the orphan branch and runs werk-close alone.
       emit(CHORUS_ACP_REFUSED, {
         role,
         card_id: cardId,
         step: STEP_WERK_CLOSE,
-        reason: 'branch-close-fail',
+        reason: 'werk-close-fail',
         detail: stderr.slice(0, 500),
         recoverable: true,
-        recovery_hint: `re-run \`/acp ${cardId}\` to retry branch-close (idempotent on accepted cards)`,
+        recovery_hint: `werk could not be torn down; card stays WIP. Fix the underlying issue (dirty werk, branch ref conflict, remote unreachable) and re-run /acp.`,
       });
+      throw new Error(`chorus_acp refused: werk-close-fail — ${stderr.split('\n')[0]}`);
     }
   }
+
+  // Step 6 — cards done (only reached if promote-werk-bin + werk-close succeeded).
+  if (cardId !== null) {
+    stepEmit('cards-done', 'started');
+    try {
+      await execFileAsync(cardsPath, ['done', String(cardId)], { env, timeout: 15_000 });
+      stepEmit('cards-done', 'completed');
+    } catch (err) {
+      const stderr = extractStderr(err);
+      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
+      throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  // Step 7 — spine event card.accepted (only reached if all substrate steps succeeded).
+  emit(CARD_ACCEPTED, { role, card: cardId });
 
   // #2863 — release event: kick building-pipeline so /build runs immediately
   // against origin/main (whose first step fast-forwards canonical). Replaces
