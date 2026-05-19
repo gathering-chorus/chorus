@@ -1,6 +1,5 @@
 pub mod jdi_detector;
 pub mod card_approval_responder;
-pub mod card_directive_detector;
 pub mod autonomy_guard;
 pub mod bedroom_nfs_guard;
 pub mod clock_sync;
