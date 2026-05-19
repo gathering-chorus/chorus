@@ -2029,11 +2029,27 @@ async function fetchPrinciplesList(fetchImpl: FetchImpl, apiBase: string): Promi
   return body.data?.principles ?? [];
 }
 
+// #3010 — return structuredContent.principles alongside the existing prose
+// text. chorus-hooks consumes the JSON array directly (no client-side
+// parse_tool_text rfind('(') greedy-match against prose, which fragmented
+// principles whose comments contain parens — e.g. the Hemenway
+// catch-and-store principle's "(in slope, charge, temperature, or otherwise)"
+// captured the comment fragment as the principle id and dropped real
+// principles from the boot envelope).
+//
+// Both content and structuredContent are populated for one rollout window:
+// the text path stays so older clients keep working until they're updated;
+// new clients prefer structuredContent. parse_tool_text retired as a
+// follow-on once chorus-mcp is fully shipped and clients no longer fall
+// back to the text path.
 async function executePrinciplesList(
   fetchImpl: FetchImpl,
   apiBase: string,
   from: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+): Promise<{
+  content: Array<{ type: 'text'; text: string }>;
+  structuredContent: { principles: PrincipleRecord[] };
+}> {
   process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.list.invoked', tool: 'chorus_principles_list', from, ts: new Date().toISOString() }) + '\n');
   const principles = await fetchPrinciplesList(fetchImpl, apiBase);
   const lines: string[] = [`${principles.length} principle${principles.length === 1 ? '' : 's'}:`];
@@ -2042,7 +2058,10 @@ async function executePrinciplesList(
     const summary = p.comment ? `${label} — ${p.comment}` : label;
     lines.push(`- ${summary}`);
   }
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+  return {
+    content: [{ type: 'text', text: lines.join('\n') }],
+    structuredContent: { principles },
+  };
 }
 
 async function executePrinciplesGet(

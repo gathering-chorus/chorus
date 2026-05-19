@@ -145,17 +145,35 @@ fn try_fetch_once(mcp_base: &str, role: &str) -> Result<FetchResult, String> {
     )
     .map_err(|e| format!("mcp call_tool: {}", e))?;
 
-    // The chorus_principles_list tool returns a text content block; parse it
-    // back into the canonical envelope so the rest of principles_inject works
-    // unchanged. The text shape is "<N> principles:\n- <Label> (<id>) — <comment>\n- ...".
-    let text = result
-        .get("content")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("text"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("");
+    // #3010 — prefer structuredContent.principles (JSON array) over the
+    // text content block. The text-parse path (parse_tool_text below) used
+    // a greedy rfind('(') for the id, which fragmented principles whose
+    // comments contained parens (e.g. Hemenway catch-and-store's
+    // "(in slope, charge, temperature, or otherwise)" captured a comment
+    // fragment as the id, dropping three real principles). When the MCP
+    // server returns structuredContent we deserialize directly, no parse.
+    //
+    // text-parse path retained as fallback for one rollout window:
+    // covers older chorus-mcp builds that haven't shipped the
+    // structuredContent path yet. Retire parse_tool_text in a follow-on
+    // card once chorus-mcp is fully shipped (#3010 AC4).
+    let principles: Vec<Principle> =
+        if let Some(arr) = result.get("structuredContent").and_then(|sc| sc.get("principles")).and_then(|p| p.as_array()) {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value::<Principle>(v.clone()).ok())
+                .collect()
+        } else {
+            // Fallback: text content block parse. The text shape is
+            // "<N> principles:\n- <Label> (<id>) — <comment>\n- ...".
+            let text = result
+                .get("content")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            parse_tool_text(text)
+        };
 
-    let principles = parse_tool_text(text);
     if principles.is_empty() {
         return Ok(FetchResult::EmptyFromApi);
     }
@@ -315,5 +333,78 @@ mod tests {
     #[test]
     fn default_mcp_base_points_to_chorus_mcp_port_3341() {
         assert_eq!(DEFAULT_MCP_BASE, "http://localhost:3341");
+    }
+
+    // #3010 AC3 — receipt: canonical Hemenway principle shape from
+    // roles/silas/ontology/chorus.ttl. Comment contains nested parens.
+    fn hemenway_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "id": "hemenway-catch-and-store",
+            "label": "Catch and store energy and materials",
+            "comment": "Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy."
+        })
+    }
+
+    // #3010 AC2 — when the MCP response includes structuredContent.principles,
+    // the client deserializes the JSON array directly. No prose parse.
+    #[test]
+    fn structured_content_principles_deserialize_directly() {
+        let result = serde_json::json!({
+            "content": [{"type": "text", "text": "1 principles:\n- Catch and store energy and materials (hemenway-catch-and-store) — ..."}],
+            "structuredContent": {
+                "principles": [hemenway_fixture()]
+            }
+        });
+
+        let principles: Vec<Principle> = result
+            .get("structuredContent")
+            .and_then(|sc| sc.get("principles"))
+            .and_then(|p| p.as_array())
+            .expect("structuredContent.principles should be present")
+            .iter()
+            .filter_map(|v| serde_json::from_value::<Principle>(v.clone()).ok())
+            .collect();
+
+        assert_eq!(principles.len(), 1, "exactly one principle in fixture");
+    }
+
+    // #3010 AC3 — the Hemenway id is intact via the structuredContent path,
+    // not fragmented to the comment's nested-paren content.
+    #[test]
+    fn hemenway_id_intact_via_structured_content() {
+        let p: Principle = serde_json::from_value(hemenway_fixture()).expect("deserialize");
+        assert_eq!(
+            p.id, "hemenway-catch-and-store",
+            "Hemenway id should be the canonical id, not a comment fragment"
+        );
+        assert_ne!(
+            p.id, "in slope, charge, temperature, or otherwise",
+            "regression guard: comment-fragment id is exactly the parse_tool_text bug shape"
+        );
+        assert_eq!(p.label, "Catch and store energy and materials");
+    }
+
+    // #3010 — regression pin documenting why we route around parse_tool_text
+    // when structuredContent is present. Greedy rfind('(') in parse_tool_text
+    // captures the LAST open-paren in the line, which falls inside the comment
+    // for any principle whose comment contains parens. This test does NOT
+    // assert correctness of parse_tool_text — it documents the buggy behavior
+    // so the structuredContent path's value is visible.
+    #[test]
+    fn parse_tool_text_fragments_hemenway_id_documenting_bug() {
+        let prose = "1 principles:\n- Catch and store energy and materials (hemenway-catch-and-store) — Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy.";
+        let parsed = parse_tool_text(prose);
+        // The fallback parser produces ONE principle but with the WRONG id —
+        // captured from the comment's nested parens, not the real id.
+        // structuredContent path bypasses this entirely.
+        assert_eq!(parsed.len(), 1, "parse_tool_text recovers one entry from the prose");
+        assert_eq!(
+            parsed[0].id, "in slope, charge, temperature, or otherwise",
+            "buggy id-fragment from rfind('(') greedy match — this is the bug #3010 routes around"
+        );
+        assert_ne!(
+            parsed[0].id, "hemenway-catch-and-store",
+            "the canonical id never survives parse_tool_text when comment has parens"
+        );
     }
 }
