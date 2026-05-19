@@ -767,7 +767,7 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, cards-done, spine event, branch-close, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | cards-done-fail | branch-close-fail (non-throwing — card is accepted; re-run /acp to retry werk-close idempotently). Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
+    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, werk-close, cards-done, spine event, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | werk-close-fail | cards-done-fail | branch-close-fail (legacy: idempotent recovery path for pre-#3012 cards already in Done with orphan branches). werk-close-fail blocks acceptance (#3012) — card stays WIP, cards-done is NOT called, card.accepted is NOT emitted. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1604,7 +1604,45 @@ async function executeAcp(
     stepEmit('pr-merge', 'completed', { idempotent: true, reason: ALREADY_MERGED });
   }
 
-  // Step 4 — cards done.
+  // #3012 — REORDER: werk-close runs BEFORE cards-done + card.accepted.
+  //
+  // Reverses #2943's non-throwing decision. Receipt: 5 abandoned werks
+  // (kade-2966, kade-2975, silas-2967, silas-3000, wren-2996) accumulated
+  // because the old order moved cards to Done while leaving werks live.
+  // Roles never re-ran /acp because cards looked accepted; werks leaked
+  // silently. Resolver then fell back to canonical on ambiguous-multiple
+  // werks, firing dirty-tree refusals on subsequent git ops.
+  //
+  // New ordering: PR merge → werk-close → cards-done → card.accepted.
+  // If werk-close fails, throw werk-close-fail; cards-done is never called;
+  // card.accepted is never emitted; card stays WIP. The idempotent recovery
+  // path above still uses branch-close-fail for legacy state (cards already
+  // Done from pre-#3012 acps — the 5 leaked werks today).
+  let branchClosed = false;
+  if (cardId !== null) {
+    stepEmit(STEP_WERK_CLOSE, 'started');
+    try {
+      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
+      await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
+      branchClosed = true;
+      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
+    } catch (err) {
+      const stderr = extractStderr(err);
+      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
+      emit(CHORUS_ACP_REFUSED, {
+        role,
+        card_id: cardId,
+        step: STEP_WERK_CLOSE,
+        reason: 'werk-close-fail',
+        detail: stderr.slice(0, 500),
+        recoverable: true,
+        recovery_hint: `werk could not be torn down; card stays WIP. Fix the underlying issue (dirty werk, branch ref conflict, remote unreachable) and re-run /acp.`,
+      });
+      throw new Error(`chorus_acp refused: werk-close-fail — ${stderr.split('\n')[0]}`);
+    }
+  }
+
+  // Step 4 — cards done (only reached if werk-close succeeded).
   if (cardId !== null) {
     stepEmit('cards-done', 'started');
     try {
@@ -1617,46 +1655,8 @@ async function executeAcp(
     }
   }
 
-  // Step 5 — spine event card.accepted.
+  // Step 5 — spine event card.accepted (only reached if werk-close + cards-done succeeded).
   emit(CARD_ACCEPTED, { role, card: cardId });
-
-  // Step 6 — chorus-werk remove (best-effort; doesn't fail the transaction).
-  // #2943: when this step fails, emit BOTH the existing werk-close.completed
-  // (with branch_closed: false for backward-compat observability) AND the
-  // typed CHORUS_ACP_REFUSED with reason: 'branch-close-fail' so the taxonomy
-  // contract documented on the tool description is honest. We do NOT throw —
-  // card.accepted has already fired, the transaction is materially complete,
-  // and an orphan remote branch is recoverable via the idempotent re-run
-  // path (above) that detects the accepted-card + orphan-branch state and
-  // runs werk-close alone. The refusal event is the typed signal for
-  // dashboards/observability/operators; it does not break the contract.
-  let branchClosed = false;
-  if (cardId !== null) {
-    stepEmit(STEP_WERK_CLOSE, 'started');
-    try {
-      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
-      await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
-      branchClosed = true;
-      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
-    } catch (err) {
-      // Non-fatal — branch close is hygiene; the transaction is already complete.
-      const stderr = extractStderr(err);
-      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
-      // #2943 — typed refusal signal (non-throwing). Mirrors the shape of
-      // other CHORUS_ACP_REFUSED emits so callers handling refusal taxonomy
-      // see the case. To recover: re-run /acp; the idempotent path above
-      // detects the orphan branch and runs werk-close alone.
-      emit(CHORUS_ACP_REFUSED, {
-        role,
-        card_id: cardId,
-        step: STEP_WERK_CLOSE,
-        reason: 'branch-close-fail',
-        detail: stderr.slice(0, 500),
-        recoverable: true,
-        recovery_hint: `re-run \`/acp ${cardId}\` to retry branch-close (idempotent on accepted cards)`,
-      });
-    }
-  }
 
   // #2863 — release event: kick building-pipeline so /build runs immediately
   // against origin/main (whose first step fast-forwards canonical). Replaces
