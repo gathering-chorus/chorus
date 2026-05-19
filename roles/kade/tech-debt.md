@@ -272,3 +272,5 @@ Running `migrate-icd-tree.py` (with or without `--publish`) regenerates all TTL 
 
 **Cost of deferral:** Every photo page, search result, and analytics query inherits Takeout's metadata poverty. Jeff doesn't trust the data.
 **Resolution:** Rebuild canonical from scratch using Jeff-confirmed 4-era authority model (Apple primary through 2019, iPhone 2020+). Depends on #1642 (era-scoped ICD).
+
+<!-- #3013 integration probe 2026-05-19: exercising post-#3012 /acp chain end-to-end. This line is the throwaway edit. -->
