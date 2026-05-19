@@ -26,6 +26,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { buildMcpServer } from './server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { randomUUID } from 'crypto';
 
 // #3000 — transport-level error capture. Emit typed mcp.transport.error
 // spine events on non-2xx /mcp responses + connection-level failures.
@@ -94,6 +95,15 @@ function resolveCallerRole(req: Request): string {
 export function mountMcpEndpoint(app: Application): void {
   app.post('/mcp', async (req: Request, res: Response) => {
     const callerRole = resolveCallerRole(req);
+    // #3008 — emit Mcp-Session-Id response header per MCP HTTP+SSE spec so
+    // spec-conformant clients (chorus-hooks mcp_client.rs:65-68 requires it
+    // on initialize and errors "no session id header" when absent) get the
+    // handshake they expect. The UUID is purely informational: server stays
+    // stateless because StreamableHTTPServerTransport is constructed
+    // without sessionIdGenerator (#2949 invariant), so the SDK never stores
+    // or validates session-ids. Header set before SDK takes over the
+    // response so it persists through transport.handleRequest.
+    res.setHeader('Mcp-Session-Id', randomUUID());
     // #3000 — capture transport-level errors. Listen for response 'finish'
     // (non-2xx) and connection 'close'/'error' (mid-stream client drop).
     res.on('finish', () => {
@@ -142,6 +152,10 @@ export function mountMcpEndpoint(app: Application): void {
   // workload, no client today depends on SSE notifications.
   app.get('/mcp', async (req: Request, res: Response) => {
     const callerRole = resolveCallerRole(req);
+    // #3008 — same header treatment as POST. GET /mcp opens an SSE
+    // notification stream; spec-conformant clients expect the session-id
+    // here too.
+    res.setHeader('Mcp-Session-Id', randomUUID());
     const transport = new StreamableHTTPServerTransport({});
     const server = buildMcpServer(() => callerRole);
     await server.connect(transport);
