@@ -2292,6 +2292,46 @@ async function appendChorusLog(event: string, role: string, fields: Record<strin
     // best-effort spine write; do not block delivery
     logEvent('error', 'mcp.nudge.spine_write_failed', { error: String(err) });
   }
+  // #3001 — push mcp.*.error events to silas's terminal via the existing
+  // nudge persistence path. Ops alerts go to the ops role, not to Jeff.
+  // Best-effort: pulse POST failure is logged but doesn't cascade.
+  if (event === 'mcp.tool.error' || event === 'mcp.transport.error' || event === 'mcp.process.error') {
+    void notifySilasOfMcpError(event, fields);
+  }
+}
+
+async function notifySilasOfMcpError(event: string, fields: Record<string, unknown>): Promise<void> {
+  const tool = String(fields['tool'] ?? '');
+  const errorType = String(fields['error_type'] ?? fields['kind'] ?? '');
+  const errorMessage = String(fields['error_message'] ?? '');
+  const traceId = String(fields['trace_id'] ?? '');
+  const summary = [
+    '[mcp.error]',
+    event,
+    tool && `tool=${tool}`,
+    errorType && `type=${errorType}`,
+    errorMessage && `msg=${errorMessage.slice(0, 200)}`,
+    traceId && `trace=${traceId}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+  try {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 2000);
+    const resp = await fetch(pulseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-MCP-Caller': '1' },
+      body: JSON.stringify({ from: 'chorus-mcp', to: 'silas', content: summary, traceId }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) {
+      logEvent('error', 'mcp.notification.failed', { reason: `pulse-${resp.status}`, event, trace_id: traceId });
+    }
+  } catch (err) {
+    logEvent('error', 'mcp.notification.failed', { reason: String(err).slice(0, 200), event, trace_id: traceId });
+  }
 }
 
 // #2605 — service-lifecycle executor. Wraps agent-state.sh; one function serves

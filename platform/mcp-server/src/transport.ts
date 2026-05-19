@@ -31,6 +31,9 @@ import { promisify } from 'util';
 // spine events on non-2xx /mcp responses + connection-level failures.
 // Closes the "behind MCP boundary errors vaporize" gap at the transport
 // layer (per-tool errors are captured inside server.ts's dispatch wrap).
+//
+// #3001 — also push notify to silas via pulse so ops sees errors in real
+// time. POST is fire-and-forget; pulse failure logs but doesn't cascade.
 const execFileAsync = promisify(execFile);
 async function emitTransportError(fields: Record<string, unknown>): Promise<void> {
   try {
@@ -42,6 +45,37 @@ async function emitTransportError(fields: Record<string, unknown>): Promise<void
     await execFileAsync('chorus-log', args, { timeout: 2000 });
   } catch {
     // best-effort; chorus-log failure must not affect the HTTP response
+  }
+  // #3001 — push notify to silas in parallel with spine emit
+  void notifyTransportError(fields);
+}
+
+async function notifyTransportError(fields: Record<string, unknown>): Promise<void> {
+  const summary = [
+    '[mcp.error] mcp.transport.error',
+    fields['method'] && `${fields['method']} ${fields['path']}`,
+    fields['status'] && `status=${fields['status']}`,
+    fields['kind'] && `kind=${fields['kind']}`,
+    fields['error_message'] && `msg=${String(fields['error_message']).slice(0, 200)}`,
+  ].filter(Boolean).join(' ');
+  const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+  try {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 2000);
+    const resp = await fetch(pulseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-MCP-Caller': '1' },
+      body: JSON.stringify({ from: 'chorus-mcp', to: 'silas', content: summary }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!resp.ok) {
+      // log via stderr (chorus-log spawn already attempted above)
+      // eslint-disable-next-line no-console
+      console.error('[chorus-mcp] mcp.notification.failed', { reason: `pulse-${resp.status}` });
+    }
+  } catch {
+    // best-effort
   }
 }
 

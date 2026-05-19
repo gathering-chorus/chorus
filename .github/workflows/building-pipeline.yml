@@ -72,3 +72,13 @@ jobs:
           export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
           export DEPLOY_ROLE=system
           /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-api
+
+      # #3001 — chorus-mcp auto-deploy. Without this step, chorus-mcp code
+      # changes ship to main but the running daemon stays on the last manual
+      # deploy. Caught 2026-05-18 when #3000's error capture code didn't
+      # actually run until manual chorus-deploy chorus-mcp post-merge.
+      - name: chorus-deploy chorus-mcp
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-mcp
