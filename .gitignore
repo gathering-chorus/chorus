@@ -6,6 +6,11 @@ dist.*/
 target/
 coverage/
 *.js.map
+# #2995 — per-role-per-werk binary slot. Populated by chorus-deploy --target
+# werk during the build phase; promoted to ~/.chorus/bin/ at /acp; torn down
+# with the werk on /unpull. Never tracked — runtime artifact tied to werk
+# lifetime, not source.
+.werk-bin/
 
 # Compiled TS artifacts shadowing source (#2201, #2209)
 # ts-jest instruments .js first when a .ts sibling exists — stale compiled

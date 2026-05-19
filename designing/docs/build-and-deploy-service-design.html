@@ -207,34 +207,63 @@ flowchart LR
 </ul>
 <p style="font-size: 0.85em; color: #999;"><em>Authoring status: not yet populated in graph (deferred to follow-on; sequenced under deploys-domain).</em></p>
 
-<h2>Per-card slot isolation — <code>$CHORUS_DEMO_BIN</code> / <code>$CHORUS_BIN</code> (designed)</h2>
-<p><strong>CI/CD interface:</strong> The <a href="http://localhost:3340/designing/docs/ci-pipeline-service-design.html">CI/CD service design</a>'s <code>/werk/build</code> and <code>/werk/deploy</code> act jobs are the dispatch surface for this slot model. <code>/werk/build</code> populates <code>$CHORUS_DEMO_BIN</code>; <code>/werk/deploy</code> probes the candidate against the preview slot before <code>/demo</code>. <code>/werk/acp</code>'s release-trigger then promotes the verified artifact to <code>$CHORUS_BIN</code>. Neither job modifies <code>$CHORUS_BIN</code> before /acp — that is the structural safety property of the two-slot design.</p>
-<p>The deploy domain has a concurrency property the VCS and CI/CD domains don't: <strong>multiple roles can be mid-flight on daemon-runtime cards simultaneously</strong> (Wren on chorus-hooks, Silas on chorus-api, Kade on cards-SDK — all in their own werks, all building/deploying candidate artifacts before /acp). The current single-slot rollback model (<code>dist.prev/</code>, <code>~/.chorus/bin/chorus-hooks.prev</code>) clobbers under concurrency — a second role's deploy overwrites the first role's rollback target. The 2026-05-15 #2924/#2925/#2927 sequence surfaced this gap; the path to close is named here, scoped to a separate follow-on card.</p>
+<h2>Per-role-per-werk binary slot — <code>$WERK_${ROLE}_BIN</code> / <code>$CHORUS_BIN</code> (designed, #2995)</h2>
+<p><strong>This section was revised by #2995 (2026-05-19).</strong> It supersedes the prior per-card / daemon-side resolution model (cards #2980, #2981) that this doc previously described. The earlier model used <code>$CHORUS_DEMO_BIN</code> as a per-(role,card) slot under <code>~/.chorus/bin/demo/</code> and relied on each daemon to resolve via env when a role's card was in flight. That shape required daemon-side context awareness, didn't survive across daemon restarts, and didn't actually let Jeff <em>see</em> the change running — he saw test output, not a live exercised feature. See the "Superseded model" subsection below for the historical record.</p>
+
+<p><strong>The shift in one line:</strong> binary slot ownership moves from <em>daemon-side env resolution</em> to <em>role-session-side PATH prefix</em>. A role's own session is the preview surface. Demo means Jeff watches the role exercise the change in its session, not "let me deploy first then verify."</p>
 
 <div class="component">
 <h3>Two-slot contract</h3>
 <ul>
-  <li><strong><code>$CHORUS_BIN</code></strong> — production stable path. <code>~/.chorus/bin/&lt;name&gt;</code> for Rust crates, <code>platform/api/dist/</code> for chorus-api, <code>directing/products/cards/dist/</code> for cards-SDK. Never modified during the demo phase. The running daemon reads from here when no card is in-flight.</li>
-  <li><strong><code>$CHORUS_DEMO_BIN</code></strong> — per-card ephemeral slot. <code>~/.chorus/bin/demo/&lt;role&gt;-&lt;card&gt;/&lt;name&gt;</code> for Rust, <code>~/.chorus/demo/&lt;role&gt;-&lt;card&gt;/&lt;unit&gt;/dist/</code> for TS surfaces. Named uniquely per (role, card) so concurrent roles don't collide. Populated by the <code>deploy-daemon-card.sh</code> wrapper's build step BEFORE <code>/demo</code> runs — the probe validates the candidate live via env resolution. The daemon resolves <code>$CHORUS_DEMO_BIN</code> via env when that role's card is in-flight, falling back to <code>$CHORUS_BIN</code> otherwise.</li>
+  <li><strong><code>$CHORUS_BIN</code></strong> — production stable path. <code>~/.chorus/bin/&lt;name&gt;</code> for Rust crates, <code>platform/api/dist/</code> for chorus-api, <code>directing/products/cards/dist/</code> for cards-SDK. Never modified between <code>/pull</code> and <code>/acp</code>. The running daemon (and any role NOT on a card touching that binary) reads from here.</li>
+  <li><strong><code>$WERK_${ROLE}_BIN</code></strong> — per-role-per-werk slot. Located inside the role's ephemeral werk at <code>chorus-werk/&lt;role&gt;-&lt;card&gt;/bin/</code> (or equivalent path adjacent to <code>$<role>_WERK</code>). The variable is exported by <code>chorus-env-setup.sh</code> whenever a role has an active werk; absent otherwise. The role's session <strong>PATH-prefixes</strong> <code>$WERK_${ROLE}_BIN</code> before <code>$CHORUS_BIN</code>, so any tool invocation, hook fire, or shell call inside that role's session resolves the werk-built binary first.</li>
 </ul>
+<p><strong>No daemon-side slot awareness required.</strong> The session that needs to run the new code IS the session that built it; PATH does the routing. Other roles' sessions don't have <code>$WERK_${ROLE}_BIN</code> exported (or it points to their own werk, not this one), so they continue resolving canonical and remain undisturbed. This is the multi-agent payoff: concurrency comes for free because each role's PATH is independent.</p>
 </div>
 
 <div class="component">
 <h3>Demo-phase decision contract</h3>
 <p>The <code>/demo</code> gate is the pivot. One decision point, two exits:</p>
 <ul>
-  <li><strong>Accept (/acp)</strong> → atomic <code>mv $CHORUS_DEMO_BIN $CHORUS_BIN</code> + kickstart the service. Same mv-pattern as <code>chorus-bin-install</code> uses today, just one step deeper in the lifecycle. The candidate becomes production; the demo slot is consumed.</li>
-  <li><strong>Reject (/demo fail or refusal)</strong> → <code>rm -r $CHORUS_DEMO_BIN</code>. No promote, no mv, no touch on <code>$CHORUS_BIN</code>. Production is byte-identical to its pre-demo state. There is nothing to "rollback to" because nothing was ever modified — the prior-state preservation is structural, not procedural.</li>
+  <li><strong>Accept (/acp)</strong> → atomic promote: <code>mv $WERK_${ROLE}_BIN/&lt;name&gt; $CHORUS_BIN/&lt;name&gt;</code> + kickstart the service. Emits a <code>binary.promoted</code> spine event with <code>{role, card, binary, cdhash, from=werk, to=canonical}</code>. Same mv-pattern as <code>chorus-bin-install</code>, scoped to the werk-slot source. Other roles pick up the new canonical at their next harness hook fire.</li>
+  <li><strong>Reject (<code>/demo</code> fail or <code>/unpull</code>)</strong> → werk teardown removes the slot with the werk itself (via <code>chorus-werk remove</code>). No promote, no mv, no touch on <code>$CHORUS_BIN</code>. Production is byte-identical to its pre-demo state. The prior-state preservation is structural, not procedural — there is nothing to "rollback to" because canonical was never modified.</li>
 </ul>
-<p><strong>Invariant:</strong> <code>$CHORUS_BIN</code> is never modified between the role pulling the card and the role's <code>/acp</code>. Production is structurally safe across the entire demo phase, including under concurrent multi-role demos. The single-slot <code>dist.prev/</code> model that #2925 shipped is the pre-cursor — it preserves the prior state explicitly via copy. The two-slot model preserves it by never touching it.</p>
+<p><strong>Invariant:</strong> <code>$CHORUS_BIN</code> is never modified between the role pulling the card and the role's <code>/acp</code>. Production is structurally safe across the entire demo phase, including under concurrent multi-role demos. Each role's werk slot is an independent PATH-resolution; collisions are impossible by construction.</p>
 </div>
 
 <div class="component">
-<h3>Why this isn't shipped yet</h3>
-<p>#2925 (the wrapper) and #2927 (multi-unit generalization) both use the single-slot model — adequate for serial single-role demos, broken under concurrency. Tonight's pattern was effectively serial (one daemon-runtime card at a time, manual coordination), so the gap didn't bite. It bites the first time two roles do <code>/demo</code> on daemon-runtime cards in overlapping windows, which is increasingly likely as the team uses the wrapper more. The follow-on card extends the unit registry's deploy/rollback functions to per-card slot paths, adds the env-resolution logic the daemons need to find their card's slot, and updates the role-state machinery to track which card's slot a role is consuming.</p>
-<p>Out of scope here: the schema for <code>$CHORUS_DEMO_BIN</code> path layout (sibling directories vs nested namespacing), the daemon-side env-resolver code, and the cleanup sweep for orphaned demo slots after role-state drift. Each is a discrete piece; the contract above is what they implement.</p>
+<h3>Lifecycle and orphan handling</h3>
+<p>The werk slot's lifetime is the werk's lifetime, period. <code>chorus-werk add &lt;role&gt; &lt;card&gt;</code> creates the werk and the slot directory; <code>chorus-werk remove &lt;role&gt; &lt;card&gt;</code> (called by <code>/acp</code> after promotion and by <code>/unpull</code> on reject) tears down both. No separate sweep is needed — the old per-card model's orphan-slot risk is dissolved by tying slot ownership to werk ownership, which is already managed atomically by <code>chorus-werk</code>.</p>
+<p>If a role's session dies mid-card (terminal crash, reboot), the werk persists with its slot. When the role re-attaches, the slot is still there and the role's PATH still points to it. Recovery is a no-op. If the card is abandoned, <code>/unpull</code> removes the werk and the slot together.</p>
+</div>
 
-<p><strong>Orphaned-slot lifecycle (follow-on must address):</strong> a slot is orphaned when its (role, card) is no longer in-flight — Jeff sleeps on a /demo for two days, the role gets rebooted, /demo passes but /acp lags. The follow-on card must tie <code>$CHORUS_DEMO_BIN</code> lifetime to <strong>role-state</strong>: a slot exists exactly while the role declares <code>building &lt;card&gt;</code>. When role-state leaves that card (idle, accepted, blocked-elsewhere), the slot is swept. Without this binding, stale slots accumulate quietly across days and the per-card model leaks the very disk-economy it was supposed to bound.</p>
+<div class="component">
+<h3>Self-modifying enforcement — intentional, bounded</h3>
+<p>A subtlety worth naming (Wren, #2995 review): when a role's session loads its own werk's <code>chorus-hooks</code> binary via PATH-prefix, and that binary changes guard rules (e.g., <code>canonical_write_guard.rs</code>), the role's session is enforcing its-own-werk's-version of the rules on its own writes. The team-wide "canonical guard enforces equally on everyone" assumption breaks for the duration of that role's card.</p>
+<p>This is intentional — try-before-buy on hook changes is exactly the point. The asymmetry is bounded in three dimensions: <strong>time</strong> (only between the role's <code>/pull</code> and <code>/acp</code>; promote-to-canonical restores equal enforcement), <strong>scope</strong> (only the role's own session; other roles' guards stay canonical), and <strong>self-equivalence</strong> (same asymmetry as "a role can change its own code by editing files in its werk" — the binary path just extends that to runtime enforcement, not a new privilege class).</p>
+<p>Risk class: a role could ship a card that intentionally weakens its own guard, and the weakening wouldn't be caught at <code>/demo</code> because the role's own session is the test surface. Counter-mitigation lives at the gate layer: <code>/gate-arch</code> on hook-changing cards requires peer review of guard-rule diffs, not just builder-self-review. The structural asymmetry is fine; the gate-level discipline closes the residual.</p>
+</div>
+
+<div class="component">
+<h3>What this gives Jeff</h3>
+<ul>
+  <li><strong>Demo = look at the role exercising the change.</strong> No "let me deploy first then verify" dance. The role's session is already running the new code by the time the role finishes <code>build</code>.</li>
+  <li><strong>No mid-demo collisions across roles.</strong> Two roles can build chorus-hooks in their werks simultaneously; each session sees its own. <code>/acp</code> from one doesn't overwrite the other's in-flight binary — it promotes only its own werk slot to canonical.</li>
+  <li><strong>/acp's release-trigger is the deploy.</strong> No separate "build canonical from main + redeploy" step is needed post-merge. The promotion <em>is</em> the deploy.</li>
+  <li><strong>Same shape for TS and Rust.</strong> TS bundles land in <code>chorus-werk/&lt;role&gt;-&lt;card&gt;/dist/</code>-equivalent paths inside the werk; the role's session resolves via env or PATH the same way. Bind-mounts (where they exist for live-edit on TS) continue to work in canonical untouched.</li>
+</ul>
+</div>
+
+<div class="component">
+<h3>Superseded model (historical record)</h3>
+<p>The prior text of this section (pre-#2995) described <code>$CHORUS_DEMO_BIN</code> as a per-(role,card) slot under <code>~/.chorus/bin/demo/&lt;role&gt;-&lt;card&gt;/</code> that <strong>daemons</strong> would resolve via env when that role's card was in flight, falling back to <code>$CHORUS_BIN</code> otherwise. Cards #2980 (<code>/werk/build</code>) and #2981 (<code>/werk/deploy</code>) were the dispatch surface for that model. The 2026-05-15 #2924/#2925/#2927 sequence shipped a single-slot rollback (<code>dist.prev/</code>) as a serial-only precursor.</p>
+<p>That model is obsolete because:</p>
+<ul>
+  <li>Demo was still "deploy first, then probe" — Jeff saw probe output, not the role using the feature naturally.</li>
+  <li>Daemon-side env resolution required every daemon to learn role-state and inspect which card was active; that's coordination overhead the multi-agent shape doesn't need.</li>
+  <li>Orphan-slot sweep was a real cost that the new model dissolves (slot lifetime = werk lifetime, already managed by <code>chorus-werk</code>).</li>
+</ul>
+<p>Cards #2980 and #2981 should be moved to Won't Do or simplified to point at #2995's CLI surface (<code>chorus-build --target werk</code>, <code>chorus-deploy --target werk</code>) as their implementation.</p>
 </div>
 
 <h2>Sub-Domain Interaction Model</h2>

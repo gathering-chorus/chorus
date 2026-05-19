@@ -95,5 +95,42 @@ case ":$PATH:" in
   *) export PATH="$CHORUS_BIN:$PATH" ;;
 esac
 
+# #2995 — WERK_<ROLE>_BIN: per-role-per-werk binary slot. When the role has
+# an active werk, expose a bin path inside it and PATH-prefix it before
+# CHORUS_BIN. Result: the role's session resolves werk-built binaries before
+# canonical ones — the binary the role is iterating on runs in the role's
+# own session as it builds. /acp's promote step then moves the slot's
+# contents into CHORUS_BIN; /unpull tears it down with the werk.
+#
+# Variable shape: WERK_${ROLE^^}_BIN — KADE / WREN / SILAS in uppercase to
+# match the existing <ROLE>_WERK convention.
+#
+# Other roles' sessions don't have this set (their CHORUS_ROLE differs or
+# their werk is missing); they continue resolving canonical and stay
+# undisturbed by this role's in-flight binary.
+if [ -n "${CHORUS_ROLE:-}" ]; then
+  case "$CHORUS_ROLE" in
+    kade)  __chorus_env_role_werk="${KADE_WERK:-}"  ;;
+    wren)  __chorus_env_role_werk="${WREN_WERK:-}"  ;;
+    silas) __chorus_env_role_werk="${SILAS_WERK:-}" ;;
+    *)     __chorus_env_role_werk=""                ;;
+  esac
+  if [ -n "$__chorus_env_role_werk" ]; then
+    __chorus_env_werk_bin="$__chorus_env_role_werk/.werk-bin"
+    mkdir -p "$__chorus_env_werk_bin" 2>/dev/null || true
+    case "$CHORUS_ROLE" in
+      kade)  export WERK_KADE_BIN="$__chorus_env_werk_bin"  ;;
+      wren)  export WERK_WREN_BIN="$__chorus_env_werk_bin"  ;;
+      silas) export WERK_SILAS_BIN="$__chorus_env_werk_bin" ;;
+    esac
+    case ":$PATH:" in
+      *":$__chorus_env_werk_bin:"*) ;;  # already present, no-op
+      *) export PATH="$__chorus_env_werk_bin:$PATH" ;;
+    esac
+    unset __chorus_env_werk_bin
+  fi
+  unset __chorus_env_role_werk
+fi
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root
