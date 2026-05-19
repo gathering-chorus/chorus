@@ -952,57 +952,16 @@ export async function sendCardApprovalNudge(args: {
  *
  * No env-var bypass an agent can set in their shell.
  */
-/** #2964: freshness window for the directive marker that the UserPromptSubmit
- *  hook writes when Jeff's prompt has card-creation directive shape. If the
- *  marker for this role is younger than this, the bouncer skips — Jeff is the
- *  initiator, no approval-ask needed. Mirrors the Rust-side constant in
- *  `card_directive_detector.rs::DIRECTIVE_FRESHNESS_SECS`. */
-export const DIRECTIVE_MARKER_FRESHNESS_MS = 60_000;
-
-/** #2964: check for a fresh Jeff-directive marker for this role. The
- *  UserPromptSubmit hook (`card_directive_detector`) writes the marker when
- *  Jeff's prompt matches "make/file/create/add a card" patterns. If the
- *  marker is fresh, this function consumes it (deletes the file) and returns
- *  true — the bouncer should skip. */
-export function consumeFreshDirectiveMarker(role: string): boolean {
-  const home = process.env.HOME || '/Users/jeffbridwell';
-  const path = `${home}/.chorus/pending-directives/${role}.json`;
-  let mtimeMs: number;
-  try {
-    mtimeMs = fs.statSync(path).mtimeMs;
-  } catch {
-    return false;
-  }
-  const ageMs = Math.max(0, Date.now() - mtimeMs);
-  if (ageMs >= DIRECTIVE_MARKER_FRESHNESS_MS) {
-    // Stale marker — clean up but don't treat as fresh.
-    try { fs.unlinkSync(path); } catch { /* best-effort */ }
-    return false;
-  }
-  // Fresh marker — consume + return true. Single-shot: subsequent cards add
-  // calls in the same session don't auto-attribute to Jeff unless he issues
-  // another directive (the hook re-writes the marker on each matching prompt).
-  try { fs.unlinkSync(path); } catch { /* best-effort */ }
-  return true;
-}
+// #2996: directive-marker retired. The dedicated `chorus_card_add_jeff` MCP
+// tool (spawned with DEPLOY_ROLE=jeff hardcoded) replaces the marker-handshake
+// path. /card invocation → MCP tool → DEPLOY_ROLE=jeff → requireJeffApprovalIfAgent
+// returns immediately because isAgent is false. One mechanism, deterministic.
 
 async function requireJeffApprovalIfAgent(title: string, opts: AddOpts): Promise<void> {
   const role = (process.env.DEPLOY_ROLE || '').toLowerCase();
   const isAgent = role === 'wren' || role === 'silas' || role === 'kade';
   if (!isAgent) return;
   if (process.env.NODE_ENV === 'test') return;
-
-  // #2964: substrate-enforced attribution. If Jeff's most-recent prompt was
-  // a card-creation directive ("make a card for X" / "file a card" / etc.),
-  // the UserPromptSubmit hook wrote a fresh marker. Reading the marker here
-  // moves the "Jeff directed → no bouncer" rule out of agent judgment (where
-  // it failed the day it was written) and into the substrate. The marker is
-  // single-shot per directive: consumed on read, re-written by the hook on
-  // the next matching prompt.
-  if (consumeFreshDirectiveMarker(role)) {
-    console.log(`[card-directive marker consumed for role=${role}; bouncer skipped — Jeff-initiated]`);
-    return;
-  }
 
   // Compose the structured approval-ask nudge from the description sections.
   // validateDescription already enforced these are present + substantive.

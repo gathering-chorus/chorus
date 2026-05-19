@@ -248,62 +248,7 @@ describe('writePendingApprovalArtifacts dedupe + retry refusal (#2964)', () => {
   });
 });
 
-// ---- #2964 directive-marker bouncer skip ----
-
-import { consumeFreshDirectiveMarker, DIRECTIVE_MARKER_FRESHNESS_MS } from '../src/sdk';
-
-describe('consumeFreshDirectiveMarker (#2964 substrate attribution)', () => {
-  let homeDir: string;
-  let originalHome: string | undefined;
-  beforeEach(() => {
-    originalHome = process.env.HOME;
-    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wren-2964-directive-'));
-    fs.mkdirSync(path.join(homeDir, '.chorus', 'pending-directives'), { recursive: true });
-    process.env.HOME = homeDir;
-  });
-  afterEach(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-    fs.rmSync(homeDir, { recursive: true, force: true });
-  });
-
-  test('returns false when no marker exists', () => {
-    expect(consumeFreshDirectiveMarker('wren')).toBe(false);
-  });
-
-  test('returns true + consumes the marker when fresh', () => {
-    const markerPath = path.join(homeDir, '.chorus', 'pending-directives', 'wren.json');
-    fs.writeFileSync(markerPath, JSON.stringify({ role: 'wren', ts_ms: Date.now(), prompt_excerpt: 'make a card' }));
-    expect(fs.existsSync(markerPath)).toBe(true);
-    expect(consumeFreshDirectiveMarker('wren')).toBe(true);
-    // Marker consumed
-    expect(fs.existsSync(markerPath)).toBe(false);
-  });
-
-  test('returns false + cleans up stale marker (past freshness window)', () => {
-    const markerPath = path.join(homeDir, '.chorus', 'pending-directives', 'wren.json');
-    fs.writeFileSync(markerPath, JSON.stringify({ role: 'wren', ts_ms: 0, prompt_excerpt: 'old' }));
-    // Backdate the mtime past the window
-    const old = (Date.now() - DIRECTIVE_MARKER_FRESHNESS_MS - 5_000) / 1000;
-    fs.utimesSync(markerPath, old, old);
-    expect(consumeFreshDirectiveMarker('wren')).toBe(false);
-    // Stale marker still gets cleaned up
-    expect(fs.existsSync(markerPath)).toBe(false);
-  });
-
-  test('only consumes own-role marker, not other roles', () => {
-    const silasMarker = path.join(homeDir, '.chorus', 'pending-directives', 'silas.json');
-    fs.writeFileSync(silasMarker, JSON.stringify({ role: 'silas', ts_ms: Date.now() }));
-    // wren has no marker
-    expect(consumeFreshDirectiveMarker('wren')).toBe(false);
-    // silas's marker is untouched
-    expect(fs.existsSync(silasMarker)).toBe(true);
-  });
-
-  test('single-shot — second call after consume returns false', () => {
-    const markerPath = path.join(homeDir, '.chorus', 'pending-directives', 'wren.json');
-    fs.writeFileSync(markerPath, JSON.stringify({ role: 'wren', ts_ms: Date.now() }));
-    expect(consumeFreshDirectiveMarker('wren')).toBe(true);
-    expect(consumeFreshDirectiveMarker('wren')).toBe(false);
-  });
-});
+// #2996: directive-marker tests retired — function and freshness window
+// were deleted along with the card_directive_detector hook. The replacement
+// path is the dedicated chorus_card_add_jeff MCP tool, exercised by MCP-server
+// tests in platform/api/.
