@@ -97,19 +97,26 @@ setup() {
   [ "$count" = "1" ]
 }
 
-@test "<ROLE>_WERK set when sourced from a role's directory" {
-  cd "$BATS_TEST_DIRNAME/../../../roles/kade"
-  unset KADE_WERK CHORUS_ROLE
-  source "$SETUP"
-  [ "$CHORUS_ROLE" = "kade" ]
-  [ "$KADE_WERK" = "$CHORUS_WERK_BASE/kade" ]
+@test "<ROLE>_WERK points at the single matching werk when exactly one exists" {
+  # Ephemeral model (#2913): <ROLE>_WERK resolves to the role's single
+  # <role>-<card> werk dir, not a persistent $CHORUS_WERK_BASE/<role> path.
+  tmpbase="$(mktemp -d)"
+  mkdir -p "$tmpbase/kade-1234"
+  run bash -ec "cd /tmp; unset KADE_WERK; export CHORUS_ROLE=kade CHORUS_WERK_BASE='$tmpbase'; source '$SETUP'; echo \$KADE_WERK"
+  rm -rf "$tmpbase"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$tmpbase/kade-1234" ]
 }
 
-@test "<ROLE>_WERK uppercases the role name" {
-  cd "$BATS_TEST_DIRNAME/../../../roles/wren"
-  unset WREN_WERK CHORUS_ROLE
-  source "$SETUP"
-  [ "$WREN_WERK" = "$CHORUS_WERK_BASE/wren" ]
+@test "<ROLE>_WERK unset when multiple werks exist (cannot disambiguate)" {
+  # Two werks in flight → no single answer → leave the uppercase var unset
+  # rather than guess (same discipline as resolveWorkingTree).
+  tmpbase="$(mktemp -d)"
+  mkdir -p "$tmpbase/wren-1" "$tmpbase/wren-2"
+  run bash -ec "cd /tmp; unset WREN_WERK; export CHORUS_ROLE=wren CHORUS_WERK_BASE='$tmpbase'; source '$SETUP'; echo OK:\${WREN_WERK:-unset}"
+  rm -rf "$tmpbase"
+  [ "$status" -eq 0 ]
+  [ "$output" = "OK:unset" ]
 }
 
 @test "no <ROLE>_WERK set when role can't be inferred" {
@@ -120,6 +127,19 @@ setup() {
   [ -z "${KADE_WERK:-}" ]
   [ -z "${WREN_WERK:-}" ]
   [ -z "${SILAS_WERK:-}" ]
+}
+
+@test "set -e: role set with zero werks must not abort sourcing (grep -c on empty input)" {
+  # Regression (#3012): `grep -c .` exits 1 on empty input. When a role had
+  # zero <role>-* werks, the werk-count assignment failed; callers that run
+  # `set -euo pipefail` (e.g. git-queue.sh) aborted silently before doing any
+  # work — breaking commit/push for any role with no active werks. The clean
+  # teardown of a role's last werk trips this directly.
+  tmpbase="$(mktemp -d)"
+  run bash -ec "cd /tmp; unset KADE_WERK; export CHORUS_ROLE=kade CHORUS_WERK_BASE='$tmpbase'; source '$SETUP'; echo OK:\${KADE_WERK:-unset}"
+  rm -rf "$tmpbase"
+  [ "$status" -eq 0 ]
+  [ "$output" = "OK:unset" ]
 }
 
 @test "CHORUS_HOME is the canonical chorus checkout (sibling to chorus-werk)" {
