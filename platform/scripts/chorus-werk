@@ -193,6 +193,23 @@ cmd_add() {
   echo "chorus-werk: added $role-$card_id at $werk (branch $branch)"
 }
 
+# #3016 — stop + clean up a werk-deployed chorus-mcp daemon. Reads the launchd
+# label from the werk's .werk-mcp/ marker, boots out the per-werk agent
+# (launchctl, never a kill — no-raw-kill rule), removes its plist, then drops the
+# marker dir. Idempotent: no marker → silent no-op.
+teardown_werk_mcp() {
+  local werk="$1"
+  [ -n "$werk" ] && [ -f "$werk/.werk-mcp/label" ] || return 0
+  local mcp_label
+  mcp_label=$(cat "$werk/.werk-mcp/label" 2>/dev/null || true)
+  if [ -n "$mcp_label" ]; then
+    launchctl bootout "gui/$(id -u)/$mcp_label" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/$mcp_label.plist" 2>/dev/null || true
+    echo "chorus-werk: tore down werk chorus-mcp daemon ($mcp_label)"
+  fi
+  rm -rf "$werk/.werk-mcp" 2>/dev/null || true
+}
+
 cmd_remove() {
   require_role "${1:-}"
   require_card_id "${2:-}"
@@ -207,6 +224,11 @@ cmd_remove() {
   local branch_present=0
   [ -d "$werk" ] && werk_present=1
   git -C "$CHORUS_HOME" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1 && branch_present=1
+
+  # #3016 — tear down any werk-deployed chorus-mcp daemon before the dirty-check
+  # + worktree remove (the .werk-mcp marker is untracked and would otherwise
+  # refuse the remove). Covers both /acp and /unpull (both call remove).
+  [ "$werk_present" = "1" ] && teardown_werk_mcp "$werk"
 
   # Idempotent: nothing left to remove.
   if [ "$werk_present" = "0" ] && [ "$branch_present" = "0" ]; then
