@@ -3483,6 +3483,13 @@ chorus:fileHasOwner a owl:ObjectProperty ;
     rdfs:range chorus:Role ;
     chorus:writeOwner chorus:enrichment .
 
+chorus:fileDependsOn a owl:ObjectProperty ;
+    rdfs:label "file depends on" ;
+    rdfs:comment "Domain this file USES (as opposed to belongs-to / fileInDomain). Derived by function: enrichment detects call-sites / imports of a domain's surface (e.g. a chorus-log emit makes the file dependsOn chorus:spine). Multi-valued. The inbound set per domain = that domain's file-level blast-radius. #3017." ;
+    rdfs:domain chorus:File ;
+    rdfs:range chorus:Domain ;
+    chorus:writeOwner chorus:enrichment .
+
 chorus:stale a owl:DatatypeProperty ;
     rdfs:label "stale" ;
     rdfs:comment "Set true by deletes-reconciliation when the file's filesystem path no longer exists. NOT a remove from the graph — visibility-not-removal so consumers choose how to treat. Cleared if the file reappears." ;
