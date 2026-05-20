@@ -150,11 +150,12 @@ if [ "$MODE" != "deploy" ] && [ "$MODE" != "--rollback" ]; then
   exit 2
 fi
 
-# #2995 — TS daemons (chorus-api, chorus-mcp) don't yet support --target werk
-# (their dist/ tree isn't routed through chorus-bin-install). Refuse loudly
-# until that's wired up rather than silently dropping the request.
-if [ "$DEPLOY_TARGET" = "werk" ] && { [ "$CRATE" = "chorus-api" ] || [ "$CRATE" = "chorus-mcp" ]; }; then
-  echo "chorus-deploy: --target werk is not yet supported for TS daemons ($CRATE); only Rust crates (chorus-hooks, chorus-inject). File a follow-on if needed." >&2
+# #3016 — chorus-mcp now supports --target werk (per-werk launchd daemon on a
+# deterministic per-role port; the chorus-mcp branch below handles it). chorus-api
+# still doesn't (no per-session endpoint resolution wired for :3340 yet) — refuse
+# loudly for it rather than silently dropping the request.
+if [ "$DEPLOY_TARGET" = "werk" ] && [ "$CRATE" = "chorus-api" ]; then
+  echo "chorus-deploy: --target werk is not yet supported for chorus-api (only chorus-mcp among TS daemons, plus Rust crates chorus-hooks/chorus-inject). File a follow-on if needed." >&2
   exit 2
 fi
 
@@ -278,6 +279,86 @@ if [ "$CRATE" = "chorus-mcp" ]; then
   if [ ! -d "$MCP_DIR" ]; then
     echo "chorus-deploy: chorus-mcp dir not found at $MCP_DIR" >&2
     exit 1
+  fi
+
+  # #3016 — --target werk: build the werk's dist and run a SEPARATE chorus-mcp
+  # as a per-werk launchd agent on a deterministic per-role port. The role's
+  # session resolves this port via CHORUS_MCP_PORT (chorus-env-setup.sh) +
+  # .mcp.json url interpolation. Canonical :3341 is NOT touched — other roles
+  # stay on it. launchd-managed (not a raw background PID) so teardown is
+  # `launchctl bootout`, never a kill (no-raw-kill rule). /acp promotes (stop
+  # werk daemon → canonical dist-swap + kickstart :3341); /unpull tears down.
+  if [ "$DEPLOY_TARGET" = "werk" ]; then
+    case "$ROLE" in
+      silas) WERK_PORT=3351 ;;
+      kade)  WERK_PORT=3352 ;;
+      wren)  WERK_PORT=3353 ;;
+      *) echo "chorus-deploy: --target werk chorus-mcp needs a role (DEPLOY_ROLE/CHORUS_ROLE), got '$ROLE'" >&2; exit 2 ;;
+    esac
+    LABEL="com.chorus.mcp.werk.$ROLE"
+    PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+    MARKER_DIR="$ROOT/.werk-mcp"
+    NODE_BIN="$(command -v node)"
+    echo "chorus-deploy: npm run build in $MCP_DIR (werk)"
+    if ! (cd "$MCP_DIR" && npm run build); then
+      echo "chorus-deploy: npm run build failed (werk)" >&2
+      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" deploy.failed "$ROLE" "commit=$COMMIT" "crate=$CRATE" "deploy_target=werk" "reason=npm-build-fail-werk" "card=$CARD_ID" >/dev/null 2>&1 || true
+      exit 1
+    fi
+    mkdir -p "$MARKER_DIR"
+    # Generate the per-werk LaunchAgent. WorkingDirectory = werk mcp-server so it
+    # runs the werk's freshly-built dist; CHORUS_MCP_PORT pins the werk port.
+    cat > "$PLIST" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$NODE_BIN</string>
+    <string>$MCP_DIR/dist/main.js</string>
+  </array>
+  <key>WorkingDirectory</key><string>$MCP_DIR</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_MCP_PORT</key><string>$WERK_PORT</string>
+    <key>CHORUS_ROOT</key><string>$ROOT</string>
+    <key>CHORUS_ROLE</key><string>$ROLE</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$MARKER_DIR/daemon.log</string>
+  <key>StandardErrorPath</key><string>$MARKER_DIR/daemon.log</string>
+</dict>
+</plist>
+PLIST_EOF
+    # Reload cleanly: bootout any prior instance, then bootstrap fresh.
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
+      launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    fi
+    echo "chorus-deploy: bootstrapped $LABEL on port $WERK_PORT"
+    echo "chorus-deploy: waiting for werk chorus-mcp smoke at :$WERK_PORT (deadline ${CHORUS_MCP_SMOKE_TIMEOUT_S}s)"
+    if ! wait_for_mcp_ready_at "http://localhost:$WERK_PORT/mcp"; then
+      echo "chorus-deploy: werk chorus-mcp smoke timed out at :$WERK_PORT" >&2
+      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" deploy.failed "$ROLE" "commit=$COMMIT" "crate=$CRATE" "deploy_target=werk" "reason=werk-mcp-smoke-timeout" "card=$CARD_ID" >/dev/null 2>&1 || true
+      exit 1
+    fi
+    # Marker: env-setup reads .werk-mcp/active to switch the session's
+    # CHORUS_MCP_PORT to this werk daemon. Record port + label for teardown.
+    printf '%s' "$WERK_PORT" > "$MARKER_DIR/port"
+    printf '%s' "$LABEL" > "$MARKER_DIR/label"
+    : > "$MARKER_DIR/active"
+    END_TS=$(date +%s)
+    DURATION_MS=$(( (END_TS - START_TS) * 1000 ))
+    if [ -x "$CHORUS_LOG" ]; then
+      "$CHORUS_LOG" deploy.completed "$ROLE" \
+        "commit=$COMMIT" "crate=$CRATE" "target=$MCP_DIR/dist/main.js" \
+        "deploy_target=werk" "port=$WERK_PORT" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
+        >/dev/null 2>&1 || true
+    fi
+    echo "chorus-deploy: $CRATE deployed to werk in ${DURATION_MS}ms (port=$WERK_PORT label=$LABEL) — /reboot this session to pick up CHORUS_MCP_PORT"
+    exit 0
   fi
 
   if [ "$MODE" = "--rollback" ]; then

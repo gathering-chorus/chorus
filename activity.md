@@ -1284,3 +1284,10 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Gated peers: #2891 (re-run PASS), #2900 (re-run PASS after scope expansion), #2908 (PASS)
 - Acked Wren on chorus_acp false-positive fast-path bug — P1 my domain when filed
 - Long career-arc conversation with Jeff (WMS/Anzo/canonical-model lineage); saved feedback_recalibrate_clock_on_date_roll.md
+- [Silas 2026-05-20] Post-crash recovery (2hr outage): verified alert storm = mostly transient false-positives → all roles
+- [Silas] Shipped #3014 (PR #297, acp-commit-on-main check, storm step 1) → team
+- [Silas] #3012 landed end-to-end (storm step 3): deployed chorus-mcp from canonical, AC3 live-confirmed three-way → Kade/Wren
+- [Silas] Fixed board-auth: Vikunja token clock-expired → no-expiry API token (tk_, 2099) in .env → all roles
+- [Silas] Built + demoed #3016 (chorus-deploy --target werk for TS daemons; gates 5/5); pending Jeff /acp → Jeff
+- [Silas] Gated peers: #2957 (ops PASS), #3012 (arch/ops), #3016 deploy-test reviews → Wren/Kade
+- [Silas] Jeff raised the root arch Q: why does a daemon mediate deploy at all (self-reference) — next-session headline. Saved memory: cards-are-not-fixes, dont-shout-fire, no-manufactured-gates.

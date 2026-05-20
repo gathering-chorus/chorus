@@ -60,3 +60,48 @@ role_werk() {
   run bash -c "unset KADE_WERK WREN_WERK SILAS_WERK; export CHORUS_ROLE=kade; source '$ENV_SETUP' >/dev/null 2>&1; echo \"\${WREN_WERK:-unset}/\${SILAS_WERK:-unset}\""
   [ "$output" = "unset/unset" ]
 }
+
+# --- #3016: CHORUS_MCP_PORT — daemon try-before-buy endpoint resolution ---
+
+mcp_port() {
+  local role="$1"
+  ( unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT CHORUS_MCP_PORT_CANONICAL
+    export CHORUS_ROLE="$role"
+    source "$ENV_SETUP" >/dev/null 2>&1
+    echo "${CHORUS_MCP_PORT:-}" )
+}
+
+@test "no active werk: CHORUS_MCP_PORT falls back to canonical 3341" {
+  run mcp_port silas
+  [ "$output" = "3341" ]
+}
+
+@test "active werk but no daemon marker: CHORUS_MCP_PORT stays canonical 3341" {
+  mkdir -p "$WERK_BASE/silas-3016"
+  run mcp_port silas
+  [ "$output" = "3341" ]
+}
+
+@test "active werk with daemon marker: CHORUS_MCP_PORT resolves to the role's werk port" {
+  mkdir -p "$WERK_BASE/silas-3016/.werk-mcp"
+  touch "$WERK_BASE/silas-3016/.werk-mcp/active"
+  run mcp_port silas
+  [ "$output" = "3351" ]
+}
+
+@test "per-role werk ports are deterministic and distinct (silas/kade/wren)" {
+  for r in silas kade wren; do
+    mkdir -p "$WERK_BASE/$r-1/.werk-mcp"
+    touch "$WERK_BASE/$r-1/.werk-mcp/active"
+  done
+  s=$(mcp_port silas); k=$(mcp_port kade); w=$(mcp_port wren)
+  [ "$s" = "3351" ]
+  [ "$k" = "3352" ]
+  [ "$w" = "3353" ]
+  [ "$s" != "$k" ] && [ "$k" != "$w" ] && [ "$s" != "$w" ]
+}
+
+@test "canonical port is overridable via CHORUS_MCP_PORT_CANONICAL" {
+  run bash -c "unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT; export CHORUS_ROLE=silas CHORUS_MCP_PORT_CANONICAL=4000; source '$ENV_SETUP' >/dev/null 2>&1; echo \$CHORUS_MCP_PORT"
+  [ "$output" = "4000" ]
+}

@@ -136,5 +136,45 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
   unset __chorus_env_role_werk
 fi
 
+# #3016 — CHORUS_MCP_PORT: per-session chorus-mcp endpoint for daemon
+# try-before-buy. The daemon equivalent of WERK_<ROLE>_BIN above: a binary is
+# isolated per session via PATH-prefix, but a daemon is one shared process on a
+# fixed port, so isolation is per-session ENDPOINT instead. Canonical chorus-mcp
+# listens on CHORUS_MCP_PORT_CANONICAL (:3341). When the role has an active werk
+# whose werk-mcp daemon is deployed (marker file present, written by
+# `chorus-deploy --target werk chorus-mcp`), the session resolves its own daemon
+# on a deterministic per-role port; .mcp.json interpolates CHORUS_MCP_PORT into
+# its url. No active werk daemon → canonical :3341 (no-regression default, AC6).
+export CHORUS_MCP_PORT_CANONICAL="${CHORUS_MCP_PORT_CANONICAL:-3341}"
+export CHORUS_MCP_PORT="$CHORUS_MCP_PORT_CANONICAL"
+if [ -n "${CHORUS_ROLE:-}" ]; then
+  # Deterministic per-role werk port — distinct, no collision with chorus-api
+  # :3340 or canonical chorus-mcp :3341.
+  # LIMITATION (#3016, flagged by Wren): the port is per-ROLE, not per-werk. A
+  # role running two werks (two cards in flight) would have both resolve to the
+  # same port — collision. Acceptable today (one-card-per-role is the norm);
+  # port-per-werk is the follow-on if concurrent-cards-per-role becomes real.
+  case "$CHORUS_ROLE" in
+    silas) __chorus_mcp_werk_port=3351 ;;
+    kade)  __chorus_mcp_werk_port=3352 ;;
+    wren)  __chorus_mcp_werk_port=3353 ;;
+    *)     __chorus_mcp_werk_port="" ;;
+  esac
+  if [ -n "$__chorus_mcp_werk_port" ]; then
+    export CHORUS_MCP_WERK_PORT="$__chorus_mcp_werk_port"
+    case "$CHORUS_ROLE" in
+      kade)  __chorus_mcp_role_werk="${KADE_WERK:-}"  ;;
+      wren)  __chorus_mcp_role_werk="${WREN_WERK:-}"  ;;
+      silas) __chorus_mcp_role_werk="${SILAS_WERK:-}" ;;
+      *)     __chorus_mcp_role_werk=""                ;;
+    esac
+    if [ -n "$__chorus_mcp_role_werk" ] && [ -f "$__chorus_mcp_role_werk/.werk-mcp/active" ]; then
+      export CHORUS_MCP_PORT="$__chorus_mcp_werk_port"
+    fi
+    unset __chorus_mcp_role_werk
+  fi
+  unset __chorus_mcp_werk_port
+fi
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root

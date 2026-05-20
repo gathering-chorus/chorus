@@ -3,7 +3,7 @@
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:3341/mcp",
+      "url": "http://localhost:${CHORUS_MCP_PORT:-3341}/mcp",
       "headers": {
         "X-Chorus-Role": "${CHORUS_ROLE}"
       }
