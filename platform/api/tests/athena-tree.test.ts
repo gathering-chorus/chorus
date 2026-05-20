@@ -251,6 +251,24 @@ describe('computeBlastRadius', () => {
     expect(r!.consumers).toContain('chorus:product-a');
   });
 
+  test('Product is never its own consumer — self-reference filtered (#2957)', () => {
+    // product-a hasDomain d1; d1 hosts s1 which nothing consumes. The only path
+    // back is the domain inverse re-adding product-a itself — must be filtered.
+    const r = computeBlastRadius(TEST_TREE, 'chorus:product-a');
+    expect(r).not.toBeNull();
+    expect(r!.consumers).not.toContain('chorus:product-a');
+    expect(r!.consumers).toEqual([]);
+  });
+
+  test('Product keeps real cross-product consumers while filtering self (#2957)', () => {
+    // product-b hasDomain d2; d2 hosts s2; product-a consumes s2.
+    // → product-a is a genuine consumer; product-b (self) is filtered out.
+    const r = computeBlastRadius(TEST_TREE, 'chorus:product-b');
+    expect(r).not.toBeNull();
+    expect(r!.consumers).toContain('chorus:product-a');
+    expect(r!.consumers).not.toContain('chorus:product-b');
+  });
+
   test('returns null for unknown IRI', () => {
     expect(computeBlastRadius(TEST_TREE, 'chorus:nope')).toBeNull();
   });
