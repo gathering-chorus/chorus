@@ -275,29 +275,54 @@ cmd_remove() {
   # (#2911). Only reached when NO acp-commit exists on main, preserving the
   # refusal for genuinely-unmerged branches with real work.
   if [ "$branch_present" = "1" ]; then
-    git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || true
-
+    # Tier 1: look for an acp commit referencing #<card_id> on origin/main.
+    # Two bugs previously defeated this (#3018), both landing on Tier 2's
+    # always-false squash-orphan refusal:
+    #   (a) `git log | grep -q` under `set -o pipefail`: grep -q matches the
+    #       NEWEST subject (the acp commit) and closes the pipe; git log, still
+    #       emitting up to 300 subjects, takes SIGPIPE (141); pipefail promotes
+    #       141 to the pipeline exit; the check reads "no match". Triggers only
+    #       once log output exceeds the pipe buffer — production history does,
+    #       the small test repo did not (why TEST 16 passed despite the live
+    #       bug). Fix: capture subjects, match with a here-string — no upstream
+    #       process in the pipe, so no SIGPIPE.
+    #   (b) the single `fetch ... || true` raced the squash-merge becoming
+    #       visible on origin/main and swallowed any failure, leaving Tier 1
+    #       evaluating a stale ref. Fix: re-fetch and retry a bounded number of
+    #       times before falling through, and record fetch failure rather than
+    #       swallowing it silently.
     local acp_committed=0
-    # Match `#<card_id>` in any recent origin/main subject, with a non-digit
-    # (or end) boundary so #300 doesn't match #3000. 300-commit window covers
-    # well beyond any plausible lag between acp and werk-close.
-    if git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null \
-         | grep -qE "#${card_id}([^0-9]|\$)"; then
-      acp_committed=1
-    fi
+    local fetch_failed=0
+    local attempt subjects
+    # Match `#<card_id>` with a non-digit (or end) boundary so #300 doesn't
+    # match #3000. 300-commit window covers any plausible acp/close lag.
+    for attempt in 1 2 3; do
+      git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || fetch_failed=1
+      subjects=$(git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null)
+      if grep -qE "#${card_id}([^0-9]|\$)" <<< "$subjects"; then
+        acp_committed=1
+        fetch_failed=0
+        break
+      fi
+      [ "$attempt" -lt 3 ] && sleep 1
+    done
 
     if [ "$acp_committed" = "1" ]; then
       : # Tier 1 pass — card accepted on main; safe to delete regardless of
         # patch-id divergence from squash-merge.
     else
       # Tier 2 — no acceptance commit found; fall back to patch-id check.
+      # Surface (don't swallow) a fetch failure so a stale-ref refusal is never
+      # silent.
+      local stale_note=""
+      [ "$fetch_failed" = "1" ] && stale_note=" (note: could not refresh origin/main — merge state may be stale)"
       local cherry_out
       if ! cherry_out=$(git -C "$CHORUS_HOME" cherry origin/main "$branch" 2>/dev/null); then
-        echo "chorus-werk: could not determine merge state of '$branch' (no acp commit on main, git cherry failed) — refusing to delete. Resolve manually." >&2
+        echo "chorus-werk: could not determine merge state of '$branch' (no acp commit on main, git cherry failed)${stale_note} — refusing to delete. Resolve manually." >&2
         exit 7
       fi
-      if echo "$cherry_out" | grep -q '^+'; then
-        echo "chorus-werk: '$branch' has commits not on origin/main by content and no acp #${card_id} commit on main — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
+      if grep -q '^+' <<< "$cherry_out"; then
+        echo "chorus-werk: '$branch' has commits not on origin/main by content and no acp #${card_id} commit on main${stale_note} — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
         exit 7
       fi
     fi
