@@ -150,6 +150,10 @@ export CHORUS_MCP_PORT="$CHORUS_MCP_PORT_CANONICAL"
 if [ -n "${CHORUS_ROLE:-}" ]; then
   # Deterministic per-role werk port — distinct, no collision with chorus-api
   # :3340 or canonical chorus-mcp :3341.
+  # LIMITATION (#3016, flagged by Wren): the port is per-ROLE, not per-werk. A
+  # role running two werks (two cards in flight) would have both resolve to the
+  # same port — collision. Acceptable today (one-card-per-role is the norm);
+  # port-per-werk is the follow-on if concurrent-cards-per-role becomes real.
   case "$CHORUS_ROLE" in
     silas) __chorus_mcp_werk_port=3351 ;;
     kade)  __chorus_mcp_werk_port=3352 ;;
