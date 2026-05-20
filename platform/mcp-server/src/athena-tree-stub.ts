@@ -46,6 +46,10 @@ export function lookupOwnership(_tree: TreeHandle, iri: string): unknown {
 
 export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
-  const out = curlJson(`/api/athena/blast-radius/${encodeURIComponent(iri)}`);
+  const out = curlJson(`/api/athena/blast-radius/${encodeURIComponent(iri)}`) as { ok?: boolean } | null;
+  // API returns 404 body { ok:false, reason:'not-found' } for unknown IRIs.
+  // Map that to null so the handler's not-found branch fires instead of
+  // reading .consumers.length on a refusal body.
+  if (out && out.ok === false) return null;
   return (out as BlastRadiusResult) ?? null;
 }
