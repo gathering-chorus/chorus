@@ -234,24 +234,52 @@ cmd_remove() {
     fi
   fi
 
-  # Delete the local branch. `git branch -d` checks *ancestry* — but after a
-  # squash-merge the branch is NOT an ancestor of origin/main even though its
-  # commits ARE upstream by content, so -d refuses (the #2913 self-acp left
-  # kade/2913 dangling: branch_closed:false). Check merged-ness by patch-id
-  # instead — the same `git cherry` test chorus_acp uses (#2911): no '+' lines
-  # means every commit is upstream → safe to -D. A '+' line is genuinely
-  # unmerged work → keep the refusal so remove never silently drops it.
+  # Delete the local branch. Merged-ness is decided in two tiers:
+  #
+  # #3014 — Tier 1: acp-commit-on-main. The reliable merge proof is an
+  # acceptance commit for THIS card on origin/main. /acp's whole job is
+  # merge-then-record, so a subject referencing `#<card>` on main means the
+  # work landed. This is the ONLY check that survives squash-merge:
+  #   - patch-id (git cherry, Tier 2 below) false-refuses because after a
+  #     squash the branch's commits aren't ancestors of main and their
+  #     patch-ids don't match the single squash commit.
+  #   - content/tree diff also false-refuses because main moves on after acp
+  #     (later cards touch the same files), so the branch "differs from main"
+  #     despite its work being fully merged.
+  # Verified 2026-05-19 on silas/3000, /2952, /2775 — all had acp commits,
+  # all were falsely refused by both diff approaches. Squash-orphan storm.
+  #
+  # Tier 2 (fallback): patch-id via `git cherry` — same test chorus_acp uses
+  # (#2911). Only reached when NO acp-commit exists on main, preserving the
+  # refusal for genuinely-unmerged branches with real work.
   if [ "$branch_present" = "1" ]; then
     git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || true
-    local cherry_out
-    if ! cherry_out=$(git -C "$CHORUS_HOME" cherry origin/main "$branch" 2>/dev/null); then
-      echo "chorus-werk: could not determine merge state of '$branch' (git cherry failed) — refusing to delete. Resolve manually." >&2
-      exit 7
+
+    local acp_committed=0
+    # Match `#<card_id>` in any recent origin/main subject, with a non-digit
+    # (or end) boundary so #300 doesn't match #3000. 300-commit window covers
+    # well beyond any plausible lag between acp and werk-close.
+    if git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null \
+         | grep -qE "#${card_id}([^0-9]|\$)"; then
+      acp_committed=1
     fi
-    if echo "$cherry_out" | grep -q '^+'; then
-      echo "chorus-werk: '$branch' has commits not on origin/main by content — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
-      exit 7
+
+    if [ "$acp_committed" = "1" ]; then
+      : # Tier 1 pass — card accepted on main; safe to delete regardless of
+        # patch-id divergence from squash-merge.
+    else
+      # Tier 2 — no acceptance commit found; fall back to patch-id check.
+      local cherry_out
+      if ! cherry_out=$(git -C "$CHORUS_HOME" cherry origin/main "$branch" 2>/dev/null); then
+        echo "chorus-werk: could not determine merge state of '$branch' (no acp commit on main, git cherry failed) — refusing to delete. Resolve manually." >&2
+        exit 7
+      fi
+      if echo "$cherry_out" | grep -q '^+'; then
+        echo "chorus-werk: '$branch' has commits not on origin/main by content and no acp #${card_id} commit on main — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
+        exit 7
+      fi
     fi
+
     if ! git -C "$CHORUS_HOME" branch -D "$branch" 2>&1; then
       echo "chorus-werk: 'git branch -D $branch' failed" >&2
       exit 7
