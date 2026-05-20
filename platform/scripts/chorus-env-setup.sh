@@ -74,8 +74,12 @@ unset __chorus_env_parent
 # or array) keeps this identical under bash and zsh — this script is
 # sourced from both.
 if [ -n "${CHORUS_ROLE:-}" ]; then
-  __chorus_env_werk_dir="$(find "$CHORUS_WERK_BASE" -maxdepth 1 -type d -name "$CHORUS_ROLE-*" 2>/dev/null)"
-  __chorus_env_werk_count="$(printf '%s' "$__chorus_env_werk_dir" | grep -c .)"
+  # `find` exits 1 if CHORUS_WERK_BASE doesn't exist yet (fresh role, no werks
+  # ever created); `|| true` keeps that from aborting callers under `set -e`.
+  __chorus_env_werk_dir="$(find "$CHORUS_WERK_BASE" -maxdepth 1 -type d -name "$CHORUS_ROLE-*" 2>/dev/null || true)"
+  # `grep -c .` exits 1 on empty input (zero werks); `|| true` keeps the
+  # count at "0" instead of aborting callers that run `set -e` (#3012).
+  __chorus_env_werk_count="$(printf '%s' "$__chorus_env_werk_dir" | grep -c . || true)"
   if [ "$__chorus_env_werk_count" = "1" ]; then
     case "$CHORUS_ROLE" in
       kade)  export KADE_WERK="$__chorus_env_werk_dir"   ;;
