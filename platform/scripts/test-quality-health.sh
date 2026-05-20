@@ -13,7 +13,9 @@
 
 set -uo pipefail
 
-SCRIPT="${1:-/Users/jeffbridwell/CascadeProjects/chorus-werk/kade/platform/scripts/quality-health}"
+# Self-locate: quality-health sits beside this test in platform/scripts/.
+# (Was hardcoded to the retired persistent-werk path chorus-werk/kade — #2913.)
+SCRIPT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/quality-health}"
 PASS=0
 FAIL=0
 

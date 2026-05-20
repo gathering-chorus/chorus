@@ -52,9 +52,9 @@ CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
 
 @test "coherence-check nudges the drifted role, not jeff" {
   # Source assertion: the nudge target is $ROLE from the loop, not 'jeff' literally.
-  run grep -nE '"\$NUDGE"\s+"jeff"' "$CHORUS_ROOT/platform/scripts/coherence-check"
+  run grep -nE '"\$OPS_NUDGE"\s+"jeff"' "$CHORUS_ROOT/platform/scripts/coherence-check"
   [ "$status" -ne 0 ]  # no match = jeff never hard-coded as target
-  grep -qE '"\$NUDGE"\s+"\$ROLE"' "$CHORUS_ROOT/platform/scripts/coherence-check"
+  grep -qE '"\$OPS_NUDGE"\s+"\$ROLE"' "$CHORUS_ROOT/platform/scripts/coherence-check"
 }
 
 @test "spine-events.json registers ac.ticked, commit.landed, test.delta" {

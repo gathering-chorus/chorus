@@ -87,12 +87,16 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "wrapper: probe-fail invokes chorus-deploy chorus-api --rollback" {
-  # Stub chorus-deploy + cards + chorus-werk-sync for the wrapper test
+@test "wrapper: probe-fail rolls back the deployed unit (internal rollback_<unit>, #2927)" {
+  # #2927 changed the wrapper's rollback from `chorus-deploy <unit> --rollback`
+  # to internal per-unit rollback_<unit> functions. On probe failure after a
+  # successful deploy, the wrapper rolls that unit back and does NOT mark the
+  # card done. Seam: source the wrapper (source-guard skips main), override the
+  # per-unit deploy/rollback functions, fake the card's werk.
   WRAP_STUBS=$(mktemp -d -t ac4-wrap.XXXXXX)
   WRAP_CALLS="$WRAP_STUBS/calls.log"
   : > "$WRAP_CALLS"
-  for cmd in chorus-werk-sync chorus-deploy cards; do
+  for cmd in chorus-werk-sync cards chorus-log; do
     cat > "$WRAP_STUBS/$cmd" <<EOF
 #!/bin/bash
 echo "$cmd \$*" >> "$WRAP_CALLS"
@@ -100,10 +104,19 @@ exit 0
 EOF
     chmod +x "$WRAP_STUBS/$cmd"
   done
-  PATH="$WRAP_STUBS:$PATH" run "$WRAPPER" 2925 --probe "exit 1"
+  export PATH="$WRAP_STUBS:$PATH"
+  export CHORUS_WERK_BASE="$WRAP_STUBS/werk"
+  mkdir -p "$CHORUS_WERK_BASE/silas-2925/platform/api"
+
+  source "$WRAPPER"
+  set +euo pipefail
+  deploy_chorus_api()   { echo "deploy chorus-api $*"   >> "$WRAP_CALLS"; return 0; }
+  rollback_chorus_api() { echo "rollback chorus-api $*" >> "$WRAP_CALLS"; return 0; }
+
+  run main 2925 --probe "exit 1" --units chorus-api
   [ "$status" -ne 0 ]
-  grep -q 'chorus-deploy chorus-api --rollback' "$WRAP_CALLS"
-  # cards done should NOT fire after rollback
+  grep -q 'rollback chorus-api' "$WRAP_CALLS"
+  # cards done should NOT fire after a rolled-back deploy
   ! grep -q 'cards done' "$WRAP_CALLS"
   rm -rf "$WRAP_STUBS"
 }

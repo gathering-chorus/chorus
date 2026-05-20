@@ -117,9 +117,9 @@ if $SCAN_MODE; then
   NUDGE_OUTPUT=$("$SCRIPT_DIR/nudge" drain "$ROLE" 2>/dev/null) || true
   # Note: nudge drain already acks + emits spine event
   # Print nudges immediately — before rate limiter can exit
-  if [ -n "$OPS_NUDGE_OUTPUT" ]; then
+  if [ -n "$NUDGE_OUTPUT" ]; then
     echo "<team-scan>"
-    echo "$OPS_NUDGE_OUTPUT"
+    echo "$NUDGE_OUTPUT"
     echo "</team-scan>"
   fi
 
