@@ -41,11 +41,11 @@ function curlJson(path: string): unknown {
 }
 
 export function lookupOwnership(_tree: TreeHandle, iri: string): unknown {
-  return curlJson(`/api/athena/ownership?iri=${encodeURIComponent(iri)}`);
+  return curlJson(`/api/athena/ownership/${encodeURIComponent(iri)}`);
 }
 
 export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
-  const out = curlJson(`/api/athena/blast-radius?iri=${encodeURIComponent(iri)}`);
+  const out = curlJson(`/api/athena/blast-radius/${encodeURIComponent(iri)}`);
   return (out as BlastRadiusResult) ?? null;
 }

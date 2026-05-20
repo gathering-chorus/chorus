@@ -171,7 +171,7 @@ export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult |
   }
   for (const domainIri of product.hasDomain) {
     const inner = computeBlastRadius(tree, domainIri);
-    if (inner) for (const c of inner.consumers) consumers.add(c);
+    if (inner) for (const c of inner.consumers) if (c !== iri) consumers.add(c);
   }
   return { iri, consumers: [...consumers], dependents: [] };
 }
