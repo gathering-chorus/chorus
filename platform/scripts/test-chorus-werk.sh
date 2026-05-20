@@ -249,5 +249,45 @@ RC=$?
 assert "remove refuses a branch with unmerged commits (exit non-zero)" test "$RC" -ne 0
 assert "unmerged branch preserved when remove refused" test -n "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3005 2>/dev/null)"
 
+# --- TEST 18: Tier-1 (acp-commit-on-main) survives a large origin/main history ---
+# Regression for #3018. This isolates Tier-1: the branch is a GENUINE squash-
+# orphan — its commit is NOT on origin/main by patch-id, so Tier-2 (git cherry)
+# WOULD refuse (a '+' line). Only the `acp #3006` commit on main proves the
+# merge, so a working Tier-1 is the ONLY thing that permits the delete.
+#
+# The bug: Tier-1 runs `git log origin/main | grep -q` under `set -o pipefail`.
+# grep -q matches the NEWEST subject (the acp commit) and closes the pipe; git
+# log, still emitting up to 300 subjects, takes SIGPIPE (141); pipefail promotes
+# 141 to the pipeline exit; Tier-1 reads "no match" and falls to Tier-2, which
+# refuses the orphan. Fires only once log output exceeds the pipe buffer — the
+# tiny repos in earlier tests never hit it (they also let Tier-2 pass, so they
+# never exercised Tier-1 at all). Build a >64KB history to force the SIGPIPE.
+#   Pre-fix: Tier-1 false-negative → Tier-2 refuses → exit 7.
+#   Post-fix (capture + here-string): Tier-1 matches → exit 0.
+"$CHORUS_WERK" add kade 3006 > /dev/null 2>&1
+# Branch-only work, never replicated on main → Tier-2 sees it as unmerged ('+').
+echo "branch only" > "$WERK_BASE/kade-3006/branch-only.txt"
+git -C "$WERK_BASE/kade-3006" add branch-only.txt
+git -C "$WERK_BASE/kade-3006" commit -q -m "kade: branch-only work (#3006)"
+# Pad origin/main with >300 long-subject commits so `git log -n 300` emits more
+# than the pipe buffer holds, guaranteeing the SIGPIPE when grep -q exits early.
+PAD=$(head -c 320 < /dev/zero | tr '\0' 'x')
+for i in $(seq 1 320); do
+  git -C "$CANONICAL" commit -q --allow-empty -m "filler $i $PAD"
+done
+# The acp commit (Tier-1's only proof) is the NEWEST subject → grep -q matches
+# log line 1 and closes the pipe immediately: the worst case for the SIGPIPE bug.
+git -C "$CANONICAL" commit -q --allow-empty -m "kade: acp #3006 (#1006)"
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+# Confirm the setup actually isolates Tier-1: branch IS an unmerged orphan by
+# patch-id (Tier-2 alone would refuse it).
+assert "test-18 setup: branch is a genuine squash-orphan (Tier-2 would refuse)" \
+  bash -c 'git -C "'"$CANONICAL"'" cherry origin/main kade/3006 2>/dev/null | grep -q "^+"'
+"$CHORUS_WERK" remove kade 3006 > /dev/null 2>&1
+RC=$?
+assert "Tier-1 removes squash-orphan despite large origin/main history (#3018 pipefail SIGPIPE)" test "$RC" -eq 0
+assert "large-history squash-orphan branch is gone" test -z "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3006 2>/dev/null)"
+assert "large-history squash-orphan werk dir is gone" test ! -d "$WERK_BASE/kade-3006"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
