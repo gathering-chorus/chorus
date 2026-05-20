@@ -654,7 +654,7 @@ const CHORUS_COMMIT_INVOKED = 'chorus_commit.invoked';
 const COMMIT_TOOL_DEF = {
   name: 'chorus_commit',
   description:
-    'Use this to commit + push changes for the card you\'re currently building. Service derives the active card from the board (status=WIP, owner=role), validates HEAD matches `<role>/<card-id>`, runs the canonical pre-commit hook chain, and pushes via the serialized queue. Returns SHA + branch + card_id on success, or a typed refusal: no-wip-card / multi-wip / board-unreachable / branch-mismatch / hook-fail / push-conflict. Do NOT use raw `git commit` or `bash git-queue.sh` — those bypass the typed refusal taxonomy and the board-derived card binding.',
+    'Use this to commit + push changes for the card you\'re currently building. Service derives the active card from the board (status=WIP, owner=role), validates HEAD matches `<role>/<card-id>`, runs the canonical pre-commit hook chain, and pushes via the serialized queue. Returns SHA + branch + card_id on success, or a typed refusal: no-wip-card / multi-wip / board-unreachable / branch-mismatch / path-not-found / hook-fail / push-conflict. Do NOT use raw `git commit` or `bash git-queue.sh` — those bypass the typed refusal taxonomy and the board-derived card binding.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1055,13 +1055,43 @@ interface CommitArgs {
 
 // #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
 // complexity under threshold. Each returns the typed reason for its phase.
-function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fail' {
+export function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fail' {
   // #2699 — tightened from /^pre-commit:|^.. blocked|hook failed/i. Old regex
   // matched any pre-commit-prefixed line (incl. warnings) and the bare 'hook
   // failed' substring anywhere. New form requires a failure marker (red circle,
   // X, 'failed', 'blocked') on the same line as the 'pre-commit:' prefix.
   // Wren observed the over-match during #2689 acp dogfood 2026-05-03.
   return /pre-commit:.*(?:🔴|❌|failed|blocked)/i.test(stderr) ? 'hook-fail' : 'commit-fail';
+}
+
+// #3011 — pick the line that actually explains the failure. When pre-commit
+// PASSES (🟢 N/N) but `git commit` fails downstream, git flushes the hook's
+// stdout into its own stderr, so stderr's first line is the green success line.
+// The old refusal used stderr.split('\n')[0] and surfaced
+// "commit-fail — pre-commit: 🟢 2/2 checks passed" — a contradiction that hid
+// the real cause (observed live 2026-05-20, 3x). Skip pre-commit SUCCESS/
+// progress lines (a `pre-commit:` line with no failure marker) and return the
+// first meaningful line. A genuine `pre-commit: 🔴 …` line carries a failure
+// marker, so it is NOT skipped — hook-fail detail is preserved (AC3).
+export function commitFailureDetail(stderr: string): string {
+  const isPrecommitNoise = (line: string): boolean =>
+    /pre-commit:/i.test(line) && !/🔴|❌|failed|blocked/i.test(line);
+  const lines = stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const meaningful = lines.find((l) => !isPrecommitNoise(l));
+  return meaningful ?? lines[0] ?? stderr.slice(0, 200);
+}
+
+// #3011 — a path that doesn't exist on disk makes git emit the cryptic
+// "fatal: pathspec '<p>' did not match any files" (the #3008 caller bug Wren
+// debugged live). Catch it before git-queue and refuse with a precise reason
+// naming the offenders. Only meaningful when staging (no_add=false); a no_add
+// commit lands staged deletes whose paths are intentionally gone from disk.
+// Untracked NEW files DO exist on disk, so they pass — git add stages them.
+export function findMissingPaths(paths: string[], exists: (p: string) => boolean): string[] {
+  return paths.filter((p) => !exists(p));
 }
 
 function classifyPushFailure(stderr: string): 'push-conflict' | 'push-fail' {
@@ -1182,6 +1212,20 @@ async function executeCommit(
   // decision; chorus_commit just routes cwd accordingly.
   const repoRoot = resolveWorkingTree(role as 'kade' | 'wren' | 'silas');
 
+  // #3011 — validate path existence before git-queue, so a non-existent path
+  // gets a precise `path-not-found` refusal naming the file instead of git's
+  // forwarded "pathspec did not match" error. Skipped for no_add (staged
+  // deletes have paths intentionally absent from disk).
+  if (!no_add) {
+    const fsMod = require('node:fs') as typeof import('node:fs');
+    const missing = findMissingPaths(paths, (p) => fsMod.existsSync(path.join(repoRoot, p)));
+    if (missing.length > 0) {
+      const reason = 'path-not-found';
+      emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: missing.join(', ') });
+      throw new Error(`chorus_commit refused: ${reason} — path(s) not found: ${missing.join(', ')}`);
+    }
+  }
+
   // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
   // #2687 — pass --force-branch so git-queue's branch-check (coordination
   // refusal) doesn't surface. Branch naming is observed via spine, not
@@ -1201,7 +1245,8 @@ async function executeCommit(
     const stderr = extractStderr(err);
     const reason = classifyCommitFailure(stderr);
     emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
+    // #3011 — surface the real failure line, not pre-commit's success output.
+    throw new Error(`chorus_commit refused: ${reason} — ${commitFailureDetail(stderr)}`);
   }
 
   // Extract SHA from `[branch sha] message` line (git's standard commit output).
@@ -1556,7 +1601,8 @@ async function executeAcp(
     if (!/nothing to commit|no changes added/i.test(stderr)) {
       const reason = classifyCommitFailure(stderr);
       emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'commit', reason, detail: stderr.slice(0, 500) });
-      throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
+      // #3011 — surface the real failure line, not pre-commit's success output.
+      throw new Error(`chorus_acp refused: ${reason} — ${commitFailureDetail(stderr)}`);
     }
     stepEmit('commit', 'completed', { idempotent: true, reason: 'nothing-to-commit' });
   }
