@@ -471,12 +471,10 @@ do_push() {
   while [ $# -gt 0 ]; do
     case "${1:-}" in
       --allow-stale-base-deletions)
-        # #2944: operator-knowing-what-they're-doing override for the stale-
-        # base silent-deletion refusal. Use ONLY when you genuinely intend
-        # to delete files that landed on origin/main between your branch-
-        # cut and your push (rare — a deliberate cross-branch deletion).
-        # The normal recovery is to rebase your branch onto current origin/
-        # main, which makes the deletions explicit in your commit history.
+        # #2944 → #3026: this was the override for the stale-base hard-block.
+        # The block is now a non-fatal NOTE (#3026 — the squash-merge keeps the
+        # files, so it was never a real revert), so this flag now only SUPPRESSES
+        # the note. Kept for backward-compat with callers that still pass it.
         allow_stale_base_deletions="true"
         shift
         ;;
@@ -532,20 +530,21 @@ do_push() {
     exit 1
   fi
 
-  # #2944 — stale-base silent-deletion guard.
+  # #2944 / #3026 — stale-base detection (NOTE, not block).
   #
-  # Bug class (three receipts 2026-05-15/16 — #2928, #2605-first-attempt,
-  # #2940): a long-lived werk branched from origin/main at /pull time stays
-  # on its original base while peers merge cards to main. When the role
-  # pushes, git's 3-way merge treats "file present in current main, absent
-  # in branch history" as a deletion — not a conflict, no merge marker.
-  # Recent peer-merged files silently disappear from the resulting tree.
+  # #2944's premise: a stale werk branch silently deletes peer-merged files
+  # because git's 3-way merge drops "present in main, absent in branch". #3026
+  # corrected that: push targets the role branch, then /acp squash-merges,
+  # applying ONLY the branch's own changeset — so a peer-added file absent from
+  # a stale branch SURVIVES the squash (verified empirically). The detected
+  # "deletions" are 2-way-diff artifacts, not real reverts; hard-blocking on
+  # them jammed the whole team (2026-05-21).
   #
-  # The guard: compute the set of files the branch's OWN commits touched
-  # (vs the merge-base with origin/main) and the set of files the push is
-  # about to delete (vs current origin/main). Any deletion NOT in the
-  # touched set is a stale-base ghost — refuse the push and tell the
-  # operator to rebase. Uses -M so renames don't look like deletions.
+  # So we still DETECT (compute files deleted vs current main that the branch's
+  # own commits never touched — stale-base ghosts, -M so renames don't count)
+  # but only to NOTE them, so the operator can rebase for clean history. The
+  # push always proceeds. The --allow-stale-base-deletions flag now just
+  # suppresses the note.
   if [ "$allow_stale_base_deletions" != "true" ]; then
     git -C "$REPO_ROOT" fetch --quiet origin main 9>&- 2>/dev/null || true
     local _merge_base
@@ -560,28 +559,20 @@ do_push() {
       if [ -n "$_silent_deletions" ]; then
         local _count
         _count=$(printf '%s\n' "$_silent_deletions" | wc -l | tr -d ' ')
-        # Find recent commits on origin/main that introduced or modified
-        # these files — points the operator at the merges they'd silently
-        # revert.
-        local _likely_lost
-        _likely_lost=$(git -C "$REPO_ROOT" log --oneline -5 --diff-filter=AM "$_merge_base..origin/main" -- $(printf '%s\n' "$_silent_deletions") 2>/dev/null | head -5)
-        echo "BLOCKED: stale-base silent deletions — your branch will delete ${_count} file(s) your commits never touched." >&2
-        echo "" >&2
-        echo "Files about to be silently deleted (peer-merged since your /pull):" >&2
-        printf '  %s\n' $_silent_deletions >&2
-        echo "" >&2
-        if [ -n "$_likely_lost" ]; then
-          echo "Likely-lost commits on origin/main (touched those files since your merge-base $(echo $_merge_base | cut -c1-8)):" >&2
-          printf '  %s\n' "$_likely_lost" >&2
-          echo "" >&2
-        fi
-        echo "Fix: rebase your branch onto current origin/main, then re-push:" >&2
-        echo "  git fetch origin && git rebase origin/main && git-queue.sh push <args>" >&2
-        echo "" >&2
-        echo "Override (use ONLY for deliberate cross-branch deletions):" >&2
-        echo "  git-queue.sh push --allow-stale-base-deletions <args>" >&2
-        log_event "git_queue.push.refused" "reason=stale-base-deletions count=${_count} files=$(printf '%s\n' $_silent_deletions | tr '\n' ',')"
-        exit 1
+        # #3026 — DOWNGRADED from hard-block to a non-fatal note. The premise
+        # ("git's 3-way merge silently drops these files") does NOT hold for the
+        # actual workflow: push targets the role branch, then /acp squash-merges
+        # it, which applies ONLY the branch's own changeset. Verified empirically
+        # — a peer-added file absent from a stale branch SURVIVES the squash
+        # (it's added on main's side, untouched on the branch's, so the 3-way
+        # keeps it). These "deletions" are 2-way-diff artifacts, not real
+        # reverts. Hard-blocking on them jammed the whole team for an hour
+        # (2026-05-21) and blocked legitimate non-overlapping branches. Note it
+        # so the operator can rebase for clean linear history if they want, but
+        # never block the push — a stale base is not, by itself, a revert.
+        echo "note: branch is stale vs origin/main — ${_count} peer-added file(s) are not in your base." >&2
+        echo "      The squash-merge keeps them (no revert); rebase onto origin/main only if you want clean linear history." >&2
+        log_event "git_queue.push.stale_base_noted" "count=${_count} files=$(printf '%s\n' $_silent_deletions | tr '\n' ',')"
       fi
     fi
   fi
