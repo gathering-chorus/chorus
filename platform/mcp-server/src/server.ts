@@ -32,6 +32,7 @@ import { executeDesignRefresh } from './design-refresh';
 // chorus-hook-shim, and Loki HTTP. No fuseki client, no oxigraph, no lancedb.
 import {
   loadTree as athenaLoadTree,
+  getTree as athenaGetTree,
   lookupOwnership as athenaLookupOwnership,
   computeBlastRadius as athenaComputeBlastRadius,
 } from './athena-tree-stub';
@@ -479,7 +480,7 @@ const CARD_ADD_JEFF_TOOL_DEF = {
 const CARDS_MOVE_TOOL_DEF = {
   name: 'chorus_cards_move',
   description:
-    'Move a card to a new status lane on the kanban board. Use this for routine board flow — Next→WIP when pulling, WIP→Blocked when stuck, Later→Next when triaged. Do NOT use for done-with-evidence — chorus_cards_done is the canonical acceptance path because it emits card.accepted spine event subscribers depend on (DEC-048).',
+    'Move a card to a new status lane on the kanban board. Use this for routine board flow — Next→WIP when pulling, WIP→Blocked when stuck, Later→Next when triaged. status=Done is REFUSED here (enforced, not just discouraged): Done is owned by chorus_cards_done, the only verb that emits the card.accepted spine event subscribers depend on (DEC-048).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -522,7 +523,7 @@ const CARDS_TAG_TOOL_DEF = {
 const CARDS_SET_TOOL_DEF = {
   name: 'chorus_cards_set',
   description:
-    'Atomic update of one or more structured card fields. Use this for owner reassignment, priority bumps, title fixes, status moves, or multi-field changes that should land together. Pass {fields: {priority: "P1", owner: "wren"}}. Do NOT use chorus_cards_tag for owner/priority/type/origin — those are structured fields and chorus_cards_set is the canonical path that emits card.item.set per change.',
+    'The single writer for a card\'s descriptive properties — owner, priority, type, origin, title, subdomain, subproduct, and the label axes sequence/domain/chunk (typed validation applies: subproduct closed-list, subdomain must exist in Athena). Use it for any field change or multi-field update that should land together. Pass {fields: {priority: "P1", owner: "wren", sequence: "pulse"}}. STATUS is REFUSED here (enforced at the boundary, not prose) — status is a transition, not a field: use chorus_cards_move for non-Done lanes, chorus_cards_done for Done (emits card.accepted). Emits card.item.set per change.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2760,6 +2761,12 @@ async function executeCardAddJeff(
   if (args.chunk) argv.push('--chunk', args.chunk);
   if (args.subproduct) argv.push('--subproduct', args.subproduct);
   if (args.subdomain) argv.push('--subdomain', args.subdomain);
+  // #3025: the cards_add vs card_add_jeff split is the enforced auth-gate
+  // boundary, not a prose-only convention. The attribution ('jeff') is
+  // hardcoded here regardless of caller, so the bouncer's isAgent check returns
+  // false and no approval-ask fires. chorus_cards_add passes the caller's role
+  // instead, so the bouncer fires. The distinction lives in code (the literal
+  // below), which is why both tools are kept rather than merged.
   const out = await execCardsCli('add', argv, 'jeff', execFileAsync, cardsPath, 'chorus_card_add_jeff');
   return { content: [{ type: 'text', text: out }] };
 }
@@ -2770,6 +2777,12 @@ async function executeCardsMove(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // #3025: set-status collapses to one enforced path. Done is owned by
+  // chorus_cards_done (the only verb that emits card.accepted, DEC-048).
+  // Routing Done through move would silently skip that audit emit.
+  if (args.status === 'Done') {
+    throw new Error('chorus_cards_move refused: use-cards-done — status=Done must go through chorus_cards_done, which emits the card.accepted spine event subscribers depend on (DEC-048). Moving to Done silently skips that audit emit.');
+  }
   const out = await execCardsCli('move', [String(args.id), args.status], from, execFileAsync, cardsPath, 'chorus_cards_move');
   return { content: [{ type: 'text', text: out }] };
 }
@@ -2817,6 +2830,17 @@ async function executeCardsSet(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // #3025 / ADR-031: cards_set is the single writer for descriptive PROPERTIES —
+  // owner, priority, type, origin, title, subdomain, subproduct, and the label
+  // axes sequence/domain/chunk (gate-arch ruling: labels are properties, fold
+  // into the one setter with typed validation). STATUS is excluded: it's a
+  // state machine, not a field — transitions carry the move/accept events a
+  // generic setter would silently bypass (today's card.accepted-skipped bug).
+  // Lanes go through chorus_cards_move; Done through the accept transaction.
+  const keys = Object.keys(args.fields);
+  if (keys.some((k) => k.toLowerCase() === 'status')) {
+    throw new Error('chorus_cards_set refused: no-status-changes — status is a transition, not a field. Use chorus_cards_move for non-Done lanes, or chorus_cards_done for Done (emits card.accepted).');
+  }
   const argv: string[] = [String(args.id)];
   for (const [key, value] of Object.entries(args.fields)) {
     argv.push(`${key}=${value}`);
@@ -3162,7 +3186,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         try {
-          const tree = athenaLoadTree();
+          const tree = athenaGetTree();
           emitSpineEvent(EVT_ATHENA_TREE_QUERIED, { tool: 'chorus_tree_get', from, ok: true });
           return { content: [{ type: 'text' as const, text: JSON.stringify(tree) }] };
         } catch (err) {
