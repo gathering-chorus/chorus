@@ -126,6 +126,27 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
   res.status(r.status).json(r.body);
 });
 
+// #3029 — pain board endpoints. Same queryPainRollup the MCP tool + regression
+// test use (one source, can't drift). Validated contract: {job} selector +
+// event-field anchor. The HTML pages under public/borg/ consume these.
+import { queryPainRollup, type RollupWindow, logsForCard } from './handlers/logs-query';
+const painLokiDeps = { fetchImpl: fetch, lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102', now: () => Date.now() };
+app.get('/api/chorus/pain/rollup', async (req, res) => {
+  // Pass the raw window through; queryPainRollup is the single validator (don't
+  // silently coerce a bad window to 7d — that returns mislabeled data). Invalid
+  // window → typed time-range-invalid → 400; Loki down → 502.
+  const window = (typeof req.query.window === 'string' ? req.query.window : '7d') as RollupWindow;
+  const result = await queryPainRollup({ window }, painLokiDeps);
+  const status = result.ok ? 200 : result.reason === 'time-range-invalid' ? 400 : 502;
+  res.status(status).json(result);
+});
+app.get('/api/chorus/pain/card/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ ok: false, reason: 'bad-card-id' }); return; }
+  const result = await logsForCard({ card_id: id, time_window: '1d' }, painLokiDeps);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+
 // New canonical path under /api/chorus/context/* (#2252 migration).
 app.get('/api/chorus/context/quality/summary', async (req, res) => {
   const r = await fetchContextQualitySummary(

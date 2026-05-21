@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- #3029 — Chorus pain board. Served by chorus-api on :3340 (/borg/pain.html).
+     Consumes /api/chorus/pain/rollup and /api/chorus/pain/card/:id — the same
+     validated queryPainRollup the MCP tool uses. No standalone server, no :8899. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chorus pain board</title>
+<style>
+  body { font: 13px/1.5 ui-monospace, Menlo, monospace; margin: 1.5rem; color: #1a1a1a; background: #f7f4ee; }
+  h1 { font-size: 1.1rem; margin: 0 0 .2rem; }
+  .sub { color: #888; margin-bottom: 1rem; }
+  .controls { margin-bottom: .8rem; }
+  .chip { display: inline-block; padding: 2px 9px; margin: 2px; border: 1px solid #ccc; border-radius: 11px; cursor: pointer; background: #fff; }
+  .chip.on { background: #5a3; color: #fff; border-color: #5a3; }
+  select, input, button { font: inherit; padding: 3px 6px; }
+  table { border-collapse: collapse; width: 100%; margin-top: .6rem; }
+  th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid #e6e0d4; }
+  th { color: #777; font-weight: 600; }
+  td.n { text-align: right; font-weight: 700; color: #a33; width: 60px; }
+  tr.zebra { background: #fbf9f4; }
+  .err { color: #a33; }
+  .card-run { margin: .4rem 0; padding: .4rem .6rem; border-left: 3px solid #ccc; background: #fff; }
+  .ok { color: #5a3; } .bad { color: #a33; font-weight: 700; }
+</style>
+</head>
+<body>
+  <h1>Chorus pain board</h1>
+  <div class="sub">what's breaking, by scope &middot; event-anchored, {job} selector &middot; kill the top class, not the next red line</div>
+
+  <div class="controls">
+    window:
+    <select id="window"><option>1d</option><option selected>7d</option><option>30d</option></select>
+    &nbsp; card&nbsp;# <input id="card" size="7" placeholder="(blank)" />
+    <button id="go">View</button>
+    <div id="chips" style="margin-top:.5rem"></div>
+  </div>
+
+  <div id="status" class="sub"></div>
+  <div id="out"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ALL = [];        // full rollup classes
+let roleFilter = ''; // '' = all
+
+function renderChips() {
+  const roles = [...new Set(ALL.map(c => c.role).filter(Boolean))].sort();
+  const total = ALL.reduce((s, c) => s + c.count, 0);
+  const mk = (label, role, n) => `<span class="chip ${roleFilter === role ? 'on' : ''}" data-role="${role}">${label} ${n}</span>`;
+  let html = mk('all', '', total);
+  for (const r of roles) html += mk(r, r, ALL.filter(c => c.role === r).reduce((s, c) => s + c.count, 0));
+  $('chips').innerHTML = html;
+  for (const el of $('chips').querySelectorAll('.chip')) {
+    el.onclick = () => { roleFilter = el.dataset.role; renderChips(); renderTable(); };
+  }
+}
+
+function renderTable() {
+  const rows = ALL.filter(c => !roleFilter || c.role === roleFilter);
+  let html = '<table><tr><th>count</th><th>role</th><th>event</th><th>reason</th></tr>';
+  rows.forEach((c, i) => {
+    html += `<tr class="${i % 2 ? 'zebra' : ''}"><td class="n">${c.count}</td><td>${c.role || '-'}</td><td>${c.event}</td><td>${c.reason || ''}</td></tr>`;
+  });
+  $('out').innerHTML = html + '</table>';
+}
+
+async function loadRollup() {
+  const w = $('window').value;
+  $('status').textContent = 'loading rollup (' + w + ')...';
+  try {
+    const r = await fetch('/api/chorus/pain/rollup?window=' + w);
+    const d = await r.json();
+    if (!d.ok) { $('status').innerHTML = '<span class="err">rollup error: ' + (d.reason || r.status) + '</span>'; return; }
+    ALL = d.classes || [];
+    $('status').textContent = d.total + ' failures in ' + (d.classes || []).length + ' classes &middot; window ' + d.window;
+    renderChips(); renderTable();
+  } catch (e) { $('status').innerHTML = '<span class="err">' + e + '</span>'; }
+}
+
+async function loadCard(id) {
+  $('status').textContent = 'loading card #' + id + '...';
+  $('chips').innerHTML = '';
+  try {
+    const r = await fetch('/api/chorus/pain/card/' + id);
+    const d = await r.json();
+    if (!d.ok) { $('status').innerHTML = '<span class="err">card error: ' + (d.reason || r.status) + '</span>'; return; }
+    const runs = {};
+    for (const ev of d.events || []) { (runs[ev.trace_id || 'no-trace'] ||= []).push(ev); }
+    const ids = Object.keys(runs);
+    $('status').textContent = '#' + id + ' &middot; ' + (d.events || []).length + ' events across ' + ids.length + ' runs';
+    let html = '';
+    for (const t of ids) {
+      const evs = runs[t];
+      const bad = evs.some(e => /\.(failed|refused|error)$/.test(e.event || ''));
+      html += `<div class="card-run"><b class="${bad ? 'bad' : 'ok'}">${bad ? 'FAIL' : 'ok'}</b> trace ${t.slice(0, 12)} &middot; ${evs.length} steps`;
+      for (const e of evs) html += `<div>${/\.(failed|refused|error)$/.test(e.event || '') ? '<span class="bad">x</span>' : '<span class="ok">.</span>'} ${e.event || ''}</div>`;
+      html += '</div>';
+    }
+    $('out').innerHTML = html || '<div class="sub">no pipeline events for this card</div>';
+  } catch (e) { $('status').innerHTML = '<span class="err">' + e + '</span>'; }
+}
+
+$('go').onclick = () => { const c = $('card').value.trim(); c ? loadCard(c) : loadRollup(); };
+$('window').onchange = loadRollup;
+loadRollup();
+</script>
+</body>
+</html>
