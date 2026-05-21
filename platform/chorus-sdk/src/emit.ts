@@ -161,7 +161,17 @@ function buildSpineEntry(
   const level = typeof extra.level === 'string' ? extra.level : 'info';
   const stage = STREAM_NAME[getEventVertebra(event) ?? ''] ?? null;
 
-  return {
+  // #3023 — env-fallback for the two cross-process observability keys, the TS
+  // twin of the shim-wrapper bridge (#2857). Precedence: explicit extra > env >
+  // (trace_id) random. Lets a multi-call action (a /demo, a build pipeline) set
+  // CHORUS_TRACE_ID once and have every emit from that process tree share one
+  // trace, instead of each emit minting its own.
+  const envTrace = process.env.CHORUS_TRACE_ID;
+  const trace_id = typeof extra.trace_id === 'string'
+    ? extra.trace_id
+    : (envTrace && envTrace.length > 0 ? envTrace : crypto.randomUUID());
+
+  const entry: SpineEvent = {
     timestamp: new Date().toISOString(),
     level,
     appName: resolveAppName(options, ctx),
@@ -169,13 +179,24 @@ function buildSpineEntry(
     event,
     role,
     ...contextFields(ctx, stage),
-    trace_id: typeof extra.trace_id === 'string' ? extra.trace_id : crypto.randomUUID(),
+    trace_id,
     file: null,
     function: caller.function,
     line: caller.line,
     ...errorFields(level, extra),
     ...extra,
   };
+
+  // branch = the git surface work ran on (third key). Stamp from env, gated to
+  // the same git/werk MUST-carry prefixes as shim-wrapper.sh
+  // (chorus_*|build.*|deploy.*|card.*) so non-git events (health, nudge) don't
+  // carry it. Explicit extra.branch (already in `entry` via the spread above)
+  // wins, so only set when the caller didn't.
+  const envBranch = process.env.CHORUS_BRANCH;
+  if (envBranch && typeof extra.branch !== 'string' && /^(chorus_|build\.|deploy\.|card\.)/.test(event)) {
+    entry.branch = envBranch;
+  }
+  return entry;
 }
 
 function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, string | number>>, hopNum: number) {
