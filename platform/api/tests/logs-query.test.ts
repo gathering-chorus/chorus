@@ -3,6 +3,7 @@ import {
   recentErrors,
   logsForCard,
   logsForTrace,
+  logsForBranch,
   type LogsQueryDeps,
 } from '../src/handlers/logs-query';
 
@@ -131,6 +132,35 @@ describe('chorus_logs_for_card (#2840)', () => {
     await logsForCard({ card_id: 2840 }, deps);
     // LogQL string contains escaped quotes (\"card_id\":2840) when decoded
     expect(decodeURIComponent(captured)).toContain('card_id\\":2840');
+  });
+});
+
+describe('chorus_logs_for_branch (#3023)', () => {
+  it('builds LogQL filter anchored on the branch JSON field', async () => {
+    let captured = '';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: (async (url: string) => {
+        captured = url;
+        return { ok: true, status: 200, json: async () => ({ data: { result: [] } }) } as unknown as Response;
+      }) as unknown as typeof fetch,
+    };
+    await logsForBranch({ branch: 'kade/3023' }, deps);
+    // AC4: branch is a queryable key — structural JSON-field anchor (mirrors trace_id)
+    expect(decodeURIComponent(captured)).toContain('branch\\":\\"kade/3023');
+  });
+
+  it('parses branch off the row (AC3) while preserving the card_id chain key (AC5)', async () => {
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: makeFetch([{ values: [lokiLine('build.push.completed', { branch: 'kade/3023', card_id: 3023 })] }]),
+    };
+    const r = await logsForBranch({ branch: 'kade/3023' }, deps);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.events[0].branch).toBe('kade/3023'); // AC3: actual branch recorded + parsed
+      expect(r.events[0].card_id).toBe(3023);        // AC5: chain key still present
+    }
   });
 });
 

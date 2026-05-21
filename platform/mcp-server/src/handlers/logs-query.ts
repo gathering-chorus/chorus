@@ -11,6 +11,7 @@ export type LogRow = {
   level?: string;
   card_id?: number;
   trace_id?: string;
+  branch?: string;
   source?: string;
   payload: Record<string, unknown>;
 };
@@ -64,7 +65,7 @@ function resolveTimeRange(deps: LogsQueryDeps, start?: string, end?: string, win
 function parseLokiLine(line: string): LogRow | null {
   try {
     const obj = JSON.parse(line) as Record<string, unknown>;
-    const { ts, event, role, level, card_id, trace_id, source, ...rest } = obj;
+    const { ts, event, role, level, card_id, trace_id, branch, source, ...rest } = obj;
     return {
       ts: typeof ts === 'string' ? ts : new Date().toISOString(),
       event: typeof event === 'string' ? event : undefined,
@@ -72,6 +73,7 @@ function parseLokiLine(line: string): LogRow | null {
       level: typeof level === 'string' ? level : undefined,
       card_id: typeof card_id === 'number' ? card_id : undefined,
       trace_id: typeof trace_id === 'string' ? trace_id : undefined,
+      branch: typeof branch === 'string' ? branch : undefined,
       source: typeof source === 'string' ? source : undefined,
       payload: rest,
     };
@@ -151,6 +153,23 @@ export async function logsForTrace(
   // count. The envelope contract in #2839 places trace_id as a top-level
   // field; this query reads against that shape.
   const query = `{job=~".+"} |~ "\\"trace_id\\":\\"${args.trace_id}\\""`;
+  const range = resolveTimeRange(deps, undefined, undefined, window);
+  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
+}
+
+// #3023 — query by the git surface work actually ran on. branch is the third
+// observability key: card_id = the chain across actions, trace_id = one action,
+// branch = where it ran. JSON-field anchor (mirrors logsForTrace) so a branch
+// name appearing in a nudge body or commit message doesn't distort the count.
+// Catches card-vs-werk divergence (a step that ran on the wrong werk shows the
+// wrong branch). Default 1d — branch lifespan is a card's lifetime, not an hour.
+export async function logsForBranch(
+  args: { branch: string; time_window?: TimeWindow },
+  deps: LogsQueryDeps,
+): Promise<LogsQueryResult> {
+  const window = args.time_window ?? '1d';
+  const query = `{job=~".+"} |~ "\\"branch\\":\\"${args.branch}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
   if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
