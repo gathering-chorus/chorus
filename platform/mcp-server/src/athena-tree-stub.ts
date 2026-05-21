@@ -1,35 +1,24 @@
-// #2997 — Athena tree stub. The real implementation lives in chorus-api
-// (platform/api/src/handlers/athena-tree.ts) and depends on fuseki client +
-// oxigraph + lancedb. To keep chorus-mcp lean and decoupled from chorus-api's
-// data layer, we proxy these calls to chorus-api over HTTP instead of importing
-// in-process. chorus-api remains the canonical source for the Athena tree.
-
-// API shape matches the in-process handler the chorus-mcp code was extracted
-// from: synchronous loadTree() returning a tree token, then sync lookup /
-// blast-radius calls that take (tree, iri). The tree token is opaque from
-// the caller's perspective — only the stub knows it's actually a URL handle.
-// Under the hood we proxy to chorus-api over HTTP; we cache nothing for now
-// (chorus-api owns the data, our role is pass-through).
+// #3025 AC6 — Athena lookups, repointed to the v2 live graph.
 //
-// The sync-shape preserves the call-site signature so the extracted
-// chorus-mcp server.ts compiles without touching every Athena tool handler.
+// History: this file proxied to chorus-api's v1 routes (/api/athena/tree,
+// /ownership/:iri, /blast-radius/:iri), which read the hand-authored
+// data/athena/tree.json. That file drifted — e.g. v1 returned not-found for
+// chorus:cards-service while the live graph has it (owner Wren, step Directing).
+// Per ADR-031 (one source of truth) the lookups now read the v2 SPARQL
+// subdomains resource: /api/athena/subdomains[/:id[/blast-radius]].
+//
+// Function signatures are preserved so the server.ts handlers compile unchanged.
+// An injectable getter (__setAthenaGetter) is the test seam.
 
 const CHORUS_API_URL = process.env.CHORUS_API_URL || 'http://localhost:3340';
 
-// Opaque tree handle. The actual proxy URL is baked in.
-export type TreeHandle = { url: string };
-
-export function loadTree(): TreeHandle {
-  return { url: CHORUS_API_URL };
-}
-
-// Sync wrapper around the HTTP proxy via synchronous XHR-style fetch.
-// Node's global fetch is async; we use a worker-thread-style sync pattern via
-// child_process execFileSync (curl). Slow per-call but Athena tree lookups
-// are rare. Cost in latency: ~5-20ms over loopback.
 import { execFileSync } from 'child_process';
 
-function curlJson(path: string): unknown {
+type AthenaGetter = (path: string) => unknown;
+
+// Default getter: synchronous curl over loopback. Athena lookups are rare;
+// the sync shape preserves the call-site signatures the handlers were built on.
+function curlGet(path: string): unknown {
   try {
     const out = execFileSync('curl', ['-s', '--max-time', '5', `${CHORUS_API_URL}${path}`], {
       encoding: 'utf-8',
@@ -40,16 +29,46 @@ function curlJson(path: string): unknown {
   }
 }
 
+let getter: AthenaGetter = curlGet;
+
+/** Test seam — swap the HTTP getter. */
+export function __setAthenaGetter(g: AthenaGetter | null): void {
+  getter = g ?? curlGet;
+}
+
+// Opaque handle, kept for signature compatibility (lookups ignore it).
+export type TreeHandle = Record<string, never>;
+export function loadTree(): TreeHandle {
+  return {};
+}
+
+// chorus:cards-service -> cards-service (the v2 subdomain id).
+function iriToId(iri: string): string {
+  return iri.replace(/^chorus:/, '');
+}
+
+type V2Envelope = { data?: unknown } | null | undefined;
+
+/** Full tree (v2 subdomains list) — backs chorus_tree_get. */
+export function getTree(): unknown {
+  const res = getter('/api/athena/subdomains') as V2Envelope;
+  return res?.data ?? [];
+}
+
+/** Who owns this IRI + where it sits — v2 subdomain detail. null = not found. */
 export function lookupOwnership(_tree: TreeHandle, iri: string): unknown {
-  return curlJson(`/api/athena/ownership/${encodeURIComponent(iri)}`);
+  const res = getter(`/api/athena/subdomains/${encodeURIComponent(iriToId(iri))}`) as V2Envelope;
+  const d = res?.data as { id?: string; label?: string; owner?: string; step?: string } | null | undefined;
+  if (!d || !d.id) return null;
+  return { iri, id: d.id, kind: 'subdomain', owner: d.owner, label: d.label, step: d.step };
 }
 
 export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
+
+/** Inferred blast-radius — v2 subdomain blast-radius. null = not found. */
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
-  const out = curlJson(`/api/athena/blast-radius/${encodeURIComponent(iri)}`) as { ok?: boolean } | null;
-  // API returns 404 body { ok:false, reason:'not-found' } for unknown IRIs.
-  // Map that to null so the handler's not-found branch fires instead of
-  // reading .consumers.length on a refusal body.
-  if (out && out.ok === false) return null;
-  return (out as BlastRadiusResult) ?? null;
+  const res = getter(`/api/athena/subdomains/${encodeURIComponent(iriToId(iri))}/blast-radius`) as V2Envelope;
+  const d = res?.data as { consumers?: unknown[] } | null | undefined;
+  if (!d || !Array.isArray(d.consumers)) return null;
+  return { iri, consumers: d.consumers };
 }
