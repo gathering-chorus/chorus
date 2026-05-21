@@ -97,12 +97,20 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // to body.traceId for backward-compat with senders that haven't migrated.
     const headerTrace = req.headers['x-chorus-trace-id'];
     const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
-    const id = store.sendNudge(from, to, content, traceId);
+    // #3032: mark teammate nudges so the receiving session can distinguish them
+    // from Jeff's own typed prompts (input_classifier already recognizes/strips
+    // the "[nudge from" prefix; nothing re-added it after the #2804 refactor).
+    // Idempotent — never double-prefix.
+    const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
+    const marked = content.startsWith('[nudge from')
+      ? content
+      : `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
+    const id = store.sendNudge(from, to, marked, traceId);
     metrics.nudgesReceived.labels(from, to).inc();
-    log('info', 'nudge.stored', { id, from, to, chars: content.length, trace_id: traceId || undefined });
+    log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
-      worker.enqueue({ id, from, to, content, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
+      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
     }
     res.json({ ok: true, id, traceId });
   });
