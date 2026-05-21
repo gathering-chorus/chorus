@@ -91,6 +91,24 @@ describe('emit', () => {
       expect(e.trace_id).not.toBe('explicit-trace');
     });
 
+    it('AC1: reads /tmp/demo-trace-<card>.txt when no extra/env trace, so cards-CLI demo emits link (matches chorus_log.rs #2897)', () => {
+      const savedTrace = process.env.CHORUS_TRACE_ID;
+      delete process.env.CHORUS_TRACE_ID;
+      const card = 999301;
+      const tracePath = `/tmp/demo-trace-${card}.txt`;
+      fs.writeFileSync(tracePath, '019e4b00-dddd-7000-8000-000000000abc\n');
+      try {
+        const a = emit('card.demo.started', 'kade', { card_id: card }, { logFile: tmpFile });
+        const b = emit('card.item.commented', 'kade', { card_id: card }, { logFile: tmpFile });
+        expect(a.trace_id).toBe('019e4b00-dddd-7000-8000-000000000abc');
+        expect(b.trace_id).toBe(a.trace_id); // both demo emits share the file's trace
+      } finally {
+        try { fs.unlinkSync(tracePath); } catch { /* ignore */ }
+        if (savedTrace === undefined) delete process.env.CHORUS_TRACE_ID;
+        else process.env.CHORUS_TRACE_ID = savedTrace;
+      }
+    });
+
     it('AC3: stamps branch from env on git/werk events (card.*)', () => {
       process.env.CHORUS_BRANCH = 'kade/3023';
       const e = emit('card.demo.started', 'kade', {}, { logFile: tmpFile }) as Record<string, unknown>;

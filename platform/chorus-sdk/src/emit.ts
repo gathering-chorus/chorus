@@ -166,10 +166,34 @@ function buildSpineEntry(
   // (trace_id) random. Lets a multi-call action (a /demo, a build pipeline) set
   // CHORUS_TRACE_ID once and have every emit from that process tree share one
   // trace, instead of each emit minting its own.
+  // #3023 — trace precedence mirrors chorus_log.rs (#2897) exactly so the TS
+  // (cards-CLI) and Rust (chorus-log) emitters of one action share a trace:
+  // explicit extra > CHORUS_TRACE_ID env > /tmp/demo-trace-<card>.txt > random.
+  // The demo-trace file is written by demo_preflight on /demo entry and read
+  // here keyed on card_id — the cards-CLI demo emits (card.demo.started, gate
+  // comments) carry card_id, so they now link into the same demo trace instead
+  // of each minting its own.
   const envTrace = process.env.CHORUS_TRACE_ID;
-  const trace_id = typeof extra.trace_id === 'string'
-    ? extra.trace_id
-    : (envTrace && envTrace.length > 0 ? envTrace : crypto.randomUUID());
+  let trace_id: string;
+  if (typeof extra.trace_id === 'string') {
+    trace_id = extra.trace_id;
+  } else if (envTrace && envTrace.length > 0) {
+    trace_id = envTrace;
+  } else {
+    const cardForTrace = typeof extra.card_id === 'number'
+      ? String(extra.card_id)
+      : (typeof extra.card_id === 'string' && /^\d+$/.test(extra.card_id) ? extra.card_id : null);
+    let fileTrace: string | null = null;
+    if (cardForTrace) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const fs = require('fs') as typeof import('fs');
+        const t = fs.readFileSync(`/tmp/demo-trace-${cardForTrace}.txt`, 'utf-8').trim();
+        if (t) fileTrace = t;
+      } catch { /* no /demo in flight for this card — fall through to random */ }
+    }
+    trace_id = fileTrace ?? crypto.randomUUID();
+  }
 
   const entry: SpineEvent = {
     timestamp: new Date().toISOString(),

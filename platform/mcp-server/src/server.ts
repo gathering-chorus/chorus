@@ -1891,6 +1891,17 @@ async function executeAcp(
   // the chorus-werk-sync 10-min poll. Best-effort: kickstart failure does
   // not fail /acp because the merge already landed; flag in step event so
   // an operator can recover manually.
+  // #3023 — hand this acp's trace to the building-pipeline. launchctl kickstart
+  // does NOT carry env across the launchd boundary, and the squash-merge strips
+  // commit trailers, so a file is the only channel that survives. The pipeline
+  // reads this and exports CHORUS_TRACE_ID/CHORUS_CARD_ID/CHORUS_BRANCH so its
+  // build/deploy emits link to this acp's trace instead of firing trace-less.
+  try {
+    const fsp = await import('fs/promises');
+    await fsp.writeFile('/tmp/chorus-acp-release-trace.json',
+      JSON.stringify({ trace_id, card_id: cardId, branch }) + '\n');
+  } catch { /* best-effort — pipeline falls back to no-trace if the file is absent */ }
+
   stepEmit('release-trigger', 'started');
   try {
     await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env, timeout: 5_000 });
