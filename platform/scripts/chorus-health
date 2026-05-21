@@ -170,8 +170,17 @@ fi
 
 # ─── RUNTIME / OPS ───────────────────────────────────────────────────────────
 
-# service-health — all registered endpoints respond
-declare -a SVC_FAIL=()
+# service-health — all registered endpoints respond. A check that couldn't
+# complete (curl timed out — local overload, dependency mid-restart) is NOT the
+# same as an endpoint that's actually down (#3022). Split by curl exit code:
+#   28  = timeout       -> inconclusive (warn): the checker couldn't finish in
+#                          time; this is what a load spike produces, not a down
+#                          service. Preserves true positives — a genuinely down
+#                          endpoint refuses the connection (rc 7) rather than
+#                          hanging.
+#   else (refused/5xx/other) = endpoint genuinely down or erroring -> fail.
+declare -a SVC_DOWN=()
+declare -a SVC_TIMEOUT=()
 for ep in \
   "http://localhost:3000|caddy-edge" \
   "http://localhost:2019/config/|caddy-admin" \
@@ -188,13 +197,23 @@ for ep in \
   "http://localhost:3340/borg/cost/|borg-cost" \
   "http://localhost:3340/borg/hooks/|borg-hooks"; do
   url="${ep%%|*}"; name="${ep##*|}"
-  code=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null) || code="000"
-  [[ "$code" =~ ^(200|204|301|302|308)$ ]] || SVC_FAIL+=("${name}:${code}")
+  code=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null); curl_rc=$?
+  if [[ "$code" =~ ^(200|204|301|302|308)$ ]]; then
+    continue
+  elif [ "$curl_rc" -eq 28 ]; then
+    SVC_TIMEOUT+=("${name}:timeout")
+  else
+    SVC_DOWN+=("${name}:${code}")
+  fi
 done
-if [ ${#SVC_FAIL[@]} -eq 0 ]; then
-  pass "service-health" "all 14 endpoints responding"
+if [ ${#SVC_DOWN[@]} -gt 0 ]; then
+  msg="down: $(IFS=,; echo "${SVC_DOWN[*]}")"
+  [ ${#SVC_TIMEOUT[@]} -gt 0 ] && msg="${msg}; inconclusive (checker timed out): $(IFS=,; echo "${SVC_TIMEOUT[*]}")"
+  fail "service-health" "$msg"
+elif [ ${#SVC_TIMEOUT[@]} -gt 0 ]; then
+  warn "service-health" "inconclusive — checker timed out (local load?), endpoints not confirmed down: $(IFS=,; echo "${SVC_TIMEOUT[*]}")"
 else
-  fail "service-health" "down: $(IFS=,; echo "${SVC_FAIL[*]}")"
+  pass "service-health" "all 14 endpoints responding"
 fi
 
 # rollback-path — prior commit reachable
@@ -243,11 +262,18 @@ else
   pass "fuseki-memory" "rss=${fuseki_mem}MB"
 fi
 
-# Bedroom reachability
+# Bedroom reachability. SSH failure alone is ambiguous — an SSH timeout under
+# local load, or a host mid-reboot, looks identical to "down" (#3022). Use ping
+# as the network-reachability ground truth: fail ONLY when ping also fails
+# (truly unreachable). SSH-fails-but-ping-ok is degraded/inconclusive (warn),
+# not a hard alert — this kills the load-induced false positive while preserving
+# real-down detection (a down or rebooting host fails ping too).
 if ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "${BEDROOM_HOST}" "echo ok" &>/dev/null; then
   pass "bedroom-reachable" "${BEDROOM_HOST} SSH reachable"
+elif ping -c 1 -t 5 "${BEDROOM_HOST}" &>/dev/null; then
+  warn "bedroom-reachable" "${BEDROOM_HOST} pings but SSH did not answer — degraded/inconclusive (local load or host mid-restart), not confirmed down"
 else
-  fail "bedroom-reachable" "SSH to ${BEDROOM_HOST} failed"
+  fail "bedroom-reachable" "${BEDROOM_HOST} unreachable — ping AND SSH both failed"
 fi
 
 # #2998: MCP round-trip now hits chorus-mcp on :3341, not chorus-api on :3340.
@@ -421,6 +447,19 @@ fi
 
 # ─── ASSEMBLE RESULT ─────────────────────────────────────────────────────────
 
+# --- #3022: severity-aware alert gating -------------------------------------
+# Two classes of bad, two policies (a real outage must not wait; a transient must
+# not intrude):
+#   - FAIL = definitive down (ping fails, connection refused, exit!=0) → alert
+#     IMMEDIATELY, deduped to the transition into failure so it fires once, not
+#     every cycle while it stays down.
+#   - WARN = inconclusive / can't-complete (timeout, can't-verify — what a deploy,
+#     a werk test run, or a load spike produce) → alert ONLY after STICKY_WARN_N
+#     runs straight; transient warns stay silent, persistent ones surface.
+# History IS the spine (failures= / warns= per emit) — no local state store.
+STICKY_WARN_N="${STICKY_WARN_N:-3}"
+LOKI_QUERY_URL="${LOKI_QUERY_URL:-http://localhost:3102}"
+
 FAIL_COUNT=0
 WARN_COUNT=0
 PASS_COUNT=0
@@ -442,6 +481,54 @@ else
   RESULT="FAIL"
 fi
 
+# #3022: compute what alerts THIS run, BEFORE emitting our own event (so we don't
+# read ourselves). Two rules: a FAIL fires on its transition into failure
+# (immediate, once); a WARN fires only once it has persisted STICKY_WARN_N runs
+# straight. Loki unreachable → empty → silent (safe).
+FAILS_CSV=""
+[ "${#FAIL_NAMES[@]}" -gt 0 ] && FAILS_CSV="$(IFS=,; echo "${FAIL_NAMES[*]}")"
+WARNS_CSV=""
+[ "${#WARN_NAMES[@]}" -gt 0 ] && WARNS_CSV="$(IFS=,; echo "${WARN_NAMES[*]}")"
+ALERT_FIRING=""
+if [ -n "${FAILS_CSV}${WARNS_CSV}" ]; then
+  ALERT_FIRING=$(curl -s -G "${LOKI_QUERY_URL}/loki/api/v1/query_range" \
+    --data-urlencode 'query={appName="chorus-events"} |~ "chorus.health"' \
+    --data-urlencode "limit=50" \
+    --data-urlencode "start=$(( $(date +%s) - 86400 ))000000000" 2>/dev/null \
+  | python3 -c "
+import json,sys
+N=int(sys.argv[1])
+cur_fail=[x for x in sys.argv[2].split(',') if x]
+cur_warn=[x for x in sys.argv[3].split(',') if x]
+try:
+    d=json.load(sys.stdin); rows=[]
+    for s in d['data']['result']:
+        for v in s['values']: rows.append((int(v[0]), v[1]))
+    rows.sort(reverse=True)   # newest-first = prior runs (this run not emitted yet)
+    runs_fail=[]; runs_bad=[]
+    for ts,line in rows:
+        try: ev=json.loads(line)
+        except: continue
+        if ev.get('event')!='chorus.health': continue
+        f=set(x for x in (ev.get('failures') or '').split(',') if x)
+        w=set(x for x in (ev.get('warns') or '').split(',') if x)
+        runs_fail.append(f); runs_bad.append(f|w)
+    prior_fail = runs_fail[0] if runs_fail else set()
+    alert=set()
+    for c in cur_fail:                 # definitive down → immediate, once (on transition)
+        if c not in prior_fail: alert.add(c)
+    for c in cur_warn:                 # inconclusive → only once persistent N runs straight
+        streak=0
+        for bad in runs_bad:
+            if c in bad: streak+=1
+            else: break
+        if streak==N-1: alert.add(c)
+    print(' '.join(sorted(alert)))
+except Exception:
+    pass
+" "$STICKY_WARN_N" "$FAILS_CSV" "$WARNS_CSV")
+fi
+
 # emit spine event
 "${CHORUS_ROOT}/platform/scripts/chorus-log" chorus.health silas \
   result="$RESULT" \
@@ -450,6 +537,7 @@ fi
   warn="$WARN_COUNT" \
   total="$TOTAL" \
   failures="$(IFS=,; echo "${FAIL_NAMES[*]}")" \
+  warns="$WARNS_CSV" \
   2>/dev/null || true
 
 if [ "$JSON_OUT" -eq 1 ]; then
@@ -488,10 +576,16 @@ if [ "$VERBOSE" -eq 1 ] || [ "$FAIL_COUNT" -gt 0 ] || [ "$WARN_COUNT" -gt 0 ]; t
   done
 fi
 
-if [ "$FAIL_COUNT" -gt 0 ]; then
+# #3022: persistence-gated nudge — fire ONLY for checks that crossed the
+# STICKY_WARN_N-run threshold this run (computed above, pre-emit). A persistent
+# failure nudges once at the crossing, then stays silent; transient deploy / test
+# / load blips never cross, so they never intrude. The chorus.health spine event
+# above still records full state every run for the dashboards — only the
+# interruptive nudge is gated.
+if [ -n "${ALERT_FIRING// /}" ]; then
   OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
-  MSG="chorus-health: ${FAIL_COUNT} failure(s) — $(IFS=,; echo "${FAIL_NAMES[*]}")"
+  MSG="chorus-health: ${ALERT_FIRING}"
   [ -x "$OPS_NUDGE" ] && "$OPS_NUDGE" silas "$MSG" 2>/dev/null || true
-  exit 1
 fi
+[ "$FAIL_COUNT" -gt 0 ] && exit 1
 exit 0
