@@ -1,10 +1,17 @@
 #!/usr/bin/env bats
-# #2944 — stale-base silent-deletion guard in git-queue.sh push.
+# #2944 / #3026 — stale-base detection in git-queue.sh push.
 #
-# Bug class (three receipts 2026-05-15/16): long-lived werk branch silently
-# deletes peer-merged files because git's 3-way merge treats "file present
-# in current main, absent in branch history" as a deletion (no conflict).
-# This guard catches it at push time before the bad commit lands on main.
+# #2944 ORIGINAL premise: a long-lived werk branch silently deletes peer-merged
+# files because git's 3-way merge drops "present in main, absent in branch".
+# #3026 CORRECTION: that premise does NOT hold for the actual workflow. Push
+# targets the role branch; /acp then squash-merges, applying ONLY the branch's
+# own changeset — so a peer-added file absent from a stale branch SURVIVES the
+# squash (verified empirically: it's added on main's side, untouched on the
+# branch's, so the 3-way keeps it). The "deletions" are 2-way-diff artifacts,
+# not real reverts. Hard-blocking on them jammed the whole team (2026-05-21),
+# so #3026 downgraded the BLOCK to a non-fatal NOTE: detect + name the stale
+# files (so the operator can rebase for clean history), but never refuse.
+# These tests pin the note-not-block contract.
 #
 # Strategy: build self-contained git fixtures (origin/main + a stale werk
 # branch) and exercise the guard's pure-bash decision logic in isolation
@@ -51,8 +58,12 @@ teardown() {
   rm -rf "$TMPROOT"
 }
 
-# Helper — runs the same logic git-queue.sh's stale-base check uses.
-# Returns 0 (pass) or 1 (silent-deletions found) and prints the file list.
+# Helper — mirrors git-queue.sh's stale-base check AFTER #3026. The detection
+# logic is unchanged (it computes which peer-added files are absent from the
+# stale branch), but the contract is now NOTE-not-BLOCK: it ALWAYS returns 0
+# (the push proceeds) and prints any detected files so callers can assert what
+# the note would name. The squash-merge keeps these files (verified), so a
+# stale base is no longer a refusal.
 _check_stale_base() {
   local repo="$1"
   local _merge_base
@@ -64,9 +75,8 @@ _check_stale_base() {
   _silent_deletions=$(comm -23 <(printf '%s\n' "$_branch_deletions") <(printf '%s\n' "$_branch_touched") | grep -v '^$' || true)
   if [ -n "$_silent_deletions" ]; then
     printf '%s\n' "$_silent_deletions"
-    return 1
   fi
-  return 0
+  return 0  # #3026 — note, never block
 }
 
 @test "stale-base guard: clean branch with no peer merges passes" {
@@ -83,16 +93,17 @@ _check_stale_base() {
   [ "$status" -eq 0 ]
 }
 
-@test "stale-base guard: branch that doesn't include peer's c.txt triggers refusal" {
-  # The werk branch was cut BEFORE peer added c.txt. The werk makes its own
-  # commit touching only a.txt. From origin/main's perspective, pushing this
-  # branch would "delete" c.txt — silent stale-base ghost.
+@test "stale-base guard (#3026): branch missing peer's c.txt is NOTED but does NOT block" {
+  # The werk branch was cut BEFORE peer added c.txt and touches only a.txt.
+  # A 2-way diff makes it LOOK like the push deletes c.txt — but the /acp
+  # squash-merge applies only the branch's own changeset, so c.txt survives
+  # (verified empirically). #3026: detect it for the note, but never refuse.
   echo "kade-change" > "$WERK/a.txt"
   git -C "$WERK" add . && git -C "$WERK" commit -q -m "kade: touch a only"
 
   run _check_stale_base "$WERK"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"c.txt"* ]]
+  [ "$status" -eq 0 ]            # #3026 — no longer a refusal
+  [[ "$output" == *"c.txt"* ]]  # still named in the note so the operator can rebase if they want
 }
 
 @test "stale-base guard: deliberate deletion via git rm in branch commit does NOT trigger (not a false-positive)" {
@@ -135,13 +146,13 @@ _check_stale_base() {
   [ "$status" -eq 0 ]
 }
 
-@test "stale-base guard: silent-deletion message identifies the exact file" {
+@test "stale-base guard (#3026): the note identifies the exact stale file (without blocking)" {
   echo "kade-change" > "$WERK/a.txt"
   git -C "$WERK" add . && git -C "$WERK" commit -q -m "kade: touch a only"
 
   run _check_stale_base "$WERK"
-  [ "$status" -eq 1 ]
-  # c.txt is the only file peer added that branch never touched.
+  [ "$status" -eq 0 ]  # #3026 — note, not refusal
+  # c.txt is the only peer-added file the branch never touched — named in the note.
   [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 1 ]
   [[ "$output" == "c.txt" ]]
 }
