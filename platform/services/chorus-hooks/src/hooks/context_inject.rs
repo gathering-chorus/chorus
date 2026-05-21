@@ -165,6 +165,72 @@ fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
     results
 }
 
+/// Recent error-level log lines from Loki (#3032). Chorus search does NOT index
+/// logs, so this is the complementary half of the forcing function: the live
+/// "what's breaking right now" signal, injected every prompt. Fail-open and
+/// tightly time-boxed (300ms) — a slow or down Loki must never block a prompt.
+fn query_recent_log_errors() -> Vec<(String, String)> {
+    let now_ns: u128 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let start_ns = now_ns.saturating_sub(900_000_000_000); // last 15 minutes
+
+    let logql = r#"{job=~".+"} |~ "\"level\":\"error\"""#;
+    let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
+        .query("query", logql)
+        .query("start", &start_ns.to_string())
+        .query("end", &now_ns.to_string())
+        .query("limit", "5")
+        .query("direction", "backward")
+        .timeout(std::time::Duration::from_millis(300))
+        .call()
+    {
+        Ok(r) => r,
+        Err(_) => return vec![],
+    };
+
+    let body: serde_json::Value = match resp.into_json() {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+
+    parse_loki_errors(&body)
+}
+
+/// Pure extractor (testable): pull up to 5 compact "event role" summaries from a
+/// Loki query_range JSON body. JSON log lines collapse to "event role"; non-JSON
+/// lines fall back to a trimmed raw snippet.
+fn parse_loki_errors(body: &serde_json::Value) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if let Some(streams) = body.pointer("/data/result").and_then(|r| r.as_array()) {
+        for stream in streams {
+            if let Some(values) = stream.get("values").and_then(|v| v.as_array()) {
+                for pair in values {
+                    let arr = match pair.as_array() {
+                        Some(a) => a,
+                        None => continue,
+                    };
+                    let line = arr.get(1).and_then(|v| v.as_str()).unwrap_or("");
+                    let summary = serde_json::from_str::<serde_json::Value>(line)
+                        .ok()
+                        .and_then(|j| {
+                            let ev = j.get("event").and_then(|v| v.as_str())?;
+                            let role = j.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                            Some(format!("{} {}", ev, role).trim().to_string())
+                        })
+                        .unwrap_or_else(|| line.replace('\n', " ").chars().take(160).collect());
+                    if !summary.is_empty() {
+                        out.push((String::new(), summary));
+                    }
+                }
+            }
+        }
+    }
+    out.truncate(5);
+    out
+}
+
 /// Read the latest pulse snapshot and return a compact summary block.
 /// Returns None if the snapshot file is missing or unparseable.
 fn read_pulse_snapshot() -> Option<String> {
@@ -309,43 +375,70 @@ fn query_athena_domain(role: &str) -> Option<String> {
     Some(out)
 }
 
+/// All chorus-project memory dirs under ~/.claude/projects.
+/// #3032: the old path hardcoded "-Users-jeffbridwell-CascadeProjects/memory" —
+/// missing the "-chorus" project suffix — so read_dir failed and the per-prompt
+/// memory scan silently returned nothing. Derive instead: match any project key
+/// containing "chorus" that has a memory/ dir (robust to role-suffixed keys too).
+fn chorus_memory_dirs() -> Vec<std::path::PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    chorus_memory_dirs_in(&format!("{}/.claude/projects", home))
+}
+
+/// Pure (testable): chorus-keyed project `memory/` dirs under a projects root.
+fn chorus_memory_dirs_in(projects: &str) -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(projects) {
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().contains("chorus") {
+                let m = e.path().join("memory");
+                if m.is_dir() {
+                    dirs.push(m);
+                }
+            }
+        }
+    }
+    dirs
+}
+
 /// Scan memory files for related decisions and feedback
 fn scan_memory(keywords: &[String]) -> Vec<String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let memory_dir = format!(
-        "{}/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory",
-        home
-    );
-
     let mut hits = Vec::new();
-    let dir = match std::fs::read_dir(&memory_dir) {
-        Ok(d) => d,
-        Err(_) => return hits,
-    };
+    let mut seen_files = std::collections::HashSet::new();
 
-    for entry in dir.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|e| e != "md") {
-            continue;
-        }
-        if path.file_name().is_some_and(|n| n == "MEMORY.md") {
-            continue;
-        }
+    for memory_dir in chorus_memory_dirs() {
+        let dir = match std::fs::read_dir(&memory_dir) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
 
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            let lower = content.to_lowercase();
-            let match_count = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
-            if match_count >= 2 || (keywords.len() == 1 && match_count == 1) {
-                // Extract the first meaningful line after frontmatter
-                let body = content
-                    .split("---")
-                    .nth(2)
-                    .unwrap_or(&content)
-                    .trim();
-                let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
-                if !first_line.is_empty() {
-                    let fname = path.file_name().unwrap_or_default().to_string_lossy();
-                    hits.push(format!("[{}] {}", fname, first_line));
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "md") {
+                continue;
+            }
+            if path.file_name().is_some_and(|n| n == "MEMORY.md") {
+                continue;
+            }
+            let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if !seen_files.insert(fname.clone()) {
+                continue; // same filename already scanned in another project dir
+            }
+
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let lower = content.to_lowercase();
+                let match_count = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
+                if match_count >= 2 || (keywords.len() == 1 && match_count == 1) {
+                    // Extract the first meaningful line after frontmatter
+                    let body = content
+                        .split("---")
+                        .nth(2)
+                        .unwrap_or(&content)
+                        .trim();
+                    let first_line: String = body.lines().next().unwrap_or("").chars().take(150).collect();
+                    if !first_line.is_empty() {
+                        hits.push(format!("[{}] {}", fname, first_line));
+                    }
                 }
             }
         }
@@ -454,12 +547,20 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             .spawn();
     }
 
+    // #3032: envelope-level latency cap. Each remote fetch is individually
+    // fail-open + timeout-bounded, but all-cold (hybrid + athena + logs) could
+    // still stack past the ~400ms warm budget. Gate the later remote fetches on
+    // a wall-clock budget so a slow envelope degrades (drops sections) rather
+    // than blowing the per-prompt latency contract.
+    let envelope_start = std::time::Instant::now();
+    let envelope_budget = std::time::Duration::from_millis(700);
+
     // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). Cached per
     // (role, keywords-hash) with HYBRID_CACHE_TTL so successive prompts that
     // share keywords don't re-query.
     let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query);
 
-    // Scan memory files
+    // Scan memory files (local, cheap)
     let memory_hits = scan_memory(&keywords);
 
     // Foundational context primitives — read every prompt, not just when search
@@ -469,7 +570,20 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // locks that contract.
     let pulse_block = read_pulse_snapshot();
     let spine_events = query_recent_spine(8);
-    let athena_block = cached_query_athena_domain(&role_name);
+    let athena_block = if envelope_start.elapsed() < envelope_budget {
+        cached_query_athena_domain(&role_name)
+    } else {
+        None
+    };
+
+    // Live log signal (#3032) — recent errors from Loki, the half Chorus search
+    // can't see (logs aren't indexed). Fail-open, 300ms-capped, and dropped
+    // entirely if the envelope is already over budget.
+    let log_errors = if envelope_start.elapsed() < envelope_budget {
+        query_recent_log_errors()
+    } else {
+        Vec::new()
+    };
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
@@ -504,6 +618,14 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         context.push_str(athena);
     }
 
+    if !log_errors.is_empty() {
+        context.push('\n');
+        context.push_str(&format!("## Logs ({} recent errors, 15m)\n", log_errors.len()));
+        for (_ts, summary) in &log_errors {
+            context.push_str(&format!("  {}\n", summary));
+        }
+    }
+
     if !chorus_results.is_empty() {
         context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
         for (role, content, ts) in &chorus_results {
@@ -522,7 +644,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     // If every source is empty, skip injection entirely.
     if pulse_block.is_none() && spine_events.is_empty() && athena_block.is_none()
-        && chorus_results.is_empty() && memory_hits.is_empty() {
+        && chorus_results.is_empty() && memory_hits.is_empty() && log_errors.is_empty() {
         info!(
             gate = "context-inject",
             event = "no-results",
@@ -605,5 +727,59 @@ mod tests {
         assert!(kw2.contains(&"check".to_string()), "check should be kept");
         assert!(kw2.contains(&"nudges".to_string()));
         assert!(kw2.contains(&"working".to_string()));
+    }
+
+    // #3032: Logs section — pure Loki-body parser.
+    #[test]
+    fn parse_loki_errors_extracts_event_role_and_caps_at_5() {
+        let body = serde_json::json!({
+            "data": { "result": [{
+                "stream": { "job": "daemon-logs" },
+                "values": [
+                    ["1779000000000000000", "{\"event\":\"crawler.domain.failed\",\"role\":\"silas\",\"level\":\"error\"}"],
+                    ["1779000000000000001", "{\"event\":\"mcp.tool.error\",\"level\":\"error\"}"],
+                    ["1779000000000000002", "raw non-json error line"],
+                    ["1779000000000000003", "{\"event\":\"a\",\"role\":\"x\"}"],
+                    ["1779000000000000004", "{\"event\":\"b\",\"role\":\"y\"}"],
+                    ["1779000000000000005", "{\"event\":\"c\",\"role\":\"z\"}"]
+                ]
+            }]}
+        });
+        let out = parse_loki_errors(&body);
+        assert!(out.len() <= 5, "caps at 5, got {}", out.len());
+        assert_eq!(out[0].1, "crawler.domain.failed silas");
+        assert_eq!(out[1].1, "mcp.tool.error", "no role → just event");
+        assert_eq!(out[2].1, "raw non-json error line", "non-json falls back to snippet");
+    }
+
+    #[test]
+    fn parse_loki_errors_empty_on_no_results() {
+        assert!(parse_loki_errors(&serde_json::json!({ "data": { "result": [] } })).is_empty());
+        assert!(parse_loki_errors(&serde_json::json!({ "nope": 1 })).is_empty());
+    }
+
+    // #3032: memory-scan path — the dead-hardcode regression. The fix derives
+    // chorus-keyed project memory dirs; this proves it finds them and skips others.
+    #[test]
+    fn chorus_memory_dirs_finds_chorus_keyed_project_with_memory() {
+        let tmp = std::env::temp_dir().join(format!("ci-3032-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("-Users-x-CascadeProjects-chorus").join("memory")).unwrap();
+        std::fs::create_dir_all(tmp.join("-Users-x-somethingelse").join("memory")).unwrap();
+        std::fs::create_dir_all(tmp.join("-Users-x-chorus-nomemory")).unwrap(); // chorus key, no memory dir
+
+        let dirs = chorus_memory_dirs_in(tmp.to_str().unwrap());
+        assert!(
+            dirs.iter().any(|d| d.ends_with("memory") && d.to_string_lossy().contains("chorus")),
+            "finds the chorus project memory dir: {:?}", dirs
+        );
+        assert!(
+            !dirs.iter().any(|d| d.to_string_lossy().contains("somethingelse")),
+            "skips non-chorus projects: {:?}", dirs
+        );
+        assert!(
+            !dirs.iter().any(|d| d.to_string_lossy().contains("nomemory")),
+            "skips chorus-keyed dirs that lack a memory/ subdir: {:?}", dirs
+        );
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
