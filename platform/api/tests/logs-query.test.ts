@@ -179,3 +179,34 @@ describe('chorus_logs_recent_errors (#2840)', () => {
     expect(decodeURIComponent(captured)).toContain('level\\":\\"error');
   });
 });
+
+describe('non-JSON / file-tailed lines (#3031)', () => {
+  it('keeps raw non-JSON lines (nightly SUITE|, coverage) instead of silently dropping them', async () => {
+    const tsNs = String(1_700_000_000_000 * 1_000_000);
+    const rawLine =
+      'SUITE|bats|/Users/jeffbridwell/CascadeProjects/chorus/platform/tests/bedroom-health.bats|silas|pass|bats: 4 passed, 0 failed';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: makeFetch([
+        {
+          values: [
+            [tsNs, rawLine], // file-tailed raw line — the old catch{return null} dropped this
+            lokiLine('chorus_commit.refused', { role: 'kade', card_id: 3031 }), // JSON spine line
+          ],
+        },
+      ]),
+    };
+    const r = await queryLogs({ query: '{job="daemon-logs"}', limit: 10 }, deps);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // BOTH survive — the raw SUITE| line is no longer dropped (the #3031 bug: 224 raw vs 0 here)
+    expect(r.events).toHaveLength(2);
+    const raw = r.events.find((e) => e.raw !== undefined);
+    expect(raw?.raw).toBe(rawLine);
+    // raw lines carry Loki's own entry ts (they have no embedded ts), not new Date()
+    expect(raw?.ts).toBe(new Date(1_700_000_000_000).toISOString());
+    // JSON spine lines still parse into structured fields (no regression)
+    const spine = r.events.find((e) => e.event === 'chorus_commit.refused');
+    expect(spine).toMatchObject({ role: 'kade', card_id: 3031 });
+  });
+});
