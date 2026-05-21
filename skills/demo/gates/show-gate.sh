@@ -23,6 +23,11 @@ LOKI_URL="${LOKI_URL:-http://localhost:3102}"
 CARD_ID="${1:-}"
 ROLE="${2:-system}"
 [ -z "$CARD_ID" ] && exit 0
+# #3030: card 99998 is the synthetic test card — it never has a real
+# card.demo.started, so it generated ~70% of the demo.show.failed/no_demo_started
+# noise that topped the pain board (a phantom: non-blocking, consumed by nothing).
+# Keep test traffic out of prod observability; allow without emitting.
+[ "$CARD_ID" = "99998" ] && exit 0
 
 "$CHORUS_LOG" demo.show.started "$ROLE" card="$CARD_ID" 2>/dev/null || true
 
