@@ -2528,6 +2528,14 @@ async function notifySilasOfMcpError(event: string, fields: Record<string, unkno
   const errorType = String(fields['error_type'] ?? fields['kind'] ?? '');
   const errorMessage = String(fields['error_message'] ?? '');
   const traceId = String(fields['trace_id'] ?? '');
+  // #3022 — caller-error suppression: validation errors and typed refusals are
+  // the caller's own bad call, already returned to that caller in the tool
+  // result. They are not ops incidents, so they must not intrude on the ops
+  // session. Only unexpected/systemic failures notify. The spine event was
+  // already written by the caller above, so these stay fully observable.
+  if (/^Invalid (arguments|option)|expected one of|refused:/i.test(errorMessage)) {
+    return;
+  }
   const summary = [
     '[mcp.error]',
     event,
