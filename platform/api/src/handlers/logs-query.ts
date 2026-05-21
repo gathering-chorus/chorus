@@ -13,6 +13,7 @@ export type LogRow = {
   trace_id?: string;
   branch?: string;
   source?: string;
+  raw?: string;
   payload: Record<string, unknown>;
 };
 
@@ -62,12 +63,20 @@ function resolveTimeRange(deps: LogsQueryDeps, start?: string, end?: string, win
   return { startNs: String(startMs * 1_000_000), endNs: String(endMs * 1_000_000) };
 }
 
-function parseLokiLine(line: string): LogRow | null {
+// #3031: parse Loki lines, KEEPING non-JSON file-tailed lines instead of dropping
+// them. Loki tails raw text (nightly SUITE|… results, coverage, daemon logs)
+// alongside JSON spine events; the old `catch { return null }` silently dropped
+// every raw line, making file-tailed data invisible through this tool (224 in raw
+// Loki vs 0 here). Non-JSON lines now return { ts, raw } so they're queryable.
+// tsNs is Loki's own entry timestamp — the truth for raw lines (which carry no ts).
+function parseLokiLine(line: string, tsNs: string): LogRow {
+  const ms = Number(tsNs) / 1_000_000;
+  const lokiTs = Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString();
   try {
     const obj = JSON.parse(line) as Record<string, unknown>;
     const { ts, event, role, level, card_id, trace_id, branch, source, ...rest } = obj;
     return {
-      ts: typeof ts === 'string' ? ts : new Date().toISOString(),
+      ts: typeof ts === 'string' ? ts : lokiTs,
       event: typeof event === 'string' ? event : undefined,
       role: typeof role === 'string' ? role : undefined,
       level: typeof level === 'string' ? level : undefined,
@@ -78,7 +87,7 @@ function parseLokiLine(line: string): LogRow | null {
       payload: rest,
     };
   } catch {
-    return null;
+    return { ts: lokiTs, raw: line, payload: {} };
   }
 }
 
@@ -100,9 +109,8 @@ async function executeLokiQuery(query: string, startNs: string, endNs: string, l
   const body = await res.json() as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
   const events: LogRow[] = [];
   for (const stream of body.data?.result ?? []) {
-    for (const [, line] of stream.values ?? []) {
-      const row = parseLokiLine(line);
-      if (row) events.push(row);
+    for (const [tsNs, line] of stream.values ?? []) {
+      events.push(parseLokiLine(line, tsNs));
     }
   }
   events.sort((a, b) => a.ts.localeCompare(b.ts));
