@@ -61,11 +61,6 @@ fi
 
 start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
 
-query='PREFIX chorus: <https://jeffbridwell.com/chorus#>
-SELECT ?f ?p WHERE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?p } }'
-resp=$(curl -s -G -H 'Accept: application/sparql-results+json' \
-  --data-urlencode "query=$query" "$FUSEKI_BASE/query" 2>/dev/null)
-
 files=0; edges=0; failures=0; batch_body=""
 
 flush_batch() {
@@ -75,32 +70,28 @@ flush_batch() {
   batch_body=""
 }
 
-while IFS=$'\t' read -r uri filepath; do
+# #3021: TARGETED lookups — query ONLY each owner-confirmed core file's URI,
+# not a full ~6000-File scan (that scan cost 21s to tag 5 files). One small
+# query per BELONGS_MAP entry, matched on canonical path suffix.
+for entry in "${BELONGS_MAP[@]}"; do
+  rel="${entry%%|*}"; rest="${entry#*|}"; dom="${rest%%|*}"; owner="${rest#*|}"
+  q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?f WHERE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?p .
+  FILTER(STRENDS(STR(?p), "/'"$rel"'") && !CONTAINS(STR(?p), "/chorus-werk/")) } } LIMIT 1'
+  uri=$(curl -s -G -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=$q" "$FUSEKI_BASE/query" 2>/dev/null \
+    | python3 -c "import json,sys
+try:
+    b=json.load(sys.stdin)['results']['bindings']; print(b[0]['f']['value'] if b else '')
+except Exception: print('')")
   [ -z "$uri" ] && continue
-  case "$filepath" in *"/chorus-werk/"*) continue ;; esac   # canonical only
-  rel=$(rel_of "$filepath")
-
-  dom=""; owner=""
-  for entry in "${BELONGS_MAP[@]}"; do
-    p="${entry%%|*}"; rest="${entry#*|}"
-    if [ "$rel" = "$p" ]; then dom="${rest%%|*}"; owner="${rest#*|}"; break; fi
-  done
-  [ -z "$dom" ] && continue
 
   batch_body="${batch_body}DELETE WHERE { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileInDomain> ?_d } } ;
 DELETE WHERE { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileHasOwner> ?_o } } ;
 INSERT DATA { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileInDomain> <${CHORUS_NS}${dom}> ; <${CHORUS_NS}fileHasOwner> <${CHORUS_NS}${owner}> } } ;
 "
   files=$((files + 1)); edges=$((edges + 1))
-done < <(echo "$resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    for b in d['results']['bindings']:
-        print(b.get('f',{}).get('value',''), b.get('p',{}).get('value',''), sep='\t')
-except Exception:
-    pass
-")
+done
 
 flush_batch
 

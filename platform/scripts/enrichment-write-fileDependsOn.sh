@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
-# enrichment-write-fileDependsOn.sh — #3017: enrichment-side writer that emits
-# chorus:fileDependsOn edges for the GLOBAL set of crawler-hydrated chorus:File
-# instances, deriving the edge BY FUNCTION (call-site detection), NOT by path.
+# enrichment-write-fileDependsOn.sh — #3017/#3021: blast-radius writer.
+# fileDependsOn = what a file USES (depends-on). Inbound set per domain =
+# that domain's file-level blast-radius:  blast(D) = { f | f fileDependsOn D }.
 #
-# fileInDomain (#2844) says what a file IS (belongs-to / domain-radius);
-# fileDependsOn says what a file USES (depends-on). The inbound set per domain
-# is that domain's file-level blast-radius:  blast(D) = { f | f fileDependsOn D }.
+# #3021 rewrite: ONE filesystem ripgrep pass per dependency pattern (not a full
+# ~6000-File scan + grep-each-file, which cost 33s), excluding dist/build +
+# node_modules + werk and restricting to code/test extensions. Pattern tightened
+# to actual emit/use call-sites — drops the soft-token false positives (and the
+# dist exclusion drops the dist artifacts) that put precision at ~91%.
 #
-# DEPENDENCY_MAP pairs an extended-regex over file CONTENT with the domain the
-# match implies. A file matching N patterns gets N edges (N:N is normal, #3017).
-# Idempotent per matched file: DELETE its fileDependsOn edges, then INSERT the
-# detected set. writeOwner=chorus:enrichment (#2827 contract).
-#
-# Spine event: enrichment.fileDependsOn.written {files, edges, duration_ms, failures}
-#
-# Validated on chorus:spine (chorus-log emitters). The pass is GLOBAL (iterates
-# every hydrated chorus:File); the MAP is the extension point — one line per
-# domain surface, no code change.
+# Idempotent per (file, domain): DELETE that edge then INSERT it.
+# writeOwner=chorus:enrichment. Spine: enrichment.fileDependsOn.written.
 
 set -uo pipefail
 
@@ -28,9 +22,18 @@ CHORUS_NS="https://jeffbridwell.com/chorus#"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
-# <extended-regex over file content>|<domain-id>. BY FUNCTION (call-site), not path.
+# <extended-regex of a domain's API surface as USED by a consumer>|<domain>.
+# IMPORTANT: the LAST pipe-section is the DOMAIN LABEL (parsed below via
+# dom="${entry##*|}"), NOT a regex alternative. So the trailing "spine" names
+# the domain — it is not a bare match-everything token. (Don't be fooled into
+# feeding the whole entry to ripgrep; the script splits the domain off first.)
+#
+# Two-sided blast-radius — a file is in spine's radius if it EMITS to spine
+# (chorus-log/emitSpine/...) OR CONSUMES it: SpineEntry/SpineEvent types, reads
+# chorus.log via spineLogPath/chorusLogPath, parses spine_events, tags
+# source:'spine'. Emit-only missed real readers (context-spine.ts, chorus-rcas.ts).
 DEPENDENCY_MAP=(
-  'chorus-log |chorus_log\(|appendSpine|writeSpine|emitSpine|/chorus-log|chorus_logs_|spine_event|spineEmit|spine\.emit|spine-events\.json|chorus_spine|emit_spine|spine_emit|appendToSpine|writeToSpine|emitSpineEvent|recordSpineEvent|/spine/|/api/spine|spine\.append\(|spine\.write\(|spine\.record\(|spine_tick|chorusLog\(|spine'
+  'chorus-log |chorus_log\(|appendSpine|writeSpine|emitSpine|/chorus-log|chorus_logs_|SpineEntry|SpineEvent|spineLogPath|chorusLogPath|spine_events|source: ?.spine.|spine'
 )
 
 post_update() {
@@ -39,13 +42,18 @@ post_update() {
     --data-binary "$1" "$FUSEKI_UPDATE" 2>/dev/null || echo "000"
 }
 
-# resolve a graph filePath (canonical OR per-role werk) to a readable path on
-# disk; prefer the canonical tree so content is current.
-resolve_path() {
-  local fp="$1" rel
-  rel=$(echo "$fp" | sed -E 's|.*/(chorus(-werk/[^/]+)?)/||')
-  if [ -f "$CHORUS_ROOT/$rel" ]; then echo "$CHORUS_ROOT/$rel"; return; fi
-  [ -f "$fp" ] && echo "$fp"
+# canonical rel-path -> chorus:File URI (targeted; canonical only)
+uri_for_rel() {
+  local rel="$1"
+  local q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?f WHERE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?p .
+  FILTER(STRENDS(STR(?p), "/'"$rel"'") && !CONTAINS(STR(?p), "/chorus-werk/")) } } LIMIT 1'
+  curl -s -G -H 'Accept: application/sparql-results+json' \
+    --data-urlencode "query=$q" "$FUSEKI_BASE/query" 2>/dev/null \
+    | python3 -c "import json,sys
+try:
+    b=json.load(sys.stdin)['results']['bindings']; print(b[0]['f']['value'] if b else '')
+except Exception: print('')"
 }
 
 # --- main ---
@@ -57,12 +65,6 @@ if ! curl -sf --max-time 3 "http://localhost:3030/\$/ping" -o /dev/null 2>/dev/n
 fi
 
 start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
-
-query='PREFIX chorus: <https://jeffbridwell.com/chorus#>
-SELECT ?f ?p WHERE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?p } }'
-resp=$(curl -s -G -H 'Accept: application/sparql-results+json' \
-  --data-urlencode "query=$query" "$FUSEKI_BASE/query" 2>/dev/null)
-
 files=0; edges=0; failures=0; batch_body=""; batch_size=0
 
 flush_batch() {
@@ -72,47 +74,34 @@ flush_batch() {
   batch_body=""; batch_size=0
 }
 
-while IFS=$'\t' read -r uri filepath; do
-  [ -z "$uri" ] && continue
-  # Tag the canonical tree only — skip stale/transient werk instances the
-  # crawler hydrated (e.g. the retired chorus-werk/kade/ tree, #2913).
-  case "$filepath" in *"/chorus-werk/"*) continue ;; esac
-  path=$(resolve_path "$filepath")
-  [ -z "$path" ] && continue
-  # fileDependsOn is a CODE-dependency edge. A doc mentioning "spine" in prose
-  # does not depend on spine — restrict to code/test artifacts.
-  case "$path" in
-    *.ts|*.tsx|*.js|*.mjs|*.cjs|*.rs|*.sh|*.bash|*.bats|*.py) ;;
-    *) continue ;;
-  esac
+# rg if available, else grep -r — ONE pass over canonical, excluding dist/build.
+have_rg=0; command -v rg >/dev/null 2>&1 && have_rg=1
 
-  detected=()
-  for entry in "${DEPENDENCY_MAP[@]}"; do
-    pat="${entry%|*}"; dom="${entry##*|}"
-    if grep -qE "$pat" "$path" 2>/dev/null; then detected+=("$dom"); fi
-  done
-  [ "${#detected[@]}" -eq 0 ] && continue
-
-  batch_body="${batch_body}DELETE WHERE { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileDependsOn> ?_d } } ;
+for entry in "${DEPENDENCY_MAP[@]}"; do
+  pat="${entry%|*}"; dom="${entry##*|}"
+  if [ "$have_rg" -eq 1 ]; then
+    matches=$(rg -l --no-messages \
+      -t ts -t js -t rust -t sh -t python \
+      -g '!**/dist/**' -g '!**/dist.prev/**' -g '!**/node_modules/**' -g '!**/chorus-werk/**' \
+      -e "$pat" "$CHORUS_ROOT" 2>/dev/null)
+  else
+    matches=$(grep -rlE --include='*.ts' --include='*.js' --include='*.sh' --include='*.rs' --include='*.py' --include='*.bats' \
+      --exclude-dir=dist --exclude-dir=dist.prev --exclude-dir=node_modules --exclude-dir=chorus-werk \
+      "$pat" "$CHORUS_ROOT" 2>/dev/null)
+  fi
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in *"/dist/"*|*"/dist.prev/"*|*"/node_modules/"*|*"/chorus-werk/"*) continue ;; esac
+    rel="${f#"$CHORUS_ROOT"/}"
+    uri=$(uri_for_rel "$rel")
+    [ -z "$uri" ] && continue
+    batch_body="${batch_body}DELETE WHERE { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileDependsOn> <${CHORUS_NS}${dom}> } } ;
+INSERT DATA { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileDependsOn> <${CHORUS_NS}${dom}> } } ;
 "
-  ins=""
-  for dom in "${detected[@]}"; do
-    ins="${ins} <${uri}> <${CHORUS_NS}fileDependsOn> <${CHORUS_NS}${dom}> ."
-    edges=$((edges + 1))
-  done
-  batch_body="${batch_body}INSERT DATA { GRAPH <${HYDRATION_GRAPH}> {${ins} } } ;
-"
-  files=$((files + 1)); batch_size=$((batch_size + 1))
-  [ "$batch_size" -ge 100 ] && flush_batch
-done < <(echo "$resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    for b in d['results']['bindings']:
-        print(b.get('f',{}).get('value',''), b.get('p',{}).get('value',''), sep='\t')
-except Exception:
-    pass
-")
+    files=$((files + 1)); edges=$((edges + 1)); batch_size=$((batch_size + 1))
+    [ "$batch_size" -ge 50 ] && flush_batch
+  done <<< "$matches"
+done
 
 flush_batch
 
