@@ -75,6 +75,18 @@ if [ "$CMD" = "chorus-log" ] && [ -n "${1:-}" ]; then
         ;;
     esac
   fi
+  # #3023 — branch env-bridge: stamp the git surface the work ran on as a
+  # first-class key (third observability dimension alongside trace_id/card_id).
+  # MUST-carry list is the git/werk-bound events — pull/commit/acp (chorus_*),
+  # build/deploy, and card lifecycle. Other events leave branch unset. This is
+  # what makes card-vs-werk divergence (a step on the wrong werk) queryable.
+  if [ -n "${CHORUS_BRANCH:-}" ]; then
+    case "$EVENT_NAME" in
+      chorus_*|build.*|deploy.*|card.*)
+        EXTRA_KV+=("branch=${CHORUS_BRANCH}")
+        ;;
+    esac
+  fi
   if [ -n "$ROLE_ARG" ]; then
     exec "$SHIM" "$CMD" "$EVENT_NAME" "$ROLE_ARG" "${EXTRA_KV[@]}" "$@"
   else

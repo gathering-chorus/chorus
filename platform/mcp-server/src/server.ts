@@ -23,7 +23,7 @@ import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
-import { queryLogs, recentErrors, logsForCard, logsForTrace, type LogsQueryDeps } from './handlers/logs-query';
+import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { resolveGitQueuePath } from './git-queue-path';
 import { executeDesignRefresh } from './design-refresh';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
@@ -865,6 +865,11 @@ const LogsForTraceInput = z.object({
   time_window: TimeWindowEnum.optional().describe('Window. Default 1h.'),
 });
 
+const LogsForBranchInput = z.object({
+  branch: z.string().min(1).describe('Git branch the work ran on, e.g. kade/3023. Returns every event stamped with this branch (#3023).'),
+  time_window: TimeWindowEnum.optional().describe('Window. Default 1d.'),
+});
+
 const TIME_WINDOW_DESC = 'Time range for the query — pick one: 5m=five minutes, 15m=fifteen minutes, 1h=one hour, 6h=six hours, 1d=one day. Larger windows scan more Loki data.';
 
 const LOGS_QUERY_TOOL_DEF = {
@@ -925,6 +930,21 @@ const LOGS_FOR_TRACE_TOOL_DEF = {
       time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
     },
     required: ['trace_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const LOGS_FOR_BRANCH_TOOL_DEF = {
+  name: 'chorus_logs_for_branch',
+  description:
+    'Use this to retrieve every event stamped with one git branch (e.g. kade/3023) — the git surface the work actually ran on. The third observability key: card_id = the whole chain, trace_id = one action, branch = where it ran. Backed by #3023 branch propagation. Default window 1d. Use it to catch card-vs-werk divergence (a step that ran on the wrong werk shows the wrong branch). Do NOT use for the card chain (use chorus_logs_for_card) or a single action (use chorus_logs_for_trace).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      branch: { type: 'string', description: 'Git branch, e.g. kade/3023' },
+      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1d.' },
+    },
+    required: ['branch'],
     additionalProperties: false,
   },
 } as const;
@@ -1871,6 +1891,17 @@ async function executeAcp(
   // the chorus-werk-sync 10-min poll. Best-effort: kickstart failure does
   // not fail /acp because the merge already landed; flag in step event so
   // an operator can recover manually.
+  // #3023 — hand this acp's trace to the building-pipeline. launchctl kickstart
+  // does NOT carry env across the launchd boundary, and the squash-merge strips
+  // commit trailers, so a file is the only channel that survives. The pipeline
+  // reads this and exports CHORUS_TRACE_ID/CHORUS_CARD_ID/CHORUS_BRANCH so its
+  // build/deploy emits link to this acp's trace instead of firing trace-less.
+  try {
+    const fsp = await import('fs/promises');
+    await fsp.writeFile('/tmp/chorus-acp-release-trace.json',
+      JSON.stringify({ trace_id, card_id: cardId, branch }) + '\n');
+  } catch { /* best-effort — pipeline falls back to no-trace if the file is absent */ }
+
   stepEmit('release-trigger', 'started');
   try {
     await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env, timeout: 5_000 });
@@ -2878,6 +2909,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       LOGS_RECENT_ERRORS_TOOL_DEF,
       LOGS_FOR_CARD_TOOL_DEF,
       LOGS_FOR_TRACE_TOOL_DEF,
+      LOGS_FOR_BRANCH_TOOL_DEF,
       TREE_GET_TOOL_DEF,
       OWNERSHIP_LOOKUP_TOOL_DEF,
       BLAST_RADIUS_TOOL_DEF,
@@ -3086,7 +3118,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       case 'chorus_logs_query':
       case 'chorus_logs_recent_errors':
       case 'chorus_logs_for_card':
-      case 'chorus_logs_for_trace': {
+      case 'chorus_logs_for_trace':
+      case 'chorus_logs_for_branch': {
         const lokiDeps: LogsQueryDeps = {
           fetchImpl: fetchImpl as unknown as typeof fetch,
           lokiUrl: process.env.CHORUS_LOKI_URL || 'http://localhost:3102',
@@ -3106,6 +3139,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           const parsed = LogsForCardInput.safeParse(req.params.arguments);
           if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
           result = await logsForCard(parsed.data, lokiDeps);
+        } else if (tool === 'chorus_logs_for_branch') {
+          const parsed = LogsForBranchInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          result = await logsForBranch(parsed.data, lokiDeps);
         } else {
           const parsed = LogsForTraceInput.safeParse(req.params.arguments);
           if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);

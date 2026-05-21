@@ -32,6 +32,29 @@ jobs:
           echo "user=$(whoami)"
           echo "commit=$(git -C /Users/jeffbridwell/CascadeProjects/chorus rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
+      # #3023 — trace context across the launchd boundary. chorus_acp writes
+      # /tmp/chorus-acp-release-trace.json before kickstart (kickstart doesn't
+      # carry env; the squash strips trailers — a file is the only channel).
+      # Loading it into $GITHUB_ENV makes every build/deploy step below inherit
+      # CHORUS_TRACE_ID/CHORUS_CARD_ID/CHORUS_BRANCH, which chorus-log's env
+      # bridge (#2857 trace/card, #3023 branch) then stamps onto build.completed
+      # / deploy.completed — so they link to the acp's trace instead of firing
+      # trace-less as role=system.
+      - name: trace context
+        run: |
+          F=/tmp/chorus-acp-release-trace.json
+          if [ -f "$F" ]; then
+            TRACE=$(python3 -c "import json;print(json.load(open('$F')).get('trace_id',''))" 2>/dev/null)
+            CARD=$(python3 -c "import json;print(json.load(open('$F')).get('card_id',''))" 2>/dev/null)
+            BRANCH=$(python3 -c "import json;print(json.load(open('$F')).get('branch',''))" 2>/dev/null)
+            [ -n "$TRACE" ] && echo "CHORUS_TRACE_ID=$TRACE" >> "$GITHUB_ENV"
+            [ -n "$CARD" ] && echo "CHORUS_CARD_ID=$CARD" >> "$GITHUB_ENV"
+            [ -n "$BRANCH" ] && echo "CHORUS_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+            echo "trace context: trace=$TRACE card=$CARD branch=$BRANCH"
+          else
+            echo "no acp release-trace file — pipeline runs trace-less (manual kickstart?)"
+          fi
+
       - name: chorus-build chorus-hooks
         run: |
           export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus

@@ -240,11 +240,23 @@ describe('spine event metadata enrichment (#1817)', () => {
       expect(String(event.trace_id).length).toBeGreaterThan(0);
     });
 
-    it('each emit gets a unique trace_id', () => {
-      const ctx = createSpineContext({ appName: 'cards' });
-      const e1 = emit('test.trace1', 'kade', {}, { logFile: tmpFile, context: ctx });
-      const e2 = emit('test.trace2', 'kade', {}, { logFile: tmpFile, context: ctx });
-      expect(e1.trace_id).not.toBe(e2.trace_id);
+    it('each emit gets a unique trace_id when no CHORUS_TRACE_ID env override is set', () => {
+      // #3023 — emit now falls back to CHORUS_TRACE_ID env when extra has none
+      // (so a multi-call action shares one trace). git-queue sets that env
+      // during a commit, so this uniqueness assertion must clear it to test the
+      // no-override path. With an env override set, sharing is the intended
+      // behavior (covered in emit.test.ts).
+      const savedTrace = process.env.CHORUS_TRACE_ID;
+      delete process.env.CHORUS_TRACE_ID;
+      try {
+        const ctx = createSpineContext({ appName: 'cards' });
+        const e1 = emit('test.trace1', 'kade', {}, { logFile: tmpFile, context: ctx });
+        const e2 = emit('test.trace2', 'kade', {}, { logFile: tmpFile, context: ctx });
+        expect(e1.trace_id).not.toBe(e2.trace_id);
+      } finally {
+        if (savedTrace === undefined) delete process.env.CHORUS_TRACE_ID;
+        else process.env.CHORUS_TRACE_ID = savedTrace;
+      }
     });
 
     it('caller can pass trace_id to continue a trace', () => {

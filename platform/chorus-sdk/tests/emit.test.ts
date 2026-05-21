@@ -63,6 +63,65 @@ describe('emit', () => {
     expect(last).toHaveProperty('card_id', '177');
   });
 
+  describe('#3023 — trace_id + branch env-fallback (TS twin of the shim-wrapper bridge)', () => {
+    const saved = { trace: process.env.CHORUS_TRACE_ID, branch: process.env.CHORUS_BRANCH };
+    afterEach(() => {
+      if (saved.trace === undefined) delete process.env.CHORUS_TRACE_ID; else process.env.CHORUS_TRACE_ID = saved.trace;
+      if (saved.branch === undefined) delete process.env.CHORUS_BRANCH; else process.env.CHORUS_BRANCH = saved.branch;
+    });
+
+    it('AC1: uses CHORUS_TRACE_ID from env when extra has none — so a multi-call action shares one trace', () => {
+      process.env.CHORUS_TRACE_ID = '019e4a00-aaaa-7000-8000-000000000001';
+      const a = emit('card.demo.started', 'kade', {}, { logFile: tmpFile });
+      const b = emit('card.item.commented', 'kade', {}, { logFile: tmpFile });
+      expect(a.trace_id).toBe('019e4a00-aaaa-7000-8000-000000000001');
+      expect(b.trace_id).toBe(a.trace_id); // both emits of the demo action link
+    });
+
+    it('explicit extra.trace_id still wins over env', () => {
+      process.env.CHORUS_TRACE_ID = '019e4a00-aaaa-7000-8000-000000000001';
+      const e = emit('card.demo.started', 'kade', { trace_id: 'explicit-trace' }, { logFile: tmpFile });
+      expect(e.trace_id).toBe('explicit-trace');
+    });
+
+    it('mints a random trace when neither extra nor env is set (unchanged behavior)', () => {
+      delete process.env.CHORUS_TRACE_ID;
+      const e = emit('card.demo.started', 'kade', {}, { logFile: tmpFile });
+      expect(typeof e.trace_id).toBe('string');
+      expect(e.trace_id).not.toBe('explicit-trace');
+    });
+
+    it('AC1: reads /tmp/demo-trace-<card>.txt when no extra/env trace, so cards-CLI demo emits link (matches chorus_log.rs #2897)', () => {
+      const savedTrace = process.env.CHORUS_TRACE_ID;
+      delete process.env.CHORUS_TRACE_ID;
+      const card = 999301;
+      const tracePath = `/tmp/demo-trace-${card}.txt`;
+      fs.writeFileSync(tracePath, '019e4b00-dddd-7000-8000-000000000abc\n');
+      try {
+        const a = emit('card.demo.started', 'kade', { card_id: card }, { logFile: tmpFile });
+        const b = emit('card.item.commented', 'kade', { card_id: card }, { logFile: tmpFile });
+        expect(a.trace_id).toBe('019e4b00-dddd-7000-8000-000000000abc');
+        expect(b.trace_id).toBe(a.trace_id); // both demo emits share the file's trace
+      } finally {
+        try { fs.unlinkSync(tracePath); } catch { /* ignore */ }
+        if (savedTrace === undefined) delete process.env.CHORUS_TRACE_ID;
+        else process.env.CHORUS_TRACE_ID = savedTrace;
+      }
+    });
+
+    it('AC3: stamps branch from env on git/werk events (card.*)', () => {
+      process.env.CHORUS_BRANCH = 'kade/3023';
+      const e = emit('card.demo.started', 'kade', {}, { logFile: tmpFile }) as Record<string, unknown>;
+      expect(e.branch).toBe('kade/3023');
+    });
+
+    it('AC3: does NOT stamp branch on non-git events (matches shim-wrapper MUST-carry gate)', () => {
+      process.env.CHORUS_BRANCH = 'kade/3023';
+      const e = emit('library.health.checked', 'kade', {}, { logFile: tmpFile }) as Record<string, unknown>;
+      expect(e.branch).toBeUndefined();
+    });
+  });
+
   describe('trace hop bridge (#2100, ADR-024)', () => {
     let originalFetch: typeof global.fetch;
     let fetchCalls: Array<{ url: string; body: unknown }>;
