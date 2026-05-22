@@ -176,7 +176,10 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
         .unwrap_or(0);
     let start_ns = now_ns.saturating_sub(900_000_000_000); // last 15 minutes
 
-    let logql = r#"{job=~".+"} |~ "\"level\":\"error\"""#;
+    // #3035: failures don't log at level=error (they're warn/info/none with an
+    // event name ending .failed/.error). Match the real failure events, not a
+    // level that never appears. (The level=error query returned 0 in prod.)
+    let logql = r#"{job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\"""#;
     let resp = match ureq::get("http://localhost:3102/loki/api/v1/query_range")
         .query("query", logql)
         .query("start", &start_ns.to_string())
