@@ -4,8 +4,8 @@
   "private": true,
   "description": "Chorus workspace root — hosts shared lint config for all packages (#2284)",
   "scripts": {
-    "lint": "eslint 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
-    "lint:fix": "eslint --fix 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
+    "lint": "eslint --format=json 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
+    "lint:fix": "eslint --fix --format=json 'platform/**/src/**/*.ts' 'directing/**/src/**/*.ts' 'platform/**/tests/**/*.ts' 'directing/**/tests/**/*.ts'",
     "lint:ratchet": "node platform/scripts/lint-ratchet.js",
     "lint:baseline": "node platform/scripts/lint-ratchet.js --regenerate"
   },

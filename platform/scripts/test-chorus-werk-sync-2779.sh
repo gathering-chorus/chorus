@@ -27,14 +27,20 @@ CANONICAL="$TEST_ROOT/chorus"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 git init -q --bare "$REMOTE"
-git clone -q "$REMOTE" "$CANONICAL"
+# #3033: init canonical directly on main + add remote, instead of cloning the
+# empty bare repo (whose HEAD follows init.defaultBranch and left the first
+# commit off main, failing `push origin main`).
+git init -q "$CANONICAL"
+git -C "$CANONICAL" symbolic-ref HEAD refs/heads/main
+git -C "$CANONICAL" remote add origin "$REMOTE"
 git -C "$CANONICAL" config user.email "test@chorus.local"
 git -C "$CANONICAL" config user.name "test"
-git -C "$CANONICAL" checkout -q -b main 2>/dev/null || git -C "$CANONICAL" checkout -q main
 echo "1" > "$CANONICAL/file.txt"
 git -C "$CANONICAL" add file.txt
 git -C "$CANONICAL" commit -q -m "1"
-git -C "$CANONICAL" push -q origin main 2>/dev/null
+git -C "$CANONICAL" push -q -u origin main
+# bare remote HEAD → main so the peer clone below lands on main
+git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
 
 # Peer ahead — gives repair something to ff to.
 PEER=$(mktemp -d)
@@ -61,12 +67,15 @@ assert() {
   fi
 }
 
-# --- TEST 1: detached canonical → sync aborts with recovery hint -------------
+# --- TEST 1: bare invocation prints usage pointing to repair for recovery ----
+# #2863: sync is automatic inside /build; the standalone script exposes only
+# repair/recover, so a bare call prints usage (exit 2) rather than running a
+# default sync. The usage must still guide a detached canonical to `repair`.
 git -C "$CANONICAL" checkout -q --detach HEAD
 "$CHORUS_WERK_SYNC" > "$TEST_ROOT/out1.log" 2>&1
 RC=$?
-assert "sync refuses on detached canonical" test "$RC" -ne 0
-assert "abort message names chorus-werk-sync repair" grep -q 'chorus-werk-sync repair' "$TEST_ROOT/out1.log"
+assert "bare invocation exits non-zero (usage)" test "$RC" -ne 0
+assert "usage points to repair for detached-HEAD recovery" grep -qi 'detached-HEAD recovery' "$TEST_ROOT/out1.log"
 git -C "$CANONICAL" checkout -q main 2>/dev/null
 
 # --- TEST 2: chorus-werk-sync repair on detached canonical → recovers --------
