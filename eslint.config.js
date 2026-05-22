@@ -134,6 +134,10 @@ module.exports = [
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/ban-types': 'off',
       'no-unused-vars': 'off',
+      // #3033: TypeScript handles undefined-var resolution; no-undef false-positives
+      // on TS ambient types (NodeJS, BufferEncoding, RequestInit) in tests. Mirrors
+      // the src block above (line ~96) — the test block was missing it.
+      'no-undef': 'off',
       'max-lines-per-function': ['warn', { max: 1500, skipBlankLines: true, skipComments: true }],
       'complexity': 'off',
     },

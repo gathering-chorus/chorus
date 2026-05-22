@@ -15,6 +15,13 @@ setup() {
   git config user.email "test@test"
   git config user.name "test"
   git commit --allow-empty -m "init" --quiet
+  # #3033: git-queue.sh sources branch-check.sh from $REPO_ROOT/platform/scripts/.
+  # The sandbox must carry that dependency, or the `source` fails with "No such
+  # file or directory" and masks the branch-check behavior under test (this was
+  # the cause of the 3 failures — git-queue itself is healthy, the file exists in
+  # the real tree).
+  mkdir -p "$TEST_REPO/platform/scripts"
+  cp "$(dirname "$GIT_QUEUE")/branch-check.sh" "$TEST_REPO/platform/scripts/branch-check.sh"
   export REPO_ROOT="$TEST_REPO"
   export CHORUS_ROOT="$TEST_REPO"
 }

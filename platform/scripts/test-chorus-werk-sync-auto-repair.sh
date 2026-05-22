@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# test-chorus-werk-sync-auto-repair.sh — tests for #2846 auto-repair.
+# test-chorus-werk-sync-auto-repair.sh — tests for the `repair` subcommand
+# (detached-HEAD recovery, #2779). #3033: rewritten off the retired #2846
+# `--auto-repair` flag / CHORUS_WERK_SYNC_AUTO_REPAIR env interface, which no
+# longer exists — chorus-werk-sync exposes `repair` / `recover` subcommands now.
 #
-# Verifies that `chorus-werk-sync --auto-repair` (or env CHORUS_WERK_SYNC_AUTO_REPAIR=1):
-#   1. On detached HEAD, retries with repair instead of aborting.
-#   2. Emits canonical.sync.repaired so callers can distinguish from manual repair.
-#   3. Without the flag, detached HEAD still aborts (no regression).
-#
-# Pattern mirrors test-chorus-werk-sync-2779.sh.
+# Verifies `chorus-werk-sync repair`:
+#   1. On detached HEAD, re-attaches HEAD to main and ff's to origin/main.
+#   2. Emits canonical.repaired.
+#   3. Is idempotent — a clean no-op when already on main.
+#   4. Bare sync (no subcommand) still aborts on detached HEAD (no regression).
 
 set -uo pipefail
 
@@ -28,14 +30,22 @@ SPINE_LOG="$TEST_ROOT/spine.log"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 git init -q --bare "$REMOTE"
-git clone -q "$REMOTE" "$CANONICAL"
+# #3033: init canonical directly on main + add remote, instead of cloning the
+# empty bare repo (whose HEAD follows init.defaultBranch and left the first
+# commit off main, so `push origin main` failed with "src refspec main").
+git init -q "$CANONICAL"
+git -C "$CANONICAL" symbolic-ref HEAD refs/heads/main
+git -C "$CANONICAL" remote add origin "$REMOTE"
 git -C "$CANONICAL" config user.email "test@chorus.local"
 git -C "$CANONICAL" config user.name "test"
-git -C "$CANONICAL" checkout -q -b main 2>/dev/null || git -C "$CANONICAL" checkout -q main
 echo "1" > "$CANONICAL/file.txt"
 git -C "$CANONICAL" add file.txt
 git -C "$CANONICAL" commit -q -m "1"
-git -C "$CANONICAL" push -q origin main 2>/dev/null
+git -C "$CANONICAL" push -q -u origin main
+# point the bare remote's HEAD at main so clones (the peer below) land on main,
+# not the host default branch — otherwise the peer commits off-main and its
+# `push origin main` fails, leaving origin/main un-advanced.
+git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
 
 # Peer ahead so repair has something to ff to.
 PEER=$(mktemp -d)
@@ -59,48 +69,48 @@ EOF
 chmod +x "$STUB_DIR/chorus-log"
 export PATH="$STUB_DIR:$PATH"
 
-# Case 1: --auto-repair on detached HEAD recovers and ff's
+# Case 1: `repair` on detached HEAD re-attaches to main and ff's to origin/main
 git -C "$CANONICAL" checkout -q --detach HEAD 2>/dev/null
 : > "$SPINE_LOG"
-OUTPUT=$(bash "$CHORUS_WERK_SYNC" --auto-repair 2>&1)
+OUTPUT=$(bash "$CHORUS_WERK_SYNC" repair 2>&1)
 EXIT_CODE=$?
 CURRENT_HEAD=$(git -C "$CANONICAL" symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
 ORIGIN_MAIN=$(git -C "$CANONICAL" rev-parse origin/main 2>/dev/null)
 LOCAL_MAIN=$(git -C "$CANONICAL" rev-parse main 2>/dev/null)
 if [ "$EXIT_CODE" -eq 0 ] && [ "$CURRENT_HEAD" = "main" ] && [ "$LOCAL_MAIN" = "$ORIGIN_MAIN" ]; then
-  echo "PASS: --auto-repair recovers detached HEAD and ff's to origin/main"
+  echo "PASS: repair recovers detached HEAD and ff's to origin/main"
   PASS=$((PASS+1))
 else
-  echo "FAIL: --auto-repair did not recover (exit=$EXIT_CODE head=$CURRENT_HEAD)"
+  echo "FAIL: repair did not recover (exit=$EXIT_CODE head=$CURRENT_HEAD)"
   echo "  output: $OUTPUT"
   FAIL=$((FAIL+1))
 fi
 
-# Case 2: spine emits canonical.sync.repaired
-if grep -q "canonical.sync.repaired" "$SPINE_LOG"; then
-  echo "PASS: canonical.sync.repaired emitted on auto-repair"
+# Case 2: spine emits canonical.repaired
+if grep -q "canonical.repaired" "$SPINE_LOG"; then
+  echo "PASS: canonical.repaired emitted on repair"
   PASS=$((PASS+1))
 else
-  echo "FAIL: canonical.sync.repaired not in spine log"
-  echo "  spine: $(cat $SPINE_LOG)"
+  echo "FAIL: canonical.repaired not in spine log"
+  echo "  spine: $(cat "$SPINE_LOG")"
   FAIL=$((FAIL+1))
 fi
 
-# Case 3: env var also works
-git -C "$CANONICAL" checkout -q --detach HEAD 2>/dev/null
+# Case 3: repair is idempotent — a clean no-op when already on main
 : > "$SPINE_LOG"
-OUTPUT=$(CHORUS_WERK_SYNC_AUTO_REPAIR=1 bash "$CHORUS_WERK_SYNC" 2>&1)
+OUTPUT=$(bash "$CHORUS_WERK_SYNC" repair 2>&1)
 EXIT_CODE=$?
 CURRENT_HEAD=$(git -C "$CANONICAL" symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
 if [ "$EXIT_CODE" -eq 0 ] && [ "$CURRENT_HEAD" = "main" ]; then
-  echo "PASS: CHORUS_WERK_SYNC_AUTO_REPAIR=1 env enables auto-repair"
+  echo "PASS: repair is idempotent (no-op when already on main)"
   PASS=$((PASS+1))
 else
-  echo "FAIL: env var did not enable auto-repair (exit=$EXIT_CODE head=$CURRENT_HEAD)"
+  echo "FAIL: repair on already-main should be a clean no-op (exit=$EXIT_CODE head=$CURRENT_HEAD)"
+  echo "  output: $OUTPUT"
   FAIL=$((FAIL+1))
 fi
 
-# Case 4: without flag, detached HEAD still aborts
+# Case 4: bare sync (no subcommand) still aborts on detached HEAD (no regression)
 git -C "$CANONICAL" checkout -q --detach HEAD 2>/dev/null
 OUTPUT=$(bash "$CHORUS_WERK_SYNC" 2>&1)
 EXIT_CODE=$?
@@ -108,7 +118,8 @@ if [ "$EXIT_CODE" -ne 0 ] && echo "$OUTPUT" | grep -q "detached"; then
   echo "PASS: bare sync still aborts on detached HEAD (no regression)"
   PASS=$((PASS+1))
 else
-  echo "FAIL: bare sync should abort on detached HEAD without flag (exit=$EXIT_CODE)"
+  echo "FAIL: bare sync should abort on detached HEAD (exit=$EXIT_CODE)"
+  echo "  output: $OUTPUT"
   FAIL=$((FAIL+1))
 fi
 
