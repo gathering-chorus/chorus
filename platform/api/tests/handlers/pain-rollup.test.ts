@@ -1,125 +1,91 @@
 /**
- * pain rollup (#3029) — unit tests for the shared rollup query + parser.
- *
- * Locks the validated query contract into code so the front end / MCP tool can
- * never silently revert to the bug class:
- *   - {job=~".+"} selector, never appName (appName is blind to job-labeled spine
- *     events, returns 0 for whole classes).
- *   - event-field anchor via json + event=~, never a bare substring filter
- *     (substring over-counts ~6x).
- *   - aggregates by role,event,reason, ranked by count, window threaded.
- * Cross-checked live 2026-05-21: this grouping reproduces the board exactly.
+ * pain rollup v1.1 (#3029) — unit tests for the raw-line rollup ported from the
+ * proven :8899 sketch (logform.py). Locks the contract the v1 server-side count
+ * threw away: per-class cards / latest / sample-detail, freeform window, the
+ * line-anchored failure filter (excludes the pulse-heartbeat FPs), synthetic
+ * test-card exclusion (99998 never ranks #1), and per-product split.
  */
-import { buildRollupQuery, parseRollupVector, eventMatchesPainFilter, PAIN_EVENT_SUFFIXES } from '../../src/handlers/logs-query';
+import {
+  rollupRawLines,
+  windowToSeconds,
+  lineMatchesPainFilter,
+  PAIN_EVENT_SUFFIXES,
+} from '../../src/handlers/logs-query';
 
-const VECTOR_FIXTURE = {
-  data: {
-    result: [
-      { metric: { role: 'silas', event: 'session.context.error' }, value: [0, '283'] },
-      { metric: { role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started' }, value: [0, '432'] },
-      { metric: { role: 'wren', event: 'mcp.tool.error' }, value: [0, '53'] },
-      { metric: { role: 'x', event: 'noise' }, value: [0, '0'] },
-    ],
-  },
-};
+// Build a Loki query_range-shaped body from [tsNs, jsonObj] rows.
+function lokiBody(rows: Array<[string, Record<string, unknown>]>) {
+  return { data: { result: [{ values: rows.map(([ts, o]) => [ts, JSON.stringify(o)] as [string, string]) }] } };
+}
 
-const TOP_CLASS = { role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started', count: 432 };
-
-describe('buildRollupQuery — validated contract is locked in code', () => {
-  it('uses the job selector and never appName', () => {
-    const q = buildRollupQuery('7d');
-    expect(q).toContain('job=~');
-    expect(q).not.toContain('appName');
+describe('windowToSeconds — freeform window (matches the :8899 sketch)', () => {
+  it('parses <n>[smhd]', () => {
+    expect(windowToSeconds('30m')).toBe(1800);
+    expect(windowToSeconds('12h')).toBe(43200);
+    expect(windowToSeconds('1d')).toBe(86400);
+    expect(windowToSeconds('7d')).toBe(604800);
   });
-
-  it('anchors on the event field via json, never a bare substring filter', () => {
-    const q = buildRollupQuery('7d');
-    expect(q).toContain('| json');
-    expect(q).toContain('event=~');
-    expect(q).not.toContain('|=');
-  });
-
-  it('aggregates by role, event, reason and threads the window', () => {
-    const q = buildRollupQuery('7d');
-    expect(q).toContain('sum by (role, event, reason)');
-    expect(q).toContain('count_over_time');
-    expect(q).toContain('[7d]');
-  });
-
-  it('threads each supported window into the query', () => {
-    expect(buildRollupQuery('1d')).toContain('[1d]');
-    expect(buildRollupQuery('7d')).toContain('[7d]');
-    expect(buildRollupQuery('30d')).toContain('[30d]');
+  it('rejects junk', () => {
+    expect(windowToSeconds('bogus')).toBeNull();
+    expect(windowToSeconds('12')).toBeNull();
+    expect(windowToSeconds('12y')).toBeNull();
   });
 });
 
-describe('parseRollupVector — grouping and ranking', () => {
-  it('parses an instant vector, drops zero-count rows, ranks by count desc', () => {
-    const classes = parseRollupVector(VECTOR_FIXTURE);
-    expect(classes.map((c) => c.count)).toEqual([432, 283, 53]);
-    expect(classes[0]).toEqual(TOP_CLASS);
-    expect(classes[1].reason).toBe('');
+describe('lineMatchesPainFilter — line-anchored, excludes the false-positives', () => {
+  it('matches real failure events (event value ends in .failed/.refused/.error)', () => {
+    expect(lineMatchesPainFilter('{"event":"demo.show.failed","role":"kade"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"mcp.tool.error"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"chorus_acp.refused"}')).toBe(true);
   });
-
-  it('is empty-safe on a malformed or empty body', () => {
-    expect(parseRollupVector({})).toEqual([]);
-    expect(parseRollupVector({ data: { result: [] } })).toEqual([]);
-    expect(parseRollupVector(null)).toEqual([]);
+  it('excludes the high-volume non-failures the substring filter false-counted', () => {
+    expect(lineMatchesPainFilter('{"event":"heartbeat.probe"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"system.heartbeat"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"clearing.probe.passed"}')).toBe(false);
+  });
+  it('PAIN_EVENT_SUFFIXES is the closed set', () => {
+    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error']);
   });
 });
 
-describe('AC6 — filter excludes the heartbeat/probe false-positives, counts match a direct aggregation', () => {
-  // Faithful fixture: REAL event names + volumes observed in live Loki 2026-05-21.
-  // The original substring filter false-counted these high-volume non-failures;
-  // the event-suffix anchor must drop them. heartbeat.probe (482) ~= the ~484/day FP.
-  type RawEv = { role: string; event: string; reason?: string };
-  const RAW: RawEv[] = [
-    ...Array<RawEv>(482).fill({ role: 'system', event: 'heartbeat.probe' }),
-    ...Array<RawEv>(6398).fill({ role: 'system', event: 'system.heartbeat' }),
-    ...Array<RawEv>(1099).fill({ role: 'system', event: 'clearing.probe.passed' }),
-    ...Array<RawEv>(3).fill({ role: 'grafana', event: 'datasource.health.ok' }), // grafana self-log
-    ...Array<RawEv>(12).fill({ role: 'system', event: 'clearing.probe.failed' }),
-    ...Array<RawEv>(8).fill({ role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started' }),
-    ...Array<RawEv>(5).fill({ role: 'wren', event: 'mcp.tool.error' }),
-    ...Array<RawEv>(2).fill({ role: 'kade', event: 'card.commit.refused' }),
+describe('rollupRawLines — group with cards/latest/detail, drop synthetic cards', () => {
+  const rows: Array<[string, Record<string, unknown>]> = [
+    ['3000000000000000000', { role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started', card_id: 99998 }], // synthetic — excluded
+    ['3000000000000000001', { role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started', card_id: 99998 }], // synthetic — excluded
+    ['3000000000000000002', { role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started', card_id: 3023 }],
+    ['3000000000000000003', { role: 'silas', event: 'session.context.error' }],
+    ['3000000000000000004', { role: 'silas', event: 'session.context.error' }],
+    ['3000000000000000005', { role: 'system', event: 'crawler.domain.failed', detail: 'timeout connecting to host\nsecond line should be dropped' }],
   ];
 
-  it('excludes heartbeat / probe-passed / grafana self-logs, keeps only real failures', () => {
-    const keptEvents = new Set(RAW.filter((r) => eventMatchesPainFilter(r.event)).map((r) => r.event));
-    // the 484-FP and its high-volume non-failure friends are gone
-    expect(keptEvents.has('heartbeat.probe')).toBe(false);
-    expect(keptEvents.has('system.heartbeat')).toBe(false);
-    expect(keptEvents.has('clearing.probe.passed')).toBe(false);
-    expect(keptEvents.has('datasource.health.ok')).toBe(false);
-    // real failures survive — including the .refused and .error siblings
-    expect(keptEvents.has('clearing.probe.failed')).toBe(true);
-    expect(keptEvents.has('demo.show.failed')).toBe(true);
-    expect(keptEvents.has('mcp.tool.error')).toBe(true);
-    expect(keptEvents.has('card.commit.refused')).toBe(true);
+  it('groups by role·event·reason, ranks by count, and 99998 never ranks #1', () => {
+    const { classes, total } = rollupRawLines(lokiBody(rows));
+    expect(total).toBe(4); // the 2 synthetic-card lines are dropped
+    expect(classes[0]).toMatchObject({ role: 'silas', event: 'session.context.error', count: 2 });
+    const demo = classes.find((c) => c.event === 'demo.show.failed')!;
+    expect(demo.count).toBe(1);           // only the real card 3023, not the 2 from 99998
+    expect(demo.cards).toEqual(['3023']); // the synthetic card never appears in Cards
   });
 
-  it('grouped-then-summed total equals the direct sum (mirrors the live 305==305 invariant)', () => {
-    const kept = RAW.filter((r) => eventMatchesPainFilter(r.event));
-    const direct = kept.length;
-    // group by role,event,reason then sum the buckets back (sum(sum by(...)))
-    const groups = new Map<string, number>();
-    for (const r of kept) {
-      const k = `${r.role}|${r.event}|${r.reason ?? ''}`;
-      groups.set(k, (groups.get(k) ?? 0) + 1);
-    }
-    const grouped = [...groups.values()].reduce((s, n) => s + n, 0);
-    expect(grouped).toBe(direct);
-    // 27 real failures counted; the 7982 heartbeat/probe/grafana lines dropped
-    expect(direct).toBe(12 + 8 + 5 + 2);
+  it('captures latest, first-line sample detail, and per-product split', () => {
+    const { classes, byProduct } = rollupRawLines(lokiBody(rows));
+    const crawler = classes.find((c) => c.event === 'crawler.domain.failed')!;
+    expect(crawler.detail).toContain('timeout connecting to host');
+    expect(crawler.detail).not.toContain('second line'); // only the first line of detail
+    expect(crawler.latest).toMatch(/\d\d-\d\d \d\d:\d\d:\d\d/); // MM-DD HH:MM:SS
+    expect(crawler.product).toBe('Gathering'); // crawler.* → Gathering
+    expect(byProduct.Chorus).toBe(3);          // demo(1) + session(2)
+    expect(byProduct.Gathering).toBe(1);       // crawler(1)
   });
-});
 
-describe('drift guard — the LogQL query and the JS predicate share one rule', () => {
-  it('buildRollupQuery embeds every PAIN_EVENT_SUFFIXES token via the json+event anchor, never substring', () => {
-    const q = buildRollupQuery('7d');
-    for (const s of PAIN_EVENT_SUFFIXES) expect(q).toContain(s); // .failed / .refused / .error
-    expect(q).toContain('| json');
-    expect(q).toContain('event=~');
-    expect(q).not.toContain('|=');
+  it('role filter narrows to one role', () => {
+    const { classes, total } = rollupRawLines(lokiBody(rows), { role: 'silas' });
+    expect(total).toBe(2);
+    expect(classes.every((c) => c.role === 'silas')).toBe(true);
+  });
+
+  it('is empty-safe on malformed / empty bodies', () => {
+    expect(rollupRawLines({}).classes).toEqual([]);
+    expect(rollupRawLines({ data: { result: [] } }).total).toBe(0);
+    expect(rollupRawLines(null).total).toBe(0);
   });
 });
