@@ -8,6 +8,8 @@
 // set-metadata (ADR-031): chorus_cards_set is the single writer for descriptive
 //   properties INCLUDING the label axes (sequence/domain/chunk). Status is the
 //   only thing it refuses — that's a transition, not a field.
+//   chorus_cards_tag is the REMOVAL verb only: op=add is refused (one writer per
+//   field — adds route to cards_set), op=remove untags any axis. (#3025 AC3-5)
 // Happy paths still pass straight through to the cards CLI.
 
 import { test } from 'node:test';
@@ -103,4 +105,43 @@ test('cards_done remains the canonical Done path', async () => {
     await client.callTool({ name: 'chorus_cards_done', arguments: { id: 5 } });
   });
   assert.deepEqual(sink[0]?.args, ['done', '5']);
+});
+
+test('cards_tag refuses op=add — setting a label value is owned by cards_set (ADR-031)', async () => {
+  const sink: Captured[] = [];
+  // Build the production server directly so the refusal is exercised end-to-end.
+  const server = buildMcpServer(() => 'wren', { execFileAsync: captureExec(sink), cardsPath: '/fake/cards' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'cards-collapse-test', version: '1.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    await assert.rejects(
+      () => client.callTool({ name: 'chorus_cards_tag', arguments: { id: 1, category: 'sequence', value: 'pulse', op: 'add' } }),
+      /use-cards-set/,
+    );
+    // op defaults to add — omitting it must still refuse, not silently write a second time.
+    await assert.rejects(
+      () => client.callTool({ name: 'chorus_cards_tag', arguments: { id: 1, category: 'domain', value: 'chorus' } }),
+      /cards_set/,
+    );
+  } finally {
+    await client.close();
+    await server.close();
+  }
+  assert.equal(sink.length, 0, 'CLI must not run on a refused tag-add');
+});
+
+test('cards_tag owns removal — op=remove untags any axis', async () => {
+  const sink: Captured[] = [];
+  const server = buildMcpServer(() => 'wren', { execFileAsync: captureExec(sink), cardsPath: '/fake/cards' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'cards-collapse-test', version: '1.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    await client.callTool({ name: 'chorus_cards_tag', arguments: { id: 3, category: 'domain', value: 'chorus', op: 'remove' } });
+  } finally {
+    await client.close();
+    await server.close();
+  }
+  assert.deepEqual(sink[0]?.args, ['untag', '3', 'domain:chorus']);
 });

@@ -1,11 +1,18 @@
-// #3025 AC6 — Athena lookups, repointed to the v2 live graph.
+// #3025 AC6 — Athena lookups read the v2 JSON tree, NOT the AS-IS Fuseki surface.
 //
-// History: this file proxied to chorus-api's v1 routes (/api/athena/tree,
-// /ownership/:iri, /blast-radius/:iri), which read the hand-authored
-// data/athena/tree.json. That file drifted — e.g. v1 returned not-found for
-// chorus:cards-service while the live graph has it (owner Wren, step Directing).
-// Per ADR-031 (one source of truth) the lookups now read the v2 SPARQL
-// subdomains resource: /api/athena/subdomains[/:id[/blast-radius]].
+// CORRECTED 2026-05-22: a prior pass had v1/v2 inverted. It repointed these
+// lookups to /api/athena/subdomains[/:id[/blast-radius]] — which the design
+// (designing/docs/athena-subproduct-design.html, line 541) names as the AS-IS
+// surface that "Athena v2 replaces", a 4-field Fuseki record with no products.
+// That dropped every product that lives only in the v2 JSON tree — e.g. The
+// Clearing (owner Wren) — so the lookups handed callers confidently-wrong
+// answers. v2's operational source is Move 0: the hand-authored JSON tree
+// data/athena/tree.json, served by chorus-api at:
+//   /api/athena/tree                 (full tree)
+//   /api/athena/ownership/:iri       (owner + containing path)
+//   /api/athena/blast-radius/:iri    (consumers / dependents / hosts)
+// These routes return the result object directly (no {data} envelope). This
+// reverts to the routes the file proxied before the regression.
 //
 // Function signatures are preserved so the server.ts handlers compile unchanged.
 // An injectable getter (__setAthenaGetter) is the test seam.
@@ -36,39 +43,40 @@ export function __setAthenaGetter(g: AthenaGetter | null): void {
   getter = g ?? curlGet;
 }
 
-// Opaque handle, kept for signature compatibility (lookups ignore it).
+// Opaque handle, kept for signature compatibility (lookups ignore it — the
+// per-call HTTP getter is the data source).
 export type TreeHandle = Record<string, never>;
 export function loadTree(): TreeHandle {
   return {};
 }
 
-// chorus:cards-service -> cards-service (the v2 subdomain id).
-function iriToId(iri: string): string {
-  return iri.replace(/^chorus:/, '');
-}
-
-type V2Envelope = { data?: unknown } | null | undefined;
-
-/** Full tree (v2 subdomains list) — backs chorus_tree_get. */
+/** Full structural tree (v2 JSON tree, data/athena/tree.json) — backs chorus_tree_get. */
 export function getTree(): unknown {
-  const res = getter('/api/athena/subdomains') as V2Envelope;
-  return res?.data ?? [];
+  return getter('/api/athena/tree');
 }
 
-/** Who owns this IRI + where it sits — v2 subdomain detail. null = not found. */
+/**
+ * Who owns this IRI + where it sits — v2 tree.json ownership lookup.
+ * Returns the chorus-api ownership object ({ iri, kind, owner, product, domain?, service? }).
+ * null = not found (caller must surface not-found, never a confidently-wrong answer).
+ */
 export function lookupOwnership(_tree: TreeHandle, iri: string): unknown {
-  const res = getter(`/api/athena/subdomains/${encodeURIComponent(iriToId(iri))}`) as V2Envelope;
-  const d = res?.data as { id?: string; label?: string; owner?: string; step?: string } | null | undefined;
-  if (!d || !d.id) return null;
-  return { iri, id: d.id, kind: 'subdomain', owner: d.owner, label: d.label, step: d.step };
+  const res = getter(`/api/athena/ownership/${encodeURIComponent(iri)}`) as
+    | { iri?: string; ok?: boolean }
+    | null
+    | undefined;
+  if (!res || (res as { ok?: boolean }).ok === false || !res.iri) return null;
+  return res;
 }
 
 export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
 
-/** Inferred blast-radius — v2 subdomain blast-radius. null = not found. */
+/** Inferred blast-radius — v2 tree.json blast-radius. null = not found. */
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
-  const res = getter(`/api/athena/subdomains/${encodeURIComponent(iriToId(iri))}/blast-radius`) as V2Envelope;
-  const d = res?.data as { consumers?: unknown[] } | null | undefined;
-  if (!d || !Array.isArray(d.consumers)) return null;
-  return { iri, consumers: d.consumers };
+  const res = getter(`/api/athena/blast-radius/${encodeURIComponent(iri)}`) as
+    | { consumers?: unknown[] }
+    | null
+    | undefined;
+  if (!res || !Array.isArray(res.consumers)) return null;
+  return res as BlastRadiusResult;
 }
