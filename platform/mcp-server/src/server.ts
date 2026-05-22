@@ -871,6 +871,17 @@ const LogsForBranchInput = z.object({
   time_window: TimeWindowEnum.optional().describe('Window. Default 1d.'),
 });
 
+// #3029 — pain board MCP surface. The rollup logic lives once, in chorus-api
+// (handlers/logs-query.queryPainRollup). These tools PROXY the existing
+// /api/chorus/pain/* endpoints — no second copy, same numbers the page shows.
+const PainRollupInput = z.object({
+  window: z.string().optional().describe('Rollup window — e.g. 12h, 1d, 7d, 30d. Default 7d. chorus-api is the single validator.'),
+});
+
+const PainCardInput = z.object({
+  card_id: z.number().int().min(1).describe('Card id — returns its pipeline-run trace (events grouped by trace_id).'),
+});
+
 const TIME_WINDOW_DESC = 'Time range for the query — pick one: 5m=five minutes, 15m=fifteen minutes, 1h=one hour, 6h=six hours, 1d=one day. Larger windows scan more Loki data.';
 
 const LOGS_QUERY_TOOL_DEF = {
@@ -946,6 +957,33 @@ const LOGS_FOR_BRANCH_TOOL_DEF = {
       time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1d.' },
     },
     required: ['branch'],
+    additionalProperties: false,
+  },
+} as const;
+
+const PAIN_ROLLUP_TOOL_DEF = {
+  name: 'chorus_pain_rollup',
+  description:
+    'Use this to see the team\'s pain in aggregate — spine failures grouped by class (role · event · reason), ranked by impact, split per product (Chorus / Gathering), with the cards / latest / sample-detail for each class. This is the in-session surface for the #3029 pain board (the browser page /borg/pain.html shows the same numbers). Reach for it to answer "what is hurting us most right now?" before pulling fix work. Do NOT use to investigate one known card (use chorus_pain_card) or to grep raw events (use chorus_logs_query).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      window: { type: 'string', description: 'Rollup window — e.g. 12h, 1d, 7d, 30d. Default 7d.' },
+    },
+    additionalProperties: false,
+  },
+} as const;
+
+const PAIN_CARD_TOOL_DEF = {
+  name: 'chorus_pain_card',
+  description:
+    'Use this to see one card\'s pipeline runs — the card broken into trace-keyed runs (pull / commit / acp / build), each pass/fail with steps + failure reason. The per-card view of the #3029 pain board. Do NOT use for the aggregate failure picture (use chorus_pain_rollup) or for arbitrary event greps (use chorus_logs_for_card / chorus_logs_query).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      card_id: { type: 'integer', minimum: 1, description: 'Card id' },
+    },
+    required: ['card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -2934,6 +2972,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       LOGS_FOR_CARD_TOOL_DEF,
       LOGS_FOR_TRACE_TOOL_DEF,
       LOGS_FOR_BRANCH_TOOL_DEF,
+      PAIN_ROLLUP_TOOL_DEF,
+      PAIN_CARD_TOOL_DEF,
       TREE_GET_TOOL_DEF,
       OWNERSHIP_LOOKUP_TOOL_DEF,
       BLAST_RADIUS_TOOL_DEF,
@@ -3179,6 +3219,27 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           ...(result.ok ? { count: result.count, truncated: result.truncated } : { reason: result.reason }),
         });
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+      }
+      // #3029 — pain board MCP surface. Gateway-to-chorus-api: proxy the existing
+      // /api/chorus/pain/* endpoints so any role sees its pain in-session. The
+      // rollup logic stays single-sourced in chorus-api (no second copy).
+      case 'chorus_pain_rollup':
+      case 'chorus_pain_card': {
+        const tool = req.params.name;
+        let url: string;
+        if (tool === 'chorus_pain_rollup') {
+          const parsed = PainRollupInput.safeParse(req.params.arguments ?? {});
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          url = `${apiBase}/api/chorus/pain/rollup?window=${encodeURIComponent(parsed.data.window ?? '7d')}`;
+        } else {
+          const parsed = PainCardInput.safeParse(req.params.arguments);
+          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+          url = `${apiBase}/api/chorus/pain/card/${parsed.data.card_id}`;
+        }
+        const resp = await fetchImpl(url);
+        const body = (await resp.json()) as { ok?: boolean };
+        emitSpineEvent('chorus_pain.queried', { tool, from, ok: body?.ok !== false });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] };
       }
       case 'chorus_tree_get': {
         const parsed = TreeGetInput.safeParse(req.params.arguments ?? {});
