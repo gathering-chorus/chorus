@@ -196,60 +196,135 @@ export async function logsForBranch(
 // over-counts ~6x). Cross-checked vs the live board 2026-05-21: this exact
 // grouping reproduces it (kade/demo.show.failed/no_demo_started 432,
 // session.context.error 283/125/120, crawler.domain.failed 327...).
-export type RollupWindow = '1d' | '7d' | '30d';
-const ROLLUP_WINDOWS: RollupWindow[] = ['1d', '7d', '30d'];
+// #3029 v1.1 — freeform window (30m / 6h / 12h / 1d / 7d / 30d), matching the
+// proven :8899 sketch. Validated by regex; bad input → time-range-invalid.
+export type RollupWindow = string;
+const WINDOW_RE = /^(\d+)([smhd])$/;
+const WINDOW_MULT: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+export function windowToSeconds(w: string): number | null {
+  const m = WINDOW_RE.exec(w);
+  return m ? parseInt(m[1], 10) * WINDOW_MULT[m[2] as keyof typeof WINDOW_MULT] : null;
+}
 
-export type PainClass = { role: string; event: string; reason: string; count: number };
+// Raw-line failure filter (ported verbatim from logform.py / :8899): match lines
+// whose `event` VALUE ends in .refused/.failed/.error. Anchored on the event
+// field — NOT a bare substring, which false-counts the pulse heartbeat (~484/day)
+// and Grafana self-logs ~6x. We fetch the raw lines and group client-side so each
+// class keeps its cards / latest / sample-detail (v1's server-side count threw
+// those away — that's why the board was "barely like" the sketch).
+const FAIL_QUERY = '{job=~".+"} |~ `"event":"[^"]*(\\.refused|\\.failed|\\.error)"`';
+
+// Synthetic/test card ids excluded so a test card never ranks #1 (99998 = the
+// show-gate test-card sentinel; demo.show.failed for it was ~85% of the headline).
+const SYNTHETIC_CARD_IDS = new Set(['99998', '99999']);
+
+export type PainClass = {
+  role: string; event: string; reason: string;
+  count: number; cards: string[]; latest: string; detail: string; product: string;
+};
 export type PainRollupResult =
-  | { ok: true; window: RollupWindow; total: number; classes: PainClass[] }
+  | { ok: true; window: string; total: number; classes: PainClass[]; byProduct: Record<string, number> }
   | { ok: false; reason: LogsRefusal; detail?: string };
 
-// The failure-suffix rule that defines "pain": an event counts only if its name
-// carries one of these suffixes. This is what excludes the high-volume
-// non-failures the original substring filter false-counted — heartbeat.probe
-// (the ~484/day FP), system.heartbeat, clearing.probe.passed, grafana self-logs.
-// Mirrored by the LogQL `event=~".+(\.failed|\.refused|\.error)"` in
-// buildRollupQuery; the drift-guard test asserts the two stay in sync.
+// The failure-suffix rule that defines "pain": a log line counts only if its
+// `event` value ends in one of these. Excludes the high-volume non-failures the
+// original substring filter false-counted (heartbeat.probe ~484/day,
+// system.heartbeat, clearing.probe.passed, Grafana self-logs).
 export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error'] as const;
-const PAIN_EVENT_RE = new RegExp(`.+(${PAIN_EVENT_SUFFIXES.map((s) => s.replace('.', '\\.')).join('|')})`);
+const PAIN_LINE_RE = new RegExp(`"event":"[^"]*(${PAIN_EVENT_SUFFIXES.map((s) => s.replace('.', '\\.')).join('|')})"`);
 
-// Pure predicate form of the rollup's event filter, so the regression test can
-// prove the exclusion (pulse heartbeat / grafana self-logs) deterministically
-// without a live Loki. Matches what Loki evaluates server-side from the LogQL.
-export function eventMatchesPainFilter(event: string): boolean {
-  return PAIN_EVENT_RE.test(event);
+// Pure predicate: does a raw Loki line match the pain filter? Mirrors FAIL_QUERY
+// so the regression test can prove the exclusion (pulse heartbeat / grafana) on a
+// fixture without a live Loki.
+export function lineMatchesPainFilter(line: string): boolean {
+  return PAIN_LINE_RE.test(line);
 }
 
-// The single source of the rollup query — MCP tool, HTTP endpoint, and the
-// regression test all call this so they can never drift.
-export function buildRollupQuery(window: RollupWindow): string {
-  return `topk(500, sum by (role, event, reason) (count_over_time(`
-    + `{job=~".+"} | json | event=~".+(\\\\.failed|\\\\.refused|\\\\.error)" [${window}])))`;
-}
-
-// Parse a Loki instant-vector response into ranked pain classes. Pure — no I/O,
-// so the test drives it with a fixture.
-export function parseRollupVector(body: unknown): PainClass[] {
-  const result = (body as { data?: { result?: Array<{ metric?: Record<string, string>; value?: [number, string] }> } })?.data?.result ?? [];
-  const classes: PainClass[] = [];
-  for (const row of result) {
-    const m = row.metric ?? {};
-    const count = row.value ? parseInt(row.value[1], 10) : 0;
-    if (!count) continue;
-    classes.push({ role: m.role ?? '', event: m.event ?? '', reason: m.reason ?? '', count });
+// One-line "Sample detail" for a failure (ported from logform.py detail()):
+// reason, first line of detail, error, then a few high-signal fields.
+function sampleDetail(o: Record<string, unknown>): string {
+  const bits: string[] = [];
+  const s = (k: string): string => { const v = o[k]; return v === undefined || v === null ? '' : String(v); };
+  if (s('reason')) bits.push(s('reason'));
+  if (s('detail')) bits.push(s('detail').trim().split('\n')[0].slice(0, 220));
+  if (s('error')) bits.push('err: ' + s('error').slice(0, 160));
+  for (const k of ['sha', 'pr_url', 'message_subject', 'file_count', 'paths_count', 'duration_ms', 'status', 'result']) {
+    if (s(k)) bits.push(`${k}=${s(k).slice(0, 70)}`);
   }
-  classes.sort((a, b) => b.count - a.count);
-  return classes;
+  return bits.join(' · ');
 }
 
-export async function queryPainRollup(args: { window?: RollupWindow }, deps: LogsQueryDeps): Promise<PainRollupResult> {
-  const window: RollupWindow = args.window ?? '7d';
-  if (!ROLLUP_WINDOWS.includes(window)) return { ok: false, reason: 'time-range-invalid', detail: `window must be one of ${ROLLUP_WINDOWS.join('|')}; got ${String(window)}` };
-  const params = new URLSearchParams({ query: buildRollupQuery(window) });
-  const url = `${deps.lokiUrl}/loki/api/v1/query?${params}`;
-  // Cold-connect to Loki fails transiently (~1 in 3 — observed live), which would
-  // otherwise 502 the board intermittently. Retry the connection a few times with
-  // small backoff before giving up; only a genuinely-down Loki returns the refusal.
+// MM-DD HH:MM:SS (UTC) from a Loki ns timestamp.
+function utcStamp(tsNs: string): string {
+  const ms = Number(tsNs) / 1e6;
+  return Number.isFinite(ms) ? new Date(ms).toISOString().replace('T', ' ').slice(5, 19) : '';
+}
+
+// Product attribution (per-product split AC). Gathering = the harvest/crawl/media
+// domains; everything else is Chorus (the coordination substrate). Heuristic on
+// the event name until a real product tag lands on spine events.
+const GATHERING_EVENT_RE = /^(crawler|harvest|photos|music|stories|seeds|garden)[._]|\.(crawl|harvest)\b/;
+function productOf(event: string): string {
+  return GATHERING_EVENT_RE.test(event) ? 'Gathering' : 'Chorus';
+}
+
+// Group raw Loki query_range streams into ranked pain classes. Pure — no I/O, so
+// the regression test drives it with a fixture. Each class carries count, the set
+// of cards, the latest occurrence, and a sample detail (the actionable context).
+// Synthetic test cards are dropped so they never rank #1; per-product totals are
+// accumulated alongside.
+export function rollupRawLines(
+  body: unknown,
+  opts?: { role?: string },
+): { classes: PainClass[]; total: number; byProduct: Record<string, number> } {
+  const result = (body as { data?: { result?: Array<{ values?: Array<[string, string]> }> } })?.data?.result ?? [];
+  type Acc = { role: string; event: string; reason: string; count: number; latestNs: string; detail: string; cards: Set<string>; product: string };
+  const roll = new Map<string, Acc>();
+  let total = 0;
+  const byProduct: Record<string, number> = {};
+  for (const stream of result) {
+    for (const [tsNs, line] of stream.values ?? []) {
+      let o: Record<string, unknown>;
+      try { o = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+      const cardId = o.card_id !== undefined && o.card_id !== null ? String(o.card_id)
+        : (o.card !== undefined && o.card !== null ? String(o.card) : '');
+      if (cardId && SYNTHETIC_CARD_IDS.has(cardId)) continue; // exclude synthetic test cards
+      const role = String(o.role ?? '?');
+      if (opts?.role && role !== opts.role) continue;
+      const event = String(o.event ?? '');
+      const reason = String(o.reason ?? o.error ?? '').slice(0, 60);
+      const product = productOf(event);
+      const key = `${role} ${event} ${reason}`;
+      let acc = roll.get(key);
+      if (!acc) { acc = { role, event, reason, count: 0, latestNs: '0', detail: '', cards: new Set(), product }; roll.set(key, acc); }
+      acc.count++;
+      total++;
+      byProduct[product] = (byProduct[product] ?? 0) + 1;
+      if (tsNs > acc.latestNs) { acc.latestNs = tsNs; acc.detail = sampleDetail(o); }
+      if (cardId) acc.cards.add(cardId);
+    }
+  }
+  const classes: PainClass[] = [...roll.values()]
+    .map((a) => ({ role: a.role, event: a.event, reason: a.reason, count: a.count, cards: [...a.cards].sort(), latest: utcStamp(a.latestNs), detail: a.detail, product: a.product }))
+    .sort((a, b) => b.count - a.count);
+  return { classes, total, byProduct };
+}
+
+export async function queryPainRollup(args: { window?: string; role?: string }, deps: LogsQueryDeps): Promise<PainRollupResult> {
+  const window = args.window ?? '7d';
+  const secs = windowToSeconds(window);
+  if (secs === null) return { ok: false, reason: 'time-range-invalid', detail: `window must match <n>[smhd] (e.g. 12h, 1d, 7d); got ${String(window)}` };
+  const now = deps.now();
+  const params = new URLSearchParams({
+    query: FAIL_QUERY,
+    start: String((now - secs * 1000) * 1_000_000),
+    end: String(now * 1_000_000),
+    limit: '5000',
+    direction: 'backward',
+  });
+  const url = `${deps.lokiUrl}/loki/api/v1/query_range?${params}`;
+  // Cold-connect to Loki fails transiently (~1 in 3 — observed live); retry a few
+  // times with small backoff. Only a genuinely-down Loki returns the refusal.
   let res: Response | undefined;
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -270,6 +345,6 @@ export async function queryPainRollup(args: { window?: RollupWindow }, deps: Log
     if (res.status === 429) return { ok: false, reason: 'rate-limited', detail: body.slice(0, 200) };
     return { ok: false, reason: 'loki-unreachable', detail: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   }
-  const classes = parseRollupVector(await res.json());
-  return { ok: true, window, total: classes.reduce((s, c) => s + c.count, 0), classes };
+  const { classes, total, byProduct } = rollupRawLines(await res.json(), { role: args.role });
+  return { ok: true, window, total, classes, byProduct };
 }
