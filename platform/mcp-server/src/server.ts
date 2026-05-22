@@ -1188,7 +1188,12 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
     let matches: string[] = [];
     try {
       matches = fs.readdirSync(werkBase, { withFileTypes: true })
-        .filter((e) => e.isDirectory() && e.name.startsWith(`${role}-`))
+        // #3038: card werks only — `<role>-<digits>`. The per-role binary slot
+        // `<role>-bin` (chorus-env-setup.sh) shares this namespace; counting it
+        // returned the bin slot (1 match at pull → branch-fail) or canonical
+        // (2 matches at commit → "On branch main"). Numeric-suffix match excludes
+        // `-bin` and any other non-card slot.
+        .filter((e) => e.isDirectory() && e.name.startsWith(`${role}-`) && /^\d+$/.test(e.name.slice(role.length + 1)))
         .map((e) => path.join(werkBase, e.name));
     } catch {
       // werk base missing/unreadable — no werk in flight, fall back to canonical
