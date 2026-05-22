@@ -1,7 +1,11 @@
-// #3025 AC6 — the three Athena lookups read the v2 live graph
-// (/api/athena/subdomains[/:id[/blast-radius]]), not the drifting v1 tree.json.
-// ADR-031: one source of truth. Asserts the routes hit + shape mapping + the
-// not-found path. The getter is injected so no live chorus-api is needed.
+// #3025 AC6 (CORRECTED 2026-05-22) — the three Athena lookups read the v2 JSON
+// tree, served by chorus-api at /api/athena/tree, /api/athena/ownership/:iri,
+// /api/athena/blast-radius/:iri (all backed by data/athena/tree.json, Move 0 of
+// Athena v2). They must NOT read /api/athena/subdomains — the AS-IS Fuseki
+// surface the design says v2 replaces, which drops products that live only in the
+// JSON tree (e.g. The Clearing). Asserts route hit + shape passthrough + not-found.
+// The getter is injected so no live chorus-api is needed; buildMcpServer is the
+// production entry under test in each case.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -12,49 +16,82 @@ import { __setAthenaGetter } from '../src/athena-tree-stub';
 
 const noopExec = (async () => ({ stdout: '', stderr: '' })) as unknown as ExecFileAsync;
 
-async function call(name: string, args: Record<string, unknown>, paths: string[], reply: (p: string) => unknown) {
-  __setAthenaGetter((p: string) => { paths.push(p); return reply(p); });
+test('ownership_lookup reads the v2 tree.json route and passes owner + product through', async () => {
+  const paths: string[] = [];
+  __setAthenaGetter((p: string) => {
+    paths.push(p);
+    return { iri: 'chorus:cards', kind: 'domain', owner: 'chorus:role-wren', product: 'chorus:clearing', domain: 'chorus:cards' };
+  });
   const server = buildMcpServer(() => 'wren', { execFileAsync: noopExec, cardsPath: '/fake' });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'athena-v2-test', version: '1.0' });
   await Promise.all([server.connect(st), client.connect(ct)]);
   try {
-    const r = await client.callTool({ name, arguments: args }) as { content: Array<{ text: string }> };
-    return JSON.parse(r.content[0].text);
+    const r = await client.callTool({ name: 'chorus_ownership_lookup', arguments: { iri: 'chorus:cards' } }) as { content: Array<{ text: string }> };
+    const out = JSON.parse(r.content[0].text);
+    assert.ok(paths.includes('/api/athena/ownership/chorus%3Acards'), `hit v2 tree ownership route, got ${paths}`);
+    assert.equal(out.owner, 'chorus:role-wren');
+    assert.equal(out.product, 'chorus:clearing'); // The Clearing survives — the answer the v1 regression dropped.
   } finally {
     await client.close(); await server.close(); __setAthenaGetter(null);
   }
-}
-
-test('ownership_lookup reads v2 subdomains/:id and maps owner', async () => {
-  const paths: string[] = [];
-  const out = await call('chorus_ownership_lookup', { iri: 'chorus:cards-service' }, paths,
-    () => ({ data: { id: 'cards-service', label: 'Cards (Service)', owner: 'Wren', step: 'Directing' } }));
-  assert.ok(paths.includes('/api/athena/subdomains/cards-service'), `hit v2 route, got ${paths}`);
-  assert.equal(out.owner, 'Wren');
-  assert.equal(out.id, 'cards-service');
 });
 
-test('blast_radius reads v2 subdomains/:id/blast-radius and maps consumers', async () => {
+test('blast_radius reads the v2 tree.json route and passes consumers through', async () => {
   const paths: string[] = [];
-  const out = await call('chorus_blast_radius', { iri: 'chorus:cards-service' }, paths,
-    () => ({ data: { subdomain: 'cards-service', consumers: [{ uri: 'x', label: 'Loom' }] } }));
-  assert.ok(paths.includes('/api/athena/subdomains/cards-service/blast-radius'), `hit v2 route, got ${paths}`);
-  assert.equal(out.consumers.length, 1);
+  __setAthenaGetter((p: string) => {
+    paths.push(p);
+    return { iri: 'chorus:cards', consumers: ['chorus:clearing'], dependents: [], hosts: [] };
+  });
+  const server = buildMcpServer(() => 'wren', { execFileAsync: noopExec, cardsPath: '/fake' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'athena-v2-test', version: '1.0' });
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  try {
+    const r = await client.callTool({ name: 'chorus_blast_radius', arguments: { iri: 'chorus:cards' } }) as { content: Array<{ text: string }> };
+    const out = JSON.parse(r.content[0].text);
+    assert.ok(paths.includes('/api/athena/blast-radius/chorus%3Acards'), `hit v2 tree blast route, got ${paths}`);
+    assert.equal(out.consumers.length, 1);
+    assert.equal(out.consumers[0], 'chorus:clearing');
+  } finally {
+    await client.close(); await server.close(); __setAthenaGetter(null);
+  }
 });
 
-test('tree_get reads the v2 subdomains list', async () => {
+test('tree_get reads the full v2 JSON tree (products incl The Clearing)', async () => {
   const paths: string[] = [];
-  const out = await call('chorus_tree_get', {}, paths,
-    () => ({ data: [{ id: 'cards-service', owner: 'Wren' }] }));
-  assert.ok(paths.includes('/api/athena/subdomains'), `hit v2 list, got ${paths}`);
-  assert.equal(out[0].id, 'cards-service');
+  __setAthenaGetter((p: string) => {
+    paths.push(p);
+    return { schemaVersion: 'athena-move-0/2026-05-16', products: [{ label: 'The Clearing' }], domains: [] };
+  });
+  const server = buildMcpServer(() => 'wren', { execFileAsync: noopExec, cardsPath: '/fake' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'athena-v2-test', version: '1.0' });
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  try {
+    const r = await client.callTool({ name: 'chorus_tree_get', arguments: {} }) as { content: Array<{ text: string }> };
+    const out = JSON.parse(r.content[0].text);
+    assert.ok(paths.includes('/api/athena/tree'), `hit v2 JSON tree, got ${paths}`);
+    assert.equal(out.products[0].label, 'The Clearing');
+  } finally {
+    await client.close(); await server.close(); __setAthenaGetter(null);
+  }
 });
 
-test('unknown id maps to not-found (no v1 confidently-wrong answer)', async () => {
+test('unknown iri maps to not-found (no confidently-wrong answer)', async () => {
   const paths: string[] = [];
-  const out = await call('chorus_ownership_lookup', { iri: 'chorus:nope' }, paths,
-    () => ({ data: null }));
-  assert.equal(out.ok, false);
-  assert.equal(out.reason, 'not-found');
+  __setAthenaGetter((p: string) => { paths.push(p); return {}; });
+  const server = buildMcpServer(() => 'wren', { execFileAsync: noopExec, cardsPath: '/fake' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'athena-v2-test', version: '1.0' });
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  try {
+    const r = await client.callTool({ name: 'chorus_ownership_lookup', arguments: { iri: 'chorus:nope' } }) as { content: Array<{ text: string }> };
+    const out = JSON.parse(r.content[0].text);
+    assert.ok(paths.includes('/api/athena/ownership/chorus%3Anope'), `hit v2 route, got ${paths}`);
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'not-found');
+  } finally {
+    await client.close(); await server.close(); __setAthenaGetter(null);
+  }
 });

@@ -507,7 +507,7 @@ const CARDS_DONE_TOOL_DEF = {
 const CARDS_TAG_TOOL_DEF = {
   name: 'chorus_cards_tag',
   description:
-    'Add or remove a tag on an existing card. Use this to set the subproduct, retag during audits, or fix mis-tagged cards. Sequence tags route through the dedicated bulk-tag verb; domain/chunk through label add/remove. Do NOT use for owner/priority/type/origin/title/status — those are structured fields, use chorus_cards_set instead.',
+    'REMOVE a label-axis tag (sequence/domain/chunk) from a card — cards_tag is the removal verb only. SETTING a label value is owned by chorus_cards_set (ADR-031: one writer per field), so op=add is REFUSED here (enforced, not prose) with a pointer to cards_set. Use op=remove to clear a mis-tag during audits. Do NOT use for owner/priority/type/origin/title/status — structured fields go through chorus_cards_set.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2841,24 +2841,18 @@ async function executeCardsTag(
   execFileAsync: ExecFileAsync,
   cardsPath: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  // Sequence uses the dedicated `sequence-tag` verb; domain/chunk use `label add/remove`.
-  let verb: string;
-  let argv: string[];
   const op = args.op ?? 'add';
-  if (args.category === 'sequence') {
-    if (op !== 'add') {
-      // Removal of a sequence tag goes through generic untag.
-      verb = 'untag';
-      argv = [String(args.id), `sequence:${args.value}`];
-    } else {
-      verb = 'sequence-tag';
-      argv = [String(args.id), args.value];
-    }
-  } else {
-    verb = op === 'add' ? 'tag' : 'untag';
-    argv = [String(args.id), `${args.category}:${args.value}`];
+  // #3025 AC3-5 / ADR-031: chorus_cards_set is the single writer for label-axis
+  // VALUES (sequence/domain/chunk are descriptive properties). cards_tag is the
+  // removal verb only — letting it ADD too makes two writers for one field, the
+  // exact overlap this card closes. Setting a value routes through cards_set.
+  if (op === 'add') {
+    throw new Error(
+      `chorus_cards_tag refused: use-cards-set — setting a ${args.category} value is owned by chorus_cards_set (one writer per field, ADR-031). Call chorus_cards_set with fields:{${args.category}: "${args.value}"}. chorus_cards_tag handles removal (op=remove).`,
+    );
   }
-  const out = await execCardsCli(verb, argv, from, execFileAsync, cardsPath, 'chorus_cards_tag');
+  // op === 'remove' — cards_tag owns removal across every axis via untag.
+  const out = await execCardsCli('untag', [String(args.id), `${args.category}:${args.value}`], from, execFileAsync, cardsPath, 'chorus_cards_tag');
   return { content: [{ type: 'text', text: out }] };
 }
 
