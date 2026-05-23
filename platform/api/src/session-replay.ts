@@ -40,43 +40,49 @@ export function isValidSessionId(id: string): boolean {
   return /^ses_\d+_[a-z0-9]+$/.test(id);
 }
 
-export function listSessions(): SessionListResponse {
-  if (!fs.existsSync(getSessionsDir())) return { sessions: [] };
+// #3039 — these read rrweb recordings (can be MB each) on request paths. Sync
+// reads here blocked the event loop per request; listSessions read+parsed EVERY
+// recording synchronously. Converted to fs.promises (off the loop). The readFile
+// catch handles missing files, so the prior existsSync sync-stat is gone too.
+export async function listSessions(): Promise<SessionListResponse> {
+  const dir = getSessionsDir();
   const now = Date.now();
   const sessions: SessionMeta[] = [];
+  let files: string[];
   try {
-    for (const file of fs.readdirSync(getSessionsDir())) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const filePath = path.join(getSessionsDir(), file);
-        const stat = fs.statSync(filePath);
-        if (now - stat.mtimeMs > MAX_SESSION_AGE_MS) continue;
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        if (data.meta) sessions.push(data.meta);
-      } catch { /* skip malformed */ }
-    }
-  } catch { /* skip */ }
+    files = await fs.promises.readdir(dir);
+  } catch {
+    return { sessions: [] };
+  }
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const filePath = path.join(dir, file);
+      const stat = await fs.promises.stat(filePath);
+      if (now - stat.mtimeMs > MAX_SESSION_AGE_MS) continue;
+      const data = JSON.parse(await fs.promises.readFile(filePath, 'utf-8'));
+      if (data.meta) sessions.push(data.meta);
+    } catch { /* skip malformed */ }
+  }
   sessions.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
   return { sessions };
 }
 
-export function getSession(sessionId: string): SessionDetailResponse | null {
+export async function getSession(sessionId: string): Promise<SessionDetailResponse | null> {
   if (!isValidSessionId(sessionId)) return null;
   const filePath = path.join(getSessionsDir(), `${sessionId}.json`);
-  if (!fs.existsSync(filePath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    return JSON.parse(await fs.promises.readFile(filePath, 'utf-8'));
   } catch {
     return null;
   }
 }
 
-export function getSessionLog(sessionId: string): string | null {
+export async function getSessionLog(sessionId: string): Promise<string | null> {
   if (!isValidSessionId(sessionId)) return null;
   const filePath = path.join(getSessionsDir(), `${sessionId}.log`);
-  if (!fs.existsSync(filePath)) return null;
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fs.promises.readFile(filePath, 'utf-8');
   } catch {
     return null;
   }
