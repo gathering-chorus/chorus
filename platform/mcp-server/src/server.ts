@@ -1123,6 +1123,15 @@ export function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fai
   return /pre-commit:.*(?:🔴|❌|failed|blocked)/i.test(stderr) ? 'hook-fail' : 'commit-fail';
 }
 
+// #3040 — a squash-merge leaves no commits between main and the card branch, so
+// `gh pr create` fails with "No commits between <base> and <head>". That is NOT
+// a real pr-create-fail: the work is already on main. acp must recover (skip the
+// PR, finish werk-close + cards-done) instead of refusing — otherwise the card
+// stays WIP and the werk/branch leak. Hit live on #3025 and #3038.
+export function prCreateMeansAlreadyMerged(stderr: string): boolean {
+  return /no commits between .+ and /i.test(stderr);
+}
+
 // #3011 — pick the line that actually explains the failure. When pre-commit
 // PASSES (🟢 N/N) but `git commit` fails downstream, git flushes the hook's
 // stdout into its own stderr, so stderr's first line is the green success line.
@@ -1695,6 +1704,7 @@ async function executeAcp(
   stepEmit('pr-view', 'started', { branch });
   let prUrl = '';
   let prAlreadyExists = false;
+  let prAlreadyMerged = false; // #3040 — set when pr-create reports "no commits between" (squash-merged)
   try {
     const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url,state'], { env, cwd: repoRoot, timeout: 15_000 });
     const pr = JSON.parse(stdout) as { url: string; state: string };
@@ -1732,11 +1742,20 @@ async function executeAcp(
       stepEmit('pr-create', 'completed', { pr_url: prUrl });
     } catch (err) {
       const stderr = extractStderr(err);
-      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-create', reason: 'pr-create-fail', detail: stderr.slice(0, 500) });
-      throw new Error(`chorus_acp refused: pr-create-fail — ${stderr.split('\n')[0]}`);
+      // #3040 — "No commits between main and <branch>" means the work is already
+      // squash-merged: nothing to PR. Recover (skip pr-merge, fall through to
+      // werk-close + cards-done) instead of refusing pr-create-fail.
+      if (prCreateMeansAlreadyMerged(stderr)) {
+        prAlreadyMerged = true;
+        stepEmit('pr-create', 'completed', { idempotent: true, reason: ALREADY_MERGED });
+      } else {
+        emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-create', reason: 'pr-create-fail', detail: stderr.slice(0, 500) });
+        throw new Error(`chorus_acp refused: pr-create-fail — ${stderr.split('\n')[0]}`);
+      }
     }
   }
 
+  if (!prAlreadyMerged) {
   stepEmit('pr-merge', 'started', { pr_url: prUrl, pr_already_exists: prAlreadyExists });
   try {
     // #2753 — no --delete-branch flag: gh's branch deletion does an implicit
@@ -1758,6 +1777,7 @@ async function executeAcp(
     }
     stepEmit('pr-merge', 'completed', { idempotent: true, reason: ALREADY_MERGED });
   }
+  } // #3040 — end if(!prAlreadyMerged): squash-merged path skips pr-merge, recovers via werk-close + cards-done below
 
   // #3012 — REORDER: substrate-clean steps (promote-werk-bin, werk-close)
   // run BEFORE cards-done + card.accepted. The card is not actually
