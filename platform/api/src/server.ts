@@ -40,6 +40,7 @@ app.use(express.json());
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
+import { startMetrics, getMetrics } from './metrics';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
 import { getPatternsSummary } from './patterns-summary';
@@ -207,18 +208,18 @@ import {
 
 const sessionDeps = { listSessions, getSession, getSessionLog, isValidSessionId };
 
-app.get('/api/chorus/sessions', (_req, res) => {
-  const r = fetchSessionList(sessionDeps);
+app.get('/api/chorus/sessions', async (_req, res) => {
+  const r = await fetchSessionList(sessionDeps);
   res.status(r.status).json(r.body);
 });
 
-app.get('/api/chorus/sessions/:id', (req, res) => {
-  const r = fetchSessionById(sessionDeps, req.params.id);
+app.get('/api/chorus/sessions/:id', async (req, res) => {
+  const r = await fetchSessionById(sessionDeps, req.params.id);
   res.status(r.status).json(r.body);
 });
 
-app.get('/api/chorus/sessions/:id/log', (req, res) => {
-  const r = fetchSessionLog(sessionDeps, req.params.id);
+app.get('/api/chorus/sessions/:id/log', async (req, res) => {
+  const r = await fetchSessionLog(sessionDeps, req.params.id);
   if (r.contentType === 'text/plain') {
     res.status(r.status).type('text/plain').send(r.body);
     return;
@@ -616,18 +617,24 @@ app.get('/api/chorus/domain/:name/blast-radius', async (req: Request, res: Respo
 // GET /api/chorus/domain/:name/releases — domain-scoped deploy history (#1910)
 // Git-first: parse ACP commits, match card domain tags, return newest first.
 import { fetchChorusDomainReleases } from './handlers/chorus-domain-releases';
-app.get('/api/chorus/domain/:name/releases', (req: Request, res: Response) => {
+app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response) => {
+  // #3039 — was execSync('git log', UNBOUNDED full history) on the event loop:
+  // a cold route that froze the WHOLE process for up to its 10s timeout whenever
+  // git contended on the shared repo (the measured 6.24s idle stall). Now read
+  // async (off the loop) and bounded (-n 300 — deploy history needs recent acps,
+  // not the entire history). The handler stays sync; we hand it the pre-fetched
+  // string, so no handler/test ripple.
+  let gitLogOut = '';
+  try {
+    const { stdout } = await execAsync('git log -n 300 --format="%H|%aI|%s"', {
+      cwd: REPO_ROOT, encoding: 'utf-8', timeout: 10000,
+    });
+    gitLogOut = stdout;
+  } catch {
+    gitLogOut = ''; // handler treats empty as zero releases (same as the old catch)
+  }
   const r = fetchChorusDomainReleases(
-    {
-      gitLog: () => {
-        const { execSync } = require('child_process');
-        return execSync('git log --oneline --format="%H|%aI|%s"', {
-          cwd: REPO_ROOT, encoding: 'utf-8', timeout: 10000,
-        });
-      },
-      getCards: getBoardCards,
-      envelope: athenaEnvelope,
-    },
+    { gitLog: () => gitLogOut, getCards: getBoardCards, envelope: athenaEnvelope },
     req.params.name,
   );
   res.status(r.status).json(r.body);
@@ -1365,6 +1372,15 @@ app.get('/api/chorus/seed-media/:filename', (req: Request, res: Response) => {
 app.get('/health', (_req: Request, res: Response) => {
   // Liveness only — no queries, no counts (#1978)
   res.json({ status: 'ok' });
+});
+
+// #3039 — Prometheus scrape target. Was 404; the most load-bearing process had
+// zero latency visibility. Exposes nodejs_eventloop_lag_seconds so a blocked
+// loop is measured, not inferred. #2482's tool-call counters share this registry.
+app.get('/metrics', async (_req: Request, res: Response) => {
+  const { contentType, body } = await getMetrics();
+  res.set('Content-Type', contentType);
+  res.send(body);
 });
 
 // --- ICD Write API (#1549) — mirrors app write endpoints, no auth ---
@@ -2273,15 +2289,17 @@ app.options('/api/chorus/open', (_req: Request, res: Response) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   res.sendStatus(204);
 });
-app.post('/api/chorus/open', (req: Request, res: Response) => {
+app.post('/api/chorus/open', async (req: Request, res: Response) => {
   res.header('Access-Control-Allow-Origin', '*');
   const { path: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: 'Missing path' });
   const resolved = path.resolve(REPO_ROOT, filePath);
   if (!resolved.startsWith(REPO_ROOT)) return res.status(403).json({ error: 'Path outside repo' });
-  const { execSync } = require('child_process');
   try {
-    execSync(`open "${resolved}"`);
+    // #3039 — was execSync('open "..."') on the event loop (a launch that can
+    // block, and string-interpolated into a shell = injection risk). Now async
+    // execFile with array args: off the loop AND no shell, so no injection.
+    await cardsExecFileAsync('open', [resolved]);
     res.json({ ok: true, opened: resolved });
   } catch (err: unknown) {
     res.status(500).json({ error: errMsg(err) });
@@ -3219,6 +3237,10 @@ process.on('SIGTERM', () => {
 // that the harness worked at all).
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 if (require.main === module) {
+  // #3039 — start Node default-metric collection (event-loop lag, heap, GC) under
+  // the live server. Idempotent; the /metrics route renders from the same registry.
+  startMetrics();
+
   // Health cache refresh — runs every 30s under the live server only.
   setTimeout(() => refreshHealthCache(), 2000);
   setInterval(() => refreshHealthCache(), 30_000);

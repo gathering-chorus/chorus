@@ -17,40 +17,43 @@ export interface FetchResult {
   contentType?: string;
 }
 
+// #3039 — session-replay reads are now async (rrweb files can be MB, off the
+// loop). Deps accept Promise OR sync value so existing tests' sync mocks still
+// typecheck; the handlers await either way.
 export interface SessionsDeps {
-  listSessions: () => unknown;
-  getSession: (id: string) => unknown | null | undefined;
-  getSessionLog: (id: string) => string | null;
+  listSessions: () => Promise<unknown> | unknown;
+  getSession: (id: string) => Promise<unknown | null | undefined> | unknown | null | undefined;
+  getSessionLog: (id: string) => Promise<string | null> | string | null;
   isValidSessionId: (id: string) => boolean;
 }
 
-export function fetchSessionList(deps: SessionsDeps): FetchResult {
+export async function fetchSessionList(deps: SessionsDeps): Promise<FetchResult> {
   try {
-    return { status: 200, body: deps.listSessions() };
+    return { status: 200, body: await deps.listSessions() };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return { status: 500, body: { error: message } };
   }
 }
 
-export function fetchSessionById(deps: SessionsDeps, idInput: unknown): FetchResult {
+export async function fetchSessionById(deps: SessionsDeps, idInput: unknown): Promise<FetchResult> {
   const id = typeof idInput === 'string' ? idInput : '';
   if (!deps.isValidSessionId(id)) {
     return { status: 400, body: { error: 'invalid session id' } };
   }
-  const session = deps.getSession(id);
+  const session = await deps.getSession(id);
   if (!session) {
     return { status: 404, body: { error: 'session not found' } };
   }
   return { status: 200, body: session };
 }
 
-export function fetchSessionLog(deps: SessionsDeps, idInput: unknown): FetchResult {
+export async function fetchSessionLog(deps: SessionsDeps, idInput: unknown): Promise<FetchResult> {
   const id = typeof idInput === 'string' ? idInput : '';
   if (!deps.isValidSessionId(id)) {
     return { status: 400, body: { error: 'invalid session id' } };
   }
-  const log = deps.getSessionLog(id);
+  const log = await deps.getSessionLog(id);
   if (log === null) {
     return { status: 404, body: { error: 'log not found' } };
   }
