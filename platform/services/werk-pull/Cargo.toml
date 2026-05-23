@@ -1,0 +1,12 @@
+[package]
+name = "werk-pull"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern
+# (libc is linked by default), and the `git`/`cards` CLIs as subprocesses.
+[dependencies]
+
+[[bin]]
+name = "werk-pull"
+path = "src/main.rs"
