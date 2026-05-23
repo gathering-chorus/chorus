@@ -132,3 +132,6 @@ roles/*/artifacts/book-images-v*
 # times in a week (2026-04-28 → 2026-05-04). On a fresh clone, run
 # `platform/scripts/claudemd-gen` once to materialize all three.
 roles/*/CLAUDE.md
+
+# per-werk MCP runtime markers — never tracked (#3044)
+.werk-mcp/
