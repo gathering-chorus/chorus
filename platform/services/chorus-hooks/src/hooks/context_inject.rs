@@ -138,7 +138,6 @@ fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
     );
 
     let resp = match ureq::get(&url)
-        .timeout(std::time::Duration::from_millis(500))
         .call()
     {
         Ok(r) => r,
@@ -186,7 +185,6 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
         .query("end", &now_ns.to_string())
         .query("limit", "5")
         .query("direction", "backward")
-        .timeout(std::time::Duration::from_millis(300))
         .call()
     {
         Ok(r) => r,
@@ -303,7 +301,7 @@ fn query_athena_domain(role: &str) -> Option<String> {
     let domain = card.get("domain").and_then(|d| d.as_str())?;
 
     let url = format!("http://localhost:3340/api/chorus/domain/{}", domain);
-    let resp = ureq::get(&url).timeout(std::time::Duration::from_millis(500)).call().ok()?;
+    let resp = ureq::get(&url).call().ok()?;
     let body: serde_json::Value = resp.into_json().ok()?;
     let desc = body.get("description").and_then(|d| d.as_str()).unwrap_or("");
     let cards_total = body.pointer("/cards/total").and_then(|c| c.as_i64()).unwrap_or(0);
