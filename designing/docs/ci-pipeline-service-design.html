@@ -41,94 +41,62 @@
 <p class="date">Kade. Related: <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS</a> · <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build+deploy</a>.</p>
 
 <div class="summary-block">
-  <h2>At a Glance</h2>
-  <p><code>act</code> is the local CI/CD orchestrator. Every step of the /werk pipeline is a <code>workflow_dispatch</code> job dispatched by act — from /pull to post-/acp build+deploy. The /werk/* commands are the developer interface; act is the engine beneath them.</p>
+  <h2>At a Glance — the werk pipeline (v8 model, 2026-05-23)</h2>
+  <p>The /werk pipeline is <strong>three verbs</strong>, keyed by <code>card#</code>: <strong>pull</strong> (get the work), <strong>demo</strong> (prove it live), <strong>acp</strong> (make it permanent). <strong>GitHub wraps the environment, which wraps the DSL</strong> (the verbs); the DSL <strong>runs on <code>act</code></strong>, the local engine. There is exactly <strong>ONE environment, and it is production (live)</strong> — no preview, no staging. <code>gh</code> = source of truth (<code>main</code>) + per-card process holder; <code>card#</code> = the key. Full visual: <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a>.</p>
 
-  <pre class="mermaid">
-flowchart LR
-  DEV["Developer"] -->|"/werk/pull"| ACT["act<br/>(local orchestrator)"]
-  ACT -->|"job: pull"| PULL["chorus_pull_card<br/>werk branch off origin/main"]
-  DEV -->|"/werk/build"| ACT
-  ACT -->|"job: build"| BUILD["chorus-build<br/>compile + sign + hash"]
-  DEV -->|"/werk/deploy"| ACT
-  ACT -->|"job: deploy"| DEPLOY["chorus-deploy<br/>preview instance"]
-  DEV -->|"/werk/demo"| ACT
-  ACT -->|"job: demo"| DEMO["gate chain<br/>product/code/quality/arch/ops"]
-  DEV -->|"/werk/acp"| ACT
-  ACT -->|"job: acp"| ACP["chorus_acp<br/>commit + push + PR + merge"]
-  ACP -->|"release-trigger"| POSTMERGE["act post-merge<br/>sync → build → deploy → spine"]
-  </pre>
+  <iframe src="werk-pipeline-model.html" style="width:100%;height:660px;border:1px solid #c7d2fe;border-radius:8px;background:#fff;" title="werk-pipeline v8 model"></iframe>
+  <p style="font-size:0.8em;color:#999;margin-top:2px;">↑ the v8 model, embedded from <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a> (single source — the same diagram, not a re-draw).</p>
 
   <table class="gap-and-next">
-    <thead><tr><th>Command</th><th>act job</th><th>What it does</th><th>Owner</th></tr></thead>
+    <thead><tr><th>Verb</th><th>What it does</th><th>Owner</th></tr></thead>
     <tbody>
-      <tr><td><code>/werk/pull</code></td><td>pull</td><td>act dispatches job:pull → calls <code>chorus_pull_card</code> MCP. act owns the dispatch layer; VCS owns the MCP contract (validate AC + Experience, <code>chorus-werk add</code>, branch off origin/main, emit <code>card.pulled</code>). See <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a>.</td><td>Kade (VCS)</td></tr>
-      <tr><td><code>/werk/build</code></td><td>build</td><td>cargo build + sign + cdhash in werk (pre-/acp preview)</td><td>Silas (build+deploy)</td></tr>
-      <tr><td><code>/werk/deploy</code></td><td>deploy</td><td>Deploy built artifact to preview instance; emit <code>deploy.preview.completed</code></td><td>Silas (build+deploy)</td></tr>
-      <tr><td><code>/werk/demo</code></td><td>demo</td><td>Run gate chain (gate-product / gate-code / gate-quality / gate-arch / gate-ops)</td><td>All roles</td></tr>
-      <tr><td><code>/werk/acp</code></td><td>acp</td><td>commit → push → PR → merge → cards done → release-trigger → post-merge build pipeline</td><td>Kade (VCS)</td></tr>
+      <tr><td><code>pull</code></td><td>worktree off <code>origin/main</code> + register <code>{card#, trace, branch}</code> in gh + card → WIP. Single step — no act. (pull v2 = <code>werk-pull</code>, #3045, shipped: ~294-line zero-dep Rust, proven against real git/gh/cards.)</td><td>Kade (VCS)</td></tr>
+      <tr><td><code>demo</code></td><td>act orchestrates <code>build → deploy → verify</code>. Runs werk code live — not yet in <code>main</code>.</td><td>build/deploy: Silas · verify: all</td></tr>
+      <tr><td><code>acp</code></td><td>act orchestrates <code>accept → commit → push → build → deploy → verify</code>. Source → <code>main</code> (permanent), then runs that.</td><td>Kade (VCS) + Silas</td></tr>
     </tbody>
   </table>
 
-  <p class="invariants"><strong>Invariants:</strong> every /werk/* command is an act job — typed refusals, spine events, and trace continuity are uniform across the pipeline. Post-merge build is sequential-fail-fast: a step's failure halts the chain. Trace propagates from /acp commit trailers (<code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code>) through build/deploy spine events — <code>chorus_logs_for_trace</code> returns the full arc from pull to deploy.</p>
+  <p class="invariants"><strong>Invariants:</strong> one environment (production) — demo and acp both deploy to it, differing by <em>source-permanence</em> not destination (demo = werk code live; acp lands source in <code>main</code>, then runs that). <code>gh</code> is authoritative (process-state + <code>main</code> = source of truth); each verb's completion is derived from the artifact it produces (integrity, not existence). <code>act</code> runs the multi-step verbs (demo, acp); pull is one step (no act). All-or-nothing rollback per verb; logs are witness-only, never transactional. <code>card#</code> is the trace key end-to-end.</p>
 </div>
 
-<h2 id="werk-pipeline">/werk pipeline — act dispatch map</h2>
+<h2 id="werk-pipeline">/werk pipeline — pull · demo · acp</h2>
 
-<p><code>act</code> runs locally under the <code>com.chorus.building-pipeline</code> LaunchAgent. Each /werk/* command invokes <code>act workflow_dispatch --job &lt;name&gt;</code>. The VCS service design's "Whole-flow CI/CD pipeline" shows the same lifecycle from the version-control perspective; this doc shows the orchestration layer that sequences it.</p>
+<p>Three verbs, one environment. <code>pull</code> is a single step (worktree + register state in gh — no act). <code>demo</code> and <code>acp</code> are multi-step runs that <code>act</code> sequences locally. Execution is local; the source (<code>main</code>) and per-card process state live in GitHub. The <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a> covers the git layer (worktree, commit, push, branches); this doc covers the orchestration.</p>
 
 <pre class="mermaid">
 sequenceDiagram
   participant Dev
-  participant Act as act (orchestrator)
-  participant VCS
-  participant Werk
-  participant Gates
-  participant Build
-  participant Deploy
-  participant Spine
+  participant DSL as werk verb
+  participant Act as act (engine)
+  participant Env as production (live)
+  participant GH as GitHub
 
-  Dev->>Act: /werk/pull
-  Act->>VCS: job:pull → chorus_pull_card
-  VCS->>Werk: chorus-werk add (branch off origin/main)
-  Werk-->>Spine: card.pulled
+  Dev->>DSL: pull card#
+  DSL->>GH: worktree off origin/main + register {card#, trace, branch}
+  Note over Env: agent writes code in the werk
 
-  Note over Werk: Role writes code + tests
+  Dev->>DSL: demo card#
+  DSL->>Act: run build → deploy → verify
+  Act->>Env: deploy werk code (live, not yet in main)
+  Act->>GH: record process state
 
-  Dev->>Act: /werk/build
-  Act->>Build: job:build → chorus-build (in werk)
-  Build-->>Spine: build.preview.completed + cdhash
-
-  Dev->>Act: /werk/deploy
-  Act->>Deploy: job:deploy → chorus-deploy (preview instance)
-  Deploy-->>Spine: deploy.preview.completed
-
-  Dev->>Act: /werk/demo
-  Act->>Gates: job:demo → gate chain (product/code/quality/arch/ops)
-  Gates-->>Spine: gate.*.passed
-
-  Dev->>Act: /werk/acp
-  Act->>VCS: job:acp → chorus_acp
-  VCS-->>Werk: chorus-werk remove
-  VCS-->>Spine: card.accepted
-  Act->>Act: release-trigger → launchctl kickstart com.chorus.building-pipeline
-  Act->>Build: chorus-werk-sync → chorus-build → chorus-deploy
-  Build-->>Spine: build.completed + cdhash
-  Deploy-->>Spine: binary.deployed + deploy.completed
+  Dev->>DSL: acp card#
+  DSL->>Act: run accept → commit → push → build → deploy → verify
+  Act->>GH: source → main (permanent)
+  Act->>Env: deploy that
 </pre>
 
 <h3>Segment ownership</h3>
 <table>
-<tr><th>Segment</th><th>Jobs</th><th>Owner</th><th>Service design</th></tr>
-<tr><td>Version control</td><td>pull, acp</td><td>Kade</td><td><a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a></td></tr>
-<tr><td>Build + Deploy</td><td>build, deploy, post-merge pipeline</td><td>Silas</td><td><a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build+Deploy service design</a></td></tr>
-<tr><td>Gates</td><td>demo</td><td>All roles</td><td>gate scripts in <code>skills/demo/gates/</code></td></tr>
-<tr><td>Orchestration</td><td>act dispatch, typed refusals, trace</td><td>Kade (CI)</td><td>this doc</td></tr>
+<tr><th>Surface</th><th>Verbs / steps</th><th>Owner</th><th>Service design</th></tr>
+<tr><td>Version control</td><td>pull; acp's commit / push / branch</td><td>Kade</td><td><a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS service design</a></td></tr>
+<tr><td>Build + Deploy</td><td>the build + deploy sub-steps of demo &amp; acp</td><td>Silas</td><td><a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build+Deploy service design</a></td></tr>
+<tr><td>Gates</td><td>demo gate chain</td><td>All roles</td><td>gate scripts in <code>skills/demo/gates/</code></td></tr>
+<tr><td>Orchestration</td><td>act sequencing inside demo &amp; acp</td><td>Kade (CI)</td><td>this doc</td></tr>
 </table>
 
-<h3>The /deploy gap (current vs designed)</h3>
-<p>Today: <code>/werk/build</code> and <code>/werk/deploy</code> are not yet shipped as act jobs. The build+deploy pipeline runs only post-/acp. Jeff accepts before the feature is observable in a running instance.</p>
-<p>Designed (this doc): <code>/werk/build</code> + <code>/werk/deploy</code> run in the werk pre-/acp → Jeff sees the feature running → /acp promotes the verified artifact. No post-/acp rebuild needed. See Gaps.</p>
+<h3>Status — what's shipped</h3>
+<p><strong>pull v2</strong> (<code>werk-pull</code>, #3045) shipped 2026-05-23 — one ~294-line zero-dep Rust binary (only the <code>git</code> + <code>cards</code> + <code>gh</code> CLIs), proven against real git/gh/cards; gh registration is a commit-status (<code>chorus/pull/&lt;card&gt;</code>), not a push (pull does not push — the branch is empty at pull). <strong>demo v2</strong> (#3046, Wren) in progress. <strong>acp v2</strong> not yet built. There is no preview instance — build + deploy are sub-steps of demo (and acp) into the one production env.</p>
 
 
 <h2>Promise</h2>
@@ -313,7 +281,7 @@ flowchart TB
 <tr><td><code>chorus-deploy</code></td><td>build+deploy</td><td>service-not-found | bootstrap-fail | probe-fail | rollback-needed</td><td><code>chorus-deploy --rollback</code> (restore dist.prev + kickstart)</td></tr>
 </table>
 <p>Sequential-fail-fast is implicit: a step's failure halts the chain, the next step never fires. The job-level concern (act's perspective) is the union of step refusals.</p>
-<p><strong>Deploy step preview contract (designed):</strong> <code>chorus-deploy</code> runs in the werk <em>before</em> <code>/acp</code> — Jeff observes the feature in a running preview instance before accepting. This is the step's defining contract, not a downstream concern. The refusal <code>probe-fail</code> encodes it: if the surface is not observable post-deploy, the step refuses before <code>/demo</code> proceeds. <em>Current state (gap): this pre-/acp step does not exist — deploy runs only post-/acp. See /deploy gap below.</em></p>
+<p><strong>Deploy step contract:</strong> there is no preview instance — there is one environment (production). <code>demo</code> deploys werk code into it (live, not yet in <code>main</code>) so Jeff sees the feature running before <code>acp</code> makes the source permanent. The refusal <code>probe-fail</code> encodes the observability check: if the surface isn't observable post-deploy, the step refuses. acp re-deploys from <code>main</code> once the source lands.</p>
 
 <h3 id="observability-contract">Observability contract</h3>
 <p>Every act-emitted event carries the trace_id from the commit trailer, joining the ACP arc to the build/deploy arc as one chain queryable via <code>chorus_logs_for_trace</code>. On failure, the typed refusal (above) emits as <code>build.failed</code> or <code>deploy.failed</code> with <code>result=fail</code> + <code>error=</code> + structured <code>step=</code> + <code>reason=</code> fields (the #2944 ERR/EXIT trap pattern). Idempotent re-run path (#2943): re-invoke <code>chorus_acp</code> on an accepted card with an orphan branch triggers the cleanup-only path, skipping commit/push/PR.</p>
@@ -434,7 +402,7 @@ flowchart TB
   <li>Commits service design (<code>designing/docs/commits-service-design.md</code>) — pre-merge surface sibling</li>
 </ul>
 
-<p class="footer">Last refreshed 2026-05-16 — Kade. Added /werk pipeline section (pull → build → deploy → demo → acp) with per-step owner, input, output, handoff, and refusal taxonomy. Act-as-orchestrator section with dispatch/step/observability contracts. History strip; Implementation Plan forward-looking.</p>
+<p class="footer">Last refreshed 2026-05-23 — Kade. Rewrote the model to v8 — three verbs (pull · demo · acp); GitHub ⊃ environment ⊃ DSL, and the DSL runs on act; ONE production environment; gh = source of truth (main) + per-card process holder. Superseded the earlier preview-instance / flat pull→build→deploy→demo→acp shape. Diagram: <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a>. pull v2 (#3045) shipped + proven against real git/gh/cards. Pre-merge enforcement / gates / CI-schedule sections unchanged (model-independent).</p>
 
 </body>
 </html>

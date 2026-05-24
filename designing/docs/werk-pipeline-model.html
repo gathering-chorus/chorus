@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Werk pipeline — model v8 (git ⊃ env ⊃ DSL, runs on act)</title>
+<style>
+  :root{ --ink:#1a1a1a; --muted:#666; --line:#d8d8d8;
+         --ghbg:#eef7f0; --ghbd:#1a7f37; --envbg:#fdeceb; --envbd:#c0392b;
+         --dslbd:#555; --verbbd:#333; --act:#efe6fb; --actbd:#7c3aed; --test:#b26a00; }
+  *{box-sizing:border-box}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+       color:var(--ink); max-width:1120px; margin:0 auto; padding:30px 26px 80px}
+  h1{font-size:23px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px}
+  code{font-family:ui-monospace,Menlo,monospace; background:#f3f3f4; padding:1px 5px; border-radius:4px; font-size:.88em}
+  .pill{display:inline-block; background:#111; color:#fff; border-radius:20px; padding:2px 10px; font-size:12px; margin-left:6px}
+
+  .gh{ background:var(--ghbg); border:2.5px solid var(--ghbd); border-radius:14px; padding:13px 15px 15px; }
+  .gh > .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--ghbd); }
+  .gh > p{ font-size:11.5px; color:#2c5a3a; margin:5px 0 0; }
+
+  .env{ background:var(--envbg); border:2.5px solid var(--envbd); border-radius:12px; padding:12px 13px 14px; margin-top:11px; }
+  .env > .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--envbd); text-align:center; }
+  .env > p{ font-size:11.5px; color:#7a2a22; margin:4px 0 11px; text-align:center; }
+
+  .dsl{ background:#fff; border:2px dashed var(--dslbd); border-radius:10px; padding:10px 11px 12px; }
+  .dsl > .lbl{ font-size:11.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:#444; margin-bottom:9px; }
+
+  .verbs{display:flex; align-items:stretch; gap:9px}
+  .verb{flex:1; border:2px solid var(--verbbd); border-radius:9px; padding:10px 11px; background:#fff; min-width:0}
+  .verb h3{margin:0 0 3px; font-size:15px}
+  .verb .role{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:7px}
+  .single{font-size:12px; color:#333}
+  .seq{display:flex; flex-wrap:wrap; gap:5px 5px; margin-top:3px}
+  .step{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:#fafafa; border:1px solid #ccc; border-radius:5px; padding:2px 6px}
+  .step.tst{background:#fff4e5; border-color:var(--test); color:#7a4a00; font-weight:700}
+  .step.dep{background:#fdecec; border-color:var(--envbd); color:#922; font-weight:700}
+  .step.src{background:#eaf7ee; border-color:var(--ghbd); color:#155; font-weight:700}
+  .sep{color:#aaa; align-self:center}
+  .note{font-size:10.5px;color:#888; margin-top:4px}
+  .conn{flex:0 0 92px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center}
+  .conn .lbl{font-size:11px; color:#555; font-style:italic}
+  .conn .big{font-size:20px; color:var(--muted); line-height:1}
+
+  .actband{ background:var(--act); border:2px solid var(--actbd); border-radius:9px; padding:9px 12px; margin-top:10px; text-align:center; }
+  .actband b{ color:var(--actbd); }
+  .actband .t{ font-size:12.5px; }
+  .actband .d{ font-size:11px; color:#5b3b8a; margin-top:2px; }
+
+  .caption{margin-top:18px; text-align:center; font-size:13px; color:#333; border-top:1px solid var(--line); padding-top:12px}
+</style>
+</head>
+<body>
+
+<h1>Werk pipeline — model <span class="pill">v8 · git ⊃ env ⊃ DSL, runs on act</span></h1>
+<p class="sub"><b>GitHub wraps the environment, which wraps the DSL.</b> The DSL is the werk verbs (pull · demo · acp). The DSL <b>runs on act</b> — the local engine. One env, and it's production.</p>
+
+<div class="gh">
+  <div class="lbl">GitHub — source of truth + process holder (wraps everything)</div>
+  <p><b>main = source of truth</b> (verbs branch from <code>origin/main</code>, land back in <code>main</code>) · <b>process holder:</b> per-card state <code>{card#, trace, branch, status, steps_done}</code> via commit-statuses / deployments, queryable by branch. Holds the process; never runs it.</p>
+
+  <div class="env">
+    <div class="lbl">One environment — production (live) · wraps the DSL</div>
+    <p>Everything runs live here — no preview, no staging. demo and acp both deploy into <em>this</em> env. A broken deploy breaks the live thing.</p>
+
+    <div class="dsl">
+      <div class="lbl">DSL — the werk verbs</div>
+      <div class="verbs">
+        <div class="verb">
+          <h3>pull <code>card#</code></h3>
+          <div class="role">get the work · single step</div>
+          <div class="single">worktree off <code>origin/main</code>; register <code>{card#, trace, branch}</code> in GitHub.</div>
+        </div>
+        <div class="conn"><div class="big">→</div><div class="lbl">agent writes the code</div><div class="big">→</div></div>
+        <div class="verb">
+          <h3>demo <code>card#</code></h3>
+          <div class="role">prove it live</div>
+          <div class="seq"><span class="step">build</span><span class="sep">→</span><span class="step dep">deploy</span><span class="sep">→</span><span class="step tst">verify</span></div>
+          <div class="note">runs werk code — live, not yet in main</div>
+        </div>
+        <div class="conn"><div class="big">→</div></div>
+        <div class="verb">
+          <h3>acp <code>card#</code></h3>
+          <div class="role">make it permanent</div>
+          <div class="seq"><span class="step">accept</span><span class="sep">→</span><span class="step src">commit</span><span class="sep">→</span><span class="step src">push</span><span class="sep">→</span><span class="step">build</span><span class="sep">→</span><span class="step dep">deploy</span><span class="sep">→</span><span class="step tst">verify</span></div>
+          <div class="note">source → <b>main</b>, then runs that</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actband">
+      <div class="t">▼ the DSL runs on &nbsp;<b>act</b> — the local engine</div>
+      <div class="d">act executes the verbs' steps (build, deploy, verify…). pull is one step; demo &amp; acp are multi-step runs act sequences. Execution is local; state + source live in GitHub.</div>
+    </div>
+  </div>
+</div>
+
+<div class="caption">
+  <b>git</b> wraps <b>environment</b> wraps <b>DSL</b> · the DSL <b>runs on act</b> · <code>card#</code> is the key.<br>
+  demo = werk code, live, ephemeral → prove it. &nbsp; acp = source to main, permanent → run that. Same environment, both times.
+</div>
+
+</body>
+</html>
