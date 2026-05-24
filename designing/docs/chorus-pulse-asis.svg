@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="1060" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1460" height="1060" fill="#ffffff"/>
+
+  <text x="40" y="38" font-size="23" font-weight="700" fill="#1a1a1a">As-is: Chorus on the spine  ↔  Pulse off the spine — two patterns for one job (serve live state)</text>
+  <text x="40" y="60" font-size="13" fill="#6b7280">Pulse reads pre-written snapshots off the loop (14ms). Chorus crawl synthesizes on demand ON the loop (8–45s). Same need, opposite shape — that asymmetry is #3055.</text>
+  <text x="40" y="78" font-size="11" fill="#9ca3af">Colour = on chorus-api's single event loop (red) vs off it (green/blue). Connects chorus-search-hierarchy.svg to the pulse producer/consumer inventory (pulse-service-design.md). Wren 2026-05-24.</text>
+
+  <!-- =================== LEFT: CHORUS (on the spine) =================== -->
+  <rect x="36" y="96" width="688" height="600" rx="10" fill="#fffaf7" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="56" y="122" font-size="16" font-weight="800" fill="#b91c1c">CHORUS — synthesize on demand, ON the loop</text>
+
+  <!-- chorus-api spine -->
+  <rect x="56" y="138" width="648" height="48" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="72" y="160" font-size="14" font-weight="700" fill="#5b21b6">chorus-api · :3340 · ONE Node event loop = the spine</text>
+  <text x="72" y="177" font-size="11.5" fill="#6d28d9">Every read endpoint runs here. Synchronous work freezes cards / nudge / context-inject / search for all three roles.</text>
+
+  <!-- /search -->
+  <rect x="56" y="198" width="648" height="78" rx="6" fill="#fffdf7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="72" y="218" font-size="13" font-weight="700" fill="#92400e">GET /api/chorus/search — façade over 3 systems  (see chorus-search-hierarchy.svg)</text>
+  <text x="72" y="236" font-size="11.5" fill="#a16207">① keyword <tspan fill="#b91c1c" font-weight="700">SYNC · on the loop</tspan>  ·  ② semantic (Ollama+LanceDB) async  ·  ③ graph (Fuseki) async</text>
+  <text x="72" y="254" font-size="11.5" fill="#166534" font-weight="600">#3051 fixed the LIKE-scan freeze (2.08s → 0.027s). The sync keyword path is still on the loop.</text>
+  <text x="72" y="270" font-size="11" fill="#a16207">modes: fts/semantic/hybrid/unified — merged with RRF</text>
+
+  <!-- /crawl -->
+  <rect x="56" y="286" width="648" height="104" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="72" y="306" font-size="13.5" font-weight="800" fill="#b91c1c">GET /api/chorus/crawl/:domain — 11-collector snapshot, synthesized ON THE LOOP</text>
+  <text x="72" y="324" font-size="11.5" fill="#7f1d1d">collectCards · Rdf · Mentions · Spine · Owl · Infra · Feedback · CodeScan · CodeFiles · Logs · Alerts</text>
+  <text x="72" y="342" font-size="11.5" fill="#7f1d1d">#3054 bounded mentions+spine, but the <tspan font-weight="700">post-await chunk is still sync on the loop</tspan>: SPARQL/timeline</text>
+  <text x="72" y="358" font-size="11.5" fill="#7f1d1d">processing (~79K triples for photos) + computeTrust + timeline.sort.</text>
+  <text x="72" y="378" font-size="12" fill="#b91c1c" font-weight="700">crawl/photos = 44,961ms · crawl/blog = 9,330ms — traced live 15:52–16:06 (via #3058 timestamps)</text>
+
+  <!-- /freshness -->
+  <rect x="56" y="400" width="648" height="56" rx="6" fill="#f6fdf8" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="72" y="420" font-size="13" font-weight="700" fill="#166534">GET /api/chorus/freshness — now cached 30s (#3060, shipped today)</text>
+  <text x="72" y="438" font-size="11.5" fill="#15803d">Was the same disease (read 170MB log + COUNT on the loop, ~1.4s). Now request path 2–8ms. <tspan font-weight="700">Already pulse-shaped.</tspan></text>
+
+  <!-- stores -->
+  <text x="56" y="486" font-size="12" font-weight="700" fill="#475569">Stores (shared, read by the endpoints above)</text>
+  <rect x="56" y="496" width="208" height="84" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="70" y="516" font-size="12.5" font-weight="700" fill="#92400e">SQLite · index.db</text>
+  <text x="70" y="533" font-size="11" fill="#78350f">1.1 GB · 1.26M messages</text>
+  <text x="70" y="549" font-size="11" fill="#78350f">FTS5 + crawler summaries</text>
+  <text x="70" y="565" font-size="10.5" fill="#a16207">(source=crawler, channel=crawl:*)</text>
+
+  <rect x="272" y="496" width="208" height="84" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="286" y="516" font-size="12.5" font-weight="700" fill="#1e3a8a">LanceDB · vectors</text>
+  <text x="286" y="533" font-size="11" fill="#1e40af">21 GB · 768-dim</text>
+  <text x="286" y="549" font-size="11" fill="#1e40af">async (off-thread)</text>
+
+  <rect x="488" y="496" width="216" height="84" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="502" y="516" font-size="12.5" font-weight="700" fill="#166534">Fuseki · SPARQL</text>
+  <text x="502" y="533" font-size="11" fill="#15803d">:3030/pods · urn:gathering:*</text>
+  <text x="502" y="549" font-size="11" fill="#15803d">async HTTP</text>
+
+  <!-- left-bottom note -->
+  <rect x="56" y="596" width="648" height="84" rx="6" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="72" y="617" font-size="12.5" font-weight="700" fill="#b91c1c">The pattern: a reader hits the endpoint → chorus-api computes the whole answer right then, on the loop.</text>
+  <text x="72" y="636" font-size="11.5" fill="#7f1d1d">No pre-computed snapshot to serve. Cost is paid per request, synchronously, in front of everyone else's work.</text>
+  <text x="72" y="655" font-size="11.5" fill="#7f1d1d">freshness (#3060) just escaped this by caching. crawl has not — it is the last big on-loop synthesizer.</text>
+
+  <!-- =================== RIGHT: PULSE (off the spine) =================== -->
+  <rect x="744" y="96" width="680" height="600" rx="10" fill="#f6fdf8" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="764" y="122" font-size="16" font-weight="800" fill="#166534">PULSE — read pre-written snapshots, OFF the loop</text>
+
+  <!-- producers -->
+  <text x="764" y="148" font-size="12" font-weight="700" fill="#475569">① Producers — each writes a file on its OWN cadence (separate processes)</text>
+  <rect x="764" y="156" width="300" height="150" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="778" y="176" font-size="11" fill="#334155">role-state CLI → {role}-declared.json  <tspan fill="#94a3b8">(on transition)</tspan></text>
+  <text x="778" y="194" font-size="11" fill="#334155">observer hook → {role}-inferred.json  <tspan fill="#94a3b8">(per tool-use)</tspan></text>
+  <text x="778" y="212" font-size="11" fill="#334155">chorus-log → chorus.log  <tspan fill="#94a3b8">(every spine event)</tspan></text>
+  <text x="778" y="230" font-size="11" fill="#334155">alert scripts → /tmp/alert-*  <tspan fill="#94a3b8">(on fire)</tspan></text>
+  <text x="778" y="248" font-size="11" fill="#334155">nudge CLI → voice-inbox/*  <tspan fill="#94a3b8">(on nudge)</tspan></text>
+  <text x="778" y="266" font-size="11" fill="#334155">deep-health.sh <tspan font-weight="700">LaunchAgent</tspan> → deep-health-latest.json  <tspan fill="#94a3b8">(5min)</tspan></text>
+  <text x="778" y="284" font-size="11" fill="#334155">cards CLI → board-wip-snapshot.json  <tspan fill="#94a3b8">(on mutation +10s TTL)</tspan></text>
+  <text x="778" y="301" font-size="11" fill="#334155">pulse → freshness-snapshot.json  <tspan fill="#94a3b8">(30s cache of /freshness)</tspan></text>
+
+  <!-- assembler -->
+  <line x1="1064" y1="231" x2="1104" y2="231" stroke="#16a34a" stroke-width="2.5" marker-end="url(#g)"/>
+  <rect x="1106" y="156" width="300" height="150" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1120" y="178" font-size="12.5" font-weight="700" fill="#5b21b6">② chorus-hooks  pulse  (Rust)</text>
+  <text x="1120" y="197" font-size="11" fill="#6d28d9">Runs in the daemon, NOT chorus-api.</text>
+  <text x="1120" y="214" font-size="11" fill="#6d28d9">Reads the files → annotates each</text>
+  <text x="1120" y="231" font-size="11" fill="#6d28d9">section with age → exposes.</text>
+  <text x="1120" y="250" font-size="11" fill="#6d28d9" font-weight="600">"Event-bus cache, not aggregator —</text>
+  <text x="1120" y="266" font-size="11" fill="#6d28d9" font-weight="600">read, annotate, expose. No synth."</text>
+  <text x="1120" y="287" font-size="11" fill="#15803d">Fires on UserPromptSubmit +</text>
+  <text x="1120" y="302" font-size="11" fill="#15803d">post-tool-use. Cold 754ms / <tspan font-weight="700">warm 14ms</tspan>.</text>
+
+  <!-- pulse-latest -->
+  <line x1="1256" y1="306" x2="1256" y2="340" stroke="#16a34a" stroke-width="2.5" marker-end="url(#g)"/>
+  <rect x="1106" y="342" width="300" height="50" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="1120" y="363" font-size="12.5" font-weight="700" fill="#166534">/tmp/pulse-latest.json</text>
+  <text x="1120" y="381" font-size="11" fill="#15803d">the pre-written snapshot · ~14ms warm read</text>
+
+  <!-- consumers -->
+  <text x="764" y="430" font-size="12" font-weight="700" fill="#475569">③ Consumers — read the snapshot, never compute</text>
+  <rect x="764" y="440" width="642" height="92" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="778" y="461" font-size="11.5" fill="#334155">• context_inject.rs — shapes pulse into the per-prompt boot envelope (regen if &gt;30s old)</text>
+  <text x="778" y="481" font-size="11.5" fill="#334155">• tiles.ts — Clearing UI role/board/health/alerts tiles</text>
+  <text x="778" y="501" font-size="11.5" fill="#334155">• GET /api/chorus/pulse/latest — chorus-api re-serves the file verbatim (read-through)</text>
+  <text x="778" y="521" font-size="11.5" fill="#334155">• agents (Claude sessions) — whole file into boot prompt</text>
+
+  <!-- right-bottom note -->
+  <rect x="764" y="548" width="642" height="132" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+  <text x="780" y="569" font-size="12.5" font-weight="700" fill="#065f46">Why pulse is fast and never freezes the spine</text>
+  <text x="780" y="589" font-size="11.5" fill="#047857">The heavy work (assembling state) happens in a SEPARATE process on its own cadence and lands in a file.</text>
+  <text x="780" y="608" font-size="11.5" fill="#047857">The read path just opens that file. No producer can block a consumer; no consumer triggers a producer.</text>
+  <text x="780" y="627" font-size="11.5" fill="#047857">This is the producer → snapshot file → read-through pattern. It is the shape chorus crawl is missing.</text>
+  <text x="780" y="651" font-size="11.5" fill="#065f46" font-weight="700">Note: GET /api/chorus/pulse/latest already proves chorus-api CAN be a pure read-through —</text>
+  <text x="780" y="668" font-size="11.5" fill="#065f46" font-weight="700">it just re-serves the file pulse wrote. crawl should serve a file the same way.</text>
+
+  <!-- =================== CONNECTIONS (center) =================== -->
+  <!-- context_inject reads both -->
+  <line x1="724" y1="237" x2="764" y2="455" stroke="#7c3aed" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#p)"/>
+  <line x1="724" y1="466" x2="640" y2="240" stroke="#7c3aed" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#p)"/>
+  <rect x="430" y="120" width="300" height="34" rx="5" fill="#faf5ff" stroke="#a78bfa"/>
+  <text x="445" y="135" font-size="10.5" fill="#5b21b6" font-weight="700">context_inject reads BOTH per prompt:</text>
+  <text x="445" y="149" font-size="10" fill="#6d28d9">pulse file (off-loop 14ms) + /search (on-loop). Two patterns.</text>
+
+  <!-- freshness cache link -->
+  <line x1="704" y1="428" x2="1106" y2="360" stroke="#16a34a" stroke-width="1.6" stroke-dasharray="4,4" marker-end="url(#g)"/>
+  <text x="820" y="408" font-size="10.5" fill="#15803d" font-weight="600">pulse's freshness section = 30s cache of chorus /freshness →</text>
+
+  <!-- =================== BOTTOM: the inversion + the fix =================== -->
+  <!-- inversion -->
+  <rect x="36" y="712" width="1388" height="150" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="56" y="738" font-size="15" font-weight="800" fill="#b91c1c">THE INVERSION — the "background" crawl job is the biggest CAUSE of on-loop crawl work</text>
+  <text x="56" y="762" font-size="12.5" fill="#7f1d1d"><tspan font-weight="700">com.chorus.crawler-index</tspan> LaunchAgent (every 30min, #3054-throttled)  →  index-crawler-snapshots.sh  →  loops 27 domains  →  <tspan font-weight="700">curl GET /api/chorus/crawl/:domain</tspan></text>
+  <text x="56" y="783" font-size="12.5" fill="#7f1d1d">So a process that LOOKS off-loop actually forces chorus-api to run the 8–45s synthesis <tspan font-weight="700">27 times every half hour</tspan>, on the loop — then stores only a short text</text>
+  <text x="56" y="804" font-size="12.5" fill="#7f1d1d">summary into SQLite (source=crawler) for search to find. The full snapshot is computed, used once for a summary, and thrown away.</text>
+  <text x="56" y="828" font-size="12.5" fill="#b91c1c" font-weight="700">Compare pulse: its producers compute IN THEIR OWN PROCESS and write a reusable snapshot file. The crawl job calls the loop instead of being a producer.</text>
+  <text x="56" y="849" font-size="11.5" fill="#7f1d1d">Result: the crawl freezes traced today (photos 45s, blog 9s) line up with this cadence job + any live reader of /crawl — both pay the on-loop cost.</text>
+
+  <!-- the fix -->
+  <rect x="36" y="876" width="1388" height="150" rx="10" fill="#ecfdf5" stroke="#16a34a" stroke-width="2"/>
+  <text x="56" y="902" font-size="15" font-weight="800" fill="#065f46">#3055 — make crawl a Pulse-style producer (don't invent infra; invert the existing one)</text>
+  <text x="56" y="926" font-size="12.5" fill="#047857"><tspan font-weight="700">1.</tspan> A standalone producer (run by the SAME existing launchd cadence job) computes each domain's snapshot <tspan font-weight="700">in its own process — off chorus-api's loop</tspan> —</text>
+  <text x="56" y="947" font-size="12.5" fill="#047857">   importing the 11 collectors directly, and writes the full snapshot to ~/.chorus/crawl-snapshots/&lt;domain&gt;.json (the pulse /tmp/*.json file convention).</text>
+  <text x="56" y="968" font-size="12.5" fill="#047857"><tspan font-weight="700">2.</tspan> GET /api/chorus/crawl/:domain becomes a <tspan font-weight="700">read-through</tspan> — serve the snapshot file (~5ms, like /pulse/latest), annotate age. Cold/never-crawled → "warming", never a live 45s synth.</text>
+  <text x="56" y="989" font-size="12.5" fill="#047857"><tspan font-weight="700">3.</tspan> Reuses what already exists: the launchd cadence, the 27-domain loop, per-domain status tracking. No new SQLite table, no new launchd job. Touches Silas's lane (the job).</text>
+  <text x="56" y="1012" font-size="12" fill="#065f46" font-weight="700">Net: crawl stops freezing the spine the way freshness (#3060) and pulse already don't. The diagram's two halves become one pattern.</text>
+
+  <defs>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#16a34a"/></marker>
+    <marker id="p" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#7c3aed"/></marker>
+  </defs>
+</svg>
