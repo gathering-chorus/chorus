@@ -44,8 +44,239 @@
   <h2>At a Glance — the werk pipeline (v8 model, 2026-05-23)</h2>
   <p>The /werk pipeline is <strong>three verbs</strong>, keyed by <code>card#</code>: <strong>pull</strong> (get the work), <strong>demo</strong> (prove it live), <strong>acp</strong> (make it permanent). <strong>GitHub wraps the environment, which wraps the DSL</strong> (the verbs); the DSL <strong>runs on <code>act</code></strong>, the local engine. There is exactly <strong>ONE environment, and it is production (live)</strong> — no preview, no staging. <code>gh</code> = source of truth (<code>main</code>) + per-card process holder; <code>card#</code> = the key. Full visual: <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a>.</p>
 
-  <iframe src="werk-pipeline-model.html" style="width:100%;height:660px;border:1px solid #c7d2fe;border-radius:8px;background:#fff;" title="werk-pipeline v8 model"></iframe>
-  <p style="font-size:0.8em;color:#999;margin-top:2px;">↑ the v8 model, embedded from <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a> (single source — the same diagram, not a re-draw).</p>
+  <h3 style="margin-top:1.4em;">As-Is (today) — monolith MCP tools, on the chorus-api loop</h3>
+  <iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;title&gt;Werk pipeline — as-is (today: monolith MCP tools, on-loop)&lt;/title&gt;
+&lt;style&gt;
+  :root{ --ink:#1a1a1a; --muted:#666; --line:#d8d8d8;
+         --loopbg:#fdeceb; --loopbd:#c0392b; --mono:#eceef0; --monobd:#9aa0a6;
+         --warn:#b26a00; --warnbg:#fff4e5; }
+  *{box-sizing:border-box}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,system-ui,sans-serif;
+       color:var(--ink); max-width:1120px; margin:0 auto; padding:30px 26px 80px}
+  h1{font-size:23px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px}
+  code{font-family:ui-monospace,Menlo,monospace; background:#f3f3f4; padding:1px 5px; border-radius:4px; font-size:.88em}
+  .pill{display:inline-block; background:#111; color:#fff; border-radius:20px; padding:2px 10px; font-size:12px; margin-left:6px}
+  .pill a{color:#fff; text-decoration:none}
+
+  .loop{ background:var(--loopbg); border:2.5px solid var(--loopbd); border-radius:14px; padding:13px 15px 15px; }
+  .loop &gt; .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--loopbd); }
+  .loop &gt; p{ font-size:11.5px; color:#7a2a22; margin:5px 0 12px; }
+
+  .ops{display:flex; align-items:stretch; gap:9px}
+  .op{flex:1; border:2px solid var(--monobd); border-radius:9px; padding:10px 11px; background:var(--mono); min-width:0}
+  .op h3{margin:0 0 3px; font-size:15px}
+  .op .tool{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#444; margin-bottom:6px}
+  .op .role{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:7px}
+  .seq{display:flex; flex-wrap:wrap; gap:4px; margin-top:3px}
+  .step{font-family:ui-monospace,Menlo,monospace; font-size:10.5px; background:#fff; border:1px solid #c4c4c4; border-radius:5px; padding:2px 6px; color:#555}
+  .sep{color:#aaa; align-self:center}
+  .opaque{display:inline-block; font-size:10px; font-weight:700; color:#7a2a22; background:#f7d9d4; border:1px solid #d98b7e; border-radius:5px; padding:1px 6px; margin-top:7px}
+  .conn{flex:0 0 88px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center}
+  .conn .lbl{font-size:11px; color:#555; font-style:italic}
+  .conn .big{font-size:20px; color:var(--muted); line-height:1}
+
+  .nogh{ margin-top:12px; border:2px dashed var(--monobd); border-radius:9px; padding:9px 12px; background:#f6f7f8; text-align:center; font-size:11.5px; color:#555; }
+  .nogh b{ color:#7a2a22; }
+
+  .friction{ margin-top:18px; border:1px solid var(--warn); background:var(--warnbg); border-radius:10px; padding:12px 15px; }
+  .friction .lbl{ font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--warn); margin-bottom:7px; }
+  .friction ul{ margin:0; padding-left:20px; }
+  .friction li{ font-size:12.5px; margin:5px 0; color:#5a3a00; }
+  .friction li b{ color:#7a4a00; }
+
+  .caption{margin-top:18px; text-align:center; font-size:13px; color:#333; border-top:1px solid var(--line); padding-top:12px}
+  .caption a{color:#1a7f37; font-weight:600}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;h1&gt;Werk pipeline — as-is &lt;span class=&quot;pill&quot;&gt;today · monolith MCP tools, on-loop&lt;/span&gt;&lt;/h1&gt;
+&lt;p class=&quot;sub&quot;&gt;&lt;b&gt;The current pipeline is three opaque operations run as MCP tools on the chorus-api daemon&lt;/b&gt; — the same event loop that carries the coordination spine. To-be: &lt;a href=&quot;/designing/docs/werk-pipeline-model.html&quot;&gt;werk-pipeline-model.html&lt;/a&gt; (v8).&lt;/p&gt;
+
+&lt;div class=&quot;loop&quot;&gt;
+  &lt;div class=&quot;lbl&quot;&gt;chorus-api daemon — the shared coordination loop (:3340)&lt;/div&gt;
+  &lt;p&gt;pull and acp are single MCP handlers; demo is a markdown skill the agent executes. All run here, on the one event loop. Heavy/synchronous work blocks the spine.&lt;/p&gt;
+
+  &lt;div class=&quot;ops&quot;&gt;
+    &lt;div class=&quot;op&quot;&gt;
+      &lt;h3&gt;pull&lt;/h3&gt;
+      &lt;div class=&quot;tool&quot;&gt;chorus_pull_card (one MCP call)&lt;/div&gt;
+      &lt;div class=&quot;role&quot;&gt;get the work · atomic&lt;/div&gt;
+      &lt;div class=&quot;seq&quot;&gt;&lt;span class=&quot;step&quot;&gt;validate&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;move WIP&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;werk add&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;role-state&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;spine&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;opaque&quot;&gt;one tool — no per-step check&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;conn&quot;&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;div class=&quot;lbl&quot;&gt;agent writes the code&lt;/div&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;/div&gt;
+    &lt;div class=&quot;op&quot;&gt;
+      &lt;h3&gt;demo&lt;/h3&gt;
+      &lt;div class=&quot;tool&quot;&gt;/demo skill (markdown gates)&lt;/div&gt;
+      &lt;div class=&quot;role&quot;&gt;prove · skill-as-logic&lt;/div&gt;
+      &lt;div class=&quot;seq&quot;&gt;&lt;span class=&quot;step&quot;&gt;validate&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;AC pre-flight&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;gate chain&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;smoke&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;stakes&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;signal&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;opaque&quot;&gt;gates = card comments; logic in markdown&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;conn&quot;&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;/div&gt;
+    &lt;div class=&quot;op&quot;&gt;
+      &lt;h3&gt;acp&lt;/h3&gt;
+      &lt;div class=&quot;tool&quot;&gt;chorus_acp (one MCP call)&lt;/div&gt;
+      &lt;div class=&quot;role&quot;&gt;land · atomic&lt;/div&gt;
+      &lt;div class=&quot;seq&quot;&gt;&lt;span class=&quot;step&quot;&gt;commit&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;push&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;PR merge&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;cards-done&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;branch-close&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;·&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;spine&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;opaque&quot;&gt;one tool — no per-step check&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;nogh&quot;&gt;state lives in SQLite index + spine + Vikunja cards · &lt;b&gt;GitHub only holds the merged commits&lt;/b&gt; — no per-verb checks, no way to ask gh &quot;did all the steps run?&quot;&lt;/div&gt;
+&lt;/div&gt;
+
+&lt;div class=&quot;friction&quot;&gt;
+  &lt;div class=&quot;lbl&quot;&gt;Why this needs the to-be&lt;/div&gt;
+  &lt;ul&gt;
+    &lt;li&gt;&lt;b&gt;On-loop freeze:&lt;/b&gt; pull/acp/index run synchronously on the chorus-api event loop — heavy work blocks the coordination spine (the #3050 / #3051 / #3055 / #3067 freeze class).&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Opaque monoliths:&lt;/b&gt; pull and acp are one tool each — a mid-acp failure is a single tool error, not a per-step state you can see or resume from.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;State scattered:&lt;/b&gt; progress is split across the index, spine, and cards; gh holds only commits — no single queryable &quot;how far did this card get?&quot;&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Skill-as-logic:&lt;/b&gt; demo&#x27;s gate logic lives in markdown the model executes — the shortcut-prone pattern #2751/#2750 already hardened pull/acp away from, but demo still carries it.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;No &lt;code&gt;act&lt;/code&gt;, no verb binaries, no commit-status mapping&lt;/b&gt; — nothing local, testable, and per-verb to run or prove.&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/div&gt;
+
+&lt;div class=&quot;caption&quot;&gt;
+  As-is = three opaque tools on the shared loop, state scattered, gh holds only commits.&lt;br&gt;
+  To-be → &lt;a href=&quot;/designing/docs/werk-pipeline-model.html&quot;&gt;werk-pipeline-model.html&lt;/a&gt;: decomposed verbs on &lt;code&gt;act&lt;/code&gt; (local, off-loop), gh as source-of-truth + process-holder with one commit-status check per verb.
+&lt;/div&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+" style="width:100%;height:760px;border:1px solid #fca5a5;border-radius:8px;background:#fff;" title="werk-pipeline as-is"></iframe>
+  <p style="font-size:0.8em;color:#999;margin-top:2px;">↑ where the pipeline is <em>today</em>: pull / demo / acp as opaque MCP monoliths on the shared loop — state scattered across index/spine/cards, gh holds only commits. Embedded from <a href="http://localhost:3340/designing/docs/werk-pipeline-asis.html">werk-pipeline-asis.html</a> (single source).</p>
+
+  <h3 style="margin-top:1.4em;">To-Be (v8) — decomposed verbs on <code>act</code>, gh as source-of-truth + process-holder</h3>
+  <iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;title&gt;Werk pipeline — model v8 (git ⊃ env ⊃ DSL, runs on act)&lt;/title&gt;
+&lt;style&gt;
+  :root{ --ink:#1a1a1a; --muted:#666; --line:#d8d8d8;
+         --ghbg:#eef7f0; --ghbd:#1a7f37; --envbg:#fdeceb; --envbd:#c0392b;
+         --dslbd:#555; --verbbd:#333; --act:#efe6fb; --actbd:#7c3aed; --test:#b26a00; }
+  *{box-sizing:border-box}
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,system-ui,sans-serif;
+       color:var(--ink); max-width:1120px; margin:0 auto; padding:30px 26px 80px}
+  h1{font-size:23px; margin:0 0 2px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px}
+  code{font-family:ui-monospace,Menlo,monospace; background:#f3f3f4; padding:1px 5px; border-radius:4px; font-size:.88em}
+  .pill{display:inline-block; background:#111; color:#fff; border-radius:20px; padding:2px 10px; font-size:12px; margin-left:6px}
+
+  .gh{ background:var(--ghbg); border:2.5px solid var(--ghbd); border-radius:14px; padding:13px 15px 15px; }
+  .gh &gt; .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--ghbd); }
+  .gh &gt; p{ font-size:11.5px; color:#2c5a3a; margin:5px 0 0; }
+  .ghchecks{ margin:11px 0 3px; }
+  .ghchecks .l{ font-size:11px; color:#2c5a3a; font-weight:700; margin-bottom:6px; }
+  .chk{ display:inline-block; font-family:ui-monospace,Menlo,monospace; font-size:11px; border:1px solid #cfe3d4; background:#fff; border-radius:6px; padding:3px 8px; margin:0 5px 5px 0; color:#24292f; }
+  .cdot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .cdot.done{background:#1a7f37} .cdot.run{background:#d4a017} .cdot.none{background:#d0d7de} .cdot.fail{background:#cf222e}
+  .ghchecks .leg{ font-size:10.5px; color:#5a7a64; margin-top:3px; }
+
+  .env{ background:var(--envbg); border:2.5px solid var(--envbd); border-radius:12px; padding:12px 13px 14px; margin-top:11px; }
+  .env &gt; .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--envbd); text-align:center; }
+  .env &gt; p{ font-size:11.5px; color:#7a2a22; margin:4px 0 11px; text-align:center; }
+
+  .dsl{ background:#fff; border:2px dashed var(--dslbd); border-radius:10px; padding:10px 11px 12px; }
+  .dsl &gt; .lbl{ font-size:11.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:#444; margin-bottom:9px; }
+
+  .verbs{display:flex; align-items:stretch; gap:9px}
+  .verb{flex:1; border:2px solid var(--verbbd); border-radius:9px; padding:10px 11px; background:#fff; min-width:0}
+  .verb h3{margin:0 0 3px; font-size:15px}
+  .verb .role{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:7px}
+  .single{font-size:12px; color:#333}
+  .seq{display:flex; flex-wrap:wrap; gap:5px 5px; margin-top:3px}
+  .step{font-family:ui-monospace,Menlo,monospace; font-size:11px; background:#fafafa; border:1px solid #ccc; border-radius:5px; padding:2px 6px}
+  .step.tst{background:#fff4e5; border-color:var(--test); color:#7a4a00; font-weight:700}
+  .step.dep{background:#fdecec; border-color:var(--envbd); color:#922; font-weight:700}
+  .step.src{background:#eaf7ee; border-color:var(--ghbd); color:#155; font-weight:700}
+  .sep{color:#aaa; align-self:center}
+  .note{font-size:10.5px;color:#888; margin-top:4px}
+  .conn{flex:0 0 92px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center}
+  .conn .lbl{font-size:11px; color:#555; font-style:italic}
+  .conn .big{font-size:20px; color:var(--muted); line-height:1}
+
+  .actband{ background:var(--act); border:2px solid var(--actbd); border-radius:9px; padding:9px 12px; margin-top:10px; text-align:center; }
+  .actband b{ color:var(--actbd); }
+  .actband .t{ font-size:12.5px; }
+  .actband .d{ font-size:11px; color:#5b3b8a; margin-top:2px; }
+
+  .caption{margin-top:18px; text-align:center; font-size:13px; color:#333; border-top:1px solid var(--line); padding-top:12px}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;h1&gt;Werk pipeline — model &lt;span class=&quot;pill&quot;&gt;v8 · git ⊃ env ⊃ DSL, runs on act&lt;/span&gt;&lt;/h1&gt;
+&lt;p class=&quot;sub&quot;&gt;&lt;b&gt;GitHub wraps the environment, which wraps the DSL.&lt;/b&gt; The DSL is the werk verbs (pull · demo · acp). The DSL &lt;b&gt;runs on act&lt;/b&gt; — the local engine. One env, and it&#x27;s production.&lt;/p&gt;
+
+&lt;div class=&quot;gh&quot;&gt;
+  &lt;div class=&quot;lbl&quot;&gt;GitHub — source of truth + process holder (wraps everything)&lt;/div&gt;
+  &lt;p&gt;&lt;b&gt;main = source of truth&lt;/b&gt; (verbs branch from &lt;code&gt;origin/main&lt;/code&gt;, land back in &lt;code&gt;main&lt;/code&gt;) · &lt;b&gt;process holder:&lt;/b&gt; per-card state &lt;code&gt;{card#, trace, branch, status, steps_done}&lt;/code&gt; via commit-statuses / deployments, queryable by branch. Holds the process; never runs it.&lt;/p&gt;
+
+  &lt;div class=&quot;ghchecks&quot;&gt;
+    &lt;div class=&quot;l&quot;&gt;the process gh holds = one commit-status check per verb — all six green on the card&#x27;s PR = every verb happened:&lt;/div&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot done&quot;&gt;&lt;/span&gt;chorus/pull&lt;/span&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot done&quot;&gt;&lt;/span&gt;chorus/commit&lt;/span&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot done&quot;&gt;&lt;/span&gt;chorus/build&lt;/span&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot run&quot;&gt;&lt;/span&gt;chorus/deploy&lt;/span&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot none&quot;&gt;&lt;/span&gt;chorus/verify&lt;/span&gt;
+    &lt;span class=&quot;chk&quot;&gt;&lt;span class=&quot;cdot none&quot;&gt;&lt;/span&gt;chorus/accept&lt;/span&gt;
+    &lt;div class=&quot;leg&quot;&gt;&lt;span class=&quot;cdot done&quot;&gt;&lt;/span&gt;done&amp;nbsp;&amp;nbsp;&lt;span class=&quot;cdot run&quot;&gt;&lt;/span&gt;running&amp;nbsp;&amp;nbsp;&lt;span class=&quot;cdot none&quot;&gt;&lt;/span&gt;not yet&amp;nbsp;&amp;nbsp;&lt;span class=&quot;cdot fail&quot;&gt;&lt;/span&gt;failed&amp;nbsp;&amp;nbsp;— the set on the branch tip = how far the card got; carried forward onto the new SHA.&lt;/div&gt;
+    &lt;div class=&quot;leg&quot; style=&quot;margin-top:5px&quot;&gt;push folds under &lt;code&gt;chorus/commit&lt;/code&gt; — committed + pushed = one state; that&#x27;s why six checks, not seven.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;env&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;One environment — production (live) · wraps the DSL&lt;/div&gt;
+    &lt;p&gt;Everything runs live here — no preview, no staging. demo and acp both deploy into &lt;em&gt;this&lt;/em&gt; env. A broken deploy breaks the live thing.&lt;/p&gt;
+
+    &lt;div class=&quot;dsl&quot;&gt;
+      &lt;div class=&quot;lbl&quot;&gt;DSL — the werk verbs&lt;/div&gt;
+      &lt;div class=&quot;verbs&quot;&gt;
+        &lt;div class=&quot;verb&quot;&gt;
+          &lt;h3&gt;pull &lt;code&gt;card#&lt;/code&gt;&lt;/h3&gt;
+          &lt;div class=&quot;role&quot;&gt;get the work · single step&lt;/div&gt;
+          &lt;div class=&quot;single&quot;&gt;worktree off &lt;code&gt;origin/main&lt;/code&gt;; register &lt;code&gt;{card#, trace, branch}&lt;/code&gt; in GitHub.&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;conn&quot;&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;div class=&quot;lbl&quot;&gt;agent writes the code&lt;/div&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;verb&quot;&gt;
+          &lt;h3&gt;demo &lt;code&gt;card#&lt;/code&gt;&lt;/h3&gt;
+          &lt;div class=&quot;role&quot;&gt;prove it live&lt;/div&gt;
+          &lt;div class=&quot;seq&quot;&gt;&lt;span class=&quot;step&quot;&gt;build&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step dep&quot;&gt;deploy&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step tst&quot;&gt;verify&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;note&quot;&gt;runs werk code — live, not yet in main&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;conn&quot;&gt;&lt;div class=&quot;big&quot;&gt;→&lt;/div&gt;&lt;/div&gt;
+        &lt;div class=&quot;verb&quot;&gt;
+          &lt;h3&gt;acp &lt;code&gt;card#&lt;/code&gt;&lt;/h3&gt;
+          &lt;div class=&quot;role&quot;&gt;make it permanent&lt;/div&gt;
+          &lt;div class=&quot;seq&quot;&gt;&lt;span class=&quot;step&quot;&gt;accept&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step src&quot;&gt;commit&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step src&quot;&gt;push&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step&quot;&gt;build&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step dep&quot;&gt;deploy&lt;/span&gt;&lt;span class=&quot;sep&quot;&gt;→&lt;/span&gt;&lt;span class=&quot;step tst&quot;&gt;verify&lt;/span&gt;&lt;/div&gt;
+          &lt;div class=&quot;note&quot;&gt;source → &lt;b&gt;main&lt;/b&gt;, then runs that&lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class=&quot;actband&quot;&gt;
+      &lt;div class=&quot;t&quot;&gt;▼ the DSL runs on &amp;nbsp;&lt;b&gt;act&lt;/b&gt; — the local engine&lt;/div&gt;
+      &lt;div class=&quot;d&quot;&gt;act executes the verbs&#x27; steps (build, deploy, verify…). pull is one step; demo &amp;amp; acp are multi-step runs act sequences. Execution is local; state + source live in GitHub.&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;div class=&quot;caption&quot;&gt;
+  &lt;b&gt;git&lt;/b&gt; wraps &lt;b&gt;environment&lt;/b&gt; wraps &lt;b&gt;DSL&lt;/b&gt; · the DSL &lt;b&gt;runs on act&lt;/b&gt; · &lt;code&gt;card#&lt;/code&gt; is the key.&lt;br&gt;
+  demo = werk code, live, ephemeral → prove it. &amp;nbsp; acp = source to main, permanent → run that. Same environment, both times.
+&lt;/div&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+" style="width:100%;height:900px;border:1px solid #c7d2fe;border-radius:8px;background:#fff;" title="werk-pipeline v8 model"></iframe>
+  <p style="font-size:0.8em;color:#999;margin-top:2px;">↑ the v8 model, embedded from <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a> (single source — the same diagram, not a re-draw). Decisions behind it: <a href="#references">ADR-032</a> (+ ADR-033, landing via Silas).</p>
 
   <table class="gap-and-next">
     <thead><tr><th>Verb</th><th>What it does</th><th>Owner</th></tr></thead>
@@ -56,7 +287,7 @@
     </tbody>
   </table>
 
-  <p class="invariants"><strong>Invariants:</strong> one environment (production) — demo and acp both deploy to it, differing by <em>source-permanence</em> not destination (demo = werk code live; acp lands source in <code>main</code>, then runs that). <code>gh</code> is authoritative (process-state + <code>main</code> = source of truth); each verb's completion is derived from the artifact it produces (integrity, not existence). <code>act</code> runs the multi-step verbs (demo, acp); pull is one step (no act). All-or-nothing rollback per verb; logs are witness-only, never transactional. <code>card#</code> is the trace key end-to-end.</p>
+  <p class="invariants"><strong>Invariants:</strong> one environment (production) — demo and acp both deploy to it, differing by <em>source-permanence</em> not destination (demo = werk code live; acp lands source in <code>main</code>, then runs that). <code>gh</code> is authoritative (process-state + <code>main</code> = source of truth) — process-state surfaces as <strong>one commit-status check per verb</strong> on the card's PR (<code>chorus/pull · commit · build · deploy · verify · accept</code>; push folds under <code>commit</code>), so all-six-green = every verb ran. Each verb's completion is derived from the artifact it produces (integrity, not existence). <code>act</code> runs the multi-step verbs (demo, acp); pull is one step (no act). All-or-nothing rollback per verb; logs are witness-only, never transactional. <code>card#</code> is the trace key end-to-end.</p>
 </div>
 
 <h2 id="werk-pipeline">/werk pipeline — pull · demo · acp</h2>
@@ -96,14 +327,14 @@ sequenceDiagram
 </table>
 
 <h3>Status — what's shipped</h3>
-<p><strong>pull v2</strong> (<code>werk-pull</code>, #3045) shipped 2026-05-23 — one ~294-line zero-dep Rust binary (only the <code>git</code> + <code>cards</code> + <code>gh</code> CLIs), proven against real git/gh/cards; gh registration is a commit-status (<code>chorus/pull/&lt;card&gt;</code>), not a push (pull does not push — the branch is empty at pull). <strong>demo v2</strong> (#3046, Wren) in progress. <strong>acp v2</strong> not yet built. There is no preview instance — build + deploy are sub-steps of demo (and acp) into the one production env.</p>
+<p><strong>pull v2</strong> (<code>werk-pull</code>, #3045) shipped 2026-05-23 — one ~294-line zero-dep Rust binary (only the <code>git</code> + <code>cards</code> + <code>gh</code> CLIs), proven against real git/gh/cards; gh registration is a commit-status (<code>chorus/pull/&lt;card&gt;</code>), not a push (pull does not push — the branch is empty at pull). <strong>demo v2</strong> (#3046, Wren) in progress. The remaining verbs are carded to the <strong>ADR-032</strong> contract — <strong>commit</strong> #3056, <strong>accept</strong> #3057, <strong>build</strong> #3061, <strong>deploy</strong> #3062, <strong>shared-trace</strong> #3063 — composed by the <strong>acp orchestrator</strong> #3064. <strong>ADR-033</strong> ratifies the pipeline model they build to (the two diagrams above). There is no preview instance — build + deploy are sub-steps of demo (and acp) into the one production env.</p>
 
 
 <h2>Promise</h2>
 <div class="promise">
 Every change that reaches <code>main</code> is measured by the same gates regardless of who pushed it. Five hooks fire pre-merge. Five named code-review checks record card-level acceptance. One scheduled GitHub Actions run on <code>main</code> (~daily) is the post-merge witness. One reactive alert wakes the on-call when CI goes red.
 </div>
-<p><strong>Honest scope:</strong> four of the five pre-merge hooks block unconditionally; the fifth (pre-commit) is <code>--no-verify</code>-skippable for the carded <code>KNOWN_FAILS</code> pattern, and the allowlist enforcing that convention is still a planned card (#2497). With required-status-checks empty (post-#2600 cost-stop), an accidental main-push lands red and stays red until the next nightly run — up to 24h. The schedule-only retreat is a deliberate cost trade ($15/mo vs $225 projected); the gap is mitigated by pre-merge maturity, not by CI itself.</p>
+<p><strong>Honest scope:</strong> four of the five pre-merge hooks block unconditionally; the fifth (pre-commit) is <code>--no-verify</code>-skippable for the carded <code>KNOWN_FAILS</code> pattern, and the allowlist enforcing that convention shipped (#2497, Done). With required-status-checks empty (post-#2600 cost-stop), an accidental main-push lands red and stays red until the next nightly run — up to 24h. The schedule-only retreat is a deliberate cost trade ($15/mo vs $225 projected); the gap is mitigated by pre-merge maturity, not by CI itself.</p>
 
 <h2>Vocabulary</h2>
 <p>The codebase uses internal terms that map to industry-standard CI/CD concepts. Reading this section once lets the rest of the doc parse without translation.</p>
@@ -135,7 +366,7 @@ Every change that reaches <code>main</code> is measured by the same gates regard
 <tr><td>5</td><td><strong>Bad commit content</strong> (typecheck/lint/test failures, secrets, oversize)</td><td>pre-commit hook</td><td>tsc errors, jest/cargo failures, lint violations, dup-strings, cog-complexity over 12, secrets, oversize binaries</td><td>(built up over many cards)</td></tr>
 </table>
 <p>All five emit JSONL audit events to <code>platform/logs/chorus.log</code>.</p>
-<p>Surface 5 is the only one bypassable: <code>--no-verify</code> skips it for the <code>KNOWN_FAILS</code> pattern (carded test failures from other roles, traced via <code>#NNNN</code> in the commit message). The allowlist enforcing that convention is #2497 (still planned).</p>
+<p>Surface 5 is the only one bypassable: <code>--no-verify</code> skips it for the <code>KNOWN_FAILS</code> pattern (carded test failures from other roles, traced via <code>#NNNN</code> in the commit message). The allowlist enforcing that convention shipped — #2497 (Done).</p>
 
 <h2>Pre-Commit Detail (Surface 5)</h2>
 <p><code>platform/hooks/pre-commit</code> runs as part of every <code>git-queue.sh commit</code>. Each check fires only when staged files trigger its scope.</p>
@@ -191,7 +422,8 @@ Every change that reaches <code>main</code> is measured by the same gates regard
 </table>
 <p>The <code>/demo</code> skill assumes a user-facing surface; infra cards (CI changes, hook changes) need a different "show what's blocked, not what's running" pattern. Tracked in #2499.</p>
 
-<h2>Current State (As-Is)</h2>
+<h2>CI enforcement &amp; quality — current state (as-is)</h2>
+<p style="background:#eef2ff;border-left:4px solid #6366f1;padding:8px 14px;font-size:0.84em;"><em>This is the <strong>second of two axes</strong> in this doc. <strong>Axis 1 — the werk verb pipeline (delivery):</strong> how a change moves pull → demo → acp; its as-is/to-be are the embedded diagrams under "At a Glance" above. <strong>Axis 2 — CI enforcement &amp; quality (keeping <code>main</code> green):</strong> hooks, gates, scheduled CI, drift — its as-is/to-be are this section and the next. Two layers of one pipeline, not competing states.</em></p>
 <pre class="mermaid">
 flowchart TB
   subgraph LOCAL["Pre-Merge — runs locally before push"]
@@ -222,7 +454,7 @@ flowchart TB
 <p>What this shape buys: cost ~$15/mo (down from ~$225 projected pre-cost-stop); five pre-merge gates refuse contamination at distinct vectors; per-PR validation runs locally; scheduled run is the post-merge witness.</p>
 <p>What it costs: regressions on <code>main</code> discoverable up to 24h after merge. Trust burden moves to pre-merge maturity. If pre-commit drifts (a flaky test bypassed via <code>--no-verify</code> without a card trace), the daily run is the only catch — and the trust audit that would detect such drift is itself a planned card (#2500), not yet wired.</p>
 
-<h2>Target State (To-Be)</h2>
+<h2>CI enforcement &amp; quality — target state (to-be)</h2>
 <pre class="mermaid">
 flowchart TB
   subgraph LOCAL["Pre-Merge (matured)"]
@@ -315,6 +547,21 @@ flowchart TB
   <li>Step traps + typed refusal: ERR / EXIT trap on build-signed.sh + deploy-daemon-card.sh — #2944 (silent-deletion at VCS push) + #2941 (cardinal-six audit) + #2943 (branch-close-fail idempotent re-run)</li>
 </ul>
 
+<h3>v2 verb migration (in flight)</h3>
+<p>The pipeline is migrating from the monolith MCP tools (the As-Is diagram) to per-verb binaries on <code>act</code> (the To-Be), each built to the <strong>ADR-032</strong> verb contract. <strong>ADR-033</strong> is the model they compose into.</p>
+<table>
+<tr><th>Verb</th><th>Card</th><th>Status</th><th>Owner</th></tr>
+<tr><td><code>pull</code></td><td>#3045 (<code>werk-pull</code>)</td><td>Shipped — zero-dep Rust, proven vs real git/gh/cards</td><td>Kade</td></tr>
+<tr><td><code>demo</code> (orchestrator)</td><td>#3046</td><td>In progress</td><td>Wren</td></tr>
+<tr><td><code>commit</code></td><td>#3056</td><td>Carded (Later)</td><td>Kade</td></tr>
+<tr><td><code>accept</code></td><td>#3057</td><td>Carded (Later)</td><td>Kade</td></tr>
+<tr><td><code>build</code></td><td>#3061</td><td>Carded (Later)</td><td>Silas</td></tr>
+<tr><td><code>deploy</code></td><td>#3062</td><td>Carded (Later)</td><td>Silas</td></tr>
+<tr><td>shared-trace</td><td>#3063</td><td>Carded (Later)</td><td>Kade</td></tr>
+<tr><td><code>acp</code> (orchestrator)</td><td>#3064</td><td>Carded (Later)</td><td>Kade</td></tr>
+<tr><td><code>verify</code></td><td>— (no standalone binary)</td><td>Runs as a step inside <code>demo</code> + <code>acp</code>; sets the <code>chorus/verify</code> check</td><td>all</td></tr>
+</table>
+
 <h3>Open work</h3>
 <p>Open cards in this surface are tracked on the board; this list is regenerated by <code>chorus_design_refresh</code> against current card statuses rather than maintained by hand. To browse: <code>cards mine kade</code> filtered to <code>domain:chorus</code> + <code>sequence:werk</code>, or query the references section below.</p>
 
@@ -328,7 +575,7 @@ flowchart TB
 <tr><td>Workflow run completes red on <code>main</code></td><td><code>red:&lt;run-url&gt;</code> line in alert stdout</td><td><code>ci-main-red.yml</code> action — nudges Silas, daily cooldown</td><td><code>nudge silas</code></td></tr>
 <tr><td>Pre-merge surface refusal</td><td>JSONL audit event</td><td>Drift dashboards, incident reconstruction</td><td><code>platform/logs/chorus.log</code></td></tr>
 <tr><td>Lock-file out of date</td><td>Dependabot opens monthly PR</td><td>Engineer review, then merge → next scheduled run validates</td><td><code>gh pr list --label deps</code></td></tr>
-<tr><td>Test fails but is upstream-known</td><td><code>--no-verify</code> with <code>#NNNN</code> trace in commit message</td><td>(today) commit-message convention only; allowlist NOT WIRED — #2497</td><td>—</td></tr>
+<tr><td>Test fails but is upstream-known</td><td><code>--no-verify</code> with <code>#NNNN</code> trace in commit message</td><td>allowlist wired — #2497 (Done)</td><td>—</td></tr>
 </table>
 
 <h2>Dependencies on Other Sub-Domains</h2>
@@ -359,7 +606,7 @@ flowchart TB
 <div class="gap"><strong>2. No drift lane (#2527)</strong> — primary backstop for what schedule-only main fire can't catch</div>
 <div class="gap"><strong>3. No sensor consumer registry (#2528)</strong> — every signal should map to a named consumer</div>
 <div class="gap"><strong>4. No run-tests contract (#2529)</strong> — load-bearing CI ↔ tests interface</div>
-<div class="gap"><strong>5. No <code>KNOWN_FAILS</code> allowlist (#2497)</strong> — <code>--no-verify</code> convention is uncoded</div>
+<div class="gap"><strong>5. KNOWN_FAILS allowlist — RESOLVED (#2497, Done)</strong> — <code>--no-verify</code> convention now coded</div>
 <div class="gap"><strong>6. No ratchet drift signal (#2496)</strong> — baseline accretion only caught via manual audit</div>
 <div class="gap"><strong>7. No GHA org-billing alert (#2591)</strong> — recurring quota wedge unprotected</div>
 <div class="gap"><strong>8. No infra-card demo adapter (#2499)</strong> — infra demo = prove threat closes, not "show CI green"</div>
@@ -386,8 +633,10 @@ flowchart TB
   <li>Cost / runtime budget for CI minutes — addressed by #2600</li>
 </ul>
 
-<h2 data-section="references">References</h2>
+<h2 id="references" data-section="references">References</h2>
 <ul>
+  <li><strong>ADR-033 — werk pipeline model</strong> (<code>roles/silas/adr/ADR-033-werk-pipeline-model.md</code>): git ⊃ env ⊃ DSL on <code>act</code>; one env = production; gh = source-of-truth (<code>main</code>) + process-holder; one commit-status check per verb (<code>chorus/pull..accept</code>). Authored from the v8 diagram; landing via Silas. The two diagrams above are this ADR's as-is/to-be.</li>
+  <li><strong>ADR-032 — verb contract v1</strong> (<code>roles/silas/adr/ADR-032-verb-contract-v1.md</code>): how each werk verb is built — zero-dep Rust, env contract, shared trace, all-or-nothing rollback, gh-wiring. ADR-033 is the model; ADR-032 is the per-verb contract.</li>
   <li>ADR-026 — CI architecture + lock-file policy (<code>roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md</code>), 2026-04-25 addendum (smoke-check stays out)</li>
   <li>DEC-2525 — required-checks governance, 2026-04-29 amendment (lockstep across branch-protection + Repository Rulesets)</li>
   <li><strong>Cards (Done):</strong> #2580 (Done), #2597 (Done), #2598 (Done), #2600 (Done), #2625 (Done), #2603 (Done), #2627 (Done), #2467 (Done), #2629 (Done), #2632 (Done), #2526 (Done), #2611 (Done)</li>
