@@ -1164,6 +1164,20 @@ const indexAllSources = createIndexAllSources({
   path,
   repoRoot: REPO_ROOT,
   homedir: () => os.homedir(),
+  // #3067: positioned tail read so indexSpine bounds the 170MB log to its recent
+  // tail instead of re-reading the whole file every reindex cycle (4.9s sync block).
+  readTail: (p, maxBytes) => {
+    const size = fs.statSync(p).size;
+    if (size <= maxBytes) return fs.readFileSync(p, 'utf-8');
+    const fd = fs.openSync(p, 'r');
+    try {
+      const buf = Buffer.alloc(maxBytes);
+      fs.readSync(fd, buf, 0, maxBytes, size - maxBytes);
+      return buf.toString('utf-8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  },
 });
 
 
