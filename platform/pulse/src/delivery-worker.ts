@@ -180,6 +180,7 @@ export class DeliveryWorker {
       }
 
       const backoffIdx = attempt - 1;
+      // eslint-disable-next-line security/detect-object-injection -- backoffIdx is a bounded attempt counter, not external input
       await this.sleep(this.backoffMs[backoffIdx]);
     }
   }

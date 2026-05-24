@@ -117,13 +117,15 @@ async function executeLokiQuery(query: string, startNs: string, endNs: string, l
   return { ok: true, events, count: events.length, truncated: events.length >= limit };
 }
 
+const TIME_RANGE_INVALID = 'time-range-invalid' as const;
+
 export async function queryLogs(
   args: { query: string; start?: string; end?: string; time_window?: TimeWindow; limit?: number },
   deps: LogsQueryDeps,
 ): Promise<LogsQueryResult> {
   const limit = Math.min(args.limit ?? 100, 1000);
   const range = resolveTimeRange(deps, args.start, args.end, args.time_window);
-  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(args.query, range.startNs, range.endNs, limit, deps);
 }
 
@@ -132,10 +134,10 @@ export async function recentErrors(
   deps: LogsQueryDeps,
 ): Promise<LogsQueryResult> {
   const window = args.time_window ?? '1h';
-  let query = `{job=~".+"} |= "\\"level\\":\\"error\\""`;
+  let query = '{job=~".+"} |= "\\"level\\":\\"error\\""';
   if (args.role) query += ` |= "\\"role\\":\\"${args.role}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
-  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 200, deps);
 }
 
@@ -146,7 +148,7 @@ export async function logsForCard(
   const window = args.time_window ?? '1d';
   const query = `{job=~".+"} |~ "\\"card_id\\":${args.card_id}\\\\b"`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
-  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
 }
 
@@ -162,7 +164,7 @@ export async function logsForTrace(
   // field; this query reads against that shape.
   const query = `{job=~".+"} |~ "\\"trace_id\\":\\"${args.trace_id}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
-  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
 }
 
@@ -179,7 +181,7 @@ export async function logsForBranch(
   const window = args.time_window ?? '1d';
   const query = `{job=~".+"} |~ "\\"branch\\":\\"${args.branch}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
-  if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };
+  if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
 }
 
@@ -231,6 +233,7 @@ export type PainRollupResult =
 // original substring filter false-counted (heartbeat.probe ~484/day,
 // system.heartbeat, clearing.probe.passed, Grafana self-logs).
 export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error'] as const;
+// eslint-disable-next-line security/detect-non-literal-regexp -- built from the PAIN_EVENT_SUFFIXES module constant, never user input
 const PAIN_LINE_RE = new RegExp(`"event":"[^"]*(${PAIN_EVENT_SUFFIXES.map((s) => s.replace('.', '\\.')).join('|')})"`);
 
 // Pure predicate: does a raw Loki line match the pain filter? Mirrors FAIL_QUERY
@@ -277,31 +280,13 @@ export function rollupRawLines(
   body: unknown,
   opts?: { role?: string },
 ): { classes: PainClass[]; total: number; byProduct: Record<string, number> } {
-  const result = (body as { data?: { result?: Array<{ values?: Array<[string, string]> }> } })?.data?.result ?? [];
-  type Acc = { role: string; event: string; reason: string; count: number; latestNs: string; detail: string; cards: Set<string>; product: string };
-  const roll = new Map<string, Acc>();
+  const result = (body as { data?: { result?: Array<{ values?: Array<[string, string]> }> } } | undefined)?.data?.result ?? [];
+  const roll = new Map<string, PainAcc>();
   let total = 0;
   const byProduct: Record<string, number> = {};
   for (const stream of result) {
     for (const [tsNs, line] of stream.values ?? []) {
-      let o: Record<string, unknown>;
-      try { o = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
-      const cardId = o.card_id !== undefined && o.card_id !== null ? String(o.card_id)
-        : (o.card !== undefined && o.card !== null ? String(o.card) : '');
-      if (cardId && SYNTHETIC_CARD_IDS.has(cardId)) continue; // exclude synthetic test cards
-      const role = String(o.role ?? '?');
-      if (opts?.role && role !== opts.role) continue;
-      const event = String(o.event ?? '');
-      const reason = String(o.reason ?? o.error ?? '').slice(0, 60);
-      const product = productOf(event);
-      const key = `${role} ${event} ${reason}`;
-      let acc = roll.get(key);
-      if (!acc) { acc = { role, event, reason, count: 0, latestNs: '0', detail: '', cards: new Set(), product }; roll.set(key, acc); }
-      acc.count++;
-      total++;
-      byProduct[product] = (byProduct[product] ?? 0) + 1;
-      if (tsNs > acc.latestNs) { acc.latestNs = tsNs; acc.detail = sampleDetail(o); }
-      if (cardId) acc.cards.add(cardId);
+      total += accumulatePainLine(tsNs, line, opts, roll, byProduct);
     }
   }
   const classes: PainClass[] = [...roll.values()]
@@ -310,10 +295,52 @@ export function rollupRawLines(
   return { classes, total, byProduct };
 }
 
+type PainAcc = { role: string; event: string; reason: string; count: number; latestNs: string; detail: string; cards: Set<string>; product: string };
+
+// One Loki line accumulated into the rollup. Returns 1 if counted, 0 if skipped
+// (parse failure, synthetic card, role filter). Split out of rollupRawLines to
+// hold that function under the complexity ceiling.
+type PainFields = { o: Record<string, unknown>; cardId: string; role: string; event: string; reason: string; product: string };
+
+// Parse one Loki line into pain fields, or null if it should be skipped
+// (parse failure, synthetic test card, role filter).
+function parsePainLine(line: string, roleFilter: string | undefined): PainFields | null {
+  let o: Record<string, unknown>;
+  try { o = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
+  const cardId = o.card_id !== undefined && o.card_id !== null ? String(o.card_id)
+    : (o.card !== undefined && o.card !== null ? String(o.card) : '');
+  if (cardId && SYNTHETIC_CARD_IDS.has(cardId)) return null; // exclude synthetic test cards
+  const role = String(o.role ?? '?');
+  if (roleFilter && role !== roleFilter) return null;
+  const event = String(o.event ?? '');
+  const reason = String(o.reason ?? o.error ?? '').slice(0, 60);
+  return { o, cardId, role, event, reason, product: productOf(event) };
+}
+
+function accumulatePainLine(
+  tsNs: string,
+  line: string,
+  opts: { role?: string } | undefined,
+  roll: Map<string, PainAcc>,
+  byProduct: Record<string, number>,
+): number {
+  const f = parsePainLine(line, opts?.role);
+  if (!f) return 0;
+  const key = `${f.role} ${f.event} ${f.reason}`;
+  let acc = roll.get(key);
+  if (!acc) { acc = { role: f.role, event: f.event, reason: f.reason, count: 0, latestNs: '0', detail: '', cards: new Set(), product: f.product }; roll.set(key, acc); }
+  acc.count++;
+  // eslint-disable-next-line security/detect-object-injection -- product is productOf()'s closed return set {Gathering,Chorus}
+  byProduct[f.product] = (byProduct[f.product] ?? 0) + 1;
+  if (tsNs > acc.latestNs) { acc.latestNs = tsNs; acc.detail = sampleDetail(f.o); }
+  if (f.cardId) acc.cards.add(f.cardId);
+  return 1;
+}
+
 export async function queryPainRollup(args: { window?: string; role?: string }, deps: LogsQueryDeps): Promise<PainRollupResult> {
   const window = args.window ?? '7d';
   const secs = windowToSeconds(window);
-  if (secs === null) return { ok: false, reason: 'time-range-invalid', detail: `window must match <n>[smhd] (e.g. 12h, 1d, 7d); got ${String(window)}` };
+  if (secs === null) return { ok: false, reason: TIME_RANGE_INVALID, detail: `window must match <n>[smhd] (e.g. 12h, 1d, 7d); got ${String(window)}` };
   const now = deps.now();
   const params = new URLSearchParams({
     query: FAIL_QUERY,

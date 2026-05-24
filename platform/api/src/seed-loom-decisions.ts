@@ -48,6 +48,7 @@ export function parseDecisions(md: string, sourcePath: string): DecisionRow[] {
   const re = /^## DEC-(\d+):\s*(.+)$/gm;
   const matches = [...md.matchAll(re)];
   for (let i = 0; i < matches.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection -- i is the bounded loop index over matches[]
     const m = matches[i];
     const num = m[1];
     const label = m[2].trim();

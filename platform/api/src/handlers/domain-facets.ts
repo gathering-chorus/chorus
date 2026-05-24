@@ -60,7 +60,7 @@ export async function fetchDomainTests(
         const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
         const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:testType ?testType } }`;
         const result = await deps.sparql(query);
-        const sparqlTests = (result.results?.bindings ?? []).map((b) => ({
+        const sparqlTests = ((result as { results?: { bindings?: Array<{ testFile?: { value?: string }; testType?: { value?: string } }> } }).results?.bindings ?? []).map((b) => ({
           path: b.testFile?.value || '',
           type: b.testType?.value || 'unknown',
         }));

@@ -44,16 +44,17 @@ export interface EmbedDeltaResult {
   ollama_failures: number;
 }
 
+type EmbedRecord = {
+  msg_id: number; source: string; channel: string; role: string;
+  content: string; timestamp: string; vector: number[];
+};
+type Msg = { id: number; source: string; channel: string; role: string; content: string; timestamp: string };
+
 export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDeltaResult> {
   const log = deps.log ?? ((m) => console.log(m));
   const error = deps.error ?? ((m) => console.error(m));
   // #2627: schema-migration + per-msg embed + lance-store + mark-embedded
   // each get a helper; orchestrator becomes a linear pipeline.
-  type EmbedRecord = {
-    msg_id: number; source: string; channel: string; role: string;
-    content: string; timestamp: string; vector: number[];
-  };
-  type Msg = { id: number; source: string; channel: string; role: string; content: string; timestamp: string };
 
   function ensureEmbeddedColumn(): void {
     const rwDb = new deps.DatabaseCtor(deps.dbPath);
