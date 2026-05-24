@@ -42,6 +42,7 @@ import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { startMetrics, getMetrics } from './metrics';
 import { startEventloopAlert } from './eventloop-alert';
+import { formatAccessLine } from './access-log';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
 import { getPatternsSummary } from './patterns-summary';
@@ -228,12 +229,15 @@ app.get('/api/chorus/sessions/:id/log', async (req, res) => {
   res.status(r.status).json(r.body);
 });
 
-// Request logging — every request writes to stdout so the log stays fresh
+// Request logging — every request writes to stdout so the log stays fresh.
+// The line carries the request START timestamp (#3058) so an event-loop-block
+// alert at time T can be matched to the request whose [start, start+ms]
+// window contains T. Format is the pure formatAccessLine() (unit-tested).
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const ms = Date.now() - start;
-    console.log(`[chorus-api] ${req.method} ${req.path} ${res.statusCode} ${ms}ms`);
+    console.log(formatAccessLine(start, req.method, req.path, res.statusCode, ms));
   });
   next();
 });
