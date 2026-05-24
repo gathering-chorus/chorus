@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="1080" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1460" height="1080" fill="#ffffff"/>
+
+  <text x="40" y="38" font-size="23" font-weight="700" fill="#1a1a1a">Chorus + Pulse — TO-BE: one memory architecture, three tiers, all off the spine</text>
+  <text x="40" y="60" font-size="13" fill="#6b7280">Same grammar, three access axes: <tspan font-weight="700" fill="#7c3aed">working = by who (now)</tspan> · <tspan font-weight="700" fill="#b45309">domain knowledge = by what (subject)</tspan> · <tspan font-weight="700" fill="#1d4ed8">long-term = by cue (corpus)</tspan>. Crawl lives in knowledge.</text>
+  <text x="40" y="78" font-size="11" fill="#9ca3af">Extends chorus-search-tobe.svg with the pulse relationship + crawl-in-knowledge. North star (direction), not the immediate fix. Wren · 2026-05-24</text>
+
+  <!-- LIVE / TO-BE legend (#3065) -->
+  <g font-size="11.5" font-weight="700">
+    <circle cx="1148" cy="34" r="5.5" fill="#16a34a"/><text x="1160" y="38" fill="#166534">LIVE — exists today</text>
+    <circle cx="1148" cy="54" r="5.5" fill="#ffffff" stroke="#d97706" stroke-width="2"/><text x="1160" y="58" fill="#b45309">TO-BE — not built yet</text>
+  </g>
+
+  <!-- ============ THE SPINE (kept free) ============ -->
+  <rect x="40" y="94" width="1380" height="80" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="58" y="118" font-size="15" font-weight="800" fill="#166534">chorus-api · :3340 — THE COORDINATION SPINE  (kept free)</text>
+  <text x="58" y="136" font-size="11.5" fill="#15803d">single event loop · only fast bounded coordination · it ASKS each tier, it never RUNS heavy work on its loop</text>
+  <g font-size="11.5" font-weight="600" fill="#166534">
+    <rect x="58"  y="146" width="96"  height="22" rx="4" fill="#dcfce7" stroke="#22c55e"/><text x="106" y="161" text-anchor="middle">cards</text>
+    <rect x="164" y="146" width="120" height="22" rx="4" fill="#dcfce7" stroke="#22c55e"/><text x="224" y="161" text-anchor="middle">nudge</text>
+    <rect x="294" y="146" width="150" height="22" rx="4" fill="#dcfce7" stroke="#22c55e"/><text x="369" y="161" text-anchor="middle">spine write</text>
+    <rect x="454" y="146" width="170" height="22" rx="4" fill="#dcfce7" stroke="#22c55e"/><text x="539" y="161" text-anchor="middle">messages (write)</text>
+    <rect x="634" y="146" width="180" height="22" rx="4" fill="#dcfce7" stroke="#22c55e"/><text x="724" y="161" text-anchor="middle">health (read)</text>
+  </g>
+
+  <line x1="40" y1="188" x2="1420" y2="188" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="730" y="183" text-anchor="middle" font-size="11" fill="#94a3b8">— async boundary: every tier below runs OFF the loop; the spine only asks —</text>
+
+  <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#94a3b8"/></marker></defs>
+
+  <!-- ============ THREE TIERS ============ -->
+
+  <!-- COL 1: WORKING / pulse -->
+  <rect x="40" y="202" width="430" height="404" rx="10" fill="#faf5ff" stroke="#7c3aed" stroke-width="2.5"/>
+  <text x="58" y="226" font-size="15" font-weight="800" fill="#5b21b6">WORKING MEMORY · pulse</text>
+  <text x="58" y="244" font-size="11.5" font-weight="700" fill="#6d28d9">indexed by WHO · "where is everyone right now"</text>
+  <rect x="58" y="256" width="394" height="92" rx="6" fill="#f5f3ff" stroke="#a78bfa"/>
+  <text x="70" y="276" font-size="12" font-weight="700" fill="#5b21b6">/pulse/roles/&lt;role&gt;/</text>
+  <text x="70" y="295" font-size="11" fill="#6d28d9">  cards · messages · streams · alerts</text>
+  <text x="70" y="313" font-size="10.5" fill="#7c3aed">streams = tool turns + results (the gemba surface)</text>
+  <text x="70" y="332" font-size="10.5" fill="#7c3aed">one index: role. team view = the union.</text>
+  <text x="58" y="372" font-size="11.5" fill="#5b21b6">• the Clearing's live surface</text>
+  <text x="58" y="392" font-size="11.5" fill="#5b21b6">• ephemeral signals assembled off-loop</text>
+  <text x="58" y="412" font-size="11.5" fill="#5b21b6">• ~14ms warm read</text>
+  <rect x="58" y="430" width="394" height="40" rx="6" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="70" y="447" font-size="11" font-weight="700" fill="#5b21b6">serves: Directing</text>
+  <text x="70" y="462" font-size="10.5" fill="#6d28d9">coordinate against the present</text>
+  <text x="58" y="492" font-size="10.5" font-weight="700" fill="#7c3aed">AX emphasis: WHEN (age / freshness)</text>
+  <text x="58" y="510" font-size="10" fill="#9ca3af">so an agent knows if it's 2s or 2min stale before reasoning</text>
+  <text x="58" y="540" font-size="10.5" font-weight="700" fill="#5b21b6">home: ephemeral producers</text>
+  <text x="58" y="557" font-size="10" fill="#6d28d9">role-state files · board · nudges · 60s spine tail</text>
+  <text x="58" y="582" font-size="10" fill="#9ca3af">no durable store of its own — it aggregates (that's why pulse caches a file)</text>
+
+  <!-- COL 2: DOMAIN KNOWLEDGE / crawl -->
+  <rect x="515" y="202" width="430" height="404" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="3"/>
+  <text x="533" y="226" font-size="15" font-weight="800" fill="#92400e">DOMAIN KNOWLEDGE · chorus:knowledge</text>
+  <text x="533" y="244" font-size="11.5" font-weight="700" fill="#b45309">indexed by WHAT · "what do we know about photos"</text>
+  <rect x="533" y="256" width="394" height="64" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="545" y="276" font-size="12" font-weight="700" fill="#92400e">/knowledge/&lt;domain&gt;</text>
+  <text x="545" y="295" font-size="11" fill="#78350f">cards · facts · mentions · code, for one subject</text>
+  <text x="545" y="312" font-size="10.5" fill="#b45309">"crawl" was the mechanism; knowledge is the resource</text>
+
+  <rect x="533" y="330" width="394" height="118" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="545" y="350" font-size="12.5" font-weight="800" fill="#9a3412">crawl fits HERE — as the COMPOSER</text>
+  <text x="545" y="369" font-size="10.8" fill="#7c2d12">• composes async from the homes — no stored snapshot</text>
+  <text x="545" y="386" font-size="10.8" fill="#7c2d12">• graph-backed; reads working + index for the rest</text>
+  <text x="545" y="403" font-size="10.8" fill="#7c2d12">• decoupled from pulse + from search-index-stuffing</text>
+  <text x="545" y="420" font-size="10.8" fill="#7c2d12">• off the loop; the sync post-processing leaves the spine</text>
+  <text x="545" y="438" font-size="10.8" fill="#b91c1c" font-weight="700">this is the discovery surface — replaces #2019 index-stuffing</text>
+
+  <rect x="533" y="456" width="394" height="34" rx="6" fill="#ffedd5" stroke="#fdba74"/>
+  <text x="545" y="477" font-size="11" font-weight="700" fill="#9a3412">serves: Shaping + Designing  (the as-is/to-be of a subject)</text>
+  <text x="533" y="512" font-size="10.5" font-weight="700" fill="#b45309">AX emphasis: STRUCTURE + PROVENANCE</text>
+  <text x="533" y="530" font-size="10" fill="#9ca3af">how things connect, and where each fact came from</text>
+  <text x="533" y="556" font-size="10.5" font-weight="700" fill="#92400e">home: the GRAPH (Fuseki, urn:gathering:*)</text>
+  <text x="533" y="573" font-size="10" fill="#b45309">domain knowledge already persists here — its true home</text>
+  <text x="533" y="595" font-size="10" fill="#9ca3af">crawl emits to loom + roles when a domain changes (hydrate / notify)</text>
+
+  <!-- COL 3: LONG-TERM / search -->
+  <rect x="990" y="202" width="430" height="404" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="1008" y="226" font-size="15" font-weight="800" fill="#1e3a8a">LONG-TERM MEMORY · chorus:search</text>
+  <text x="1008" y="244" font-size="11.5" font-weight="700" fill="#1d4ed8">indexed by CUE · "have we ever…"</text>
+  <rect x="1008" y="256" width="394" height="64" rx="6" fill="#dbeafe" stroke="#60a5fa"/>
+  <text x="1020" y="276" font-size="12" font-weight="700" fill="#1e3a8a">/search  (capability, worker pool)</text>
+  <text x="1020" y="295" font-size="11" fill="#1e40af">lexical · semantic · structured — one door</text>
+  <text x="1020" y="312" font-size="10.5" fill="#1d4ed8">a search bug degrades search only, never the spine</text>
+  <text x="1008" y="344" font-size="11.5" fill="#1e3a8a">• off the spine (own service / pool)</text>
+  <text x="1008" y="364" font-size="11.5" fill="#1e3a8a">• honest integration — like-with-like</text>
+  <text x="1008" y="384" font-size="11.5" fill="#1e3a8a">• retires naive `unified` RRF blend</text>
+  <rect x="1008" y="402" width="394" height="46" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="1020" y="421" font-size="11" font-weight="700" fill="#1e3a8a">corpora: messages · memory · life graph</text>
+  <text x="1020" y="438" font-size="10.5" fill="#1e40af">spans what the team DID + what it works ON (your life)</text>
+  <text x="1008" y="476" font-size="11" font-weight="700" fill="#1d4ed8">serves: all three steps reach in</text>
+  <text x="1008" y="512" font-size="10.5" font-weight="700" fill="#1d4ed8">AX emphasis: COVERAGE</text>
+  <text x="1008" y="530" font-size="10" fill="#9ca3af">how much of the corpus this answer actually saw</text>
+  <text x="1008" y="556" font-size="10.5" font-weight="700" fill="#1e3a8a">home: SQLite FTS (1.1G) + LanceDB (21G)</text>
+  <text x="1008" y="573" font-size="10" fill="#1e40af">+ Gathering life graph (first-class, not evicted)</text>
+  <text x="1008" y="595" font-size="10" fill="#9ca3af">continuous indexing = its consolidation step</text>
+
+  <!-- consumer + composition arrows -->
+  <!-- context_inject reads all three off the spine -->
+  <rect x="40" y="630" width="430" height="40" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="58" y="648" font-size="11" font-weight="700" fill="#334155">context_inject + agents read across all three</text>
+  <text x="58" y="663" font-size="10" fill="#64748b">one grammar, three axes — learn it once, read every tier</text>
+
+  <!-- crawl composes-from arrow note (col2 -> graph + working + index) -->
+  <rect x="515" y="630" width="430" height="40" rx="6" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="533" y="648" font-size="11" font-weight="700" fill="#9a3412">crawl composes from: graph (its home) + working (live ops) + index (code)</text>
+  <text x="533" y="663" font-size="10" fill="#b45309">each part read from its own home, async — never a 4th copy</text>
+
+  <rect x="990" y="630" width="430" height="40" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+  <text x="1008" y="648" font-size="11" font-weight="700" fill="#1e3a8a">search indexes the homes (incl. knowledge/graph)</text>
+  <text x="1008" y="663" font-size="10" fill="#1e40af">so "have we ever" still reaches domain knowledge</text>
+
+  <!-- ============ AX ENVELOPE (cross-cutting) ============ -->
+  <rect x="40" y="690" width="1380" height="68" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="58" y="713" font-size="13" font-weight="800" fill="#5b21b6">ONE AX ENVELOPE across all three — every datum carries:  what (semantic name) · where (provenance) · when (age + tier) · version (schema)</text>
+  <text x="58" y="734" font-size="11.5" fill="#6d28d9">The agents are the consumers; the API is their harness. Each tier emphasizes one field — working: <tspan font-weight="700">when</tspan> · knowledge: <tspan font-weight="700">structure/provenance</tspan> · long-term: <tspan font-weight="700">coverage</tspan>.</text>
+  <text x="58" y="751" font-size="11.5" fill="#b91c1c" font-weight="600">loom is consolidated FROM these surfaces → semantically clean APIs in = a loom agents can reason over, not recite. AX quality is upstream of team intelligence.</text>
+
+  <!-- ============ footer ============ -->
+  <text x="40" y="790" font-size="13" font-weight="700" fill="#334155">The architecture in one breath</text>
+  <text x="40" y="811" font-size="12" fill="#475569">Three memory tiers, all off the coordination spine, one grammar. <tspan font-weight="700">Pulse</tspan> is working memory (by who, now). <tspan font-weight="700">Knowledge</tspan> is domain memory (by what) — graph-backed,</text>
+  <text x="40" y="829" font-size="12" fill="#475569">and <tspan font-weight="700">crawl is the composer that serves it</tspan>, not a tenant of pulse or search. <tspan font-weight="700">Search</tspan> is long-term recall (by cue) over the corpus + your life graph.</text>
+
+  <text x="40" y="857" font-size="12" fill="#475569">• <tspan font-weight="700">Pulse ↔ Knowledge ↔ Search are siblings, not a pipeline</tspan> — different data, different access, no copies between them.</text>
+  <text x="40" y="875" font-size="12" fill="#475569">• <tspan font-weight="700">Crawl re-homes into knowledge</tspan> — off the loop, graph-backed, composed async; the #2019 search-index-stuffing retires.</text>
+  <text x="40" y="893" font-size="12" fill="#475569">• <tspan font-weight="700">The tiers map to your value stream</tspan> — working→Directing, knowledge→Shaping+Designing, long-term→all three reach in.</text>
+
+  <!-- north star vs now -->
+  <rect x="40" y="916" width="1380" height="96" rx="10" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.6"/>
+  <text x="58" y="939" font-size="13" font-weight="800" fill="#b91c1c">This is the north star — NOT the immediate build</text>
+  <text x="58" y="960" font-size="11.5" fill="#7f1d1d"><tspan font-weight="700">Now (the loop-blocker fix):</tspan> bound or yield the remaining SYNCHRONOUS work in the crawl handler so it stops freezing the loop — the #3054 pattern, finished. Measure which</text>
+  <text x="58" y="978" font-size="11.5" fill="#7f1d1d">sync step dominates on photos first; fix that one. No snapshot store (doubling down on bad), no /knowledge rebuild (overly ambitious).</text>
+  <text x="58" y="998" font-size="11.5" fill="#7f1d1d"><tspan font-weight="700">Later (this diagram):</tspan> re-home crawl into /knowledge, graph-backed, composed async; build the AX envelope; the role/domain-indexed surfaces. Direction, sequenced after the bleed stops.</text>
+
+  <!-- per-feature LIVE / TO-BE badges (#3065) -->
+  <g font-size="9.5" font-weight="700" text-anchor="middle">
+    <g><rect x="1338" y="100" width="50" height="16" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="1363" y="112" fill="#166534">●LIVE</text></g>
+    <g><rect x="390" y="259" width="56" height="16" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="418" y="271" fill="#b45309">○TO-BE</text></g>
+    <g><rect x="865" y="259" width="56" height="16" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="893" y="271" fill="#b45309">○TO-BE</text></g>
+    <g><rect x="855" y="334" width="56" height="16" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="883" y="346" fill="#b45309">○TO-BE</text></g>
+    <g><rect x="1306" y="259" width="92" height="16" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="1352" y="271" fill="#166534">●LIVE (partial)</text></g>
+    <g><rect x="1336" y="697" width="56" height="16" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="1364" y="709" fill="#b45309">○TO-BE</text></g>
+  </g>
+
+  <text x="40" y="1034" font-size="10.5" fill="#cbd5e1">Extends chorus-search-tobe.svg · drawn to be argued with · LIVE/TO-BE badges added #3065 · Wren · 2026-05-24</text>
+</svg>
