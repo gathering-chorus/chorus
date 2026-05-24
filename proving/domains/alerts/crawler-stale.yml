@@ -1,8 +1,8 @@
 # crawler-stale.yml — Alert when chorus crawler hasn't indexed recently
 # Card #2817 (#2861 — bash-only check; python moved to sibling)
 #
-# Worst-case staleness budget post-#2817: 60 seconds. 5-min biz-hours threshold
-# gives 5x buffer; 30-min off-hours threshold tolerates host sleep.
+# #3068 (2026-05-24): crawler now on StartInterval=1800 (30 min) only.
+# Business-hours threshold bumped 300→1800 to match; off-hours was already 1800.
 #
 # alert-runner contract: stdout must equal literal "ok" for success.
 
@@ -16,7 +16,7 @@ check: |
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-stale-check.py"
   HOUR=$(date +%H)
   if [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 22 ]; then
-    THRESHOLD_SEC=300
+    THRESHOLD_SEC=1800
   else
     THRESHOLD_SEC=1800
   fi

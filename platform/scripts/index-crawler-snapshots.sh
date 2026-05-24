@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-API_URL="http://localhost:3340"
+API_URL="${API_URL:-http://localhost:3340}"
 DB_PATH="$HOME/.chorus/index.db"
 TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 STATUS_FILE="/tmp/crawler-domain-status.json"
@@ -58,9 +58,18 @@ if ! sqlite3 "$DB_PATH" "SELECT 1" &>/dev/null; then
   exit 1
 fi
 
-if ! curl -sf "$API_URL/health" -o /dev/null 2>/dev/null; then
-  echo "ERROR: Chorus API not reachable at $API_URL" >&2
-  exit 1
+_health_max="${HEALTH_RETRY_MAX:-3}"
+_health_delay="${HEALTH_RETRY_DELAY:-5}"
+_health_ok=0
+for _i in $(seq 1 "$_health_max"); do
+  if curl -sf "$API_URL/health" -o /dev/null 2>/dev/null; then
+    _health_ok=1; break
+  fi
+  [ "$_i" -lt "$_health_max" ] && sleep "$_health_delay"
+done
+if [ "$_health_ok" -eq 0 ]; then
+  echo "chorus-api unavailable after $_health_max retries — skipping run"
+  exit 0
 fi
 
 indexed=0
@@ -171,15 +180,15 @@ print('\n'.join(lines))
   # Index into SQLite
   trace_hop "$TRACE_ID" 3 "chorus-api" "sqlite-index" "$domain"
   # Delete previous snapshot for this domain (keep only latest)
-  sqlite3 "$DB_PATH" "DELETE FROM messages WHERE source = 'crawler' AND channel = 'crawl:$domain';" 2>/dev/null
+  sqlite3 "$DB_PATH" -cmd ".timeout 5000" "DELETE FROM messages WHERE source = 'crawler' AND channel = 'crawl:$domain';"
 
   # Escape single quotes for SQL
   escaped_snapshot=$(echo "$snapshot" | sed "s/'/''/g")
   source_id="crawler-${domain}-$(date +%s)"
 
   # Insert new snapshot
-  sqlite3 "$DB_PATH" "INSERT INTO messages (source, source_id, channel, role, author, content, timestamp, metadata)
-    VALUES ('crawler', '$source_id', 'crawl:$domain', 'system', 'crawler', '$escaped_snapshot', '$TIMESTAMP', '{\"domain\":\"$domain\"}');" 2>/dev/null
+  sqlite3 "$DB_PATH" -cmd ".timeout 5000" "INSERT INTO messages (source, source_id, channel, role, author, content, timestamp, metadata)
+    VALUES ('crawler', '$source_id', 'crawl:$domain', 'system', 'crawler', '$escaped_snapshot', '$TIMESTAMP', '{\"domain\":\"$domain\"}');"
 
   # Track success (#1885)
   domain_end=$(python3 -c "import time; print(int(time.time()*1000))")
