@@ -17,7 +17,15 @@ import {
 
 function emptyDb(): Database.Database {
   const db = new Database(':memory:');
-  db.exec(`CREATE TABLE messages (id INTEGER PRIMARY KEY, author TEXT, content TEXT, role TEXT, timestamp TEXT);`);
+  // #3054: mirror the real index — external-content FTS5 over messages, kept in
+  // sync by an insert trigger — so collectMentions' MATCH path is exercised here.
+  db.exec(`
+    CREATE TABLE messages (id INTEGER PRIMARY KEY, author TEXT, content TEXT, role TEXT, timestamp TEXT);
+    CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='id');
+    CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+    END;
+  `);
   return db;
 }
 
@@ -33,6 +41,7 @@ function deps(overrides: Partial<CrawlDeps> = {}): CrawlDeps {
     athenaSparqlQuery: nullSparql,
     execAsync: nullExec,
     readFile: () => '',
+    readLogTail: () => '',
     exists: () => false,
     readdir: () => [],
     now: () => 1_700_000_000_000,
@@ -134,11 +143,23 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     const r = await fetchCrawl('photos', deps({
       getBoardCards: () => boardCards,
       exists: (p) => p === '/fake/chorus.log',
-      readFile: () => logLines,
+      readLogTail: () => logLines,
     }));
     const b = r.body as { spine: Array<{ event: string }> };
     expect(b.spine).toHaveLength(1);
     expect(b.spine[0].event).toBe('card.accepted');
+  });
+
+  test('#3054: spine log read is BOUNDED (tail, not whole file)', async () => {
+    let maxBytesSeen = -1;
+    await fetchCrawl('photos', deps({
+      getBoardCards: () => [{ id: '42', title: 'x', status: 'Done', owner: 'kade', tags: 'domain:photos' }],
+      exists: (p) => p === '/fake/chorus.log',
+      readLogTail: (_p, maxBytes) => { maxBytesSeen = maxBytes; return ''; },
+    }));
+    // collectSpine must request a bounded tail, never an unbounded full-file read.
+    expect(maxBytesSeen).toBeGreaterThan(0);
+    expect(maxBytesSeen).toBeLessThanOrEqual(8_000_000);
   });
 
   test('memory feedback: only files containing domain in body counted', async () => {

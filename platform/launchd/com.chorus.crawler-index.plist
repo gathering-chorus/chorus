@@ -10,9 +10,11 @@
     1. WatchPaths fires on filesystem changes under chorus/{designing,
        platform, roles, skills, directing, proving} — sub-second after
        any role's edit.
-    2. StartInterval=60 polls every 60 seconds as fallback if WatchPaths
+    2. StartInterval=1800 polls every 30 min as a FALLBACK if WatchPaths
        events are missed (launchd event coalescing, host sleep, etc.).
-       Worst-case staleness drops from 15 min (pre-#2817) to 60 sec.
+       Throttled 60s->1800s (#3054, Silas): the 60s fallback drove ~200
+       crawls/hr that queued behind each other on the spine. WatchPaths
+       still fires sub-second on real edits, so this only widens the fallback.
     3. ThrottleInterval=5 enforces the debounce — no matter how many
        events fire in a 5-second window, launchd only invokes the
        script once per 5s. A `git pull` of N files triggers one run,
@@ -49,7 +51,7 @@
   </array>
 
   <key>StartInterval</key>
-  <integer>60</integer>
+  <integer>1800</integer>
 
   <key>ThrottleInterval</key>
   <integer>5</integer>

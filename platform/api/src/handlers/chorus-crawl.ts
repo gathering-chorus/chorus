@@ -11,6 +11,7 @@
  */
 import type Database from 'better-sqlite3';
 import * as pathMod from 'path';
+import { toFtsMatchQuery } from './chorus-search';
 
 export type FetchFn = (
   url: string,
@@ -41,6 +42,7 @@ export interface CrawlDeps {
   athenaSparqlQuery: AthenaSparqlFn;
   execAsync: ExecAsyncFn;
   readFile: (p: string, enc: BufferEncoding) => string;
+  readLogTail: (p: string, maxBytes: number) => string;
   exists: (p: string) => boolean;
   readdir: (p: string) => string[];
   now?: () => number;
@@ -169,9 +171,19 @@ function collectMentions(
   const counts: Record<string, number> = {};
   try {
     if (db) {
-      const rows = db
-        .prepare('SELECT author, content, timestamp, role FROM messages WHERE content LIKE ? ORDER BY timestamp ASC LIMIT 100')
-        .all(`%${domain}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
+      // #3054: FTS5 MATCH (quote-safe), NOT a `%domain%` wildcard scan over content — that
+      // is an unindexed full scan over 1.26M rows (~2.8s sync, freezes the spine; #3051 class).
+      const matchQuery = toFtsMatchQuery(domain);
+      const rows = matchQuery
+        ? (db
+            .prepare(
+              `SELECT m.author, m.content, m.timestamp, m.role
+               FROM messages_fts f JOIN messages m ON f.rowid = m.id
+               WHERE messages_fts MATCH ?
+               ORDER BY m.timestamp ASC LIMIT 100`,
+            )
+            .all(matchQuery) as Array<{ author: string; content: string; timestamp: string; role: string }>)
+        : [];
       for (const m of rows) {
         const text = extractMentionText(m.content);
         if (!text) continue;
@@ -188,9 +200,14 @@ function collectMentions(
   return { mentions, related };
 }
 
+// #3054: read only the recent tail of the spine log, not the whole ~81MB file —
+// the full read + JSON.parse-per-line is a multi-hundred-ms synchronous block on
+// the coordination spine, every crawl. The tail covers recent card lifecycle events.
+const SPINE_TAIL_BYTES = 4_000_000;
+
 function collectSpine(
   exists: (p: string) => boolean,
-  readFile: (p: string, enc: BufferEncoding) => string,
+  readLogTail: (p: string, maxBytes: number) => string,
   chorusLogPath: string,
   cards: CardEntry[],
   timeline: TimelineEntry[],
@@ -199,7 +216,7 @@ function collectSpine(
   try {
     if (!exists(chorusLogPath)) return spine;
     const cardIds = new Set(cards.map((c) => c.index));
-    for (const line of readFile(chorusLogPath, 'utf-8').split('\n')) {
+    for (const line of readLogTail(chorusLogPath, SPINE_TAIL_BYTES).split('\n')) {
       try {
         const parsed = JSON.parse(line);
         if (!parsed.event || !parsed.event.startsWith('card.')) continue;
@@ -533,6 +550,7 @@ export async function fetchCrawl(
     athenaSparqlQuery,
     execAsync,
     readFile,
+    readLogTail,
     exists,
     readdir,
     now = Date.now,
@@ -561,7 +579,7 @@ export async function fetchCrawl(
   const cards = collectCards(getBoardCards, domain, timeline, history);
   const rdf = await collectRdf(fetchFn, fusekiUrl, domain);
   const { mentions, related } = collectMentions(db, domain, timeline);
-  const spine = collectSpine(exists, readFile, chorusLogPath, cards, timeline);
+  const spine = collectSpine(exists, readLogTail, chorusLogPath, cards, timeline);
   const owl = await collectOwl(fetchFn, fusekiUrl, domain);
   const infra = await collectInfra(execAsync, domain);
   history.feedback = collectFeedback(exists, readdir, readFile, memoryDir, domain);
