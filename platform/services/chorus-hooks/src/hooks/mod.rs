@@ -17,7 +17,6 @@ pub mod icd_write_gate;
 pub mod demo_preflight;
 pub mod demo_show;
 pub mod accept_gate;
-pub mod batch_progress;
 pub mod demo_provenance;
 pub mod pair_enforcement;
 pub mod nudge_blast_radius;
