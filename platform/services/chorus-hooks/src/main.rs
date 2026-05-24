@@ -299,12 +299,6 @@ async fn pre_tool_use_inner(
 
             // #2270: demo gate removed from hook chain — cards CLI SDK is single enforcement point
 
-            // Batch progress (#1656) — detect run_in_background in PreToolUse
-            // PostToolUse doesn't fire until background task completes
-            let r = hooks::batch_progress::check_pre_bg(input);
-            if r.stderr.is_some() {
-                // Don't block — stderr warning passes through
-            }
         }
         "Grep" | "Glob" => {
             _last_module = "memory_first".into(); let r = hooks::memory_first::check(input, state);
@@ -480,12 +474,6 @@ async fn post_tool_use(
                 tokio::spawn(async move {
                     crate::state::chorus_log("smoke.check.completed", &role_name, &[]).await;
                 });
-            }
-            // Batch progress monitor (#1656) — detect background jobs, emit progress
-            let r = hooks::batch_progress::check(&input).await;
-            if r.stderr.is_some() {
-                // Pass stderr through but don't block
-                return Json(r);
             }
         }
         "Read" => {

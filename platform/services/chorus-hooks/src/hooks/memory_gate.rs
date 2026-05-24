@@ -34,10 +34,12 @@ pub fn post_check(input: &HookInput) {
             let cmd = input.get_tool_input_str("command");
             let response = input.tool_response_str();
             if cmd.contains("chorus-query.sh") || cmd.contains("chorus search") {
-                let result_preview = if response.len() > 100 {
-                    format!("{}...", &response[..100])
+                // Char-safe truncation: byte-index slicing (&response[..100])
+                // panicked the daemon on a multibyte char at the cut (#3052).
+                let result_preview = if response.chars().count() > 100 {
+                    format!("{}...", response.chars().take(100).collect::<String>())
                 } else {
-                    response.to_string()
+                    response.clone()
                 };
                 info!(
                     gate = "context-synthesis",
@@ -424,6 +426,38 @@ mod tests {
     }
 
     fn state() -> AppState { AppState::new() }
+
+    // --- #3052: post_check must not crash on multibyte search responses.
+    // Byte-index slicing (&response[..100]) panicked the daemon on an em-dash
+    // or arrow straddling the cut, and fail-closed hooks blocked the team. ---
+
+    fn make_bash_search_input(command: &str, response: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({ "command": command })),
+            tool_response: Some(serde_json::Value::String(response.to_string())),
+            session_id: None,
+            cwd: Some(format!("{}/roles/silas", chorus_root())),
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("silas".to_string()),
+            chorus_worktree_override: None,}
+    }
+
+    #[test]
+    fn post_check_survives_em_dash_in_search_response() {
+        // em-dash (3 bytes) straddles byte 100; the old &response[..100] panicked.
+        let response = format!("{}\u{2014}{}", "x".repeat(99), "y".repeat(200));
+        post_check(&make_bash_search_input("chorus search foo", &response));
+        // reaching here = no panic
+    }
+
+    #[test]
+    fn post_check_survives_arrow_in_search_response() {
+        let response = "\u{2192}".repeat(300);
+        post_check(&make_bash_search_input("chorus-query.sh bar", &response));
+    }
 
     // --- Basic gate behavior (unchanged) ---
 
