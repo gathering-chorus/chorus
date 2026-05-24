@@ -197,7 +197,8 @@ describe('fetchSearch (#2189 /api/chorus/search)', () => {
     expect(events).toHaveLength(1);
     expect(events[0].mode).toBe('fts');
     expect(events[0].role_filter).toBe('kade');
-    expect(events[0].duration_ms).toBe(5);
+    expect(events[0].duration_ms).toBe(15); // #3051: +2 now() ticks from the fts_ms timing
+    expect(events[0].fts_ms).toBe(5); // #3051: per-request FTS time (AC4)
     db.close();
   });
 
