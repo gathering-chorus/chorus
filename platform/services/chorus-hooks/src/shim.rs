@@ -383,8 +383,12 @@ fn main() -> ExitCode {
         }
     };
 
-    // Set timeout
-    let timeout = std::time::Duration::from_secs(5);
+    // #3048: context_inject now gathers live search + Loki uncapped, which can take
+    // ~3-6s cold. The old 5s read timeout cut the slow-but-complete response off —
+    // the shim got 0 bytes and injected nothing. Wait generously (Jeff's call: wait
+    // the few seconds, get the context). connect() above still fails fast, so a DOWN
+    // daemon is unaffected — this only governs the connected-but-slow case.
+    let timeout = std::time::Duration::from_secs(15);
     let _ = stream.set_write_timeout(Some(timeout));
     let _ = stream.set_read_timeout(Some(timeout));
 
