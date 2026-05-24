@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Crawlers as a domain of declared instances — the to-be model (#3069)</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; color: #1a1a1a; max-width: 1140px; margin: 0 auto; padding: 32px 24px 80px; line-height: 1.55; }
+  h1 { font-size: 26px; margin-bottom: 2px; }
+  h2 { font-size: 19px; margin-top: 36px; border-bottom: 2px solid #eef2f7; padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-top: 22px; color: #334155; }
+  .sub { color: #6b7280; font-size: 14px; margin-top: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 12px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 12.5px; line-height: 1.45; }
+  .cheap { color: #166534; font-weight: 700; }
+  .moderate { color: #92400e; font-weight: 700; }
+  .heavy { color: #b91c1c; font-weight: 700; }
+  .pull { background: #ede9fe; color: #5b21b6; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
+  .callout { background: #f5f3ff; border: 1.5px solid #a78bfa; border-radius: 10px; padding: 14px 18px; color: #5b21b6; margin: 16px 0; }
+  .ref { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px 16px; font-size: 13px; margin: 12px 0; }
+  ul { margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>Crawlers as a domain of declared instances</h1>
+<p class="sub">The to-be model (#3069). Decompose the monolith into a registry of declared instances — like skills. Each instance: <code>source → target → cadence → cost-tier</code>. Wren, 2026-05-24.</p>
+
+<div class="ref">
+<strong>This doc is the to-be only. The as-is is already documented — it rides on:</strong>
+<ul>
+<li><a href="/designing/docs/crawler-service-design.html">crawler-service-design.html</a> — component anatomy, the four substrates, consumers, gaps (the older graph-hydrator wave, #2817/#2827).</li>
+<li><a href="/designing/docs/crawler-dependency-map.html">crawler-dependency-map.html</a> (#3071) — VERIFIED writers→outputs→consumers: 7 outputs / 4 stores.</li>
+<li><code>data/athena/tree.json</code> — <code>chorus:service-crawler</code> with <code>produces</code>/<code>consumedBy</code> + <code>consumes</code>/<code>dependsOn</code> on 6 domains.</li>
+</ul>
+This card does <em>not</em> redraw the as-is. It delivers the instance contract (AC2) + the collector→instance decomposition (AC3).
+</div>
+
+<h2>Why decompose — the structural argument</h2>
+<p>The monolith couples three things that have nothing in common: <strong>cadence</strong> (code metadata changes constantly; the ontology rarely; the 35–55s RDF cross-graph join is expensive every time), <strong>write-home</strong> (domain knowledge belongs in the graph, not a flat <code>messages</code> blob nobody reads), and <strong>read-discipline</strong> (mentions/logs are computed every sweep <em>on spec</em>, whether anyone asks or not). <code>fetchCrawl</code> runs all 11+ collectors × 27 domains on one cadence, on the shared event loop, against one SQLite file — which is the storm. Tuning the interval can't fix a structural coupling. Splitting the unit can.</p>
+
+<p>A registry of instances also gives each facet one home and one owner, instead of scattering across the codebase with no domain model.</p>
+
+<h2>AC2 — the crawler-instance contract</h2>
+<p>An instance is a declaration, parallel to a skill. The engine reads declarations from a registry and runs each per its own terms — it does <em>not</em> hard-code a sweep.</p>
+<pre>{
+  "name": "code-scan",
+  "source":   { "type": "git/fs", "ref": "platform/**, roles/**" },
+  "target":   { "store": "graph", "home": "chorus:knowledge" },   // RIGHT home, not a messages blob
+  "cadence":  { "trigger": "file-watch", "minInterval": "60s" },  // own cadence
+  "costTier": "cheap",                                            // governs how often it MAY run
+  "mode":     "scheduled",                                        // scheduled | pull-on-demand
+  "domains":  ["chorus:code", "chorus:tests"],                    // which Athena domains it serves
+  "write":    { "busyTimeoutMs": 5000, "failVisible": true }      // write-resilience (the exit=5 class)
+}</pre>
+<h3>How the engine runs instances</h3>
+<ul>
+<li><strong>Registry</strong> — instances are declared (like <code>skills/</code>), discoverable, owned. The engine enumerates them; there is no monolithic <code>fetchCrawl</code>.</li>
+<li><strong>Scheduled instances</strong> run on their declared trigger/cadence; <code>costTier</code> caps frequency (a <code>heavy</code> instance may not run on file-watch).</li>
+<li><strong>Pull-on-demand instances</strong> do not run on a clock at all — they compute at query time, when a consumer actually asks. This is the "pull not push" fix for use-thin work.</li>
+<li><strong>Write path</strong> — every instance's writes set <code>busy_timeout</code> and surface failures (no suppressed stderr). This closes the exit=5 / SQLITE_BUSY class traced 2026-05-24.</li>
+<li><strong>Supersedes the graph-hydrator framing</strong> (#2817/#2827): the hydrator becomes simply the <code>target.store: "graph"</code> branch of the write path, shared by every graph-homed instance — not a separate bespoke subsystem.</li>
+</ul>
+
+<h2>AC3 — decomposition: collectors → instances</h2>
+<p>The 11+ collectors in <code>fetchCrawl</code> map to instances by their natural cadence + write-home. Cost-tier governs frequency; mode governs push-vs-pull.</p>
+<table>
+  <tr><th>Collector (as-is)</th><th>Instance</th><th>Write-home (to-be)</th><th>Cadence</th><th>Cost</th><th>Mode</th></tr>
+  <tr><td>collectCodeScan / collectCodeFiles</td><td>code-scan</td><td>graph (chorus:File)</td><td>file-watch</td><td class="cheap">cheap</td><td>scheduled</td></tr>
+  <tr><td>collectCards</td><td>cards-snapshot</td><td>graph (cards is already a clean domain)</td><td>file-watch / short</td><td class="cheap">cheap</td><td>scheduled</td></tr>
+  <tr><td>collectSpine</td><td>spine-index</td><td>index (incremental — watermark/tail)</td><td>short interval</td><td class="cheap">cheap</td><td>scheduled</td></tr>
+  <tr><td>collectFeedback</td><td>feedback-snapshot</td><td>graph / index</td><td>file-watch</td><td class="cheap">cheap</td><td>scheduled</td></tr>
+  <tr><td>collectInfra / collectAlerts</td><td>ops-snapshot</td><td>working-memory (pulse)</td><td>interval</td><td class="cheap">cheap</td><td>scheduled</td></tr>
+  <tr><td>collectOwl / ClassProps / Relations</td><td>ontology-sync</td><td>graph</td><td>on-change / rare</td><td class="moderate">moderate</td><td>scheduled-rare</td></tr>
+  <tr><td>collectRdf</td><td>rdf-join</td><td>graph</td><td>rare / long interval</td><td class="heavy">heavy (35–55s, #3066)</td><td>scheduled-rare</td></tr>
+  <tr><td>collectMentions</td><td>mentions</td><td>— (computed, not stored)</td><td>—</td><td class="moderate">moderate</td><td><span class="pull">pull-on-demand</span></td></tr>
+  <tr><td>collectLogs</td><td>logs</td><td>— (Loki IS the store)</td><td>—</td><td class="cheap">cheap</td><td><span class="pull">pull-on-demand</span></td></tr>
+</table>
+
+<h3>What the split buys</h3>
+<ul>
+<li><strong>"Much more frequent" for the cheap slices</strong> (code-scan, cards) without ever dragging the 35–55s <code>rdf-join</code> into the frequent path — Jeff's ask, structurally.</li>
+<li><strong>No storm:</strong> the heavy instance runs rarely; the pull instances run only when asked; nothing fires all collectors at once on the shared loop.</li>
+</ul>
+
+<h2>How the point-fixes fold in</h2>
+<ul>
+<li><strong>#3055 (off-spine):</strong> <code>mentions</code> becomes pull-on-demand — the heavy mention scan leaves the sweep entirely.</li>
+<li><strong>#3066 (collectRdf 35–55s):</strong> <code>rdf-join</code> is a rare-cadence heavy instance — never in the frequent path.</li>
+<li><strong>Index watermark:</strong> <code>spine-index</code> reads incrementally (watermark/tail), not whole-file (the #3067 lesson made structural).</li>
+<li><strong>Search-on-spec:</strong> the pull instances (<code>mentions</code>, <code>logs</code>) compute at query time, not pre-materialized every sweep.</li>
+<li><strong>busy_timeout write-resilience:</strong> baked into every instance's write path — closes the exit=5 / SQLITE_BUSY death class.</li>
+</ul>
+
+<div class="callout">
+<strong>Must-handle constraints (carried verbatim from #3071's verified map — name in AC, don't discover mid-build):</strong>
+<ul>
+<li><strong>Circular dep #2323:</strong> <code>collectMentions</code> reads <code>messages_fts</code> → writes a crawler row → reindex → read again. Making <code>mentions</code> <em>pull-on-demand</em> (compute, don't store) is the clean resolution — it stops writing the row back, breaking the cycle. This is the single most load-bearing reason the split must include a pull mode.</li>
+<li><strong>traces = clean cut:</strong> 108/min, 144K of 301K rows, zero readers. Cut or sample; do not make it an instance.</li>
+<li><strong>chorus_files = fold, not cut:</strong> no external reader, but it's the hydrator's own retry/dedup state. Fold it into the <code>code-scan</code> instance's internal state; do not retire standalone.</li>
+</ul>
+</div>
+
+<h2>Not in scope (follow-on per-instance cards)</h2>
+<p>This is a Designing-step card: the contract + the map. Building the registry, the engine, and each instance are follow-on implementation cards, filed per instance in dependency order (cheap scheduled first, then pull, then the heavy rare ones). Immediate storm relief (WatchPaths gate #3068, busy_timeout) is separate/ops and already moving.</p>
+
+<h2>References</h2>
+<ul>
+<li><a href="/designing/docs/crawler-dependency-map.html">crawler-dependency-map.html</a> (#3071) — the verified as-is dependency map this builds on.</li>
+<li><a href="/designing/docs/crawler-service-design.html">crawler-service-design.html</a> — the older service design (graph-hydrator wave) this supersedes.</li>
+<li><code>data/athena/tree.json</code> — <code>chorus:service-crawler</code> edges.</li>
+<li>ADR-033 (Silas) — lands the decomposition decision from this model.</li>
+</ul>
+</body>
+</html>
