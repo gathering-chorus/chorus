@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Crawler dependency map (#3071) — verified writers → outputs → consumers</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; color: #1a1a1a; max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; line-height: 1.55; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 19px; margin-top: 34px; border-bottom: 2px solid #eef2f7; padding-bottom: 6px; }
+  .sub { color: #6b7280; font-size: 14px; margin-top: 0; }
+  .map { width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 10px; margin: 18px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 14px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .lb { color: #166534; font-weight: 700; }
+  .waste { color: #b91c1c; font-weight: 700; }
+  .callout { background: #f5f3ff; border: 1.5px solid #a78bfa; border-radius: 10px; padding: 14px 18px; color: #5b21b6; margin: 18px 0; }
+  ul { margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>Crawler dependency map (#3071)</h1>
+<p class="sub">Verified writers → outputs → consumers (+ owners). Built 2026-05-24 (Wren) from two subagent traces against the running system — <strong>not inference</strong>. Inference burned us ~4× this session; this is measured. Supersedes the wrong "it writes one SQLite row" claim.</p>
+
+<svg class="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 980" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1480" height="980" fill="#ffffff"/>
+  <text x="40" y="38" font-size="22" font-weight="700" fill="#1a1a1a">Crawler pipeline — VERIFIED dependency map: writers &#8594; outputs &#8594; consumers (+ owners)</text>
+  <text x="40" y="59" font-size="13" fill="#6b7280">From two subagent traces against the running system (#3071), not inference. The "one SQLite row" claim was wrong: 4 stores, ~10 outputs, multiple writers.</text>
+  <text x="40" y="77" font-size="11" fill="#9ca3af">Owner color = the Athena-tree domain owner of each output. &#9679; load-bearing (something breaks if it stops) &#183; &#9675; no consumer found. Wren 2026-05-24.</text>
+  <g font-size="11.5" font-weight="700">
+    <circle cx="48" cy="98" r="6" fill="#7c4dff"/><text x="58" y="102" fill="#5b21b6">Wren</text>
+    <circle cx="138" cy="98" r="6" fill="#1d1d1f"/><text x="148" y="102" fill="#1d1d1f">Jeff</text>
+    <circle cx="218" cy="98" r="6" fill="#e08a1e"/><text x="228" y="102" fill="#9a6312">Kade</text>
+    <circle cx="300" cy="98" r="6" fill="#0f9d8f"/><text x="310" y="102" fill="#0a6b61">Silas</text>
+  </g>
+  <text x="56" y="138" font-size="12" font-weight="800" fill="#475569">WRITER</text>
+  <text x="372" y="138" font-size="12" font-weight="800" fill="#475569">OUTPUT  (store &#183; owner)</text>
+  <text x="800" y="138" font-size="12" font-weight="800" fill="#475569">CONSUMERS</text>
+  <text x="1300" y="138" font-size="12" font-weight="800" fill="#475569">VERDICT</text>
+  <line x1="40" y1="146" x2="1440" y2="146" stroke="#cbd5e1"/>
+  <g font-size="11">
+    <text x="56" y="172" fill="#334155">index-crawler-snapshots.sh</text>
+    <circle cx="360" cy="178" r="6" fill="#7c4dff"/><text x="372" y="182" font-weight="700" fill="#5b21b6">messages source=crawler</text><text x="372" y="197" fill="#94a3b8">SQLite &#183; 27 rows &#183; Clearing</text>
+    <text x="800" y="178" fill="#334155">context_inject (EVERY prompt) &#183; /search FTS+hybrid &#183; embed&#8594;LanceDB</text>
+    <rect x="1296" y="166" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="179" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="206" x2="1440" y2="206" stroke="#eef2f7"/>
+    <text x="56" y="230" fill="#334155">index-crawler-snapshots.sh</text>
+    <circle cx="360" cy="236" r="6" fill="#7c4dff"/><text x="372" y="240" font-weight="700" fill="#5b21b6">spine events crawler.*</text><text x="372" y="255" fill="#94a3b8">chorus.log &#183; Clearing/spine</text>
+    <text x="800" y="236" fill="#334155">crawler-stale + hydration-divergence ALERTS &#183; context_inject (Spine+Loki, every prompt) &#183; pain rollup &#183; indexSpine</text>
+    <rect x="1296" y="224" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="237" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="264" x2="1440" y2="264" stroke="#eef2f7"/>
+    <text x="56" y="288" fill="#334155">crawler-hydrate-graph.sh</text><text x="56" y="302" fill="#b91c1c" font-size="10" font-weight="700">&#8592; crawler DOES write the graph</text>
+    <circle cx="360" cy="294" r="6" fill="#1d1d1f"/><text x="372" y="298" font-weight="700" fill="#1d1d1f">Fuseki RDF (chorus:File)</text><text x="372" y="313" fill="#94a3b8">graph urn:chorus:instances &#183; knowledge</text>
+    <text x="800" y="294" fill="#334155">/crawl collectRdf + collectOwl &#183; stale/deletes reconciliation</text>
+    <rect x="1296" y="282" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="295" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="322" x2="1440" y2="322" stroke="#eef2f7"/>
+    <text x="56" y="346" fill="#334155">embedDelta</text>
+    <circle cx="360" cy="352" r="6" fill="#1d1d1f"/><text x="372" y="356" font-weight="700" fill="#1d1d1f">LanceDB vectors</text><text x="372" y="371" fill="#94a3b8">~/.chorus/lance &#183; search</text>
+    <text x="800" y="352" fill="#334155">semanticSearch &#8594; /search (semantic/hybrid) &#183; context_inject (indirect)</text>
+    <rect x="1296" y="340" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="353" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="380" x2="1440" y2="380" stroke="#eef2f7"/>
+    <text x="56" y="404" fill="#334155">index-crawler-snapshots.sh</text>
+    <circle cx="360" cy="410" r="6" fill="#0f9d8f"/><text x="372" y="414" font-weight="700" fill="#0a6b61">/tmp/crawler-domain-status.json</text><text x="372" y="429" fill="#94a3b8">file &#183; alerts-monitors</text>
+    <text x="800" y="410" fill="#334155">crawler-error ALERT (5min&#8594;Kade) &#183; crawler-domain-failure ALERT (&#8594;Silas)</text>
+    <rect x="1296" y="398" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="411" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="438" x2="1440" y2="438" stroke="#eef2f7"/>
+    <text x="56" y="462" fill="#334155">trace_hop (the .sh)</text>
+    <circle cx="360" cy="468" r="6" fill="#0f9d8f"/><text x="372" y="472" font-weight="700" fill="#0a6b61">traces table</text><text x="372" y="487" fill="#b91c1c" font-weight="700">108 rows/MIN &#183; 144K of 301K &#183; observability</text>
+    <text x="800" y="468" fill="#b91c1c" font-weight="700">NONE load-bearing found — nobody reads them</text>
+    <rect x="1296" y="456" width="92" height="18" rx="9" fill="#fee2e2" stroke="#dc2626"/><text x="1342" y="469" text-anchor="middle" font-size="10" font-weight="700" fill="#b91c1c">&#9675;WASTE?</text>
+    <line x1="40" y1="496" x2="1440" y2="496" stroke="#eef2f7"/>
+    <text x="56" y="520" fill="#334155">crawler-hydrate-graph.sh</text>
+    <circle cx="360" cy="526" r="6" fill="#e08a1e"/><text x="372" y="530" font-weight="700" fill="#9a6312">chorus_files</text><text x="372" y="545" fill="#94a3b8">SQLite &#183; code</text>
+    <text x="800" y="526" fill="#334155">reconciliation (internal to the script); no external load-bearing reader found</text>
+    <rect x="1296" y="514" width="92" height="18" rx="9" fill="#fef3c7" stroke="#d97706"/><text x="1342" y="527" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e">&#9675; low</text>
+    <line x1="40" y1="554" x2="1440" y2="554" stroke="#eef2f7"/>
+    <text x="56" y="578" fill="#334155">indexAllSources (reindex)</text>
+    <circle cx="360" cy="584" r="6" fill="#1d1d1f"/><text x="372" y="588" font-weight="700" fill="#1d1d1f">messages other sources</text><text x="372" y="603" fill="#94a3b8">SQLite spine/brief/decision/… &#183; search/memory</text>
+    <text x="800" y="584" fill="#334155">/search &#183; /self &#183; context_inject &#183; freshness</text>
+    <rect x="1296" y="572" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="585" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679;LOAD-BEARING</text>
+    <line x1="40" y1="612" x2="1440" y2="612" stroke="#eef2f7"/>
+    <text x="56" y="636" fill="#334155">indexAllSources</text>
+    <circle cx="360" cy="642" r="6" fill="#1d1d1f"/><text x="372" y="646" font-weight="700" fill="#1d1d1f">watermarks</text><text x="372" y="661" fill="#94a3b8">SQLite &#183; search/freshness</text>
+    <text x="800" y="642" fill="#334155">/freshness monitoring &#183; search-meta (domain_coverage)</text>
+    <rect x="1296" y="630" width="92" height="18" rx="9" fill="#dcfce7" stroke="#16a34a"/><text x="1342" y="643" text-anchor="middle" font-size="10" font-weight="700" fill="#166534">&#9679; supporting</text>
+    <line x1="40" y1="670" x2="1440" y2="670" stroke="#eef2f7"/>
+    <text x="56" y="694" fill="#334155">index-crawler-snapshots.sh</text>
+    <circle cx="360" cy="700" r="6" fill="#0f9d8f"/><text x="372" y="704" font-weight="700" fill="#0a6b61">/tmp/crawler-last-run-ts</text><text x="372" y="719" fill="#94a3b8">file (0-byte) &#183; ops</text>
+    <text x="800" y="700" fill="#334155">the script itself (file-watch vs polling trigger heuristic)</text>
+    <rect x="1296" y="688" width="92" height="18" rx="9" fill="#fef3c7" stroke="#d97706"/><text x="1342" y="701" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e">&#9675; internal</text>
+  </g>
+  <line x1="40" y1="728" x2="1440" y2="728" stroke="#cbd5e1"/>
+  <text x="40" y="754" font-size="14" font-weight="800" fill="#334155">What the map settled</text>
+  <text x="40" y="776" font-size="12" fill="#475569">&#183; Keep it on was right. context_inject reads crawler rows + spine events + LanceDB on EVERY prompt; 4 alerts read its status/spine.</text>
+  <text x="40" y="797" font-size="12" fill="#475569">&#183; Jeff was right: the crawler DOES write the graph (crawler-hydrate-graph.sh &#8594; chorus:File triples). "Only reads" was wrong — a separate script.</text>
+  <text x="40" y="818" font-size="12" fill="#475569">&#183; The waste = the traces table. 108 rows/min, 144K of 301K total, and NO load-bearing consumer found. First to cut/sample (verify).</text>
+  <text x="40" y="839" font-size="12" fill="#475569">&#183; Circular: /crawl collectMentions READS messages &#8594; writes a crawler row &#8594; re-indexed &#8594; read again (#2323). Blast-radius note for #3069.</text>
+  <text x="40" y="860" font-size="12" fill="#475569">&#183; The flood was WatchPaths (file-churn trigger), not StartInterval (correctly 1800/30min). Gated &#8594; safe, removes no data.</text>
+  <rect x="40" y="884" width="1400" height="74" rx="10" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="58" y="908" font-size="13" font-weight="800" fill="#5b21b6">Ownership: one monolith, four owners</text>
+  <text x="58" y="929" font-size="12" fill="#5b21b6">Outputs span Wren (crawler messages, spine) &#183; Jeff (graph/knowledge, LanceDB/search, reindex, watermarks) &#183; Kade (chorus_files/code) &#183; Silas (status, traces, alerts).</text>
+  <text x="58" y="949" font-size="12" fill="#5b21b6">Decomposing (#3069) hands each output to its owner on its own cadence — and the map says which consumers each owner must preserve. The traces output (Silas, no consumer) is the one to question first.</text>
+</svg>
+
+<h2>Outputs &#8594; consumers &#8594; what breaks if it stops</h2>
+<table>
+  <tr><th>Output (store)</th><th>Load-bearing consumers</th><th>If it stops</th></tr>
+  <tr><td><code>messages source='crawler'</code> (27 rows, delete+insert)</td><td><code>context_inject</code> hybrid grounding (EVERY prompt) &#183; <code>/api/chorus/search</code> FTS/hybrid &#183; embed-delta &#8594; LanceDB</td><td>per-prompt domain-snapshot grounding lost; search loses domain layer; semantic loses domain vectors</td></tr>
+  <tr><td><code>spine events crawler.*</code></td><td><code>crawler-stale.yml</code> &#183; <code>hydration-divergence.yml</code> &#183; <code>context_inject</code> (every prompt) &#183; pain rollup &#183; <code>indexSpine</code></td><td>crawler-stale fires; per-prompt context loses crawler signal; pain board loses attribution</td></tr>
+  <tr><td><code>/tmp/crawler-domain-status.json</code></td><td><code>crawler-error.yml</code> (&#8594;Kade) &#183; <code>crawler-domain-failure.yml</code> (&#8594;Silas)</td><td>both alerts go silent (designed: no file = non-failing)</td></tr>
+  <tr><td>LanceDB vectors</td><td><code>semanticSearch</code> &#8594; /search semantic/hybrid &#183; <code>context_inject</code> (indirect)</td><td>semantic &#8594; FTS-only (graceful); index-freshness alert fires</td></tr>
+  <tr><td>Fuseki RDF graph (crawler-hydrate-graph.sh)</td><td><code>/crawl/:domain</code> collectRdf/collectOwl &#183; stale/deletes reconciliation</td><td>crawl RDF bucket empties; stale-flag detection stops</td></tr>
+  <tr><td class="waste"><code>traces</code> (108/min, 144K rows)</td><td class="waste">none load-bearing found (diagnostics only)</td><td>likely nothing notices — the waste candidate</td></tr>
+  <tr><td>messages other sources, watermarks</td><td>search, self, freshness monitoring</td><td>per-source; freshness alert</td></tr>
+</table>
+
+<h2>Circular dependency (note for #3069 decomposition)</h2>
+<p><code>/crawl/:domain</code> &#8594; <code>collectMentions</code> READS <code>messages_fts</code> (all sources incl. existing crawler rows) &#8594; builds the snapshot &#8594; written back as a NEW <code>source='crawler'</code> row &#8594; re-indexed &#8594; read again. The crawl reads the index, then writes to the index (#2323 "eating its own tail"). Blast-radius-relevant for the decomposition.</p>
+
+<div class="callout">
+<strong>How this folds into Athena v2.</strong> The crawler is now a <code>service</code> entry in <code>data/athena/tree.json</code> (<code>chorus:service-crawler</code>) carrying <code>produces</code> (each output &#8594; owning domain) and <code>consumedBy</code> (each consumer &#8594; its domain). The consuming domains carry <code>consumes</code>/<code>dependsOn</code> edges pointing back. "Safe to turn off / decompose vs has unmapped runtime consumers" is now a tree query, not a guess.
+</div>
+
+<h2>Implications for #3069 / ADR-033</h2>
+<ul>
+<li>Decomposition must preserve the load-bearing consumers — above all <code>context_inject</code>'s every-prompt reads (crawler rows + spine + LanceDB) and the 4 alerts. These were the "runtime dependencies we don't understand" — now mapped.</li>
+<li>The graph-write (<code>crawler-hydrate-graph.sh</code>) is the to-be done right already — structure into the graph. Extend that pattern; retire the flat-summary-to-messages where the graph can hold it.</li>
+<li>The <code>traces</code> 108/min is the first thing to question — highest write volume, no found consumer. Likely cut or sample, not decompose.</li>
+<li>Safe vs needs-care: frequency throttle (WatchPaths, #3068) = safe, removes no data. Turning off any OUTPUT = needs care (this map shows which break). Turning off <code>traces</code> writes = likely safe (no consumer found) — verify.</li>
+</ul>
+</body>
+</html>
