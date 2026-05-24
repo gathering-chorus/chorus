@@ -261,4 +261,32 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     expect(b.logs).toHaveLength(2);
     expect(b.logs[0].level).toBe('error');
   });
+
+  // #3055: collectMentions must bound the FTS scan (mentionScanCap), so a common
+  // domain term can't become a ~400ms synchronous loop block. These lock the cap
+  // behaviourally: a revert to ORDER BY (rank|timestamp) over the full match set
+  // would ignore the cap, and cap=3 would return more than 3.
+  function seedManyMentions(db: Database.Database, n: number): void {
+    const ins = db.prepare('INSERT INTO messages (author, content, role, timestamp) VALUES (?,?,?,?)');
+    for (let i = 0; i < n; i++) {
+      ins.run('jeff', `photos discussion entry number ${i} with sufficient length to pass the filter`, 'jeff', `2026-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`);
+    }
+  }
+
+  test('#3055: mentionScanCap bounds the scan — cap=3 yields <=3 mentions despite 20 matches', async () => {
+    const db = emptyDb();
+    seedManyMentions(db, 20);
+    const r = await fetchCrawl('photos', deps({ db, mentionScanCap: 3 }));
+    const b = r.body as { mentions: unknown[] };
+    expect(b.mentions.length).toBeGreaterThan(0);
+    expect(b.mentions.length).toBeLessThanOrEqual(3);
+  });
+
+  test('#3055: the cap is load-bearing — a higher cap returns more mentions', async () => {
+    const db = emptyDb();
+    seedManyMentions(db, 20);
+    const r = await fetchCrawl('photos', deps({ db, mentionScanCap: 15 }));
+    const b = r.body as { mentions: unknown[] };
+    expect(b.mentions.length).toBeGreaterThan(3);
+  });
 });
