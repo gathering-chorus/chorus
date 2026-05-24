@@ -141,12 +141,18 @@ fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
         .call()
     {
         Ok(r) => r,
-        Err(_) => return vec![],
+        Err(e) => {
+            eprintln!("context-inject: chorus search fetch FAILED (grounding lost this prompt): {}", e);
+            return vec![];
+        }
     };
 
     let body: serde_json::Value = match resp.into_json() {
         Ok(v) => v,
-        Err(_) => return vec![],
+        Err(e) => {
+            eprintln!("context-inject: chorus search response parse FAILED: {}", e);
+            return vec![];
+        }
     };
 
     let mut results = Vec::new();
@@ -188,7 +194,10 @@ fn query_recent_log_errors() -> Vec<(String, String)> {
         .call()
     {
         Ok(r) => r,
-        Err(_) => return vec![],
+        Err(e) => {
+            eprintln!("context-inject: Loki fetch FAILED (live error signal lost this prompt): {}", e);
+            return vec![];
+        }
     };
 
     let body: serde_json::Value = match resp.into_json() {
@@ -301,7 +310,13 @@ fn query_athena_domain(role: &str) -> Option<String> {
     let domain = card.get("domain").and_then(|d| d.as_str())?;
 
     let url = format!("http://localhost:3340/api/chorus/domain/{}", domain);
-    let resp = ureq::get(&url).call().ok()?;
+    let resp = match ureq::get(&url).call() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("context-inject: athena domain fetch FAILED: {}", e);
+            return None;
+        }
+    };
     let body: serde_json::Value = resp.into_json().ok()?;
     let desc = body.get("description").and_then(|d| d.as_str()).unwrap_or("");
     let cards_total = body.pointer("/cards/total").and_then(|c| c.as_i64()).unwrap_or(0);
@@ -449,7 +464,8 @@ fn scan_memory(keywords: &[String]) -> Vec<String> {
     hits
 }
 
-/// Manifest envelope for CONTEXT_PUSH_MODE=manifest (#2249 Phase 1).
+/// Manifest envelope — orientation half of the per-prompt context (#2249 Phase 1).
+/// Always built now (#3048); paired with the dynamic search/Loki synthesis.
 /// ~2KB identity + orientation + endpoint list. No pre-synthesized blobs.
 pub fn build_manifest_envelope(role: &str, card: Option<&str>, health: &str, team_wip: usize, role_wip: usize) -> String {
     let wip_line = match card {
@@ -520,20 +536,21 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
 
-    // #2249 Phase 3: manifest is default. Legacy shape behind CONTEXT_PUSH_MODE=legacy.
-    if std::env::var("CONTEXT_PUSH_MODE").as_deref() != Ok("legacy") {
+    // #3048: push BOTH the manifest (orientation: pulse + endpoints + nudges) AND
+    // the live search/Loki synthesis (grounding) on every prompt. Pre-#3048 the
+    // manifest returned early HERE, so the #3032 search/Loki path below was dead
+    // code — shadowed by #2249's manifest-default. Now the manifest is built into
+    // a block and the function falls through to the dynamic synthesis, which is
+    // appended before returning. No CONTEXT_PUSH_MODE fork: both always run.
+    let manifest_block = {
         let (health, team_wip, role_wip, card) = parse_pulse_orientation(&role_name);
         let envelope = build_manifest_envelope(&role_name, card.as_deref(), &health, team_wip, role_wip);
-        // #2435 wedge 3 — surface pending nudges via poll when NUDGE_PATH_V2=1.
-        // No-op when flag is off; legacy delivery paths continue unchanged.
-        // On each surface, emits nudge.surfaced to spine so the unread fold converges.
         let log_path_str = crate::shared::state_paths::chorus_log_file();
         let log_path = std::path::Path::new(&log_path_str);
-        let augmented = crate::hooks::nudge_poll::augment_envelope_with_nudges(
+        crate::hooks::nudge_poll::augment_envelope_with_nudges(
             &role_name, &envelope, log_path, 50_000, 10,
-        );
-        return HookResponse::warn_stderr(&format!("\n{}\n", augmented));
-    }
+        )
+    };
 
     // Pulse: assemble team state snapshot. A background daemon already refreshes
     // /tmp/pulse-latest.json on schedule (#1881); only spawn a rebuild when the
@@ -548,13 +565,12 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             .spawn();
     }
 
-    // #3032: envelope-level latency cap. Each remote fetch is individually
-    // fail-open + timeout-bounded, but all-cold (hybrid + athena + logs) could
-    // still stack past the ~400ms warm budget. Gate the later remote fetches on
-    // a wall-clock budget so a slow envelope degrades (drops sections) rather
-    // than blowing the per-prompt latency contract.
+    // #3048: no latency cap. Jeff's call (A): wait the few seconds and get the
+    // context. Pre-#3048 a 700ms wall-clock budget silently dropped athena + Loki
+    // when the envelope ran long — the same fail-open-silent bug as the per-call
+    // timeouts, one level up. Removed. envelope_start is kept only to MEASURE and
+    // log the real cost (AC5), never to skip a fetch.
     let envelope_start = std::time::Instant::now();
-    let envelope_budget = std::time::Duration::from_millis(700);
 
     // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). Cached per
     // (role, keywords-hash) with HYBRID_CACHE_TTL so successive prompts that
@@ -571,20 +587,13 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // locks that contract.
     let pulse_block = read_pulse_snapshot();
     let spine_events = query_recent_spine(8);
-    let athena_block = if envelope_start.elapsed() < envelope_budget {
-        cached_query_athena_domain(&role_name)
-    } else {
-        None
-    };
+    let athena_block = cached_query_athena_domain(&role_name);
 
     // Live log signal (#3032) — recent errors from Loki, the half Chorus search
-    // can't see (logs aren't indexed). Fail-open, 300ms-capped, and dropped
-    // entirely if the envelope is already over budget.
-    let log_errors = if envelope_start.elapsed() < envelope_budget {
-        query_recent_log_errors()
-    } else {
-        Vec::new()
-    };
+    // can't see (logs aren't indexed). Runs every prompt now, uncapped (#3048);
+    // a genuine failure logs loudly (see query_recent_log_errors) rather than
+    // vanishing into an empty result.
+    let log_errors = query_recent_log_errors();
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
@@ -643,7 +652,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         }
     }
 
-    // If every source is empty, skip injection entirely.
+    // If every dynamic source is empty, still push the manifest — orientation is
+    // useful even when search/Loki/spine turn up nothing this prompt.
     if pulse_block.is_none() && spine_events.is_empty() && athena_block.is_none()
         && chorus_results.is_empty() && memory_hits.is_empty() && log_errors.is_empty() {
         info!(
@@ -651,8 +661,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             event = "no-results",
             role = %role_name,
             query = %query,
+            elapsed_ms = envelope_start.elapsed().as_millis() as u64,
         );
-        return HookResponse::allow();
+        return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
     }
 
     context.push_str("\nMANDATORY: You MUST reference this context before responding. Do not search filesystem or git for information already provided here. If Chorus returned results, cite them. Ignoring injected context is a protocol violation.\n");
@@ -676,9 +687,12 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         cycle_id = %cycle_id,
         chorus_hits = chorus_results.len(),
         memory_hits = memory_hits.len(),
+        log_errors = log_errors.len(),
+        elapsed_ms = envelope_start.elapsed().as_millis() as u64,
     );
 
-    HookResponse::warn_stderr(&context)
+    // #3048: manifest (orientation) + dynamic synthesis (grounding), both pushed.
+    HookResponse::warn_stderr(&format!("\n{}\n{}", manifest_block, context))
 }
 
 #[cfg(test)]
@@ -782,5 +796,45 @@ mod tests {
             "skips chorus-keyed dirs that lack a memory/ subdir: {:?}", dirs
         );
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    // #3048 — real-vs-real: call check() against the LIVE search (:3340) + Loki
+    // (:3102). Proves the runtime path actually pushes non-empty context (catches
+    // the 0-byte bug) instead of source-grepping. #[ignore]: needs live services,
+    // so it never runs in CI — run explicitly: `cargo test --lib -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn check_pushes_nonempty_context_against_live_services() {
+        let state = AppState::new();
+        let input = HookInput {
+            tool_name: None,
+            tool_input: None,
+            tool_response: None,
+            session_id: Some("itest-3048".into()),
+            cwd: Some("/Users/jeffbridwell/CascadeProjects/chorus/roles/wren".into()),
+            prompt: Some(
+                "what did wren and kade ship today and what pipeline errors happened recently"
+                    .into(),
+            ),
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: Some("wren".into()),
+            chorus_worktree_override: None,
+        };
+        let resp = check(&input, &state).await;
+        let out = resp.stderr.clone().unwrap_or_default();
+        eprintln!(
+            "[itest #3048] injected {} bytes | search={} logs={} spine={} pulse={}",
+            out.len(),
+            out.contains("Chorus hybrid"),
+            out.contains("## Logs"),
+            out.contains("## Spine"),
+            out.contains("Pulse"),
+        );
+        assert!(
+            !out.is_empty(),
+            "context_inject returned EMPTY for a real prompt — the 0-byte bug (#3048). \
+             check() must always push at least the manifest, never nothing."
+        );
     }
 }
