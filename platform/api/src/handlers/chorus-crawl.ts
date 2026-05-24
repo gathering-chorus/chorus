@@ -51,6 +51,7 @@ export interface CrawlDeps {
   memoryDir: string;
   alertDir: string;
   lokiBaseUrl?: string;
+  mentionScanCap?: number; // #3055: cap the FTS mention scan (default MENTION_SCAN_CAP); injectable for tests.
 }
 
 export interface CrawlResult {
@@ -166,6 +167,7 @@ function collectMentions(
   db: Database.Database | null,
   domain: string,
   timeline: TimelineEntry[],
+  scanCap: number = MENTION_SCAN_CAP,
 ): { mentions: Array<{ timestamp: string; role: string; text: string }>; related: Array<{ domain: string; strength: number }> } {
   const mentions: Array<{ timestamp: string; role: string; text: string }> = [];
   const counts: Record<string, number> = {};
@@ -174,15 +176,24 @@ function collectMentions(
       // #3054: FTS5 MATCH (quote-safe), NOT a `%domain%` wildcard scan over content — that
       // is an unindexed full scan over 1.26M rows (~2.8s sync, freezes the spine; #3051 class).
       const matchQuery = toFtsMatchQuery(domain);
+      // #3055: bound the FTS scan, then sort. A common term like "photos" matches
+      // ~16.7K rows; `ORDER BY m.timestamp` (or `ORDER BY rank`) over the full
+      // match set is a 400ms synchronous block — the dominant crawl loop-block.
+      // Measured fix: cap the FTS scan to MENTION_SCAN_CAP (early-terminates, ~5ms),
+      // then sort that bounded sample by timestamp and take 100. Bounded regardless
+      // of how common the domain term is. Result shape unchanged (oldest-first):
+      // FTS rowid is insertion-chronological for this append-only message log, so
+      // the first-CAP-by-rowid are the oldest, and the 100 oldest of those == the
+      // 100 oldest overall. (Would skew only if rows were BACKFILLED out of order.)
       const rows = matchQuery
         ? (db
             .prepare(
               `SELECT m.author, m.content, m.timestamp, m.role
-               FROM messages_fts f JOIN messages m ON f.rowid = m.id
-               WHERE messages_fts MATCH ?
+               FROM (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? LIMIT ?) f
+               JOIN messages m ON f.rowid = m.id
                ORDER BY m.timestamp ASC LIMIT 100`,
             )
-            .all(matchQuery) as Array<{ author: string; content: string; timestamp: string; role: string }>)
+            .all(matchQuery, Math.max(1, Math.floor(scanCap))) as Array<{ author: string; content: string; timestamp: string; role: string }>)
         : [];
       for (const m of rows) {
         const text = extractMentionText(m.content);
@@ -204,6 +215,9 @@ function collectMentions(
 // the full read + JSON.parse-per-line is a multi-hundred-ms synchronous block on
 // the coordination spine, every crawl. The tail covers recent card lifecycle events.
 const SPINE_TAIL_BYTES = 4_000_000;
+// #3055: cap the per-crawl FTS mention scan so a common domain term (e.g. "photos",
+// ~16.7K matches) can't turn collectMentions into a ~400ms synchronous loop block.
+const MENTION_SCAN_CAP = 300;
 
 function collectSpine(
   exists: (p: string) => boolean,
@@ -559,6 +573,7 @@ export async function fetchCrawl(
     memoryDir,
     alertDir,
     lokiBaseUrl = 'http://localhost:3102',
+    mentionScanCap = MENTION_SCAN_CAP,
   }: CrawlDeps,
 ): Promise<CrawlResult> {
   const domain = (domainRaw || '').toLowerCase();
@@ -578,7 +593,7 @@ export async function fetchCrawl(
 
   const cards = collectCards(getBoardCards, domain, timeline, history);
   const rdf = await collectRdf(fetchFn, fusekiUrl, domain);
-  const { mentions, related } = collectMentions(db, domain, timeline);
+  const { mentions, related } = collectMentions(db, domain, timeline, mentionScanCap);
   const spine = collectSpine(exists, readLogTail, chorusLogPath, cards, timeline);
   const owl = await collectOwl(fetchFn, fusekiUrl, domain);
   const infra = await collectInfra(execAsync, domain);
