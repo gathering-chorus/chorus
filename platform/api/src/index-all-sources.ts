@@ -43,6 +43,9 @@ export interface IndexAllSourcesDeps {
   repoRoot: string;
   homedir: () => string;
   now?: () => string;
+  // #3067: read only the recent tail of the (170MB) spine log, not the whole file.
+  // Optional — falls back to a readFileSync slice for small logs / tests.
+  readTail?: (path: string, maxBytes: number) => string;
 }
 
 interface IndexCtx {
@@ -54,7 +57,16 @@ interface IndexCtx {
   repoRoot: string;
   homedir: () => string;
   now: string;
+  readTail: (path: string, maxBytes: number) => string;
 }
+
+// #3067: indexSpine read the whole ~170MB spine log + JSON.parse'd ~838K lines
+// every reindex cycle (~2min) — 4.9s of the 5.1s total, a recurring sync block
+// on the coordination spine. Bound it to the recent tail; the insert is
+// INSERT OR IGNORE so re-processing the tail's overlap is a no-op, and new
+// (appended) events are always within the tail. 16MB >> a 2-min slice of the
+// log, so nothing is missed between cycles (only a >16MB indexing OUTAGE could).
+const SPINE_INDEX_TAIL_BYTES = 16_000_000;
 
 /** Indexed spine event row — columns the insert statement binds. */
 interface IndexEvent {
@@ -79,7 +91,9 @@ function runSource(name: string, results: Record<string, string>, fn: () => stri
 function indexSpine(ctx: IndexCtx): string | void {
   const logPath = `${process.env.HOME}/.chorus/chorus.log`;
   if (!ctx.fs.existsSync(logPath)) return;
-  const content = String(ctx.fs.readFileSync(logPath, 'utf-8'));
+  // #3067: read only the recent tail, not the whole 170MB log. A tail start lands
+  // mid-line; that partial first line fails JSON.parse and is skipped below.
+  const content = String(ctx.readTail(logPath, SPINE_INDEX_TAIL_BYTES));
   const lines = content.trim().split('\n');
   let indexed = 0;
   const insertMany = ctx.db.transaction((events: IndexEvent[]) => {
@@ -288,10 +302,18 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
       ON CONFLICT(source) DO UPDATE SET last_seen = excluded.last_seen, last_indexed = excluded.last_indexed
     `);
 
+    // #3067: prefer the injected positioned-tail reader; fall back to a
+    // readFileSync slice (correct, but reads the whole file) for small logs / tests.
+    const readTail = deps.readTail ?? ((p: string, max: number): string => {
+      const full = deps.fs.readFileSync(p, 'utf-8');
+      return full.length <= max ? full : full.slice(full.length - max);
+    });
+
     const ctx: IndexCtx = {
       db, insert, updateWatermark,
       fs: deps.fs, path: deps.path, repoRoot: deps.repoRoot, homedir: deps.homedir,
       now: nowFn(),
+      readTail,
     };
 
     runSource('spine', results, () => indexSpine(ctx));
