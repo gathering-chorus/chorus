@@ -4,8 +4,8 @@
 # outage (e.g. mid-redeploy) — retry with backoff and exit cleanly — instead of
 # SIGPIPE-crash-looping (exit 141) into throttle-off on every deploy.
 
-SCRIPT="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/index-crawler-snapshots.sh"
-[ -f "$SCRIPT" ] || SCRIPT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/index-crawler-snapshots.sh"
+SCRIPT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/index-crawler-snapshots.sh"
+[ -f "$SCRIPT" ] || SCRIPT="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/index-crawler-snapshots.sh"
 
 setup() {
   TEST_HOME=$(mktemp -d)
@@ -43,20 +43,22 @@ teardown() { rm -rf "$TEST_HOME"; }
 # answers — proven by attempt-count: a stub that 200s on /health lets the run pass
 # the gate (it then exits on the empty crawl, NOT on the api gate).
 @test "chorus-api reachable: passes the health gate (no skip message)" {
-  # minimal stub server: always 200 on any path
+  # pick a free port dynamically — avoids fixed-port bleed between runs
+  STUB_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
   python3 -c "
-import http.server, socketserver, threading, sys
+import http.server, socketserver
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
     def log_message(self,*a): pass
-with socketserver.TCPServer(('127.0.0.1', 8771), H) as s:
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(('127.0.0.1', $STUB_PORT), H) as s:
     open('$TEST_HOME/port.ready','w').close()
     s.serve_forever()
 " &
   STUB_PID=$!
   for _ in $(seq 1 50); do [ -f "$TEST_HOME/port.ready" ] && break; sleep 0.05; done
 
-  run env API_URL="http://127.0.0.1:8771" DB_PATH="$TEST_DB" CHORUS_ROOT="$TEST_ROOT" \
+  run env API_URL="http://127.0.0.1:${STUB_PORT}" DB_PATH="$TEST_DB" CHORUS_ROOT="$TEST_ROOT" \
     HEALTH_RETRY_MAX=2 HEALTH_RETRY_DELAY=0 bash "$SCRIPT" notadomain
   kill "$STUB_PID" 2>/dev/null || true
 
