@@ -18,6 +18,12 @@
   .gh{ background:var(--ghbg); border:2.5px solid var(--ghbd); border-radius:14px; padding:13px 15px 15px; }
   .gh > .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--ghbd); }
   .gh > p{ font-size:11.5px; color:#2c5a3a; margin:5px 0 0; }
+  .ghchecks{ margin:11px 0 3px; }
+  .ghchecks .l{ font-size:11px; color:#2c5a3a; font-weight:700; margin-bottom:6px; }
+  .chk{ display:inline-block; font-family:ui-monospace,Menlo,monospace; font-size:11px; border:1px solid #cfe3d4; background:#fff; border-radius:6px; padding:3px 8px; margin:0 5px 5px 0; color:#24292f; }
+  .cdot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .cdot.done{background:#1a7f37} .cdot.run{background:#d4a017} .cdot.none{background:#d0d7de} .cdot.fail{background:#cf222e}
+  .ghchecks .leg{ font-size:10.5px; color:#5a7a64; margin-top:3px; }
 
   .env{ background:var(--envbg); border:2.5px solid var(--envbd); border-radius:12px; padding:12px 13px 14px; margin-top:11px; }
   .env > .lbl{ font-size:12.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--envbd); text-align:center; }
@@ -58,6 +64,18 @@
 <div class="gh">
   <div class="lbl">GitHub — source of truth + process holder (wraps everything)</div>
   <p><b>main = source of truth</b> (verbs branch from <code>origin/main</code>, land back in <code>main</code>) · <b>process holder:</b> per-card state <code>{card#, trace, branch, status, steps_done}</code> via commit-statuses / deployments, queryable by branch. Holds the process; never runs it.</p>
+
+  <div class="ghchecks">
+    <div class="l">the process gh holds = one commit-status check per verb — all six green on the card's PR = every verb happened:</div>
+    <span class="chk"><span class="cdot done"></span>chorus/pull</span>
+    <span class="chk"><span class="cdot done"></span>chorus/commit</span>
+    <span class="chk"><span class="cdot done"></span>chorus/build</span>
+    <span class="chk"><span class="cdot run"></span>chorus/deploy</span>
+    <span class="chk"><span class="cdot none"></span>chorus/verify</span>
+    <span class="chk"><span class="cdot none"></span>chorus/accept</span>
+    <div class="leg"><span class="cdot done"></span>done&nbsp;&nbsp;<span class="cdot run"></span>running&nbsp;&nbsp;<span class="cdot none"></span>not yet&nbsp;&nbsp;<span class="cdot fail"></span>failed&nbsp;&nbsp;— the set on the branch tip = how far the card got; carried forward onto the new SHA.</div>
+    <div class="leg" style="margin-top:5px">push folds under <code>chorus/commit</code> — committed + pushed = one state; that's why six checks, not seven.</div>
+  </div>
 
   <div class="env">
     <div class="lbl">One environment — production (live) · wraps the DSL</div>
