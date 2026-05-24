@@ -184,6 +184,8 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "context_inject reads crawler messages + spine + LanceDB on EVERY prompt; degraded grounding for all roles if it stops (#3071)",
       "gaps": []
     },
     {
@@ -256,6 +258,8 @@
       "ownedBy": "chorus:role-jeff",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "indexSpine re-indexes crawler.* spine events into the index (#3071)",
       "gaps": []
     },
     {
@@ -265,6 +269,8 @@
       "ownedBy": "chorus:role-jeff",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
+      "dependsOn": ["chorus:service-crawler"],
+      "dependsOnNote": "crawler-hydrate-graph.sh writes chorus:File RDF triples; /crawl collectRdf reads them. Graph RDF bucket empties + stale-flag detection stops if it stops (#3071)",
       "gaps": []
     },
     {
@@ -274,6 +280,8 @@
       "ownedBy": "chorus:role-jeff",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "FTS/hybrid reads crawler messages; semantic reads crawler LanceDB vectors. Loses domain layer + domain vectors if it stops (#3071)",
       "gaps": []
     },
     {
@@ -391,6 +399,8 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
+      "dependsOn": ["chorus:service-crawler"],
+      "dependsOnNote": "crawler-stale/error/domain-failure/hydration-divergence read crawler spine + /tmp status. crawler-stale's 5-min threshold will FALSE-FIRE under the #3068 30-min cadence — align threshold (#3071)",
       "gaps": []
     },
     {
@@ -445,6 +455,8 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "exploring",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "pain rollup reads crawler.* spine events for failure attribution (#3071)",
       "gaps": []
     },
     {
@@ -457,5 +469,36 @@
       "gaps": []
     }
   ],
-  "services": []
+  "services": [
+    {
+      "iri": "chorus:service-crawler",
+      "label": "crawler",
+      "comment": "Monolithic snapshot crawler — index-crawler-snapshots.sh (11 collectors x 27 domains) + crawler-hydrate-graph.sh (RDF). VERIFIED dependency map via subagent traces against the running system (#3071), not inference. One monolith, four owners; pending decomposition into per-collector instances (#3069/ADR-033). Full map: designing/docs/crawler-dependency-map.html.",
+      "ownedBy": "chorus:role-silas",
+      "atStep": "chorus:value-stream-step-directing",
+      "status": "operating",
+      "produces": [
+        { "output": "messages source=crawler", "store": "sqlite:messages", "writer": "index-crawler-snapshots.sh", "domain": "chorus:messages", "verdict": "load-bearing" },
+        { "output": "spine events crawler.*", "store": "spine:chorus.log", "writer": "index-crawler-snapshots.sh", "domain": "chorus:spine", "verdict": "load-bearing" },
+        { "output": "chorus:File RDF triples", "store": "fuseki:urn:chorus:instances", "writer": "crawler-hydrate-graph.sh", "domain": "chorus:knowledge", "verdict": "load-bearing" },
+        { "output": "LanceDB vectors", "store": "lancedb", "writer": "embedDelta", "domain": "chorus:search", "verdict": "load-bearing" },
+        { "output": "/tmp/crawler-domain-status.json", "store": "tmpfile", "writer": "index-crawler-snapshots.sh", "domain": "chorus:alerts-monitors", "verdict": "load-bearing" },
+        { "output": "traces", "store": "sqlite:traces", "writer": "trace_hop", "domain": "chorus:spine", "verdict": "waste", "note": "108 rows/min, 144K of 301K total, NO load-bearing consumer found — cut/sample candidate, verify first" },
+        { "output": "chorus_files", "store": "sqlite:chorus_files", "writer": "crawler-hydrate-graph.sh", "domain": "chorus:code", "verdict": "low", "note": "internal reconciliation; no external load-bearing reader found" }
+      ],
+      "consumedBy": [
+        { "consumer": "context_inject (EVERY prompt)", "domain": "chorus:policies", "reads": ["messages source=crawler", "spine events crawler.*", "LanceDB vectors"] },
+        { "consumer": "/api/chorus/search FTS+hybrid", "domain": "chorus:search", "reads": ["messages source=crawler", "LanceDB vectors"] },
+        { "consumer": "crawler-stale.yml / hydration-divergence.yml / crawler-error.yml / crawler-domain-failure.yml", "domain": "chorus:alerts-monitors", "reads": ["spine events crawler.*", "/tmp/crawler-domain-status.json"] },
+        { "consumer": "pain rollup", "domain": "chorus:analytics", "reads": ["spine events crawler.*"] },
+        { "consumer": "indexSpine (re-index)", "domain": "chorus:memory", "reads": ["spine events crawler.*"] },
+        { "consumer": "/crawl collectRdf + collectOwl", "domain": "chorus:knowledge", "reads": ["chorus:File RDF triples"] }
+      ],
+      "gaps": [
+        "traces table has no load-bearing consumer — first to cut/sample (#3069)",
+        "circular: collectMentions reads messages_fts then writes back a crawler row, re-indexed, read again (#2323)",
+        "monolith spans 4 owners — ownership violation pending decomposition #3069/ADR-033"
+      ]
+    }
+  ]
 }
