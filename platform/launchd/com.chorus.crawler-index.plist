@@ -2,23 +2,16 @@
 <!--
   com.chorus.crawler-index — chorus crawler hydrator (#2817).
 
-  Replaces the prior StartCalendarInterval=15min calendar with file-watch
-  primary + polling fallback. Same script as before (index-crawler-
-  snapshots.sh); the trigger surface is what changes.
+  Trigger: StartInterval=1800 ONLY — the crawler runs every 30 min.
 
-  Three trigger paths:
-    1. WatchPaths fires on filesystem changes under chorus/{designing,
-       platform, roles, skills, directing, proving} — sub-second after
-       any role's edit.
-    2. StartInterval=1800 polls every 30 min as a FALLBACK if WatchPaths
-       events are missed (launchd event coalescing, host sleep, etc.).
-       Throttled 60s->1800s (#3054, Silas): the 60s fallback drove ~200
-       crawls/hr that queued behind each other on the spine. WatchPaths
-       still fires sub-second on real edits, so this only widens the fallback.
-    3. ThrottleInterval=5 enforces the debounce — no matter how many
-       events fire in a 5-second window, launchd only invokes the
-       script once per 5s. A `git pull` of N files triggers one run,
-       not N.
+  WatchPaths was REMOVED (#3068, Jeff's call 2026-05-24). It had fired the full
+  27-domain sweep on every filesystem change under chorus/{designing,platform,
+  roles,skills,directing,proving}, so commit/sync/deploy churn ran it constantly
+  — a continuous eventloop-block storm. "Every 30 min is good enough; every 60
+  seconds is a flood." StartInterval is now the SOLE trigger, not a fallback.
+  ThrottleInterval was also removed — it debounced WatchPaths events; with no
+  event triggers it serves no purpose. Same script (index-crawler-snapshots.sh);
+  only the trigger surface changed.
 
   StandardOut/Err unify on a single .log file (already in Loki via
   Promtail scrape per #2824).
@@ -40,21 +33,18 @@
     <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/index-crawler-snapshots.sh</string>
   </array>
 
-  <key>WatchPaths</key>
-  <array>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/designing</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/roles</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/skills</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/directing</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/proving</string>
-  </array>
+  <!-- WatchPaths REMOVED (#3068, Jeff's call 2026-05-24). Firing the full
+       27-domain sweep on every filesystem change under chorus/{designing,
+       platform,roles,skills,directing,proving} turned commit/sync/deploy churn
+       into a continuous eventloop-block STORM (1.7-12s blocks, ~27/10min).
+       Empirical: with the crawler off, blocks dropped 6-11s -> ~1.3s. This is a
+       FREQUENCY change, not a turn-off — every output is still produced on
+       StartInterval below, so no consumer is starved. (Removing the crawler
+       entirely would need the consumer dep-map #3071; dropping WatchPaths does
+       not.) -->
 
   <key>StartInterval</key>
   <integer>1800</integer>
-
-  <key>ThrottleInterval</key>
-  <integer>5</integer>
 
   <key>StandardErrorPath</key>
   <string>/Users/jeffbridwell/Library/Logs/Chorus/crawler-index.log</string>
