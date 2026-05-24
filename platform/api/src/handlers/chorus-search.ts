@@ -73,8 +73,26 @@ export interface SearchResult {
   body: unknown;
 }
 
+/**
+ * #3051 — turn arbitrary user text into a valid FTS5 MATCH expression.
+ * Replaces every run of non-word chars with a space, then wraps each token in
+ * double quotes (an FTS5 literal). Guarantees MATCH never throws on operators,
+ * parens, colons, or quotes — so /search never drops to the synchronous
+ * `content LIKE '%q%'` full-table scan over 1.26M rows that froze the spine.
+ * Returns '' when the input has no word tokens (caller then returns no rows).
+ */
+export function toFtsMatchQuery(raw: string): string {
+  return raw
+    .replace(/[^\p{L}\p{N}_]+/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t}"`)
+    .join(' ');
+}
+
 function runFtsQuery(db: SearchDeps['db'], q: string, fetchLimit: number, role: string | undefined, mode: string): unknown[] {
-  const ftsQuery = q.replace(/-/g, ' ');
+  const ftsQuery = toFtsMatchQuery(q);
+  if (!ftsQuery) return []; // no word tokens — nothing to match, never scan
   const ftsOrderBy = mode === 'relevance' ? 'bm25(messages_fts) ASC' : 'm.timestamp DESC';
   const params: unknown[] = role ? [ftsQuery, role, fetchLimit] : [ftsQuery, fetchLimit];
   const roleFilter = role ? 'AND m.role = ?' : '';
@@ -90,16 +108,10 @@ function runFtsQuery(db: SearchDeps['db'], q: string, fetchLimit: number, role: 
        LIMIT ?`,
     ).all(...params);
   } catch {
-    const likeParams: unknown[] = role ? [`%${q}%`, role, fetchLimit] : [`%${q}%`, fetchLimit];
-    const likeRoleFilter = role ? 'AND role = ?' : '';
-    return db.prepare(
-      `SELECT id, source, channel, role, author, content, timestamp, NULL as snippet
-       FROM messages
-       WHERE content LIKE ?
-       ${likeRoleFilter}
-       ORDER BY timestamp DESC
-       LIMIT ?`,
-    ).all(...likeParams);
+    // #3051: do NOT fall back to `content LIKE '%q%'` — that is an unindexed full
+    // scan over 1.26M rows (~3.6s synchronous, freezes the whole spine). Sanitized
+    // FTS shouldn't throw; if it ever does, return empty rather than scan.
+    return [];
   }
 }
 
@@ -180,9 +192,10 @@ export async function fetchSearch(
     return { results: enriched, total: enriched.length, mode: resolvedMode, _meta: meta, ...extra };
   };
 
+  let ftsMs = 0; // #3051 AC4: per-request FTS time, so the next stall is attributable
   const emit: EmitFn = (m, count, extra = {}) => emitSearchEvent({
     system: 'chorus-api', query: q.slice(0, 200), mode: m,
-    result_count: count, duration_ms: now() - searchStart,
+    result_count: count, duration_ms: now() - searchStart, fts_ms: ftsMs,
     ...(role ? { role_filter: role } : {}), ...extra,
   });
 
@@ -190,7 +203,9 @@ export async function fetchSearch(
     return trySemanticMode(deps, q, fetchLimit, role, limit, limitExplicit, format, emit);
   }
 
+  const ftsStart = now();
   const ftsResults = runFtsQuery(db, q, fetchLimit, role, mode);
+  ftsMs = now() - ftsStart;
 
   if (mode === 'unified') {
     const result = await tryUnifiedMode(deps, q, fetchLimit, role, ftsResults, format, emit);
