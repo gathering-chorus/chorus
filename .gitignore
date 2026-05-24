@@ -119,6 +119,7 @@ proving/logs/*.json
 *.swp
 *~
 .git-commit.meta
+.git-commit.lock
 
 # #2458 — book photos never belong in git (each 9-18MB, push-bloat incident 2026-04-24)
 platform/api/public/book/images*
