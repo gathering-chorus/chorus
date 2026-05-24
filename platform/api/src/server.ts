@@ -41,6 +41,7 @@ app.use(express.json());
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { startMetrics, getMetrics } from './metrics';
+import { startEventloopAlert } from './eventloop-alert';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
 import { getPatternsSummary } from './patterns-summary';
@@ -346,6 +347,7 @@ import { mergeUnified, enrichHit, resolveSearchLimit } from './search-fusion';
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
 const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
+const OPS_NUDGE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/ops-nudge');
 
 // emitSearchEvent + getDb + DbNotFoundError moved to src/server-helpers.ts (#2205 wave 12).
 import {
@@ -3240,6 +3242,17 @@ if (require.main === module) {
   // #3039 — start Node default-metric collection (event-loop lag, heap, GC) under
   // the live server. Idempotent; the /metrics route renders from the same registry.
   startMetrics();
+
+  // #3050 — event-loop block alert via the `blocked` library (replaces the
+  // hand-rolled shell alert). Real duration only, no fabricated story; the route is
+  // correlated from the access log by timestamp. Cold-start excluded by the boot delay.
+  // execFile (no shell) so the message can't shell-inject.
+  startEventloopAlert({
+    emit: (a) =>
+      execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`], () => {}),
+    nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+  });
 
   // Health cache refresh — runs every 30s under the live server only.
   setTimeout(() => refreshHealthCache(), 2000);
