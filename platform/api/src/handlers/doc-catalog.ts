@@ -219,38 +219,50 @@ function addOrReplace(allDocs: DocEntry[], seenTitle: Map<string, DocEntry>, doc
   allDocs.push(doc);
 }
 
-function scanDirectory(sd: SourceDir): DocEntry[] {
-  const absDir = path.join(rootPath(sd.root), sd.dir);
-  if (!fs.existsSync(absDir)) return [];
-  const entries: DocEntry[] = [];
+// #2969: recursive scan walks subdirectories so trees like skills/<name>/SKILL.md
+// are discoverable. Returns relative paths from absDir so href construction is
+// unchanged for the flat case. Split out of scanDirectory to hold it under the
+// complexity ceiling.
+function addDocDirent(e: fs.Dirent, rel: string, here: string, stack: string[], docFiles: Array<{ relPath: string; absPath: string }>): void {
+  if (e.name.startsWith('.') || e.name === 'node_modules') return;
+  const childRel = rel ? `${rel}/${e.name}` : e.name;
+  if (e.isDirectory()) {
+    stack.push(childRel);
+  } else if (e.isFile() && (e.name.endsWith('.html') || e.name.endsWith('.md'))) {
+    docFiles.push({ relPath: childRel, absPath: path.join(here, e.name) });
+  }
+}
 
-  // #2969: recursive scan walks subdirectories so trees like skills/<name>/SKILL.md
-  // are discoverable. Returns relative paths from absDir so href construction is
-  // unchanged for the flat case.
+function walkDocsRecursive(absDir: string, docFiles: Array<{ relPath: string; absPath: string }>): void {
+  const stack: string[] = [''];
+  while (stack.length > 0) {
+    const rel = stack.pop()!;
+    const here = path.join(absDir, rel);
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(here, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) addDocDirent(e, rel, here, stack, docFiles);
+  }
+}
+
+function collectDocFiles(absDir: string, recursive: boolean | undefined): Array<{ relPath: string; absPath: string }> {
   const docFiles: Array<{ relPath: string; absPath: string }> = [];
-  if (sd.recursive) {
-    const stack: string[] = [''];
-    while (stack.length > 0) {
-      const rel = stack.pop()!;
-      const here = path.join(absDir, rel);
-      let entries: fs.Dirent[];
-      try { entries = fs.readdirSync(here, { withFileTypes: true }); } catch { continue; }
-      for (const e of entries) {
-        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
-        const childRel = rel ? `${rel}/${e.name}` : e.name;
-        if (e.isDirectory()) {
-          stack.push(childRel);
-        } else if (e.isFile() && (e.name.endsWith('.html') || e.name.endsWith('.md'))) {
-          docFiles.push({ relPath: childRel, absPath: path.join(here, e.name) });
-        }
-      }
-    }
+  if (recursive) {
+    walkDocsRecursive(absDir, docFiles);
   } else {
     const files = fs.readdirSync(absDir).filter(f => f.endsWith('.html') || f.endsWith('.md'));
     for (const f of files) {
       docFiles.push({ relPath: f, absPath: path.join(absDir, f) });
     }
   }
+  return docFiles;
+}
+
+function scanDirectory(sd: SourceDir): DocEntry[] {
+  const absDir = path.join(rootPath(sd.root), sd.dir);
+  if (!fs.existsSync(absDir)) return [];
+  const entries: DocEntry[] = [];
+
+  const docFiles = collectDocFiles(absDir, sd.recursive);
 
   for (const { relPath, absPath } of docFiles) {
     const filename = path.basename(relPath);

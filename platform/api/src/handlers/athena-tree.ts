@@ -138,42 +138,59 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
  * Returns null if IRI not found.
  */
 // cog-override: multi-type graph traversal — structurally complex, not simplifiable without losing semantics
-export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult | null {
-  const ownership = lookupOwnership(tree, iri);
-  if (!ownership) return null;
-
+function serviceBlastRadius(tree: Tree, iri: string): BlastRadiusResult {
   const consumers = new Set<string>();
-
-  if (ownership.kind === 'service') {
-    for (const p of tree.products) {
-      if ((p.consumes ?? []).includes(iri)) consumers.add(p.iri);
-    }
-    return { iri, consumers: [...consumers], dependents: [], hosts: [] };
+  for (const p of tree.products) {
+    if ((p.consumes ?? []).includes(iri)) consumers.add(p.iri);
   }
+  return { iri, consumers: [...consumers], dependents: [], hosts: [] };
+}
 
-  if (ownership.kind === 'domain') {
-    for (const p of tree.products) {
-      if (p.hasDomain.includes(iri)) consumers.add(p.iri);
-    }
-    const domain = tree.domains.find((d) => d.iri === iri);
-    const hosts = (domain?.hosts ?? []) as string[];
-    for (const serviceIri of hosts) {
-      const inner = computeBlastRadius(tree, serviceIri);
-      if (inner) for (const c of inner.consumers) consumers.add(c);
-    }
-    return { iri, consumers: [...consumers], dependents: [], hosts };
+function consumersFromHosts(tree: Tree, hosts: string[]): string[] {
+  const out = new Set<string>();
+  for (const serviceIri of hosts) {
+    const inner = computeBlastRadius(tree, serviceIri);
+    if (inner) for (const c of inner.consumers) out.add(c);
   }
+  return [...out];
+}
 
-  // product
+function domainBlastRadius(tree: Tree, iri: string): BlastRadiusResult {
+  const consumers = new Set<string>();
+  for (const p of tree.products) {
+    if (p.hasDomain.includes(iri)) consumers.add(p.iri);
+  }
+  const domain = tree.domains.find((d) => d.iri === iri);
+  const hosts = (domain?.hosts ?? []) as string[];
+  for (const c of consumersFromHosts(tree, hosts)) consumers.add(c);
+  return { iri, consumers: [...consumers], dependents: [], hosts };
+}
+
+function consumersFromDomains(tree: Tree, domains: string[], exclude: string): string[] {
+  const out = new Set<string>();
+  for (const domainIri of domains) {
+    const inner = computeBlastRadius(tree, domainIri);
+    if (inner) for (const c of inner.consumers) if (c !== exclude) out.add(c);
+  }
+  return [...out];
+}
+
+function productBlastRadius(tree: Tree, iri: string): BlastRadiusResult {
+  const consumers = new Set<string>();
   const product = tree.products.find((p) => p.iri === iri)!;
   for (const p of tree.products) {
     if (p.hasChild.includes(iri)) consumers.add(p.iri);
   }
-  for (const domainIri of product.hasDomain) {
-    const inner = computeBlastRadius(tree, domainIri);
-    if (inner) for (const c of inner.consumers) if (c !== iri) consumers.add(c);
-  }
+  for (const c of consumersFromDomains(tree, product.hasDomain, iri)) consumers.add(c);
   return { iri, consumers: [...consumers], dependents: [] };
+}
+
+export function computeBlastRadius(tree: Tree, iri: string): BlastRadiusResult | null {
+  const ownership = lookupOwnership(tree, iri);
+  if (!ownership) return null;
+  if (ownership.kind === 'service') return serviceBlastRadius(tree, iri);
+  if (ownership.kind === 'domain') return domainBlastRadius(tree, iri);
+  return productBlastRadius(tree, iri);
 }
 
 /**

@@ -150,6 +150,29 @@ function errorFields(level: string, extra: Partial<Record<string, string | numbe
   };
 }
 
+// #3023 trace precedence: explicit extra.trace_id > CHORUS_TRACE_ID env >
+// /tmp/demo-trace-<card>.txt (written by demo_preflight) > random. Mirrors
+// chorus_log.rs (#2897) so the TS + Rust emitters of one action share a trace.
+// Split out of buildSpineEntry to hold it under the complexity ceiling.
+function resolveTraceId(
+  extra: Partial<Record<string, string | number>>,
+  envTrace: string | undefined,
+): string {
+  if (typeof extra.trace_id === 'string') return extra.trace_id;
+  if (envTrace && envTrace.length > 0) return envTrace;
+  const cardForTrace = typeof extra.card_id === 'number'
+    ? String(extra.card_id)
+    : (typeof extra.card_id === 'string' && /^\d+$/.test(extra.card_id) ? extra.card_id : null);
+  if (cardForTrace) {
+    try {
+      const fs = require('fs') as typeof import('fs');
+      const t = fs.readFileSync(`/tmp/demo-trace-${cardForTrace}.txt`, 'utf-8').trim();
+      if (t) return t;
+    } catch { /* no /demo in flight for this card — fall through to random */ }
+  }
+  return crypto.randomUUID();
+}
+
 function buildSpineEntry(
   event: string,
   role: string,
@@ -173,27 +196,7 @@ function buildSpineEntry(
   // here keyed on card_id — the cards-CLI demo emits (card.demo.started, gate
   // comments) carry card_id, so they now link into the same demo trace instead
   // of each minting its own.
-  const envTrace = process.env.CHORUS_TRACE_ID;
-  let trace_id: string;
-  if (typeof extra.trace_id === 'string') {
-    trace_id = extra.trace_id;
-  } else if (envTrace && envTrace.length > 0) {
-    trace_id = envTrace;
-  } else {
-    const cardForTrace = typeof extra.card_id === 'number'
-      ? String(extra.card_id)
-      : (typeof extra.card_id === 'string' && /^\d+$/.test(extra.card_id) ? extra.card_id : null);
-    let fileTrace: string | null = null;
-    if (cardForTrace) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const fs = require('fs') as typeof import('fs');
-        const t = fs.readFileSync(`/tmp/demo-trace-${cardForTrace}.txt`, 'utf-8').trim();
-        if (t) fileTrace = t;
-      } catch { /* no /demo in flight for this card — fall through to random */ }
-    }
-    trace_id = fileTrace ?? crypto.randomUUID();
-  }
+  const trace_id = resolveTraceId(extra, process.env.CHORUS_TRACE_ID);
 
   const entry: SpineEvent = {
     timestamp: new Date().toISOString(),

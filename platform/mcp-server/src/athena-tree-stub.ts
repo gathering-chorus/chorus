@@ -32,7 +32,7 @@ function curlGet(path: string): unknown {
     });
     return JSON.parse(out);
   } catch (err) {
-    throw new Error(`chorus-api ${path} unreachable: ${(err as Error).message}`);
+    throw new Error(`chorus-api ${path} unreachable: ${(err as Error).message}`, { cause: err });
   }
 }
 

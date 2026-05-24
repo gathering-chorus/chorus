@@ -463,7 +463,7 @@ function buildLinks(
       links.push({ from_type: 'card', from: `#${c.index}`, to_type: 'code', to: f });
     }
   }
-  const classNames = (owl.properties || [])
+  const classNames = ((owl.properties as string[] | undefined) || [])
     .map((p) => p.split('::')[0])
     .filter((n, i, arr) => n && arr.indexOf(n) === i)
     .slice(0, 5);
