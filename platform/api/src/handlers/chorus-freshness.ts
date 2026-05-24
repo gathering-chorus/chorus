@@ -16,18 +16,37 @@
  * Dependencies injected:
  *   db            — better-sqlite3 Database
  *   exists        — filesystem existence check (for spine log)
- *   readFile      — filesystem read (for spine log line count)
+ *   countLines    — streaming newline count (for spine log on-disk count, #3060)
  *   now           — epoch ms
  *   timestamp     — wall-clock string for response
  *   spineLogPath  — path to chorus.log
  *   cadence       — source → cadence_seconds map
  */
 import type Database from 'better-sqlite3';
+import * as fs from 'fs';
+
+// #3060 - count newlines without loading the whole (170MB) spine log into a
+// string + building an 838K-element split() array. Streams in 1MB chunks; same
+// answer, no heap spike, ~halves the read cost.
+function streamingCountLines(p: string): number {
+  const fd = fs.openSync(p, 'r');
+  try {
+    const buf = Buffer.alloc(1 << 20);
+    let lines = 0;
+    let n: number;
+    while ((n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      for (let i = 0; i < n; i++) if (buf[i] === 10) lines++;
+    }
+    return lines;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
 export interface FreshnessDeps {
   db: Database.Database;
   exists?: (p: string) => boolean;
-  readFile?: (p: string, enc: BufferEncoding) => string;
+  countLines?: (p: string) => number;
   now?: () => number;
   timestamp?: () => string;
   spineLogPath: string;
@@ -76,7 +95,7 @@ interface Count { cnt: number }
 export function fetchFreshness({
   db,
   exists = () => false,
-  readFile = () => '',
+  countLines = streamingCountLines,
   now = Date.now,
   timestamp = () => new Date().toISOString(),
   spineLogPath,
@@ -99,7 +118,7 @@ export function fetchFreshness({
   const claudeWatermarks = (db.prepare("SELECT COUNT(*) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as Count).cnt;
   const claudeOnDisk = claudeWatermarks;
 
-  const spineOnDisk = exists(spineLogPath) ? readFile(spineLogPath, 'utf-8').split('\n').length : 0;
+  const spineOnDisk = exists(spineLogPath) ? countLines(spineLogPath) : 0;
   const spineIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='spine'").get() as Count).cnt;
 
   const driftMap: Partial<Record<string, { onDisk: number; indexed: number }>> = {

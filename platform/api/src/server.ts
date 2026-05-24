@@ -749,6 +749,7 @@ app.get('/api/chorus/stats', async (_req: Request, res: Response) => {
 
 import { fetchFreshness } from './handlers/chorus-freshness';
 import { fetchContextFreshness } from './handlers/context-freshness';
+import { createFreshnessCache } from './freshness-cache';
 
 function runFreshnessHandler() {
   if (!fs.existsSync(DB_PATH)) {
@@ -760,7 +761,6 @@ function runFreshnessHandler() {
     return fetchFreshness({
       db,
       exists: (p) => fs.existsSync(p),
-      readFile: (p, enc) => fs.readFileSync(p, enc),
       spineLogPath: `${process.env.HOME}/.chorus/chorus.log`,
       cadence: SOURCE_CADENCE,
       timestamp: bostonNow,
@@ -770,10 +770,20 @@ function runFreshnessHandler() {
   }
 }
 
+// #3060 - fetchFreshness reads the 170MB spine log + COUNTs ~838K spine rows,
+// ~1.4s of synchronous work that blocked the event loop (the coordination spine)
+// on every poll. The cache serves the last snapshot on the request path in <1ms
+// and recomputes off the request tick (stale-while-revalidate), so no request
+// blocks the loop. TTL 30s — well inside the hourly+ source cadences. The
+// recompute's own residual sync cost moving fully off-loop (worker thread) is
+// the structural follow-on #3055.
+const freshnessCache = createFreshnessCache(runFreshnessHandler, { ttlMs: 30_000 });
+freshnessCache.get(); // pre-warm at boot so the first live request never pays the cold cost
+
 // New canonical path under /api/chorus/context/* (#2252).
 app.get('/api/chorus/context/freshness', async (req: Request, res: Response) => {
   const r = await fetchContextFreshness(
-    { sparql: _athena, runFreshness: runFreshnessHandler },
+    { sparql: _athena, runFreshness: () => freshnessCache.get() },
     req.originalUrl,
   );
   res.status(r.status).json(r.body);
@@ -783,7 +793,7 @@ app.get('/api/chorus/context/freshness', async (req: Request, res: Response) => 
 // /api/chorus/context/freshness. 301 redirect + telemetry wave follows
 // once callers (test suites, bats) are carded — see #2252 follow-on.
 app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
-  const r = runFreshnessHandler();
+  const r = freshnessCache.get();
   res.status(r.status).json(r.body);
 });
 
