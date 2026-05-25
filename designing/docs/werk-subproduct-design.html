@@ -43,21 +43,17 @@
 <h1>Werk <span>— Subproduct Design</span></h1>
 <p class="date">Kade · 2026-05-16, reconciled 2026-05-25 (#3078) · subproduct-design doc, peer to <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a> and <a href="/designing/docs/loom-subproduct-design.html"><code>loom-subproduct-design.html</code></a>. Werk is the engineering pipeline — the line that turns "card in Next" into "running code on origin/main with a coherent receipt."</p>
 
+<h2>1 &middot; Step &amp; purpose — what Werk serves</h2>
+<p>Werk is the Chorus subproduct at the <strong>Building</strong> step of the value stream (Shaping → Designing → Directing → <strong>Building</strong> → Proving). <strong>Its purpose:</strong> turn shaped, designed, and directed work into <strong>shipped software on <code>origin/main</code></strong> — every card that enters Werk leaves as merged source with a coherent receipt (card_id + trace_id, one trace from /pull to deployed cdhash). <em>Canonical (Athena v2): <code>chorus:werk</code> · atStep Building · status operating · owner Kade · domains pipelines / version-control / code / tests.</em></p>
+
+<h2>2 &middot; The product</h2>
 <div class="promise">
-<strong>Werk is the engineering pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. Its promise: every card that enters Werk leaves as merged source on <code>origin/main</code> with a coherent receipt — card_id and trace_id propagated through every step from /pull to deployed cdhash. Four Domains compose it (code, tests, version-control, pipelines) sharing one discipline: typed contracts at every boundary, refuse early, emit observable events. Werk does not build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> domain, handed off at the post-/acp release-trigger.
+<strong>Werk is the engineering-pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. The promise: every card that enters leaves as merged source on <code>origin/main</code> with a coherent receipt — one trace, /pull to deployed cdhash. Werk does <em>not</em> build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> (Silas), handed off at the post-/acp release-trigger.
 </div>
+<p>The <code>/werk</code> verbs (<code>/pull</code> · <code>/demo</code> · <code>/acp</code>) are the developer interface; <code>act</code> is the local runner (build/deploy/verify are steps inside demo &amp; acp, not standalone commands). <strong>The pipeline model is v8 (ADR-033):</strong> <code>git ⊃ env ⊃ DSL</code> on <code>act</code> — one environment (production, live), GitHub as source-of-truth (<code>main</code>) + per-card process-holder, one commit-status check per verb (all green = every verb ran). Verbs are decomposing from the <code>chorus_commit</code> / <code>chorus_acp</code> monolith into per-verb binaries under the verb contract (ADR-032). Full model + as-is/to-be diagrams: <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a>.</p>
 
-<div class="frame" style="border-left-color:#0ea5e9;background:#eff6ff">
-<strong>The pipelines domain — 1..n instances, one discipline.</strong> Werk governs a domain of <strong>many pipeline instances</strong> (not two), owned per-role — the cards-runner is Wren's, the ci-cd/build pipeline is Kade's, others as they're declared. The set is open beyond the Building step: the same governed pattern can host a pipeline for any value-stream step (shaping → proving) as the need arises — ci-cd is simply the first. Every instance conforms to one set of contracts: the verb contract (ADR-032), the v8 model (ADR-033), <code>act</code>, typed refusals, per-verb commit-status. <strong>Kade governs how the set behaves; each owner builds their instance.</strong>
-<br><br><strong>Coherence claim:</strong> every accepted card advances coherently across the pipeline instances it touches <em>and</em> the artifact's lifecycle status (Athena <code>chorus:status</code>) — one trace, /pull to deployed cdhash. A card that ships code without advancing the artifact's status is incomplete.
-</div>
-
-<h2>What Werk is</h2>
-<p>The <strong>engineering pipeline subproduct</strong> of Chorus, at the <strong>Building</strong> value-stream step. Composed of four child Domains. Owner: Kade. The <code>/werk</code> verbs (<code>/pull</code> · <code>/demo</code> · <code>/acp</code>) are its developer interface; <code>act</code> is the local runner beneath them (build/deploy/verify are steps inside demo &amp; acp, not standalone commands).</p>
-<p><strong>The pipeline model is v8 (ADR-033):</strong> <code>git ⊃ env ⊃ DSL</code> running on <code>act</code> — exactly one environment (production, live), GitHub as source-of-truth (<code>main</code>) + per-card process-holder, and one commit-status check per verb (<code>chorus/pull · commit · build · deploy · verify · accept</code>; all green = every verb ran, push folds under commit). The verbs are decomposing from the <code>chorus_commit</code> / <code>chorus_acp</code> monolith into per-verb binaries under the verb contract (ADR-032): <code>werk-pull</code> shipped; commit, accept, build, deploy, shared-trace, and the acp orchestrator carded. The five pre-merge hooks plus the five role gates are the refusal surfaces. Full model + as-is/to-be diagrams: <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a>.</p>
-
-<h2>Structure — up and down</h2>
-<p><strong>UP:</strong> single inbound edge — <code>chorus-product hasChild werk-product</code> (transitionally <code>hasSubProduct</code> in AS-IS graph, per Athena's named collapse).</p>
+<h2>3 &middot; Supporting domains</h2>
+<p>Werk decomposes into four domains. <strong>UP:</strong> single inbound edge — <code>chorus-product hasChild werk-product</code> (transitionally <code>hasSubProduct</code> in AS-IS graph, per Athena's named collapse). <strong>DOWN:</strong> four domains via <code>hasDomain</code>.</p>
 
 <pre class="mermaid">
 flowchart TD
@@ -109,6 +105,15 @@ flowchart TD
 <p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> not yet authored — currently spread across <code>TESTING.md</code>, <code>test-categorization.html</code>, <code>ICD_TEST_STRATEGY.html</code>, <code>zero-test-subdomain-triage.md</code>. <strong>Gap:</strong> tests has no canonical service-design doc; this is the first thing the domain needs.</p>
 <p><strong>Shipped:</strong> hermetic-by-default discipline named as principle and enforced in pre-commit (cargo test --lib --bins / jest scope). Integration tests gated in /demo. TDD discipline written into CLAUDE.md (DEC-1674).</p>
 <p><strong>Gaps:</strong> no run-tests contract — the load-bearing CI ↔ tests interface is unnamed. Hermetic/integration tagging on individual tests is partial (some bats files marked, most TS tests rely on filename convention). chorus-hooks/inject test isolation has hardcoded paths in some tests. sessions.test.ts has a pre-existing fail.</p>
+
+<h2>4 &middot; Domains → services</h2>
+<p>Each domain composes into the services/verbs that actually run. Those are the specific, carded work — specified in their own docs, not re-asserted here (and TO-BE as Athena <code>hosts</code> graph instances, per Path-to-close #5):</p>
+<ul>
+  <li><strong>pipelines</strong> → the v2 verb binaries + <code>act</code> orchestration — <a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> + the v2 cards.</li>
+  <li><strong>version-control</strong> → chorus_commit/acp, git-queue, werks, hook-shim — <a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a>.</li>
+  <li><strong>code</strong> → lint + complexity gates — <a href="/designing/docs/quality-service-design.md">quality-service-design.md</a>.</li>
+  <li><strong>tests</strong> → jest / cargo / bats — no service-design yet (the domain's first need).</li>
+</ul>
 
 <h2>Two pipelines reconciled</h2>
 <p>The card pipeline and the artifact lifecycle share one source-of-truth (the card + its commits), but they observe different state and emit different events.</p>
