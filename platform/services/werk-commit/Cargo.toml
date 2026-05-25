@@ -1,0 +1,13 @@
+[package]
+name = "werk-commit"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern
+# (libc is linked by default), and the `git`/`cards`/`gh` CLIs as subprocesses.
+# Same contract as werk-pull (#3045) — the v2 verb-binary blueprint.
+[dependencies]
+
+[[bin]]
+name = "werk-commit"
+path = "src/main.rs"
