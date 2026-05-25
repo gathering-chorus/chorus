@@ -1,11 +1,14 @@
 //! werk-commit — `/werk/commit` v2 logic (card #3056).
 //!
-//! Self-contained: std only + a direct libc `flock` extern; calls `git`, `cards`,
-//! and `gh` CLIs as subprocesses. No dependency on any other chorus code.
+//! Self-contained: std only + a direct libc `flock` extern; calls `git` as a
+//! subprocess. No dependency on any other chorus code.
 //!
-//! Commit + push a card's werk -> a commit on `<role>/<card>` pushed to origin,
-//! registered in gh as the process holder. The v2 verb-binary blueprint is
-//! werk-pull (#3045); this adds the commit+push specifics.
+//! ATOMIC VERB — commit ONLY. Stages + commits a card's werk to a LOCAL commit on
+//! `<role>/<card>`. It does NOT push and writes NO gh status (gh can't see an
+//! unpushed sha). Pushing + the chorus/push gh status is the sibling werk-push
+//! verb. The split (#3056) is deliberate: bundled commit+push HID push — you
+//! couldn't see "committed but not pushed". Atomic verbs make each step a visible,
+//! separately-traceable state in gh / act / loki. Blueprint: werk-pull (#3045).
 //!
 //! Key fix vs the old chorus_commit path (#3012/#3013 resolver bug): the werk is
 //! derived deterministically as `werk_base/<role>-<card>` and REFUSED if absent —
@@ -15,9 +18,9 @@
 //! file pathspec dance (#3053 was a shared-werk relic), and untracked NEW files
 //! are staged too (the #3085 gap).
 //!
-//! - Lock: one flock around the canonical-touching git steps (add/commit/push).
-//! - All-or-nothing: on push or gh failure, the local commit is soft-reset and any
-//!   pushed remote ref is deleted — no half state. (Delta vs pull, which never pushes.)
+//! - Lock: one flock around the canonical-touching git steps (add + commit).
+//! - No rollback step: add + commit is atomic (a failed pre-commit gate leaves
+//!   staged changes but no commit; a re-run is idempotent). Nothing fragile follows.
 //! - JSONL log per step: best-effort, NEVER affects the operation (not transactional).
 
 use std::env;
@@ -141,60 +144,6 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// Register the commit in gh — the process holder (v6 diagram). state=success on
-/// the just-pushed sha, context chorus/commit/<card>, carrying the sha + trace so
-/// the pipeline state is queryable per card.
-fn register_gh(werk_s: &str, card: u64, role: &str, trace: &str, branch: &str, sha: &str) -> R<()> {
-    let endpoint = format!("repos/{{owner}}/{{repo}}/statuses/{}", sha);
-    let desc = format!("role={} trace={} branch={} sha={} status=committed", role, trace, branch, sha);
-    run_in(
-        werk_s,
-        "gh",
-        &[
-            "api",
-            &endpoint,
-            "-f",
-            "state=success",
-            "-f",
-            &format!("context=chorus/commit/{}", card),
-            "-f",
-            &format!("description={}", desc),
-        ],
-    )?;
-    Ok(())
-}
-
-/// Undo everything this invocation created, best-effort, under the lock.
-/// All-or-nothing: soft-reset the local commit we made (keeps the work in the
-/// tree) and delete any remote ref we pushed. `committed`/`pushed` gate each
-/// undo so an amend/re-commit (prior pushed commit) is never clobbered.
-#[allow(clippy::too_many_arguments)]
-fn rollback(
-    home: &Path,
-    werk_s: &str,
-    branch: &str,
-    role: &str,
-    card: u64,
-    trace: &str,
-    reason: &str,
-    committed: bool,
-    pushed: bool,
-) {
-    jsonl(home, role, card, trace, "commit.rolledback", &format!(",\"reason\":\"{}\"", reason));
-    if let Ok(_lock) = lock(home, Duration::from_secs(30)) {
-        if pushed {
-            // we created the remote ref this run; remove it. delete IS a push, so
-            // it needs the sanctioned-pusher sentinel too (else the pre-push hook
-            // refuses the rollback and leaves an orphan remote ref).
-            let _ = run_in_env(werk_s, "git", &["push", "origin", "--delete", branch], &[("_GIT_QUEUE_PUSH", "1")]);
-        }
-        if committed {
-            // undo our commit, keep the changes in the working tree.
-            let _ = run_in(werk_s, "git", &["reset", "--soft", "HEAD~1"]);
-        }
-    }
-}
-
 /// Entry: parse the contract args (`werk-commit <card> <role> [summary...]`, role
 /// falls back to $DEPLOY_ROLE) + env, then run the verb.
 pub fn run_commit() -> R<String> {
@@ -275,35 +224,18 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
         run_in_env(&werk_s, "git", &["commit", "-m", &msg], &[("_GIT_QUEUE_INTERNAL", "1")])
             .map_err(|e| format!("commit failed (pre-commit gate?): {}", e))?;
         jsonl(home, role, card, &trace, "committed", "");
-    } // flock released; re-acquired inside push so the lock window stays tight
+    } // flock released
 
+    // Commit only — the atomic verb stops here. The commit is LOCAL: not pushed,
+    // and it gets NO gh status, because gh can't see an unpushed sha. That honest
+    // gap is the point of the split — "committed but not pushed" is now a distinct,
+    // visible state, not hidden inside a fused commit+push. Pushing + the
+    // chorus/push gh status is the separate werk-push verb.
+    //
+    // No rollback needed: `git add -A` + `git commit` is atomic — a failed
+    // pre-commit gate leaves staged changes but no commit, and a re-run is
+    // idempotent (the clean-and-ahead branch above). Nothing fragile follows.
     let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
-
-    // push <role>/<card> to origin (creates the remote ref; pull never pushed).
-    // most-fragile-last ordering: any failure here rolls back the local commit.
-    {
-        let _lock = lock(home, Duration::from_secs(30))?;
-        // _GIT_QUEUE_PUSH=1 is the sanctioned-pusher sentinel the pre-push hook
-        // requires (#2598). werk-commit already refused a wrong-branch werk above,
-        // which carries the #2580 cross-role intent (you can only push your own
-        // card's branch). Found by the #3047 integration test.
-        if let Err(e) = run_in_env(&werk_s, "git", &["push", "origin", &branch], &[("_GIT_QUEUE_PUSH", "1")]) {
-            drop(_lock);
-            // commit always precedes push, so the local commit exists to undo.
-            rollback(home, &werk_s, &branch, role, card, &trace, "push-fail", true, false);
-            return Err(format!("push failed; rolled back local commit: {}", e));
-        }
-    }
-    jsonl(home, role, card, &trace, "pushed", &format!(",\"sha\":\"{}\"", sha));
-
-    // gh registration LAST (most fragile). On failure, undo commit AND remote ref.
-    if let Err(e) = register_gh(&werk_s, card, role, &trace, &branch, &sha) {
-        // commit + push both succeeded to reach here; undo both.
-        rollback(home, &werk_s, &branch, role, card, &trace, "gh-register-fail", true, true);
-        return Err(format!("gh registration failed; rolled back commit + remote ref: {}", e));
-    }
-    jsonl(home, role, card, &trace, "gh.registered", "");
-
     jsonl(home, role, card, &trace, "commit.completed", &format!(",\"sha\":\"{}\"", sha));
     Ok(sha)
 }
