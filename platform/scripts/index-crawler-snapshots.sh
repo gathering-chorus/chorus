@@ -13,7 +13,7 @@ set -euo pipefail
 API_URL="${API_URL:-http://localhost:3340}"
 DB_PATH="$HOME/.chorus/index.db"
 TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-STATUS_FILE="/tmp/crawler-domain-status.json"
+STATUS_FILE="${CRAWLER_STATUS_FILE:-/tmp/crawler-domain-status.json}"
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 

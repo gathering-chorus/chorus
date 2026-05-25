@@ -19,6 +19,8 @@ setup() {
   chmod +x "$TEST_ROOT/platform/scripts/chorus-log"
   # discard port — chorus-api is unavailable here
   export DEAD_API="http://127.0.0.1:9"
+  # #3076: isolate the status-file write so tests never pollute the live /tmp path
+  export CRAWLER_STATUS_FILE="$TEST_HOME/crawler-status.json"
 }
 
 teardown() { rm -rf "$TEST_HOME"; }
@@ -64,4 +66,8 @@ with socketserver.TCPServer(('127.0.0.1', $STUB_PORT), H) as s:
 
   # it got PAST the api gate — no "unavailable/skip" message
   [[ "$output" != *"unavailable after"* ]]
+
+  # #3076: the status write landed in the override file, NOT the live /tmp path
+  [ -f "$CRAWLER_STATUS_FILE" ]
+  ! grep -q notadomain /tmp/crawler-domain-status.json 2>/dev/null
 }
