@@ -42,7 +42,6 @@ export interface CrawlDeps {
   athenaSparqlQuery: AthenaSparqlFn;
   execAsync: ExecAsyncFn;
   readFile: (p: string, enc: BufferEncoding) => string;
-  readLogTail: (p: string, maxBytes: number) => string;
   exists: (p: string) => boolean;
   readdir: (p: string) => string[];
   now?: () => number;
@@ -211,36 +210,54 @@ function collectMentions(
   return { mentions, related };
 }
 
-// #3054: read only the recent tail of the spine log, not the whole ~81MB file —
-// the full read + JSON.parse-per-line is a multi-hundred-ms synchronous block on
-// the coordination spine, every crawl. The tail covers recent card lifecycle events.
-const SPINE_TAIL_BYTES = 4_000_000;
 // #3055: cap the per-crawl FTS mention scan so a common domain term (e.g. "photos",
 // ~16.7K matches) can't turn collectMentions into a ~400ms synchronous loop block.
 const MENTION_SCAN_CAP = 300;
 
-function collectSpine(
-  exists: (p: string) => boolean,
-  readLogTail: (p: string, maxBytes: number) => string,
+// #3088: read card.* events from Loki (the spine superset) instead of reading the
+// 4MB chorus.log tail + JSON.parse-per-line — that was a ~1s SYNCHRONOUS block on the
+// serving loop, EVERY crawl (54/hr; #3079 class). Loki is async I/O (~52ms, non-blocking),
+// line-filters card.* server-side so we parse only the tiny result, and its retention
+// (~24h) matches the old tail's span — verified equivalent (9==9, #3088). Eliminates the
+// block AND the waste of re-parsing 24h of log per crawl, rather than just off-loading it.
+export async function collectSpine(
+  fetchFn: FetchFn,
+  lokiBaseUrl: string,
   chorusLogPath: string,
   cards: CardEntry[],
   timeline: TimelineEntry[],
-): SpineEntry[] {
+  now: () => number,
+): Promise<SpineEntry[]> {
   const spine: SpineEntry[] = [];
   try {
-    if (!exists(chorusLogPath)) return spine;
     const cardIds = new Set(cards.map((c) => c.index));
-    for (const line of readLogTail(chorusLogPath, SPINE_TAIL_BYTES).split('\n')) {
-      try {
-        const parsed = JSON.parse(line);
-        if (!parsed.event || !parsed.event.startsWith('card.')) continue;
-        const cardId = parseInt(parsed.card || '0', 10);
-        if (!cardIds.has(cardId)) continue;
-        spine.push({ timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId });
-        timeline.push({ timestamp: parsed.timestamp, source: 'spine', text: parsed.event, role: parsed.role, card: cardId });
-      } catch { /* skip malformed */ }
+    // Server-side line-filter for card.* events; time-bound to ~24h to match the old tail span.
+    const lokiQuery = encodeURIComponent(`{filename="${chorusLogPath}"} |= "\\"event\\":\\"card."`);
+    const nowSec = Math.floor(now() / 1000);
+    const resp = await fetchFn(
+      `${lokiBaseUrl}/loki/api/v1/query_range?query=${lokiQuery}&start=${nowSec - 86400}&end=${nowSec}&limit=1000`,
+    );
+    if (!resp.ok) return spine;
+    const data = (await resp.json()) as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
+    const collected: SpineEntry[] = [];
+    for (const stream of data.data?.result || []) {
+      for (const [, line] of stream.values || []) {
+        try {
+          const parsed = JSON.parse(line);
+          if (!parsed.event || !parsed.event.startsWith('card.')) continue;
+          const cardId = parseInt(parsed.card || '0', 10);
+          if (!cardIds.has(cardId)) continue;
+          collected.push({ timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId });
+        } catch { /* skip malformed */ }
+      }
     }
-  } catch { /* log unreadable */ }
+    // Chronological asc — matches the old append-only-tail order so downstream is unchanged.
+    collected.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : 0));
+    for (const e of collected) {
+      spine.push(e);
+      timeline.push({ timestamp: e.timestamp, source: 'spine', text: e.event, role: e.role, card: e.card });
+    }
+  } catch { /* loki down — degrade to empty, same as collectLogs */ }
   return spine;
 }
 
@@ -564,7 +581,6 @@ export async function fetchCrawl(
     athenaSparqlQuery,
     execAsync,
     readFile,
-    readLogTail,
     exists,
     readdir,
     now = Date.now,
@@ -594,7 +610,7 @@ export async function fetchCrawl(
   const cards = collectCards(getBoardCards, domain, timeline, history);
   const rdf = await collectRdf(fetchFn, fusekiUrl, domain);
   const { mentions, related } = collectMentions(db, domain, timeline, mentionScanCap);
-  const spine = collectSpine(exists, readLogTail, chorusLogPath, cards, timeline);
+  const spine = await collectSpine(fetchFn, lokiBaseUrl, chorusLogPath, cards, timeline, now);
   const owl = await collectOwl(fetchFn, fusekiUrl, domain);
   const infra = await collectInfra(execAsync, domain);
   history.feedback = collectFeedback(exists, readdir, readFile, memoryDir, domain);

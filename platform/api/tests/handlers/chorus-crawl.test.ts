@@ -33,6 +33,21 @@ const nullFetch: FetchFn = async () => ({ ok: false, status: 503, json: async ()
 const nullExec: ExecAsyncFn = async () => ({ stdout: '' });
 const nullSparql: AthenaSparqlFn = async () => ({ results: { bindings: [] } });
 
+// #3088: spine now comes from Loki, not a file tail. Returns card.* lines for the
+// spine query (routed by the {filename=...} label); not-ok for other fetch calls.
+function lokiSpineFetch(cardLines: string[]): FetchFn {
+  return (async (url: string) => {
+    if (url.includes('filename')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { result: [{ values: cardLines.map((l, i) => [String(i * 1000), l]) }] } }),
+      };
+    }
+    return { ok: false, status: 503, json: async () => ({}) };
+  }) as unknown as FetchFn;
+}
+
 function deps(overrides: Partial<CrawlDeps> = {}): CrawlDeps {
   return {
     db: emptyDb(),
@@ -41,7 +56,6 @@ function deps(overrides: Partial<CrawlDeps> = {}): CrawlDeps {
     athenaSparqlQuery: nullSparql,
     execAsync: nullExec,
     readFile: () => '',
-    readLogTail: () => '',
     exists: () => false,
     readdir: () => [],
     now: () => 1_700_000_000_000,
@@ -139,27 +153,30 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
       JSON.stringify({ event: 'card.moved', card: '999', role: 'wren', timestamp: '2026-04-18T09:00:00Z' }), // unknown card
       JSON.stringify({ event: 'system.other', card: '42', role: 'wren', timestamp: '2026-04-18T08:00:00Z' }), // non-card event
       'not json',
-    ].join('\n');
+    ];
     const r = await fetchCrawl('photos', deps({
       getBoardCards: () => boardCards,
-      exists: (p) => p === '/fake/chorus.log',
-      readLogTail: () => logLines,
+      fetchFn: lokiSpineFetch(logLines),
     }));
     const b = r.body as { spine: Array<{ event: string }> };
     expect(b.spine).toHaveLength(1);
     expect(b.spine[0].event).toBe('card.accepted');
   });
 
-  test('#3054: spine log read is BOUNDED (tail, not whole file)', async () => {
-    let maxBytesSeen = -1;
+  test('#3088: spine query is TIME-BOUNDED (Loki range, not unbounded)', async () => {
+    let spineUrl = '';
+    const capturingFetch = (async (url: string) => {
+      if (url.includes('filename')) spineUrl = url;
+      return { ok: false, status: 503, json: async () => ({}) };
+    }) as unknown as FetchFn;
     await fetchCrawl('photos', deps({
       getBoardCards: () => [{ id: '42', title: 'x', status: 'Done', owner: 'kade', tags: 'domain:photos' }],
-      exists: (p) => p === '/fake/chorus.log',
-      readLogTail: (_p, maxBytes) => { maxBytesSeen = maxBytes; return ''; },
+      fetchFn: capturingFetch,
     }));
-    // collectSpine must request a bounded tail, never an unbounded full-file read.
-    expect(maxBytesSeen).toBeGreaterThan(0);
-    expect(maxBytesSeen).toBeLessThanOrEqual(8_000_000);
+    // collectSpine must query a bounded time range, never an unbounded scan.
+    expect(spineUrl.includes('query_range')).toBe(true);
+    expect(spineUrl).toContain('start=');
+    expect(spineUrl).toContain('end=');
   });
 
   test('memory feedback: only files containing domain in body counted', async () => {

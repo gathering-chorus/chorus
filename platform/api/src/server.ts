@@ -525,19 +525,6 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       athenaSparqlQuery,
       execAsync,
       readFile: (p, enc) => fs.readFileSync(p, enc),
-      // #3054: read only the last maxBytes of the (81MB+) spine log, not the whole file.
-      readLogTail: (p, maxBytes) => {
-        const size = fs.statSync(p).size;
-        if (size <= maxBytes) return fs.readFileSync(p, 'utf-8');
-        const fd = fs.openSync(p, 'r');
-        try {
-          const buf = Buffer.alloc(maxBytes);
-          fs.readSync(fd, buf, 0, maxBytes, size - maxBytes);
-          return buf.toString('utf-8');
-        } finally {
-          fs.closeSync(fd);
-        }
-      },
       exists: (p) => fs.existsSync(p),
       readdir: (p) => fs.readdirSync(p),
       chorusLogPath: path.resolve(__dirname, '../../logs/chorus.log'),
