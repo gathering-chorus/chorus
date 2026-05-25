@@ -8,23 +8,44 @@
 // - Don't false-fire on a deploy cold-start: monitoring starts after a boot delay.
 // - `blocked` (duration only, lightweight, prod-safe), NOT `blocked-at` (async-hooks
 //   overhead) — never put always-on async-hooks overhead on the coordination spine.
+//
+// #3079 — current-op sentinel: scheduled jobs call setCurrentOp() before/after so the
+// blocked callback captures which op was running. If op=unknown, the block fired outside
+// all tracked jobs (request handler or untracked async). No async_hooks; zero overhead.
+
+/** Set by scheduled jobs before running; cleared in finally. Captured by blocked callback. */
+let _currentOp: string | null = null;
+
+/** Called by each scheduled job: setCurrentOp('index') before, setCurrentOp(null) after. */
+export function setCurrentOp(op: string | null): void {
+  _currentOp = op;
+}
+
+/** Read by blocked callback at fire time. */
+export function getCurrentOp(): string {
+  return _currentOp ?? 'unknown';
+}
 
 export interface BlockAlert {
   duration_ms: number;
   ts: string;
+  op: string;
   message: string;
 }
 
-/** Pure, honest formatter — only the measured block, with a pointer (not a claim)
- *  at where the slow request lives. No cause is inferred. */
-export function formatBlockAlert(durationMs: number, ts: string): BlockAlert {
+/** Pure, honest formatter — only the measured block + which op was running (or unknown). */
+export function formatBlockAlert(durationMs: number, ts: string, op: string): BlockAlert {
+  const opNote = op === 'unknown'
+    ? `The slow request is in the access log at this time — grep chorus-api.log around ${ts} for the route.`
+    : `Captured op: ${op}.`;
   return {
     duration_ms: durationMs,
     ts,
+    op,
     message:
       `chorus-api event loop blocked ${durationMs}ms at ${ts}. ` +
-      `The slow request is in the access log at this time — grep chorus-api.log around ${ts} for the route. ` +
-      `No cause inferred; this is the measured block only.`,
+      opNote +
+      ` No cause inferred; this is the measured block only.`,
   };
 }
 
@@ -55,7 +76,7 @@ export function startEventloopAlert(deps: EventloopAlertDeps): void {
 
   const start = () => {
     blockedFn((ms: number) => {
-      const a = formatBlockAlert(Math.round(ms), new Date(now()).toISOString());
+      const a = formatBlockAlert(Math.round(ms), new Date(now()).toISOString(), getCurrentOp());
       deps.emit(a);
       if (now() - lastNudge >= throttleMs) {
         lastNudge = now();
