@@ -385,7 +385,18 @@ import { addStaleHeader, buildSearchMeta, SOURCE_CADENCE } from './search-meta';
 
 import { fetchSearch } from './handlers/chorus-search';
 import { createWithDb } from './with-db';
+import { Worker } from 'node:worker_threads';
+import { createFtsPool } from './fts-worker-pool';
 const withDb = createWithDb<Database.Database>(() => getDb());
+
+// #3086 — FTS runs OFF the serving event loop in a worker_threads pool. Active only
+// when the built worker exists (dist/fts-worker.js): prod uses the pool; ts-run tests
+// without a build fall back to the in-process sync query. worker_threads inherits
+// chorus-api's node, so the better-sqlite3 ABI mismatch that bit #3085 can't recur.
+const ftsWorkerPath = path.join(__dirname, 'fts-worker.js');
+const ftsPool = fs.existsSync(ftsWorkerPath)
+  ? createFtsPool({ spawn: () => new Worker(ftsWorkerPath) })
+  : null;
 
 app.get('/api/chorus/search', async (req: Request, res: Response) => {
   await withDb(res, async (db) => {
@@ -401,6 +412,9 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
         buildSearchMeta,
         enrichHit,
         resolveSearchLimit,
+        ...(ftsPool
+          ? { ftsSearch: (q: string, fetchLimit: number, role: string | undefined, mode: string) => ftsPool.runFtsAsync({ q, fetchLimit, role, mode }) }
+          : {}),
       },
       {
         q: req.query.q as string | undefined,

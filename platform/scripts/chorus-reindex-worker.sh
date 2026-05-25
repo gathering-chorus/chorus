@@ -14,6 +14,12 @@
 set -euo pipefail
 
 WORKER_JS="${CHORUS_REINDEX_WORKER_JS:-$HOME/CascadeProjects/chorus/platform/api/dist/index-worker.js}"
+# #3085/#3086 — pin node by ABSOLUTE path, not via PATH. better-sqlite3 is a native
+# module compiled for chorus-api's node (nvm v20.11.1 / ABI 115); resolving `node`
+# off PATH found homebrew v23 (ABI 131) on the #3085 deploy and crashed the worker
+# (silently-dead → stale index). Mirror chorus-api-wrapper.sh: single source of the
+# node version, PATH-independent, so re-install can't reintroduce the mismatch.
+NODE_BIN="${CHORUS_NODE_BIN:-/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node}"
 LOGFILE="${HOME}/.chorus/reindex-worker.log"
 LOCKFILE="${HOME}/.chorus/reindex-worker.lock"
 
@@ -38,4 +44,9 @@ if [ ! -f "$WORKER_JS" ]; then
   exit 0
 fi
 
-node "$WORKER_JS" >> "$LOGFILE" 2>&1
+if [ ! -x "$NODE_BIN" ]; then
+  log "node not found/executable at $NODE_BIN (set CHORUS_NODE_BIN) — refusing to run on a wrong node"
+  exit 1
+fi
+
+"$NODE_BIN" "$WORKER_JS" >> "$LOGFILE" 2>&1

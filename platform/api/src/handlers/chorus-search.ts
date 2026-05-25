@@ -21,6 +21,7 @@
  * The injection is fine for one or two consumers; don't propagate further.
  */
 import type Database from 'better-sqlite3';
+import { toFtsMatchQuery, runFtsQueryOnDb } from '../lib/fts-query';
 
 export type SemanticSearchFn = (
   query: string,
@@ -58,6 +59,12 @@ export interface SearchDeps {
   buildSearchMeta: BuildSearchMetaFn;
   enrichHit: EnrichHitFn;
   resolveSearchLimit: ResolveSearchLimitFn;
+  /**
+   * #3086 — when provided, the FTS query runs OFF the serving event loop via this
+   * async fn (the worker_threads pool). Absent → falls back to the in-process sync
+   * query (runFtsQueryOnDb); tests inject neither and stay sync + fast.
+   */
+  ftsSearch?: (q: string, fetchLimit: number, role: string | undefined, mode: string) => Promise<unknown[]>;
   now?: () => number;
 }
 
@@ -81,39 +88,10 @@ export interface SearchResult {
  * `content LIKE '%q%'` full-table scan over 1.26M rows that froze the spine.
  * Returns '' when the input has no word tokens (caller then returns no rows).
  */
-export function toFtsMatchQuery(raw: string): string {
-  return raw
-    .replace(/[^\p{L}\p{N}_]+/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((t) => `"${t}"`)
-    .join(' ');
-}
-
-function runFtsQuery(db: SearchDeps['db'], q: string, fetchLimit: number, role: string | undefined, mode: string): unknown[] {
-  const ftsQuery = toFtsMatchQuery(q);
-  if (!ftsQuery) return []; // no word tokens — nothing to match, never scan
-  const ftsOrderBy = mode === 'relevance' ? 'bm25(messages_fts) ASC' : 'm.timestamp DESC';
-  const params: unknown[] = role ? [ftsQuery, role, fetchLimit] : [ftsQuery, fetchLimit];
-  const roleFilter = role ? 'AND m.role = ?' : '';
-  try {
-    return db.prepare(
-      `SELECT m.id, m.source, m.channel, m.role, m.author, m.content, m.timestamp,
-              snippet(messages_fts, 0, '<b>', '</b>', '...', 40) as snippet
-       FROM messages_fts f
-       JOIN messages m ON f.rowid = m.id
-       WHERE messages_fts MATCH ?
-       ${roleFilter}
-       ORDER BY ${ftsOrderBy}
-       LIMIT ?`,
-    ).all(...params);
-  } catch {
-    // #3051: do NOT fall back to `content LIKE '%q%'` — that is an unindexed full
-    // scan over 1.26M rows (~3.6s synchronous, freezes the whole spine). Sanitized
-    // FTS shouldn't throw; if it ever does, return empty rather than scan.
-    return [];
-  }
-}
+// #3086: the FTS SQL now lives in lib/fts-query so the worker thread and this
+// in-process path run identical queries (parity by construction). toFtsMatchQuery
+// is re-exported for existing importers (chorus-crawl, fts-sanitize test).
+export { toFtsMatchQuery };
 
 type FormatFn = (raw: unknown[], mode: string, includeDb: boolean, extra?: Record<string, unknown>) => unknown;
 type EmitFn = (mode: string, count: number, extra?: Record<string, unknown>) => void;
@@ -204,7 +182,9 @@ export async function fetchSearch(
   }
 
   const ftsStart = now();
-  const ftsResults = runFtsQuery(db, q, fetchLimit, role, mode);
+  const ftsResults = deps.ftsSearch
+    ? await deps.ftsSearch(q, fetchLimit, role, mode)
+    : runFtsQueryOnDb(db, q, fetchLimit, role, mode);
   ftsMs = now() - ftsStart;
 
   if (mode === 'unified') {
