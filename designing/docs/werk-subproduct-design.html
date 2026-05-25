@@ -90,7 +90,7 @@ flowchart TD
 <h3>pipelines <span class="t-bld">BUILDING</span></h3>
 <p><strong>What it is:</strong> a domain of <strong>1..n pipeline instances</strong>, owned per-role — the ci-cd/build pipeline is Kade's; the <strong>cards-runner</strong> (the Next→WIP→Demo→Done card lifecycle) is Wren's; build+deploy is Silas's. <strong>Promise (set-governance): Kade governs how the set behaves, not the instances</strong> — every pipeline is uniform via the frameworks: the verb contract (ADR-032), the v8 model (ADR-033), resource/verb/grain (ADR-031), <code>act</code> as the local runner, typed refusals, and one commit-status check per verb. Each instance conforms to the set's contracts; each owner builds their own.</p>
 <p><strong>Set-governance owner:</strong> Kade — frameworks, ADRs, <code>act</code>, contracts; NOT the individual instances (cards-runner is Wren's, build+deploy is Silas's). <strong>Design doc (the specifics):</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> — the ci-cd instance: <code>act</code>, the verb binaries, the v8 model.</p>
-<p><strong>Shipped:</strong> orchestration via <code>act</code> + <code>workflow_dispatch</code> + launchd kickstart; pre-merge surface 5 (pre-commit) wired; cost-stop / schedule-only main re-run (DEC-2525); ci-main-red reactive alert. <strong>v8 model ratified (ADR-033) + per-verb contract (ADR-032);</strong> pull v2 shipped, the remaining verbs carded.</p>
+<p><strong>Shipped:</strong> orchestration via <code>act</code> + <code>workflow_dispatch</code> + launchd kickstart; pre-merge surface 5 (pre-commit) wired; cost-stop / schedule-only main re-run (DEC-2525); ci-main-red reactive alert. <strong>v8 model ratified (ADR-033 — file landing via Silas) + per-verb contract (ADR-032);</strong> pull v2 shipped, the remaining verbs carded.</p>
 <p><strong>Gaps (headline, in product-frame):</strong></p>
 <ul>
   <li><strong>Can't try before you buy.</strong> /werk/build and /werk/deploy as pre-/acp act jobs are designed but not shipped — Jeff accepts before the feature is observable in a running instance. This is the customer-facing #1 gap, not item 6 on a punch list.</li>
@@ -126,8 +126,8 @@ flowchart TD
   <li><strong>tests</strong> → jest / cargo / bats — no service-design yet (the domain's first need).</li>
 </ul>
 
-<h2>Two pipelines reconciled</h2>
-<p>The card pipeline and the artifact lifecycle share one source-of-truth (the card + its commits), but they observe different state and emit different events.</p>
+<h2>Card &harr; artifact coherence</h2>
+<p>The pipelines domain holds 1..n instances; the <strong>card pipeline is Wren's cards-runner</strong> (Werk consumes it to drive a card Next→WIP→Demo→Done). The <strong>artifact lifecycle</strong> is not a peer pipeline — it's a coherence concern: the card and the artifact lifecycle share one source-of-truth (the card + its commits), but they observe different state and emit different events, and the two must stay reconciled or the graph drifts behind reality.</p>
 
 <table>
 <tr><th>Stage</th><th>Card pipeline state</th><th>Artifact lifecycle event (Athena status)</th><th>Spine events Werk emits</th></tr>
@@ -143,8 +143,8 @@ flowchart TD
 
 <h2>Coherence findings — synthesis</h2>
 <div class="finding"><strong>1. Two of the four Domains have service-designs; two don't.</strong> Version-control and pipelines have canonical docs and graph instances. Code has a markdown service-design that lags behind the wired pre-commit rules. Tests has no service-design at all — its substance is spread across four markdown files. The next service-design Werk needs is <code>tests-service-design.html</code>.</div>
-<div class="finding"><strong>2. Werk-the-subproduct is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Both pipelines need to advance per accepted card or the graph drifts behind reality.</div>
-<div class="finding"><strong>3. The pipelines domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Reframed: customers can't try before they buy (#/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
+<div class="finding"><strong>2. Werk-the-subproduct is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Each accepted card must advance the artifact lifecycle in step with the card pipeline or the graph drifts behind reality.</div>
+<div class="finding"><strong>3. The pipelines domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Customers can't try before they buy (/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
 <div class="finding"><strong>4. Werk does not own build+deploy.</strong> The post-/acp release-trigger is the handoff line. Build+Deploy is a sibling subproduct under Silas. Werk's responsibility ends at "card accepted, commit on origin/main, trace_id propagating into the build pipeline."</div>
 
 <h2>OWL + SHACL — conformance to Athena v2</h2>
@@ -159,7 +159,7 @@ chorus:werk-product
   chorus:vision "Typed contracts at every boundary; every card a coherent SKU." ;
   chorus:valueProposition "Every accepted card advances both card-pipeline and artifact-lifecycle coherently, with one trace from /pull to deployed cdhash." ;
   chorus:audience "roles building Chorus and Gathering" , "Jeff (customer of accepted work)" ;
-  chorus:status "building" ;
+  chorus:status "operating" ;
   chorus:atStep chorus:building-step ;
   chorus:hasDesignDoc chorus:werk-subproduct-design ;
   chorus:hasDomain chorus:pipelines ,
@@ -205,32 +205,22 @@ chorus:werk-product
   <li><strong>tests:</strong> #2529 (run-tests contract); #2491 (test isolation); #2493 (sessions.test.ts fail).</li>
 </ul>
 
-<h2>Appendix — sources this doc consumes</h2>
-<div class="frame">
-This doc builds on:
-<strong>(1) <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a></strong> (Kade) — the source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers;
-<strong>(2) <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a></strong> (Kade) — the orchestration slice: <code>act</code> as local runner, /werk verb dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry;
-<strong>(3) <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a></strong> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention);
-<strong>(4) <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a></strong> (Wren, 2026-05-15) — the structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines;
-<strong>(5)</strong> the work-as-product reframe — every card is a SKU, /demo is try-before-buy, /acp is the purchase, the spine is the receipt ledger;
-<strong>(6) <a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a></strong> (Silas) — sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.
-</div>
-
 <h2>References</h2>
+<p>The work-as-product reframe runs throughout: every card is a SKU, /demo is try-before-buy, /acp is the purchase, the spine is the receipt ledger.</p>
 <ul>
-  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> — Kade. The VCS slice.</li>
-  <li><a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> — Kade. The orchestration slice.</li>
-  <li><a href="/designing/docs/quality-service-design.md">quality-service-design.md</a> — code reference.</li>
-  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling subproduct; the post-/acp handoff.</li>
-  <li><a href="/designing/docs/athena-subproduct-design.html">athena-subproduct-design.html</a> — Wren. Structural / SHACL substrate.</li>
+  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> — Kade. The source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers.</li>
+  <li><a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> — Kade. The orchestration slice: <code>act</code> as local runner, /werk verb dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry.</li>
+  <li><a href="/designing/docs/quality-service-design.md">quality-service-design.md</a> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention).</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.</li>
+  <li><a href="/designing/docs/athena-subproduct-design.html">athena-subproduct-design.html</a> — Wren. The structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines.</li>
   <li><a href="/designing/docs/loom-subproduct-design.html">loom-subproduct-design.html</a> — Wren. Sibling subproduct (principles / practices / decisions / policies).</li>
-  <li>ADR-033 — werk pipeline model (git ⊃ env ⊃ DSL on act; one env = production; gh = source-of-truth + per-card process-holder; one commit-status check per verb).</li>
+  <li>ADR-033 — werk pipeline model (git ⊃ env ⊃ DSL on act; one env = production; gh = source-of-truth + per-card process-holder; one commit-status check per verb). <em>Ratified; file landing via Silas — not yet in roles/silas/adr/.</em></li>
   <li>ADR-032 — verb contract v1 (per-verb build contract: zero-dep, env contract, shared trace, all-or-nothing rollback).</li>
   <li>ADR-031 — resource/verb/grain convention (MCP + REST surface bindings).</li>
-  <li>#2720 — canonical model proposed pipelines-domain → ci-cd; <strong>superseded</strong> — pipelines is the domain (1..n instances), ci-cd is one instance Kade owns. (Cards backing each claim: see the Card-provenance appendix.)</li>
-  <li>DEC-1674 — TDD discipline (AC → tests → code).</li>
   <li>ADR-026 — CI architecture + lock-file policy.</li>
+  <li>DEC-1674 — TDD discipline (AC → tests → code).</li>
   <li>DEC-2525 — required-checks governance.</li>
+  <li>#2720 — canonical model proposed pipelines-domain → ci-cd; <strong>superseded</strong> — pipelines is the domain (1..n instances), ci-cd is one instance Kade owns. (Cards backing each claim: see the Card-provenance appendix.)</li>
 </ul>
 
 <p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-033) + verb contract (ADR-032) + the v2 verb decomposition; <code>pipelines</code> kept as the domain (1..n instances, governed as a set by Kade — #2720's pipelines→ci-cd rename reversed per Jeff's model); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
