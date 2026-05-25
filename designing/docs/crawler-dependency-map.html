@@ -119,6 +119,18 @@
 <h2>Circular dependency (note for #3069 decomposition)</h2>
 <p><code>/crawl/:domain</code> &#8594; <code>collectMentions</code> READS <code>messages_fts</code> (all sources incl. existing crawler rows) &#8594; builds the snapshot &#8594; written back as a NEW <code>source='crawler'</code> row &#8594; re-indexed &#8594; read again. The crawl reads the index, then writes to the index (#2323 "eating its own tail"). Blast-radius-relevant for the decomposition.</p>
 
+<h2>Processing dependencies tied to products (revised #3077)</h2>
+<p>The output&#8594;consumer&#8594;domain edges above roll up to the 7 Athena <strong>products</strong> — the level that answers "if this processing stops or moves, which product degrades?" This is the unit that gates the #3077 off-loop refactor: a step may move off the event loop, but each product's processing inputs must be preserved.</p>
+<table>
+  <tr><th>Product (owner)</th><th>Depends on crawler processing via</th><th>Degrades if the processing stops/changes</th></tr>
+  <tr><td><strong>Chorus</strong> (Jeff) — memory/knowledge/search</td><td>search FTS+semantic over crawler messages; Fuseki RDF (collectRdf); LanceDB vectors; indexSpine re-index of crawler.* events</td><td>DEEPEST — search loses its domain layer + domain vectors; the graph RDF empties; memory loses crawler signal</td></tr>
+  <tr><td><strong>Loom</strong> (Wren) — policies</td><td>context_inject reads crawler messages + spine + LanceDB on EVERY prompt</td><td>per-prompt grounding for all roles degrades</td></tr>
+  <tr><td><strong>Borg</strong> (Silas) — alerts-monitors/analytics</td><td>4 crawler alerts + pain rollup read crawler spine + /tmp status</td><td>alerts mis-fire / pain board loses attribution</td></tr>
+  <tr><td><strong>Werk</strong> (Kade) — code</td><td>chorus_files (hydrator's own retry/dedup state)</td><td>low — internal only, no external reader</td></tr>
+  <tr><td><strong>Clearing</strong> (Wren) — messages/spine</td><td>producer-side: the crawler WRITES into messages/spine</td><td>n/a as a consumer (owns the store, doesn't depend on the processing)</td></tr>
+</table>
+<p><strong>Data-dependency &#8800; loop-cost.</strong> This map answers <em>what breaks if an output stops</em> (data dependency). That is a SEPARATE axis from <em>what blocks the event loop</em> (loop-cost = synchronous in-process work). Per #3077's code-verified classification: <code>collectRdf</code> is fully <code>async</code> (<code>await fetch</code> to Fuseki) — its 44s is Fuseki wall-clock latency, NOT a loop-block, so it's #3066's lane. The synchronous better-sqlite3/parse work (index reindex, embed COUNT/UPDATE, search FTS) is what blocks the loop. When #3077 moves the SYNC processing off the loop, it must preserve every product dependency in the table above — off-loading changes <em>where/when</em> processing runs, never <em>whether</em> a product still gets its input.</p>
+
 <div class="callout">
 <strong>How this folds into Athena v2.</strong> The crawler is now a <code>service</code> entry in <code>data/athena/tree.json</code> (<code>chorus:service-crawler</code>) carrying <code>produces</code> (each output &#8594; owning domain) and <code>consumedBy</code> (each consumer &#8594; its domain). The consuming domains carry <code>consumes</code>/<code>dependsOn</code> edges pointing back. "Safe to turn off / decompose vs has unmapped runtime consumers" is now a tree query, not a guess.
 </div>

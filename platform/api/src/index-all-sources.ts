@@ -46,6 +46,11 @@ export interface IndexAllSourcesDeps {
   // #3067: read only the recent tail of the (170MB) spine log, not the whole file.
   // Optional — falls back to a readFileSync slice for small logs / tests.
   readTail?: (path: string, maxBytes: number) => string;
+  // #3077 AC2: read only the bytes appended since `offset` (incremental reindex).
+  // Returns the decoded new content, the offset actually used (0 if the file was
+  // rotated/truncated so `offset` > size), and the current byte size. Optional —
+  // falls back to a readFileSync-from-offset for tests / pre-wire systems.
+  readSince?: (path: string, offset: number) => { content: string; startOffset: number; size: number };
 }
 
 interface IndexCtx {
@@ -58,15 +63,12 @@ interface IndexCtx {
   homedir: () => string;
   now: string;
   readTail: (path: string, maxBytes: number) => string;
+  readSince: (path: string, offset: number) => { content: string; startOffset: number; size: number };
 }
 
-// #3067: indexSpine read the whole ~170MB spine log + JSON.parse'd ~838K lines
-// every reindex cycle (~2min) — 4.9s of the 5.1s total, a recurring sync block
-// on the coordination spine. Bound it to the recent tail; the insert is
-// INSERT OR IGNORE so re-processing the tail's overlap is a no-op, and new
-// (appended) events are always within the tail. 16MB >> a 2-min slice of the
-// log, so nothing is missed between cycles (only a >16MB indexing OUTAGE could).
-const SPINE_INDEX_TAIL_BYTES = 16_000_000;
+// #3067 bounded indexSpine to the recent 16MB tail (down from the whole 170MB log).
+// #3077 AC2 supersedes that: read only the bytes appended since the last cycle's
+// persisted offset, so the JSON.parse cost is O(new) instead of O(16MB) per reindex.
 
 /** Indexed spine event row — columns the insert statement binds. */
 interface IndexEvent {
@@ -91,10 +93,24 @@ function runSource(name: string, results: Record<string, string>, fn: () => stri
 function indexSpine(ctx: IndexCtx): string | void {
   const logPath = `${process.env.HOME}/.chorus/chorus.log`;
   if (!ctx.fs.existsSync(logPath)) return;
-  // #3067: read only the recent tail, not the whole 170MB log. A tail start lands
-  // mid-line; that partial first line fails JSON.parse and is skipped below.
-  const content = String(ctx.readTail(logPath, SPINE_INDEX_TAIL_BYTES));
-  const lines = content.trim().split('\n');
+  // #3077 AC2: read ONLY the bytes appended since the last cycle, not the whole 16MB
+  // tail every reindex. #3067 bounded the read to 16MB, but the JSON.parse of that
+  // overlap re-ran every ~15-min cycle (the residual multi-second block, since the
+  // insert is INSERT OR IGNORE so re-inserting was already a no-op — the PARSE was
+  // the cost). The byte offset is persisted in watermarks('spine:offset').
+  const offsetRow = ctx.db.prepare('SELECT last_indexed FROM watermarks WHERE source = ?')
+    .get!('spine:offset') as { last_indexed?: string } | undefined;
+  const storedOffset = offsetRow?.last_indexed ? (parseInt(offsetRow.last_indexed, 10) || 0) : 0;
+  // readSince resets startOffset to 0 if the log was rotated/truncated (offset > size).
+  const { content, startOffset } = ctx.readSince(logPath, storedOffset);
+  // Process only COMPLETE (newline-terminated) lines; a trailing partial line — or a
+  // byte range that split a multibyte char at the end — is left for the next cycle.
+  // newOffset advances only past the last complete line, so nothing is dropped or
+  // double-counted across cycles.
+  const lastNl = content.lastIndexOf('\n');
+  const complete = lastNl >= 0 ? content.slice(0, lastNl + 1) : '';
+  const newOffset = startOffset + Buffer.byteLength(complete, 'utf-8');
+  const lines = complete.length ? complete.trimEnd().split('\n') : [];
   let indexed = 0;
   const insertMany = ctx.db.transaction((events: IndexEvent[]) => {
     for (const e of events) {
@@ -128,6 +144,9 @@ function indexSpine(ctx: IndexCtx): string | void {
     } catch { /* skip malformed */ }
   }
   insertMany(events);
+  // Persist the new byte offset (last_indexed column is what the next cycle reads)
+  // and the freshness timestamp on the 'spine' row.
+  ctx.updateWatermark.run!('spine:offset', ctx.now, String(newOffset));
   ctx.updateWatermark.run!('spine', ctx.now, ctx.now);
   return `${indexed} events indexed`;
 }
@@ -308,12 +327,22 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
       const full = deps.fs.readFileSync(p, 'utf-8');
       return full.length <= max ? full : full.slice(full.length - max);
     });
+    // #3077 AC2: byte-offset incremental reader. Fallback reads the whole file then
+    // slices by BYTE offset (correct for multibyte via Buffer) — fine for tests /
+    // small logs; server.ts injects an fd positioned-read for the real 170MB log.
+    const readSince = deps.readSince ?? ((p: string, offset: number) => {
+      const full = deps.fs.readFileSync(p, 'utf-8');
+      const buf = Buffer.from(full, 'utf-8');
+      const size = buf.length;
+      const start = offset > size ? 0 : offset;
+      return { content: buf.subarray(start).toString('utf-8'), startOffset: start, size };
+    });
 
     const ctx: IndexCtx = {
       db, insert, updateWatermark,
       fs: deps.fs, path: deps.path, repoRoot: deps.repoRoot, homedir: deps.homedir,
       now: nowFn(),
-      readTail,
+      readTail, readSince,
     };
 
     runSource('spine', results, () => indexSpine(ctx));
