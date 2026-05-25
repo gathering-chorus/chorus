@@ -52,7 +52,18 @@
 </div>
 <p>The <code>/werk</code> verbs (<code>/pull</code> · <code>/demo</code> · <code>/acp</code>) are the developer interface; <code>act</code> is the local runner (build/deploy/verify are steps inside demo &amp; acp, not standalone commands). <strong>The pipeline model is v8 (ADR-033):</strong> <code>git ⊃ env ⊃ DSL</code> on <code>act</code> — one environment (production, live), GitHub as source-of-truth (<code>main</code>) + per-card process-holder, one commit-status check per verb (all green = every verb ran). Verbs are decomposing from the <code>chorus_commit</code> / <code>chorus_acp</code> monolith into per-verb binaries under the verb contract (ADR-032). Full model + as-is/to-be diagrams: <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a>.</p>
 
-<h2>3 &middot; Supporting domains</h2>
+<h2>3 &middot; Surfaces — how the team leverages Werk</h2>
+<p>The entry points the three roles use to drive work through Werk:</p>
+<ul>
+  <li><strong>The <code>/werk</code> verbs</strong> — <code>/pull</code> (take a card to WIP), <code>/demo</code> (prove it live), <code>/acp</code> (land it). The primary developer interface.</li>
+  <li><strong>Role gates</strong> — <code>/gate-code</code> · <code>/gate-quality</code> (Kade), <code>/gate-product</code> (Wren), <code>/gate-arch</code> · <code>/gate-ops</code> (Silas) — the checks every demo runs.</li>
+  <li><strong>MCP write-paths</strong> — <code>chorus_pull_card</code>, <code>chorus_commit</code>, <code>chorus_acp</code> — the typed, refusal-guarded mutations behind the verbs.</li>
+  <li><strong>GitHub</strong> — the PR + per-verb commit-status checks (<code>chorus/pull..accept</code>); the source-of-truth + process-holder surface.</li>
+  <li><strong>The spine</strong> — <code>card.pulled</code> / <code>card.demoed</code> / <code>card.accepted</code> + build/deploy events; the observability surface, queryable by card or trace.</li>
+  <li><strong>The board</strong> — the cards CLI (the cards-runner is Wren's, consumed from The Clearing) — where work enters and exits.</li>
+</ul>
+
+<h2>4 &middot; Supporting domains</h2>
 <p>Werk decomposes into four domains. <strong>UP:</strong> single inbound edge — <code>chorus-product hasChild werk-product</code> (transitionally <code>hasSubProduct</code> in AS-IS graph, per Athena's named collapse). <strong>DOWN:</strong> four domains via <code>hasDomain</code>.</p>
 
 <pre class="mermaid">
@@ -106,7 +117,7 @@ flowchart TD
 <p><strong>Shipped:</strong> hermetic-by-default discipline named as principle and enforced in pre-commit (cargo test --lib --bins / jest scope). Integration tests gated in /demo. TDD discipline written into CLAUDE.md (DEC-1674).</p>
 <p><strong>Gaps:</strong> no run-tests contract — the load-bearing CI ↔ tests interface is unnamed. Hermetic/integration tagging on individual tests is partial (some bats files marked, most TS tests rely on filename convention). chorus-hooks/inject test isolation has hardcoded paths in some tests. sessions.test.ts has a pre-existing fail.</p>
 
-<h2>4 &middot; Domains → services</h2>
+<h2>5 &middot; Domains → services</h2>
 <p>Each domain composes into the services/verbs that actually run. Those are the specific, carded work — specified in their own docs, not re-asserted here (and TO-BE as Athena <code>hosts</code> graph instances, per Path-to-close #5):</p>
 <ul>
   <li><strong>pipelines</strong> → the v2 verb binaries + <code>act</code> orchestration — <a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> + the v2 cards.</li>
