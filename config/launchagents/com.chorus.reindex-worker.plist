@@ -20,7 +20,11 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- #3086: nvm v20.11.1 first so PATH-resolved tools match chorus-api's node.
+             Belt-and-suspenders — chorus-reindex-worker.sh now pins node by absolute
+             path, but keeping committed == the working installed config avoids the
+             divergence that hid the #3085 ABI crash. -->
+        <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>
