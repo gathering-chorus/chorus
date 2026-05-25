@@ -309,6 +309,12 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
   return async function indexAllSources() {
     const db = new deps.DatabaseCtor(deps.dbPath);
     db.pragma('journal_mode = WAL');
+    // #3085: reindex now runs in a standalone worker process, so it can collide
+    // with the API process's own SQLite writes (embed-marks). WAL serializes
+    // writers; busy_timeout makes a blocked writer WAIT for the lock instead of
+    // failing immediately (default 0 = fail-fast). Without this, a reindex pass
+    // could intermittently error under cross-process write contention.
+    db.pragma('busy_timeout = 5000');
     const results: Record<string, string> = {};
     const startTime = Date.now();
 

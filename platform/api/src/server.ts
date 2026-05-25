@@ -1160,45 +1160,11 @@ app.post('/api/chorus/index', async (_req: Request, res: Response) => {
 });
 
 // indexAllSources extracted to src/index-all-sources.ts (#2205 wave 18).
-import { createIndexAllSources } from './index-all-sources';
-const indexAllSources = createIndexAllSources({
-  dbPath: DB_PATH,
-  DatabaseCtor: Database,
-  fs,
-  path,
-  repoRoot: REPO_ROOT,
-  homedir: () => os.homedir(),
-  // #3067: positioned tail read so indexSpine bounds the 170MB log to its recent
-  // tail instead of re-reading the whole file every reindex cycle (4.9s sync block).
-  readTail: (p, maxBytes) => {
-    const size = fs.statSync(p).size;
-    if (size <= maxBytes) return fs.readFileSync(p, 'utf-8');
-    const fd = fs.openSync(p, 'r');
-    try {
-      const buf = Buffer.alloc(maxBytes);
-      fs.readSync(fd, buf, 0, maxBytes, size - maxBytes);
-      return buf.toString('utf-8');
-    } finally {
-      fs.closeSync(fd);
-    }
-  },
-  // #3077 AC2: positioned read of only the bytes appended since `offset`. Resets to 0
-  // if the log was rotated/truncated (offset > size). O(new bytes), not O(16MB tail).
-  readSince: (p, offset) => {
-    const size = fs.statSync(p).size;
-    const start = offset > size ? 0 : offset;
-    if (start >= size) return { content: '', startOffset: start, size };
-    const fd = fs.openSync(p, 'r');
-    try {
-      const len = size - start;
-      const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, start);
-      return { content: buf.toString('utf-8'), startOffset: start, size };
-    } finally {
-      fs.closeSync(fd);
-    }
-  },
-});
+// Deps wiring (incl. the perf-tuned readTail #3067 / readSince #3077) shared with
+// the standalone reindex worker via index-all-sources-deps.ts so the two cannot
+// drift (#3085, chorus:principle-no-competing-implementations).
+import { makeIndexAllSources } from './index-all-sources-deps';
+const indexAllSources = makeIndexAllSources({ dbPath: DB_PATH, repoRoot: REPO_ROOT });
 
 
 // --- GET /api/chorus/self — Read-only filtered endpoint for Self (DEC-068) ---
@@ -1601,18 +1567,13 @@ const refreshHealthCache = () => _healthCache.refresh();
 // Legacy export for existing handler deps — returns the live snapshot object.
 const healthCache = _healthCache.snapshot();
 
-// Scheduled reindex — keep index_freshness sources current (#1960)
-// indexAllSources() is SQLite-only (no Ollama), safe in-process unlike embedDelta (#1978).
-// Runs every 15 min. First run after 60s startup delay to avoid boot contention.
-// The timer starts are at the bottom of this file inside `require.main === module`
-// (#2173 AC4) — fn declaration lives here so the start can reference it.
-// scheduledReindex extracted to src/scheduled-reindex.ts (#2205 wave 15).
-// indexAllSources is declared further down; lazy-wrapper defers the capture.
-const REINDEX_INTERVAL = 15 * 60_000;
-import { createScheduledReindex } from './scheduled-reindex';
-const scheduledReindex = createScheduledReindex({
-  indexAllSources: () => indexAllSources(),
-});
+// Scheduled reindex moved to a standalone worker (chorus-reindex-worker.sh) — #3085.
+// indexAllSources() uses synchronous better-sqlite3, so running it on the API event
+// loop (the old in-process 15-min setInterval) blocked every request during a pass —
+// the eventloop.blocked alerts. The #1605 "SQLite-only, safe in-process" assumption
+// was falsified by #3079's live capture. The worker runs the same indexAllSources in
+// its own process on the same 15-min cadence. POST /api/chorus/reindex still works for
+// on-demand manual runs. (#3080 Track A / ADR-034: decouple compute via the store.)
 
 // SHACL validation — check ontology integrity (#2014).
 // Extracted to handlers/athena-validate.ts (#2180).
@@ -3325,15 +3286,8 @@ if (require.main === module) {
     try { refreshHealthCache(); } finally { setCurrentOp(null); }
   }, 30_000);
 
-  // Scheduled reindex — live server only. First run after 60s startup delay.
-  setTimeout(() => {
-    const runReindex = () => {
-      setCurrentOp('scheduledReindex');
-      void Promise.resolve(scheduledReindex()).finally(() => setCurrentOp(null));
-    };
-    runReindex();
-    setInterval(runReindex, REINDEX_INTERVAL);
-  }, 60_000);
+  // Scheduled reindex runs in the standalone worker (chorus-reindex-worker.sh) — #3085.
+  // No in-process timer here: reindex is synchronous SQLite and would block the loop.
 
   app.listen(PORT, BIND_HOST, () => {
     console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
