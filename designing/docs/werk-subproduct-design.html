@@ -210,7 +210,7 @@ chorus:werk-product
   <li>ADR-032 — verb contract v1 (per-verb build contract: zero-dep, env contract, shared trace, all-or-nothing rollback).</li>
   <li>ADR-031 — resource/verb/grain convention (MCP + REST surface bindings).</li>
   <li>#3045 / #3056 / #3057 / #3061 / #3062 / #3063 / #3064 — v2 verb decomposition (pull shipped; commit/accept/build/deploy/trace/acp-orchestrator carded).</li>
-  <li>#2720 — canonical model: ci-cd domain under Werk; pipelines-domain retired.</li>
+  <li>#2720 — canonical model proposed pipelines-domain → ci-cd; <strong>superseded</strong> — pipelines is the domain (1..n instances), ci-cd is one instance Kade owns.</li>
   <li>DEC-1674 — TDD discipline (AC → tests → code).</li>
   <li>ADR-026 — CI architecture + lock-file policy.</li>
   <li>DEC-2525 — required-checks governance.</li>
@@ -219,7 +219,7 @@ chorus:werk-product
   <li>#2941, #2943, #2944 — typed-refusal / idempotent /acp / pre-push silent-deletion (recent VCS hardening).</li>
 </ul>
 
-<p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-033) + verb contract (ADR-032) + the v2 verb decomposition; 4th-domain naming corrected to <code>ci-cd</code> (#2720 retired pipelines-domain); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
+<p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-033) + verb contract (ADR-032) + the v2 verb decomposition; <code>pipelines</code> kept as the domain (1..n instances, governed as a set by Kade — #2720's pipelines→ci-cd rename reversed per Jeff's model); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
 
 </body>
 </html>
