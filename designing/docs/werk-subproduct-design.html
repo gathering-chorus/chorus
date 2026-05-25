@@ -43,16 +43,6 @@
 <h1>Werk <span>— Subproduct Design</span></h1>
 <p class="date">Kade · 2026-05-16, reconciled 2026-05-25 (#3078) · subproduct-design doc, peer to <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a> and <a href="/designing/docs/loom-subproduct-design.html"><code>loom-subproduct-design.html</code></a>. Werk is the engineering pipeline — the line that turns "card in Next" into "running code on origin/main with a coherent receipt."</p>
 
-<div class="frame">
-This doc consumes:
-<strong>(1) <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a></strong> (Kade) — the source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers;
-<strong>(2) <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a></strong> (Kade) — the orchestration slice: <code>act</code> as local runner, /werk/* dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry;
-<strong>(3) <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a></strong> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention);
-<strong>(4) <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a></strong> (Wren, 2026-05-15) — the structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines;
-<strong>(5)</strong> the work-as-product reframe — every card is a SKU, /demo is try-before-buy, /acp is the purchase, the spine is the receipt ledger;
-<strong>(6) <a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a></strong> (Silas) — sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.
-</div>
-
 <div class="promise">
 <strong>Werk is the engineering pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. Its promise: every card that enters Werk leaves as merged source on <code>origin/main</code> with a coherent receipt — card_id and trace_id propagated through every step from /pull to deployed cdhash. Four Domains compose it (code, tests, version-control, pipelines) sharing one discipline: typed contracts at every boundary, refuse early, emit observable events. Werk does not build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> domain, handed off at the post-/acp release-trigger.
 </div>
@@ -197,6 +187,17 @@ chorus:werk-product
   <li><strong>Gathering's CI</strong> — lives in <code>jeff-bridwell-personal-site</code> repo; smoke check is its problem (ADR-026 addendum).</li>
   <li><strong>Quality at runtime</strong> — observability of the running system is Borg's substrate, not Werk's.</li>
 </ul>
+
+<h2>Appendix — sources this doc consumes</h2>
+<div class="frame">
+This doc builds on:
+<strong>(1) <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a></strong> (Kade) — the source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers;
+<strong>(2) <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a></strong> (Kade) — the orchestration slice: <code>act</code> as local runner, /werk verb dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry;
+<strong>(3) <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a></strong> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention);
+<strong>(4) <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a></strong> (Wren, 2026-05-15) — the structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines;
+<strong>(5)</strong> the work-as-product reframe — every card is a SKU, /demo is try-before-buy, /acp is the purchase, the spine is the receipt ledger;
+<strong>(6) <a href="/designing/docs/build-and-deploy-service-design.html"><code>build-and-deploy-service-design.html</code></a></strong> (Silas) — sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.
+</div>
 
 <h2>References</h2>
 <ul>
