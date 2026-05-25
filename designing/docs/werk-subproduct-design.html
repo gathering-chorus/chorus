@@ -43,8 +43,12 @@
 <h1>Werk <span>— Subproduct Design</span></h1>
 <p class="date">Kade · 2026-05-16, reconciled 2026-05-25 (#3078) · subproduct-design doc, peer to <a href="/designing/docs/athena-subproduct-design.html"><code>athena-subproduct-design.html</code></a> and <a href="/designing/docs/loom-subproduct-design.html"><code>loom-subproduct-design.html</code></a>. Werk is the engineering pipeline — the line that turns "card in Next" into "running code on origin/main with a coherent receipt."</p>
 
-<h2>1 &middot; Step &amp; purpose — what Werk serves</h2>
-<p>Werk is the Chorus subproduct at the <strong>Building</strong> step of the value stream (Shaping → Designing → Directing → <strong>Building</strong> → Proving). <strong>Its purpose:</strong> turn shaped, designed, and directed work into <strong>shipped software on <code>origin/main</code></strong> — every card that enters Werk leaves as merged source with a coherent receipt (card_id + trace_id, one trace from /pull to deployed cdhash). <em>Canonical (Athena v2): <code>chorus:werk</code> · atStep Building · status operating · owner Kade · domains pipelines / version-control / code / tests.</em></p>
+<p class="promise" style="font-style:normal;border-left-color:#0f9d8f;background:#eafaf7"><strong>TL;DR —</strong> Werk is Chorus's <strong>Building-step</strong> pipeline: it turns an accepted card into merged source on <code>origin/main</code> with one verifiable receipt — a single trace from <code>/pull</code> to the deployed cdhash. Owner: Kade · domains pipelines · version-control · code · tests.</p>
+
+<h2>1 &middot; Problem, step &amp; purpose</h2>
+<p><strong>The problem:</strong> work that's been shaped, designed, and directed still has to become <em>running code on <code>main</code></em> — reliably, drivable by any of the three roles, without a human carrying it between steps and without a deploy lying about what shipped. Absent a disciplined Building pipeline, cards stall, deploys go false-green, and provenance is lost.</p>
+<p><strong>Step &amp; purpose:</strong> Werk is the Chorus subproduct at the <strong>Building</strong> step (Shaping → Designing → Directing → <strong>Building</strong> → Proving). It turns shaped/designed/directed work into <strong>shipped software on <code>origin/main</code></strong> with a coherent receipt — one trace, /pull → deployed cdhash.</p>
+<p><strong>Success metric:</strong> every accepted card lands on <code>main</code> with a complete, queryable trace (all per-verb checks green; deployed cdhash == running cdhash) and <strong>zero false-green acceptances</strong>; the risks below trend to closed. <em>Canonical (Athena v2): <code>chorus:werk</code> · atStep Building · status operating · owner Kade · domains pipelines / version-control / code / tests.</em></p>
 
 <h2>2 &middot; The product</h2>
 <div class="promise">
@@ -146,6 +150,16 @@ flowchart TD
 <div class="finding"><strong>2. Werk-the-subproduct is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Each accepted card must advance the artifact lifecycle in step with the card pipeline or the graph drifts behind reality.</div>
 <div class="finding"><strong>3. The pipelines domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Customers can't try before they buy (/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
 <div class="finding"><strong>4. Werk does not own build+deploy.</strong> The post-/acp release-trigger is the handoff line. Build+Deploy is a sibling subproduct under Silas. Werk's responsibility ends at "card accepted, commit on origin/main, trace_id propagating into the build pipeline."</div>
+
+<h2>Alternatives considered &amp; risks</h2>
+<p><strong>Rejected approaches (why this shape):</strong></p>
+<ul>
+  <li><strong>The <code>chorus_commit</code> / <code>chorus_acp</code> monolith</strong> — opaque, no per-step state. Rejected for per-verb binaries under the verb contract (ADR-032): each verb is testable, refusable, and carries its own gh check.</li>
+  <li><strong>Renaming pipelines → ci-cd (#2720)</strong> — collapsed the governed <em>set</em> into one <em>instance</em>. Reversed: pipelines is the domain (1..n instances); ci-cd is one instance Kade owns.</li>
+  <li><strong>The "two pipelines" framing</strong> — pinned the count at two and mis-typed the artifact lifecycle as a peer pipeline. Replaced by 1..n instances + the card ↔ artifact coherence claim.</li>
+  <li><strong>A preview / staging environment</strong> — rejected: there is one environment (production). <code>demo</code> proves werk code live before <code>acp</code> lands it; no separate stack to drift.</li>
+</ul>
+<p><strong>Risks / failure modes:</strong> the operational risks are the headline gaps in §4 — can't-try-before-you-buy, receipts-don't-reconcile, deployed≠running-unasserted. One structural risk to name outright: <strong>model-mirroring</strong> — because this doc's outline mirrors the Athena containment graph, anything the ontology can't express (cross-domain concerns, alternatives, this risk list itself) has no natural home; this section is the deliberate slack against that blind spot.</p>
 
 <h2>OWL + SHACL — conformance to Athena v2</h2>
 <p>This subproduct adds no new structural classes. It uses Athena's <code>chorus:Product</code> / <code>chorus:Domain</code> / <code>chorus:Service</code> with the recursive containment model. The Werk-specific shape is:</p>
