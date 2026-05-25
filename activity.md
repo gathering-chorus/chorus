@@ -1291,3 +1291,5 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Silas] Built + demoed #3016 (chorus-deploy --target werk for TS daemons; gates 5/5); pending Jeff /acp → Jeff
 - [Silas] Gated peers: #2957 (ops PASS), #3012 (arch/ops), #3016 deploy-test reviews → Wren/Kade
 - [Silas] Jeff raised the root arch Q: why does a daemon mediate deploy at all (self-reference) — next-session headline. Saved memory: cards-are-not-fixes, dont-shout-fire, no-manufactured-gates.
+- [Kade] #3078 (WIP, not acp'd) — reworked werk-subproduct-design.html voice/framing across many passes: Werk = the versioned Chorus execution protocol ("how we execute"), value realized in Building+Proving, version-on-every-turn as concrete anchor + surface (#2311 drift). Read 5 real human design docs (Google/Ubl, Rust NLL, React RSC, Oxide RFD1, Pragmatic Engineer) for voice. Committed cab14954. → Jeff
+- [Kade] Pending: sync subproduct-design-template.md to the new shape; #3078 demo/acp is Jeff's call. → next session

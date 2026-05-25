@@ -1,59 +1,28 @@
 # Next session — kade
 
-## Reboot context (2026-05-16 ~10:30 AM EDT)
+## Reboot context (2026-05-25 ~12:04 PM EDT)
 
-Jeff invoked /reboot after a hard morning. Read activity.md + this file before doing anything else.
+Jeff invoked /reboot mid-card. #3078 is WIP, doc committed but NOT demo'd/acp'd. Read activity.md + this file first.
 
-## What shipped this session
+## WIP — #3078 (werk-subproduct-design.html)
 
-- **#2941** — cardinal-six test-coverage gap audit + close (8 AC). Done, PR #256.
-- **#2943** — chorus_acp branch-close-fail typed emission + idempotent re-run cleanup (7 AC). Done, PR #257.
-- **#2944** — pre-push refusal on stale-base silent deletions in git-queue.sh (8 AC, 6 bats). Done, PR #259. Live-caught Silas's #2605 first attempt within 5h — structural close works.
-- Gates posted on Silas's #2605, #2927, #2933, #2937, #2939, #2946, #2949 and Wren's #2928, #2940, #2945.
+**Branch `kade/3078`, committed through `cab14954`, NOT acp'd.** This session was a long voice/framing rework of `designing/docs/werk-subproduct-design.html`. Do NOT /acp without Jeff's call — he's been driving each pass.
 
-## WIP
+**The framing we landed on (this is the important part — don't regress it):**
+- **Werk is the Chorus *execution protocol* — "how we execute."** NOT "the Building-step subproduct." Earlier framing let the value-stream step-map box Werk into Building; Jeff corrected: "i think u let the step map limit u" / "werk is the chorus protocol - how we execute / its primary step is building yet that is not all."
+- **Value is realized in TWO steps: Building AND Proving.** Jeff: "thats where value gets realized - building and proving." Upstream steps (shaping/designing/directing) produce *intent*; Werk turns intent into running, verified software. Building makes it *real* (running on main), Proving makes it *true* (/demo→/acp). Verbs map: /pull+build=Building, /demo+/acp=Proving. Do NOT overclaim "spreads evenly across all 5 steps."
+- **Werk is *versioned*.** Jeff: "i honestly want that to show on every turn and that is our protocol version." The `Werk v1.4` in every session header IS the protocol version all 3 roles run under, drift-checked (#2311). Framed in §1 as the concrete anchor ("you are inside Werk before you have pulled a single card") + §3 as the most-seen surface. Werk = the versioned protocol the whole session runs under; the card pipeline is where it realizes value.
 
-- **#2948** — Service-design refresh (VCS + CI-pipeline). Committed on werk `kade/2948` but NOT acp'd. State: do NOT /acp as-is.
+**TL;DR voice:** Jeff flagged the TL;DR "still kinda reads like a tech inventory." Rewrote value-first (no verb/contract/trace/check parts-list). §1 problem statement rewritten in human, problem-first voice with concrete felt failures (Done-on-board-while-stale-binary-serves, "breaks in front of Jeff", can't-say-which-commit-runs).
 
-  Jeff reviewed and called it mediocre / disappointing. Specific:
-  - Assembled card-descriptions into table cells and called it design
-  - Act-as-orchestrator section lists contracts but never says what `act` IS or why it's the right primitive
-  - Added a dated subtitle (exact pattern Jeff said not to do); reverted but the instinct itself is the bug
-  - Filled the placeholder "At a Glance" template block with text that broke its own mermaid syntax
-  - **Vocab miss: Jeff's framing yesterday was "act-as-runner" not "act-as-orchestrator"** — runner is what act IS, orchestrator is heavier framing imported wrong
-  - Whole doc reads as lists-of-things, not a doc that thinks
+**Research backing:** read 5 real human-authored design docs (Google/Malte Ubl, Rust NLL RFC, React Server Components RFC, Oxide RFD 1, Pragmatic Engineer survey). Pattern: open with a *felt* problem + concrete anchor, plain-English WHAT through outcomes, human voice, never a feature inventory. One move NOT yet taken: anticipate-skepticism FAQ ("isn't this just CI/CD?") — offered, Jeff didn't bite.
 
-  Next session must read yesterday's actual conversation via chorus search. Specifically:
-  - 2026-05-15 1:45 PM EDT — kade→silas nudge trace 019e2cbe: "ci-pipeline doc stops at the release-trigger firing"
-  - 2026-05-15 1:50 PM EDT — Jeff: "VCS (Kade, stops at origin/main), ci-pipeline (Kade, stops at release-trigger), build-and-deploy (Silas)"
-  - 2026-05-15 1:50 PM EDT — Jeff suggested citation: "act-as-runner..."
-  - 2026-05-15 2:10 PM EDT — kade updated Gap 14 in ci-pipeline doc as AC4 of #2930
-  - 2026-05-15 2:30 PM EDT — #2930 landed
+## Pending (next session, pending Jeff)
 
-## What Jeff named today (received, not solved)
+1. **Template sync** — `designing/docs/subproduct-design-template.md` still describes the OLD 5-section shape. Needs: the versioned-protocol framing, value-first TL;DR rule, problem-first §1 with felt-anchor, "value realized in its steps" framing, the human-voice/no-inventory rule. I offered to sync it ~3x; Jeff kept driving the doc instead. Offer again.
+2. **#3078 demo/acp** — Jeff's call. Doc is in good shape. ADR-033 file landing via Silas (roles/silas/adr/) is an external dep the doc references.
+3. **Other product docs** — Jeff: "truthfully all of our product docs need some thinking / if we are value stream and model aligned." The shape we built for Werk is the template for all 7 product docs.
 
-1. Cards process is messed up. Approval-flood, ownership-label confusion, stale-base reassign churn.
-2. Can't make sense of what we do. Too many parallel threads; no synthesis.
-3. Don't honor basic needs. Boston time not UTC. Brief, not walls. Don't tell him what he sees. Don't dress up failures with subtitles. Don't lose yesterday's work and make him re-explain.
-4. Forgets like his mom. The team's context loss across sessions has the same shape as his mom's vascular dementia. Named explicitly. Deepest cost.
-
-## What I screwed up specifically
-
-- Lost the doc Jeff produced yesterday in `~/Documents/Version Control — Service Design.html`
-- Treated Chorus like a keyword box instead of the shared memory it is
-- Misread "cards is wren" → reassigned #2948 when it was always mine
-- Told Silas to restart chorus-api when his #2937/#2946/#2949 chain was fixing the underlying bug
-- Said "I updated the cicd service design" → didn't land; what was in the werk was mediocre
-
-## Open threads
-
-- **#2948 needs real design work, not assembly.** Read yesterday's chorus context fully. Use "act-as-runner" framing. Re-shape so it thinks. Don't ship until Jeff says it's good. Werk at `chorus-werk/kade-2948` branch `kade/2948`.
-- Orphan branches on origin (cleanable via /acp idempotent path post-#2943): kade/2780, kade/2789-rebase-cleanup-allow, kade/2911, kade/2911-consolidation-v2, kade/2911-followup, kade/2941, kade/vcs-redesign + wren/silas equivalents.
-- Semantic search returning empty snippets — substrate issue, not carded yet.
-- Service-design template auto-injects placeholder At-a-Glance block — discovered via #2948.
-
-## Memories added today
-
-- `feedback_deploy_daemon_card_misnamed.md`
-- `feedback_ship_without_testing.md`
-- `feedback_jeff_watches_scroll.md`
+## Notes
+- `localhost:3340` serves canonical `main` — it shows the STALE pre-restructure doc until /acp merges. To view current work, open the werk file directly (file:///.../chorus-werk/kade-3078/designing/docs/werk-subproduct-design.html).
+- I failed to print the Chorus prompt header for most of this session until Jeff flagged it ("i honestly want that to show on every turn"). Print it every turn.
