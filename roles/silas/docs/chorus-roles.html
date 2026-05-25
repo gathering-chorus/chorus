@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Gathering Team &mdash; Roles</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --ink:#1d1d1f; --muted:#6b6b70; --line:#e3e3df; --card:#ffffff;
+    --wren:#7c4dff; --silas:#0f9d8f; --kade:#e08a1e;
+    --pm:#c2410c; --arch:#0f9d8f; --eng:#2563eb; --ops:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 28px 80px}
+  h1{font-size:32px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:17px;margin:0 0 8px}
+  .meta{color:#9a9aa0;font-size:13px;margin:0 0 36px}
+  h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+    margin:48px 0 16px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  .thesis{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 24px;
+    font-size:18px;line-height:1.5}
+  .thesis b{color:var(--ink)}
+  .thesis .small{display:block;font-size:14.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+  .grid4{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .fn{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
+    border-top:4px solid var(--line)}
+  .fn.pm{border-top-color:var(--pm)} .fn.arch{border-top-color:var(--arch)}
+  .fn.eng{border-top-color:var(--eng)} .fn.ops{border-top-color:var(--ops)}
+  .fn h3{margin:0 0 8px;font-size:18px}
+  .fn .tag{font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .fn.pm .tag{color:var(--pm)} .fn.arch .tag{color:var(--arch)}
+  .fn.eng .tag{color:var(--eng)} .fn.ops .tag{color:var(--ops)}
+  .fn p{margin:8px 0 0;font-size:15px;color:#33333a}
+  .fn .measure{margin-top:12px;font-size:14px;color:var(--ink);background:#f3f3f0;
+    border-radius:8px;padding:9px 12px}
+  .fn .measure b{font-weight:600}
+  .shared{margin-top:16px;background:#fffdf3;border:1px solid #efe6c8;border-radius:12px;
+    padding:16px 20px;font-size:15px;color:#5a4a1a}
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .kade-band{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    border-top:5px solid var(--kade);padding:22px 24px 20px;position:relative}
+  .kade-band .spanlabel{position:absolute;top:-11px;left:24px;background:var(--kade);color:#fff;
+    font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 11px;border-radius:999px}
+  .kade-band h3{margin:0;font-size:20px;color:var(--ink);display:inline-block}
+  .kade-band .title{color:var(--kade);font-weight:700;font-size:14px;margin:4px 0 2px}
+  .kade-band .scope{font-size:13px;color:var(--muted);margin-bottom:12px}
+  .kade-band p{margin:0;font-size:14.5px;color:#33333a;max-width:900px;line-height:1.55}
+  .role{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;
+    border-left:5px solid var(--line)}
+  .role.wren{border-left-color:var(--wren)} .role.silas{border-left-color:var(--silas)}
+  .role.kade{border-left-color:var(--kade)}
+  .role h3{margin:0;font-size:20px}
+  .role .title{font-size:14px;font-weight:700;margin:3px 0 1px}
+  .role.wren .title{color:var(--wren)} .role.silas .title{color:var(--silas)} .role.kade .title{color:var(--kade)}
+  .role .layer{font-size:13px;color:var(--muted);margin:2px 0 14px}
+  .role .lens{font-size:13px;font-weight:600;margin-bottom:10px}
+  .role.wren .lens{color:var(--wren)} .role.silas .lens{color:var(--silas)} .role.kade .lens{color:var(--kade)}
+  .role .doms{font-size:13.5px;color:#44444a;margin:0 0 14px}
+  .hats{display:flex;flex-wrap:wrap;gap:6px}
+  .hat{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:999px;background:#f0f0ec;color:#444}
+  .allfour{font-size:12.5px;color:var(--muted);margin-top:12px;font-style:italic}
+  .prin-label{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:14px 0 6px}
+  .prins{display:flex;flex-wrap:wrap;gap:5px}
+  .prin{font-size:11px;padding:3px 8px;border-radius:6px;background:#f4f3ef;color:#555;border:1px solid #e8e7e2}
+  .role.wren .prin{background:#f3eeff;border-color:#e4d9fb;color:#5b3aa6}
+  .role.silas .prin{background:#eafaf7;border-color:#cdeee8;color:#0a6b61}
+  .kade-band .prin{background:#fdf3e6;border-color:#f3e0c2;color:#9a6312}
+  .jd{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .jd>summary{cursor:pointer;padding:14px 18px;font-weight:700;font-size:16px;list-style:none}
+  .jd>summary::-webkit-details-marker{display:none}
+  .jd>summary::before{content:"\25B8  ";color:var(--muted)}
+  .jd[open]>summary::before{content:"\25BE  ";color:var(--ink)}
+  .jd .body{padding:2px 18px 16px;font-size:14.5px;color:#33333a}
+  .jd .role-def{margin:0 0 4px}
+  .jd h5{margin:12px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .jd ul{margin:0;padding-left:18px}
+  .jd li{margin:6px 0}
+  .jd .measure{margin-top:12px;font-size:13.5px;background:#f3f3f0;border-radius:8px;padding:9px 12px}
+  .owner{background:linear-gradient(180deg,#1d1d1f,#2b2b30);color:#fff;border-radius:14px;padding:24px 28px;margin-bottom:18px}
+  .owner h3{margin:0;font-size:24px;color:#fff}
+  .owner .role-t{font-size:13px;color:#c9b8ff;letter-spacing:.06em;text-transform:uppercase;font-weight:700;margin:5px 0 14px}
+  .owner p{margin:0;font-size:15.5px;color:#e9e9ec;max-width:820px;line-height:1.55}
+  .owner b{color:#fff}
+  .ten.resolved{border-left-color:#0f9d8f}
+  .ten.resolved h4 span{color:#0f9d8f;font-weight:700}
+  .open{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .ten{background:#fff;border:1px solid var(--line);border-left:4px solid #d33;border-radius:12px;padding:16px 20px}
+  .ten h4{margin:0 0 6px;font-size:15px}
+  .ten p{margin:0;font-size:14px;color:#44444a}
+  @media(max-width:760px){.grid4,.roles,.open{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>The Gathering Team &mdash; Roles</h1>
+  <p class="sub">Each role is a full team-of-one for the domains it owns.</p>
+  <p class="meta">Silas &middot; 2026-05-24 &middot; permaculture principles live from the graph (Hemenway, verbatim labels) &middot; per-role mapping derived from each principle's graph techReading &mdash; my read, correct as needed</p>
+
+  <div class="thesis">
+    Each role &mdash; Wren, Silas, Kade &mdash; wears <b>all four hats</b> (product manager, domain architect, engineering lead, operations lead) for the <b>domains it owns</b>. Not one function per person.
+    <span class="small">One-function-per-role is a human-org-chart artifact &mdash; orgs split PM / architect / eng / ops because of specialization and headcount, since no one person is great at all four. Here that reason doesn't hold: all three roles run the same model with the same capability; only <b>context</b> differs. So the natural unit isn't a function spread across all domains &mdash; it's full-stack ownership of a domain, all four functions. It also collapses the handoff chain (PM&rarr;arch&rarr;eng&rarr;ops with a nudge at each seam) into one head.</span>
+  </div>
+
+  <h2>Owner, two domain slices, and cross-cutting depth</h2>
+  <div class="owner">
+    <h3>Jeff</h3>
+    <div class="role-t">Owner &amp; Head of Product</div>
+    <p>The external product authority &mdash; the "is this worth doing" signal the team can't self-generate. <b>Every role's PM hat answers here.</b> Jeff owns the whole, sets product direction, and is the anti-blarf forcing function: work traces to his actual use, or it doesn't get built.</p>
+  </div>
+  <div class="roles">
+    <div class="role wren">
+      <h3>Wren</h3>
+      <div class="title">Chief of Staff for Product</div>
+      <div class="layer">Interaction layer</div>
+      <div class="lens">Lens: Product &amp; coordination</div>
+      <div class="doms">Domains: search &amp; context, loom (principles), convergence (data integration), the demo verb, coordination tooling.</div>
+      <div class="hats"><span class="hat">PM</span><span class="hat">Architect</span><span class="hat">Eng lead</span><span class="hat">Ops lead</span></div>
+      <div class="allfour">All four, for her domains.</div>
+      <div class="prin-label">Permaculture principles</div>
+      <div class="prins"><span class="prin">Connect</span><span class="prin">Optimize edge</span><span class="prin">Get a yield</span></div>
+    </div>
+    <div class="role silas">
+      <h3>Silas</h3>
+      <div class="title">Solutions Architect</div>
+      <div class="layer">Observation layer</div>
+      <div class="lens">Lens: Architecture &amp; operations</div>
+      <div class="doms">Domains: dashboards, alerting, gates, infrastructure, build &amp; deploy verbs, ontology.</div>
+      <div class="hats"><span class="hat">PM</span><span class="hat">Architect</span><span class="hat">Eng lead</span><span class="hat">Ops lead</span></div>
+      <div class="allfour">All four, for his domains.</div>
+      <div class="prin-label">Permaculture principles</div>
+      <div class="prins"><span class="prin">Observe</span><span class="prin">Make the least change for the greatest effect</span><span class="prin">Use small-scale, intensive systems</span><span class="prin">Turn problems into solutions</span></div>
+    </div>
+  </div>
+
+  <div class="kade-band">
+    <span class="spanlabel">Cross-cutting &middot; spans the whole stack</span>
+    <h3>Kade</h3>
+    <div class="title">Distinguished Engineer</div>
+    <div class="scope">Not a layer &mdash; vertical depth across every domain.</div>
+    <p>Org-wide technical authority and force multiplier: owns the hardest, highest-ambiguity, cross-cutting problems &mdash; code correctness, the gnarliest RCAs (root-caused the daemon byte-slice), the version-control / build / test substrate &mdash; and raises the engineering bar that Wren and Silas build on. Measured by the output he unlocks in everyone else, not his own code. The technical conscience the whole team consults.</p>
+    <div class="prin-label">Permaculture principles</div>
+    <div class="prins"><span class="prin">Mistakes are tools for learning</span><span class="prin">Collaborate with succession</span><span class="prin">Use biological and renewable resources</span></div>
+  </div>
+
+  <div class="thesis" style="margin-top:18px">
+    <b>The model itself is two permaculture principles.</b> <b style="color:var(--kade)">Each element performs multiple functions</b> &mdash; the four hats; the graph's reading literally lists each role's functions. And <b style="color:var(--silas)">Each function is supported by multiple elements</b> &mdash; three distinct roles, distinct on purpose, so quality is held by several lenses, not one. Those two are the foundation; the per-role tags above are emphases on top.
+
+  <h2>The Four Hats</h2>
+  <div class="grid4">
+    <div class="fn pm">
+      <span class="tag">Product Manager</span>
+      <h3>What &amp; why</h3>
+      <p>Owns what's worth building and for whom &mdash; prioritization and sequencing against outcomes, representing the user's real need, protecting focus by saying no.</p>
+      <div class="measure"><b>Measured by:</b> outcomes delivered to users &mdash; did the right thing get built, did it move the needle &mdash; not features shipped or tickets closed.</div>
+    </div>
+    <div class="fn arch">
+      <span class="tag">Domain Architect</span>
+      <h3>Structure &amp; fit</h3>
+      <p>Owns the target-state architecture of a bounded domain &mdash; holds the as-is/to-be model, sets patterns, standards, and integration contracts, governs architectural decisions and technical debt, reviews solutions for fit and cross-domain coherence.</p>
+      <div class="measure"><b>Measured by:</b> reduced complexity and risk &mdash; not artifacts produced.</div>
+    </div>
+    <div class="fn eng">
+      <span class="tag">Engineering Lead</span>
+      <h3>Delivery &amp; craft</h3>
+      <p>Owns delivery and the health of both the codebase and the engineers &mdash; turning goals into shipped, working software, setting engineering standards (testing, review, quality), owning velocity without trading away maintainability, growing and unblocking the team.</p>
+      <div class="measure"><b>Measured by:</b> sustained ability to ship working software &mdash; not lines of code or commit count.</div>
+    </div>
+    <div class="fn ops">
+      <span class="tag">Operations Lead</span>
+      <h3>Reliability &amp; health</h3>
+      <p>Owns reliability and operational health &mdash; SLOs and error budgets, incident management with real root-cause analysis and blameless postmortems, capacity and change management, alerting where every alert is actionable and tied to a runbook.</p>
+      <div class="measure"><b>Measured by:</b> stable systems &mdash; and non-actionable alert noise (alert fatigue) is a primary failure mode the role exists to eliminate.</div>
+    </div>
+  </div>
+
+  <div class="shared">
+    <b>All four share a standard:</b> judged by outcomes for the business and the people they serve &mdash; stable systems, lower risk, less toil and noise &mdash; and all four treat <b>human and operational cost as a first-class constraint, not a byproduct</b>.
+  </div>
+
+  <h2>Job descriptions &mdash; grounded in this session's work</h2>
+
+  <details class="jd" open>
+    <summary>Solutions Architect &mdash; designs the end-to-end fix to a system problem</summary>
+    <div class="body">
+      <p class="role-def">Takes a live, cross-cutting problem and architects the durable answer: holds the whole-system view, RCAs to root cause with data, designs the fix <i>shape</i> (not just the patch), reviews peers' designs for fit, and defines the contracts between components. Problem-driven and spans domains &mdash; distinct from the Domain Architect's single-domain depth.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>RCA'd the coordination-spine freeze to root: a crawl handler doing sync work (a 1.26M-row LIKE scan + an 81MB log read) multiplied by a 60s-cadence crawler hammering all 27 domains &mdash; measured each blocker, proved causation with concurrency data, reconciled conflicting numbers with a peer.</li>
+        <li>Designed the fix in three layers and named which was which: throttle (the amplifier), handler-bounding (the root), off-spine cache (the durable structural fix, #3055).</li>
+        <li>Reviewed Wren's search TO-BE: affirmed the core, flagged the load-bearing risk (the warm-cache refresher repeating the crawler's cadence-pileup), answered the open design questions.</li>
+        <li>Caught a deploy shipping a stale binary; defined the two-sided contract (deploy guarantees a rebuild + refuses on unchanged cdhash; demo asserts running == built) so an orchestrator can't inherit a false green.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> reduced complexity and risk; durable fixes over patches &mdash; not artifacts produced.</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Domain Architect &mdash; owns the target-state architecture of a bounded domain</summary>
+    <div class="body">
+      <p class="role-def">Holds the as-is/to-be model for a domain, sets its patterns and integration contracts, governs its technical debt, and reviews changes for fit and cross-domain coherence. Deep in a bounded area &mdash; distinct from the Solutions Architect's cross-system, problem-driven breadth.</p>
+      <h5>This session &mdash; build/deploy, observation, ontology</h5>
+      <ul>
+        <li>Held the build/deploy contract: established "merged &ne; live," that the deploy verb must guarantee a rebuild, and that the live cdhash is the truth &mdash; not the deploy's self-report.</li>
+        <li>Governed the org/roles model (#3059) as an architecture-of-the-team artifact: grounded it in the live principle graph, caught that rigid principle-tagging was procrustean, and that decision-rights is the load-bearing fact, not the domain list.</li>
+        <li>Kept cross-domain coherence: aligned role domains to the canonical Athena tree instead of cached, stale lists.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> reduced complexity and risk inside the domain.</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Operations Lead &mdash; owns reliability and operational health</summary>
+    <div class="body">
+      <p class="role-def">Incident response with real RCA, alerting where every alert is actionable, capacity and change management, and a self-healing system. The failure mode the role exists to eliminate is alert fatigue &mdash; non-actionable noise.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>Ran the freeze incident: throttled the runaway crawler (60s &rarr; 30min) as the immediate bleed-stop, separating the amplifier from the root.</li>
+        <li>Recovered a corrupted canonical: an acp on an un-pulled card committed a junk "acp #unknown" sweep and left main ahead of origin (breaking team syncs) &mdash; caught it, realigned to origin, preserved the artifacts.</li>
+        <li>Verified deploys against reality: refused the deploy's "success" self-report, checked the live cdhash + binary contents, and ran a live em-dash reproduction to prove the daemon fix (#3052) actually worked.</li>
+        <li>Owned alerting honestly: recognized my own #3050 alert firing into the live conversation <i>was</i> alert fatigue &mdash; the exact failure the role exists to prevent.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> stable systems, low toil, alerts that are signal not noise.</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Distinguished Engineer &mdash; org-wide technical authority on the hardest cross-cutting problems</summary>
+    <div class="body">
+      <p class="role-def">Owns the highest-ambiguity, cross-cutting problems no single domain owns: code correctness, the gnarliest RCAs, and the version-control / build / test substrate the other roles build on. Sets the engineering bar and the patterns, then is measured by the output it unlocks in everyone else &mdash; not its own code. Vertical depth across every domain, not a layer.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>Established <code>werk-pull</code> (#3045) as the <b>v2 verb blueprint</b> &mdash; a zero-dep Rust binary (typed <code>R&lt;T&gt;</code> errors, libc flock, JSONL witness log, testable core with all inputs explicit, units + real-git e2e) &mdash; then made it the contract Wren's and Silas's verbs must follow, decomposed the acp/demo monoliths into self-contained verbs (#3056 commit+push, #3057 accept), and designed the shared gh-orchestration wiring (per-verb commit-status, carry prior statuses forward onto the new SHA, one trace across gh + JSONL).</li>
+        <li>Root-caused the #3053 lint cascade to <b>2 NUL bytes</b> corrupting the pain-rollup group key (a #3029 paste artifact) &mdash; the single cause behind every silently-failing multi-line edit, grep treating the file as binary, and a false &ldquo;werk reverted&rdquo; alarm. Owned my own wrong count (claimed 351, real 2 &mdash; a broken <code>grep -c</code> counting lines) the moment Silas reconciled it.</li>
+        <li>Named the structural tension that blocked the acp: whole-codebase <code>lint:ratchet</code> vs the per-file fix-as-we-go cog/dupe gate &mdash; a whole-tree <code>--fix</code> staged <code>server.ts</code> (executeAcp at cognitive-complexity 108) that the gate then demanded I clean. Scoped the commit to the real refactors instead of refactoring the pipeline core.</li>
+        <li>Refactored 4 functions over both the complexity and cognitive ceilings (<code>rollupRawLines</code>, <code>computeBlastRadius</code>, <code>scanDirectory</code>, <code>buildSpineEntry</code>) via extract-helper, protected by 49 characterization tests &mdash; correctness without touching the acp core or colliding with peers' open werks.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> the engineering output unlocked in everyone else &mdash; durable substrate, RCAs to root, the bar the team builds on &mdash; not lines of code.</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Engineering Lead &mdash; delivery and the health of the codebase and the team</summary>
+    <div class="body">
+      <p class="role-def">Turns goals into shipped, working software; owns the engineering standards (testing, review, the quality gates) and the health of both the codebase and the people. Owns velocity without trading away maintainability &mdash; ship small, keep the gates honest, unblock peers.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>Ran the gate chain as the engineering bar on peers' work: <code>gate-code</code> + <code>gate-quality</code> on Wren's #3051 (FTS sanitizer) and #3060 (freshness off the event loop) &mdash; read the actual diffs, confirmed tests + tsc, verified no <code>console.*</code> added, checked the residual debt was carded (#3055), advanced the chain.</li>
+        <li>Took the red nightly's one real failure (<code>lint:ratchet</code>, 9 rules drifted above baseline) back to green &mdash; auto-fix + refactors &mdash; and was direct that the pipeline-core drift (no-base-to-string, max-depth) is a separate card, adopted into baseline so the gate tracks it forward rather than silently re-baselined.</li>
+        <li>Diagnosed the whole nightly: separated real failures from outage debris (cargo, agent-state, build-invariance, and 11 of 16 jest fails were the hooks-daemon outage; only lint was real) &mdash; so the nightly reads as a trustworthy signal again.</li>
+        <li>Fixed a durable bug found mid-card: the Gathering analytics proxies had no fetch timeout and hung forever on any chorus-api blip &mdash; added <code>AbortSignal.timeout</code>, api-e2e back to 32/32.</li>
+        <li>Caught and corrected my own misses in-flight: over-assigning build/deploy to Wren (it's Silas's), and the whole-codebase <code>--fix</code> sprawl &mdash; scoped down, re-routed, saved the lesson.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> sustained ability to ship working software &mdash; green gates that mean something, peers unblocked &mdash; not commit count.</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Product Manager &mdash; shapes what's worth building and for whom (the Shaping step)</summary>
+    <div class="body">
+      <p class="role-def">Owns the front of the value stream &mdash; <b>Shaping</b>. Represents the user's real need, decides what's worth building and why, prioritizes and sequences against outcomes, and protects focus by saying no. The PM hat <b>cannot be self-owned</b>: its value is the anti-blarf forcing function &mdash; gating on real demand, not its own curiosity &mdash; so it answers to <b>Jeff as Head of Product</b>. The job is to carry Jeff's felt need into the work, not to generate work the team finds interesting.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>Carried Jeff's felt pain into the right card: a spine block kept firing but the access log had no per-request timestamp, so every alert was &ldquo;noted, can't trace it.&rdquo; Shaped that into #3058 (start-timestamp on every access line) &mdash; the need was traceability, not a feature.</li>
+        <li>Anti-blarf anchored to real use: restoring per-prompt context injection (#3048) traced straight to Jeff's experience &mdash; gated work on his actual use, not agent invention.</li>
+        <li>Prioritized and sequenced against outcomes: proved freshness was the recurring loop-blocker, made it P1 (#3060), and sequenced ship #3060 now (small, contained) while holding #3055 (the structural crawl fix) for design &mdash; smallest-first, outcome-first.</li>
+        <li>Said no to fake consensus: split Kade's &ldquo;keep #3055 prioritized&rdquo; from Silas's &ldquo;it's polish&rdquo; by <i>scope</i> instead of averaging two opinions into hollow agreement.</li>
+        <li>Protected focus when Jeff did: on &ldquo;spend time on this b4 we do anything on 3055,&rdquo; stopped building and held the shape.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> outcomes delivered to Jeff &mdash; did the right thing get built, did it move the needle &mdash; not features shipped. The test is &ldquo;would Jeff use this, and does the work trace to his real use?&rdquo;</div>
+    </div>
+  </details>
+
+  <details class="jd">
+    <summary>Chief of Staff for Product &mdash; directs the multi-role work: priority, sequence, the floor (the Directing step). Not admin.</summary>
+    <div class="body">
+      <p class="role-def"><b>Not an administrative role.</b> This is the decision-rights and leadership seat for the <b>Directing</b> step &mdash; turning shaped and designed work into sequenced, coordinated motion across three roles so Jeff is never the carrier between them. It <b>calls priority and shape</b> (recommend, don't hedge), <b>moderates the multi-role work</b> (the demo gate chain, lane de-confliction, brief routing, the interaction patterns), and <b>reads Jeff's interaction pattern before acting</b> &mdash; direction vs ideation vs story vs reflection. Wren spans the front three value-stream steps (Shaping &middot; Designing &middot; Directing); this is the one that orchestrates the other two into delivery.</p>
+      <h5>This session</h5>
+      <ul>
+        <li>Moderated the multi-role floor: ran the #3060 demo gate chain (routed gate-code/quality to Kade, gate-arch/ops to Silas, tracked to 5/5, shipped) and de-conflicted lanes when Silas and I collided &mdash; so Jeff didn't have to referee.</li>
+        <li>Read Jeff's pattern and matched it: on the break/garden moment, received it as human and held the work; on &ldquo;look at the service design,&rdquo; stopped building cold and grounded before proposing.</li>
+        <li>Called the decision at the right time: when acp left #3058/#3060 merged-and-deployed but not Done, force-closed after live validation and named the recurring acp gap as a class &mdash; a substrate fix &mdash; rather than re-hitting it card by card.</li>
+        <li>Held a position on its own authority: in the #3059 review, pushed back that &ldquo;Chief of Staff&rdquo; undersold the seat &mdash; it <i>calls</i> priority and shape, it doesn't just support.</li>
+        <li>Directed the structural reframe: re-read the service designs, built the connected as-is chorus&harr;pulse diagram, and named the inversion behind #3055 &mdash; converting a vague &ldquo;crawl is slow&rdquo; into a sequenced, designed direction.</li>
+      </ul>
+      <div class="measure"><b>Measured by:</b> Jeff's coordination load &mdash; fewer touches per card (target: start + accept), fewer re-nudges to clarify intent, patterns named before they recur &mdash; not activity or meetings run. When the seat works, Jeff thinks and creates instead of relaying.</div>
+    </div>
+  </details>
+
+  <h2>Open tensions</h2>
+  <div class="open">
+    <div class="ten resolved">
+      <h4>The PM hat can't be self-owned &mdash; <span>resolved</span></h4>
+      <p>A PM's value is the anti-blarf forcing function: gating on real demand, saying no &mdash; which a role can't credibly do against its own work. <b>Jeff, as Head of Product, is that external signal.</b> Each role's PM hat answers to his direction, not its own curiosity. The seam on the right is the one still open.</p>
+    </div>
+    <div class="ten">
+      <h4>The seams aren't anyone's domain</h4>
+      <p>Cross-domain coherence and incidents that span everyone (a spine freeze hits search, crawl, context, cards at once) fall between owners. The seams need explicit contracts (ICDs) plus a shared "platform" responsibility for cross-cutting incidents.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
