@@ -136,7 +136,7 @@ const DOMAIN_MAP: Record<string, string> = {
   'done-gate': 'gates', 'skill-gate': 'gates', 'chrome-tab-gate': 'gates',
   'pre-commit': 'gates', 'pre-push': 'gates',
   'domain-api-consolidated': 'chorus', 'domain-borg-services': 'chorus',
-  'embed-sync': 'chorus', 'scheduled-reindex': 'chorus', 'shacl-validation': 'chorus',
+  'embed-sync': 'chorus', 'shacl-validation': 'chorus',
   'ollama-resilience': 'chorus', 'timestamp': 'chorus', 'logs-facet': 'chorus',
   athena: 'chorus', rca: 'chorus', crawl: 'chorus', 'crawl-shape': 'chorus', 'crawl-validation': 'chorus',
   'perf-budget': 'chorus', 'domain-api': 'chorus', 'domain-radius': 'chorus',
