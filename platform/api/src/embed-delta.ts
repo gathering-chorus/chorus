@@ -60,6 +60,10 @@ export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDelta
     const rwDb = new deps.DatabaseCtor(deps.dbPath);
     rwDb.pragma('journal_mode = WAL');
     try { rwDb.exec('ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0'); } catch { /* exists */ }
+    // #3077 AC3: index the embedded column so the page query (WHERE embedded = 0)
+    // is a range scan over unembedded rows instead of a full scan past the ~1.26M
+    // mostly-embedded rows. Idempotent.
+    try { rwDb.exec('CREATE INDEX IF NOT EXISTS idx_messages_embedded ON messages(embedded)'); } catch { /* exists */ }
     rwDb.close();
   }
 
@@ -118,15 +122,15 @@ export function createEmbedDelta(deps: EmbedDeltaDeps): () => Promise<EmbedDelta
         LIMIT ?
       `).all!(deps.minLength, deps.pageSize) as Msg[];
       if (page.length === 0) return { embedded: 0, skipped: 0, ollama_failures: 0 };
-      const countRow = db.prepare(`
-        SELECT COUNT(*) as cnt FROM messages WHERE embedded = 0 AND LENGTH(content) >= ?
-      `).get!(deps.minLength) as { cnt: number };
       const { records, skipped, ollamaFailures } = await embedPage(page);
       if (records.length === 0) return { embedded: 0, skipped, ollama_failures: ollamaFailures };
       await persistToLance(records);
       markEmbedded(records);
       const tail = ollamaFailures > 0 ? `, ollama_failures ${ollamaFailures}` : '';
-      log(`[embed-delta] Embedded ${records.length}/${countRow.cnt} remaining, skipped ${skipped}${tail}`);
+      // #3077 AC3: dropped the COUNT(*) full-scan (1.26M rows, ran every call, fed
+      // only this log line). A full page is a free "more pending" signal instead.
+      const morePending = page.length === deps.pageSize ? ' (more pending)' : '';
+      log(`[embed-delta] Embedded ${records.length}${morePending}, skipped ${skipped}${tail}`);
       return { embedded: records.length, skipped, ollama_failures: ollamaFailures };
     } finally {
       db.close();

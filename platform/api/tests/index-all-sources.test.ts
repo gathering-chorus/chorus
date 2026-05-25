@@ -6,6 +6,9 @@ function fakeDbFactory() {
     pragma: jest.fn(),
     prepare: (sql: string) => ({
       run: (...args: any[]) => { runs.push({ sql, args }); return undefined; },
+      // #3077 AC2: indexSpine reads watermarks('spine:offset') via .get(); undefined
+      // here → offset 0 → readSince fallback reads the whole file (prior behavior).
+      get: (..._args: any[]) => undefined,
     }),
     transaction: (fn: (events: any[]) => void) => (events: any[]) => fn(events),
     close: jest.fn(),

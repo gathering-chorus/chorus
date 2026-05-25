@@ -1178,6 +1178,22 @@ const indexAllSources = createIndexAllSources({
       fs.closeSync(fd);
     }
   },
+  // #3077 AC2: positioned read of only the bytes appended since `offset`. Resets to 0
+  // if the log was rotated/truncated (offset > size). O(new bytes), not O(16MB tail).
+  readSince: (p, offset) => {
+    const size = fs.statSync(p).size;
+    const start = offset > size ? 0 : offset;
+    if (start >= size) return { content: '', startOffset: start, size };
+    const fd = fs.openSync(p, 'r');
+    try {
+      const len = size - start;
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, start);
+      return { content: buf.toString('utf-8'), startOffset: start, size };
+    } finally {
+      fs.closeSync(fd);
+    }
+  },
 });
 
 

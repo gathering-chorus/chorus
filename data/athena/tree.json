@@ -54,6 +54,8 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "context_inject reads crawler messages + spine + LanceDB on EVERY prompt for grounding (policies domain). Per-prompt grounding degrades if crawler processing stops (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
         "chorus:roles",
@@ -97,6 +99,8 @@
       "ownedBy": "chorus:role-jeff",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "DEEPEST product dependency on crawler processing — search FTS+semantic over crawler messages, Fuseki RDF (collectRdf), LanceDB vectors, indexSpine re-index. #3077 off-loop refactor must preserve these inputs (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
         "chorus:memory",
@@ -141,6 +145,8 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
+      "consumes": ["chorus:service-crawler"],
+      "consumesNote": "4 crawler alerts + pain rollup read crawler spine + /tmp status (alerts-monitors/analytics). Alerts mis-fire / pain board loses attribution if crawler processing changes (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
         "chorus:builds",
