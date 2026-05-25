@@ -1,0 +1,12 @@
+[package]
+name = "werk-deploy"
+version = "0.1.0"
+edition = "2021"
+
+# Zero-dep blueprint (ADR-032 §1): std only; werk-build, chorus-bin-install,
+# launchctl, codesign all invoked as subprocesses, never code dependencies.
+[dependencies]
+
+[[bin]]
+name = "werk-deploy"
+path = "src/main.rs"
