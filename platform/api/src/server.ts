@@ -41,7 +41,7 @@ app.use(express.json());
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { startMetrics, getMetrics } from './metrics';
-import { startEventloopAlert } from './eventloop-alert';
+import { startEventloopAlert, setCurrentOp } from './eventloop-alert';
 import { formatAccessLine } from './access-log';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
@@ -272,8 +272,12 @@ const boardCache = createBoardCache({
 
 const getBoardCards = (): CachedCard[] => boardCache.getCards();
 
-void boardCache.refresh();
-setInterval(() => { void boardCache.refresh(); }, 60_000);
+setCurrentOp('boardCache');
+void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
+setInterval(() => {
+  setCurrentOp('boardCache');
+  void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
+}, 60_000);
 
 // --- LanceDB semantic search (#2205 wave 11: init + search extracted) ---
 
@@ -3307,18 +3311,28 @@ if (require.main === module) {
   startEventloopAlert({
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
-        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`], () => {}),
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
   });
 
   // Health cache refresh — runs every 30s under the live server only.
-  setTimeout(() => refreshHealthCache(), 2000);
-  setInterval(() => refreshHealthCache(), 30_000);
+  setTimeout(() => {
+    setCurrentOp('healthCache');
+    try { refreshHealthCache(); } finally { setCurrentOp(null); }
+  }, 2000);
+  setInterval(() => {
+    setCurrentOp('healthCache');
+    try { refreshHealthCache(); } finally { setCurrentOp(null); }
+  }, 30_000);
 
   // Scheduled reindex — live server only. First run after 60s startup delay.
   setTimeout(() => {
-    void scheduledReindex();
-    setInterval(() => { void scheduledReindex(); }, REINDEX_INTERVAL);
+    const runReindex = () => {
+      setCurrentOp('scheduledReindex');
+      void Promise.resolve(scheduledReindex()).finally(() => setCurrentOp(null));
+    };
+    runReindex();
+    setInterval(runReindex, REINDEX_INTERVAL);
   }, 60_000);
 
   app.listen(PORT, BIND_HOST, () => {
