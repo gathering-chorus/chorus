@@ -54,13 +54,13 @@ This doc consumes:
 </div>
 
 <div class="promise">
-<strong>Werk is the engineering pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. Its promise: every card that enters Werk leaves as merged source on <code>origin/main</code> with a coherent receipt — card_id and trace_id propagated through every step from /pull to deployed cdhash. Four Domains compose it (code, tests, version-control, ci-cd) sharing one discipline: typed contracts at every boundary, refuse early, emit observable events. Werk does not build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> domain, handed off at the post-/acp release-trigger.
+<strong>Werk is the engineering pipeline product.</strong> Its customers are the three roles building Chorus and Gathering, and Jeff as the human accepting work. Its promise: every card that enters Werk leaves as merged source on <code>origin/main</code> with a coherent receipt — card_id and trace_id propagated through every step from /pull to deployed cdhash. Four Domains compose it (code, tests, version-control, pipelines) sharing one discipline: typed contracts at every boundary, refuse early, emit observable events. Werk does not build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> domain, handed off at the post-/acp release-trigger.
 </div>
 
 <div class="frame" style="border-left-color:#0ea5e9;background:#eff6ff">
 <strong>Two pipelines, one product.</strong> Werk runs two state machines in parallel from a single source of truth (the card and its commits):
 <ul>
-  <li><em>The card pipeline</em> — what Jeff sees Werk doing. States: <code>Next → WIP → Demo → Done</code>. Transitions emit spine events (<code>card.pulled</code>, <code>card.demoed</code>, <code>card.accepted</code>) and are gated by the five role gates and the five pre-merge surfaces. This is the assembly line.</li>
+  <li><em>The card pipeline</em> — the cards-runner, <strong>owned by Wren</strong> (not Werk). States: <code>Next → WIP → Demo → Done</code>, emitting <code>card.pulled</code> / <code>card.demoed</code> / <code>card.accepted</code>, gated by the five role gates + five pre-merge surfaces. Werk <em>consumes</em> this state; it doesn't run it. This is the assembly line.</li>
   <li><em>The artifact lifecycle</em> — what Werk leaves behind, governed by Athena. States: <code>exploring → building → operating → retiring</code> on the Service or Domain the card touched. This is the product on the shelf.</li>
 </ul>
 Werk's load-bearing claim: every accepted card advances both pipelines coherently. A card that ships code without advancing the artifact's status is incomplete — the artifact lifecycle is part of the deliverable, not a follow-up.
@@ -76,12 +76,12 @@ Werk's load-bearing claim: every accepted card advances both pipelines coherentl
 <pre class="mermaid">
 flowchart TD
   Chorus["Chorus — Product"] -->|hasChild| Werk["Werk — Subproduct<br/>(child of Chorus)<br/>owned by Kade · Building step"]
-  Werk -->|hasDomain| CICD["ci-cd<br/>act runner, /werk verb dispatch,<br/>pre-merge 5, v8 model + per-verb checks"]
+  Werk -->|hasDomain| Pipelines["pipelines<br/>1..n instances, owned per-role;<br/>Kade governs the set —<br/>ADRs, act, verb contract"]
   Werk -->|hasDomain| VCS["version-control<br/>chorus_commit/acp, git-queue,<br/>werks, pre-merge 1–4, trailers"]
   Werk -->|hasDomain| Code["code<br/>quality rules, lint, complexity,<br/>dup-string, no-warn-tier"]
   Werk -->|hasDomain| Tests["tests<br/>TDD discipline, hermetic-by-default,<br/>integration-gated-explicitly"]
   Werk -.->|consumes| BD["build+deploy<br/>(sibling — Silas)"]
-  CICD -->|hosts| ActSvc["act-service"]
+  Pipelines -->|hosts| ActSvc["act-service"]
   VCS -->|hosts| GitQueueSvc["git-queue-service"]
   VCS -->|hosts| WerkSvc["werks-service<br/>(chorus-werk add/remove)"]
   Code -->|hosts| LintSvc["quality-service<br/>(lint + complexity gates)"]
@@ -92,16 +92,16 @@ flowchart TD
   classDef sibling fill:#e0e7ff,stroke:#3730a3,color:#3730a3;
   class Chorus,Werk anchor;
   class VCS op;
-  class Code,Tests,CICD bld;
+  class Code,Tests,Pipelines bld;
   class BD sibling;
 </pre>
 <p class="caption">Werk → four Domains via <code>hasDomain</code>. Each Domain <code>hosts</code> the Services where its code lives. Werk <code>consumes</code> Build+Deploy across the post-/acp boundary (dashed — cross-cutting dependency, not containment). Purple = subproduct anchor · green = operating · yellow = building.</p>
 
 <h2>The four Domains</h2>
 
-<h3>ci-cd <span class="t-bld">BUILDING</span></h3>
-<p><strong>Promise:</strong> every /werk/* command is an <code>act</code> job; typed refusals, spine events, and trace continuity are uniform across the pipeline; post-merge build chain is sequential-fail-fast with one observable trace from /acp to deployed cdhash.</p>
-<p><strong>Owner:</strong> Kade (orchestration). <strong>Service hosted:</strong> act-runner (local LaunchAgent <code>com.chorus.building-pipeline</code>). <strong>Design doc:</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a>.</p>
+<h3>pipelines <span class="t-bld">BUILDING</span></h3>
+<p><strong>What it is:</strong> a domain of <strong>1..n pipeline instances</strong>, owned per-role — the ci-cd/build pipeline is Kade's; the <strong>cards-runner</strong> (the Next→WIP→Demo→Done card lifecycle) is Wren's; build+deploy is Silas's. <strong>Promise (set-governance): Kade governs how the set behaves, not the instances</strong> — every pipeline is uniform via the frameworks: the verb contract (ADR-032), the v8 model (ADR-033), resource/verb/grain (ADR-031), <code>act</code> as the local runner, typed refusals, and one commit-status check per verb. Each instance conforms to the set's contracts; each owner builds their own.</p>
+<p><strong>Set-governance owner:</strong> Kade — frameworks, ADRs, <code>act</code>, contracts; NOT the individual instances (cards-runner is Wren's, build+deploy is Silas's). <strong>Service hosted:</strong> act-runner (local LaunchAgent <code>com.chorus.building-pipeline</code>). <strong>Design doc:</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> (the ci-cd instance).</p>
 <p><strong>Shipped:</strong> orchestration via <code>act</code> + <code>workflow_dispatch</code> + launchd kickstart (#2933, #2939); pre-merge surface 5 (pre-commit) wired; cost-stop / schedule-only main re-run (#2600, DEC-2525); ci-main-red reactive alert. <strong>v8 model ratified (ADR-033) + per-verb contract (ADR-032);</strong> pull v2 shipped (<code>werk-pull</code> #3045), remaining verbs carded (#3056/#3057/#3061/#3062/#3063/#3064).</p>
 <p><strong>Gaps (headline, in product-frame):</strong></p>
 <ul>
@@ -145,9 +145,9 @@ flowchart TD
 <p><strong>The coherence claim:</strong> a card that touches a Service (e.g., quality-service, version-control-service) must declare whether its acceptance advances that Service's <code>chorus:status</code>. If the card is moving <code>building → operating</code>, /acp writes that triple through the Athena API as part of the commit. If the card doesn't move status, that's stated explicitly (a maintenance card on an <code>operating</code> service stays operating). Today: no enforcement — artifact status drifts behind reality. Path to close named below.</p>
 
 <h2>Coherence findings — synthesis</h2>
-<div class="finding"><strong>1. Two of the four Domains have service-designs; two don't.</strong> Version-control and ci-cd have canonical docs and graph instances. Code has a markdown service-design that lags behind the wired pre-commit rules. Tests has no service-design at all — its substance is spread across four markdown files. The next service-design Werk needs is <code>tests-service-design.html</code>.</div>
+<div class="finding"><strong>1. Two of the four Domains have service-designs; two don't.</strong> Version-control and pipelines have canonical docs and graph instances. Code has a markdown service-design that lags behind the wired pre-commit rules. Tests has no service-design at all — its substance is spread across four markdown files. The next service-design Werk needs is <code>tests-service-design.html</code>.</div>
 <div class="finding"><strong>2. Werk-the-subproduct is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Both pipelines need to advance per accepted card or the graph drifts behind reality.</div>
-<div class="finding"><strong>3. The ci-cd domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Reframed: customers can't try before they buy (#/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
+<div class="finding"><strong>3. The pipelines domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Reframed: customers can't try before they buy (#/werk/build + /werk/deploy pre-/acp); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
 <div class="finding"><strong>4. Werk does not own build+deploy.</strong> The post-/acp release-trigger is the handoff line. Build+Deploy is a sibling subproduct under Silas. Werk's responsibility ends at "card accepted, commit on origin/main, trace_id propagating into the build pipeline."</div>
 
 <h2>OWL + SHACL — conformance to Athena v2</h2>
@@ -165,7 +165,7 @@ chorus:werk-product
   chorus:status "building" ;
   chorus:atStep chorus:building-step ;
   chorus:hasDesignDoc chorus:werk-subproduct-design ;
-  chorus:hasDomain chorus:ci-cd ,
+  chorus:hasDomain chorus:pipelines ,
                    chorus:version-control ,
                    chorus:code ,
                    chorus:tests ;
