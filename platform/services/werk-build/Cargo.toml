@@ -1,0 +1,12 @@
+[package]
+name = "werk-build"
+version = "0.1.0"
+edition = "2021"
+
+# Zero-dep blueprint (ADR-032 §1): std only; all external tools (git, gh,
+# build-signed.sh) are invoked as subprocesses, never code dependencies.
+[dependencies]
+
+[[bin]]
+name = "werk-build"
+path = "src/main.rs"
