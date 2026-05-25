@@ -304,6 +304,16 @@ borg:endpointBinding a owl:DatatypeProperty ;
 # =============================================================================
 # Jeff's framing: compute (services, processes), storage (databases, volumes),
 # network (ports, tunnels, routes). Each surface has its own herald pattern.
+#
+# ADR-034 — compute tiers decouple ONLY through the storage surface (dependency
+# flows compute -> store -> compute, never compute -> compute/process). The
+# storage entity's concurrency model is the constraint that says how much
+# decoupling a given store can buffer. #3080 (chorus-api tier split) is the
+# reference instance. See roles/silas/adr/ADR-034-*.md.
+# NOTE: the concurrencyModel property is NOT declared here — per Kade's #3081
+# review it ships WITH its first consumer (borg-dashboard render OR #3080 reading
+# it), never ahead of one (avoid the unread-property-rots failure). ADR-034
+# specifies the model; the property lands in the consumer's card.
 
 borg:Surface a owl:Class ;
     rdfs:label "Surface" ;
