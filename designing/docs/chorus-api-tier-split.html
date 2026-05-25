@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>chorus-api tier split — ingestion workers / serving API, decoupled by data (#3080)</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; color: #1a1a1a; max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; line-height: 1.55; }
+  h1 { font-size: 25px; margin-bottom: 2px; }
+  h2 { font-size: 18px; margin-top: 34px; border-bottom: 2px solid #eef2f7; padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-top: 20px; color: #334155; }
+  .sub { color: #6b7280; font-size: 14px; margin-top: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 12px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .stays { color: #166534; font-weight: 700; }
+  .moves { color: #b45309; font-weight: 700; }
+  .callout { background: #f5f3ff; border: 1.5px solid #a78bfa; border-radius: 10px; padding: 14px 18px; color: #5b21b6; margin: 16px 0; }
+  .risk { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 10px; padding: 14px 18px; color: #991b1b; margin: 16px 0; }
+  svg { width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 10px; margin: 16px 0; }
+  ul { margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>chorus-api tier split (#3080)</h1>
+<p class="sub">Ingestion workers feed the stores; a thin serving API reads them; the data stores are the contract. Decoupled by <strong>data, not process</strong>. From Jeff's architecture call, 2026-05-25. Designing-step — architecture + decomposition; build cards follow per job.</p>
+
+<h2>The problem</h2>
+<p>chorus-api is one Node process — one event loop — hosting two fundamentally different kinds of work:</p>
+<ul>
+<li><strong>Serving</strong>: request handlers (search, cards, context, nudge) that must answer fast.</li>
+<li><strong>Ingestion</strong>: batch jobs (crawl, reindex, embed, cache-warm) that are heavy, periodic, CPU/IO-bound.</li>
+</ul>
+<p>Because they share one loop, any heavy ingestion job <strong>freezes all serving for every role + Jeff at once</strong> — the shared-fate freeze behind the all-session <code>eventloop.blocked</code> alerts (~90/hr post-deploy, blocks up to 15s, confirmed by #3079's live stack capture pinning even a 5–7s <code>GET /api/chorus/search</code> as a symptom). Patching handlers one at a time (#3077: index, embed, search) is whack-a-mole because the design is wrong, not the handlers.</p>
+
+<h2>The key insight: ingestion has no real dependency on the API</h2>
+<p>Each ingestion job depends on the <strong>data stores</strong>, not on chorus-api:</p>
+<ul>
+<li><code>reindex</code> reads files → writes SQLite.</li>
+<li><code>embed</code> reads SQLite → calls Ollama → writes LanceDB → marks SQLite.</li>
+<li><code>crawl</code> reads SQLite/Fuseki/Loki → writes a summary row to SQLite.</li>
+</ul>
+<p>None of that needs the API. They touch SQLite, LanceDB, Fuseki, files — directly. chorus-api is just <em>another client</em> of those same stores. The dependency that exists today is incidental: reindex/embed are <code>setInterval</code>'d into <code>server.ts</code> (code placement), and the crawler <em>curls its own API</em> (<code>GET /api/chorus/crawl/:domain</code> — a self-call inversion). They were bolted into the API; they never depended on it.</p>
+
+<h2>AC1 — the two-tier architecture</h2>
+<svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, sans-serif">
+  <rect width="1000" height="360" fill="#ffffff"/>
+  <!-- ingestion tier -->
+  <rect x="30" y="40" width="270" height="280" rx="12" fill="#fff7ed" stroke="#b45309" stroke-width="1.5"/>
+  <text x="45" y="66" font-size="13" font-weight="800" fill="#b45309">INGESTION TIER (workers)</text>
+  <text x="45" y="84" font-size="11" fill="#9a6312">own processes &amp; cadence</text>
+  <g font-size="12" fill="#7c2d12">
+    <rect x="50" y="100" width="230" height="34" rx="7" fill="#fff" stroke="#fcd9b6"/><text x="64" y="121">crawl  (per-domain instances, #3069)</text>
+    <rect x="50" y="142" width="230" height="34" rx="7" fill="#fff" stroke="#fcd9b6"/><text x="64" y="163">reindex  (files &#8594; index)</text>
+    <rect x="50" y="184" width="230" height="34" rx="7" fill="#fff" stroke="#fcd9b6"/><text x="64" y="205">embed  (Ollama &#8594; LanceDB)</text>
+    <rect x="50" y="226" width="230" height="34" rx="7" fill="#fff" stroke="#fcd9b6"/><text x="64" y="247">cache-warm / counts</text>
+  </g>
+  <text x="45" y="300" font-size="11" fill="#9a6312">writes &#8594;</text>
+  <!-- stores -->
+  <rect x="365" y="40" width="270" height="280" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+  <text x="380" y="66" font-size="13" font-weight="800" fill="#334155">DATA STORES = THE CONTRACT</text>
+  <g font-size="12" fill="#1f2937">
+    <rect x="385" y="100" width="230" height="34" rx="7" fill="#fff" stroke="#cbd5e1"/><text x="399" y="121">SQLite (messages, watermarks, FTS)</text>
+    <rect x="385" y="142" width="230" height="34" rx="7" fill="#fff" stroke="#cbd5e1"/><text x="399" y="163">LanceDB (vectors)</text>
+    <rect x="385" y="184" width="230" height="34" rx="7" fill="#fff" stroke="#cbd5e1"/><text x="399" y="205">Fuseki (RDF graph)</text>
+    <rect x="385" y="226" width="230" height="34" rx="7" fill="#fff" stroke="#cbd5e1"/><text x="399" y="247">files</text>
+  </g>
+  <!-- serving tier -->
+  <rect x="700" y="40" width="270" height="280" rx="12" fill="#f0fdf4" stroke="#166534" stroke-width="1.5"/>
+  <text x="715" y="66" font-size="13" font-weight="800" fill="#166534">SERVING TIER (thin API)</text>
+  <text x="715" y="84" font-size="11" fill="#3f6212">request/response, stays fast</text>
+  <g font-size="12" fill="#14532d">
+    <rect x="720" y="100" width="230" height="34" rx="7" fill="#fff" stroke="#bbf7d0"/><text x="734" y="121">search</text>
+    <rect x="720" y="142" width="230" height="34" rx="7" fill="#fff" stroke="#bbf7d0"/><text x="734" y="163">cards</text>
+    <rect x="720" y="184" width="230" height="34" rx="7" fill="#fff" stroke="#bbf7d0"/><text x="734" y="205">context</text>
+    <rect x="720" y="226" width="230" height="34" rx="7" fill="#fff" stroke="#bbf7d0"/><text x="734" y="247">nudge / health / freshness</text>
+  </g>
+  <text x="700" y="300" font-size="11" fill="#3f6212" text-anchor="end">&#8594; reads</text>
+  <!-- arrows -->
+  <text x="312" y="200" font-size="22" fill="#b45309">&#8594;</text>
+  <text x="648" y="200" font-size="22" fill="#166534">&#8594;</text>
+  <text x="500" y="340" font-size="12" font-weight="700" fill="#334155" text-anchor="middle">No tier calls the other. The API depends on the DATA, not on worker processes.</text>
+</svg>
+<p><strong>The boundary contract:</strong> the serving API depends on the <em>data in the stores</em>, not on the worker processes. Workers write to the stores; the API reads from them; neither tier invokes the other. A worker grinding a 5-second job cannot block a search — they are not in the same process, and the store is the buffer that decouples them.</p>
+
+<h2>AC2 — inventory + classification</h2>
+<table>
+  <tr><th>Job (today, in chorus-api)</th><th>What it actually touches</th><th>Tier</th><th>Real API dependency?</th></tr>
+  <tr><td>search (GET /search)</td><td>SQLite FTS + LanceDB (semantic, async)</td><td class="stays">SERVING — stays</td><td>n/a (it IS the API). But FTS is heavy → needs non-blocking (cache/worker, #3077)</td></tr>
+  <tr><td>cards / context / nudge / health / freshness</td><td>SQLite / board / in-mem caches</td><td class="stays">SERVING — stays</td><td>n/a (request handlers)</td></tr>
+  <tr><td>reindex (setInterval, server.ts)</td><td>files → SQLite</td><td class="moves">INGESTION — moves out</td><td>NONE — timer placement only</td></tr>
+  <tr><td>embed (background)</td><td>SQLite → Ollama → LanceDB</td><td class="moves">INGESTION — moves out</td><td>NONE</td></tr>
+  <tr><td>crawl (handler hit by the crawler)</td><td>SQLite/Fuseki/Loki → summary row</td><td class="moves">INGESTION — moves out</td><td>FAKE — the crawler curls the API's own endpoint (self-call)</td></tr>
+  <tr><td>cache-warm (board 60s, health 30s COUNTs)</td><td>SQLite counts</td><td class="moves">INGESTION-ish — moves out / cheapen</td><td>serves API caches, but the counts are batch work</td></tr>
+</table>
+
+<h2>AC3 — decomposition + migration plan</h2>
+<p>Each ingestion job becomes a standalone worker that hits the stores directly, on its own cadence. Sequence smallest/safest first; each migration is its own build card with a runtime-outcome AC (a heavy run of that job cannot block a serving request — measured post-migration).</p>
+<ol>
+<li><strong>reindex</strong> — smallest, cleanest (files → SQLite, no external service). Move the <code>setInterval</code> out of <code>server.ts</code> into a standalone worker. First, lowest risk.</li>
+<li><strong>embed</strong> — worker hitting SQLite + Ollama + LanceDB. Second.</li>
+<li><strong>crawl</strong> — folds in <strong>#3069</strong> (crawlers as declared instances): each collector becomes a worker instance writing the stores directly; <em>stop the self-call</em> (the crawler no longer curls the API). Heaviest, last.</li>
+<li><strong>cache-warm</strong> — either move the counts to the reindex worker (it already touches SQLite) or make them cheap/approximate; the API reads cached values.</li>
+</ol>
+<p>The serving tier shrinks to request handlers only. Search stays but gets the #3077 non-blocking treatment (cache first, worker for cold FTS).</p>
+
+<div class="risk">
+<strong>AC4 — the one real risk to validate FIRST (a spike, before any migration):</strong> concurrent store access across processes. SQLite WAL allows multiple processes to read/write, but we must prove it under realistic load — workers writing while the API reads, no <code>SQLITE_BUSY</code> deaths (note #3073's busy_timeout work), no corruption. Same check for LanceDB multi-process. The entire design rests on this; if it doesn't hold, the buffer isn't the store and we rethink. Measured spike, not assumption.</div>
+
+<div class="callout">
+<strong>Why this is the fix, not #3077.</strong> #3077's handler patches are stopgaps — real wins (index/embed faster) but still inside the one process, so the next heavy handler freezes everyone again. This removes the <em>category</em> of failure: ingestion can't freeze serving because they're not in the same process. It's also the product bar made structural — the team-model only beats solo Claude Code if the coordination layer can't be frozen by its own pipeline. Solo has no shared loop to freeze; our advantage is negative until this lands.
+</div>
+
+<h2>Relationships</h2>
+<ul>
+<li><strong>#3069</strong> (crawlers as instances) — the crawl slice; folds in under step 3.</li>
+<li><strong>#3077</strong> (handler patches) — stopgaps this supersedes; the byte-offset + index-drop wins stay.</li>
+<li><strong>#3079</strong> (instrument-the-block) — the diagnosis that confirmed search is a symptom of the shared-loop root.</li>
+</ul>
+</body>
+</html>
