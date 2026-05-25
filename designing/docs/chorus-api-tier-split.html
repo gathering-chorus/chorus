@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>chorus-api tier split — ingestion workers / serving API, decoupled by data (#3080)</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Helvetica, sans-serif; color: #1a1a1a; max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; line-height: 1.55; }
+  h1 { font-size: 25px; margin-bottom: 2px; }
+  h2 { font-size: 18px; margin-top: 34px; border-bottom: 2px solid #eef2f7; padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-top: 20px; color: #334155; }
+  .sub { color: #6b7280; font-size: 14px; margin-top: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 12px 0; }
+  th, td { border: 1px solid #e2e8f0; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .stays { color: #166534; font-weight: 700; }
+  .moves { color: #b45309; font-weight: 700; }
+  .callout { background: #f5f3ff; border: 1.5px solid #a78bfa; border-radius: 10px; padding: 14px 18px; color: #5b21b6; margin: 16px 0; }
+  .risk { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 10px; padding: 14px 18px; color: #991b1b; margin: 16px 0; }
+  svg { width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 10px; margin: 16px 0; }
+  ul { margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>chorus-api tier split (#3080)</h1>
+<p class="sub">Ingestion workers feed the stores; a thin serving API reads them; the data stores are the contract. Decoupled by <strong>data, not process</strong>. From Jeff's architecture call, 2026-05-25. Designing-step — architecture + decomposition; build cards follow per job.</p>
+
+<h2>The problem</h2>
+<p>chorus-api is one Node process — one event loop — hosting three different kinds of work that the architecture should keep apart:</p>
+<ul>
+<li><strong>Serving</strong>: request handlers (search, cards, context, nudge) that must answer fast.</li>
+<li><strong>Ingestion</strong>: batch jobs (crawl, reindex, embed) that write source data into the stores — heavy, periodic, CPU/IO-bound.</li>
+<li><strong>Emission</strong>: jobs that read store state, derive, and push out (pulse snapshot, andon/role-state, alert relay, eventloop alert). Not request/response, not source-ingestion — a third pattern.</li>
+</ul>
+<p>Because all three share one loop, any heavy job <strong>freezes all serving for every role + Jeff at once</strong> — the shared-fate freeze behind the all-session <code>eventloop.blocked</code> alerts (~90/hr post-deploy, blocks up to 15s, confirmed by #3079's live capture pinning even a 5–7s <code>GET /api/chorus/search</code>). Patching handlers one at a time (#3077: index, embed, search) is whack-a-mole because the design is wrong, not the handlers. The clean cut is <strong>serving (on the loop) vs everything off the loop</strong>; off-loop splits into two worker classes — ingestion and emission.</p>
+
+<h2>The key insight: ingestion has no real dependency on the API</h2>
+<p>Each ingestion job depends on the <strong>data stores</strong>, not on chorus-api:</p>
+<ul>
+<li><code>reindex</code> reads files → writes SQLite.</li>
+<li><code>embed</code> reads SQLite → calls Ollama → writes LanceDB → marks SQLite.</li>
+<li><code>crawl</code> reads SQLite/Fuseki/Loki → writes a summary row to SQLite.</li>
+</ul>
+<p>None of that needs the API. They touch SQLite, LanceDB, Fuseki, files — directly. chorus-api is just <em>another client</em> of those same stores. The dependency that exists today is incidental: <code>reindex</code> is <code>setInterval</code>'d into <code>server.ts</code> (code placement), and the crawler <em>curls its own API</em> (<code>GET /api/chorus/crawl/:domain</code> — a self-call inversion). They were bolted into the API; they never depended on it. <strong>Embed already proves the pattern:</strong> #1978 extracted it to a standalone worker (<code>chorus-embed-worker.sh</code>) precisely because its 100+ sequential Ollama calls per cycle froze the loop — it has run as a separate process writing LanceDB + marking SQLite, concurrent with the API reading, since 2026-04-12.</p>
+
+<div class="callout">
+<strong>Two tracks, named separately.</strong> The evidence splits this into two problems the tier-split does <em>not</em> conflate:
+<ul>
+<li><strong>Track A — tiering (this card's core).</strong> Move ingestion (<code>reindex</code>, <code>crawl</code>) out of the API process. Kills <em>ingestion-caused</em> shared-fate freezes. <code>embed</code> is the shipped precedent.</li>
+<li><strong>Track B — search offload.</strong> The #3079 5–7s block is <code>GET /api/chorus/search</code> — which <em>is</em> request-serving and stays in the thin API by definition. <strong>Tiering cannot fix it</strong>; the block lives inside the serving tier. Search needs in-tier offload (<code>worker_threads</code>/piscina or child process for the FTS + RRF fusion + query-embed compute), independent of Track A.</li>
+</ul>
+Both are P1. Conflating them — "the split fixes the freezes" — would leave the loudest blocker (search) untouched.</div>
+
+<h2>AC1 — two tiers: serving-loop vs off-loop workers</h2>
+<p>The cut is <strong>serving (on the loop) vs everything off the loop</strong>. Off-loop work is two worker <em>classes</em>, not one — both touch only the stores, never the serving loop:</p>
+<ul>
+<li><strong>Ingestion</strong> — write source data <em>into</em> the stores (crawl, reindex, embed).</li>
+<li><strong>Emission</strong> — read store state, derive, and <em>push out</em> (pulse snapshot, andon/role-state, alert relay, eventloop alert). The store is the emitter's source; emission is store-<em>driven</em>.</li>
+</ul>
+<svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, sans-serif">
+  <rect width="1000" height="470" fill="#ffffff"/>
+  <!-- off-loop workers container -->
+  <rect x="20" y="30" width="340" height="410" rx="12" fill="#fffdf7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="36" y="55" font-size="13" font-weight="800" fill="#b45309">OFF-LOOP WORKERS</text>
+  <text x="36" y="72" font-size="11" fill="#9a6312">own processes &amp; cadence — never on the serving loop</text>
+  <!-- ingestion class -->
+  <rect x="36" y="84" width="308" height="158" rx="9" fill="#fff7ed" stroke="#fcd9b6"/>
+  <text x="50" y="104" font-size="12" font-weight="700" fill="#9a3412">INGESTION — write source IN</text>
+  <g font-size="11.5" fill="#7c2d12">
+    <rect x="50" y="114" width="280" height="28" rx="6" fill="#fff" stroke="#fcd9b6"/><text x="62" y="132">crawl  (per-domain instances, #3069)</text>
+    <rect x="50" y="148" width="280" height="28" rx="6" fill="#fff" stroke="#fcd9b6"/><text x="62" y="166">reindex  (files &#8594; SQLite, setInterval today)</text>
+    <rect x="50" y="182" width="280" height="28" rx="6" fill="#f0fdf4" stroke="#86efac"/><text x="62" y="200" fill="#166534">embed  (DONE — worker #1978, the precedent)</text>
+    <rect x="50" y="208" width="280" height="26" rx="6" fill="#fff" stroke="#fcd9b6"/><text x="62" y="225">cache-warm / counts  (decide)</text>
+  </g>
+  <!-- emission class -->
+  <rect x="36" y="252" width="308" height="174" rx="9" fill="#faf5ff" stroke="#d8b4fe"/>
+  <text x="50" y="272" font-size="12" font-weight="700" fill="#7e22ce">EMISSION — derive + push OUT</text>
+  <text x="50" y="287" font-size="10.5" fill="#9333ea">store-driven; reads store state, pushes derived state</text>
+  <g font-size="11.5" fill="#6b21a8">
+    <rect x="50" y="296" width="280" height="28" rx="6" fill="#fff" stroke="#e9d5ff"/><text x="62" y="314">pulse snapshot  (/tmp/pulse-latest.json)</text>
+    <rect x="50" y="330" width="280" height="28" rx="6" fill="#fff" stroke="#e9d5ff"/><text x="62" y="348">andon  (role-state)</text>
+    <rect x="50" y="364" width="280" height="28" rx="6" fill="#fff" stroke="#e9d5ff"/><text x="62" y="382">alerts  (Grafana relay &#8594; spine + notify)</text>
+    <rect x="50" y="398" width="280" height="22" rx="6" fill="#fff" stroke="#e9d5ff"/><text x="62" y="413">eventloop.blocked alert</text>
+  </g>
+  <!-- store -->
+  <rect x="408" y="120" width="180" height="230" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+  <text x="498" y="146" font-size="12.5" font-weight="800" fill="#334155" text-anchor="middle">THE ONE CONTRACT</text>
+  <text x="498" y="162" font-size="10.5" fill="#64748b" text-anchor="middle">data stores</text>
+  <g font-size="11.5" fill="#1f2937" text-anchor="middle">
+    <rect x="424" y="178" width="148" height="30" rx="6" fill="#fff" stroke="#cbd5e1"/><text x="498" y="197">SQLite + FTS</text>
+    <rect x="424" y="214" width="148" height="30" rx="6" fill="#fff" stroke="#cbd5e1"/><text x="498" y="233">LanceDB</text>
+    <rect x="424" y="250" width="148" height="30" rx="6" fill="#fff" stroke="#cbd5e1"/><text x="498" y="269">Fuseki</text>
+    <rect x="424" y="286" width="148" height="30" rx="6" fill="#fff" stroke="#cbd5e1"/><text x="498" y="305">files</text>
+  </g>
+  <!-- serving -->
+  <rect x="660" y="120" width="320" height="230" rx="12" fill="#f0fdf4" stroke="#166534" stroke-width="1.5"/>
+  <text x="676" y="146" font-size="13" font-weight="800" fill="#166534">SERVING TIER (thin API)</text>
+  <text x="676" y="163" font-size="11" fill="#3f6212">on the loop — request/response, only reads</text>
+  <g font-size="11.5" fill="#14532d">
+    <rect x="676" y="176" width="288" height="30" rx="6" fill="#fff" stroke="#bbf7d0"/><text x="688" y="195">search  (Track B — offload its compute)</text>
+    <rect x="676" y="212" width="288" height="30" rx="6" fill="#fff" stroke="#bbf7d0"/><text x="688" y="231">cards</text>
+    <rect x="676" y="248" width="288" height="30" rx="6" fill="#fff" stroke="#bbf7d0"/><text x="688" y="267">context</text>
+    <rect x="676" y="284" width="288" height="30" rx="6" fill="#fff" stroke="#bbf7d0"/><text x="688" y="303">nudge / health / freshness / pulse-read</text>
+  </g>
+  <!-- arrows -->
+  <text x="384" y="186" font-size="20" fill="#b45309">&#8594;</text>
+  <text x="372" y="172" font-size="10" fill="#9a6312">writes in</text>
+  <text x="620" y="240" font-size="20" fill="#166534">&#8594;</text>
+  <text x="600" y="226" font-size="10" fill="#3f6212">reads</text>
+  <!-- store -> emission (down-left) + emission push-out -->
+  <text x="384" y="330" font-size="20" fill="#7e22ce">&#8592;</text>
+  <text x="372" y="316" font-size="10" fill="#9333ea">reads</text>
+  <text x="30" y="455" font-size="11" font-weight="700" fill="#7e22ce">&#8595; emission pushes OUT: pulse.json · desktop notify · spine · andon</text>
+  <text x="690" y="338" font-size="11" font-weight="700" fill="#334155">No tier calls another — the contract is the DATA, not a process.</text>
+</svg>
+<p><strong>The boundary contract:</strong> the serving API depends on the <em>data in the stores</em>, not on any worker process. Ingestion writes into the stores; emission reads store state and pushes derived state outward; serving reads on request. None of the three invokes another — the store is the buffer that decouples them. A worker grinding a 5-second job (ingest or emit) cannot block a search, because it is not in the serving process. <strong>Today all three share one loop</strong> — which is why a heavy reindex, a slow pulse aggregation, <em>and</em> a 5–7s search all show up as the same <code>eventloop.blocked</code> alert.</p>
+
+<h2>AC2 — inventory + classification</h2>
+<table>
+  <tr><th>Job (today, in chorus-api)</th><th>What it actually touches</th><th>Tier</th><th>Real API dependency?</th></tr>
+  <tr><td>search (<code>server.ts:390</code> → chorus-search.ts)</td><td>SQLite FTS + RRF fusion + query-embed + SPARQL</td><td class="stays">SERVING — stays</td><td>n/a (it IS the API). <strong>Track B</strong>: the #3079 5–7s block — needs in-tier offload, NOT fixed by tiering</td></tr>
+  <tr><td>cards / context / nudge / health / freshness</td><td>SQLite / board / in-mem caches</td><td class="stays">SERVING — stays</td><td>n/a (request handlers)</td></tr>
+  <tr><td>reindex (<code>server.ts:3329</code>, setInterval 15min)</td><td>files → SQLite</td><td class="moves">INGESTION — moves out</td><td>NONE — timer placement only</td></tr>
+  <tr><td>embed (<code>chorus-embed-worker.sh</code>)</td><td>SQLite → Ollama → LanceDB</td><td class="stays">INGESTION — <strong class="stays">already a worker (#1978)</strong></td><td>NONE — the shipped precedent, live since 2026-04-12</td></tr>
+  <tr><td>crawl (<code>handlers/chorus-crawl.ts</code>, hit by the crawler)</td><td>SQLite/Fuseki/Loki → summary row</td><td class="moves">INGESTION — moves out</td><td>FAKE — the crawler curls the API's own endpoint (self-call)</td></tr>
+  <tr><td>cache-warm (board <code>server.ts:277</code> 60s, health <code>:3323</code> 30s)</td><td>shells <code>cards list</code> (15s timeout) / SQLite counts</td><td class="moves">CACHE-WARM — decide</td><td>serves API caches; either serving-tier read-through or worker→shared store</td></tr>
+  <tr><td>pulse snapshot (<code>POST /api/chorus/pulse</code> → <code>lifecycle-writes.ts</code>)</td><td>reads board/health/alerts/role-state → writes <code>/tmp/pulse-latest.json</code></td><td class="moves">EMISSION — moves out</td><td>NONE — derives from store state, pushes a snapshot out</td></tr>
+  <tr><td>andon (<code>POST /api/chorus/role-state</code>, <code>derive-role-state</code>)</td><td>role state → snapshot / spine</td><td class="moves">EMISSION — moves out</td><td>NONE — store-driven state push</td></tr>
+  <tr><td>alert relay (<code>handleAlert</code>, Grafana webhook)</td><td>alert payload → spine line + desktop notify</td><td class="moves">EMISSION — moves out</td><td>NONE — relays outward, no API need</td></tr>
+  <tr><td>eventloop alert (<code>startEventloopAlert</code>, <code>server.ts:3311</code>)</td><td>loop-lag → spine event + nudge</td><td class="moves">EMISSION — moves out</td><td>NONE (ironic: the freeze-detector rides the frozen loop)</td></tr>
+</table>
+<p class="sub">Note: <code>GET /api/chorus/pulse/latest</code> stays serving — it just <em>reads</em> the snapshot file. It's the <em>composition + write</em> of the snapshot (and the andon/alert/eventloop pushes) that is emission and moves off-loop.</p>
+
+<h2>AC3 — decomposition + migration plan</h2>
+<p><strong>Track A (off-loop migration)</strong> — move both worker classes out of the serving loop. Each job becomes a standalone worker hitting the stores directly, on its own cadence. <code>embed</code> is the proven precedent; the sequence is the jobs still inside the loop, smallest/safest first. Each migration is its own build card with a runtime-outcome AC (a heavy run of that job cannot block a serving request — measured post-migration).</p>
+<p><em>Ingestion class:</em></p>
+<ol>
+<li><strong>reindex</strong> — smallest, cleanest (files → SQLite, no external service). Move the <code>setInterval</code> out of <code>server.ts:3329</code> into a standalone worker — mirror <code>chorus-embed-worker.sh</code>. First, lowest risk. <em>Owner: Silas (infra/service) or Wren (API).</em></li>
+<li><strong>crawl</strong> — folds in <strong>#3069</strong> (crawlers as declared instances): each collector becomes a worker instance writing the stores directly; <em>stop the self-call</em> (the crawler no longer curls the API). Heaviest, last. <em>Owner: Wren (#3069).</em></li>
+<li><strong>cache-warm</strong> — decision, not a move: either keep as serving-tier read-through caches (cheap, in-process) or fold the counts into the reindex worker writing a shared row. <em>Owner: Wren (API).</em></li>
+</ol>
+<p><em>Emission class</em> (Jeff's AC1 catch — the store is also the emitter):</p>
+<ol start="4">
+<li><strong>pulse snapshot</strong> — move the compose+write of <code>/tmp/pulse-latest.json</code> into a pulse-emitter worker reading the stores directly; <code>GET /pulse/latest</code> stays serving (reads the file). <em>Owner: Silas (observability).</em></li>
+<li><strong>andon / alert / eventloop emitters</strong> — relays that read state and push out (spine, desktop notify, role-state snapshot). Move to the emitter worker; the eventloop alert especially must not ride the loop it's measuring. <em>Owner: Silas (observability).</em></li>
+</ol>
+<p><strong>Track B (search) — two sub-problems, do not conflate</strong> (Silas's AC4 caveat). The #3079 5–7s block is <em>not</em> addressed by Track A, and it is itself two things:</p>
+<ul>
+<li><strong>B1 — shared-fate freeze.</strong> Search compute on the main loop freezes <em>everyone else's</em> requests. Fix: move the FTS + RRF fusion + query-embed + SPARQL work off the loop (<code>worker_threads</code>/piscina or child process). This is the tiering-shaped fix for serving — search stays serving, but its CPU leaves the loop.</li>
+<li><strong>B2 — single-query latency.</strong> A search is <em>just slow</em> (5–7s) on the 1.1 GB <code>index.db</code> — a data-size / query-latency problem, <strong>not</strong> concurrency, and <strong>not</strong> fixed by B1. B1 stops one slow search from freezing others; making any one search fast is async/streaming/index-tuning, separate work.</li>
+</ul>
+<p><em>Owner: Wren (search/API). File B1 + B2 as their own P1 cards — naming them apart is the point.</em></p>
+
+<div class="callout">
+<strong>AC4 — concurrency assumption: VALIDATED (3 independent proofs).</strong> The whole design rests on multiple processes safely sharing the stores while ingestion writes and serving reads. All spikes ran on scratch stores — live <code>index.db</code> never touched.
+<ul>
+<li><strong>Production precedent:</strong> <code>embed</code> has run as a separate process writing LanceDB + marking SQLite, concurrent with the API reading, since 2026-04-12 (#1978) — ~6 weeks, no corruption, no contention deaths.</li>
+<li><strong>SQLite WAL spike (Silas, 2026-05-25, 20s):</strong> 1 writer (153 commits/s) + 4 readers (~43k FTS queries/s each) → <strong>0 <code>SQLITE_BUSY</code>, 0 locked, 0 err</strong>, reader p50 0.0ms / p99 0.1ms <em>under continuous write</em>, <code>integrity_check=ok</code>, counts consistent. WAL gives cross-process readers-never-block-writer for free. (<code>/tmp/ac4-sqlite-spike.py</code>)</li>
+<li><strong>LanceDB spike (Silas, 2026-05-25, 20s):</strong> 1 writer + 4 readers → 0 conflict, 0 err, reader p50 8ms / p99 19ms, all appends landed (20000+539). Manifest-versioning handles 1-writer / N-reader cleanly — <em>exactly</em> the design shape (embed is the only Lance writer; serving only reads). (<code>/tmp/ac4-lance-spike.js</code>)</li>
+<li><strong>Fuseki:</strong> already a standalone HTTP server, multi-process by construction — zero new risk.</li>
+</ul>
+Conclusion: the decouple-by-data assumption is proven across all three stores. The data-store boundary is a safe buffer between tiers. No blocker to migration.</div>
+
+<div class="callout">
+<strong>Why this is the fix, not #3077.</strong> #3077's handler patches are stopgaps — real wins (index/embed faster) but still inside the one process, so the next heavy handler freezes everyone again. This removes the <em>category</em> of failure: ingestion can't freeze serving because they're not in the same process. It's also the product bar made structural — the team-model only beats solo Claude Code if the coordination layer can't be frozen by its own pipeline. Solo has no shared loop to freeze; our advantage is negative until this lands.
+</div>
+
+<h2>Relationships</h2>
+<ul>
+<li><strong>#3069</strong> (crawlers as instances) — the crawl slice; folds in under step 3.</li>
+<li><strong>#3077</strong> (handler patches) — stopgaps this supersedes; the byte-offset + index-drop wins stay.</li>
+<li><strong>#3079</strong> (instrument-the-block) — the diagnosis that pinned <code>GET /api/chorus/search</code> as a 5–7s block; that finding is what separates Track B from Track A (search is serving-internal, not ingestion).</li>
+<li><strong>ADR-034</strong> (#3081, <code>roles/silas/adr/</code>) — the general pattern this card instances: <em>decouple compute tiers through the storage surface; the store's concurrency-model is the constraint</em> (ties to the borg compute/storage/network surface ontology). This doc is the reference instance the ADR cites — see ADR-034 for the pattern, this for the chorus-api application of it. The AC4 spike is the "concurrency-model is the constraint" clause made concrete; the emission class is the "push-out" face of the storage surface.</li>
+</ul>
+</body>
+</html>
