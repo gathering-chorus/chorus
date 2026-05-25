@@ -48,7 +48,7 @@
 </div>
 
 <div class="frame" style="border-left-color:#0ea5e9;background:#eff6ff">
-<strong>The pipelines domain — 1..n instances, one discipline.</strong> Werk governs a domain of <strong>many pipeline instances</strong> (not two), owned per-role — the cards-runner is Wren's, the ci-cd/build pipeline is Kade's, others as they're declared. Every instance conforms to one set of contracts: the verb contract (ADR-032), the v8 model (ADR-033), <code>act</code>, typed refusals, per-verb commit-status. <strong>Kade governs how the set behaves; each owner builds their instance.</strong>
+<strong>The pipelines domain — 1..n instances, one discipline.</strong> Werk governs a domain of <strong>many pipeline instances</strong> (not two), owned per-role — the cards-runner is Wren's, the ci-cd/build pipeline is Kade's, others as they're declared. The set is open beyond the Building step: the same governed pattern can host a pipeline for any value-stream step (shaping → proving) as the need arises — ci-cd is simply the first. Every instance conforms to one set of contracts: the verb contract (ADR-032), the v8 model (ADR-033), <code>act</code>, typed refusals, per-verb commit-status. <strong>Kade governs how the set behaves; each owner builds their instance.</strong>
 <br><br><strong>Coherence claim:</strong> every accepted card advances coherently across the pipeline instances it touches <em>and</em> the artifact's lifecycle status (Athena <code>chorus:status</code>) — one trace, /pull to deployed cdhash. A card that ships code without advancing the artifact's status is incomplete.
 </div>
 
@@ -67,11 +67,6 @@ flowchart TD
   Werk -->|hasDomain| Code["code<br/>quality rules, lint, complexity,<br/>dup-string, no-warn-tier"]
   Werk -->|hasDomain| Tests["tests<br/>TDD discipline, hermetic-by-default,<br/>integration-gated-explicitly"]
   Werk -.->|consumes| BD["build+deploy<br/>(sibling — Silas)"]
-  Pipelines -->|hosts| ActSvc["act-service"]
-  VCS -->|hosts| GitQueueSvc["git-queue-service"]
-  VCS -->|hosts| WerkSvc["werks-service<br/>(chorus-werk add/remove)"]
-  Code -->|hosts| LintSvc["quality-service<br/>(lint + complexity gates)"]
-  Tests -->|hosts| TestRunnerSvc["test-runner-service<br/>(hermetic + integration tiers)"]
   classDef op fill:#d1fae5,stroke:#065f46,color:#065f46;
   classDef bld fill:#fef9c3,stroke:#854d0e,color:#854d0e;
   classDef anchor fill:#ede9fe,stroke:#7c3aed,color:#5b21b6;
@@ -81,13 +76,13 @@ flowchart TD
   class Code,Tests,Pipelines bld;
   class BD sibling;
 </pre>
-<p class="caption">Werk → four Domains via <code>hasDomain</code>. Each Domain <code>hosts</code> the Services where its code lives. Werk <code>consumes</code> Build+Deploy across the post-/acp boundary (dashed — cross-cutting dependency, not containment). Purple = subproduct anchor · green = operating · yellow = building.</p>
+<p class="caption">Werk → four Domains via <code>hasDomain</code>; Werk <code>consumes</code> Build+Deploy across the post-/acp boundary (dashed — cross-cutting dependency, not containment). <strong>The structure stops at domains on purpose</strong> — each domain's services/verbs are the specific, carded work in the v2 cards + the <a href="/designing/docs/ci-pipeline-service-design.html">ci-cd</a> / <a href="/designing/docs/version-control-service-design.html">version-control</a> service-designs, not re-asserted here. Purple = subproduct anchor · green = operating · yellow = building.</p>
 
 <h2>The four Domains</h2>
 
 <h3>pipelines <span class="t-bld">BUILDING</span></h3>
 <p><strong>What it is:</strong> a domain of <strong>1..n pipeline instances</strong>, owned per-role — the ci-cd/build pipeline is Kade's; the <strong>cards-runner</strong> (the Next→WIP→Demo→Done card lifecycle) is Wren's; build+deploy is Silas's. <strong>Promise (set-governance): Kade governs how the set behaves, not the instances</strong> — every pipeline is uniform via the frameworks: the verb contract (ADR-032), the v8 model (ADR-033), resource/verb/grain (ADR-031), <code>act</code> as the local runner, typed refusals, and one commit-status check per verb. Each instance conforms to the set's contracts; each owner builds their own.</p>
-<p><strong>Set-governance owner:</strong> Kade — frameworks, ADRs, <code>act</code>, contracts; NOT the individual instances (cards-runner is Wren's, build+deploy is Silas's). <strong>Service hosted:</strong> act-runner (local LaunchAgent <code>com.chorus.building-pipeline</code>). <strong>Design doc:</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> (the ci-cd instance).</p>
+<p><strong>Set-governance owner:</strong> Kade — frameworks, ADRs, <code>act</code>, contracts; NOT the individual instances (cards-runner is Wren's, build+deploy is Silas's). <strong>Design doc (the specifics):</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> — the ci-cd instance: <code>act</code>, the verb binaries, the v8 model.</p>
 <p><strong>Shipped:</strong> orchestration via <code>act</code> + <code>workflow_dispatch</code> + launchd kickstart (#2933, #2939); pre-merge surface 5 (pre-commit) wired; cost-stop / schedule-only main re-run (#2600, DEC-2525); ci-main-red reactive alert. <strong>v8 model ratified (ADR-033) + per-verb contract (ADR-032);</strong> pull v2 shipped (<code>werk-pull</code> #3045), remaining verbs carded (#3056/#3057/#3061/#3062/#3063/#3064).</p>
 <p><strong>Gaps (headline, in product-frame):</strong></p>
 <ul>
@@ -99,19 +94,19 @@ flowchart TD
 
 <h3>version-control <span class="t-op">OPERATING</span></h3>
 <p><strong>Promise:</strong> source state on <code>origin/main</code> is the only truth; every mutation is a typed MCP call (chorus_commit, chorus_acp) carrying card_id + trace_id; werks are ephemeral per-card worktrees, never branch-swapped in place; cross-role contamination is refused at four distinct surfaces.</p>
-<p><strong>Owner:</strong> Kade. <strong>Services hosted:</strong> git-queue (mutex-locked wrapper, branch-check), werks (<code>chorus-werk add/remove</code>), chorus-hook-shim (PreToolUse refusals). <strong>Design doc:</strong> <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a>.</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a> — chorus_commit/acp, git-queue, werks, chorus-hook-shim, pre-merge surfaces 1–4.</p>
 <p><strong>Shipped:</strong> chorus_commit / chorus_acp MCPs with verify-after sequenced steps (#2782); ephemeral per-card worktrees replacing persistent per-role mutation (#2735, #2913); pre-merge surfaces 1–4 (wrong-branch, raw push, dangerous git, cross-worktree contamination — #2580, #2598, #2625); trace propagation through commit trailers (#2931); idempotent /acp re-run path on orphan branches (#2943); pre-push refusal on stale-base silent deletions (#2944).</p>
 <p><strong>Gaps:</strong> three-domain rollback across version-control / build / deploy (named in Build+Deploy doc as structurally hard, no card). Shared-HEAD race on canonical accepted-residual — closed (#2706 Done). Same-role wrong-card commit-time defense was filed as #2641 but declined Won't-Do in favor of the #2625 PreToolUse worktree-contamination guard plus chorus_commit_status pre-flight.</p>
 
 <h3>code <span class="t-bld">BUILDING</span></h3>
 <p><strong>Promise:</strong> staged code that reaches a commit is type-clean, lint-clean below thresholds, free of duplicate-string accretion (≥5), and below cognitive-complexity 12 — refused at the pre-commit boundary, not at review.</p>
-<p><strong>Owner:</strong> Kade. <strong>Service:</strong> quality (gates + lint rules). <strong>Design doc:</strong> <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a>.</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> <a href="/designing/docs/quality-service-design.md"><code>quality-service-design.md</code></a> — lint + complexity gates.</p>
 <p><strong>Shipped:</strong> sonarjs error tier wired in pre-commit (no-duplicate-string threshold 5, cognitive-complexity threshold 12), magic-comment override (<code>// cog-override: &lt;reason&gt;</code>) emits audit event (#2603, #2627). No-warn-tier convention asserted.</p>
 <p><strong>Gaps:</strong> no-warn-tier convention is not self-enforced — nothing today refuses a contributor adding a <code>warn</code>-tier rule. Trust audit for pre-merge maturity (claim that "trust burden moved to pre-merge" needs a check that pre-merge isn't quietly weakening) is uncarded. Ratchet drift signal (#2496) still planned — baseline accretion only caught via manual audit.</p>
 
 <h3>tests <span class="t-bld">BUILDING</span></h3>
 <p><strong>Promise:</strong> tests describe the experience the card was filed to fix, not internal state; pre-commit runs hermetic tier only; integration tier is explicitly gated and runs in /demo. AC items become test cases before code. (DEC-1674.)</p>
-<p><strong>Owner:</strong> Kade. <strong>Service:</strong> test-runner. <strong>Design doc:</strong> not yet authored as a service-design — currently lives across <code>TESTING.md</code>, <code>test-categorization.html</code>, <code>ICD_TEST_STRATEGY.html</code>, <code>zero-test-subdomain-triage.md</code>. <strong>Gap:</strong> tests has no canonical service-design doc; this is the first thing the domain needs.</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> not yet authored — currently spread across <code>TESTING.md</code>, <code>test-categorization.html</code>, <code>ICD_TEST_STRATEGY.html</code>, <code>zero-test-subdomain-triage.md</code>. <strong>Gap:</strong> tests has no canonical service-design doc; this is the first thing the domain needs.</p>
 <p><strong>Shipped:</strong> hermetic-by-default discipline named as principle and enforced in pre-commit (cargo test --lib --bins / jest scope). Integration tests gated in /demo. TDD discipline written into CLAUDE.md (DEC-1674).</p>
 <p><strong>Gaps:</strong> no run-tests contract (#2529) — the load-bearing CI ↔ tests interface is unnamed. Hermetic/integration tagging on individual tests is partial (some bats files marked, most TS tests rely on filename convention). chorus-hooks/inject test isolation (#2491) has hardcoded paths in some tests. sessions.test.ts pre-existing fail (#2493).</p>
 
