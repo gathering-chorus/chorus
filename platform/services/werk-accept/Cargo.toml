@@ -1,0 +1,13 @@
+[package]
+name = "werk-accept"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern,
+# and the `git`/`gh`/`cards`/`chorus-log`/`chorus-werk` CLIs as subprocesses.
+# Blueprint: werk-pull (#3045). The atomic EXIT-FINALIZE verb (#3057).
+[dependencies]
+
+[[bin]]
+name = "werk-accept"
+path = "src/main.rs"
