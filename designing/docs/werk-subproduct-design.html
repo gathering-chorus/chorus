@@ -48,12 +48,8 @@
 </div>
 
 <div class="frame" style="border-left-color:#0ea5e9;background:#eff6ff">
-<strong>Two pipelines, one product.</strong> Werk runs two state machines in parallel from a single source of truth (the card and its commits):
-<ul>
-  <li><em>The card pipeline</em> — the cards-runner, <strong>owned by Wren</strong> (not Werk). States: <code>Next → WIP → Demo → Done</code>, emitting <code>card.pulled</code> / <code>card.demoed</code> / <code>card.accepted</code>, gated by the five role gates + five pre-merge surfaces. Werk <em>consumes</em> this state; it doesn't run it. This is the assembly line.</li>
-  <li><em>The artifact lifecycle</em> — what Werk leaves behind, governed by Athena. States: <code>exploring → building → operating → retiring</code> on the Service or Domain the card touched. This is the product on the shelf.</li>
-</ul>
-Werk's load-bearing claim: every accepted card advances both pipelines coherently. A card that ships code without advancing the artifact's status is incomplete — the artifact lifecycle is part of the deliverable, not a follow-up.
+<strong>The pipelines domain — 1..n instances, one discipline.</strong> Werk governs a domain of <strong>many pipeline instances</strong> (not two), owned per-role — the cards-runner is Wren's, the ci-cd/build pipeline is Kade's, others as they're declared. Every instance conforms to one set of contracts: the verb contract (ADR-032), the v8 model (ADR-033), <code>act</code>, typed refusals, per-verb commit-status. <strong>Kade governs how the set behaves; each owner builds their instance.</strong>
+<br><br><strong>Coherence claim:</strong> every accepted card advances coherently across the pipeline instances it touches <em>and</em> the artifact's lifecycle status (Athena <code>chorus:status</code>) — one trace, /pull to deployed cdhash. A card that ships code without advancing the artifact's status is incomplete.
 </div>
 
 <h2>What Werk is</h2>
