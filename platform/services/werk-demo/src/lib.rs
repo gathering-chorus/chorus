@@ -361,13 +361,21 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     signal(card, role, home, &trace);
     jsonl(home, role, card, &trace, "demo.signal.completed", "");
 
-    // The ACT: build → deploy → verify, live in the one prod env via the shipped verbs.
+    // The ACT: build → env-up → verify. Demo runs in the role's WERK VARIANT
+    // (chorus-api/mcp on per-role ports), NOT canonical prod. /acp's accept lane
+    // still runs `werk-deploy <card>` (canonical) post-demo — two distinct calls
+    // for two distinct purposes (#3098 closes the demo=prod consumer gap on
+    // #3092's env-up primitive).
     let werk = werk_base.join(format!("{}-{}", role, card));
     let werk_s = path(&werk)?;
     run("werk-build", &[&card_s]).map_err(|e| format!("demo build: {}", e))?;
     jsonl(home, role, card, &trace, "demo.built", "");
-    // werk-deploy owns the install + running==built verify + all-or-nothing rollback.
-    run("werk-deploy", &[&card_s]).map_err(|e| format!("demo deploy/verify: {}", e))?;
+    // werk-deploy env-up brings up the role's chorus-api + chorus-mcp variants
+    // from werk source (per-role ports, isolated from canonical), smokes them,
+    // writes activation markers. Idempotent — re-running refreshes against
+    // current werk dist. State (DB/Fuseki/Loki/Vikunja) is shared by design.
+    run("werk-deploy", &["env-up", role, &card_s])
+        .map_err(|e| format!("demo deploy/verify: {}", e))?;
     jsonl(home, role, card, &trace, "demo.deployed", "");
 
     // The accept_gate evidence event — without this, /acp refuses at accept time

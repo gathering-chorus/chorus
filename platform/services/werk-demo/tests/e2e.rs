@@ -69,7 +69,15 @@ exit 0
         ),
     );
     write_exec(&bin.join("werk-build"), "#!/bin/sh\necho built\nexit 0\n");
-    write_exec(&bin.join("werk-deploy"), "#!/bin/sh\necho deployed\nexit 0\n");
+    // #3098: capture werk-deploy args so we can assert the env-up variant call
+    let deploy_log = tmp("deploylog").join("calls");
+    write_exec(
+        &bin.join("werk-deploy"),
+        &format!(
+            "#!/bin/sh\necho \"$@\" >> \"{deploy_log}\"\necho deployed\nexit 0\n",
+            deploy_log = deploy_log.display()
+        ),
+    );
     write_exec(&bin.join("curl"), "#!/bin/sh\nexit 0\n");
     write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
 
@@ -153,6 +161,20 @@ exit 0
             witness
         );
     }
+
+    // (4) #3098: werk-deploy must be called as `env-up <role> <card>`, not bare `<card>`
+    //     — demo brings up the per-role variant from #3092, NOT the canonical deploy path.
+    let deploy_calls = fs::read_to_string(&deploy_log).unwrap_or_default();
+    assert!(
+        deploy_calls.contains("env-up wren 3046"),
+        "werk-deploy should be invoked as `env-up wren 3046` (per-role variant); got:\n{}",
+        deploy_calls
+    );
+    assert!(
+        !deploy_calls.lines().any(|l| l.trim() == "3046"),
+        "werk-deploy must NOT be invoked with bare card-id (canonical deploy path); got:\n{}",
+        deploy_calls
+    );
 
     // cleanup the trace file so re-runs are hermetic
     let _ = fs::remove_file(trace_path);
