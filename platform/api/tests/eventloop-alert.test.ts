@@ -15,8 +15,15 @@ describe('#3050 formatBlockAlert — honest, no fabrication', () => {
 
   it('carries the timestamp so the slow request is correlatable in the access log (op=unknown)', () => {
     const a = formatBlockAlert(1234, TS, 'unknown');
+    // Storage contract: `ts` field stays ISO/UTC (spine event correlation,
+    // db rows, cross-machine ordering). Render contract: the message body
+    // is what humans read, and it renders Boston (#3093 — render-vs-storage
+    // boundary, Jeff doesn't read UTC). Two separate concerns, two separate
+    // assertions, one helper (boston()) responsible for the render side.
     expect(a.ts).toBe(TS);
-    expect(a.message).toContain(TS);
+    // 2026-05-23T20:00:00.000Z → 16:00:00 EDT (UTC-4 in May).
+    expect(a.message).toContain('2026-05-23 16:00:00 EDT');
+    expect(a.message).not.toContain(TS); // no raw ISO in human surface
     expect(a.message.toLowerCase()).toContain('access log');
   });
 

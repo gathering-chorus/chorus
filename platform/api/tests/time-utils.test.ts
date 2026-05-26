@@ -1,4 +1,4 @@
-import { isEDT, convertToLocal, bostonNow } from '../src/time-utils';
+import { isEDT, convertToLocal, bostonNow, boston } from '../src/time-utils';
 
 describe('isEDT', () => {
   it('returns true for any date in April through October', () => {
@@ -73,5 +73,50 @@ describe('bostonNow', () => {
     const b = convertToLocal(new Date().toISOString(), 'America/New_York');
     // Match at minute granularity to avoid seconds flake.
     expect(a.slice(0, 16)).toBe(b.slice(0, 16));
+  });
+});
+
+describe('#3093 boston — the render-to-human helper', () => {
+  // The render-vs-storage boundary: storage stays UTC; this is the only
+  // formatter for human-facing strings (alert messages, nudge bodies, etc).
+
+  it('renders an ISO string in Boston with the EDT suffix in summer', () => {
+    // 2026-05-26T17:24:41Z is the exact shape of the alerts Jeff has been
+    // seeing all day. EDT = UTC-4, so 17:24 → 13:24.
+    expect(boston('2026-05-26T17:24:41.000Z')).toBe('2026-05-26 13:24:41 EDT');
+  });
+
+  it('renders an ISO string in Boston with the EST suffix in winter', () => {
+    // EST = UTC-5, so 17:00Z in January → 12:00.
+    expect(boston('2026-01-15T17:00:00.000Z')).toBe('2026-01-15 12:00:00 EST');
+  });
+
+  it('accepts a Date instance', () => {
+    const d = new Date('2026-05-26T17:24:41.000Z');
+    expect(boston(d)).toBe('2026-05-26 13:24:41 EDT');
+  });
+
+  it('accepts epoch milliseconds', () => {
+    const ms = Date.parse('2026-05-26T17:24:41.000Z');
+    expect(boston(ms)).toBe('2026-05-26 13:24:41 EDT');
+  });
+
+  it('shape is stable: YYYY-MM-DD HH:MM:SS [EDT|EST]', () => {
+    // The shape contract — anything reading these strings (humans, log
+    // grep, future parsers) depends on it. Lock it.
+    expect(boston(new Date())).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} (EDT|EST)$/);
+  });
+
+  it('does not leak ISO artifacts into the rendered string', () => {
+    // The whole point of #3093 — UTC formatting must not bleed into a
+    // string Jeff reads. The ISO date-time separator ("T" between date and
+    // time) and the UTC suffix ("Z") are both forbidden in the date/time
+    // portion. The trailing zone abbreviation "EDT/EST" happens to contain
+    // a "T", so we check the date+time portion specifically.
+    const out = boston('2026-05-26T17:24:41.000Z');
+    const dateTimePart = out.replace(/ (EDT|EST)$/, '');
+    expect(dateTimePart).not.toContain('T');
+    expect(dateTimePart).not.toContain('Z');
+    expect(out).not.toMatch(/\.\d{3}Z/); // no milliseconds-with-Z either
   });
 });
