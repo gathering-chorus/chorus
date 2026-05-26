@@ -3,3 +3,12 @@
 [chorus-api] 2026-05-26T20:58:57.541Z GET /api/chorus/health 200 3ms
 [chorus-api] LanceDB: 1648095 vectors loaded
 [chorus-api] 2026-05-26T20:59:10.867Z GET /api/chorus/health 200 6ms
+[chorus-api] Listening on 0.0.0.0:3345
+[chorus-api] Database: /Users/jeffbridwell/.chorus/index.db
+[chorus-api] LanceDB: 1648887 vectors loaded
+[chorus-api] 2026-05-26T22:07:08.784Z GET /api/chorus/health 200 5ms
+[chorus-api] Received SIGTERM — shutting down
+[chorus-api] Listening on 0.0.0.0:3345
+[chorus-api] Database: /Users/jeffbridwell/.chorus/index.db
+[chorus-api] LanceDB: 1648924 vectors loaded
+[chorus-api] 2026-05-26T22:08:33.756Z GET /api/chorus/health 200 3ms

@@ -66,9 +66,12 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
 /// Which of the five role gates are absent from the card body. Ported from /demo
 /// Step 2 (grep `gate:<g>-pass`). demo requires the chain complete before the act.
 pub fn gates_missing(card_view: &str) -> Vec<&'static str> {
+    // Case-insensitive: roles post `gate:code-pass` or `gate:code-PASS` interchangeably;
+    // both must be recognized. Lowercase the view once, compare against lowercase needles.
+    let v = card_view.to_lowercase();
     ["product", "code", "quality", "arch", "ops"]
         .iter()
-        .filter(|g| !card_view.contains(&format!("gate:{}-pass", g)))
+        .filter(|g| !v.contains(&format!("gate:{}-pass", g)))
         .copied()
         .collect()
 }
@@ -294,8 +297,8 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
         let msg = format!(
-            "[feedback] #{} — werk-demo ran live.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?\\nACK REQUIRED within 10 min or blocked-on-X.",
-            card
+            "[feedback from {} — ACK REQUIRED] #{} — werk-demo ran live; need your substantive reply (or blocked-on-X) within 10 min before /acp.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?",
+            role, card
         );
         let body = format!(
             r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
@@ -307,6 +310,10 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
                 "-s", "-f", "-X", "POST",
                 &mcp_url,
                 "-H", "Content-Type: application/json",
+                // chorus-mcp requires BOTH content types in Accept; Accept:
+                // application/json alone returns 406. Silas's #3092 maiden voyage
+                // hit the same trap on the MCP smoke. Same fix here.
+                "-H", "Accept: application/json, text/event-stream",
                 "-H", &format!("X-Chorus-Role: {}", role),
                 "-H", &format!("X-Chorus-Trace-Id: {}", trace),
                 "-d", &body,
