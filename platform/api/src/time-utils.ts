@@ -47,3 +47,32 @@ export function convertToLocal(isoTimestamp: string, _tz: string): string {
 export function bostonNow(): string {
   return convertToLocal(new Date().toISOString(), 'America/New_York');
 }
+
+/**
+ * #3093 — single canonical render-to-Boston helper for human-facing strings.
+ *
+ * Storage stays UTC (correct for cross-machine ordering, spine events, db
+ * rows). Render-to-human goes through this. The rule: anywhere a timestamp
+ * lands in a string Jeff reads (alert message bodies, nudge bodies, terminal
+ * output, bridge posts), use `boston()`. Anywhere it lands in storage (spine
+ * event `ts` field, log JSON `timestamp` field, db column, JSON API contract),
+ * leave as ISO. The render-vs-storage boundary is the discipline; this helper
+ * is the only allowed render-time formatter.
+ *
+ * Format: `YYYY-MM-DD HH:MM:SS EDT` (or EST). Stable, sortable within a
+ * timezone window, includes the suffix so the reader doesn't have to ask.
+ * Accepts Date | string | number (epoch ms) — every common shape a Date can
+ * arrive in, so callers don't have to pre-coerce.
+ */
+export function boston(ts: Date | string | number): string {
+  const iso = ts instanceof Date
+    ? ts.toISOString()
+    : typeof ts === 'number'
+      ? new Date(ts).toISOString()
+      : ts;
+  const local = convertToLocal(iso, 'America/New_York');
+  // convertToLocal returns 'YYYY-MM-DD HH:MM:SS' (no TZ); add the abbreviation
+  // so the reader knows the offset without doing the math.
+  const tz = isEDT(iso) ? 'EDT' : 'EST';
+  return `${local} ${tz}`;
+}

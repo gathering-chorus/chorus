@@ -13,6 +13,8 @@
 // blocked callback captures which op was running. If op=unknown, the block fired outside
 // all tracked jobs (request handler or untracked async). No async_hooks; zero overhead.
 
+import { boston } from './time-utils';
+
 /** Set by scheduled jobs before running; cleared in finally. Captured by blocked callback. */
 let _currentOp: string | null = null;
 
@@ -57,17 +59,21 @@ export interface BlockAlert {
   message: string;
 }
 
-/** Pure, honest formatter — only the measured block + which op was running (or unknown). */
+/** Pure, honest formatter — only the measured block + which op was running (or unknown).
+ *  `ts` field stays ISO (storage contract for spine event correlation); the
+ *  human-facing `message` body renders Boston (#3093 — render-vs-storage
+ *  boundary, Jeff doesn't read UTC). */
 export function formatBlockAlert(durationMs: number, ts: string, op: string): BlockAlert {
+  const display = boston(ts);
   const opNote = op === 'unknown'
-    ? `The slow request is in the access log at this time — grep chorus-api.log around ${ts} for the route.`
+    ? `The slow request is in the access log at this time — grep chorus-api.log around ${display} for the route.`
     : `Captured op: ${op}.`;
   return {
     duration_ms: durationMs,
     ts,
     op,
     message:
-      `chorus-api event loop blocked ${durationMs}ms at ${ts}. ` +
+      `chorus-api event loop blocked ${durationMs}ms at ${display}. ` +
       opNote +
       ` No cause inferred; this is the measured block only.`,
   };
