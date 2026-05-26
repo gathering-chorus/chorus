@@ -46,4 +46,22 @@ describe('collectSpine (#3088 — Loki, off-loop)', () => {
     const spine = await collectSpine(notOk, 'http://loki', '/chorus.log', cards, [], () => 1_000_000);
     expect(spine.length).toBe(0);
   });
+
+  test('#3090: SLOW Loki (hangs, not throws) aborts at 5s and returns empty — degrade contract enforced', async () => {
+    jest.useFakeTimers();
+    // A fetch that NEVER resolves on its own — rejects only when the signal aborts.
+    // Simulates a slow Loki: without #3090's AbortController this would hang the
+    // crawl handler indefinitely (the bug 10/27 domains were tripping on live).
+    const hangingFetch = ((_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      })) as unknown as FetchFn;
+    const timeline: unknown[] = [];
+    const p = collectSpine(hangingFetch, 'http://loki', '/chorus.log', cards, timeline, () => 1_000_000);
+    jest.advanceTimersByTime(5000); // fire the 5s timeout → ctrl.abort() → fetch rejects → catch → empty
+    const spine = await p;
+    expect(spine.length).toBe(0);
+    expect(timeline.length).toBe(0);
+    jest.useRealTimers();
+  });
 });

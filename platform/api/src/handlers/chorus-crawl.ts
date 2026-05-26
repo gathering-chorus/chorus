@@ -234,9 +234,22 @@ export async function collectSpine(
     // Server-side line-filter for card.* events; time-bound to ~24h to match the old tail span.
     const lokiQuery = encodeURIComponent(`{filename="${chorusLogPath}"} |= "\\"event\\":\\"card."`);
     const nowSec = Math.floor(now() / 1000);
-    const resp = await fetchFn(
-      `${lokiBaseUrl}/loki/api/v1/query_range?query=${lokiQuery}&start=${nowSec - 86400}&end=${nowSec}&limit=1000`,
-    );
+    // #3090: 5s timeout via AbortController. Without this a SLOW Loki (vs down)
+    // hangs the crawl handler indefinitely — the try/catch around this block
+    // only catches Loki *throwing* ("loki down → empty"), not *hanging*. On
+    // AbortError the fetch throws → outer catch returns empty spine, honoring
+    // the documented degrade-to-empty contract for slow-Loki too.
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 5000);
+    let resp;
+    try {
+      resp = await fetchFn(
+        `${lokiBaseUrl}/loki/api/v1/query_range?query=${lokiQuery}&start=${nowSec - 86400}&end=${nowSec}&limit=1000`,
+        { signal: ctrl.signal },
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
     if (!resp.ok) return spine;
     const data = (await resp.json()) as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
     const collected: SpineEntry[] = [];
