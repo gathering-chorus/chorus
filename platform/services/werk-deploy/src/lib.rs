@@ -26,6 +26,12 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
+// Encapsulated in demo_env.rs so the per-service plist/marker logic has ONE
+// home instead of being scattered across werk-deploy + chorus-werk + future
+// verbs. Named demo_env (not env) to avoid colliding with std::env in lib.rs.
+pub mod demo_env;
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -253,7 +259,21 @@ fn path(p: &Path) -> R<&str> {
 /// Entry: `werk-deploy <card> <role> [--target werk|canonical]`.
 pub fn run_deploy() -> R<String> {
     let argv: Vec<String> = env::args().skip(1).collect();
-    let card_arg = argv.first().ok_or_else(|| "usage: werk-deploy <card> <role> [--target werk|canonical]".to_string())?;
+
+    // #3092 — env-* subcommands intercept BEFORE the standard <card> <role>
+    // parse. Two verbs: env-up (build + bootstrap + smoke + markers; idempotent;
+    // re-running refreshes against current werk source) and env-down (teardown).
+    // Builds are cheap (~2s for TS), so up is also the "deploy a change to demo"
+    // path — no separate start/deploy boundary.
+    if let Some(first) = argv.first() {
+        match first.as_str() {
+            "env-up" => return run_env_up(&argv[1..]),
+            "env-down" => return run_env_down(&argv[1..]),
+            _ => {}
+        }
+    }
+
+    let card_arg = argv.first().ok_or_else(|| "usage: werk-deploy <card> <role> [--target werk|canonical]  |  werk-deploy env-{up,down} <role> [card]".to_string())?;
     let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
     let role = argv
         .get(1)
@@ -265,6 +285,49 @@ pub fn run_deploy() -> R<String> {
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base = PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
     deploy(card, &role, target, &home, &werk_base)
+}
+
+/// #3092 — werk-deploy env-up <role> [card]
+/// Stand up the role's demo environment: build dist per service inside the
+/// werk, generate plists, bootstrap launchd variants, smoke, write markers.
+/// Idempotent — re-running is the "deploy a change to demo" path.
+/// If `card` is given, variants run from that card's werk; else discover the
+/// role's first card werk under CHORUS_WERK_BASE.
+fn run_env_up(args: &[String]) -> R<String> {
+    let role = parse_explicit_role(args)?;
+    let werk_base = env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?;
+    let home = env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?;
+    let card = parse_optional_card(args);
+    let werk_root = crate::demo_env::werk_root_for(&role, card, &werk_base)?;
+    crate::demo_env::env_up(&role, &werk_root, &home)
+}
+
+/// #3092 — werk-deploy env-down <role>
+/// Tear down the role's demo environment. Idempotent. Verifies post-bootout
+/// that variants actually exited (retries once on lag).
+fn run_env_down(args: &[String]) -> R<String> {
+    let role = parse_explicit_role(args)?;
+    let home = env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?;
+    crate::demo_env::env_down(&role, &home)
+}
+
+/// Require an explicit role arg for env-* (don't fall back to DEPLOY_ROLE)
+/// so a stray invocation can't silently spin up a variant from the calling
+/// session's env. Caught on the maiden voyage 2026-05-26: a no-args sanity
+/// check inherited DEPLOY_ROLE=silas and accidentally fired env_start.
+fn parse_explicit_role(args: &[String]) -> R<String> {
+    args.iter()
+        .find(|s| !s.starts_with("--") && s.parse::<u64>().is_err())
+        .cloned()
+        .ok_or_else(|| {
+            "env-*: role required as explicit positional arg (silas/kade/wren). \
+             DEPLOY_ROLE fallback intentionally disabled so a stray invocation \
+             can't spin up a variant. Pass the role: `werk-deploy env-up silas`".to_string()
+        })
+}
+
+fn parse_optional_card(args: &[String]) -> Option<u64> {
+    args.iter().find_map(|s| s.parse::<u64>().ok())
 }
 
 /// The whole verb, all inputs explicit (testable: deps injected via PATH — real or
@@ -418,14 +481,27 @@ fn deploy_ts_service(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
     svc_name: &str, built_dist_sha: &str, svc: &str, dist_dir_rel: &str, smoke_url: &str,
 ) -> R<()> {
-    // Werk-slot has no role-scoped chorus-api today (one launchd unit, shared).
-    // For demo, the build is the surface; skip install + kickstart with a named
-    // jsonl event so observability sees the deliberate no-op.
+    // #3092 — target=werk: spin up a per-role werk-api LaunchAgent on a
+    // role-scoped port, running from the werk's dist. This makes "test in demo"
+    // REAL for chorus-api: the role's session resolves to its werk port (via
+    // chorus-env-setup.sh's CHORUS_API_PORT marker check), so the role tests
+    // its own code in isolation while canonical :3340 stays serving everyone
+    // else. The plist/marker/bootstrap logic lives in demo_env so chorus-mcp
+    // and chorus-api (and future TS services) share one substrate.
+    //
+    // dist_dir_rel and the per-service smoke URL are owned by demo_env::env_services,
+    // not by this call site — that's the encapsulation point Jeff named.
     if target == "werk" {
-        jsonl(
-            home, role, card, trace, "deploy.ts.werk-skipped",
-            &format!(",\"name\":\"{}\",\"reason\":\"no-role-slot-ts-service-today\"", svc_name),
-        );
+        let _ = (dist_dir_rel, smoke_url, built_dist_sha); // owned by demo_env now
+        let canonical_root = canonical_root_path(home);
+        jsonl(home, role, card, trace, "deploy.ts.env-up", &format!(",\"name\":\"{}\"", svc_name));
+        let started = crate::demo_env::env_up(role, werk_s, &canonical_root)
+            .map_err(|e| format!("env_up for {} failed: {}", svc_name, e))?;
+        jsonl(home, role, card, trace, "deploy.ts.env-up-done", &format!(",\"name\":\"{}\",\"detail\":\"{}\"", svc_name, started.replace('"', "'")));
+        // env_up's smoke (per-service GET on the role port) IS the deploy
+        // verify for target=werk. The dist IS the source for the werk variant
+        // (no separate installed copy to hash); the running variant serving
+        // 200 on its endpoint is the proof.
         return Ok(());
     }
 
