@@ -26,6 +26,30 @@ export function getCurrentOp(): string {
   return _currentOp ?? 'unknown';
 }
 
+/** Shape we need from Express's req/res — tiny + injectable so the middleware
+ * is unit-testable without spinning up Express. */
+export interface ReqLike { method: string; path: string }
+export interface ResLike { once(event: 'finish' | 'close', listener: () => void): void }
+
+/** #3089: Express middleware that names the request handler so block alerts
+ * attribute to a route, not `op=unknown`. The #3079 sentinel only fires for
+ * SCHEDULED jobs (setCurrentOp at the cron sites); without this middleware,
+ * request-handler blocks log op=unknown → "No cause inferred" → hand-grep-and-guess.
+ * Single-slot is correct for the common case: sync handlers serialize on the event
+ * loop, so only one is on-loop at a time and `_currentOp` reflects it. Clearing on
+ * `finish` AND `close` so the op doesn't leak past the response. Known limitation:
+ * async-resume — req A awaits, B enters+sets, A resumes+blocks → attributed to B.
+ * Full per-async-context attribution would need AsyncLocalStorage; deferred. */
+export function makeRequestOpMiddleware(): (req: ReqLike, res: ResLike, next: () => void) => void {
+  return (req: ReqLike, res: ResLike, next: () => void): void => {
+    setCurrentOp(`${req.method} ${req.path}`);
+    const clear = (): void => setCurrentOp(null);
+    res.once('finish', clear);
+    res.once('close', clear);
+    next();
+  };
+}
+
 export interface BlockAlert {
   duration_ms: number;
   ts: string;
