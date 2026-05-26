@@ -405,15 +405,20 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         r#"{{"from":"{}","text":"[demo ready] #{} — werk-variant up; gates green; ready for your eyes. Ask questions, check the variant, or /acp when satisfied."}}"#,
         role, card
     );
-    let _ = run(
+    // -f + exit-check so the silent-success class can't recur on this surface
+    // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
+    if let Err(e) = run(
         "curl",
         &[
-            "-s", "-X", "POST",
+            "-s", "-f", "-X", "POST",
             "http://localhost:3470/api/message",
             "-H", "Content-Type: application/json",
             "-d", &pause_body,
         ],
-    );
+    ) {
+        jsonl(home, role, card, &trace, "demo.bridge.failed",
+              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
+    }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
     jsonl(home, role, card, &trace, "demo.completed", "");
