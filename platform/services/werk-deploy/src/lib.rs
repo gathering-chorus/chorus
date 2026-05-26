@@ -463,6 +463,37 @@ fn deploy_ts_service(
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-service\",\"target\":\"{}\"", svc_name, target));
 
+    // #3092 — identity verify BEFORE kickstart (maiden-voyage bug fix).
+    // The cp -R has just landed the dist bytes; the canonical dist tree is now a
+    // snapshot of the built artifact. Hash it NOW, before the node process starts
+    // and writes transient files (sourcemap cache, runtime state) into dist that
+    // would shift the hash without changing what was installed. The "installed
+    // == built" assertion is about the bytes we copied, not about what the
+    // running process leaves on disk afterwards.
+    // #3092 — relative-path hash (werk-build/deploy must produce the SAME hash
+    // for byte-identical content even though werk + canonical sit at different
+    // absolute paths). Mirrors werk-build's `build_ts_service`.
+    let snapshot_cmd = format!(
+        "cd {} && find . -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        canonical_dist
+    );
+    let installed_sha = run_env(None, &[], "sh", &["-c", &snapshot_cmd]).map(|o| o.trim().to_string()).unwrap_or_default();
+    if installed_sha != built_dist_sha {
+        // Bytes don't match what werk-build hashed — cp corrupted something or
+        // the source dist mutated mid-copy. Roll back BEFORE kickstart so the
+        // running process never sees the bad install.
+        let _ = fs::remove_dir_all(&canonical_dist);
+        if Path::new(&canonical_dist_prev).is_dir() {
+            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
+        }
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-identity-mismatch-pre-kickstart\"");
+        return Err(format!(
+            "installed dist sha != built for {} (pre-kickstart snapshot): built={} installed={} — rolled back, prev preserved",
+            svc_name, built_dist_sha, installed_sha
+        ));
+    }
+    jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"dist_sha\":\"{}\",\"phase\":\"pre-kickstart\"", svc_name, installed_sha));
+
     // Kickstart the LaunchAgent. v1 uses `launchctl kickstart -k gui/<uid>/<svc>`.
     if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
         // Rollback: restore prev dist + re-kickstart so the prior version stays up.
@@ -488,26 +519,14 @@ fn deploy_ts_service(
         return Err(format!("health smoke for {} failed; restored prev dist: {}", svc_name, e));
     }
 
-    // Identity verify: re-hash the installed dist; assert it matches the built dist.
-    // Same `find | sort | shasum | shasum` scheme werk-build uses.
-    let cmd = format!(
-        "find {} -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
-        canonical_dist
-    );
-    let installed_sha = run_env(None, &[], "sh", &["-c", &cmd]).map(|o| o.trim().to_string()).unwrap_or_default();
-    if installed_sha != built_dist_sha {
-        let _ = fs::remove_dir_all(&canonical_dist);
-        if Path::new(&canonical_dist_prev).is_dir() {
-            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
-        }
-        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-identity-mismatch\"");
-        return Err(format!(
-            "installed dist sha != built for {}: built={} installed={} — rolled back",
-            svc_name, built_dist_sha, installed_sha
-        ));
-    }
-    jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"dist_sha\":\"{}\"", svc_name, installed_sha));
+    // #3092 — identity verify happens BEFORE kickstart (above). The running
+    // node process writes transient files into dist (sourcemap cache, runtime
+    // artifacts), which would shift a post-kickstart hash and produce a false
+    // mismatch (caught on the maiden voyage of #3096 against the new substrate
+    // 2026-05-26: a clean install verified-out-of-date because the kickstarted
+    // process had already touched dist before the re-hash ran). Pre-kickstart
+    // snapshot is the right "installed == built" assertion; post-kickstart the
+    // dist tree is the running process's working set, not a build artifact.
     Ok(())
 }
 

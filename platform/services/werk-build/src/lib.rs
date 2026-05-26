@@ -311,11 +311,16 @@ fn build_ts_service(werk_s: &str, service: &str) -> R<String> {
     if !Path::new(&dist_dir).is_dir() {
         return Err(format!("expected dist/ after `npm run build` at {}", dist_dir));
     }
-    // sha256 of dist tree. `find ... | sort | xargs shasum | shasum | cut`
-    // — file content + path both in the hash; sorted listing makes the
-    // outer hash deterministic. LC_ALL=C ensures locale-stable sort.
+    // sha256 of dist tree, RELATIVE PATHS so the hash is location-independent:
+    // werk-build hashes the werk's dist; werk-deploy hashes the canonical dist
+    // after cp. Both MUST produce the same hash for byte-identical content even
+    // though the dirs sit at different absolute paths. (Maiden-voyage bug #3092
+    // 2026-05-26: `find $abs_dir -type f` bakes the absolute path into each
+    // shasum line, so faithfully-identical content at different paths produced
+    // different outer hashes. Use `cd $dir && find . -type f` so the shasum
+    // lines all start with "./relpath" — location-independent.)
     let cmd = format!(
-        "find {} -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        "cd {} && find . -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
         dist_dir
     );
     let out = run("sh", &["-c", &cmd])?;
