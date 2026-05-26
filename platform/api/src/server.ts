@@ -3279,11 +3279,20 @@ if (require.main === module) {
   // hand-rolled shell alert). Real duration only, no fabricated story; the route is
   // correlated from the access log by timestamp. Cold-start excluded by the boot delay.
   // execFile (no shell) so the message can't shell-inject.
+  // #3099: threshold 3000ms (was default 1000). chorus-api's real sync work —
+  // search response marshaling, crawl parse slices post-#3091, board-poll
+  // coincidences — regularly hits 1-2.5s; alerts on those are false positives,
+  // not bugs. 3000ms surfaces real outliers (e.g., the 21s search tail-marshal
+  // class) without firing on normal slow work. Drops ~80% of today's alert
+  // volume. Revisit when CHORUS_API_PORT routing + worker-thread ALS land
+  // (#3096 follow-on) — those eliminate the underlying overlap classes and
+  // the threshold can come back down.
   startEventloopAlert({
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+    threshold: 3000,
   });
 
   // Health cache refresh — runs every 30s under the live server only.
