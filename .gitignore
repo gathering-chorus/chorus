@@ -70,6 +70,11 @@ ops/logs/permission-prompts.log
 ops/logs/command-errors.log
 ops/logs/*.log.*.gz
 ops/logs/board-snapshot-*.json
+# Verb-witness runtime logs (werk-build/commit/push/pull/deploy/accept/demo);
+# never source. #3095 — closes the acp #unknown orphan class where a dirty
+# canonical tree got these jsonl files swept into a junk commit (e.g. the
+# wren: acp #unknown that blocked #3089's deploy 2026-05-26 morning).
+ops/logs/*.jsonl
 platform/logs/chorus.log
 platform/logs/permission-prompts.log
 platform/logs/command-errors.log
