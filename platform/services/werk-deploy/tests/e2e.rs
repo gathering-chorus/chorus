@@ -48,7 +48,7 @@ fn e2e_deploy_both_slots_and_guards() {
     let marker = logd.join("installed.marker");
     std::env::set_var("CS_MARKER", marker.to_str().unwrap());
 
-    write_exec(&bin.join("werk-build"), &format!("#!/bin/sh\necho \"$@\" >> {bs:?}\necho 'widget=DEADBEEF'\n"));
+    write_exec(&bin.join("werk-build"), &format!("#!/bin/sh\necho \"$@\" >> {bs:?}\necho 'chorus-inject=DEADBEEF'\n"));
     // install: log argv + touch the marker (so codesign returns the NEW cdhash after).
     write_exec(&bin.join("chorus-bin-install"), &format!("#!/bin/sh\necho \"$@\" >> {inst:?}\ntouch \"$CS_MARKER\"\nexit 0\n"));
     write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nexit 0\n"));
@@ -73,14 +73,14 @@ fn e2e_deploy_both_slots_and_guards() {
 
     let werk = werk_base.join("silas-7001");
     git(&home, &["worktree", "add", "-q", "-b", "silas/7001", werk.to_str().unwrap(), "origin/main"]);
-    fs::create_dir_all(werk.join("platform/services/widget/src")).unwrap();
-    fs::write(werk.join("platform/services/widget/src/lib.rs"), "// w\n").unwrap();
-    git(&werk, &["add", "."]); git(&werk, &["commit", "-q", "-m", "widget"]);
+    fs::create_dir_all(werk.join("platform/services/chorus-inject/src")).unwrap();
+    fs::write(werk.join("platform/services/chorus-inject/src/lib.rs"), "// w\n").unwrap();
+    git(&werk, &["add", "."]); git(&werk, &["commit", "-q", "-m", "chorus-inject"]);
 
     // === TEST-IN-DEMO: target=werk → role slot, NO kickstart, NO verify ===
     let _ = fs::remove_file(&marker);
     let r = deploy(7001, "silas", "werk", &home, &werk_base).expect("demo-slot deploy");
-    assert!(r.contains("widget=DEADBEEF") && r.contains("target=werk"), "demo summary: {}", r);
+    assert!(r.contains("chorus-inject=DEADBEEF") && r.contains("target=werk"), "demo summary: {}", r);
     assert!(read(&bs).contains("7001"), "werk-build ran (guaranteed rebuild)");
     assert!(read(&inst).contains("--target werk"), "installed to werk slot: {}", read(&inst));
     assert!(read(&lc).is_empty(), "DEMO must NOT kickstart: {}", read(&lc));
@@ -99,7 +99,7 @@ fn e2e_deploy_both_slots_and_guards() {
     // === AC2 STALE-BUILD: rebuild gives the running cdhash WHILE source changed → refuse ===
     fs::remove_file(&inst).ok();
     fs::remove_file(&marker).ok();              // pre-install read
-    std::env::set_var("CS_PRE", "DEADBEEF");    // running(old) == built(DEADBEEF) AND widget source changed
+    std::env::set_var("CS_PRE", "DEADBEEF");    // running(old) == built(DEADBEEF) AND chorus-inject source changed
     let e = deploy(7001, "silas", "canonical", &home, &werk_base).expect_err("stale build must refuse");
     assert!(e.contains("cdhash-divergence"), "stale-build refuse: {}", e);
     assert!(!read(&inst).contains("--target canonical"), "stale build refused BEFORE install (nothing mutated): {}", read(&inst));

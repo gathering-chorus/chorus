@@ -70,8 +70,7 @@ pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, ext
 }
 
 /// Map a changed repo path to its owning Rust crate name, or None.
-/// werk-build's scope is signed Rust crates under platform/services/<crate>/.
-/// (chorus-api is TypeScript — npm build, no cdhash — a separate path.)
+/// Rust crates live under platform/services/<crate>/ (signed binaries via build-signed.sh).
 pub fn crate_for_path(path: &str) -> Option<String> {
     let rest = path.strip_prefix("platform/services/")?;
     let name = rest.split('/').next()?;
@@ -80,6 +79,65 @@ pub fn crate_for_path(path: &str) -> Option<String> {
     } else {
         Some(name.to_string())
     }
+}
+
+/// #3092 — map a changed repo path to its owning TS service name, or None.
+/// TS services are tsc-built; identity is sha256(dist tree), not cdhash.
+/// Today only chorus-api lives at platform/api/; future TS services would add
+/// rules here. The detection is intentionally a function returning a unit,
+/// not an enum class — the work IS the data (Jeff's framing): a Cargo.toml means
+/// cargo-build; platform/api/ means npm-build. New buildable kind = new rule.
+pub fn ts_service_for_path(path: &str) -> Option<String> {
+    if path.starts_with("platform/api/") {
+        return Some("chorus-api".to_string());
+    }
+    None
+}
+
+/// #3092 — what kind of thing was changed, and what's its identifier. Either a
+/// Rust crate (built via build-signed.sh, emits cdhash) or a TS service (built
+/// via `npm run build`, emits sha256-of-dist). The two flow through the same
+/// `<name>=<identity>` summary contract that werk-deploy parses (ADR-032 §1,
+/// §5 amended: cdhash and sha256(dist) are both "stable identity hashes").
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BuildUnit {
+    /// Rust crate at platform/services/<name>/ — cargo+codesign+cdhash.
+    RustCrate(String),
+    /// TS service at platform/api/ etc. — `npm run build` in service dir, hash dist.
+    TsService(String),
+}
+
+impl BuildUnit {
+    /// Stable display name used in the summary (`<name>=<identity>`).
+    pub fn name(&self) -> &str {
+        match self {
+            BuildUnit::RustCrate(n) | BuildUnit::TsService(n) => n.as_str(),
+        }
+    }
+}
+
+/// #3092 — walk a diff line-set and yield every buildable unit (Rust crate OR
+/// TS service) the branch touched. Deduplicated + ordered. Pure (no IO);
+/// callers pass the output of `git diff origin/main --name-only`.
+///
+/// This is Jeff's "build all things that need a build based on the branch" —
+/// no language enum on the verb, just per-path detection rules. Adding a new
+/// language = a new `<lang>_for_path` rule + an arm here.
+pub fn discover_build_units<I, S>(diff_lines: I) -> Vec<BuildUnit>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
+    for line in diff_lines {
+        let p = line.as_ref().trim();
+        if let Some(c) = crate_for_path(p) {
+            units.insert(BuildUnit::RustCrate(c));
+        } else if let Some(s) = ts_service_for_path(p) {
+            units.insert(BuildUnit::TsService(s));
+        }
+    }
+    units.into_iter().collect()
 }
 
 // --- side-effecting helpers ---
@@ -180,17 +238,9 @@ pub fn extract_cdhash(output: &str) -> Option<String> {
     None
 }
 
-/// Which Rust crates did this card change (vs origin/main)? Empty => nothing to build.
-fn detect_crates(werk_s: &str) -> R<Vec<String>> {
-    let diff = run("git", &["-C", werk_s, "diff", "origin/main", "--name-only"])?;
-    let mut crates: BTreeSet<String> = BTreeSet::new();
-    for line in diff.lines() {
-        if let Some(c) = crate_for_path(line.trim()) {
-            crates.insert(c);
-        }
-    }
-    Ok(crates.into_iter().collect())
-}
+// #3092 — `detect_crates` (Rust-only diff scan) retired; replaced by the
+// pure `discover_build_units` helper above + a direct git-diff call in `build`.
+// One diff query, dispatched through the BuildUnit enum.
 
 /// (identifier, binary-name) for a crate. Mirrors build-signed.sh `resolve_crate`
 /// for the signed crates; derives a sensible default otherwise. Needed because the
@@ -224,6 +274,61 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     )?;
     extract_cdhash(&out)
         .ok_or_else(|| format!("build of {} produced no cdhash (build-signed.sh output had no 'cdhash=' line)", crate_name))
+}
+
+/// #3092 — map a TS service name to its source directory inside the werk.
+/// Today only chorus-api at platform/api/; future TS services add a rule here.
+/// Separate from `ts_service_for_path` so the path→name rule and the name→dir
+/// rule can evolve independently (e.g., a different repo layout for a future
+/// TS service).
+fn ts_service_dir(werk_s: &str, service: &str) -> R<String> {
+    match service {
+        "chorus-api" => Ok(format!("{}/platform/api", werk_s)),
+        other => Err(format!(
+            "unknown TS service '{}' (only 'chorus-api' is registered today; add a rule in ts_service_dir)",
+            other
+        )),
+    }
+}
+
+/// #3092 — build ONE TS service IN THE WERK, return its identity hash
+/// (sha256 of the dist tree). Determinism PROVEN externally (2026-05-26: three
+/// back-to-back tsc builds → byte-identical sha) so same source → same hash,
+/// build-invariance holds the same way cdhash does for Rust crates.
+///
+/// Mirrors v1 chorus-deploy.sh's chorus-api branch (`npm run build`) — same
+/// command, different caller. The hash uses `find | sort | shasum | shasum`
+/// (the same scheme the determinism check used), keying on file CONTENT and
+/// file PATHS so a rename or addition shifts the hash.
+fn build_ts_service(werk_s: &str, service: &str) -> R<String> {
+    let service_dir = ts_service_dir(werk_s, service)?;
+    if !Path::new(&service_dir).is_dir() {
+        return Err(format!("TS service dir not found at {}", service_dir));
+    }
+    // npm run build in the service dir (mirrors v1 chorus-deploy.sh #2831 path).
+    run_in_env(&service_dir, &[], "npm", &["run", "build"])?;
+    let dist_dir = format!("{}/dist", service_dir);
+    if !Path::new(&dist_dir).is_dir() {
+        return Err(format!("expected dist/ after `npm run build` at {}", dist_dir));
+    }
+    // sha256 of dist tree, RELATIVE PATHS so the hash is location-independent:
+    // werk-build hashes the werk's dist; werk-deploy hashes the canonical dist
+    // after cp. Both MUST produce the same hash for byte-identical content even
+    // though the dirs sit at different absolute paths. (Maiden-voyage bug #3092
+    // 2026-05-26: `find $abs_dir -type f` bakes the absolute path into each
+    // shasum line, so faithfully-identical content at different paths produced
+    // different outer hashes. Use `cd $dir && find . -type f` so the shasum
+    // lines all start with "./relpath" — location-independent.)
+    let cmd = format!(
+        "cd {} && find . -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        dist_dir
+    );
+    let out = run("sh", &["-c", &cmd])?;
+    let sha = out.trim();
+    if sha.is_empty() || sha.len() < 32 {
+        return Err(format!("dist hash invalid ({:?}) after build of {}", sha, service));
+    }
+    Ok(sha.to_string())
 }
 
 /// gh: set chorus/build/<card> success on the werk HEAD carrying the cdhash, and
@@ -334,25 +439,62 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
 
-    let crates = detect_crates(&werk_s)?;
-    if crates.is_empty() {
-        jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-crate-changed\"");
-        return Err(format!("card #{} changed no Rust crate under platform/services/ — nothing to build", card));
+    // #3092 — discover ALL build units (Rust crates + TS services) from the branch
+    // diff. The verb doesn't classify by language; it walks the diff and dispatches
+    // each unit through its own builder. Adding a new buildable kind = a new
+    // detection rule (ts_service_for_path / crate_for_path / future), no orchestrator
+    // change. This is Jeff's "build all things that need a build based on the branch."
+    let diff = run("git", &["-C", &werk_s, "diff", "origin/main", "--name-only"])?;
+    let units = discover_build_units(diff.lines());
+    if units.is_empty() {
+        jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-buildable-changed\"");
+        return Err(format!(
+            "card #{} changed nothing buildable (no Rust crate under platform/services/, no TS service under platform/api/) — nothing to build",
+            card
+        ));
     }
 
-    // one lock around all the crate builds (cargo can't race the target dir).
-    let _lock = lock(&werk, Duration::from_secs(60))?;
+    // one lock around all builds (cargo can't race the target dir; npm builds also
+    // serialize naturally per-service, but the lock is the cross-unit guarantee).
+    let _lock = lock(&werk, Duration::from_secs(120))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
     let mut summary: Vec<String> = Vec::new();
-    for c in &crates {
-        jsonl(home, role, card, &trace, "crate.build.started", &format!(",\"crate\":\"{}\"", c));
-        let cdhash = build_crate(&werk_s, c)?;
-        jsonl(home, role, card, &trace, "crate.build.completed", &format!(",\"crate\":\"{}\",\"cdhash\":\"{}\"", c, cdhash));
-        // gh status per crate (last write wins for the chorus/build/<card> context;
-        // the summary carries every crate=cdhash).
-        register_gh(&werk_s, card, role, &trace, &cdhash);
-        summary.push(format!("{}={}", c, cdhash));
+    for unit in &units {
+        let (kind_str, name) = match unit {
+            BuildUnit::RustCrate(n) => ("rust", n.as_str()),
+            BuildUnit::TsService(n) => ("ts", n.as_str()),
+        };
+        jsonl(
+            home,
+            role,
+            card,
+            &trace,
+            "unit.build.started",
+            &format!(",\"kind\":\"{}\",\"name\":\"{}\"", kind_str, name),
+        );
+        // Dispatch by unit kind. Each returns the unit's stable identity hash
+        // (cdhash for Rust, sha256-of-dist for TS — same contract, different forms,
+        // per ADR-032 §1/§5 widened: "stable identity hash").
+        let identity = match unit {
+            BuildUnit::RustCrate(c) => build_crate(&werk_s, c)?,
+            BuildUnit::TsService(s) => build_ts_service(&werk_s, s)?,
+        };
+        jsonl(
+            home,
+            role,
+            card,
+            &trace,
+            "unit.build.completed",
+            &format!(
+                ",\"kind\":\"{}\",\"name\":\"{}\",\"identity\":\"{}\"",
+                kind_str, name, identity
+            ),
+        );
+        // gh status per unit (last write wins for the chorus/build/<card> context;
+        // the summary line carries every name=identity pair for werk-deploy).
+        register_gh(&werk_s, card, role, &trace, &identity);
+        summary.push(format!("{}={}", name, identity));
     }
 
     let joined = summary.join(",");

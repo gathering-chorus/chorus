@@ -16,7 +16,11 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 BIN_DIR="${CHORUS_BIN_DIR:-$HOME/.chorus/bin}"
 
-VERBS=(werk-pull werk-commit werk-push werk-build werk-deploy werk-accept)
+# #3092 — werk-demo added so the demo orchestrator binary ('#'3046) is on PATH
+# alongside the other v2 verbs. Surfaced by the v2 maiden voyage on '#'3096:
+# werk-demo wasn't installed by the bootstrap, so the demo step needed a manual
+# build+install. Drive-by inside #3092's substrate sweep.
+VERBS=(werk-pull werk-commit werk-push werk-build werk-deploy werk-accept werk-demo)
 
 mkdir -p "$BIN_DIR"
 echo "install-werk-verbs: building + installing ${#VERBS[@]} verb(s) to $BIN_DIR"

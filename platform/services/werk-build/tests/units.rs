@@ -1,5 +1,8 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
-use werk_build::{branch_name, crate_for_path, extract_cdhash, jsonl_line, resolve_trace};
+use werk_build::{
+    branch_name, crate_for_path, discover_build_units, extract_cdhash, jsonl_line, resolve_trace,
+    ts_service_for_path, BuildUnit,
+};
 
 #[test]
 fn branch_name_is_role_slash_card() {
@@ -10,10 +13,65 @@ fn branch_name_is_role_slash_card() {
 fn crate_for_path_maps_services_paths_only() {
     assert_eq!(crate_for_path("platform/services/werk-build/src/lib.rs"), Some("werk-build".to_string()));
     assert_eq!(crate_for_path("platform/services/chorus-hooks/Cargo.toml"), Some("chorus-hooks".to_string()));
-    // not a services crate -> None (chorus-api is TS, no cdhash; docs etc. ignored)
+    // not a services crate -> None (TS paths handled by ts_service_for_path; docs etc. ignored)
     assert_eq!(crate_for_path("platform/api/src/server.ts"), None);
     assert_eq!(crate_for_path("roles/silas/adr/ADR-032.md"), None);
     assert_eq!(crate_for_path("platform/services/"), None);
+}
+
+#[test]
+fn ts_service_for_path_maps_api_paths_to_chorus_api() {
+    // #3092 — platform/api/* is chorus-api (the TS service); other paths are None.
+    assert_eq!(ts_service_for_path("platform/api/src/server.ts"), Some("chorus-api".to_string()));
+    assert_eq!(ts_service_for_path("platform/api/src/handlers/chorus-crawl.ts"), Some("chorus-api".to_string()));
+    assert_eq!(ts_service_for_path("platform/api/package.json"), Some("chorus-api".to_string()));
+    // a Rust crate path is NOT a TS service.
+    assert_eq!(ts_service_for_path("platform/services/werk-build/src/lib.rs"), None);
+    // docs/state are not TS services.
+    assert_eq!(ts_service_for_path("roles/silas/adr/ADR-032.md"), None);
+    assert_eq!(ts_service_for_path("platform/api"), None); // needs trailing slash to be inside the dir
+}
+
+#[test]
+fn discover_build_units_finds_rust_and_ts_in_one_diff() {
+    // A mixed diff produces both kinds, deduplicated, ordered.
+    let diff = [
+        "platform/services/werk-build/src/lib.rs",
+        "platform/services/werk-build/tests/units.rs", // same crate -> dedup
+        "platform/api/src/server.ts",
+        "platform/api/src/handlers/chorus-crawl.ts", // same service -> dedup
+        "roles/silas/adr/ADR-032.md",                 // not buildable
+    ];
+    let units = discover_build_units(diff.iter());
+    // BTreeSet over (kind, name) sorts: RustCrate < TsService by enum-variant order.
+    assert_eq!(
+        units,
+        vec![
+            BuildUnit::RustCrate("werk-build".to_string()),
+            BuildUnit::TsService("chorus-api".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn discover_build_units_empty_on_no_buildable_paths() {
+    let diff = ["roles/silas/adr/ADR-032.md", "designing/docs/x.html"];
+    let units = discover_build_units(diff.iter());
+    assert!(units.is_empty(), "non-buildable paths must yield empty unit list");
+}
+
+#[test]
+fn discover_build_units_handles_empty_lines_and_whitespace() {
+    // git diff output may have trailing whitespace; the function trims per-line.
+    let diff = ["", "  platform/services/chorus-hooks/src/lib.rs  ", "\n"];
+    let units = discover_build_units(diff.iter());
+    assert_eq!(units, vec![BuildUnit::RustCrate("chorus-hooks".to_string())]);
+}
+
+#[test]
+fn build_unit_name_returns_inner_string_regardless_of_kind() {
+    assert_eq!(BuildUnit::RustCrate("chorus-hooks".to_string()).name(), "chorus-hooks");
+    assert_eq!(BuildUnit::TsService("chorus-api".to_string()).name(), "chorus-api");
 }
 
 #[test]

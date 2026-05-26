@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus deploy topology — current + #3092</title>
+<style>
+  :root {
+    --bg:#f6f4ef; --ink:#22221f; --rule:#b8b3a5; --hi:#d65d00; --share:#7b9a52;
+    --canon:#3b82a9; --werk:#a06f33; --jeff:#7a3b8a; --muted:#7a7565;
+    --code: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system, sans-serif; }
+  .wrap { max-width:1180px; margin:24px auto; padding:0 20px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin:32px 0 12px; border-bottom:1px solid var(--rule); padding-bottom:6px; }
+  p { margin:8px 0; max-width:780px; }
+  .lede { color:var(--muted); margin-bottom:16px; }
+  .grid { display:grid; gap:14px; }
+  .cols-3 { grid-template-columns:repeat(3, 1fr); }
+  .cols-4 { grid-template-columns:repeat(4, 1fr); }
+  .box { background:#fff; border:1px solid var(--rule); border-radius:6px; padding:12px 14px; }
+  .box h3 { margin:0 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:0.05em; }
+  .box.canon h3 { color:var(--canon); }
+  .box.werk h3 { color:var(--werk); }
+  .box.shared h3 { color:var(--share); }
+  .box.jeff h3 { color:var(--jeff); }
+  .box ul { margin:4px 0 0; padding-left:16px; font-size:13px; }
+  .box li { margin:2px 0; }
+  .port, code, .mono { font-family:var(--code); font-size:12px; color:var(--hi); }
+  .lbl { font-family:var(--code); font-size:11px; color:var(--muted); }
+  .route { background:#fff8ec; border:1px dashed var(--hi); border-radius:6px; padding:10px 12px; font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:8px 0; background:#fff; border:1px solid var(--rule); border-radius:6px; overflow:hidden; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { background:#efece5; font-weight:600; }
+  tr:last-child td { border-bottom:none; }
+  .arrow { color:var(--muted); }
+  .pill { display:inline-block; padding:1px 6px; border:1px solid var(--rule); border-radius:10px; font-size:11px; font-family:var(--code); margin-right:4px; }
+  .pill.canon { background:#dceaf3; border-color:var(--canon); color:var(--canon); }
+  .pill.werk { background:#f3e5d2; border-color:var(--werk); color:var(--werk); }
+  .pill.shared { background:#e2ecd6; border-color:var(--share); color:var(--share); }
+  .pill.jeff { background:#e6d8ec; border-color:var(--jeff); color:var(--jeff); }
+  .note { color:var(--muted); font-style:italic; font-size:12px; }
+  .lifecycle { font-size:12px; color:var(--muted); }
+  .lifecycle b { color:var(--ink); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Chorus deploy topology</h1>
+<p class="lede">
+  As of 2026-05-26 (post-#3092 substrate work). Three roles + one human, one machine,
+  one shared state surface. Process isolation per role in demo; state shared with canonical.
+</p>
+
+<h2>Layers</h2>
+<div class="grid cols-4">
+  <div class="box jeff">
+    <h3>Human surface</h3>
+    <ul>
+      <li>Jeff's browser at <span class="port">localhost:3000</span></li>
+      <li>(jeff-bridwell-personal-site UI; calls <span class="port">:3340</span>)</li>
+      <li>Jeff's terminal sessions</li>
+    </ul>
+  </div>
+  <div class="box werk">
+    <h3>Role sessions</h3>
+    <ul>
+      <li>silas / wren / kade Claude Code sessions</li>
+      <li>Per-role <span class="mono">CHORUS_ROLE</span>, env vars from <span class="mono">chorus-env-setup.sh</span></li>
+      <li>PATH-prefixed with <span class="mono">$WERK_&lt;ROLE&gt;_BIN</span></li>
+    </ul>
+  </div>
+  <div class="box canon">
+    <h3>Canonical (prod)</h3>
+    <ul>
+      <li>Long-running daemons that everyone hits when not in demo</li>
+      <li>One process per service</li>
+    </ul>
+  </div>
+  <div class="box shared">
+    <h3>Shared state</h3>
+    <ul>
+      <li>Singletons consumed by ALL processes (canonical + werk)</li>
+      <li>Data is intentionally shared (#3092 design call)</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Canonical services (always running)</h2>
+<table>
+  <tr><th>Unit</th><th>Listens / invoked as</th><th>Runs</th><th>Role at runtime</th></tr>
+  <tr><td><span class="pill canon">com.chorus.api</span></td><td><span class="port">:3340</span></td><td><span class="mono">node dist/server.js</span> via <span class="mono">chorus-api-wrapper.sh</span></td><td>HTTP API — cards, search, board context, spine</td></tr>
+  <tr><td><span class="pill canon">com.chorus.mcp</span></td><td><span class="port">:3341</span></td><td><span class="mono">node dist/main.js</span></td><td>MCP daemon — tool calls from agent sessions</td></tr>
+  <tr><td><span class="pill canon">com.chorus.hooks</span></td><td>per-event (claude code hooks)</td><td><span class="mono">chorus-hook-shim</span> (Rust)</td><td>PreToolUse/PostToolUse hooks, canonical_write_guard, etc.</td></tr>
+  <tr><td><span class="pill canon">com.chorus.inject</span></td><td>per-event (nudge substrate)</td><td><span class="mono">chorus-inject</span> (Rust)</td><td>Cross-role nudge delivery via AppleEvents</td></tr>
+</table>
+<p class="note">The first two are true long-running daemons (port-bound). The last two are subprocess-invoked binaries that have launchd registrations for TCC permission stability — they aren't always running.</p>
+
+<h2>Per-role demo variants (when the role has an active werk)</h2>
+<p>Each role gets its OWN running variant of the long-running daemons, on its own port, running from its werk's dist. Activated by a marker file at <span class="mono">$ROOT/.werk-&lt;svc&gt;/active</span>; the role's session reads the marker via <span class="mono">chorus-env-setup.sh</span> and routes its calls to its own port instead of canonical.</p>
+
+<table>
+  <tr><th>Role</th><th>werk-api</th><th>werk-mcp</th><th>WERK_&lt;ROLE&gt;_BIN</th><th>Marker activates routing</th></tr>
+  <tr>
+    <td><b>silas</b></td>
+    <td><span class="pill werk">com.chorus.api.werk.silas</span> <span class="port">:3343</span></td>
+    <td><span class="pill werk">com.chorus.mcp.werk.silas</span> <span class="port">:3351</span></td>
+    <td><span class="mono">~/CascadeProjects/chorus-werk/silas-bin/</span></td>
+    <td><span class="mono">.werk-api/active</span> + <span class="mono">.werk-mcp/active</span></td>
+  </tr>
+  <tr>
+    <td><b>wren</b></td>
+    <td><span class="pill werk">com.chorus.api.werk.wren</span> <span class="port">:3345</span></td>
+    <td><span class="pill werk">com.chorus.mcp.werk.wren</span> <span class="port">:3353</span></td>
+    <td><span class="mono">~/CascadeProjects/chorus-werk/wren-bin/</span></td>
+    <td>same shape</td>
+  </tr>
+  <tr>
+    <td><b>kade</b></td>
+    <td><span class="pill werk">com.chorus.api.werk.kade</span> <span class="port">:3344</span></td>
+    <td><span class="pill werk">com.chorus.mcp.werk.kade</span> <span class="port">:3352</span></td>
+    <td><span class="mono">~/CascadeProjects/chorus-werk/kade-bin/</span></td>
+    <td>same shape</td>
+  </tr>
+</table>
+<p class="note">Port assignments mirror chorus-mcp's #3016 (silas/kade/wren = 3351/3352/3353). chorus-api ports are 3343/3344/3345 in the same order. Hooks/inject don't get per-role variants today — claude-code invokes them by absolute path, so per-role wouldn't be exercised.</p>
+
+<h2>Shared state — the same backing for all environments</h2>
+<table>
+  <tr><th>Resource</th><th>Where</th><th>Consumed by</th><th>Why shared</th></tr>
+  <tr><td><span class="pill shared">chorus index</span></td><td><span class="mono">~/.chorus/index.db</span> (SQLite WAL)</td><td>canonical chorus-api + all werk-api variants</td><td>Search/spine queries hit one truth; tests run against real data</td></tr>
+  <tr><td><span class="pill shared">Fuseki</span></td><td><span class="port">localhost:3030</span></td><td>chorus-api Athena/Loom queries (canonical + werk)</td><td>Single triple store; per-role triples would fragment the graph</td></tr>
+  <tr><td><span class="pill shared">Loki</span></td><td><span class="port">localhost:3102</span></td><td>All processes via promtail</td><td>Unified log/spine observation</td></tr>
+  <tr><td><span class="pill shared">Vikunja</span></td><td>(cards backend, separate process)</td><td>All chorus-api variants for the board</td><td>One team kanban; per-role boards would fragment work</td></tr>
+  <tr><td><span class="pill shared">log files</span></td><td><span class="mono">~/Library/Logs/Chorus/chorus-api.log</span></td><td>App log (canonical writes; werk variant has its own stdout/stderr at <span class="mono">$ROOT/.werk-api/daemon.log</span>)</td><td>Process-level logs split; app-level logs unified</td></tr>
+  <tr><td><span class="pill shared">/tmp scratch</span></td><td><span class="mono">/tmp/crawler-domain-status.json</span>, <span class="mono">/tmp/role-state-*.json</span>, <span class="mono">/tmp/&lt;card&gt;-trace</span></td><td>All</td><td>Cross-process coordination scratch</td></tr>
+  <tr><td><span class="pill shared">~/.chorus/bin</span></td><td><span class="mono">$CHORUS_BIN</span></td><td>Everyone (canonical PATH)</td><td>Shared installed verb binaries + chorus-hook-shim/inject</td></tr>
+</table>
+
+<h2>Routing — how a session finds its services</h2>
+<div class="route">
+<p><b>chorus-env-setup.sh</b> runs at session start and sets env vars based on <span class="mono">CHORUS_ROLE</span> + presence of marker files:</p>
+<ul>
+  <li><span class="mono">PATH</span>: prepend <span class="mono">$WERK_&lt;ROLE&gt;_BIN</span>, then <span class="mono">$CHORUS_BIN</span> — CLI verbs resolve to the role slot first</li>
+  <li><span class="mono">CHORUS_MCP_PORT</span>: if <span class="mono">$ROOT/.werk-mcp/active</span> exists → role's werk-mcp port; else <span class="mono">CHORUS_MCP_PORT_CANONICAL</span> (3341)</li>
+  <li><span class="mono">CHORUS_API_PORT</span> (<b>#3092 new</b>): if <span class="mono">$ROOT/.werk-api/active</span> exists → role's werk-api port; else <span class="mono">CHORUS_API_PORT_CANONICAL</span> (3340)</li>
+  <li><span class="mono">.mcp.json</span> interpolates <span class="mono">$CHORUS_MCP_PORT</span> into the MCP server URL</li>
+</ul>
+<p>Result: when the role is mid-card with a deployed demo env, its session resolves to its OWN werk-api/werk-mcp. Other roles + Jeff's browser + all cron/scripts stay on canonical :3340 / :3341.</p>
+</div>
+
+<h2>Lifecycle — when each piece is born / dies</h2>
+<table>
+  <tr><th>Event</th><th>Werk</th><th>Werk-api / werk-mcp</th><th>Canonical</th></tr>
+  <tr><td><span class="mono">/pull &lt;card&gt;</span></td><td>created by <span class="mono">chorus-werk add</span> off origin/main</td><td>not yet started</td><td>untouched</td></tr>
+  <tr><td><span class="mono">/demo &lt;card&gt;</span> (= werk-deploy --target werk)</td><td>build runs in werk</td><td><b>generated launchd plist + bootstrap + marker</b> → variant running on role port</td><td>untouched</td></tr>
+  <tr><td><span class="mono">/acp &lt;card&gt;</span> success (= werk-deploy --target canonical)</td><td>still alive briefly</td><td>still running on role port</td><td>install dist + kickstart com.chorus.&lt;svc&gt; on canonical port</td></tr>
+  <tr><td>after /acp: <span class="mono">chorus-werk remove</span></td><td>torn down (worktree removed, branch deleted)</td><td><b>plist bootout + marker removed + role-bin slot cleaned</b></td><td>continues running new code</td></tr>
+  <tr><td><span class="mono">/unpull &lt;card&gt;</span> (card abandoned)</td><td>torn down</td><td>plist bootout + marker removed</td><td>untouched</td></tr>
+</table>
+<p class="lifecycle"><b>env build</b> = the plist generation + bootstrap step at first <span class="mono">/demo</span>. <b>env deploy</b> = subsequent <span class="mono">/demo</span>s that re-kickstart the variant against new dist. <b>env destroy</b> = the bootout + marker-removal + role-bin cleanup wired into <span class="mono">chorus-werk remove</span> (so /acp success and /unpull both trigger it).</p>
+
+<h2>What this delivers vs what it doesn't</h2>
+<table>
+  <tr><th>Capability</th><th>Status</th><th>Why</th></tr>
+  <tr><td>Process isolation per role</td><td><b>YES</b></td><td>Each role's werk-api/werk-mcp is its own launchd process on its own port</td></tr>
+  <tr><td>Role can test its own code in demo</td><td><b>YES</b></td><td>Role session routes to its werk port; tests exercise the role's new code</td></tr>
+  <tr><td>Other roles unaffected by a role's demo</td><td><b>YES</b></td><td>They keep using canonical or their own werk variant</td></tr>
+  <tr><td>Jeff's browser sees the role's demo</td><td><b>NO</b></td><td>Browser still hits <span class="port">:3340</span> canonical; Jeff can curl the werk port to verify</td></tr>
+  <tr><td>State isolation (DB, Fuseki, Vikunja)</td><td><b>NO — by design</b></td><td>Shared state is the intent (#3092 decision); a role's test against real data is the point</td></tr>
+  <tr><td>Per-event binaries (hooks/inject) isolated</td><td><b>NO</b></td><td>Claude Code invokes them by absolute path; per-role wouldn't be exercised</td></tr>
+  <tr><td>Crash recovery / rollback for demo</td><td><b>YES</b></td><td>Variant is independent; if it crashes, role re-deploys; canonical never touched</td></tr>
+</table>
+
+<h2>What #3092 actually adds (vs what was already there)</h2>
+<table>
+  <tr><th>Piece</th><th>Before #3092</th><th>After #3092</th></tr>
+  <tr><td>werk-build TS service path</td><td>refused: "no Rust crate"</td><td>npm run build in werk + sha256(dist) identity</td></tr>
+  <tr><td>werk-deploy TS canonical</td><td>refused (no path)</td><td>dist install (preserve dist.prev) + kickstart + health smoke + identity verify</td></tr>
+  <tr><td>werk-deploy TS werk-slot</td><td>no-op (skipped)</td><td><b>generate per-role plist + bootstrap + marker + smoke on role port</b> (<i>in progress</i>)</td></tr>
+  <tr><td>werk-deploy CLI-verb crates</td><td>tried to kickstart com.chorus.werk-pull (failed)</td><td>install only, installed-cdhash verify, no kickstart</td></tr>
+  <tr><td>install-werk-verbs.sh</td><td>missing werk-demo</td><td>werk-demo included in bootstrap</td></tr>
+  <tr><td>CHORUS_API_PORT routing</td><td>didn't exist</td><td>chorus-env-setup.sh exports per-role port + canonical fallback</td></tr>
+  <tr><td>ADR-032 §1, §5</td><td>cdhash-only</td><td>"stable identity hash" (cdhash for Rust, sha256(dist) for TS)</td></tr>
+</table>
+
+</div>
+</body>
+</html>

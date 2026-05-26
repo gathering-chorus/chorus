@@ -141,3 +141,5 @@ roles/*/CLAUDE.md
 
 # per-werk MCP runtime markers — never tracked (#3044)
 .werk-mcp/
+# per-werk API runtime markers — never tracked (#3092; same shape as .werk-mcp)
+.werk-api/

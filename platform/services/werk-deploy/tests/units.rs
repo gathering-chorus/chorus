@@ -1,8 +1,77 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
     branch_name, crate_binary, extract_running_cdhash, parse_build_summary, parse_target,
-    resolve_trace, service_for_crate,
+    resolve_trace, service_for_crate, target_class, TargetClass,
 };
+
+#[test]
+fn target_class_resolves_rust_services_with_svc_and_bin() {
+    // #3092 — chorus-hooks/inject/mcp are the original Rust-service slice.
+    // The svc is the launchd unit name; the bin may differ from the crate name
+    // (chorus-hooks → chorus-hook-shim mirrors build-signed.sh's resolve_crate).
+    match target_class("chorus-hooks").unwrap() {
+        TargetClass::RustService { svc, bin } => {
+            assert_eq!(svc, "com.chorus.hooks");
+            assert_eq!(bin, "chorus-hook-shim");
+        }
+        other => panic!("expected RustService, got {:?}", other),
+    }
+    match target_class("chorus-inject").unwrap() {
+        TargetClass::RustService { svc, bin } => {
+            assert_eq!(svc, "com.chorus.inject");
+            assert_eq!(bin, "chorus-inject");
+        }
+        other => panic!("expected RustService, got {:?}", other),
+    }
+    match target_class("chorus-mcp").unwrap() {
+        TargetClass::RustService { svc, .. } => assert_eq!(svc, "com.chorus.mcp"),
+        other => panic!("expected RustService, got {:?}", other),
+    }
+}
+
+#[test]
+fn target_class_resolves_chorus_api_as_ts_service() {
+    // #3092 — chorus-api is the net-new TS-service path. Returns dist dir + smoke URL
+    // so the deploy step doesn't have to hard-code them.
+    match target_class("chorus-api").unwrap() {
+        TargetClass::TsService { svc, dist_dir_rel, smoke_url } => {
+            assert_eq!(svc, "com.chorus.api");
+            assert_eq!(dist_dir_rel, "platform/api/dist");
+            assert!(
+                smoke_url.contains("/api/chorus/health"),
+                "smoke URL should hit chorus-api's health endpoint, got {}",
+                smoke_url
+            );
+        }
+        other => panic!("expected TsService, got {:?}", other),
+    }
+}
+
+#[test]
+fn target_class_resolves_werk_cli_verbs_to_cli_verb() {
+    // #3092 — werk-* binaries are CLI verbs (no LaunchAgent, no kickstart).
+    for verb in &[
+        "werk-pull", "werk-commit", "werk-push", "werk-build", "werk-deploy", "werk-accept", "werk-demo",
+    ] {
+        match target_class(verb).unwrap() {
+            TargetClass::CliVerb { bin } => assert_eq!(&bin, verb),
+            other => panic!("expected CliVerb for {}, got {:?}", verb, other),
+        }
+    }
+}
+
+#[test]
+fn target_class_refuses_unknown_names_with_actionable_message() {
+    // Unknown names surface; don't silent-mis-deploy. The error names the three
+    // possible kinds so the next-card path is obvious.
+    let err = target_class("chorus-future-thing").unwrap_err();
+    assert!(err.contains("unknown name"), "error must name 'unknown'; got {}", err);
+    assert!(
+        err.contains("Rust service") && err.contains("TS service") && err.contains("CLI verb"),
+        "error must enumerate the three kinds; got {}",
+        err
+    );
+}
 
 #[test]
 fn branch_name_is_role_slash_card() {
