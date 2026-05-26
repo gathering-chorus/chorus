@@ -15,6 +15,10 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import * as lancedb from '@lancedb/lancedb';
+// #3089: hoisted from the later import block so makeRequestOpMiddleware is
+// initialized before the `app.use(makeRequestOpMiddleware())` call below
+// (CJS compile evaluates imports in source order → TDZ if used before).
+import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware } from './eventloop-alert';
 
 const execAsync = promisify(exec);
 const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
@@ -30,6 +34,12 @@ type SparqlBinding = Record<string, { value: string; type?: string; datatype?: s
 const app = express();
 app.use(express.json());
 
+// #3089: name every request so eventloop.blocked alerts attribute to a route
+// (`op=GET /api/chorus/search`) instead of `op=unknown`. Must come BEFORE any
+// route handlers so it fires on entry; clearing on `finish` + `close` so the op
+// doesn't leak past the response.
+app.use(makeRequestOpMiddleware());
+
 // #2998 — MCP transport REMOVED from chorus-api. /mcp now served by the
 // chorus-mcp daemon on :3341 (separate LaunchAgent com.chorus.mcp). Decouples
 // MCP from chorus-api's deploy lifecycle so chorus-api redeploys no longer
@@ -41,7 +51,6 @@ app.use(express.json());
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
 import { startMetrics, getMetrics } from './metrics';
-import { startEventloopAlert, setCurrentOp } from './eventloop-alert';
 import { formatAccessLine } from './access-log';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
