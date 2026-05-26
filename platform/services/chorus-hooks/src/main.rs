@@ -393,11 +393,9 @@ async fn pre_tool_use_inner(
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
-            // Demo preflight gate (#1657)
-            _last_module = "demo_preflight".into(); let r = hooks::demo_preflight::check(input).await;
-            if r.stdout.is_some() || r.exit_code != 0 {
-                return (_last_module.clone(), r);
-            }
+            // #3046: demo_preflight hook retired — werk-demo posts the
+            // demo:preflight-pass evidence comment directly; accept_gate (next)
+            // still reads it the same way.
             // Accept gate (#1671)
             _last_module = "accept_gate".into(); let r = hooks::accept_gate::check(input).await;
             if r.stdout.is_some() || r.exit_code != 0 {
@@ -594,11 +592,9 @@ async fn post_tool_use(
     if tool == "Skill" {
         let skill_name = input.get_tool_input_str("skill");
         tracing::info!(skill = %skill_name, "post-tool-use: Skill completed");
-        let r = hooks::demo_provenance::check(&input).await;
-        if r.stderr.is_some() {
-            tracing::info!(skill = %skill_name, "demo-provenance: dispatched");
-            return Json(r);
-        }
+        // #3046: demo_provenance hook retired — werk-demo emits its own jsonl
+        // witness + the demo.show.completed spine event directly. No PostToolUse
+        // dispatch needed.
     }
 
     // Demo show (#2864) — REMOVED as PostToolUse on /demo skill: PostToolUse

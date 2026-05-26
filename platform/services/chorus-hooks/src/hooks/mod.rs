@@ -14,10 +14,12 @@ pub mod tool_telemetry;
 pub mod story_write_gate;
 pub mod write_scrubber;
 pub mod icd_write_gate;
-pub mod demo_preflight;
-pub mod demo_show;
+// #3046: demo_preflight / demo_show / demo_provenance / demo_gate retired —
+// the /demo skill is now a thin wrapper around the `werk-demo` binary, which
+// posts the demo:preflight-pass evidence comment + emits the demo.show.completed
+// spine event directly. accept_gate still reads those (it's the consumer).
 pub mod accept_gate;
-pub mod demo_provenance;
+pub mod batch_progress;
 pub mod pair_enforcement;
 pub mod nudge_blast_radius;
 pub mod input_classifier;
@@ -28,7 +30,6 @@ pub mod memory_gate;
 pub mod tdd_gate;
 pub mod test_quality_gate;
 pub mod pair_gate;
-pub mod demo_gate;
 pub mod context_inject;
 pub mod stop_on_error;
 // #3000 — mcp_health_gate retired (wrong-layer, never fired for MCP tools).
