@@ -117,6 +117,74 @@ pub fn service_for_crate(crate_name: &str) -> String {
     format!("com.chorus.{}", crate_name.strip_prefix("chorus-").unwrap_or(crate_name))
 }
 
+/// #3092 — what KIND of thing is this name, and what does it need at deploy time?
+///
+/// Three classes today, all foreseeable from the existing repo + LaunchAgent layout:
+/// - **RustService:** signed Rust binary with a com.chorus.<svc> LaunchAgent
+///   (chorus-hooks/chorus-inject/chorus-mcp). Install + kickstart + cdhash verify.
+/// - **TsService:** TypeScript service with a com.chorus.<svc> LaunchAgent that runs
+///   `node dist/server.js` (chorus-api today). Install dist + kickstart + health smoke.
+/// - **CliVerb:** standalone Rust binary, no LaunchAgent — runs once per invocation
+///   (werk-pull/commit/push/build/deploy/accept/demo). Install + installed-cdhash
+///   verify; NO kickstart (no service to restart).
+///
+/// Per Jeff's framing (2026-05-26 #3092): "build all things that need a build based
+/// on the branch; deploy all things that get built." The class is data not enum —
+/// the rule here recognizes the existing names today; new buildable things add a
+/// rule. The kickstart-or-not question reduces to "does the LaunchAgent exist?"
+/// — which is exactly what `RustService` / `TsService` carry vs `CliVerb` doesn't.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetClass {
+    /// Rust binary + LaunchAgent. Existing chorus-hooks/inject/mcp path.
+    RustService { svc: String, bin: String },
+    /// TypeScript service + LaunchAgent. New path: dist install + smoke.
+    /// `dist_dir_rel` is the service's dist directory relative to repo root
+    /// (e.g., "platform/api/dist" for chorus-api). `smoke_url` is the health
+    /// endpoint to wait on after kickstart.
+    TsService { svc: String, dist_dir_rel: String, smoke_url: String },
+    /// Rust binary, no LaunchAgent. werk-* CLI verbs.
+    CliVerb { bin: String },
+}
+
+/// #3092 — classify a name from the build summary. Returns Err for unknown
+/// names so unfamiliar additions get surfaced rather than silently mis-deployed.
+///
+/// The known set is the union of what werk-build can produce today; expanding
+/// this list and the corresponding werk-build path is the same one-card move.
+pub fn target_class(name: &str) -> R<TargetClass> {
+    match name {
+        // Rust services (LaunchAgents): the original werk-deploy slice.
+        "chorus-hooks" => Ok(TargetClass::RustService {
+            svc: "com.chorus.hooks".to_string(),
+            bin: "chorus-hook-shim".to_string(),
+        }),
+        "chorus-inject" => Ok(TargetClass::RustService {
+            svc: "com.chorus.inject".to_string(),
+            bin: "chorus-inject".to_string(),
+        }),
+        "chorus-mcp" => Ok(TargetClass::RustService {
+            svc: "com.chorus.mcp".to_string(),
+            bin: "chorus-mcp".to_string(),
+        }),
+        // TS service (LaunchAgent runs `node dist/server.js`): the #3092 net-new path.
+        "chorus-api" => Ok(TargetClass::TsService {
+            svc: "com.chorus.api".to_string(),
+            dist_dir_rel: "platform/api/dist".to_string(),
+            // Health endpoint that v1 chorus-deploy.sh's CHORUS_API_HEALTH_URL also
+            // hits post-kickstart. Bypassing MCP-init smoke because chorus-api no
+            // longer hosts /mcp (#2998); a 200 on /health is the served-the-new-code
+            // signal, same as v1's wait_for_chorus_api_mcp_ready inner branch.
+            smoke_url: "http://localhost:3340/api/chorus/health".to_string(),
+        }),
+        // CLI verbs (no LaunchAgent, no kickstart): the #3092 second net-new path.
+        n if n.starts_with("werk-") => Ok(TargetClass::CliVerb { bin: n.to_string() }),
+        other => Err(format!(
+            "target_class: unknown name '{}' — add a rule (Rust service, TS service, or CLI verb)",
+            other
+        )),
+    }
+}
+
 // --- side-effecting helpers ---
 
 fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &str) {
@@ -239,70 +307,31 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     }
     jsonl(home, role, card, &trace, "rebuilt", &format!(",\"built\":\"{}\"", summary(&built)));
 
-    // install + (prod) kickstart + verify, per crate, all-or-nothing.
-    for (crate_name, built_cdhash) in &built {
-        let bin = crate_binary(crate_name);
-        let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
-
-        // AC2 stale-build guard (canonical only — there's a running binary to compare):
-        // if the fresh rebuild produced the SAME cdhash that's already running WHILE this
-        // card changed the crate's source, werk-build's build-invariance is suspect (a
-        // stale/cached build that didn't pick up the change). Refuse BEFORE mutating —
-        // nothing is touched. (Unchanged source legitimately yields the same cdhash =
-        // an idempotent no-op, NOT a divergence, so the source-changed clause is required.)
-        if target == "canonical" {
-            let installed = installed_path(target, role, &bin);
-            let current = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed])
-                .ok()
-                .and_then(|o| extract_running_cdhash(&o));
-            if current.as_deref() == Some(built_cdhash.as_str()) && crate_source_changed(&werk_s, crate_name) {
-                jsonl(home, role, card, &trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
-                return Err(format!(
-                    "cdhash-divergence: rebuild of {} gave the running cdhash {} but its source changed this card — stale build, refusing (werk-build invariance suspect)",
-                    crate_name, built_cdhash
-                ));
+    // install + (prod) kickstart + verify, per unit, all-or-nothing.
+    // #3092: dispatch by target_class so each kind (Rust service / TS service / CLI verb)
+    // walks its own deploy path; no class enum on the verb's top level, just per-unit
+    // dispatch (Jeff's framing: deploy all things that got built).
+    for (name, built_identity) in &built {
+        let class = target_class(name)?;
+        match &class {
+            TargetClass::RustService { svc, bin } => {
+                deploy_rust_service(
+                    home, &werk_s, role, card, target, &trace, name, built_identity, svc, bin,
+                )?;
+            }
+            TargetClass::TsService { svc, dist_dir_rel, smoke_url } => {
+                deploy_ts_service(
+                    home, &werk_s, role, card, target, &trace, name, built_identity, svc,
+                    dist_dir_rel, smoke_url,
+                )?;
+            }
+            TargetClass::CliVerb { bin } => {
+                deploy_cli_verb(
+                    home, &werk_s, role, card, target, &trace, name, built_identity, bin,
+                )?;
             }
         }
-
-        // install to the slot. chorus-bin-install --target werk → $WERK_<ROLE>_BIN (demo),
-        // --target canonical → $CHORUS_BIN (prod). CHORUS_ROLE drives WERK_<ROLE>_BIN.
-        if let Err(e) = run_env(
-            Some(&werk_s),
-            &[("CHORUS_ROLE", role)],
-            "chorus-bin-install",
-            &["--target", target, &built_path, &bin],
-        ) {
-            rollback(home, &werk_s, role, card, &trace, target, &bin, "install-fail");
-            return Err(format!("install of {} failed; rolled back: {}", bin, e));
-        }
-        jsonl(home, role, card, &trace, "installed", &format!(",\"crate\":\"{}\",\"target\":\"{}\"", crate_name, target));
-
-        // TEST-IN-PROD (canonical) only: kickstart + verify running==built. TEST-IN-DEMO
-        // (werk slot) skips kickstart — the role's session resolves the slot binary directly,
-        // so there's no daemon to restart and no running-binary to verify yet.
-        if target == "canonical" {
-            let svc = service_for_crate(crate_name);
-            if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
-                rollback(home, &werk_s, role, card, &trace, target, &bin, "kickstart-fail");
-                return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
-            }
-            // AC3: running == built. Read the installed binary's cdhash, assert it matches.
-            let installed = installed_path(target, role, &bin);
-            let cs = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed]).unwrap_or_default();
-            match extract_running_cdhash(&cs) {
-                Some(running) if &running == built_cdhash => {
-                    jsonl(home, role, card, &trace, "verified", &format!(",\"crate\":\"{}\",\"cdhash\":\"{}\"", crate_name, running));
-                }
-                other => {
-                    rollback(home, &werk_s, role, card, &trace, target, &bin, "cdhash-mismatch");
-                    return Err(format!(
-                        "running != built for {}: built={} running={:?} — rolled back (stale-binary guard)",
-                        bin, built_cdhash, other
-                    ));
-                }
-            }
-        }
-        let _ = register_gh(&werk_s, card, role, &trace, crate_name, built_cdhash, target);
+        let _ = register_gh(&werk_s, card, role, &trace, name, built_identity, target);
     }
 
     let joined = summary(&built);
@@ -312,6 +341,247 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
 
 fn summary(built: &[(String, String)]) -> String {
     built.iter().map(|(c, h)| format!("{}={}", c, h)).collect::<Vec<_>>().join(",")
+}
+
+/// #3092 — deploy a Rust SERVICE crate (chorus-hooks/inject/mcp).
+/// Existing pre-#3092 behavior, extracted: chorus-bin-install → kickstart →
+/// codesign cdhash verify running==built. The stale-build guard (cdhash-divergence
+/// refuse) fires only on canonical (where there's a running binary to compare).
+#[allow(clippy::too_many_arguments)]
+fn deploy_rust_service(
+    home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
+    crate_name: &str, built_cdhash: &str, svc: &str, bin: &str,
+) -> R<()> {
+    let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
+
+    // AC2 stale-build guard (canonical only).
+    if target == "canonical" {
+        let installed = installed_path(target, role, bin);
+        let current = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed])
+            .ok()
+            .and_then(|o| extract_running_cdhash(&o));
+        if current.as_deref() == Some(built_cdhash) && crate_source_changed(werk_s, crate_name) {
+            jsonl(home, role, card, trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
+            return Err(format!(
+                "cdhash-divergence: rebuild of {} gave the running cdhash {} but its source changed this card — stale build, refusing (werk-build invariance suspect)",
+                crate_name, built_cdhash
+            ));
+        }
+    }
+
+    if let Err(e) = run_env(
+        Some(werk_s),
+        &[("CHORUS_ROLE", role)],
+        "chorus-bin-install",
+        &["--target", target, &built_path, bin],
+    ) {
+        rollback(home, werk_s, role, card, trace, target, bin, "install-fail");
+        return Err(format!("install of {} failed; rolled back: {}", bin, e));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"target\":\"{}\"", crate_name, target));
+
+    if target == "canonical" {
+        if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
+            rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
+            return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
+        }
+        let installed = installed_path(target, role, bin);
+        let cs = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed]).unwrap_or_default();
+        match extract_running_cdhash(&cs) {
+            Some(running) if running == built_cdhash => {
+                jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"cdhash\":\"{}\"", crate_name, running));
+            }
+            other => {
+                rollback(home, werk_s, role, card, trace, target, bin, "cdhash-mismatch");
+                return Err(format!(
+                    "running != built for {}: built={} running={:?} — rolled back (stale-binary guard)",
+                    bin, built_cdhash, other
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// #3092 — deploy a TS SERVICE (chorus-api today).
+/// Net new path: copy dist/ to canonical, preserve dist.prev for rollback,
+/// kickstart com.chorus.<svc>, wait on health smoke, identity-verify installed
+/// dist sha == built dist sha. Mirrors v1 chorus-deploy.sh's chorus-api branch
+/// (#2831 install pattern + #2925 AC4 dist.prev preservation + #2993 ready smoke).
+///
+/// target=werk: build is already done; the role-slot has no separate chorus-api
+/// service today (one launchd unit, shared by all roles), so install + kickstart
+/// are skipped — the build itself is the "test-in-demo" surface. Logged with a
+/// named reason so the no-op is intentional, not a silent skip.
+#[allow(clippy::too_many_arguments)]
+fn deploy_ts_service(
+    home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
+    svc_name: &str, built_dist_sha: &str, svc: &str, dist_dir_rel: &str, smoke_url: &str,
+) -> R<()> {
+    // Werk-slot has no role-scoped chorus-api today (one launchd unit, shared).
+    // For demo, the build is the surface; skip install + kickstart with a named
+    // jsonl event so observability sees the deliberate no-op.
+    if target == "werk" {
+        jsonl(
+            home, role, card, trace, "deploy.ts.werk-skipped",
+            &format!(",\"name\":\"{}\",\"reason\":\"no-role-slot-ts-service-today\"", svc_name),
+        );
+        return Ok(());
+    }
+
+    // target=canonical: dist install + kickstart + smoke + identity verify.
+    let canonical_root = canonical_root_path(home);
+    let canonical_dist = format!("{}/{}", canonical_root, dist_dir_rel);
+    let canonical_dist_prev = format!("{}.prev", canonical_dist);
+    let werk_dist = format!("{}/{}", werk_s, dist_dir_rel);
+
+    if !Path::new(&werk_dist).is_dir() {
+        return Err(format!(
+            "TS service deploy: werk dist not found at {} (werk-build should have produced it)",
+            werk_dist
+        ));
+    }
+
+    // Preserve current canonical dist (v1 #2925 AC4 pattern). Best-effort —
+    // a non-existent canonical/dist just means this is a fresh install.
+    if Path::new(&canonical_dist).is_dir() {
+        let _ = fs::remove_dir_all(&canonical_dist_prev);
+        if let Err(e) = fs::rename(&canonical_dist, &canonical_dist_prev) {
+            return Err(format!("preserve {} → {} failed: {}", canonical_dist, canonical_dist_prev, e));
+        }
+    }
+
+    // Copy werk dist → canonical dist. `cp -R` matches v1's atomic intent.
+    if let Err(e) = run_env(None, &[], "cp", &["-R", &werk_dist, &canonical_dist]) {
+        // Restore previous dist on failed install — keep canonical consistent.
+        if Path::new(&canonical_dist_prev).is_dir() {
+            let _ = fs::remove_dir_all(&canonical_dist);
+            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
+        }
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-install-fail\"");
+        return Err(format!("install of {} dist failed; restored prev: {}", svc_name, e));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-service\",\"target\":\"{}\"", svc_name, target));
+
+    // Kickstart the LaunchAgent. v1 uses `launchctl kickstart -k gui/<uid>/<svc>`.
+    if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
+        // Rollback: restore prev dist + re-kickstart so the prior version stays up.
+        let _ = fs::remove_dir_all(&canonical_dist);
+        if Path::new(&canonical_dist_prev).is_dir() {
+            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
+        }
+        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-kickstart-fail\"");
+        return Err(format!("kickstart {} failed; restored prev dist: {}", svc, e));
+    }
+
+    // Health smoke — wait for the new process to start serving. The endpoint comes
+    // from TargetClass::TsService (chorus-api uses /api/chorus/health per v1 #2998).
+    // ~30s budget mirrors v1's CHORUS_MCP_SMOKE_TIMEOUT_S.
+    if let Err(e) = wait_for_health(smoke_url, Duration::from_secs(30)) {
+        let _ = fs::remove_dir_all(&canonical_dist);
+        if Path::new(&canonical_dist_prev).is_dir() {
+            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
+        }
+        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-smoke-timeout\"");
+        return Err(format!("health smoke for {} failed; restored prev dist: {}", svc_name, e));
+    }
+
+    // Identity verify: re-hash the installed dist; assert it matches the built dist.
+    // Same `find | sort | shasum | shasum` scheme werk-build uses.
+    let cmd = format!(
+        "find {} -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        canonical_dist
+    );
+    let installed_sha = run_env(None, &[], "sh", &["-c", &cmd]).map(|o| o.trim().to_string()).unwrap_or_default();
+    if installed_sha != built_dist_sha {
+        let _ = fs::remove_dir_all(&canonical_dist);
+        if Path::new(&canonical_dist_prev).is_dir() {
+            let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
+        }
+        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-identity-mismatch\"");
+        return Err(format!(
+            "installed dist sha != built for {}: built={} installed={} — rolled back",
+            svc_name, built_dist_sha, installed_sha
+        ));
+    }
+    jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"dist_sha\":\"{}\"", svc_name, installed_sha));
+    Ok(())
+}
+
+/// #3092 — deploy a Rust CLI VERB (werk-* binaries).
+/// No LaunchAgent, no kickstart. Install to CHORUS_BIN, verify installed cdhash
+/// matches built cdhash, emit binary.deployed via chorus-bin-install (which
+/// already emits it on install). The "running" notion doesn't apply — CLI verbs
+/// run once per invocation; identity is just installed-cdhash matching built.
+#[allow(clippy::too_many_arguments)]
+fn deploy_cli_verb(
+    home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
+    crate_name: &str, built_cdhash: &str, bin: &str,
+) -> R<()> {
+    let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
+
+    if let Err(e) = run_env(
+        Some(werk_s),
+        &[("CHORUS_ROLE", role)],
+        "chorus-bin-install",
+        &["--target", target, &built_path, bin],
+    ) {
+        rollback(home, werk_s, role, card, trace, target, bin, "install-fail");
+        return Err(format!("install of {} failed; rolled back: {}", bin, e));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"cli-verb\",\"target\":\"{}\"", crate_name, target));
+
+    // Identity verify against the INSTALLED binary's cdhash. No kickstart so
+    // no "running" cdhash; the contract is install-then-cdhash-match.
+    let installed = installed_path(target, role, bin);
+    let cs = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed]).unwrap_or_default();
+    match extract_running_cdhash(&cs) {
+        Some(installed_cdhash) if installed_cdhash == built_cdhash => {
+            jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"cdhash\":\"{}\"", crate_name, installed_cdhash));
+            Ok(())
+        }
+        other => {
+            rollback(home, werk_s, role, card, trace, target, bin, "cdhash-mismatch");
+            Err(format!(
+                "installed != built for {}: built={} installed={:?} — rolled back",
+                bin, built_cdhash, other
+            ))
+        }
+    }
+}
+
+/// #3092 — canonical repo root path (where TS service dist gets installed).
+/// CHORUS_HOME is the canonical anchor for role sessions; werk_base lives next
+/// to it. The TS dist install needs to write THERE, not into the werk.
+fn canonical_root_path(home: &Path) -> String {
+    env::var("CHORUS_HOME").unwrap_or_else(|_| home.to_string_lossy().to_string())
+}
+
+/// #3092 — poll a health URL until 200 or timeout. v1 chorus-deploy uses a
+/// shell `curl` loop; we mirror the simplest form (curl -s -f) so a 5xx or
+/// connection-refused both fail-fast within the budget.
+fn wait_for_health(url: &str, timeout: Duration) -> R<()> {
+    let start = Instant::now();
+    loop {
+        let out = Command::new("curl")
+            .args(["-s", "-f", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", url])
+            .output();
+        if let Ok(o) = out {
+            if o.status.success() {
+                let code = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if code == "200" {
+                    return Ok(());
+                }
+            }
+        }
+        if start.elapsed() >= timeout {
+            return Err(format!("health smoke {} timed out after {:?}", url, timeout));
+        }
+        sleep(Duration::from_millis(500));
+    }
 }
 
 /// Did this card change the crate's source (vs origin/main)? Drives the AC2
