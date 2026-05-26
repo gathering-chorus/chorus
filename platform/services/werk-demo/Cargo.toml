@@ -1,0 +1,13 @@
+[package]
+name = "werk-demo"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies (verb-contract v1 / ADR-032, mirrors werk-pull
+# #3045). std only + a direct libc `flock` extern; git / cards / werk-build /
+# werk-deploy CLIs as subprocesses. #3046 folds the /demo skill + gates + hooks here.
+[dependencies]
+
+[[bin]]
+name = "werk-demo"
+path = "src/main.rs"
