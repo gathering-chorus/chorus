@@ -286,22 +286,35 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
         ],
     );
 
-    // Feedback nudges to the other roles (HTTP to chorus-api MCP-equivalent endpoint).
-    // The three canonical questions, framed as consumer-impact (per /demo skill).
+    // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
+    // canonical nudge surface. werk-demo invokes it by POSTing a JSON-RPC
+    // tools/call to the MCP server's HTTP endpoint. -f so 4xx/5xx surface
+    // (the #3100 bug class: silent 404 on the wrong endpoint).
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
-        let nudge_body = format!(
-            r#"{{"to":"{}","message":"[feedback] #{} — werk-demo ran live.\n(1) How does this impact your products?\n(2) How does it impact your users?\n(3) Am I over-building or under-planning?\nACK REQUIRED within 10 min or blocked-on-X."}}"#,
-            other, card
+        let msg = format!(
+            "[feedback] #{} — werk-demo ran live.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?\\nACK REQUIRED within 10 min or blocked-on-X.",
+            card
         );
-        let _ = run(
+        let body = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+            other, msg
+        );
+        if let Err(e) = run(
             "curl",
             &[
-                "-s", "-X", "POST",
-                "http://localhost:3340/api/chorus/nudge",
+                "-s", "-f", "-X", "POST",
+                &mcp_url,
                 "-H", "Content-Type: application/json",
-                "-d", &nudge_body,
+                "-H", &format!("X-Chorus-Role: {}", role),
+                "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+                "-d", &body,
             ],
-        );
+        ) {
+            jsonl(home, role, card, trace, "demo.nudge.failed",
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+        }
     }
 }
 
@@ -382,8 +395,29 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // (mirrors show-gate.sh emitting demo.show.completed on a successful demo).
     emit_spine(home, "demo.show.completed", role, card, &trace);
     register_gh(werk_s, card, &trace);
+
+    // #3100 AC3 — human-pause step. The /demo skill's original Step 6 ("Show,
+    // then wait") didn't survive the fold into the binary; werk-demo runs to
+    // completion. Replace the in-process wait with an explicit Bridge
+    // announcement: variant is up, gates green, this is the moment to react
+    // or ask. Agent reads Bridge and engages; binary terminates clean.
+    let pause_body = format!(
+        r#"{{"from":"{}","text":"[demo ready] #{} — werk-variant up; gates green; ready for your eyes. Ask questions, check the variant, or /acp when satisfied."}}"#,
+        role, card
+    );
+    let _ = run(
+        "curl",
+        &[
+            "-s", "-X", "POST",
+            "http://localhost:3470/api/message",
+            "-H", "Content-Type: application/json",
+            "-d", &pause_body,
+        ],
+    );
+    jsonl(home, role, card, &trace, "demo.ready_for_review", "");
+
     jsonl(home, role, card, &trace, "demo.completed", "");
-    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green)", card, checked, total))
+    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green) — ready for review", card, checked, total))
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).

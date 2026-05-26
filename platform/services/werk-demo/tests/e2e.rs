@@ -78,7 +78,15 @@ exit 0
             deploy_log = deploy_log.display()
         ),
     );
-    write_exec(&bin.join("curl"), "#!/bin/sh\nexit 0\n");
+    // #3100: capture curl invocations so we can assert nudges hit :3475/api/nudge
+    let curl_log = tmp("curllog").join("calls");
+    write_exec(
+        &bin.join("curl"),
+        &format!(
+            "#!/bin/sh\necho \"$@\" >> \"{curl_log}\"\nexit 0\n",
+            curl_log = curl_log.display()
+        ),
+    );
     write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
 
     // --- $HOME-like layout: home/platform/scripts/{smoke-check.sh,chorus-log} ---
@@ -174,6 +182,47 @@ exit 0
         !deploy_calls.lines().any(|l| l.trim() == "3046"),
         "werk-deploy must NOT be invoked with bare card-id (canonical deploy path); got:\n{}",
         deploy_calls
+    );
+
+    // (5a) #3100 AC1+AC2+AC4: feedback nudges go through MCP (chorus_nudge_message
+    //      tools/call), NOT the legacy :3340/api/chorus/nudge 404. Uses -f so a
+    //      bad endpoint surfaces instead of silently exiting 0.
+    let curl_calls = fs::read_to_string(&curl_log).unwrap_or_default();
+    assert!(
+        curl_calls.contains("chorus_nudge_message"),
+        "feedback nudges must invoke chorus_nudge_message via MCP tools/call; got:\n{}",
+        curl_calls
+    );
+    assert!(
+        curl_calls.contains("tools/call"),
+        "MCP nudge POST must use JSON-RPC tools/call method; got:\n{}",
+        curl_calls
+    );
+    assert!(
+        !curl_calls.contains("http://localhost:3340/api/chorus/nudge"),
+        "must NOT POST to the legacy 404 :3340/api/chorus/nudge; got:\n{}",
+        curl_calls
+    );
+    assert!(
+        curl_calls.contains(" -f "),
+        "curl must use -f so silent-success-on-error class can't recur; got:\n{}",
+        curl_calls
+    );
+    // Two non-builder roles (silas, kade) → 2 MCP nudge POSTs
+    let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
+    assert_eq!(
+        mcp_post_count, 2,
+        "expected 2 MCP nudges (silas + kade); got {} in:\n{}",
+        mcp_post_count, curl_calls
+    );
+
+    // (5b) #3100 AC3: human-pause step — werk-demo announces "ready for review"
+    //      to Bridge before exit so Jeff has a clear engagement point. The wait
+    //      is external (agent reads Bridge + acts); binary stays terminating.
+    assert!(
+        witness.contains("\"event\":\"demo.ready_for_review\""),
+        "demo must emit demo.ready_for_review as the human-pause announcement; got:\n{}",
+        witness
     );
 
     // cleanup the trace file so re-runs are hermetic
