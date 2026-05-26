@@ -2,7 +2,8 @@
 // and must NOT fabricate a causal story. This test is the honest-message contract:
 // the day's whole lesson — an alert that asserts the unobservable can't be trusted.
 // #3079 — added op param; op=unknown → access-log pointer; op=name → captured-op note.
-import { formatBlockAlert } from '../src/eventloop-alert';
+// #3096 — ALS-bound request op survives async resumption; scheduled-job slot still works.
+import { formatBlockAlert, makeRequestOpMiddleware, setCurrentOp, getCurrentOp } from '../src/eventloop-alert';
 
 const TS = '2026-05-23T20:00:00.000Z';
 
@@ -41,5 +42,70 @@ describe('#3050 formatBlockAlert — honest, no fabrication', () => {
     expect(m).not.toContain('stalled');
     expect(m).not.toContain('sync git');
     expect(m).not.toContain('#3039 freeze class');
+  });
+});
+
+describe('#3096 ALS-bound request op survives async resumption', () => {
+  const makeRes = (): { once: jest.Mock } => ({ once: jest.fn() });
+
+  afterEach(() => setCurrentOp(null));
+
+  it('returns the middleware-set op inside the handler context', async () => {
+    const mw = makeRequestOpMiddleware();
+    let captured = 'NOT-SET';
+    await new Promise<void>((resolve) => {
+      mw({ method: 'GET', path: '/api/chorus/search' }, makeRes(), () => {
+        captured = getCurrentOp();
+        resolve();
+      });
+    });
+    expect(captured).toBe('GET /api/chorus/search');
+  });
+
+  it('Class A: slow A awaits, fast B enters+exits, A resumes — A still reads its own op (not B, not unknown)', async () => {
+    const mw = makeRequestOpMiddleware();
+    let aOpAfterResume = 'NOT-SET';
+
+    // Slow request A: enters, awaits a microtask, resumes, reads its op.
+    const aDone = new Promise<void>((resolve) => {
+      mw({ method: 'GET', path: '/api/chorus/search' }, makeRes(), async () => {
+        await new Promise((r) => setImmediate(r));
+        aOpAfterResume = getCurrentOp();
+        resolve();
+      });
+    });
+
+    // Fast request B: runs to completion while A is awaiting. With the old
+    // single-slot middleware, B would clobber A's op to 'GET /freshness'
+    // then clear it to null; A would resume reading 'unknown'.
+    await new Promise<void>((resolve) => {
+      mw({ method: 'GET', path: '/freshness' }, makeRes(), () => resolve());
+    });
+
+    await aDone;
+    expect(aOpAfterResume).toBe('GET /api/chorus/search');
+  });
+
+  it('outside any request context falls back to the scheduled-job slot, then unknown', () => {
+    expect(getCurrentOp()).toBe('unknown');
+    setCurrentOp('boardCache');
+    expect(getCurrentOp()).toBe('boardCache');
+    setCurrentOp(null);
+    expect(getCurrentOp()).toBe('unknown');
+  });
+
+  it('ALS op wins over the scheduled-job slot when both are set (request running over a sticky cron)', async () => {
+    setCurrentOp('boardCache');
+    const mw = makeRequestOpMiddleware();
+    let inside = 'NOT-SET';
+    await new Promise<void>((resolve) => {
+      mw({ method: 'GET', path: '/api/chorus/search' }, makeRes(), () => {
+        inside = getCurrentOp();
+        resolve();
+      });
+    });
+    expect(inside).toBe('GET /api/chorus/search');
+    // After the request, the slot is intact for the scheduled job.
+    expect(getCurrentOp()).toBe('boardCache');
   });
 });

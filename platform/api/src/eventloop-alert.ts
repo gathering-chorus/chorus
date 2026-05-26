@@ -13,18 +13,40 @@
 // blocked callback captures which op was running. If op=unknown, the block fired outside
 // all tracked jobs (request handler or untracked async). No async_hooks; zero overhead.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { boston } from './time-utils';
 
-/** Set by scheduled jobs before running; cleared in finally. Captured by blocked callback. */
+/** #3096 — Request-vs-scheduled boundary for the eventloop attribution surface:
+ *  TWO surfaces, TWO slots, ONE reader.
+ *
+ *  Request handlers run inside an AsyncLocalStorage `run()` block. The op set
+ *  by the middleware survives `await` resumption because Node tracks the
+ *  originating async context — not whichever request most recently touched a
+ *  global slot. This closes Class A (single-slot clobber by fast peers during
+ *  slow A's await) and Class C (a /board/wip poll reading the heavy op of
+ *  something behind it). A awaits → B runs in its OWN ALS context → A resumes
+ *  → A's op is still the one captured. No more `op=unknown` from overlap.
+ *
+ *  Scheduled jobs (boardCache refresh, healthCache, future cron paths) don't
+ *  have a request context, so they continue to set the module-level slot via
+ *  setCurrentOp() before/after. The reader is ALS-first, slot-second; either
+ *  surface fills it, neither steps on the other. */
+const requestOpStore = new AsyncLocalStorage<{ op: string }>();
+
+/** Module-level slot for scheduled-job paths (no request context). */
 let _currentOp: string | null = null;
 
-/** Called by each scheduled job: setCurrentOp('index') before, setCurrentOp(null) after. */
+/** Called by each scheduled job: setCurrentOp('index') before, setCurrentOp(null) after.
+ *  Request handlers do NOT use this — they get an ALS-bound op via the middleware. */
 export function setCurrentOp(op: string | null): void {
   _currentOp = op;
 }
 
-/** Read by blocked callback at fire time. */
+/** Read by blocked callback at fire time. ALS first (per-request, async-safe),
+ *  module slot second (scheduled jobs), 'unknown' as the honest fallback. */
 export function getCurrentOp(): string {
+  const fromAls = requestOpStore.getStore()?.op;
+  if (fromAls) return fromAls;
   return _currentOp ?? 'unknown';
 }
 
@@ -33,22 +55,18 @@ export function getCurrentOp(): string {
 export interface ReqLike { method: string; path: string }
 export interface ResLike { once(event: 'finish' | 'close', listener: () => void): void }
 
-/** #3089: Express middleware that names the request handler so block alerts
- * attribute to a route, not `op=unknown`. The #3079 sentinel only fires for
- * SCHEDULED jobs (setCurrentOp at the cron sites); without this middleware,
- * request-handler blocks log op=unknown → "No cause inferred" → hand-grep-and-guess.
- * Single-slot is correct for the common case: sync handlers serialize on the event
- * loop, so only one is on-loop at a time and `_currentOp` reflects it. Clearing on
- * `finish` AND `close` so the op doesn't leak past the response. Known limitation:
- * async-resume — req A awaits, B enters+sets, A resumes+blocks → attributed to B.
- * Full per-async-context attribution would need AsyncLocalStorage; deferred. */
+/** #3089 → #3096: Express middleware that names the request handler so block
+ *  alerts attribute to a route, not `op=unknown`. The op is bound to the
+ *  request's async context via AsyncLocalStorage: `als.run({ op }, next)`
+ *  pins the value across every `await` the handler performs, so a slow A
+ *  resuming after a fast B no longer reads B's op (Class A clobber) and a
+ *  /board/wip poll heavy-behind no longer reads the heavy op (Class C
+ *  coincidence). The store cleans itself up when the async tree completes —
+ *  no `finish`/`close` listeners required, and the scheduled-job slot is
+ *  untouched. */
 export function makeRequestOpMiddleware(): (req: ReqLike, res: ResLike, next: () => void) => void {
-  return (req: ReqLike, res: ResLike, next: () => void): void => {
-    setCurrentOp(`${req.method} ${req.path}`);
-    const clear = (): void => setCurrentOp(null);
-    res.once('finish', clear);
-    res.once('close', clear);
-    next();
+  return (req: ReqLike, _res: ResLike, next: () => void): void => {
+    requestOpStore.run({ op: `${req.method} ${req.path}` }, next);
   };
 }
 
