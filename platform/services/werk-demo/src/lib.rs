@@ -362,12 +362,30 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // Step 2: gate chain — all five role gates present.
+    // Step 2: gate chain — all five role gates present. AC #1 (Jeff's need:
+    // "gate interaction with team works") — emit demo.gate.requested at start,
+    // demo.gate.passed when chain is complete; on incomplete chain the refusal
+    // surfaces WHICH ROLE is owed, not just gate names. Builder + Jeff see the
+    // accountability surface.
+    emit_spine(home, "demo.gate.requested", role, card, &trace);
     let missing = gates_missing(&cv);
     if !missing.is_empty() {
-        jsonl(home, role, card, &trace, "demo.refused", &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", missing.join(",")));
-        return Err(format!("#{} gate chain incomplete — missing: {}", card, missing.join(", ")));
+        // Map gate → owning role so the error names accountability.
+        let owners: Vec<String> = missing.iter().map(|g| {
+            let owner = match *g {
+                "product" => "wren",
+                "code" | "quality" => "kade",
+                "arch" | "ops" => "silas",
+                _ => "unknown",
+            };
+            format!("{}({})", g, owner)
+        }).collect();
+        jsonl(home, role, card, &trace, "demo.refused",
+              &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\",\"owed_by\":\"{}\"",
+                       missing.join(","), owners.join(",")));
+        return Err(format!("#{} gate chain incomplete — owed by: {}", card, owners.join(", ")));
     }
+    emit_spine(home, "demo.gate.passed", role, card, &trace);
 
     // Step 3: smoke check (hard gate — type:swat exempt, non-code skipped, per skill).
     run_smoke_check(home, &cv).inspect_err(|_e| {
@@ -403,14 +421,21 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     emit_spine(home, "demo.show.completed", role, card, &trace);
     register_gh(werk_s, card, &trace);
 
-    // #3100 AC3 — human-pause step. The /demo skill's original Step 6 ("Show,
-    // then wait") didn't survive the fold into the binary; werk-demo runs to
-    // completion. Replace the in-process wait with an explicit Bridge
-    // announcement: variant is up, gates green, this is the moment to react
-    // or ask. Agent reads Bridge and engages; binary terminates clean.
+    // #3100 AC#4 — visible announce. Owner/head-of-product (Jeff) gets a
+    // framed shape he cannot miss: [DEMO READY FOR JEFF] banner prefix, card
+    // id, variant URL, explicit react prompt. Not a scrollable Bridge line.
+    // Per-role werk-api ports per #3092 (silas=3343, kade=3344, wren=3345);
+    // canonical 3340 fallback for unknown role.
+    let variant_port = match role {
+        "silas" => 3343,
+        "kade"  => 3344,
+        "wren"  => 3345,
+        _ => 3340,
+    };
+    let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port);
     let pause_body = format!(
-        r#"{{"from":"{}","text":"[demo ready] #{} — werk-variant up; gates green; ready for your eyes. Ask questions, check the variant, or /acp when satisfied."}}"#,
-        role, card
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nGates green; act complete; awaiting your eyes.\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
+        role, card, variant_url
     );
     // -f + exit-check so the silent-success class can't recur on this surface
     // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
@@ -428,8 +453,53 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
+    // #3100 AC #5 — comment window. After the announce, Jeff gets a real
+    // pause to react/comment before the demo is "done." Binary sleeps for the
+    // configured window so the BUILDER AGENT does not jump into /acp solicitation
+    // prose. Default 60s; CHORUS_DEMO_COMMENT_WINDOW_SECS overrides for tests.
+    // demo.awaiting_comment fires at window start; demo.comment_window_closed
+    // at window end. AC #6 (no premature /acp begging) follows naturally —
+    // the binary doesn't return until the window closes, so the agent can't
+    // prose-prompt /acp before that.
+    let window_secs: u64 = std::env::var("CHORUS_DEMO_COMMENT_WINDOW_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
+    jsonl(home, role, card, &trace, "demo.awaiting_comment",
+          &format!(",\"window_secs\":{}", window_secs));
+    std::thread::sleep(std::time::Duration::from_secs(window_secs));
+    jsonl(home, role, card, &trace, "demo.comment_window_closed", "");
+
+    // #3100 AC #2 — feedback interaction. After the comment window, check
+    // each peer role's session for a response to the feedback nudge. A
+    // response = a nudge-back from that role OR a new card comment from
+    // that role since demo.signal.completed. If silent, emit
+    // demo.feedback.unacked so the builder agent (or the next layer) sees
+    // the stall and Jeff doesn't have to chase. Substantive re-nudge is the
+    // builder agent's responsibility; the event is the surface.
+    for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
+        // Query chorus-api spine search for recent activity from this role on
+        // this card. Anything within the demo window counts as "engaged."
+        let q = format!("card_id={}+role={}", card, other);
+        let check = run("curl", &[
+            "-sS", "-G",
+            "http://localhost:3340/api/chorus/search",
+            "--data-urlencode", &format!("q={}", q),
+            "--data-urlencode", "limit=3",
+        ]).unwrap_or_default();
+        // Cheap heuristic: if the search response contains the role + the
+        // card id together, treat as engaged. Not perfect; the binary stays
+        // zero-dep, so no JSON parsing — agent-side will refine if needed.
+        let engaged = check.contains(&format!("\"role\":\"{}\"", other))
+                   && check.contains(&card.to_string());
+        if !engaged {
+            jsonl(home, role, card, &trace, "demo.feedback.unacked",
+                  &format!(",\"from\":\"{}\"", other));
+        }
+    }
+
     jsonl(home, role, card, &trace, "demo.completed", "");
-    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green) — ready for review", card, checked, total))
+    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green) — ready for review (commented {}s)", card, checked, total, window_secs))
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).

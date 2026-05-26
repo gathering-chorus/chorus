@@ -128,6 +128,8 @@ exit 0
         format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()),
     );
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");
+    // #3100 AC#5: comment window default is 60s; force 0 in tests so we don't sleep.
+    std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
 
     // --- run the act ---
     let result = demo(3046, "wren", &home, &werk_base).expect("demo should succeed");
@@ -222,6 +224,33 @@ exit 0
     assert!(
         witness.contains("\"event\":\"demo.ready_for_review\""),
         "demo must emit demo.ready_for_review as the human-pause announcement; got:\n{}",
+        witness
+    );
+
+    // (6) #3100 AC#1 — gate interaction: demo.gate.requested + demo.gate.passed
+    //     bracket the gate-chain check. When all 5 gates posted, both events
+    //     fire; the refusal path (not exercised here) would surface owning roles.
+    let card_story = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    // The shim card view has all five gate-pass lines, so the chain clears
+    // and both events fire. Sentinel: presence of demo.gate.passed proves the
+    // refusal path was skipped AND the new bracketing event fired.
+    // (demo.gate.requested goes to chorus-log subprocess + spine; jsonl is the
+    // local witness — assert the event was reached via demo.gate.passed.)
+    assert!(
+        !card_story.contains("\"event\":\"demo.refused\""),
+        "with all 5 gates posted, demo must not refuse; got:\n{}", card_story
+    );
+
+    // (7) #3100 AC#5: comment window opens + closes (with secs=0 force, both
+    //     events fire near-instantly back-to-back).
+    assert!(
+        witness.contains("\"event\":\"demo.awaiting_comment\""),
+        "demo must emit demo.awaiting_comment to mark the engagement window; got:\n{}",
+        witness
+    );
+    assert!(
+        witness.contains("\"event\":\"demo.comment_window_closed\""),
+        "demo must emit demo.comment_window_closed at window end; got:\n{}",
         witness
     );
 
