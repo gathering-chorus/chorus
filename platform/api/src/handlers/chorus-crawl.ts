@@ -82,14 +82,29 @@ async function sparqlPost(
 ): Promise<Array<Partial<Record<string, { value?: string }>>>> {
   // #2620: dataset is /pods, not /gathering. The /gathering endpoint returns
   // 404 silently → sparqlPost returned [] for every call → rdf/owl always empty.
-  const resp = await fetchFn(`${fusekiUrl}/pods/sparql`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
-    body: `query=${encodeURIComponent(sparql)}`,
-  });
-  if (!resp.ok) return [];
-  const result = (await resp.json()) as { results?: { bindings?: Array<Partial<Record<string, { value?: string }>>> } };
-  return result.results?.bindings || [];
+  // #3091: 5s timeout via AbortController. Without this a slow Fuseki hangs the
+  // crawl handler indefinitely — the bug 10/27 domains were tripping on live, same
+  // class #3090 closed for the Loki collectSpine path. AbortError → catch → empty
+  // bindings ("fuseki down → []" contract, now enforced for slow-Fuseki too). A
+  // single wrap here covers all callers: collectRdf, collectOwlClassProps,
+  // collectOwlRelations, collectOwl.
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const resp = await fetchFn(`${fusekiUrl}/pods/sparql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
+      body: `query=${encodeURIComponent(sparql)}`,
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) return [];
+    const result = (await resp.json()) as { results?: { bindings?: Array<Partial<Record<string, { value?: string }>>> } };
+    return result.results?.bindings || [];
+  } catch {
+    return []; // AbortError on timeout, or any fetch failure — degrade-to-empty
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function collectCards(
@@ -456,9 +471,19 @@ async function collectLogs(fetchFn: FetchFn, lokiBaseUrl: string, domain: string
     const domainStem = domain.replace(/s$/, '');
     const lokiQuery = encodeURIComponent(`{job="gathering-app"} |~ "${domain}|${domainStem}" | json`);
     const nowSec = Math.floor(now() / 1000);
-    const resp = await fetchFn(
-      `${lokiBaseUrl}/loki/api/v1/query_range?query=${lokiQuery}&start=${nowSec - 86400}&end=${nowSec}&limit=20`,
-    );
+    // #3091: 5s timeout (same pattern as collectSpine/sparqlPost). Slow Loki without
+    // this hangs collectLogs; AbortError falls to the outer catch → return empty logs.
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 5000);
+    let resp;
+    try {
+      resp = await fetchFn(
+        `${lokiBaseUrl}/loki/api/v1/query_range?query=${lokiQuery}&start=${nowSec - 86400}&end=${nowSec}&limit=20`,
+        { signal: ctrl.signal },
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
     if (!resp.ok) return logs;
     const data = (await resp.json()) as { data?: { result?: Array<{ values?: Array<[string, string]> }> } };
     for (const stream of data.data?.result || []) {

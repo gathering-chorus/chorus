@@ -306,4 +306,51 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     const b = r.body as { mentions: unknown[] };
     expect(b.mentions.length).toBeGreaterThan(3);
   });
+
+  // #3091 — close the fetch-timeout class: a slow Fuseki (sparqlPost) or slow Loki
+  // (collectLogs) used to hang the crawl handler indefinitely (same class #3090
+  // closed for collectSpine). Each call now wraps an AbortController + 5s timeout;
+  // AbortError → empty bucket for that collector (degrade-to-empty contract).
+
+  test('#3091: SLOW Fuseki (sparqlPost) aborts at 5s — rdf bucket empty, no hang', async () => {
+    jest.useFakeTimers();
+    // Hangs on /pods/sparql; rejects when signal aborts. Non-Fuseki fetches return 503.
+    const fetchFn = ((url: string, init?: { signal?: AbortSignal }) => {
+      if (url.includes('/pods/sparql')) {
+        return new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    }) as unknown as FetchFn;
+    const p = fetchCrawl('photos', deps({ fetchFn }));
+    // sparqlPost is called sequentially up to 4× (collectRdf×2 + collectOwlClassProps + collectOwlRelations);
+    // each queues a fresh 5s timer after the previous one resolves. advanceTimersByTimeAsync flushes
+    // microtasks between fires so the chain unblocks.
+    await jest.advanceTimersByTimeAsync(30_000);
+    const r = await p;
+    const b = r.body as { rdf?: { triples?: unknown[]; relationships?: unknown[] } };
+    expect(b.rdf?.triples ?? []).toEqual([]);
+    expect(b.rdf?.relationships ?? []).toEqual([]);
+    jest.useRealTimers();
+  }, 30_000);
+
+  test('#3091: SLOW Loki on collectLogs aborts at 5s — logs bucket empty, no hang', async () => {
+    jest.useFakeTimers();
+    // Hangs on the collectLogs URL (Loki `{job=` filter), distinct from spine (`{filename=`).
+    const fetchFn = ((url: string, init?: { signal?: AbortSignal }) => {
+      if (url.includes('loki') && url.includes('job%3D')) {
+        return new Promise((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    }) as unknown as FetchFn;
+    const p = fetchCrawl('photos', deps({ fetchFn }));
+    await jest.advanceTimersByTimeAsync(30_000);
+    const r = await p;
+    const b = r.body as { logs?: unknown[] };
+    expect(b.logs ?? []).toEqual([]);
+    jest.useRealTimers();
+  }, 30_000);
 });
