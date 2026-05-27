@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="940" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1260" height="940" fill="#ffffff"/>
+
+  <text x="40" y="38" font-size="23" font-weight="700" fill="#1a1a1a">Chorus search — TO-BE  (v2: life graph is first-class)</text>
+  <text x="40" y="60" font-size="13" fill="#6b7280">One retrieval capability, off the spine, over distinct corpora — spanning <tspan font-weight="700">what the team did</tspan> AND <tspan font-weight="700">what the team works on (your life)</tspan>.</text>
+  <text x="40" y="78" font-size="11" fill="#9ca3af">first run v2 · Wren · domains from /api/athena/tree (v2) · corrected: Gathering life graph belongs</text>
+
+  <!-- ============ THE SPINE ============ -->
+  <rect x="40" y="96" width="1180" height="86" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="58" y="120" font-size="15" font-weight="800" fill="#166534">chorus-api · :3340 — THE COORDINATION SPINE  (kept free)</text>
+  <text x="58" y="138" font-size="11.5" fill="#15803d">single event loop · only fast bounded coordination · NO heavy search on this loop</text>
+  <g font-size="12" font-weight="600" fill="#166534">
+    <rect x="58"  y="148" width="110" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="113" y="165" text-anchor="middle">cards</text>
+    <rect x="178" y="148" width="150" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="253" y="165" text-anchor="middle">nudge / heralds</text>
+    <rect x="338" y="148" width="150" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="413" y="165" text-anchor="middle">spine / streams</text>
+    <rect x="498" y="148" width="190" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="593" y="165" text-anchor="middle">athena (chorus:domains)</text>
+    <rect x="698" y="148" width="150" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="773" y="165" text-anchor="middle">messages (write)</text>
+    <rect x="858" y="148" width="200" height="26" rx="5" fill="#dcfce7" stroke="#22c55e"/><text x="958" y="165" text-anchor="middle">health · context-cache (read)</text>
+  </g>
+
+  <line x1="40" y1="198" x2="1220" y2="198" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="630" y="193" text-anchor="middle" font-size="11" fill="#94a3b8">— async boundary: the spine ASKS search; it never RUNS search on its loop —</text>
+
+  <!-- ============ chorus:search SERVICE ============ -->
+  <rect x="40" y="212" width="740" height="150" rx="10" fill="#faf5ff" stroke="#7c3aed" stroke-width="2.5"/>
+  <text x="58" y="235" font-size="15" font-weight="800" fill="#5b21b6">chorus:search — retrieval CAPABILITY  (own service / worker pool, OFF the loop)</text>
+  <text x="58" y="253" font-size="11.5" fill="#6d28d9">one door · bounded workers (timeout + SLA) · response names which corpus + method answered + ms</text>
+  <text x="58" y="269" font-size="11.5" fill="#b91c1c" font-weight="600">a search problem degrades search only — it can no longer freeze coordination</text>
+
+  <rect x="60" y="282" width="225" height="68" rx="6" fill="#fef2f2" stroke="#ef4444" stroke-width="2"/>
+  <text x="75" y="302" font-size="13" font-weight="700" fill="#b91c1c">lexical</text>
+  <text x="75" y="319" font-size="10.5" fill="#7f1d1d">FTS5 quote-safe (#3051)</text>
+  <text x="75" y="334" font-size="10.5" fill="#7f1d1d">"did someone say X?"</text>
+
+  <rect x="295" y="282" width="225" height="68" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="310" y="302" font-size="13" font-weight="700" fill="#1d4ed8">semantic</text>
+  <text x="310" y="319" font-size="10.5" fill="#1e40af">embed + vector (LanceDB)</text>
+  <text x="310" y="334" font-size="10.5" fill="#1e40af">"what's related to this?"</text>
+
+  <rect x="530" y="282" width="232" height="68" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="545" y="302" font-size="13" font-weight="700" fill="#166534">structured</text>
+  <text x="545" y="319" font-size="10.5" fill="#15803d">SPARQL / graph facts</text>
+  <text x="545" y="334" font-size="10.5" fill="#15803d">"what are the facts about X?"</text>
+
+  <!-- context path -->
+  <rect x="800" y="212" width="420" height="150" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="818" y="235" font-size="14" font-weight="800" fill="#92400e">per-prompt context (the #3048 path)</text>
+  <text x="818" y="256" font-size="11.5" fill="#78350f">background refresher calls search on a cadence,</text>
+  <text x="818" y="272" font-size="11.5" fill="#78350f">keeps a <tspan font-weight="700">warm cache</tspan> (Pulse pattern)</text>
+  <rect x="818" y="286" width="384" height="32" rx="5" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="828" y="307" font-size="12" font-weight="600" fill="#92400e">context_inject reads warm cache → instant, every prompt</text>
+  <text x="818" y="338" font-size="11" fill="#b45309">no sync per-prompt search · kills the ~10s tax · "recent enough" beats "this turn"</text>
+
+  <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#94a3b8"/></marker></defs>
+  <line x1="410" y1="182" x2="410" y2="212" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#a)"/>
+
+  <!-- honest-integration note -->
+  <rect x="40" y="372" width="1180" height="34" rx="6" fill="#f5f3ff" stroke="#ddd6fe"/>
+  <text x="58" y="394" font-size="12" fill="#5b21b6"><tspan font-weight="700">Honest integration (not the old `unified` RRF blend):</tspan> merge like-with-like — text hits ranked together; structured/graph results returned as their own section, OR the life-knowledge embedded into the same semantic space. Never one score across incommensurable answers.</text>
+
+  <!-- ============ CORPORA — two layers ============ -->
+  <text x="40" y="432" font-size="13" font-weight="700" fill="#475569">CORPORA — distinct stores the one capability reads across</text>
+
+  <!-- layer 1: team memory -->
+  <text x="48" y="456" font-size="11.5" font-weight="700" fill="#64748b">▸ WHAT THE TEAM DID — process memory (Chorus)</text>
+  <rect x="40" y="464" width="380" height="78" rx="8" fill="#fef2f2" stroke="#ef4444" stroke-width="1.6"/>
+  <text x="56" y="485" font-size="13.5" font-weight="700" fill="#b91c1c">chorus:messages</text>
+  <text x="56" y="503" font-size="11" fill="#7f1d1d">raw message log · SQLite FTS5 (1.1G)</text>
+  <text x="56" y="520" font-size="10.5" fill="#9ca3af">lexical · owner wren</text>
+
+  <rect x="430" y="464" width="380" height="78" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.6"/>
+  <text x="446" y="485" font-size="13.5" font-weight="700" fill="#1d4ed8">chorus:memory</text>
+  <text x="446" y="503" font-size="11" fill="#1e40af">indexed sessions + archives · LanceDB (21G)</text>
+  <text x="446" y="520" font-size="10.5" fill="#9ca3af">semantic · owner jeff</text>
+
+  <rect x="820" y="464" width="400" height="78" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="836" y="485" font-size="13.5" font-weight="700" fill="#166534">chorus:knowledge</text>
+  <text x="836" y="503" font-size="11" fill="#15803d">structured facts — team / products / history</text>
+  <text x="836" y="520" font-size="10.5" fill="#9ca3af">structured + semantic · owner jeff</text>
+
+  <!-- layer 2: life knowledge (FIRST CLASS now) -->
+  <text x="48" y="572" font-size="11.5" font-weight="700" fill="#92400e">▸ WHAT THE TEAM WORKS ON — your life (Gathering) · FIRST-CLASS, not evicted</text>
+  <rect x="40" y="580" width="1180" height="78" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="56" y="601" font-size="13.5" font-weight="700" fill="#92400e">Gathering life-knowledge graph</text>
+  <text x="56" y="619" font-size="11.5" fill="#78350f">Fuseki urn:gathering:* — photos · music · people · notes · stories · gardens · ideas</text>
+  <text x="56" y="637" font-size="11.5" fill="#b45309">"what do we know about the garden / this person / this photo?" — the questions that matter most. Sourced via chorus:integrations / convergence; embed it for semantic recall, keep structured for facts.</text>
+
+  <!-- worker -> corpus arrows -->
+  <g stroke="#cbd5e1" stroke-width="2" fill="none">
+    <path d="M172 350 V464" marker-end="url(#a)"/>
+    <path d="M407 350 V464" marker-end="url(#a)"/>
+    <path d="M646 350 C646 420 1010 430 1010 464" marker-end="url(#a)"/>
+    <path d="M407 350 C407 560 620 565 620 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
+    <path d="M646 350 C646 560 640 565 640 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
+  </g>
+
+  <!-- ============ footer ============ -->
+  <text x="40" y="694" font-size="13" font-weight="700" fill="#334155">The to-be, in one breath</text>
+  <text x="40" y="715" font-size="12" fill="#475569">Search is the heaviest, riskiest tenant — so take it <tspan font-weight="700">off the coordination spine</tspan> and make it a <tspan font-weight="700">capability over distinct corpora</tspan>, spanning the team's own</text>
+  <text x="40" y="733" font-size="12" fill="#475569">process memory AND your life-knowledge. A search bug can never freeze the team; the life graph stays first-class; integration is honest, not a one-score blend.</text>
+
+  <text x="40" y="762" font-size="12" fill="#475569">• <tspan font-weight="700">Off the spine</tspan> — own service/worker pool; removes the freeze <tspan font-style="italic">class</tspan> (#3051 was one instance).</text>
+  <text x="40" y="780" font-size="12" fill="#475569">• <tspan font-weight="700">Capability over corpora</tspan> — messages / memory / knowledge / <tspan font-weight="700">Gathering life graph</tspan>; not welded to any one store.</text>
+  <text x="40" y="798" font-size="12" fill="#475569">• <tspan font-weight="700">Honest integration</tspan> — like-with-like; structured results as their own section or embedded; retire naive `unified` RRF.</text>
+  <text x="40" y="816" font-size="12" fill="#475569">• <tspan font-weight="700">Warm-cached context</tspan> — context_inject reads a background-refreshed cache, not a sync per-prompt search.</text>
+
+  <text x="40" y="846" font-size="11.5" fill="#94a3b8">Open: (1) own process vs worker-pool? (2) embed the life graph into the semantic space, or keep a distinct structured path? (3) who owns the service — jeff (model) or wren?</text>
+  <text x="40" y="866" font-size="10.5" fill="#cbd5e1">first run v2 — drawn to be argued with. Wren · 2026-05-24</text>
+</svg>
