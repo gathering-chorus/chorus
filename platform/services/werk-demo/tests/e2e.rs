@@ -130,6 +130,8 @@ exit 0
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");
     // #3100 AC#5: comment window default is 60s; force 0 in tests so we don't sleep.
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
+    // #3100 AC#2: ack window default is 60s; force 0 in tests for fast iteration.
+    std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
 
     // --- run the act ---
     let result = demo(3046, "wren", &home, &werk_base).expect("demo should succeed");
@@ -210,12 +212,23 @@ exit 0
         "curl must use -f so silent-success-on-error class can't recur; got:\n{}",
         curl_calls
     );
-    // Two non-builder roles (silas, kade) → 2 MCP nudge POSTs
+    // Two non-builder roles (silas, kade) get nudged in the initial signal
+    // round (2), and again as re-nudges from the AC#2 loop because the shimmed
+    // chorus-api search returns empty → peer_engaged=false → re-nudge fires (2).
+    // Total: 4. Plus a demo.feedback.escalate per silent peer (still unacked
+    // after re-nudge) + a Bridge escalate POST per silent peer.
     let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
     assert_eq!(
-        mcp_post_count, 2,
-        "expected 2 MCP nudges (silas + kade); got {} in:\n{}",
+        mcp_post_count, 4,
+        "expected 4 MCP nudges (2 initial + 2 re-nudge per #3100 AC#2); got {} in:\n{}",
         mcp_post_count, curl_calls
+    );
+    // Escalate Bridge POSTs for silent peers (2 — silas + kade still silent after re-nudge)
+    let escalate_posts = curl_calls.lines().filter(|l| l.contains("FEEDBACK STALL")).count();
+    assert_eq!(
+        escalate_posts, 2,
+        "expected 2 Bridge escalate posts (silent peers after re-nudge); got {} in:\n{}",
+        escalate_posts, curl_calls
     );
 
     // (5b) #3100 AC3: human-pause step — werk-demo announces "ready for review"
@@ -252,6 +265,21 @@ exit 0
         witness.contains("\"event\":\"demo.comment_window_closed\""),
         "demo must emit demo.comment_window_closed at window end; got:\n{}",
         witness
+    );
+
+    // (8) #3100 AC#2: feedback unacked → re-nudge → escalate path fully wired.
+    //     Shimmed search returns empty so both peers stay silent through both rounds.
+    assert!(
+        witness.contains("\"event\":\"demo.feedback.unacked\""),
+        "demo must emit demo.feedback.unacked when peer is silent; got:\n{}", witness
+    );
+    assert!(
+        witness.contains("\"event\":\"demo.renudge.sent\""),
+        "demo must emit demo.renudge.sent when re-nudging an unacked peer; got:\n{}", witness
+    );
+    assert!(
+        witness.contains("\"event\":\"demo.feedback.escalate\""),
+        "demo must emit demo.feedback.escalate when peer is still silent after re-nudge; got:\n{}", witness
     );
 
     // cleanup the trace file so re-runs are hermetic

@@ -264,6 +264,51 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
     }
 }
 
+/// Send a feedback nudge to `other` via the chorus_nudge_message MCP path.
+/// The team's canonical nudge surface — JSON-RPC tools/call POST'd to the
+/// MCP server's HTTP endpoint. Body shape matches the MCP tool's NudgeInput.
+/// Returns Err with curl's exit if the POST fails (status check via -f).
+/// Used by signal() for the initial round and by demo() for re-nudge on
+/// unacked peers (#3100 AC #2).
+fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    let msg = format!(
+        "[feedback from {} — ACK REQUIRED] #{} — werk-demo ran live; need your substantive reply (or blocked-on-X) within 10 min before /acp.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?",
+        from, card
+    );
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        other, msg
+    );
+    run("curl", &[
+        "-s", "-f", "-X", "POST",
+        &mcp_url,
+        "-H", "Content-Type: application/json",
+        // chorus-mcp requires BOTH content types in Accept (Silas #3092 trap).
+        "-H", "Accept: application/json, text/event-stream",
+        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+        "-d", &body,
+    ]).map(|_| ())
+}
+
+/// Check if a peer role has engaged with this card's demo. Cheap heuristic:
+/// search chorus-api's spine for recent activity from `other` on `card`. If
+/// the response contains both, treat as engaged. Stays zero-dep (no JSON
+/// parsing). Used post-comment-window to detect silent peers (#3100 AC #2).
+fn peer_engaged(other: &str, card: u64) -> bool {
+    let q = format!("card_id={}+role={}", card, other);
+    let check = run("curl", &[
+        "-sS", "-G",
+        "http://localhost:3340/api/chorus/search",
+        "--data-urlencode", &format!("q={}", q),
+        "--data-urlencode", "limit=3",
+    ]).unwrap_or_default();
+    check.contains(&format!("\"role\":\"{}\"", other))
+        && check.contains(&card.to_string())
+}
+
 /// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
 /// All four are best-effort (the act has already gated; signal is the announcement,
 /// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
@@ -290,35 +335,10 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     );
 
     // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
-    // canonical nudge surface. werk-demo invokes it by POSTing a JSON-RPC
-    // tools/call to the MCP server's HTTP endpoint. -f so 4xx/5xx surface
-    // (the #3100 bug class: silent 404 on the wrong endpoint).
-    let mcp_url = std::env::var("CHORUS_MCP_URL")
-        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
+    // path in demo() for AC #2).
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
-        let msg = format!(
-            "[feedback from {} — ACK REQUIRED] #{} — werk-demo ran live; need your substantive reply (or blocked-on-X) within 10 min before /acp.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?",
-            role, card
-        );
-        let body = format!(
-            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
-            other, msg
-        );
-        if let Err(e) = run(
-            "curl",
-            &[
-                "-s", "-f", "-X", "POST",
-                &mcp_url,
-                "-H", "Content-Type: application/json",
-                // chorus-mcp requires BOTH content types in Accept; Accept:
-                // application/json alone returns 406. Silas's #3092 maiden voyage
-                // hit the same trap on the MCP smoke. Same fix here.
-                "-H", "Accept: application/json, text/event-stream",
-                "-H", &format!("X-Chorus-Role: {}", role),
-                "-H", &format!("X-Chorus-Trace-Id: {}", trace),
-                "-d", &body,
-            ],
-        ) {
+        if let Err(e) = send_mcp_nudge(role, other, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
                   &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
         }
@@ -470,31 +490,53 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     std::thread::sleep(std::time::Duration::from_secs(window_secs));
     jsonl(home, role, card, &trace, "demo.comment_window_closed", "");
 
-    // #3100 AC #2 — feedback interaction. After the comment window, check
-    // each peer role's session for a response to the feedback nudge. A
-    // response = a nudge-back from that role OR a new card comment from
-    // that role since demo.signal.completed. If silent, emit
-    // demo.feedback.unacked so the builder agent (or the next layer) sees
-    // the stall and Jeff doesn't have to chase. Substantive re-nudge is the
-    // builder agent's responsibility; the event is the surface.
+    // #3100 AC #2 + #3 — feedback interaction + no-intervention.
+    // After the comment window, check each peer role's spine activity for a
+    // response. If silent: emit demo.feedback.unacked, re-nudge once via the
+    // same MCP path, sleep the ack-window, re-check. If STILL silent, emit
+    // demo.feedback.escalate + post a Bridge announce to Jeff so the substrate
+    // (not Jeff) chases the stall. Implements the DEC-107 + /demo-skill
+    // ack discipline structurally instead of as prose.
+    let ack_window_secs: u64 = std::env::var("CHORUS_DEMO_ACK_WINDOW_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
+    let mut unacked_round1: Vec<&str> = Vec::new();
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
-        // Query chorus-api spine search for recent activity from this role on
-        // this card. Anything within the demo window counts as "engaged."
-        let q = format!("card_id={}+role={}", card, other);
-        let check = run("curl", &[
-            "-sS", "-G",
-            "http://localhost:3340/api/chorus/search",
-            "--data-urlencode", &format!("q={}", q),
-            "--data-urlencode", "limit=3",
-        ]).unwrap_or_default();
-        // Cheap heuristic: if the search response contains the role + the
-        // card id together, treat as engaged. Not perfect; the binary stays
-        // zero-dep, so no JSON parsing — agent-side will refine if needed.
-        let engaged = check.contains(&format!("\"role\":\"{}\"", other))
-                   && check.contains(&card.to_string());
-        if !engaged {
+        if !peer_engaged(other, card) {
             jsonl(home, role, card, &trace, "demo.feedback.unacked",
-                  &format!(",\"from\":\"{}\"", other));
+                  &format!(",\"from\":\"{}\",\"round\":1", other));
+            // Re-nudge once via the same MCP path used in signal().
+            if let Err(e) = send_mcp_nudge(role, other, card, &trace) {
+                jsonl(home, role, card, &trace, "demo.renudge.failed",
+                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+            } else {
+                jsonl(home, role, card, &trace, "demo.renudge.sent",
+                      &format!(",\"to\":\"{}\"", other));
+            }
+            unacked_round1.push(other);
+        }
+    }
+    // Wait the ack-window then re-check the silent peers. Anyone still silent
+    // escalates — both as a spine event AND as a Bridge announce to Jeff.
+    if !unacked_round1.is_empty() {
+        std::thread::sleep(std::time::Duration::from_secs(ack_window_secs));
+        for other in &unacked_round1 {
+            if !peer_engaged(other, card) {
+                jsonl(home, role, card, &trace, "demo.feedback.escalate",
+                      &format!(",\"from\":\"{}\",\"reason\":\"unacked-after-renudge\"", other));
+                // AC #3 — surface to Jeff via Bridge so he doesn't have to notice silently.
+                let escalate_body = format!(
+                    r#"{{"from":"{}","text":"⚠️  [FEEDBACK STALL] #{} — {} did not ack the feedback nudge after re-nudge; substrate has escalated. Either chase or /acp anyway if you're comfortable."}}"#,
+                    role, card, other
+                );
+                let _ = run("curl", &[
+                    "-s", "-f", "-X", "POST",
+                    "http://localhost:3470/api/message",
+                    "-H", "Content-Type: application/json",
+                    "-d", &escalate_body,
+                ]);
+            }
         }
     }
 
