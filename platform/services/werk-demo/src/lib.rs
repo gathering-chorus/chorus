@@ -66,9 +66,12 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
 /// Which of the five role gates are absent from the card body. Ported from /demo
 /// Step 2 (grep `gate:<g>-pass`). demo requires the chain complete before the act.
 pub fn gates_missing(card_view: &str) -> Vec<&'static str> {
+    // Case-insensitive: roles post `gate:code-pass` or `gate:code-PASS` interchangeably;
+    // both must be recognized. Lowercase the view once, compare against lowercase needles.
+    let v = card_view.to_lowercase();
     ["product", "code", "quality", "arch", "ops"]
         .iter()
-        .filter(|g| !card_view.contains(&format!("gate:{}-pass", g)))
+        .filter(|g| !v.contains(&format!("gate:{}-pass", g)))
         .copied()
         .collect()
 }
@@ -261,6 +264,95 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
     }
 }
 
+/// Gate → owning role map. Wren owns product, Kade owns code+quality,
+/// Silas owns arch+ops. Used by the gate-request fan-out + refusal naming.
+pub fn gate_owner(gate: &str) -> &'static str {
+    match gate {
+        "product" => "wren",
+        "code" | "quality" => "kade",
+        "arch" | "ops" => "silas",
+        _ => "unknown",
+    }
+}
+
+/// Send a gate-request nudge to `to` via the chorus_nudge_message MCP path.
+/// Neutral framing: pointers and ask, no editorializing. Sender, gates needed,
+/// then "read the card, read the code, run the gates" instruction, plus ack
+/// expected. No "narrow/clean/delivered" pre-framing — reviewer forms their
+/// own read.
+fn send_gate_request_nudge(from: &str, to: &str, card: u64, gates: &[String], trace: &str) -> R<()> {
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    let gate_list = gates.iter().map(|g| format!("gate:{}", g)).collect::<Vec<_>>().join(" + ");
+    let msg = format!(
+        "[gate #{} — ACK REQUIRED]\\nFrom: {}\\nNeeds: {} (your lanes)\\nRead the card. Read the code. Run the gates.\\nAck: substantive reply or blocked-on-X within 10 min.",
+        card, from, gate_list
+    );
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        to, msg
+    );
+    run("curl", &[
+        "-s", "-f", "-X", "POST",
+        &mcp_url,
+        "-H", "Content-Type: application/json",
+        "-H", "Accept: application/json, text/event-stream",
+        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+        "-d", &body,
+    ]).map(|_| ())
+}
+
+/// Send a feedback nudge to `other` via the chorus_nudge_message MCP path.
+/// The team's canonical nudge surface — JSON-RPC tools/call POST'd to the
+/// MCP server's HTTP endpoint. Body shape matches the MCP tool's NudgeInput.
+/// Returns Err with curl's exit if the POST fails (status check via -f).
+/// Used by signal() for the initial round and by demo() for re-nudge on
+/// unacked peers (#3100 AC #2).
+fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    // Neutral framing — pointers + ask, no editorializing that biases the
+    // reply. Sender + ack-required up front; "read the card and the code"
+    // instruction (recipient forms their own read); the 3 skill questions
+    // as the actual ask. No "before /acp" pressure, no "narrow/clean/delivered"
+    // pre-framing — those just inherit my satisfaction to the reviewer.
+    let msg = format!(
+        "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?\\nAck: substantive reply or blocked-on-X within 10 min.",
+        card, from
+    );
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        other, msg
+    );
+    run("curl", &[
+        "-s", "-f", "-X", "POST",
+        &mcp_url,
+        "-H", "Content-Type: application/json",
+        // chorus-mcp requires BOTH content types in Accept (Silas #3092 trap).
+        "-H", "Accept: application/json, text/event-stream",
+        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+        "-d", &body,
+    ]).map(|_| ())
+}
+
+/// Check if a peer role has engaged with this card's demo. Cheap heuristic:
+/// search chorus-api's spine for recent activity from `other` on `card`. If
+/// the response contains both, treat as engaged. Stays zero-dep (no JSON
+/// parsing). Used post-comment-window to detect silent peers (#3100 AC #2).
+fn peer_engaged(other: &str, card: u64) -> bool {
+    let q = format!("card_id={}+role={}", card, other);
+    let check = run("curl", &[
+        "-sS", "-G",
+        "http://localhost:3340/api/chorus/search",
+        "--data-urlencode", &format!("q={}", q),
+        "--data-urlencode", "limit=3",
+    ]).unwrap_or_default();
+    check.contains(&format!("\"role\":\"{}\"", other))
+        && check.contains(&card.to_string())
+}
+
 /// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
 /// All four are best-effort (the act has already gated; signal is the announcement,
 /// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
@@ -286,22 +378,14 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
         ],
     );
 
-    // Feedback nudges to the other roles (HTTP to chorus-api MCP-equivalent endpoint).
-    // The three canonical questions, framed as consumer-impact (per /demo skill).
+    // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
+    // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
+    // path in demo() for AC #2).
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
-        let nudge_body = format!(
-            r#"{{"to":"{}","message":"[feedback] #{} — werk-demo ran live.\n(1) How does this impact your products?\n(2) How does it impact your users?\n(3) Am I over-building or under-planning?\nACK REQUIRED within 10 min or blocked-on-X."}}"#,
-            other, card
-        );
-        let _ = run(
-            "curl",
-            &[
-                "-s", "-X", "POST",
-                "http://localhost:3340/api/chorus/nudge",
-                "-H", "Content-Type: application/json",
-                "-d", &nudge_body,
-            ],
-        );
+        if let Err(e) = send_mcp_nudge(role, other, card, trace) {
+            jsonl(home, role, card, trace, "demo.nudge.failed",
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+        }
     }
 }
 
@@ -342,12 +426,67 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // Step 2: gate chain — all five role gates present.
+    // Step 2: gate chain — all five role gates present. AC #1 + gate-request
+    // fan-out: emit demo.gate.requested, detect missing gates, and on detection
+    // FAN OUT a single concurrent nudge round to all gate-owners (no sequential
+    // chain — sender does not handoff to a peer to nudge another peer). Wait
+    // CHORUS_DEMO_GATE_WAIT_SECS for gates to land, then re-check. Refuse with
+    // owner-set if still missing. Builder's own gate cannot be substituted by
+    // a nudge — they owe it themselves; refuse fast on that case.
+    emit_spine(home, "demo.gate.requested", role, card, &trace);
     let missing = gates_missing(&cv);
     if !missing.is_empty() {
-        jsonl(home, role, card, &trace, "demo.refused", &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", missing.join(",")));
-        return Err(format!("#{} gate chain incomplete — missing: {}", card, missing.join(", ")));
+        // Builder owes their own gate first — no self-nudge possible.
+        let self_owed: Vec<&&str> = missing.iter().filter(|g| gate_owner(g) == role).collect();
+        if !self_owed.is_empty() {
+            let owed_str: Vec<String> = self_owed.iter().map(|g| format!("{}({})", g, role)).collect();
+            jsonl(home, role, card, &trace, "demo.refused",
+                  &format!(",\"reason\":\"self-gate-missing\",\"owed\":\"{}\"", owed_str.join(",")));
+            return Err(format!("#{} you owe your own gate first: {}", card, owed_str.join(", ")));
+        }
+        // All other missing gates owed by peers — fan out one nudge per owner.
+        // Collect unique owners (Kade owns both code+quality, Silas owns both
+        // arch+ops, so deduping gives 1-2 outbound nudges, never 3+).
+        let mut owners_to_nudge: Vec<&str> = Vec::new();
+        for g in &missing {
+            let owner = gate_owner(g);
+            if owner != role && !owners_to_nudge.contains(&owner) {
+                owners_to_nudge.push(owner);
+            }
+        }
+        for owner in &owners_to_nudge {
+            let owner_gates: Vec<String> = missing.iter()
+                .filter(|g| gate_owner(g) == *owner)
+                .map(|g| g.to_string())
+                .collect();
+            if let Err(e) = send_gate_request_nudge(role, owner, card, &owner_gates, &trace) {
+                jsonl(home, role, card, &trace, "demo.gate.nudge_failed",
+                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", owner, e.replace('"', "'")));
+            } else {
+                jsonl(home, role, card, &trace, "demo.gate.nudge_sent",
+                      &format!(",\"to\":\"{}\",\"gates\":\"{}\"", owner, owner_gates.join(",")));
+            }
+        }
+        // Wait once for all gates to land (fan-out semantic: no chained handoffs).
+        let gate_wait: u64 = std::env::var("CHORUS_DEMO_GATE_WAIT_SECS")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(120);
+        jsonl(home, role, card, &trace, "demo.gate.waiting",
+              &format!(",\"secs\":{},\"nudged\":\"{}\"", gate_wait, owners_to_nudge.join(",")));
+        std::thread::sleep(std::time::Duration::from_secs(gate_wait));
+        // Re-check after the wait — re-read the card view; if all in, proceed.
+        let cv2 = run("cards", &["view", &card_s])?;
+        let still_missing = gates_missing(&cv2);
+        if !still_missing.is_empty() {
+            let owners: Vec<String> = still_missing.iter()
+                .map(|g| format!("{}({})", g, gate_owner(g))).collect();
+            jsonl(home, role, card, &trace, "demo.refused",
+                  &format!(",\"reason\":\"gates-still-missing-after-wait\",\"owed_by\":\"{}\"",
+                           owners.join(",")));
+            return Err(format!("#{} gate chain still incomplete after {}s — owed by: {}",
+                               card, gate_wait, owners.join(", ")));
+        }
     }
+    emit_spine(home, "demo.gate.passed", role, card, &trace);
 
     // Step 3: smoke check (hard gate — type:swat exempt, non-code skipped, per skill).
     run_smoke_check(home, &cv).inspect_err(|_e| {
@@ -378,12 +517,150 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         .map_err(|e| format!("demo deploy/verify: {}", e))?;
     jsonl(home, role, card, &trace, "demo.deployed", "");
 
+    // Pair with #3101: after env-up + (when #3101 lands) the CLI-verb wrapper
+    // resolves role-slot-first, install CLI-verb crates from the card to the
+    // role's WERK_<ROLE>_BIN so the demo-er actually runs the new code
+    // mid-demo. Without this, build+deploy ran but the new binary never lands
+    // where PATH can find it — the whole-point-is-testing gap Silas named.
+    if let Err(e) = run("werk-deploy", &[&card_s, role, "--target", "werk"]) {
+        // Soft-fail: not every card has a CLI-verb change. werk-deploy --target
+        // werk should be a no-op for non-CliVerb diffs. If it actually fails on
+        // a CliVerb card, surface the reason; don't abort the demo.
+        jsonl(home, role, card, &trace, "demo.cliverb_install.skipped_or_failed",
+              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
+    } else {
+        jsonl(home, role, card, &trace, "demo.cliverb_installed", "");
+    }
+
+    // #3100 — announce the TEST SURFACE before the test window opens. Names
+    // service ports + CLI-verb binary paths so the demo-er + team + Jeff know
+    // exactly what new code is running and where to hit it. Without this, the
+    // pause is a "comment window" with no surface to comment on; with it, the
+    // pause becomes a real test window. Silas paired the framing on #3101.
+    let api_port = match role { "silas" => 3343, "kade" => 3344, "wren" => 3345, _ => 3340 };
+    let mcp_port = match role { "silas" => 3351, "kade" => 3352, "wren" => 3353, _ => 3341 };
+    let test_surface_body = format!(
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/, chorus-mcp http://localhost:{}/mcp\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
+        role, card, api_port, mcp_port, role
+    );
+    if let Err(e) = run("curl", &[
+        "-s", "-f", "-X", "POST",
+        "http://localhost:3470/api/message",
+        "-H", "Content-Type: application/json",
+        "-d", &test_surface_body,
+    ]) {
+        jsonl(home, role, card, &trace, "demo.bridge.failed",
+              &format!(",\"reason\":\"test_surface:{}\"", e.replace('"', "'")));
+    }
+    emit_spine(home, "demo.test_surface.ready", role, card, &trace);
+    jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
+
     // The accept_gate evidence event — without this, /acp refuses at accept time
     // (mirrors show-gate.sh emitting demo.show.completed on a successful demo).
     emit_spine(home, "demo.show.completed", role, card, &trace);
     register_gh(werk_s, card, &trace);
+
+    // #3100 AC#4 — visible announce. Owner/head-of-product (Jeff) gets a
+    // framed shape he cannot miss: [DEMO READY FOR JEFF] banner prefix, card
+    // id, variant URL, explicit react prompt. Not a scrollable Bridge line.
+    // Per-role werk-api ports per #3092 (silas=3343, kade=3344, wren=3345);
+    // canonical 3340 fallback for unknown role.
+    let variant_port = match role {
+        "silas" => 3343,
+        "kade"  => 3344,
+        "wren"  => 3345,
+        _ => 3340,
+    };
+    let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port);
+    let pause_body = format!(
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nGates green; act complete; awaiting your eyes.\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
+        role, card, variant_url
+    );
+    // -f + exit-check so the silent-success class can't recur on this surface
+    // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
+    if let Err(e) = run(
+        "curl",
+        &[
+            "-s", "-f", "-X", "POST",
+            "http://localhost:3470/api/message",
+            "-H", "Content-Type: application/json",
+            "-d", &pause_body,
+        ],
+    ) {
+        jsonl(home, role, card, &trace, "demo.bridge.failed",
+              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
+    }
+    jsonl(home, role, card, &trace, "demo.ready_for_review", "");
+
+    // #3100 AC #5 — comment window. After the announce, Jeff gets a real
+    // pause to react/comment before the demo is "done." Binary sleeps for the
+    // configured window so the BUILDER AGENT does not jump into /acp solicitation
+    // prose. Default 60s; CHORUS_DEMO_COMMENT_WINDOW_SECS overrides for tests.
+    // demo.awaiting_comment fires at window start; demo.comment_window_closed
+    // at window end. AC #6 (no premature /acp begging) follows naturally —
+    // the binary doesn't return until the window closes, so the agent can't
+    // prose-prompt /acp before that.
+    let window_secs: u64 = std::env::var("CHORUS_DEMO_COMMENT_WINDOW_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
+    jsonl(home, role, card, &trace, "demo.awaiting_comment",
+          &format!(",\"window_secs\":{}", window_secs));
+    std::thread::sleep(std::time::Duration::from_secs(window_secs));
+    jsonl(home, role, card, &trace, "demo.comment_window_closed", "");
+
+    // #3100 AC #2 + #3 — feedback interaction + no-intervention.
+    // After the comment window, check each peer role's spine activity for a
+    // response. If silent: emit demo.feedback.unacked, re-nudge once via the
+    // same MCP path, sleep the ack-window, re-check. If STILL silent, emit
+    // demo.feedback.escalate + post a Bridge announce to Jeff so the substrate
+    // (not Jeff) chases the stall. Implements the DEC-107 + /demo-skill
+    // ack discipline structurally instead of as prose.
+    let ack_window_secs: u64 = std::env::var("CHORUS_DEMO_ACK_WINDOW_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
+    let mut unacked_round1: Vec<&str> = Vec::new();
+    for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
+        if !peer_engaged(other, card) {
+            jsonl(home, role, card, &trace, "demo.feedback.unacked",
+                  &format!(",\"from\":\"{}\",\"round\":1", other));
+            // Re-nudge once via the same MCP path used in signal().
+            if let Err(e) = send_mcp_nudge(role, other, card, &trace) {
+                jsonl(home, role, card, &trace, "demo.renudge.failed",
+                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+            } else {
+                jsonl(home, role, card, &trace, "demo.renudge.sent",
+                      &format!(",\"to\":\"{}\"", other));
+            }
+            unacked_round1.push(other);
+        }
+    }
+    // Wait the ack-window then re-check the silent peers. Anyone still silent
+    // escalates — both as a spine event AND as a Bridge announce to Jeff.
+    if !unacked_round1.is_empty() {
+        std::thread::sleep(std::time::Duration::from_secs(ack_window_secs));
+        for other in &unacked_round1 {
+            if !peer_engaged(other, card) {
+                jsonl(home, role, card, &trace, "demo.feedback.escalate",
+                      &format!(",\"from\":\"{}\",\"reason\":\"unacked-after-renudge\"", other));
+                // AC #3 — surface to Jeff via Bridge so he doesn't have to notice silently.
+                let escalate_body = format!(
+                    r#"{{"from":"{}","text":"⚠️  [FEEDBACK STALL] #{} — {} did not ack the feedback nudge after re-nudge; substrate has escalated. Either chase or /acp anyway if you're comfortable."}}"#,
+                    role, card, other
+                );
+                let _ = run("curl", &[
+                    "-s", "-f", "-X", "POST",
+                    "http://localhost:3470/api/message",
+                    "-H", "Content-Type: application/json",
+                    "-d", &escalate_body,
+                ]);
+            }
+        }
+    }
+
     jsonl(home, role, card, &trace, "demo.completed", "");
-    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green)", card, checked, total))
+    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green) — ready for review (commented {}s)", card, checked, total, window_secs))
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
