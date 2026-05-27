@@ -1,6 +1,19 @@
 # System Architecture
 
-Last updated: 2026-03-22
+Last updated: 2026-05-27
+
+## Borg domains (Silas-owned)
+
+Borg now spans thirteen domains. The 13th — **crawler** — lands the first **instance contract** (`source → target → cadence → cost`) and is the template the other twelve will inherit. See [architecture/crawler-as-13th-borg-domain.md](architecture/crawler-as-13th-borg-domain.md) for the synthesis (and the 2-heralds: code-herald + test-herald decomposition proposed for Wren ACK).
+
+Companion design docs (Wren, #3069/#3071):
+- [crawler-instance-model.html](../../designing/docs/crawler-instance-model.html) — to-be contract
+- [crawler-dependency-map.html](../../designing/docs/crawler-dependency-map.html) — verified writers→outputs→consumers
+- [crawler-asis-tobe.md](../../designing/docs/crawler-asis-tobe.md) — the lens (AS-IS storm → TO-BE registry)
+
+---
+
+
 
 ## Vision
 

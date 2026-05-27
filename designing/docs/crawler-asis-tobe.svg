@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1460" height="1000" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1460" height="1000" fill="#ffffff"/>
+
+  <text x="40" y="38" font-size="23" font-weight="700" fill="#1a1a1a">Crawler — AS-IS (one monolith, fired constantly)  →  TO-BE (a "crawlers" domain of declared instances)</text>
+  <text x="40" y="60" font-size="13" fill="#6b7280">The all-day spine storm, root-caused. GET-heavy / PUT-thin / use-thin. Fix = decompose into instances (like skills): own cadence · right home · pull-not-push.</text>
+  <text x="40" y="78" font-size="11" fill="#9ca3af">#3069 · Wren · 2026-05-24 · grounded in chorus-crawl.ts + index-crawler-snapshots.sh + #3058 access log + eventloop.blocked spine events</text>
+
+  <!-- ===================== AS-IS ===================== -->
+  <rect x="36" y="96" width="688" height="780" rx="10" fill="#fffaf7" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="56" y="122" font-size="16" font-weight="800" fill="#b91c1c">AS-IS — one monolith</text>
+
+  <rect x="56" y="136" width="648" height="56" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="70" y="157" font-size="12.5" font-weight="700" fill="#b91c1c">crawler-index (LaunchAgent: 30-min interval + WatchPaths file-triggers)</text>
+  <text x="70" y="175" font-size="11" fill="#7f1d1d">file churn → overlapping sweeps pile up → 27 domains, sequential, each ~10–55s</text>
+
+  <rect x="56" y="202" width="648" height="280" rx="6" fill="#fffdf7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="70" y="222" font-size="13" font-weight="700" fill="#92400e">fetchCrawl() — 11 collectors per domain, all in one loop</text>
+  <g font-size="11" fill="#78350f">
+    <text x="74" y="244">collectRdf      READ Fuseki graph        <tspan fill="#b91c1c" font-weight="700">HEAVY 35–55s  (#3066 cross-graph join)</tspan></text>
+    <text x="74" y="262">collectCodeScan / collectCodeFiles   READ git/fs/SPARQL   async</text>
+    <text x="74" y="280">collectLogs      READ Loki              async</text>
+    <text x="74" y="298">collectInfra     READ launchctl/endpoints   async</text>
+    <text x="74" y="316">collectOwl       READ Fuseki graph        async</text>
+    <text x="74" y="334">collectMentions  READ SQLite FTS         sync · ~10ms (#3055)</text>
+    <text x="74" y="352">collectSpine     READ chorus.log tail    sync · ~30ms (#3054)</text>
+    <text x="74" y="370">collectCards     READ Vikunja board      sync · cheap</text>
+    <text x="74" y="388">collectFeedback / collectAlerts   READ memory/alert files   sync · cheap</text>
+    <text x="74" y="406">computeTrust · timeline.sort · buildLinks   sync</text>
+  </g>
+  <text x="70" y="432" font-size="11.5" fill="#92400e">READS from 9 sources · the endpoint itself writes NOTHING (returns JSON)</text>
+  <text x="70" y="452" font-size="11.5" fill="#b91c1c" font-weight="700">then the script flattens it → a TEXT SUMMARY → SQLite messages (source=crawler)</text>
+  <text x="70" y="470" font-size="11" fill="#7f1d1d">NOT the graph. The structure (counts, relationships) becomes prose nobody reads.</text>
+
+  <rect x="56" y="494" width="648" height="84" rx="6" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="70" y="515" font-size="13" font-weight="800" fill="#b91c1c">= THE STORM</text>
+  <text x="70" y="534" font-size="11.5" fill="#7f1d1d">monolith × high frequency × ONE shared event loop + ONE SQLite = continuous</text>
+  <text x="70" y="551" font-size="11.5" fill="#7f1d1d">eventloop blocks (1.7–15s, ~2–6/min all day). Even bounded ops (#3067 index)</text>
+  <text x="70" y="568" font-size="11.5" fill="#7f1d1d">inflate back to 9–17s under the concurrent contention.</text>
+
+  <rect x="56" y="590" width="648" height="68" rx="6" fill="#fffbeb" stroke="#f59e0b"/>
+  <text x="70" y="611" font-size="12.5" font-weight="700" fill="#92400e">The deeper tell: GET-heavy, PUT-thin, use-thin</text>
+  <text x="70" y="630" font-size="11.5" fill="#78350f">Huge expensive READS (search 15s, crawl 55s) run on spec — every prompt, every</text>
+  <text x="70" y="647" font-size="11.5" fill="#78350f">sweep — for output barely consumed. Effort with no yield.</text>
+
+  <text x="56" y="690" font-size="12" font-weight="700" fill="#b91c1c">Why it can't be tuned away</text>
+  <text x="56" y="710" font-size="11.5" fill="#7f1d1d">Point-fixes bound each op in isolation (#3051/#3054/#3055/#3060/#3067), but the</text>
+  <text x="56" y="727" font-size="11.5" fill="#7f1d1d">monolith forces cheap + expensive chunks onto the same beat — so you can't run</text>
+  <text x="56" y="744" font-size="11.5" fill="#7f1d1d">the cheap thing (code/tests) often without dragging the 55s graph join along.</text>
+  <text x="56" y="768" font-size="11.5" fill="#7f1d1d">And no internal structure → every facet surfaces as its own card (6 today).</text>
+
+  <text x="56" y="806" font-size="11" fill="#9ca3af">Writes: SQLite messages (flat summaries) · LanceDB (embed) · /tmp status. Reads: 9 sources. Graph = READ-only here.</text>
+
+  <!-- ===================== TO-BE ===================== -->
+  <rect x="744" y="96" width="680" height="780" rx="10" fill="#f6fdf8" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="764" y="122" font-size="16" font-weight="800" fill="#166534">TO-BE — a "crawlers" domain of declared instances (like skills)</text>
+
+  <rect x="764" y="136" width="640" height="50" rx="6" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="778" y="157" font-size="12.5" font-weight="700" fill="#166534">crawler engine — runs each registered instance per its declaration</text>
+  <text x="778" y="174" font-size="11" fill="#15803d">monolith dissolves into a registry. Add a crawler = add a declaration (like a skill).</text>
+
+  <text x="764" y="208" font-size="12" font-weight="700" fill="#475569">Each instance declares: source (reads) → target (writes) → cadence → cost</text>
+
+  <!-- instance table -->
+  <rect x="764" y="218" width="640" height="232" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <g font-size="11">
+    <text x="776" y="236" font-weight="700" fill="#475569">instance</text>
+    <text x="912" y="236" font-weight="700" fill="#475569">reads</text>
+    <text x="1052" y="236" font-weight="700" fill="#475569">writes (home)</text>
+    <text x="1240" y="236" font-weight="700" fill="#475569">cadence</text>
+    <line x1="772" y1="242" x2="1396" y2="242" stroke="#e5e7eb"/>
+    <g fill="#15803d" font-weight="600">
+      <text x="776" y="262">code / tests</text><text x="912" y="262" fill="#334155">git / fs</text><text x="1052" y="262" fill="#334155">graph / knowledge</text><text x="1240" y="262" fill="#166534">frequent</text>
+      <text x="776" y="284">cards</text><text x="912" y="284" fill="#334155">Vikunja board</text><text x="1052" y="284" fill="#334155">working / graph</text><text x="1240" y="284" fill="#166534">on-mutation</text>
+      <text x="776" y="306">mentions</text><text x="912" y="306" fill="#334155">SQLite FTS</text><text x="1052" y="306" fill="#334155">knowledge</text><text x="1240" y="306" fill="#166534">medium</text>
+      <text x="776" y="328">graph-rdf</text><text x="912" y="328" fill="#334155">Fuseki</text><text x="1052" y="328" fill="#334155">graph</text><text x="1240" y="328" fill="#b45309">rare / hourly</text>
+      <text x="776" y="350">embed</text><text x="912" y="350" fill="#334155">new messages</text><text x="1052" y="350" fill="#334155">LanceDB</text><text x="1240" y="350" fill="#1d4ed8">async / own pace</text>
+      <text x="776" y="372">logs · alerts · infra</text><text x="912" y="372" fill="#334155">Loki / files</text><text x="1052" y="372" fill="#334155">working</text><text x="1240" y="372" fill="#166534">medium</text>
+    </g>
+    <line x1="772" y1="384" x2="1396" y2="384" stroke="#e5e7eb"/>
+    <text x="776" y="404" fill="#9a3412">cost note:</text><text x="850" y="404" fill="#7c2d12">graph-rdf is the only HEAVY one (#3066) — so it runs rarely; everything else is cheap + frequent.</text>
+    <text x="776" y="426" fill="#166534" font-weight="700">key: domain knowledge writes to the GRAPH, not a flat messages blob.</text>
+  </g>
+
+  <!-- three principles -->
+  <rect x="764" y="464" width="640" height="120" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
+  <text x="780" y="485" font-size="13" font-weight="800" fill="#065f46">Three rules each instance follows</text>
+  <text x="780" y="506" font-size="11.5" fill="#047857"><tspan font-weight="700">1. Own cadence</tspan> — matched to how fast its source changes × its cost. Code every few min; graph-rdf hourly; embed async.</text>
+  <text x="780" y="526" font-size="11.5" fill="#047857"><tspan font-weight="700">2. Right home</tspan> — persist once, to the store that owns that data (graph for knowledge), not copied/flattened into search.</text>
+  <text x="780" y="546" font-size="11.5" fill="#047857"><tspan font-weight="700">3. Pull, not push</tspan> — read on demand when something needs it, not constantly on spec for output no one consumes.</text>
+  <text x="780" y="570" font-size="11.5" fill="#065f46" font-weight="700">→ "much more frequent" for cheap slices AND no storm — you never run the 55s chunk often. Structural, not tuning.</text>
+
+  <!-- payoff -->
+  <rect x="764" y="598" width="640" height="118" rx="6" fill="#f0fdf4" stroke="#16a34a"/>
+  <text x="780" y="619" font-size="12.5" font-weight="700" fill="#166534">What it buys</text>
+  <text x="780" y="639" font-size="11.5" fill="#15803d">• Storm becomes structurally impossible (heavy chunk on a rare cadence).</text>
+  <text x="780" y="658" font-size="11.5" fill="#15803d">• Extensible — new crawler = new declaration, no monolith surgery.</text>
+  <text x="780" y="677" font-size="11.5" fill="#15803d">• Observable — named instances; a slow one is identifiable (closes the invisible-background-block gap).</text>
+  <text x="780" y="696" font-size="11.5" fill="#15803d">• Fewer cards — recurring work is a declaration, not a fresh card per facet.</text>
+
+  <text x="764" y="744" font-size="12" font-weight="700" fill="#334155">Cards is the template + the proof</text>
+  <text x="764" y="764" font-size="11.5" fill="#475569">Cards works because it's a clean bounded domain: one store, clear instances, clear ops, a real user.</text>
+  <text x="764" y="782" font-size="11.5" fill="#475569">Make crawlers the same. The point-fixes fold in: #3055 (off-spine), #3066 (graph-rdf), the index</text>
+  <text x="764" y="800" font-size="11.5" fill="#475569">watermark, search-on-spec — all become "an instance with its own cadence + home."</text>
+
+  <!-- ===================== bottom line ===================== -->
+  <rect x="36" y="892" width="1388" height="88" rx="10" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="56" y="916" font-size="14" font-weight="800" fill="#5b21b6">The one-line shift</text>
+  <text x="56" y="939" font-size="12.5" fill="#5b21b6">AS-IS:  one monolith × high frequency × shared loop+SQLite → continuous storm, flat summaries nobody reads.</text>
+  <text x="56" y="959" font-size="12.5" fill="#5b21b6">TO-BE:  N small crawler instances, each its own cadence + home, pulled on demand → frequent where it's cheap, never storms, knowledge lands in the graph.</text>
+
+  <text x="40" y="994" font-size="10.5" fill="#cbd5e1">#3069 design artifact · drawn to be argued with · Wren · 2026-05-24</text>
+</svg>
