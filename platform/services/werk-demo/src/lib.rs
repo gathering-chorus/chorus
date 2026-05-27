@@ -517,6 +517,44 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         .map_err(|e| format!("demo deploy/verify: {}", e))?;
     jsonl(home, role, card, &trace, "demo.deployed", "");
 
+    // Pair with #3101: after env-up + (when #3101 lands) the CLI-verb wrapper
+    // resolves role-slot-first, install CLI-verb crates from the card to the
+    // role's WERK_<ROLE>_BIN so the demo-er actually runs the new code
+    // mid-demo. Without this, build+deploy ran but the new binary never lands
+    // where PATH can find it — the whole-point-is-testing gap Silas named.
+    if let Err(e) = run("werk-deploy", &[&card_s, role, "--target", "werk"]) {
+        // Soft-fail: not every card has a CLI-verb change. werk-deploy --target
+        // werk should be a no-op for non-CliVerb diffs. If it actually fails on
+        // a CliVerb card, surface the reason; don't abort the demo.
+        jsonl(home, role, card, &trace, "demo.cliverb_install.skipped_or_failed",
+              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
+    } else {
+        jsonl(home, role, card, &trace, "demo.cliverb_installed", "");
+    }
+
+    // #3100 — announce the TEST SURFACE before the test window opens. Names
+    // service ports + CLI-verb binary paths so the demo-er + team + Jeff know
+    // exactly what new code is running and where to hit it. Without this, the
+    // pause is a "comment window" with no surface to comment on; with it, the
+    // pause becomes a real test window. Silas paired the framing on #3101.
+    let api_port = match role { "silas" => 3343, "kade" => 3344, "wren" => 3345, _ => 3340 };
+    let mcp_port = match role { "silas" => 3351, "kade" => 3352, "wren" => 3353, _ => 3341 };
+    let test_surface_body = format!(
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/, chorus-mcp http://localhost:{}/mcp\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
+        role, card, api_port, mcp_port, role
+    );
+    if let Err(e) = run("curl", &[
+        "-s", "-f", "-X", "POST",
+        "http://localhost:3470/api/message",
+        "-H", "Content-Type: application/json",
+        "-d", &test_surface_body,
+    ]) {
+        jsonl(home, role, card, &trace, "demo.bridge.failed",
+              &format!(",\"reason\":\"test_surface:{}\"", e.replace('"', "'")));
+    }
+    emit_spine(home, "demo.test_surface.ready", role, card, &trace);
+    jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
+
     // The accept_gate evidence event — without this, /acp refuses at accept time
     // (mirrors show-gate.sh emitting demo.show.completed on a successful demo).
     emit_spine(home, "demo.show.completed", role, card, &trace);
