@@ -447,11 +447,23 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     let diff = run("git", &["-C", &werk_s, "diff", "origin/main", "--name-only"])?;
     let units = discover_build_units(diff.lines());
     if units.is_empty() {
-        jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-buildable-changed\"");
-        return Err(format!(
-            "card #{} changed nothing buildable (no Rust crate under platform/services/, no TS service under platform/api/) — nothing to build",
-            card
-        ));
+        // #3107 — "buildable" was the wrong question. Some artifacts have a build
+        // cycle (Rust compile, TS bundle), others don't (docs, graph data, principles,
+        // config). Build's job is "compile what needs compiling, then get out of the
+        // way" — not gate the demo on whether anything compiled. werk-deploy is
+        // universal and dispatches by what changed (catalog register for docs, etc.);
+        // build returns a clean no-op success so the demo chain proceeds.
+        let changed = diff.lines().filter(|l| !l.is_empty()).count();
+        jsonl(
+            home,
+            role,
+            card,
+            &trace,
+            "build.skipped",
+            &format!(",\"reason\":\"no-build-cycle\",\"changed_paths\":{}", changed),
+        );
+        jsonl(home, role, card, &trace, "build.completed", ",\"built\":\"\"");
+        return Ok(String::new());
     }
 
     // one lock around all builds (cargo can't race the target dir; npm builds also
