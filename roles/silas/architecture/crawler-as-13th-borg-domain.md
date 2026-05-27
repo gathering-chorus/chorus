@@ -45,6 +45,19 @@ Why split:
 
 Open question for Wren: is this split inside the crawler-engine (two instance declarations) or one tier up (test-herald lives in `heralds` Borg-domain, code-herald in `crawler-engine`)? My read: **both are crawler-instances** because both fit the source→target→cadence→cost contract. The `heralds` Borg-domain is the SET (governance), each herald is an instance.
 
+### The herald family is open (extensible by construction)
+
+Code-herald + test-herald are the **first two**, not the whole set. The point of the instance contract is that adding a herald = adding a declaration, not re-architecting. Concrete future heralds already in the pipeline:
+
+| Future herald | Reads | Writes | Cadence | Motivating gap |
+|---|---|---|---|---|
+| **desktop-sweep-herald** | `~/Desktop/*.svg,*.html,*.md` | doc-catalog | weekly | Wren's #3104 + Silas's #3106 both surfaced desktop-resident chorus diagrams; sweep-as-instance closes the class (her idea, captured here for the family). |
+| **doc-catalog-drift-herald** | doc-catalog filePath entries | drift report → spine events | daily | The werk-pointing-filePath substrate gap (Kade's #3103, hit on 3 cards today): a drift herald checks every catalog entry's filePath resolves on canonical, surfaces stale entries. |
+| **ontology-drift-herald** | Athena tree vs filesystem | spine events | on-change | Discovers when subdomain Owl declarations diverge from on-disk reality (today's reflexive grep-each-session pattern as instance). |
+| **principle-stale-herald** | loom principle file mtimes | spine events | hourly | Existing class (#3009) folds into the family. |
+
+**The family closes by construction.** Any new sense-and-emit pattern that fits `source → target → cadence → cost` lands as a herald declaration; no re-architecture of the synthesis note, no new Borg-subdomain, no new bash convention. That's the verb-as-substrate property applied to observability instances.
+
 ## How crawler-as-domain fits Borg's set
 
 ```
