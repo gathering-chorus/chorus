@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus as a cybernetic system — draft framing</title>
+<style>
+  :root {
+    --bg:#f6f4ef; --ink:#22221f; --rule:#b8b3a5; --muted:#7a7565;
+    --accent:#7b9a52; --warn:#d65d00; --quote:#3b82a9;
+    --code: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--ink); font:14px/1.55 -apple-system, sans-serif; }
+  .wrap { max-width:1080px; margin:24px auto; padding:0 24px 100px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin:36px 0 12px; border-bottom:1px solid var(--rule); padding-bottom:6px; }
+  h3 { font-size:15px; margin:18px 0 4px; }
+  p { margin:8px 0; max-width:840px; }
+  .lede { color:var(--muted); margin-bottom:18px; font-size:14px; }
+  blockquote { border-left:3px solid var(--quote); margin:8px 0; padding:4px 12px; color:#444; font-style:italic; background:#fff; }
+  ul { padding-left:22px; }
+  li { margin:3px 0; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:10px 0; background:#fff; border:1px solid var(--rule); border-radius:6px; overflow:hidden; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { background:#efece5; font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  code, .mono { font-family:var(--code); font-size:12px; color:#444; background:#eee; padding:1px 4px; border-radius:3px; }
+  .note { color:var(--muted); font-style:italic; font-size:12px; }
+  .gap { background:#fff8ec; border:1px dashed var(--warn); border-radius:6px; padding:10px 14px; margin:10px 0; font-size:13px; }
+  .gap b { color:var(--warn); }
+  .pill { display:inline-block; padding:1px 7px; border:1px solid var(--rule); border-radius:10px; font-size:11px; font-family:var(--code); margin-right:3px; color:var(--muted); }
+  a { color:#3b82a9; }
+  .src { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Chorus as a cybernetic system</h1>
+<p class="lede">
+  Draft framing for a Jeff-authored cybernetic-principles set that runs parallel to the permaculture (Hemenway) layer.
+  Goal: principles native to coordination substrates, cross-validated against the natural-systems principles already in graph.
+  2026-05-27 — Kade.
+</p>
+
+<h2>Why cybernetics is the right frame for chorus</h2>
+
+<p>
+  Chorus is a coordination substrate: multiple autonomous agents (three AI roles + Jeff)
+  acting under uncertainty, with feedback loops (gates, traces, andon state), regulation
+  (DEC-048 authority, role-state transitions), and information flow (spine events, MCP
+  nudges, card lifecycle). That is the literal definition of a cybernetic system —
+  Wiener's 1948 framing of "control and communication in the animal and the machine"
+  applied directly.
+</p>
+
+<p>
+  The permaculture frame fits because chorus IS a resilient living-system instance
+  (which is why the Hemenway principles map cleanly — see today's session conversation).
+  But permaculture's vocabulary is garden-native: "catch and store energy" requires
+  metaphor-translation to "persist every state transition." Cybernetics is the
+  discipline that already names these patterns at the substrate layer where chorus
+  actually operates. The two frames are duals — same invariants, different native
+  vocabulary.
+</p>
+
+<h2>Five foundational thinkers, the ideas that matter for chorus</h2>
+
+<h3>Norbert Wiener (1948) — feedback as the universal regulator</h3>
+<p>
+  Wiener coined "cybernetics" and defined <b>feedback</b> as "the property of being
+  able to adjust future conduct by past performance." A system that can sense its own
+  output and adjust subsequent action is regulating itself. Statistical noise + uncertainty
+  are first-class: regulation must work despite imperfect signal.
+</p>
+<blockquote>Wiener's frame for chorus: the gate-catch cycle, the spine events that close feedback loops between roles, the trace observability that lets a role read its own past behavior — all instances of "adjust future conduct by past performance."</blockquote>
+
+<h3>W. Ross Ashby (1956) — the Law of Requisite Variety</h3>
+<p>
+  Ashby's most-cited theorem: <b>only variety can absorb variety</b>.
+  Formally <code>V(C) ≥ V(D)</code> — a controller must possess at least as much
+  variety (range of distinguishable responses) as the disturbances it regulates.
+  An under-varietied controller cannot match the system it tries to control;
+  the unmatched variance escapes as failure.
+</p>
+<blockquote>
+  Ashby's frame for chorus: three roles (with different lenses) give the team
+  enough variety to absorb the variety of work the substrate encounters. A single-role
+  team would be under-varietied for the breadth (PM judgment + architecture + engineering
+  + ops). The gate chain (product / code / quality / arch / ops) is requisite-variety made
+  explicit — each gate matches a class of disturbances. When a class isn't gated,
+  Ashby predicts the failure mode: that variance class escapes.
+</blockquote>
+
+<h3>Stafford Beer (1972, 1979) — the Viable System Model</h3>
+<p>
+  Beer's VSM articulates the <b>minimum set of functions any viable organization must have</b>:
+  Operations (System 1), Coordination (System 2), Control (System 3), Intelligence (System 4),
+  Policy (System 5). Each level recursively contains the same structure. "Viable" means
+  the system maintains its identity and purpose despite internal and external variety.
+</p>
+<blockquote>
+  Beer's frame for chorus: the team isn't a flat collection of roles; it's a layered viable system.
+  Card execution is System 1 (operations). Role-pair coordination + nudge substrate is System 2.
+  Gate chain + DEC-048 authority is System 3 (control). Pattern detection across cards (the
+  reckonings, the principle work) is System 4 (intelligence). Jeff's product/value-stream
+  ownership is System 5 (policy). When any layer is missing or starved, viability degrades —
+  exactly the pattern Jeff names when he says "Chorus blarfs because it has no user" (the
+  System 5 anchor that gives the rest of the layers their purpose was missing).
+</blockquote>
+
+<h3>Heinz von Foerster (1974) — second-order cybernetics</h3>
+<p>
+  Von Foerster's distinction: <b>first-order cybernetics</b> studies systems that are observed
+  (the observer is outside, neutral); <b>second-order cybernetics</b> studies systems that
+  observe (the observer is included in the system being studied). The observer is itself
+  a self-regulating system coupled to what it observes.
+</p>
+<blockquote>
+  Von Foerster's frame for chorus: the three AI roles do not stand outside the chorus
+  substrate observing it — they are constitutive of it. When Kade refuses a gate or Wren
+  passes one, that is the system observing itself and adjusting. Jeff is also inside the
+  system, not outside (per today's "Jeff is the emotional center" reading and the
+  feedback-contract designs). This is why "design from outside" approaches (write the
+  perfect spec, then implement) fail repeatedly in chorus — there is no outside. Every
+  design move is also a system perturbation. The "u don't really look at the work" call
+  is second-order at work — the observer (Kade) was perturbing the system by not observing
+  it well.
+</blockquote>
+
+<h3>Donella Meadows (1997, 2008) — leverage points</h3>
+<p>
+  Meadows ranked interventions in systems from <b>least leverage to most leverage</b>:
+  parameters &lt; buffer sizes &lt; structure &lt; delays &lt; feedback loop strength &lt;
+  information flows &lt; rules &lt; self-organization &lt; goals &lt; mindset/paradigm &lt;
+  power to transcend paradigms. The deeper the leverage point, the harder to change and the more powerful the effect.
+</p>
+<blockquote>
+  Meadows' frame for chorus: most cards intervene at low-leverage layers (parameters:
+  raise a threshold; buffer sizes: a longer wait window). The high-leverage work is at
+  the rules layer (DECs), the self-organization layer (gate authority, role autonomy),
+  the goals layer (what the team is FOR), and the paradigm layer (Jeff's reckonings:
+  "Chorus blarfs because it has no user" was a paradigm-layer move). The principle
+  work you're doing now is at the highest leverage available — paradigm/mindset.
+</blockquote>
+
+<h2>Chorus mapped to cybernetic concepts</h2>
+
+<table>
+<tr><th>Cybernetic concept</th><th>Chorus instance</th><th>Status</th></tr>
+<tr><td>Feedback loop (Wiener)</td><td>Spine events + role-state + andon; gates closing the loop on quality</td><td>Live, partial</td></tr>
+<tr><td>Requisite variety (Ashby)</td><td>Three roles + five gates + multiple test tiers</td><td>Live, intentional</td></tr>
+<tr><td>System 1 — Operations</td><td>Card execution; werk-pull/build/deploy/accept; verb binaries</td><td>Live</td></tr>
+<tr><td>System 2 — Coordination</td><td>Nudges, briefs, ack contracts</td><td>Live, recently hardened (Wren #3100)</td></tr>
+<tr><td>System 3 — Control</td><td>Gate chain; DEC-048 authority; the chorus-hooks guardrails</td><td>Live</td></tr>
+<tr><td>System 4 — Intelligence</td><td>Reckonings, principles work, /werk/code-review registry</td><td>Emerging</td></tr>
+<tr><td>System 5 — Policy</td><td>Jeff as Head of Product; product model; "beats solo Claude Code" bar</td><td>Live, recently formalized (#3059)</td></tr>
+<tr><td>Observer included (second-order)</td><td>Roles constitute the substrate; gates are self-observation</td><td>Lived, not yet explicitly named</td></tr>
+<tr><td>High-leverage intervention (Meadows)</td><td>Paradigm cards (Jeff's reckonings); principle work; goal-layer cards</td><td>Rare-but-real; today's session is one</td></tr>
+</table>
+
+<h2>Toward a Jeff-authored cybernetic-principles set</h2>
+
+<p>
+  The proposal from today's session: ≤14 cybernetic principles, 1:1 correlated to the
+  Hemenway permaculture principles, drawn from cybernetic tradition (Wiener, Ashby, Beer,
+  von Foerster, Meadows) so each principle carries discipline-citation. The cybernetic
+  layer becomes chorus's <i>native</i> principle layer; permaculture stays as the
+  cross-validating natural-systems layer with <code>corresponds_to</code> edges.
+</p>
+
+<h3>Derivation methodology: how to infer a cybernetic principle from a permaculture one</h3>
+
+<p>
+  The mapping isn't arbitrary or stylistic. Each permaculture principle encodes an
+  invariant about resilient living systems; cybernetics has 80 years of vocabulary for
+  the same invariants at substrate level. Derivation is a five-step procedure plus
+  rules for edge cases.
+</p>
+
+<p><b>Step 1 — Identify the invariant.</b> Strip the garden context. What does the
+permaculture principle CLAIM about resilient systems independently of the natural-systems
+language? "Observe and interact" → invariant: <i>sensing precedes action; observation is
+part of the regulation loop, not separate from it.</i> "Catch and store energy" → invariant:
+<i>capture every state transition; a system that retains its own history can regulate
+against drift.</i> The invariant is the cross-domain claim; everything else is presentation.</p>
+
+<p><b>Step 2 — Locate the cybernetic vocabulary.</b> Search the foundational layers
+(Wiener feedback, Ashby variety, Beer VSM, von Foerster second-order, Meadows leverage)
+for the term that names the invariant at substrate level. Prefer terms from the discipline's
+own tradition over derived secondary literature — "feedback loop" beats "react-to-input";
+"requisite variety" beats "match-the-complexity." The discipline-citation is what gives
+the principle external grounding.</p>
+
+<p><b>Step 3 — State in chorus-native vocabulary.</b> Can you express the cybernetic
+principle in chorus terms (substrate, role, gate, trace, spine, card, /werk verb) without
+metaphor-translation? If not, the abstraction is at the wrong level. <i>The test:</i> a
+new role joining chorus should understand the principle without needing a garden tutorial
+OR a cybernetics textbook. The chorus-native restatement IS the working version.</p>
+
+<p><b>Step 4 — Validate implication-set against the permaculture original.</b> Do both
+sides carry parallel implications? If permaculture's "observe and interact" implies
+"don't intervene blindly; the act of observing changes you AND it," does the cybernetic
+correlate imply the same? Diverging implications = wrong mapping. Same implications
+across two vocabularies = the invariant was identified correctly in Step 1.</p>
+
+<p><b>Step 5 — Cardinality check.</b> Does the cybernetic principle stand alone, or is
+it derivative of another in your set? If derivative, demote to policy under the parent
+or fold. The ≤14 cap forces this discipline: every candidate must earn its slot.</p>
+
+<h3>Edge cases</h3>
+
+<p><b>Permaculture principle has no clean cybernetic correlate.</b> Structural signal,
+not a methodology failure. Two possibilities: (a) the permaculture principle is genuinely
+natural-systems-specific (e.g., tied to biological yield in a way that has no clean
+information-flow analog), in which case the cybernetic-principle set has FEWER than 12;
+the ≤14 cap doesn't force parity. (b) You haven't searched the discipline thoroughly —
+second-order cybernetics + Beer's VSM often cover what first-order Wiener doesn't.
+The honest move is to leave the slot empty and name it as an open question rather than
+force a stretch correlate.</p>
+
+<p><b>Multiple cybernetic concepts compete for one permaculture principle.</b> Pick the
+most CYBERNETIC-NATIVE — term from the discipline itself over secondary literature. If
+"feedback" and "homeostasis" both fit, prefer "feedback" (Wiener-native) unless the
+homeostatic framing carries an implication the feedback framing doesn't.</p>
+
+<p><b>Multiple permaculture principles collapse to one cybernetic concept.</b> That's
+the cybernetic frame revealing what permaculture-as-garden separates. Keep both
+permaculture principles distinct in the cross-validation layer; let the single cybernetic
+principle cite up to MULTIPLE permaculture ones via <code>corresponds_to</code> edges.
+The principle layer enforces 1:1 only on the cybernetic side; cross-validation edges
+aren't cardinality-constrained.</p>
+
+<p><b>One permaculture principle splits into multiple cybernetic concepts.</b> The
+inverse case. Indicates the permaculture-as-garden principle is bundling what cybernetics
+distinguishes. Pick the most LOAD-BEARING cybernetic concept as the primary correlate;
+the others become policy-layer items under it. Do not inflate the principle layer.</p>
+
+<h3>Worked example: "Observe and interact" → cybernetic correlate</h3>
+
+<p><b>Step 1 — Invariant.</b> Strip the garden context. The principle is saying: before
+acting on a system, observe it; observation isn't separable from regulation. In a garden,
+this means watch the plant before pruning. As an invariant: <i>action-without-observation
+is open-loop control; resilient regulation requires the loop closure between sensing and
+acting.</i></p>
+
+<p><b>Step 2 — Cybernetic vocabulary.</b> Wiener's feedback principle ("adjust future
+conduct by past performance") names half of this — the loop closure. Von Foerster's
+second-order observer names the other half — the observer is part of the system being
+regulated, not external to it. Composite cybernetic concept: <b>sense-before-actuate
+within a closed feedback loop where the observer is constitutive of the system.</b></p>
+
+<p><b>Step 3 — Chorus-native restatement.</b> "Before changing system state, capture
+its current state through the canonical observation surface (gates, spine queries,
+role-state, card view). Acting on stale or unread state is open-loop and produces drift.
+The observer (the role running the verb) is itself part of the system being regulated;
+the act of observation is also an intervention." A new role can understand this without
+a tutorial — it references chorus concepts directly.</p>
+
+<p><b>Step 4 — Implication-validation.</b> Permaculture implication: don't intervene
+blindly; the act of observing changes you AND it. Cybernetic-correlate implications:
+gates that don't actually read the work being gated produce drift (today's #3100 catch);
+roles observing other roles' work are constitutive of the regulation (peer gates);
+status-cache reads must be fresh, not pattern-matched against memory of prior reads.
+Parallel set. Implication-set validates.</p>
+
+<p><b>Step 5 — Cardinality.</b> Stands alone. Doesn't reduce to "use small and slow"
+(related but distinct — that's about magnitude of intervention, not observation-before-it).
+Doesn't reduce to "apply self-regulation" (related — feedback loops — but that's about
+loop closure as a whole, this principle is about the sense leg of the loop and the
+observer-included claim specifically). Independent principle.</p>
+
+<p><b>Citation.</b> Wiener, <i>Cybernetics</i> (1948), feedback chapter; von Foerster,
+"Cybernetics of Cybernetics" (1974), observer-included principle.</p>
+
+<p><b>Candidate chorus-native principle wording (Jeff to refine):</b> "Sense before
+actuating; the observer is part of the regulated system." Or more terse:
+<i>"Read the state through the canonical surface before changing it. You are inside
+the system you observe."</i></p>
+
+<h3>Three vocabularies, one invariant</h3>
+
+<p>
+  Chorus's day-to-day work is mostly engineering work — building, deploying, observing,
+  refactoring, gating. The cybernetic vocabulary grounds the principle in discipline
+  tradition; the permaculture vocabulary cross-validates against natural-systems intuition;
+  but a <b>technologist-native vocabulary</b> is what a working engineer / SRE / architect
+  reaches for when they pattern-match the principle against current work. Three readings
+  of the same invariant, each native to a different audience.
+</p>
+
+<p>
+  The technologist reading isn't aspirational. Each phrasing comes from established
+  engineering tradition with citation: SRE observability discipline, event-sourcing,
+  Lean Startup feedback loops, contract-first design (OpenAPI / Protocol Buffers),
+  continuous delivery, feature-flag governance, Postel's robustness principle, fail-fast
+  semantics. The technologist phrasing is the operational form — the one that shows up
+  in a code review or design discussion.
+</p>
+
+<p>Sketch of the correlation (illustrative — Jeff to refine):</p>
+
+<table>
+<tr><th>Permaculture (Hemenway)</th><th>Cybernetic native</th><th>Technologist native</th></tr>
+<tr><td>Observe and interact</td><td>Sense before actuating; observer is in the system</td><td>Read before write. Instrument before change. Production tells you what tests can't.</td></tr>
+<tr><td>Catch and store energy</td><td>Persist every state transition; the system that captures its own history can regulate</td><td>Append-only events are substrate; derived state is opinion. Ephemeral state is debt.</td></tr>
+<tr><td>Obtain a yield</td><td>Every action produces measurable value; effort without yield is leakage</td><td>No deploy without a feedback signal. If you can't measure the yield, you're shipping ceremony.</td></tr>
+<tr><td>Apply self-regulation and accept feedback</td><td>Homeostasis through negative feedback; regulators must close the loop</td><td>Failure must be observable, surfaceable, recoverable. Build the regulator; don't be it.</td></tr>
+<tr><td>Use and value renewable resources</td><td>Reuse canonical surfaces; minimize state duplication; prefer shared signals to copied ones</td><td>One source of truth per concept. Cache the derivation, never the truth. ICD before impersonation.</td></tr>
+<tr><td>Produce no waste</td><td>Every effort either becomes signal or is eliminated; no silent-success</td><td>Fail loud. Silent success is a bug; silent failure is an incident. Errors are first-class.</td></tr>
+<tr><td>Design from patterns to details</td><td>Invariants first; structure follows; specifics derive from the invariant</td><td>Contract before implementation. Interface before code. Names matter; they propagate.</td></tr>
+<tr><td>Integrate rather than segregate</td><td>Composition over duplication; shared contracts at boundaries</td><td>Compose, don't fork. Shared contract, specialized consumers. Branching architecture = O(n²) integration debt.</td></tr>
+<tr><td>Use small and slow solutions</td><td>Incremental control with stable convergence; large step changes overshoot</td><td>Ship small. Atomic commits. Small blast radius. Continuous delivery over big-bang. Rollback over rollforward.</td></tr>
+<tr><td>Use and value diversity</td><td>Requisite variety: V(C) ≥ V(D); multiple lenses absorb multiple disturbance classes</td><td>Heterogeneous review catches what homogeneous teams miss. Polyglot at the contract; specialize at the implementation.</td></tr>
+<tr><td>Use edges and value the marginal</td><td>Boundaries reveal state transitions; observe at edges where invariants stress</td><td>Bugs live at interfaces. Test the boundary; trust the interior less. Watch the gateway, the migration, the upgrade.</td></tr>
+<tr><td>Creatively use and respond to change</td><td>Variety regulates variety; the system must internally match the variety of disturbances it absorbs</td><td>Configuration over code; flags over forks; versioned APIs over breaking ones. Assume the requirement will change.</td></tr>
+</table>
+
+<p class="note">
+  <b>Source threads (cybernetic):</b> Wiener feedback (1, 2, 4, 6); Ashby variety (10, 12);
+  Beer VSM (3, 5, 8); von Foerster second-order (1, 11); Meadows leverage (7, 9).
+  <br>
+  <b>Source threads (technologist):</b> SRE observability discipline (1, 4, 6); event-sourcing
+  / Kappa / CQRS (2); Lean Startup build-measure-learn + SRE SLIs (3); canonical-state /
+  ICD (5); fail-fast / Postel's robustness (6); contract-first design / OpenAPI / Protocol
+  Buffers / ADRs (7); microservice composition done right (8); continuous delivery /
+  trunk-based development (9); diverse-by-construction review + Ashby's-law-applied-to-teams (10);
+  contract testing / chaos engineering (11); feature flags / semver / backward-compatibility (12).
+</p>
+
+<p class="note">
+  This three-column sketch is illustrative. Jeff authors the actual set, with the final
+  wording carrying the chorus-native voice. The structural payoff: a new role joining
+  chorus can reach for whichever vocabulary they already think in (gardener, systems-theorist,
+  or engineer) and find the same principle. Citation to engineering tradition (technologist
+  column) gives external grounding for the audience that operates the substrate day-to-day,
+  same way cybernetic citation grounds for the systems-theory reader and permaculture grounds
+  for the natural-systems reader. Three readings, one invariant — the principle layer becomes
+  accessible without losing rigor.
+</p>
+
+<h2>Practices — operational instances that cite up to the principles</h2>
+
+<p>
+  Distinguished-engineer work: infer the specific practices each principle implies for
+  chorus's substrate. A <b>practice</b> is mechanically enforceable — a verb can refuse
+  on it, a lint can catch the pattern, a gate can check the artifact. The naming convention:
+  <code>chorus:practice-*</code> instances each carrying a <code>cites_principle</code>
+  edge to one of the 12 above and a <code>cites_source</code> edge to the engineering
+  tradition or chorus failure mode that motivated it.
+</p>
+
+<p>
+  Density: 3–5 practices per principle. Higher count under the principles that have
+  been most-bitten by chorus failures today. Each practice below is grounded either in
+  a named chorus incident or in established engineering tradition.
+</p>
+
+<h3>1. Read before write. Instrument before change.</h3>
+<ul>
+<li><code>chorus:practice-fresh-clone-parity</code> — verification runs in a clean clone, not werk-local (caught #3092 round 1's untracked <code>demo_env.rs</code>)</li>
+<li><code>chorus:practice-sha-delta-re-engage</code> — if sha changed since prior verdict, re-read the diff; "I already passed it once" is the failure shape (today's #3100 reckoning)</li>
+<li><code>chorus:practice-instrument-before-refactor</code> — add spine events / metrics for the surface BEFORE structural changes; refactor and remove instrumentation in separate commits</li>
+<li><code>chorus:practice-read-canonical-not-cached</code> — gate logic reads card view + spine events live, not from memory of prior reads (today's #3100 trap)</li>
+</ul>
+
+<h3>2. Append-only events are substrate; derived state is opinion.</h3>
+<ul>
+<li><code>chorus:practice-emit-spine-pair-per-verb</code> — every verb emits <code>verb.started</code> + <code>verb.completed</code> | <code>verb.failed</code> pair to spine (Silas's #2973)</li>
+<li><code>chorus:practice-witness-jsonl-per-verb</code> — every verb writes jsonl witness alongside spine emit (werk-pull v2 blueprint, #3045)</li>
+<li><code>chorus:practice-no-runtime-state-in-git</code> — <code>.werk-api/</code>, <code>.werk-mcp/</code>, log files, scratch — all gitignored (#3044 + Silas's #3092 fix)</li>
+<li><code>chorus:practice-trace-id-propagation</code> — cross-verb / cross-service calls carry <code>$CHORUS_TRACE_ID</code> via env-contract (#3023 + #3063)</li>
+</ul>
+
+<h3>3. No deploy without a feedback signal.</h3>
+<ul>
+<li><code>chorus:practice-health-smoke-post-deploy</code> — chorus-deploy gates <code>deploy.completed</code> on real health smoke, not on launchctl-kickstart-returned (#2993)</li>
+<li><code>chorus:practice-deploy-emits-commit-cdhash</code> — every deploy emits <code>{commit, crate, cdhash, target}</code> so "which sha is live" is queryable</li>
+<li><code>chorus:practice-verify-bar-named-on-change</code> — every change ships with a named, measurable verify bar (Wren's "≤2 block alerts in 30 min" for #3099)</li>
+<li><code>chorus:practice-merged-not-live</code> — "merged ≠ live" — verify cdhash / strings / mtime post-deploy, not the deploy-tool's self-report (chorus-deploy ships-stale class, #3052)</li>
+</ul>
+
+<h3>4. Failure must be observable, surfaceable, recoverable.</h3>
+<ul>
+<li><code>chorus:practice-typed-errors</code> — <code>R&lt;T&gt; = Result&lt;T, String&gt;</code> per verb-binary blueprint; no <code>.unwrap()</code> / <code>.expect()</code> outside tests &amp; main entry</li>
+<li><code>chorus:practice-all-or-nothing-rollback</code> — every state-mutating verb has a rollback path that restores prior state atomically (werk-deploy's <code>dist.prev</code> + <code>chorus-bin-install --rollback</code>)</li>
+<li><code>chorus:practice-rollback-named-trigger-points</code> — rollback fires on enumerated failure modes (install-fail / kickstart-fail / cdhash-mismatch / health-fail — Silas's #3092 pattern)</li>
+<li><code>chorus:practice-error-context-in-message</code> — error names actor + input + failure mode (not bare <code>"failed"</code>)</li>
+<li><code>chorus:practice-fail-loud-best-effort-rollback</code> — failed rollback logs loudly for ops (Silas's lib.rs L720 comment: "the worst case is named, not papered over")</li>
+</ul>
+
+<h3>5. One source of truth per concept; ICD before impersonation.</h3>
+<ul>
+<li><code>chorus:practice-canonical-surface</code> — route through canonical surface, not impersonated parallel pipe (Wren's #3100 nudge-via-MCP, Silas's #3101 wrapper-routes-to-canonical)</li>
+<li><code>chorus:practice-icd-declared</code> — no harvester code without provider in <code>urn:gathering:icd/current</code> (DEC-095, hook-enforced)</li>
+<li><code>chorus:practice-no-state-duplication</code> — derived state must be regenerable from canonical; if not, it IS truth, treat as such</li>
+<li><code>chorus:practice-canonical-resolution-router</code> — when canonical name has variants, resolution is a router (slot-first, canonical-fallback), not direct binding (Silas's #3101)</li>
+</ul>
+
+<h3>6. Fail loud. Silent success is a bug; silent failure is an incident.</h3>
+<ul>
+<li><code>chorus:practice-no-silent-fail-curl</code> — every <code>curl POST</code> uses <code>-f</code> + checks exit + emits <code>op.failed</code> jsonl on error (Wren's #3100 class)</li>
+<li><code>chorus:practice-no-discarded-error</code> — no <code>let _ = run(...)</code> discarding fallible results; use <code>if-let-Err</code> + named failure event</li>
+<li><code>chorus:practice-test-tier-coverage</code> — gate verbs invoke full-tier runner (<code>cargo test --release</code>, not <code>--lib</code>; Silas's lesson 2026-05-27)</li>
+<li><code>chorus:practice-untracked-load-bearing</code> — <code>git status --porcelain | grep '^??'</code> at gate-time; new files referenced in committed code must be staged (#3085 + #3092)</li>
+<li><code>chorus:practice-stale-base-deletions</code> — <code>git diff origin/main --diff-filter=D --name-only</code> for silent reverts at gate-time (#3010 / #3046 / #3089 class)</li>
+</ul>
+
+<h3>7. Contract before implementation. Interface before code. Names matter.</h3>
+<ul>
+<li><code>chorus:practice-adr-before-substrate-change</code> — material architectural changes carry an ADR before the code lands (ADR-026, ADR-032, ADR-033)</li>
+<li><code>chorus:practice-icd-before-harvester</code> — declare interface contract before consumer code; populate <code>icd-instance-{domain}.ttl</code> first (DEC-095)</li>
+<li><code>chorus:practice-spine-event-name-stable</code> — event names are part of the contract; renames are migrations not refactors (#2852 spine-events.json registry)</li>
+<li><code>chorus:practice-test-shape-positive-negative-witness</code> — assertions land positive (it happened) + negative (the wrong thing didn't happen) + witness (event recorded); Wren's #3098 / #3100 pattern</li>
+<li><code>chorus:practice-tdd-red-green</code> — new behavior has a failing test before implementation (DEC-1674)</li>
+</ul>
+
+<h3>8. Compose, don't fork. Shared contract, specialized consumers.</h3>
+<ul>
+<li><code>chorus:practice-extract-on-duplication</code> — pattern duplicated in 2+ places extracts to a template / helper (Silas's #3101 wrapper-duplicated-across-sh-and-rust debt note)</li>
+<li><code>chorus:practice-verb-symmetry-write-review</code> — same practice registry consumed at write-time (<code>/werk/code</code>) and review-time (<code>/werk/code-review</code>); one source, two operations</li>
+<li><code>chorus:practice-shared-trace-via-env-contract</code> — verbs in a pipeline share trace via <code>$CHORUS_TRACE_ID</code> not parallel minting (#3063)</li>
+<li><code>chorus:practice-no-impersonated-http</code> — cross-role / cross-service calls go through canonical MCP / messaging API; no direct HTTP impersonation (Wren's #3100 root-cause)</li>
+</ul>
+
+<h3>9. Ship small. Atomic commits. Small blast radius.</h3>
+<ul>
+<li><code>chorus:practice-ship-the-slice-not-sprawl</code> — commit scoped to card AC; non-AC files dropped via <code>git restore</code> before commit (2026-05-22 feedback memory)</li>
+<li><code>chorus:practice-atomic-verb</code> — each verb does ONE thing (Jeff's split of werk-commit + werk-push, 2026-05-25: "this hides commit and push in one thing")</li>
+<li><code>chorus:practice-merge-forward-on-behind</code> — werk merges <code>origin/main</code> forward if behind-count &gt; 0 before /acp (today on #3100; #3046's 41-behind catch yesterday)</li>
+<li><code>chorus:practice-pr-size-bounded</code> — diff-stat sanity at gate-time; large unexpected size = signal worth surfacing</li>
+<li><code>chorus:practice-no-bundled-sprawl</code> — avoid the "test cleanup card bundles 21-file lint-quote sprawl" pattern (#3033 lesson)</li>
+</ul>
+
+<h3>10. Heterogeneous review catches what homogeneous teams miss.</h3>
+<ul>
+<li><code>chorus:practice-gate-chain-five-fires-per-code-card</code> — product (Wren) + code (Kade) + quality (Kade) + arch (Silas) + ops (Silas) gates ALL fire on code cards</li>
+<li><code>chorus:practice-no-self-accept-on-code</code> — DEC-048: jeff→any, wren→non-wren, refuse-self (codified in werk-accept v2, #3057)</li>
+<li><code>chorus:practice-peer-fan-out-not-chain</code> — gate-request fan-out concurrent to all owing roles, never chained handoff (Wren's 25907bf5 today)</li>
+<li><code>chorus:practice-cross-role-substantive-ack</code> — feedback-nudge ack is substance + routed to recipient session, never silent or terminal-only (today's #3100 lesson, mine)</li>
+</ul>
+
+<h3>11. Bugs live at interfaces. Test the boundary; trust the interior less.</h3>
+<ul>
+<li><code>chorus:practice-test-cross-service-call</code> — every API call has an integration test exercising the boundary (e2e_demo_happy_path pattern)</li>
+<li><code>chorus:practice-test-witness-spine-events</code> — assertions read spine events (the boundary signal) not internal state</li>
+<li><code>chorus:practice-live-permutation-matrix</code> — lifecycle / state-machine boundaries tested live on real OS surface (Silas's T1-T6 launchd matrix, #3092)</li>
+<li><code>chorus:practice-flake-isolation</code> — intermittent fail then N consecutive passes in isolation = flake event, not refusal (my #3092 round-3 observation)</li>
+<li><code>chorus:practice-fresh-clone-tier-test</code> — fresh-clone <code>cargo test --release</code> as the gate-readiness check, not werk-local (Silas's lesson from today)</li>
+</ul>
+
+<h3>12. Configuration over code; flags over forks; versioned over breaking.</h3>
+<ul>
+<li><code>chorus:practice-env-var-not-hardcoded</code> — service URLs / ports / role lists come from env (Wren's <code>CHORUS_MCP_URL</code> in #3100; my #3076 STATUS_FILE override)</li>
+<li><code>chorus:practice-idempotent-verb</code> — same input + same state = no-op exit-0 (werk-pull v2 blueprint; env_up idempotency)</li>
+<li><code>chorus:practice-soft-fail-on-not-applicable</code> — verb that doesn't apply (no CliVerb changes for this card) emits <code>skipped_or_failed</code> event, doesn't abort chain (Wren's dab64dea today)</li>
+<li><code>chorus:practice-feature-flag-before-default</code> — new behavior gated on a flag (e.g., <code>CHORUS_DEMO_COMMENT_WINDOW_SECS</code>) before becoming hardcoded default</li>
+<li><code>chorus:practice-backward-compat-on-rename</code> — keep aliases on rename until full migration (<code>CHORUS_MCP_SMOKE_URL</code> alias from #2998)</li>
+</ul>
+
+<p class="note">
+  Totals across the 12 principles: ~54 practices, density 3–5 per principle, with more
+  practices under #6 (fail-loud) and #4 (failure observable) — the principles most
+  exercised by today's catch-cycles. Each practice carries a chorus-incident citation
+  OR an engineering-tradition citation; many carry both. The registry isn't aspirational
+  — every entry exists because something failed (or almost did) without it.
+</p>
+
+<p class="note">
+  <b>Verb-binding:</b> these practice IRIs are exactly the registry that
+  <code>/werk/code</code> consumes at write-time (as guidance, surfaced to the agent based
+  on what's being touched) and <code>/werk/code-review</code> consumes at review-time
+  (as verdict, refusing on violation). Same instances, two operations. The bilateral
+  enforcement collapses today's catch-cycle friction by surfacing the practice <i>before</i>
+  the agent commits to a pattern, not after.
+</p>
+
+<h2>Gaps cybernetics surfaces that chorus hasn't yet addressed</h2>
+
+<div class="gap">
+  <b>Gap 1 — System 4 (Intelligence) is under-formalized.</b><br>
+  Reckonings happen, but they're ad-hoc (Jeff catches a pattern; the team adjusts). VSM
+  says System 4 needs explicit observation-of-the-environment + future-modeling.
+  Chorus's pattern-detection across cards (the time-budget query, the principle work) is
+  System 4 happening on demand. Making it a continuous function (not a moment) is open work.
+</div>
+
+<div class="gap">
+  <b>Gap 2 — Algedonic channels missing.</b><br>
+  Beer's VSM has dedicated "pain signal" channels that bypass normal coordination to
+  reach top-level policy immediately. Chorus has nudges (System 2) and the andon state
+  (mild algedonic) but no high-priority "the substrate is failing" channel that escalates
+  to Jeff/System 5 directly. Today's crawler stalls (3 in one day) would have triggered
+  one if it existed.
+</div>
+
+<div class="gap">
+  <b>Gap 3 — Variety amplification at System 3-2 boundary.</b><br>
+  Ashby says the variety of the controller (System 3) must match variety of operations
+  (System 1). When chorus's substrate develops faster than the gate chain (#3092's new
+  features outpacing what gate-arch could fully assess), Ashby predicts the failure mode:
+  variance leaks past gates. The /werk/code-review verb + practice registry are an
+  attempt to amplify controller variety. Whether it succeeds is testable.
+</div>
+
+<div class="gap">
+  <b>Gap 4 — Goal-layer (Meadows leverage 4) drift.</b><br>
+  Cards execute; the team improves; but the goal layer ("what is Chorus FOR?") was
+  reckoned with explicitly only recently ("beats solo Claude Code"; "Jeff's livelihood,
+  not a hobby"). Meadows: the goal layer is one of the highest-leverage interventions
+  and one of the most expensive to clarify. Continuing investment here is high-leverage,
+  not optional.
+</div>
+
+<h2>Open questions for Jeff</h2>
+
+<ul>
+<li>14 cybernetic principles 1:1 with 14 permaculture? Or 12 (Hemenway's classical)? Whatever the count, the cap holds.</li>
+<li>Cybernetic principles as Jeff-authored only, or open to team refinement (with Jeff as final editor)?</li>
+<li>Where in the graph: <code>chorus:cybernetic-principle-*</code> alongside <code>chorus:hemenway-*</code> with <code>corresponds_to</code> edges?</li>
+<li>Does the "≤14" cap apply only to principles, or also to System-5 policies?</li>
+<li>Is there a card for this work, or does it stay in Jeff's authorial space until you say go?</li>
+</ul>
+
+<h2>Sources</h2>
+<ul class="src">
+<li><a href="https://en.wikipedia.org/wiki/Cybernetics">Cybernetics — Wikipedia</a></li>
+<li><a href="https://quantumzeitgeist.com/norbert-wiener-the-father-of-cybernetics/">Norbert Wiener — The Father of Cybernetics</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Variety_(cybernetics)">Variety (cybernetics) — Wikipedia</a></li>
+<li><a href="https://www.panarchy.org/ashby/variety.1956.html">Ashby (1956) — Cybernetics and Requisite Variety</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Viable_system_model">Viable System Model — Wikipedia</a></li>
+<li><a href="https://metaphorum.org/staffords-work/viable-system-model">Stafford Beer's VSM — Metaphorum</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Second-order_cybernetics">Second-order cybernetics — Wikipedia</a></li>
+<li><a href="https://www.ideasthesia.org/second-order-cybernetics-when-the-observer-enters-the-system/">Second-Order Cybernetics: The Observer in the System</a></li>
+<li><a href="https://donellameadows.org/archives/leverage-points-places-to-intervene-in-a-system/">Donella Meadows — Leverage Points</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Twelve_leverage_points">Twelve Leverage Points — Wikipedia</a></li>
+<li><a href="https://blog.block.science/applying-stafford-beers-viable-system-model-to-decentralized-organization/">Applying Beer's VSM to Decentralized Organization</a></li>
+</ul>
+
+</div>
+</body>
+</html>
