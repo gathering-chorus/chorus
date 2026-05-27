@@ -273,9 +273,14 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    // Neutral framing — pointers + ask, no editorializing that biases the
+    // reply. Sender + ack-required up front; "read the card and the code"
+    // instruction (recipient forms their own read); the 3 skill questions
+    // as the actual ask. No "before /acp" pressure, no "narrow/clean/delivered"
+    // pre-framing — those just inherit my satisfaction to the reviewer.
     let msg = format!(
-        "[feedback from {} — ACK REQUIRED] #{} — werk-demo ran live; need your substantive reply (or blocked-on-X) within 10 min before /acp.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?",
-        from, card
+        "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?\\nAck: substantive reply or blocked-on-X within 10 min.",
+        card, from
     );
     let body = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
