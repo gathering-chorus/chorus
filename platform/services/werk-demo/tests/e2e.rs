@@ -132,6 +132,8 @@ exit 0
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
     // #3100 AC#2: ack window default is 60s; force 0 in tests for fast iteration.
     std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
+    // #3100 gate-request fan-out: wait default 120s; force 0 in tests.
+    std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
 
     // --- run the act ---
     let result = demo(3046, "wren", &home, &werk_base).expect("demo should succeed");

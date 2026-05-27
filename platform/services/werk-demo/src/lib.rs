@@ -264,6 +264,45 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
     }
 }
 
+/// Gate → owning role map. Wren owns product, Kade owns code+quality,
+/// Silas owns arch+ops. Used by the gate-request fan-out + refusal naming.
+pub fn gate_owner(gate: &str) -> &'static str {
+    match gate {
+        "product" => "wren",
+        "code" | "quality" => "kade",
+        "arch" | "ops" => "silas",
+        _ => "unknown",
+    }
+}
+
+/// Send a gate-request nudge to `to` via the chorus_nudge_message MCP path.
+/// Neutral framing: pointers and ask, no editorializing. Sender, gates needed,
+/// then "read the card, read the code, run the gates" instruction, plus ack
+/// expected. No "narrow/clean/delivered" pre-framing — reviewer forms their
+/// own read.
+fn send_gate_request_nudge(from: &str, to: &str, card: u64, gates: &[String], trace: &str) -> R<()> {
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    let gate_list = gates.iter().map(|g| format!("gate:{}", g)).collect::<Vec<_>>().join(" + ");
+    let msg = format!(
+        "[gate #{} — ACK REQUIRED]\\nFrom: {}\\nNeeds: {} (your lanes)\\nRead the card. Read the code. Run the gates.\\nAck: substantive reply or blocked-on-X within 10 min.",
+        card, from, gate_list
+    );
+    let body = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        to, msg
+    );
+    run("curl", &[
+        "-s", "-f", "-X", "POST",
+        &mcp_url,
+        "-H", "Content-Type: application/json",
+        "-H", "Accept: application/json, text/event-stream",
+        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+        "-d", &body,
+    ]).map(|_| ())
+}
+
 /// Send a feedback nudge to `other` via the chorus_nudge_message MCP path.
 /// The team's canonical nudge surface — JSON-RPC tools/call POST'd to the
 /// MCP server's HTTP endpoint. Body shape matches the MCP tool's NudgeInput.
@@ -387,28 +426,65 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // Step 2: gate chain — all five role gates present. AC #1 (Jeff's need:
-    // "gate interaction with team works") — emit demo.gate.requested at start,
-    // demo.gate.passed when chain is complete; on incomplete chain the refusal
-    // surfaces WHICH ROLE is owed, not just gate names. Builder + Jeff see the
-    // accountability surface.
+    // Step 2: gate chain — all five role gates present. AC #1 + gate-request
+    // fan-out: emit demo.gate.requested, detect missing gates, and on detection
+    // FAN OUT a single concurrent nudge round to all gate-owners (no sequential
+    // chain — sender does not handoff to a peer to nudge another peer). Wait
+    // CHORUS_DEMO_GATE_WAIT_SECS for gates to land, then re-check. Refuse with
+    // owner-set if still missing. Builder's own gate cannot be substituted by
+    // a nudge — they owe it themselves; refuse fast on that case.
     emit_spine(home, "demo.gate.requested", role, card, &trace);
     let missing = gates_missing(&cv);
     if !missing.is_empty() {
-        // Map gate → owning role so the error names accountability.
-        let owners: Vec<String> = missing.iter().map(|g| {
-            let owner = match *g {
-                "product" => "wren",
-                "code" | "quality" => "kade",
-                "arch" | "ops" => "silas",
-                _ => "unknown",
-            };
-            format!("{}({})", g, owner)
-        }).collect();
-        jsonl(home, role, card, &trace, "demo.refused",
-              &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\",\"owed_by\":\"{}\"",
-                       missing.join(","), owners.join(",")));
-        return Err(format!("#{} gate chain incomplete — owed by: {}", card, owners.join(", ")));
+        // Builder owes their own gate first — no self-nudge possible.
+        let self_owed: Vec<&&str> = missing.iter().filter(|g| gate_owner(g) == role).collect();
+        if !self_owed.is_empty() {
+            let owed_str: Vec<String> = self_owed.iter().map(|g| format!("{}({})", g, role)).collect();
+            jsonl(home, role, card, &trace, "demo.refused",
+                  &format!(",\"reason\":\"self-gate-missing\",\"owed\":\"{}\"", owed_str.join(",")));
+            return Err(format!("#{} you owe your own gate first: {}", card, owed_str.join(", ")));
+        }
+        // All other missing gates owed by peers — fan out one nudge per owner.
+        // Collect unique owners (Kade owns both code+quality, Silas owns both
+        // arch+ops, so deduping gives 1-2 outbound nudges, never 3+).
+        let mut owners_to_nudge: Vec<&str> = Vec::new();
+        for g in &missing {
+            let owner = gate_owner(g);
+            if owner != role && !owners_to_nudge.contains(&owner) {
+                owners_to_nudge.push(owner);
+            }
+        }
+        for owner in &owners_to_nudge {
+            let owner_gates: Vec<String> = missing.iter()
+                .filter(|g| gate_owner(g) == *owner)
+                .map(|g| g.to_string())
+                .collect();
+            if let Err(e) = send_gate_request_nudge(role, owner, card, &owner_gates, &trace) {
+                jsonl(home, role, card, &trace, "demo.gate.nudge_failed",
+                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", owner, e.replace('"', "'")));
+            } else {
+                jsonl(home, role, card, &trace, "demo.gate.nudge_sent",
+                      &format!(",\"to\":\"{}\",\"gates\":\"{}\"", owner, owner_gates.join(",")));
+            }
+        }
+        // Wait once for all gates to land (fan-out semantic: no chained handoffs).
+        let gate_wait: u64 = std::env::var("CHORUS_DEMO_GATE_WAIT_SECS")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(120);
+        jsonl(home, role, card, &trace, "demo.gate.waiting",
+              &format!(",\"secs\":{},\"nudged\":\"{}\"", gate_wait, owners_to_nudge.join(",")));
+        std::thread::sleep(std::time::Duration::from_secs(gate_wait));
+        // Re-check after the wait — re-read the card view; if all in, proceed.
+        let cv2 = run("cards", &["view", &card_s])?;
+        let still_missing = gates_missing(&cv2);
+        if !still_missing.is_empty() {
+            let owners: Vec<String> = still_missing.iter()
+                .map(|g| format!("{}({})", g, gate_owner(g))).collect();
+            jsonl(home, role, card, &trace, "demo.refused",
+                  &format!(",\"reason\":\"gates-still-missing-after-wait\",\"owed_by\":\"{}\"",
+                           owners.join(",")));
+            return Err(format!("#{} gate chain still incomplete after {}s — owed by: {}",
+                               card, gate_wait, owners.join(", ")));
+        }
     }
     emit_spine(home, "demo.gate.passed", role, card, &trace);
 
