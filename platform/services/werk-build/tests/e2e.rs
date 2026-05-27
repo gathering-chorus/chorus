@@ -108,11 +108,15 @@ fn e2e_build_in_werk() {
     let again = build(8001, "silas", &home, &werk_base).expect("rebuild");
     assert_eq!(summary, again, "same source commit => same cdhash (invariance)");
 
-    // --- no Rust crate changed -> refuse ---
+    // --- #3107: no Rust crate / TS service changed -> no-op success, not refuse.
+    // Docs-only / config-only / graph-only cards have no build cycle; build returns
+    // Ok("") and werk-deploy handles whatever artifacts there are. The verb's job
+    // is "compile what needs compiling, then get out of the way."
     let werk2 = werk_base.join("silas-8002");
     git(&home, &["worktree", "add", "-q", "-b", "silas/8002", werk2.to_str().unwrap(), "origin/main"]);
     commit_file(&werk2, "roles/silas/notes.md", "just docs\n");
-    assert!(build(8002, "silas", &home, &werk_base).is_err(), "no crate changed => refuse");
+    let no_cycle = build(8002, "silas", &home, &werk_base).expect("docs-only => no-op success");
+    assert_eq!(no_cycle, "", "no-build-cycle returns empty summary");
 
     // --- wrong branch -> refuse ---
     let werk3 = werk_base.join("silas-8003");
