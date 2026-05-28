@@ -4,23 +4,14 @@
     "chorus-api": {
       "type": "http",
       "url": "http://localhost:3341/mcp",
-      "headers": {
-        "X-Chorus-Role": "kade"
-      }
+      "headers": { "X-Chorus-Role": "kade" }
     },
     "cclsp": {
       "command": "cclsp",
-      "env": {
-        "CCLSP_CONFIG_PATH": "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json"
-      }
+      "env": { "CCLSP_CONFIG_PATH": "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json" }
     },
     "ast-grep": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/ast-grep/ast-grep-mcp",
-        "ast-grep-server"
-      ]
+      "command": "/Users/jeffbridwell/.local/bin/ast-grep-server"
     }
   }
 }
