@@ -337,19 +337,31 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     ]).map(|_| ())
 }
 
-/// Check if a peer role has engaged with this card's demo. Cheap heuristic:
-/// search chorus-api's spine for recent activity from `other` on `card`. If
-/// the response contains both, treat as engaged. Stays zero-dep (no JSON
-/// parsing). Used post-comment-window to detect silent peers (#3100 AC #2).
+/// Check if a peer role has actually EXERCISED this card's variant during the demo
+/// window (#3109 Bug 2 fix). Tightened from the prior "any spine activity counts"
+/// heuristic, which let a gate-pass comment stand in for actually touching the
+/// variant — exactly the contamination on #3109 today (Silas posted gate:arch-pass
+/// + gate:ops-pass without ever hitting the variant URL, yet `peer_engaged`
+/// returned true).
+///
+/// New contract: the peer's session must emit a spine event named
+/// `demo.peer.exercised` for this card. That event is the peer's signed witness
+/// that they HTTP-hit the variant URL announced by the demo. A gate comment alone
+/// no longer counts.
+///
+/// Until peer sessions add the `demo.peer.exercised` emit on their side, this
+/// returns false — demos will escalate by design. That IS the staging-environment
+/// enforcement (no faking; the team self-tests before /acp, not Jeff).
 fn peer_engaged(other: &str, card: u64) -> bool {
-    let q = format!("card_id={}+role={}", card, other);
+    let q = format!("event=demo.peer.exercised+card_id={}+role={}", card, other);
     let check = run("curl", &[
         "-sS", "-G",
         "http://localhost:3340/api/chorus/search",
         "--data-urlencode", &format!("q={}", q),
         "--data-urlencode", "limit=3",
     ]).unwrap_or_default();
-    check.contains(&format!("\"role\":\"{}\"", other))
+    check.contains("\"event\":\"demo.peer.exercised\"")
+        && check.contains(&format!("\"role\":\"{}\"", other))
         && check.contains(&card.to_string())
 }
 
@@ -555,10 +567,13 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     emit_spine(home, "demo.test_surface.ready", role, card, &trace);
     jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
 
-    // The accept_gate evidence event — without this, /acp refuses at accept time
-    // (mirrors show-gate.sh emitting demo.show.completed on a successful demo).
-    emit_spine(home, "demo.show.completed", role, card, &trace);
-    register_gh(werk_s, card, &trace);
+    // #3109 Bug 1 fix: `demo.show.completed` previously fired here, right after
+    // deploy and BEFORE the peer-engagement check below. Since /acp's accept_gate
+    // reads `demo.show.completed`, that order let /acp admit a card before peers
+    // had actually exercised the variant — the contamination Silas hit on #3109
+    // today. The emission is now moved to AFTER the peer-engagement loop and
+    // gated on no escalations; if any peer failed to exercise, the demo emits
+    // `demo.show.refused` instead and /acp refuses.
 
     // #3100 AC#4 — visible announce. Owner/head-of-product (Jeff) gets a
     // framed shape he cannot miss: [DEMO READY FOR JEFF] banner prefix, card
@@ -638,10 +653,14 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
     // Wait the ack-window then re-check the silent peers. Anyone still silent
     // escalates — both as a spine event AND as a Bridge announce to Jeff.
+    // #3109 Bug 1: track whether ANY peer escalated, so we can gate the
+    // accept_gate evidence event below on real peer exercise.
+    let mut any_escalated = false;
     if !unacked_round1.is_empty() {
         std::thread::sleep(std::time::Duration::from_secs(ack_window_secs));
         for other in &unacked_round1 {
             if !peer_engaged(other, card) {
+                any_escalated = true;
                 jsonl(home, role, card, &trace, "demo.feedback.escalate",
                       &format!(",\"from\":\"{}\",\"reason\":\"unacked-after-renudge\"", other));
                 // AC #3 — surface to Jeff via Bridge so he doesn't have to notice silently.
@@ -657,6 +676,18 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
                 ]);
             }
         }
+    }
+
+    // #3109 Bug 1 fix: only NOW — after peer-engagement check fully completes
+    // without escalations — emit the accept_gate evidence. If any peer
+    // escalated, emit `demo.show.refused` instead so /acp refuses.
+    if any_escalated {
+        jsonl(home, role, card, &trace, "demo.show.refused",
+              ",\"reason\":\"peer-exercise-incomplete\"");
+        emit_spine(home, "demo.show.refused", role, card, &trace);
+    } else {
+        emit_spine(home, "demo.show.completed", role, card, &trace);
+        register_gh(werk_s, card, &trace);
     }
 
     jsonl(home, role, card, &trace, "demo.completed", "");
