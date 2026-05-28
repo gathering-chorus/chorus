@@ -1,0 +1,14 @@
+{
+  "servers": [
+    {
+      "extensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs"],
+      "command": ["typescript-language-server", "--stdio"],
+      "rootDir": "."
+    },
+    {
+      "extensions": ["rs"],
+      "command": ["rust-analyzer"],
+      "rootDir": "."
+    }
+  ]
+}

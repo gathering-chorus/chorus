@@ -256,6 +256,16 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
     let _ = run("chorus-log", &["card.accepted", role, &format!("card={}", card)]);
     jsonl(home, role, card, &trace, "card.done", "");
 
+    // #3108 AC#8: tear down the per-card variant overlay BEFORE removing the
+    // werk. env-down boots out the LaunchAgents + removes plists + marker
+    // files for the role's variant services (per-role api/mcp ports). Doing
+    // this first lets the services release any handles into the werk tree
+    // before chorus-werk-remove deletes that tree. Best-effort + idempotent:
+    // env-down is a no-op when no overlay is active, matching the existing
+    // "let _ = run(...)" pattern for accept's finalize steps.
+    let _ = run("werk-deploy", &["env-down", role]);
+    jsonl(home, role, card, &trace, "accept.env_down", "");
+
     // close branch + werk (idempotent).
     let _ = run("chorus-werk", &["remove", role, &card.to_string()]);
 
