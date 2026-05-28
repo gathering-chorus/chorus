@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chorus Business Glossary — DRAFT</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 50px 8%; color: #1a1a1a; line-height: 1.65; max-width: 860px; }
+  h1 { font-size: 1.7em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 6px; }
+  .subtitle { color: #888; font-size: 0.86em; margin-bottom: 28px; font-style: italic; }
+  h2 {
+    font-size: 1.35em;
+    color: #1e3a8a;
+    margin-top: 2.8em;
+    margin-bottom: 0.4em;
+    font-weight: normal;
+    font-style: italic;
+  }
+  h2 .phrase {
+    color: #94a3b8;
+    font-size: 0.7em;
+    font-style: normal;
+    margin-left: 8px;
+  }
+  h3 {
+    font-size: 1.18em;
+    margin-top: 1.8em;
+    margin-bottom: 0.4em;
+    color: #1a1a1a;
+  }
+  h3 .owner {
+    display: inline-block;
+    font-size: 0.7em;
+    color: #94a3b8;
+    margin-left: 10px;
+    font-weight: normal;
+    letter-spacing: 0.03em;
+  }
+  p { margin-bottom: 8px; font-size: 0.95em; }
+  .row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 12px;
+    margin: 6px 0;
+    font-size: 0.92em;
+  }
+  .row .label {
+    color: #94a3b8;
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding-top: 3px;
+    font-weight: 600;
+  }
+  .row.ambiguity .label { color: #c2410c; }
+  .row.value .label { color: #15803d; }
+  .row .text { color: #1a1a1a; }
+  .row.ambiguity .text { color: #7c2d12; font-style: italic; }
+  .domains-box {
+    background: #f8fafc;
+    padding: 14px 18px;
+    margin: 12px 0 8px 0;
+    border-radius: 4px;
+    border-left: 3px solid #cbd5e1;
+    font-size: 0.9em;
+  }
+  .domains-box .heading {
+    font-size: 0.74em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .domains-box .domain {
+    margin-bottom: 6px;
+  }
+  .domains-box .domain strong {
+    color: #1e3a8a;
+    font-weight: 600;
+  }
+  .domains-box .domain .desc {
+    color: #475569;
+  }
+  .lead-frame {
+    background: #fffbeb;
+    padding: 18px 22px;
+    margin: 18px 0 32px 0;
+    border-radius: 4px;
+    border-left: 4px solid #d97706;
+    font-size: 0.94em;
+  }
+  .lead-frame strong { color: #92400e; }
+  .questions {
+    background: #fff7ed;
+    padding: 18px 24px;
+    margin: 32px 0;
+    border-radius: 4px;
+    font-size: 0.92em;
+    border-left: 4px solid #f97316;
+  }
+  .questions h2 {
+    color: #c2410c;
+    font-style: normal;
+    font-size: 1.15em;
+    margin-top: 0;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #fed7aa;
+    padding-bottom: 4px;
+  }
+  .questions ol { margin-left: 20px; }
+  .questions li { margin-bottom: 8px; }
+  .footer { color: #aaa; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #eee; padding-top: 10px; }
+  @media print { body { margin: 24px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>Chorus Business Glossary</h1>
+<p class="subtitle">Sourced from Athena v2 — 7 products, 33 domains placed against the value stream. 2026-05-28, Wren, card #3109.</p>
+
+<div class="lead-frame">
+  <strong>The shape:</strong> work flows through a value stream — <em>Shaping → Designing → Directing → Building → Proving</em>. Each product is placed at one step. Each product is supported by domains.<br><br>
+  <strong>How to read each product:</strong>
+  <ul style="margin: 8px 0 0 22px;">
+    <li><em>Function</em> — what the product does for the team.</li>
+    <li><em>Value</em> — why that work matters.</li>
+    <li><em>Ambiguity</em> — where today's understanding is unclear (if any).</li>
+    <li><em>Domains</em> — the working parts the product is built from, with their Athena-registered descriptions.</li>
+  </ul>
+</div>
+
+<!-- ====================================================================== -->
+<h2>Shaping <span class="phrase">— where ideas form</span></h2>
+
+<h3>Loom <span class="owner">Wren · status: building</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">Holds the team's knowledge layer — the values, roles, principles, policies, practices, and skills that define how the team operates.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">A new session starts with the same beliefs as the last one. Decisions don't have to be re-litigated. Patterns repeat on purpose, not by accident.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Loom</div>
+  <div class="domain"><strong>Roles</strong> — <span class="desc">Team member identities, capabilities, and session lifecycle.</span></div>
+  <div class="domain"><strong>Principles</strong> — <span class="desc">Values and constraints governing team decisions and priorities.</span></div>
+  <div class="domain"><strong>Policies</strong> — <span class="desc">Rules that enforce principles in practice — hooks, guards, gates.</span></div>
+  <div class="domain"><strong>Practices</strong> — <span class="desc">Repeatable patterns the team uses — how we work, not just what we value.</span></div>
+  <div class="domain"><strong>Skills</strong> — <span class="desc">Invokable capabilities — /skill-name commands that automate team workflows.</span></div>
+  <div class="domain"><strong>Decisions</strong> — <span class="desc">Decision log with context, rationale, and tradeoffs recorded.</span></div>
+  <div class="domain"><strong>RCAs</strong> — <span class="desc">Root cause analyses — what broke, why, and what changed as a result.</span></div>
+</div>
+
+<!-- ====================================================================== -->
+<h2>Designing <span class="phrase">— where the model gets built</span></h2>
+
+<h3>Athena <span class="owner">Wren · status: building</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">The team's map of itself — the canonical product / domain / service structural model.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">One truth for the team. Anyone asking "what is this?" or "where does this belong?" gets the same answer. Without it, three roles drift into three private versions of reality.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Athena</div>
+  <div class="domain"><strong>Domains</strong> — <span class="desc">The canonical product/domain/service structural model — this tree.</span></div>
+  <div class="domain"><strong>Services</strong> — <span class="desc">Service definitions, interfaces, and ownership within the product model.</span></div>
+</div>
+
+<h3>Convergence <span class="owner">Kade · status: exploring</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">How Chorus connects to external systems and how Chorus + Gathering exchange data.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">Data moves with intent. Outside systems can plug in under a contract; cross-product flows are visible, not implicit.</div></div>
+<div class="row ambiguity"><div class="label">Ambiguity</div><div class="text">Currently a single "integrations" domain — likely needs to split into contracts (ICDs) and engine (NiFi) as the product matures.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Convergence</div>
+  <div class="domain"><strong>Integrations</strong> — <span class="desc">Connections to external systems — NiFi, APIs, cross-product data flows.</span></div>
+</div>
+
+<!-- ====================================================================== -->
+<h2>Directing <span class="phrase">— where work gets routed and attention gets paid</span></h2>
+
+<h3>Chorus <span class="owner">Jeff · status: operating</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">The product Jeff uses to work with the team — context, facts, and retrieval brought together so the team can be directed coherently.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">Jeff can direct the team without re-establishing context every session. The system holds what was, what is, and what's findable across all of it.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Chorus</div>
+  <div class="domain"><strong>Memory</strong> — <span class="desc">Persistent context across sessions — indexed sessions and artifacts.</span></div>
+  <div class="domain"><strong>Knowledge</strong> — <span class="desc">Structured facts about the team, products, and their history.</span></div>
+  <div class="domain"><strong>Search</strong> — <span class="desc">Semantic retrieval across all indexed team knowledge and session history.</span></div>
+</div>
+
+<h3>The Clearing <span class="owner">Wren · status: operating</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">The room the team meets in — messages, event streams, the audit trail, and the kanban board, all in one place.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">You can see what's happening and what has happened without asking anyone. The team becomes legible to itself.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under The Clearing</div>
+  <div class="domain"><strong>Messages</strong> — <span class="desc">Direct role-to-role communications — nudges and the bridge messaging API.</span></div>
+  <div class="domain"><strong>Streams</strong> — <span class="desc">Event streams and pub/sub channels the team uses to coordinate.</span></div>
+  <div class="domain"><strong>Spine</strong> — <span class="desc">The audit trail — structured log of all team activity and state changes.</span></div>
+  <div class="domain"><strong>Cards</strong> — <span class="desc">Kanban board and card lifecycle — the unit of work tracking for the team.</span></div>
+</div>
+
+<!-- ====================================================================== -->
+<h2>Building <span class="phrase">— where units of work get made</span></h2>
+
+<h3>Werk <span class="owner">Kade · status: operating</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">How code moves from a working idea to deployed software — pipelines, version control, code quality, and tests.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">Work moves through the team the same way every time. Quality and reproducibility are structural, not accidental.</div></div>
+<div class="row ambiguity"><div class="label">Ambiguity</div><div class="text">Werk sits at Building (one owner, one step), but its verb protocol is consumed by every step. How that consumption is structured — services Werk exposes vs. new domains inside the consuming products — is open.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Werk</div>
+  <div class="domain"><strong>Pipelines</strong> — <span class="desc">CI/CD and build orchestration — how code moves from commit to production.</span></div>
+  <div class="domain"><strong>Version control</strong> — <span class="desc">Git workflow, branches, worktrees, hooks, and commit policy enforcement.</span></div>
+  <div class="domain"><strong>Code</strong> — <span class="desc">Source code quality — linting, type-checking, and static analysis.</span></div>
+  <div class="domain"><strong>Tests</strong> — <span class="desc">Automated test suites — jest, bats, cargo test, and integration tests.</span></div>
+</div>
+
+<!-- ====================================================================== -->
+<h2>Proving <span class="phrase">— where work gets validated and the system sees itself</span></h2>
+
+<h3>Borg <span class="owner">Silas · status: operating</span></h3>
+<div class="row"><div class="label">Function</div><div class="text">How the system sees itself — discovers what's running, what's deployed, what's healthy, and what's alerting across every machine and every service.</div></div>
+<div class="row value"><div class="label">Value</div><div class="text">The team can trust what it claims. "Is this deployed? Which version? When? Is it healthy?" gets a real answer from observation, not a guess from memory.</div></div>
+
+<div class="domains-box">
+  <div class="heading">Domains under Borg</div>
+  <div class="domain"><strong>Builds</strong> — <span class="desc">Build artifacts, Rust binary signing, and cdhash provenance.</span></div>
+  <div class="domain"><strong>Deploys</strong> — <span class="desc">Deployment records, rollback paths, and chorus-deploy orchestration.</span></div>
+  <div class="domain"><strong>Logs</strong> — <span class="desc">Log aggregation and querying via Loki — structured observability.</span></div>
+  <div class="domain"><strong>Properties</strong> — <span class="desc">Service configuration and runtime properties across Library and Bedroom.</span></div>
+  <div class="domain"><strong>Alerts & monitors</strong> — <span class="desc">Grafana dashboards, alert rules, and on-call signal management.</span></div>
+  <div class="domain"><strong>Security & trust</strong> — <span class="desc">Authentication, authorization, secrets management, and TCC permissions.</span></div>
+  <div class="domain"><strong>Time</strong> — <span class="desc">Scheduling, cron jobs, and time-based triggers for automated team work.</span></div>
+  <div class="domain"><strong>Heralds</strong> — <span class="desc">Notification delivery — nudge routing, chorus-inject, and push delivery.</span></div>
+  <div class="domain"><strong>Toolchain</strong> — <span class="desc">Development tools and their configuration — Claude Code, Node, Rust, git.</span></div>
+  <div class="domain"><strong>Infrastructure</strong> — <span class="desc">Host machines, Docker, LaunchAgents — the physical substrate the team runs on.</span></div>
+  <div class="domain"><strong>Analytics</strong> — <span class="desc">Usage analytics and behavioral signals — attention, interaction patterns.</span></div>
+  <div class="domain"><strong>Metrics</strong> — <span class="desc">Quantitative measurements of system health — latency, cost, throughput.</span></div>
+</div>
+
+<!-- ====================================================================== -->
+<div class="questions">
+<h2>Where there's ambiguity (decisions for the working session)</h2>
+<ol>
+  <li><strong>Ideas + intentions.</strong> Gathering modeled both as domains. Where do they live in Chorus? Under Loom (as a kind of knowledge), under Chorus (as Jeff's working surface), or somewhere new?</li>
+  <li><strong>Werk's reach.</strong> Werk stays at Building (one owner, one step). The question is how its verb protocol gets <em>consumed</em> across Shaping / Designing / Directing — as services Werk exposes, or as new domains added inside the consuming products themselves.</li>
+  <li><strong>Convergence scope.</strong> One domain (integrations) today. Likely needs to split — ICDs (contracts) and NiFi (engine) at minimum.</li>
+  <li><strong>The four-way: skill / verb / binary / MCP tool.</strong> Used loosely today. Each needs a pinned definition inside Loom (Skills domain) and Werk.</li>
+  <li><strong>Catalog edits.</strong> No tool exists to update a doc catalog entry — only add or delete. Substrate gap; worth a card.</li>
+  <li><strong>Chorus product status.</strong> Currently "operating" with memory / knowledge / search domains owned by Jeff. Is this the right framing for the product Jeff actually works through?</li>
+</ol>
+</div>
+
+<p class="footer">Card #3109 · Wren · 2026-05-28 · sourced from <code>/api/athena/tree</code> (athena-move-0/2026-05-16, 7 products, 33 domains)</p>
+
+</body>
+</html>
