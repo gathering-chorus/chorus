@@ -4,7 +4,7 @@
     "chorus-api": {
       "type": "http",
       "url": "http://localhost:3341/mcp",
-      "headers": { "X-Chorus-Role": "wren" }
+      "headers": { "X-Chorus-Role": "silas" }
     },
     "cclsp": {
       "command": "cclsp",
