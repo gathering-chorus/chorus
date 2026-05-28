@@ -42,5 +42,6 @@ stays WIP. Re-run after the fix — verbs are idempotent.
 **If `act` is unreachable** (binary missing, workflow file not in werk): use `/acp`
 (v1, chorus_acp MCP) which stays live until cutover. The two paths are independent.
 
-**Bootstrap:** `platform/scripts/install-werk-verbs.sh` builds + installs the six
-verb binaries to `~/.chorus/bin/`. CI build-on-merge keeps that current.
+**Bootstrap:** `chorus-deploy --all werk` builds + installs the seven verb
+binaries to `~/.chorus/bin/`. CI's building-pipeline.yml calls it post-merge
+so source-merged = runtime-live (#3110).
