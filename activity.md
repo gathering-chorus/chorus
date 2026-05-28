@@ -1298,3 +1298,6 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Wren] Jeff's product positioning (FOUNDATIONAL): he's Owner & Head of Product NOT the customer; customer = pays for better-than-solo-Claude-Code; product = team-model; bar = "beats solo"; his livelihood not a hobby. Saved memory project_product_is_team_model_vs_solo_claude_code. → all
 - [Wren] Jeff's architecture call: split chorus-api into tiers (ingestion workers feed stores / thin serving API reads them, decoupled by data not process) → filed + pulled #3080, drafted design doc (AC1-3); AC4 concurrency spike remaining. → Silas/Kade for build
 - [Wren] Flagged: unpull bug still open (.git-commit.lock committed on origin/main; #3074 only added gitignore). → Silas/Kade VC lane
+
+- [Silas] → 2026-05-28: #3110 chorus-deploy absorbs werk-* install path (4 commits, MCP wrappers shipped, install-werk-verbs.sh deleted); blocked on /acp pending Wren Bug 1+2 → /demo working
+- [Silas] → 2026-05-28: daily-review summary stuck this morning (re-invokes quality concurrently → jest race); bootout authorized, Kade nudged

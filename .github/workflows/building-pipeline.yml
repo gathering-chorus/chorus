@@ -105,3 +105,17 @@ jobs:
           export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
           export DEPLOY_ROLE=system
           /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy chorus-mcp
+
+      # #3110: build + deploy all 7 werk-* verb binaries via the unified
+      # chorus-deploy --all werk path. install-werk-verbs.sh deleted in the
+      # same commit (no parallel install path; one substrate for all chorus-
+      # managed binaries per chorus:principle-no-competing-implementations).
+      # Without this step, werk-* source merges to main but never reaches the
+      # runtime ~/.chorus/bin/<verb>-bin — the exact merged-≠-live class that
+      # bit /acp-v2 #3108 on the May 27 pre-#3107 binary. Now closed at the
+      # substrate.
+      - name: chorus-deploy --all werk (7 verb binaries)
+        run: |
+          export CHORUS_ROOT=/Users/jeffbridwell/CascadeProjects/chorus
+          export DEPLOY_ROLE=system
+          /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-deploy --all werk

@@ -41,7 +41,7 @@ CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | h
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
-KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp"
+KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp|werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-accept|werk-demo"
 
 # #2993: gate chorus-api deploy.completed on a real MCP-init smoke. Without
 # this gate, `launchctl kickstart -k` returns immediately and deploy.completed
@@ -145,8 +145,48 @@ fi
 
 CRATE="$1"
 MODE="${2:-deploy}"
+
+# #3110: chorus-deploy --all werk — build + deploy all 7 verb binaries in one
+# call. Retires install-werk-verbs.sh as the parallel orchestrator. Each verb
+# goes through chorus-build then chorus-deploy in sequence; failure of one
+# does not stop the others (collected and reported at end). Handled BEFORE the
+# MODE check below because MODE="werk" wouldn't match deploy/--rollback.
+if [ "$CRATE" = "--all" ] && [ "$MODE" = "werk" ]; then
+  WERK_VERBS=(werk-pull werk-commit werk-push werk-build werk-deploy werk-accept werk-demo)
+  failed=()
+  for v in "${WERK_VERBS[@]}"; do
+    crate_dir="$ROOT/platform/services/$v"
+    if [ ! -f "$crate_dir/Cargo.toml" ]; then
+      echo "  ✗ $v: no crate at $crate_dir/Cargo.toml — skipping"
+      failed+=("$v:missing")
+      continue
+    fi
+    echo "  → building $v..."
+    if ! cargo build --release --quiet --manifest-path "$crate_dir/Cargo.toml"; then
+      echo "  ✗ $v: cargo build failed"
+      failed+=("$v:build")
+      continue
+    fi
+    echo "  → deploying $v..."
+    if ! "$0" ${DEPLOY_TARGET:+--target $DEPLOY_TARGET} "$v"; then
+      echo "  ✗ $v: chorus-deploy failed"
+      failed+=("$v:deploy")
+      continue
+    fi
+  done
+  if [ ${#failed[@]} -gt 0 ]; then
+    echo
+    echo "chorus-deploy --all werk: FAILED — ${failed[*]}"
+    exit 1
+  fi
+  echo
+  echo "chorus-deploy --all werk: ${#WERK_VERBS[@]}/${#WERK_VERBS[@]} verbs built + installed."
+  exit 0
+fi
+
 if [ "$MODE" != "deploy" ] && [ "$MODE" != "--rollback" ]; then
   echo "Usage: chorus-deploy [--target werk|canonical] <${KNOWN_CRATES}> [--rollback]" >&2
+  echo "       chorus-deploy --all werk    # build + deploy all 7 verb binaries" >&2
   exit 2
 fi
 
@@ -456,6 +496,17 @@ case "$CRATE" in
     BINARIES=("chorus-inject")
     KICKSTART_SERVICE=""  # spawn-on-demand by pulse worker; no daemon
     ;;
+  werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-accept|werk-demo)
+    # #3110: chorus-deploy absorbs the werk-* verb-binary install path
+    # (retiring install-werk-verbs.sh as a parallel-implementation violation
+    # of chorus:principle-no-competing-implementations). CLI verbs — no
+    # service, no kickstart. The binary installs to ~/.chorus/bin/<verb>-bin
+    # with a role-slot-routing wrapper at ~/.chorus/bin/<verb> (per #3101).
+    CRATE_DIR="$ROOT/platform/services/$CRATE"
+    BINARIES=("$CRATE")
+    KICKSTART_SERVICE=""  # CLI verb, no daemon
+    INSTALL_AS_WRAPPER=1   # post-install: write wrapper, install raw as -bin
+    ;;
   *)
     echo "chorus-deploy: unknown crate '$CRATE' (known: ${KNOWN_CRATES})" >&2
     exit 2
@@ -499,8 +550,15 @@ for bin in "${BINARIES[@]}"; do
     emit_deploy_failed "binary-missing"
     exit 1
   fi
-  if ! "$INSTALL" ${INSTALL_TARGET_FLAGS[@]+"${INSTALL_TARGET_FLAGS[@]}"} "$src" "$bin"; then
-    echo "chorus-deploy: install failed for $bin" >&2
+  # #3110: werk-* verbs install raw binary as `<verb>-bin` so the role-slot
+  # routing wrapper (written below) can live at `<verb>`. Service binaries
+  # install as their plain name (legacy path, unchanged).
+  install_name="$bin"
+  if [ "${INSTALL_AS_WRAPPER:-0}" = "1" ]; then
+    install_name="${bin}-bin"
+  fi
+  if ! "$INSTALL" ${INSTALL_TARGET_FLAGS[@]+"${INSTALL_TARGET_FLAGS[@]}"} "$src" "$install_name"; then
+    echo "chorus-deploy: install failed for $install_name" >&2
     emit_deploy_failed "install-fail"
     exit 1
   fi
@@ -518,10 +576,72 @@ for bin in "${BINARIES[@]}"; do
       __cdh_dir="$HOME/.chorus/bin"
     fi
     if [ -n "$__cdh_dir" ]; then
-      INSTALLED_CDHASH=$(codesign -dvvv "$__cdh_dir/$bin" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+      INSTALLED_CDHASH=$(codesign -dvvv "$__cdh_dir/$install_name" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
     fi
   fi
 done
+
+# #3110: write the role-slot-routing wrapper for werk-* verb binaries.
+# Wrapper lives at ~/.chorus/bin/<verb>; exec's the role's WERK_<ROLE>_BIN/<verb>
+# if present (so a demo-er's session uses their freshly-built variant mid-demo),
+# else falls through to ~/.chorus/bin/<verb>-bin. Mirrors install-werk-verbs.sh
+# lines 60-77, which this case now retires. Service binaries skip this block
+# (INSTALL_AS_WRAPPER unset).
+if [ "${INSTALL_AS_WRAPPER:-0}" = "1" ]; then
+  if [ "$DEPLOY_TARGET" = "werk" ]; then
+    case "$ROLE" in
+      kade)  __wrap_dir="${WERK_KADE_BIN:-}"  ;;
+      wren)  __wrap_dir="${WERK_WREN_BIN:-}"  ;;
+      silas) __wrap_dir="${WERK_SILAS_BIN:-}" ;;
+      *)     __wrap_dir=""                    ;;
+    esac
+  else
+    __wrap_dir="$HOME/.chorus/bin"
+  fi
+  if [ -n "$__wrap_dir" ]; then
+    for bin in "${BINARIES[@]}"; do
+      cat > "$__wrap_dir/$bin" <<WRAPPER_EOF
+#!/bin/sh
+# Auto-generated by chorus-deploy (#3110). Routes to role-slot first, then
+# canonical. Edit chorus-deploy's TEMPLATE; manual edits here get overwritten.
+case "\${CHORUS_ROLE:-}" in
+  silas) slot="\${WERK_SILAS_BIN:-}/$bin" ;;
+  wren)  slot="\${WERK_WREN_BIN:-}/$bin" ;;
+  kade)  slot="\${WERK_KADE_BIN:-}/$bin" ;;
+  *)     slot="" ;;
+esac
+if [ -n "\$slot" ] && [ -x "\$slot" ]; then
+  exec "\$slot" "\$@"
+fi
+exec "$__wrap_dir/${bin}-bin" "\$@"
+WRAPPER_EOF
+      chmod +x "$__wrap_dir/$bin"
+    done
+  fi
+
+  # #3110 AC6: orphan-sweep. Pre-#3110 deploys wrote raw werk-* binaries
+  # straight into peer overlay dirs (chorus-werk/<role>-bin/). Once the
+  # wrapper convention shipped, those raw files mask the canonical binary
+  # because the wrapper routes role-slot-first. On every canonical werk-*
+  # deploy, sweep the three overlay dirs and remove any non-wrapper file
+  # at <verb> for the verbs we just installed. Wrapper recognized by the
+  # "Auto-generated by chorus-deploy" marker on line 2; anything else
+  # under that name is orphan from before the convention.
+  if [ "$DEPLOY_TARGET" = "canonical" ]; then
+    __sweep_base="${CHORUS_WERK_BASE:-$HOME/CascadeProjects/chorus-werk}"
+    for __peer in silas-bin wren-bin kade-bin; do
+      __peer_dir="$__sweep_base/$__peer"
+      [ -d "$__peer_dir" ] || continue
+      for bin in "${BINARIES[@]}"; do
+        __peer_file="$__peer_dir/$bin"
+        [ -e "$__peer_file" ] || continue
+        if ! head -2 "$__peer_file" 2>/dev/null | grep -q "Auto-generated by chorus-deploy"; then
+          rm -f "$__peer_file" && echo "chorus-deploy: swept orphan $__peer_file (pre-#3110 raw binary)"
+        fi
+      done
+    done
+  fi
+fi
 
 # #2823: kickstart the launchd-managed service after atomic mv. Skipped on
 # --target werk (#2995): the binary lives in the role's per-werk slot and is
