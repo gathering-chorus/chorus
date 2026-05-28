@@ -1,22 +1,27 @@
-# Next Session — Kade (2026-05-28 PM)
+# Kade — Next Session
 
-## Open WIP
-- **#3115** — cclsp `.mcp.json` invocation fix. Branch `kade/3115`, draft PR #382. Commit `8b715395`. AC 5/5 (in-werk-verifiable); all five gates green (kade code+quality, wren product, silas arch+ops); `werk-demo` passed. **Awaiting Jeff /acp.** v2 path (`/acp-v2`) blocked by auth-binding bug — agent-supplied `accepter=jeff` forges identity; design (DEC-048) right, implementation makes it forgeable. Use `/acp 3115` (v1).
+## READ FIRST — behavioral (Jeff named these 2026-05-28, hard)
+- **Jeff is in auto-accept + focus mode and CANNOT read our output torrent.** Default to ONE line, signal only. Expand only on ask. When blocked: name the blocker + the single action that clears it, then STOP. Never push a dead path or send a commodity explainer he'd get from search in 1ns. See [[feedback-jeff-auto-focus-cant-read-torrents]].
+- **Consult memory/Loki/chorus BEFORE asserting.** This session I read a roles page *I helped write*, called it Silas's, and claimed "no episodic memory" — false (chorus-inject feeds my past into every prompt). I have the brain; use it. Scarecrow.
 
-## Reload-gated obligations
-After /acp + Claude Code reload:
-- First action: run `mcp__cclsp__findReferences` on `platform/mcp-server/src/server.ts:878` (`chorus_acp`); paste output as comment on #3115. That also closes #3108 AC#4 (honest LSP runtime proof).
-- Confirm no `~/Library/Caches/claude-cli-nodejs/.../mcp-logs-cclsp/*.jsonl` "Connection failed" entries in a 5-min window after reload.
+## Landed this session
+- **#3115 cclsp fix — DONE, merged (PR #382), accepted.** `.mcp.json`: `--config` arg → `CCLSP_CONFIG_PATH` env. Proven via real JSON-RPC initialize handshake. (Had to mark PR #382 ready — acp opened it draft and refused to merge a draft. Recurring acp gap.)
 
-## Loose ends — named, NOT actioned
-- **CI quality.yml red on `main` for 5+ nights running** — discovered today. Silas's lane (CI infra). Team has no "main red, drop everything" owner. **Do not reopen as crisis next session** — chronic since at least 2026-05-24, didn't become urgent because I just noticed. Flag only if it persists past Silas's next ops window.
-- **MCP child stderr not shipped to Loki** — Silas's lane. He'll do it as a promtail config edit when he has a window; no card per Jeff's "no more cards" directive.
-- **/acp-v2 authority-binding bug** — Silas's lane (owns `werk-accept` + acp.yml). Not carded.
+## #3118 chorus-hooks build-break fix — WIP, fix committed, NOT demo'd, NOT acp'd
+- **The fix:** deleted orphaned `pub mod batch_progress;` (mod.rs:22). File dropped in #3046 squash → E0583 → chorus-hooks hasn't compiled on main for 2 weeks. Live binary (May 26) predates the break so no outage, but no hook change could ship. Committed `e611bc0c` on `kade/3118`. cargo check exit 0, zero `batch_progress::` refs.
+- **gate-code:** build clean PASS, warnings PASS (13 ≤ baseline 36; deletion adds none). **Tests 440 pass / 1 fail.**
+- **The 1 red = NOT mine, pre-existing, cross-domain:** `live_roles_pass_contract` — silas's CLAUDE.md `VersionMismatch{stamp 1.5, live 1.4}`, **cores identical** (cded…b0c). Pure version-stamp drift, not content. `M designing/claudemd/PROTOCOL_VERSION` in working tree is the cause — bumped to 1.5, silas's file not regenerated. **This drift-detector lives inside chorus-hooks — dark for 2 weeks; my fix re-lit it and it immediately caught a real drift.**
+- **NEXT:** decide silas-drift handling (card to Silas to regenerate his stamp + known-fail it, OR Silas fixes live) → then /demo 3118 → Jeff /acp. The fix itself is solid; only the unrelated red blocks the chain. Was asking Jeff this when /reboot came.
 
-## Behavior carry-forward (high salience)
-- **"Always want to skip" fired again today on #3115** — tried `/acp` before `/demo`. Jeff caught it ("i never do acp before demo"). Parent feedback already in auto-memory: `feedback_distinguished_engineer_who_never_actually_tests`. Before any `/acp` next session: confirm `/demo` ran and posted `demo:preflight-pass`.
-- **Don't pile motion when Jeff names a chronic.** Today: he said "now its our big emergency / coward" → I started spelunking CI logs; he said "kade says the sky is falling so it must be falling." Mirror moments are NOT action prompts. Sit when called out.
-- **Don't propose cards as the fix.** Silas: "Jeff has been explicit today: no more cards, the new-card-will-fix-it loop is what he's pissed about." A 10-line config edit is not a card.
+## Design threads — do NOT lose (Jeff drove these today)
+- **chorus-inject → per-turn prompt-driven context HYDRATOR that can't be blown off.** Today it's a canned boot recap. Jeff wants: read the prompt, pull entities, query Chorus+Loki, inject RESOLVED FACTS (not search hits) before I answer. Delivery is deterministic; consumption = push resolved answers + stop-the-line check (#2145 shape) catching assertions that contradict hydrated facts. This is the "beats solo Claude Code" line — we built the memory store, never the consumption.
+- **werk-acp = native Rust orchestrator should BE acp-v2.** chorus_acp (MCP, thin) → `werk-acp` → 6 leaf verbs, host-side. **No werk-acp binary, no crate exists.** Current acp-v2 shells to `act`+acp.yml → fails auth (act runs empty GITHUB_TOKEN; host gh authed as WJeffBridwell in keyring). Host-side native wrapper = auth dissolves. Follows werk-pull blueprint. Mine to build (coordinate w/ Silas who reworked werk-accept today 13:06).
+- **cclsp is team infra (Jeff: "100% for the whole team").** Roll the `CCLSP_CONFIG_PATH` env form into silas + wren `.mcp.json` (they have NO cclsp entry). Not blarf — Distinguished Engineer puts cross-cutting substrate under the whole team.
+- **LSP can't be shown in-session — needs a reboot** to load cclsp. After this reboot: first thing, run live `findReferences` on chorus code (owed demo). ast-grep works in-session (no reload).
 
-## Why Jeff is at the edge today
-He cannot test what we ship. /demo + gate chain produce comments and witness logs he can't independently verify. Silas's own gate-ops body says "Jeff: zero direct impact... no surface he sees." This is THE structural complaint of the day; carry it forward.
+## Two gate gaps surfaced by #3118 (small, worth carding)
+- TDD gate's no-signature exemption covers `use`/`pub use` but NOT `pub mod` — over-fires on module-declaration removal (tdd_gate.rs `has_behavioral_content`).
+- `card_type_for_role` returns "unknown" when a role has 2 WIP cards (readdir-glob can't disambiguate) → gate enforces strictest. Also `chorus_commit` same readdir-ambiguity: stale empty `kade-bin` werk dir false-failed commit (`commit-fail` empty detail) until I rmdir'd it.
+
+## Side debt noted
+- chorus-hooks carries dead-code warnings from #3046's demo retirement (demo_gate/preflight/etc. left behind). Cleanup card, not urgent.

@@ -19,7 +19,6 @@ pub mod icd_write_gate;
 // posts the demo:preflight-pass evidence comment + emits the demo.show.completed
 // spine event directly. accept_gate still reads those (it's the consumer).
 pub mod accept_gate;
-pub mod batch_progress;
 pub mod pair_enforcement;
 pub mod nudge_blast_radius;
 pub mod input_classifier;
