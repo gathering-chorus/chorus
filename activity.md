@@ -1301,3 +1301,19 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 
 - [Silas] → 2026-05-28: #3110 chorus-deploy absorbs werk-* install path (4 commits, MCP wrappers shipped, install-werk-verbs.sh deleted); blocked on /acp pending Wren Bug 1+2 → /demo working
 - [Silas] → 2026-05-28: daily-review summary stuck this morning (re-invokes quality concurrently → jest race); bootout authorized, Kade nudged
+## 2026-05-28 — kade session
+
+- Card-prune carry-over from yesterday: holding at ~65 Kade open
+- Worked: #3108 (LSP+AST MCP bridges install) — gates green (product/code/quality/arch/ops), blocked from /acp pending team-test-in-demo wire (Jeff's directive)
+- Gated for peers: #3104 (Wren), #3106 (Silas), #3107 (Silas), #3109 (Wren) — all five gates landed substantive on each
+- Substrate findings:
+  - werk-build-bin stale (May 27); #3107's cure in source but not deployed-to-runtime — merged-≠-live class
+  - Root cause: chorus-deploy KNOWN_CRATES excludes werk-* binaries; no automation rebuilds verb-binaries on source-merge to main
+  - 6th v2-JX class scoped (Silas takes the structural-fix; chorus-deploy extension + retire install-werk-verbs.sh)
+  - 7th item from Jeff: team-test-against-staging-variant wire in werk-demo (NOT a card; just the work, Wren+Silas lane)
+- Cross-role rituals research exchange landed substantively across all three roles — five functions + Wren's sixth function (model-of-team-refresh)
+- Patterns I got caught on by Jeff: operator-mode /demo bypasses, focus-mode-invisible "demos", card-as-output reflex, plan-shape substituting for execution
+- Day-end: Jeff explicitly named "i cant get a single card built bc of our fucked up version control and cicd / both of which u own" — owned
+- Brief from Silas: 6th class scoping; holding on filing pending Jeff
+- Memory: project_v2_cutover_criteria_bundle_drain_first written
+- No /acp today across team per Jeff directive
