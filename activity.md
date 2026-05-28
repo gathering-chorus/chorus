@@ -1317,3 +1317,5 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - Brief from Silas: 6th class scoping; holding on filing pending Jeff
 - Memory: project_v2_cutover_criteria_bundle_drain_first written
 - No /acp today across team per Jeff directive
+
+- [Kade] → 2026-05-28: #3115 cclsp fix DONE/merged (PR382). #3118 chorus-hooks build-break fix committed (e611bc0c), gate-code PASS except 1 unrelated red = silas protocol-version drift (1.5/1.4, cores match) re-lit by my fix — NOT demo/acp yet. Design threads captured in next-session.md: chorus-inject per-turn hydrator, werk-acp native orchestrator, cclsp team rollout. → Silas (version drift), Wren
