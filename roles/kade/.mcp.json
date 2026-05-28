@@ -7,6 +7,18 @@
       "headers": {
         "X-Chorus-Role": "kade"
       }
+    },
+    "cclsp": {
+      "command": "cclsp",
+      "args": ["--config", "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json"]
+    },
+    "ast-grep": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ast-grep/ast-grep-mcp",
+        "ast-grep-server"
+      ]
     }
   }
 }
