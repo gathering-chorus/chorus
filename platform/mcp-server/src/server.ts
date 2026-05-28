@@ -391,6 +391,22 @@ const ServiceLifecycleInput = z.object({
 type ServiceVerb = 'status' | 'start' | 'stop' | 'restart' | 'deploy' | 'rollback';
 const SERVICE_LIFECYCLE_VERBS: ReadonlyArray<ServiceVerb> = ['status', 'start', 'stop', 'restart', 'deploy', 'rollback'];
 
+// #3110: werk-binary MCP wrapper inputs.
+const RoleEnum = z.enum(['kade', 'wren', 'silas']);
+const BuildInput = z.object({
+  role: RoleEnum,
+  card_id: z.number().int().min(1).describe('Card id whose werk holds the source.'),
+});
+const DeployInput = z.object({
+  role: RoleEnum,
+  card_id: z.number().int().min(1).describe('Card id whose werk holds the build artifacts.'),
+  target: z.enum(['canonical', 'werk']).optional().describe('Install target. Default: canonical.'),
+});
+const EnvUpInput = z.object({
+  role: RoleEnum,
+  card_id: z.number().int().min(1).optional().describe('Optional card context.'),
+});
+
 const SERVICE_STATUS_TOOL_DEF = {
   name: 'chorus_service_status',
   description: 'Use this to read the current launchd state of a chorus service — PID, exit code, running cdhash. Wraps `agent-state.sh status <svc>`. Refusal taxonomy: service-not-found | label-resolve-fail. Read-only verb, open to any role. Do NOT use to mutate state (start/stop/restart/deploy/rollback are write verbs) or to query historical lifecycle events (chorus_logs_for_card is the trace surface).',
@@ -425,6 +441,54 @@ const SERVICE_ROLLBACK_TOOL_DEF = {
   name: 'chorus_service_rollback',
   description: 'Use this to roll back a chorus crate to the prior cdhash from manifest — restore the previous binary, kickstart, verify. Emits paired service.rollback.{started,completed,failed}. Wraps `agent-state.sh rollback <crate>` which invokes `chorus-deploy <crate> --rollback`. Refusal taxonomy: service-not-found | no-prior-cdhash | restore-fail | kickstart-fail | verify-fail. Write verb with per-unit authority per #2927. Do NOT use as a substitute for `git revert` (rollback only restores binary; source state stays at HEAD) or to roll back further than one step (manifest holds only the immediately-prior cdhash today).',
   inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name to roll back' } }, required: ['service'] },
+} as const;
+
+// #3110: werk-binary MCP wrappers — chorus_build / chorus_deploy / chorus_env_up
+// expose werk-build, werk-deploy, and werk-deploy env-up as MCP tools so
+// werk-demo (Wren's binary) consumes them via MCP instead of shelling out
+// directly. Jeff: "no CLI shell-outs from werk-demo." Each wraps the
+// corresponding verb binary in ~/.chorus/bin/ with role + card env wiring.
+const CHORUS_BUILD_TOOL_DEF = {
+  name: 'chorus_build',
+  description: 'Use this to run werk-build for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-build with role + card env, returning structured exit + stdout + stderr. Wraps the verb binary; per #3107 the build returns Ok-empty on no-build-cycle (docs/config/graph-only cards) rather than refusing. Use from werk-demo or any orchestrator that needs to drive a card\'s build without subprocess-shelling. Refusal taxonomy: usage-error | no-werk | branch-mismatch | build-fail. Do NOT use to deploy (chorus_deploy) or to rebuild verbs system-wide (chorus-deploy --all werk via building-pipeline.yml).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role — drives DEPLOY_ROLE + werk path resolution.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the source to build.' },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const CHORUS_DEPLOY_TOOL_DEF = {
+  name: 'chorus_deploy',
+  description: 'Use this to run werk-deploy for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-deploy with role + card env. Target defaults to canonical; pass target=werk to install to the per-card werk\'s target/release/ (variant deploy for staging). Wraps the verb binary. Refusal taxonomy: usage-error | no-werk | branch-mismatch | no-deploy-target (class 5, still open as of 2026-05-28) | install-fail | cdhash-divergence | verify-timeout. Use from werk-demo. Do NOT use to deploy services system-wide (chorus_service_deploy) or to bring up env variants (chorus_env_up).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the build artifacts to deploy.' },
+      target: { type: 'string', enum: ['canonical', 'werk'], description: 'Install target — canonical (~/.chorus/bin/) or werk (per-card slot). Default: canonical.' },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const CHORUS_ENV_UP_TOOL_DEF = {
+  name: 'chorus_env_up',
+  description: 'Use this to bring up the role\'s werk-variant of chorus-api + chorus-mcp on per-role ports (silas 3343/3351, kade 3344/3352, wren 3345/3353). Invokes ~/.chorus/bin/werk-deploy env-up <role>. The variant is the STAGING surface the team exercises during /demo before promoting to canonical. Companion: chorus_env_down to tear it back down. Refusal taxonomy: bootstrap-fail | port-conflict | smoke-timeout. Use from werk-demo before announcing the demo URL.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose variant to bring up.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Optional card context for spine event card_id field.' },
+    },
+    required: ['role'],
+    additionalProperties: false,
+  },
 } as const;
 
 // #2652 (AC8) — cards MCP tool defs. Each tool is a thin wrapper around the
@@ -2698,6 +2762,85 @@ async function executeServiceLifecycle(
   throw new Error(`${verb}-fail — reason=${reason} exit=${exitCode}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 200) : ''}`);
 }
 
+// #3110: werk-binary MCP wrapper executors. Each spawns the verb binary at
+// ~/.chorus/bin/<verb> with role + card env wiring, returning structured
+// {ok, stdout, stderr, exit} on success or throwing a typed-refusal-shaped
+// error on non-zero exit. Parses reason= markers from stderr/stdout so the
+// refusal taxonomy on the tool def remains meaningful at the caller side.
+async function executeWerkVerb(
+  verb: 'werk-build' | 'werk-deploy',
+  args: string[],
+  role: string,
+  cardId: number | undefined,
+  extraEnv: Record<string, string>,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binPath = pathMod.join(binDir, verb);
+  const execFileP = promisify(execFile);
+  let stdout = '';
+  let stderr = '';
+  let exitCode = 0;
+  try {
+    const result = await execFileP(binPath, args, {
+      env: {
+        ...process.env,
+        DEPLOY_ROLE: role,
+        CHORUS_ROLE: role,
+        CHORUS_HOME: process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus',
+        CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
+        ...extraEnv,
+      },
+      timeout: 600000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || '';
+    stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+  }
+  if (exitCode === 0) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ ok: true, verb, role, card_id: cardId, stdout: stdout.trim(), stderr: stderr.trim() }),
+      }],
+    };
+  }
+  const combined = stderr + stdout;
+  const reasonMatch = combined.match(/reason[=:]\s*([a-z0-9_-]+)/i);
+  const reason = reasonMatch ? reasonMatch[1] : (exitCode === 2 ? 'usage-error' : 'work-fail');
+  throw new Error(
+    `${verb}-fail — reason=${reason} exit=${exitCode}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 400) : ''}`,
+  );
+}
+
+async function executeChorusBuild(
+  args: z.infer<typeof BuildInput>,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  return executeWerkVerb('werk-build', [String(args.card_id), args.role], args.role, args.card_id, {});
+}
+
+async function executeChorusDeploy(
+  args: z.infer<typeof DeployInput>,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const verbArgs: string[] = [String(args.card_id)];
+  if (args.target === 'werk') {
+    verbArgs.push('--target', 'werk');
+  }
+  return executeWerkVerb('werk-deploy', verbArgs, args.role, args.card_id, {});
+}
+
+async function executeChorusEnvUp(
+  args: z.infer<typeof EnvUpInput>,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // werk-deploy env-up <role>: brings the role's variant up on per-role ports.
+  return executeWerkVerb('werk-deploy', ['env-up', args.role], args.role, args.card_id, {});
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
@@ -2964,6 +3107,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       SERVICE_RESTART_TOOL_DEF,
       SERVICE_DEPLOY_TOOL_DEF,
       SERVICE_ROLLBACK_TOOL_DEF,
+      CHORUS_BUILD_TOOL_DEF,
+      CHORUS_DEPLOY_TOOL_DEF,
+      CHORUS_ENV_UP_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -3019,6 +3165,27 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // #2804 — executeNudge POSTs to pulse instead of spawning shim.
         const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
         return executeNudge(parsed.data, from, fetchImpl, pulseUrl);
+      }
+      case 'chorus_build': {
+        const parsed = BuildInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeChorusBuild(parsed.data);
+      }
+      case 'chorus_deploy': {
+        const parsed = DeployInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeChorusDeploy(parsed.data);
+      }
+      case 'chorus_env_up': {
+        const parsed = EnvUpInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeChorusEnvUp(parsed.data);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':
