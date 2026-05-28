@@ -42,6 +42,10 @@ fn accept_authority_gate_and_happy_path() {
     write_exec(&bin.join("gh"), "#!/bin/sh\necho \"gh $@\" >> \"$SHIM_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
     write_exec(&bin.join("chorus-log"), "#!/bin/sh\necho \"chorus-log $@\" >> \"$SHIM_LOG\"\n");
     write_exec(&bin.join("chorus-werk"), "#!/bin/sh\necho \"chorus-werk $@\" >> \"$SHIM_LOG\"\n");
+    // #3108 AC#8: accept tears down the role's variant overlay before removing
+    // the werk. Shim werk-deploy so the test can prove (a) env-down is called
+    // on happy-path, and (b) it precedes chorus-werk remove in the log order.
+    write_exec(&bin.join("werk-deploy"), "#!/bin/sh\necho \"werk-deploy $@\" >> \"$SHIM_LOG\"\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
 
     // real git: origin + home clone + a card worktree with a PUSHED commit.
@@ -70,6 +74,8 @@ fn accept_authority_gate_and_happy_path() {
     let after_refuse = fs::read_to_string(&log).unwrap_or_default();
     assert!(!after_refuse.contains("pr merge"), "refused accept must NOT merge");
     assert!(!after_refuse.contains("cards done"), "refused accept must NOT mark done");
+    // #3108 AC#8: env-down sits post-merge; a refused accept must not reach it.
+    assert!(!after_refuse.contains("werk-deploy env-down"), "refused accept must NOT tear down variants");
 
     // (2) happy path: DEPLOY_ROLE=jeff accepting kade's card => Ok, merge + done called.
     accept(9001, "kade", "jeff", &home, &werk_base).expect("jeff finalizes");
@@ -77,6 +83,12 @@ fn accept_authority_gate_and_happy_path() {
     assert!(after_ok.contains("pr merge"), "happy path merges the PR");
     assert!(after_ok.contains("cards done 9001"), "happy path marks the card Done");
     assert!(after_ok.contains("chorus-log card.accepted"), "happy path emits card.accepted");
+    // #3108 AC#8: env-down called on happy path AND precedes chorus-werk remove
+    // (so variant services release file handles before the worktree is destroyed).
+    assert!(after_ok.contains("werk-deploy env-down kade"), "happy path tears down kade's variant");
+    let env_down_at = after_ok.find("werk-deploy env-down").expect("env-down logged");
+    let werk_remove_at = after_ok.find("chorus-werk remove kade 9001").expect("chorus-werk remove logged");
+    assert!(env_down_at < werk_remove_at, "env-down must precede chorus-werk remove (got env-down at {}, werk remove at {})", env_down_at, werk_remove_at);
 
     // (3) the load-bearing nuance: wren accepting a WREN-owned card => Err (self-accept).
     std::env::set_var("CARDS_OWNER", "wren");
