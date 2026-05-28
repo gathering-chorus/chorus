@@ -298,8 +298,22 @@ fn run_env_up(args: &[String]) -> R<String> {
     let werk_base = env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?;
     let home = env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?;
     let card = parse_optional_card(args);
-    let werk_root = crate::demo_env::werk_root_for(&role, card, &werk_base)?;
-    crate::demo_env::env_up(&role, &werk_root, &home)
+    // #3119: witness the standalone env-up path — it was the only verb path that
+    // emitted NOTHING (the deploy() TS path already wraps env_up with jsonl).
+    // Writes to ops/logs/werk-deploy.jsonl, ingested by promtail job=werk-verbs.
+    let card_n = card.unwrap_or(0);
+    let trace = resolve_trace(card_n);
+    let home_p = Path::new(&home);
+    jsonl(home_p, &role, card_n, &trace, "env.up.started", "");
+    let result = crate::demo_env::werk_root_for(&role, card, &werk_base)
+        .and_then(|werk_root| crate::demo_env::env_up(&role, &werk_root, &home));
+    match &result {
+        Ok(summary) => jsonl(home_p, &role, card_n, &trace, "env.up.completed",
+            &format!(",\"detail\":\"{}\"", summary.replace('\\', "/").replace('"', "'"))),
+        Err(e) => jsonl(home_p, &role, card_n, &trace, "env.up.failed",
+            &format!(",\"error\":\"{}\"", e.replace('\\', "/").replace('"', "'"))),
+    }
+    result
 }
 
 /// #3092 — werk-deploy env-down <role>
@@ -308,7 +322,19 @@ fn run_env_up(args: &[String]) -> R<String> {
 fn run_env_down(args: &[String]) -> R<String> {
     let role = parse_explicit_role(args)?;
     let home = env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?;
-    crate::demo_env::env_down(&role, &home)
+    // #3119: witness env-down (same dark path as env-up).
+    let card_n = parse_optional_card(args).unwrap_or(0);
+    let trace = resolve_trace(card_n);
+    let home_p = Path::new(&home);
+    jsonl(home_p, &role, card_n, &trace, "env.down.started", "");
+    let result = crate::demo_env::env_down(&role, &home);
+    match &result {
+        Ok(summary) => jsonl(home_p, &role, card_n, &trace, "env.down.completed",
+            &format!(",\"detail\":\"{}\"", summary.replace('\\', "/").replace('"', "'"))),
+        Err(e) => jsonl(home_p, &role, card_n, &trace, "env.down.failed",
+            &format!(",\"error\":\"{}\"", e.replace('\\', "/").replace('"', "'"))),
+    }
+    result
 }
 
 /// Require an explicit role arg for env-* (don't fall back to DEPLOY_ROLE)

@@ -75,9 +75,13 @@ def parse_iso(ts):
     except (ValueError, AttributeError):
         return None
 
-# 1. chorus_acp.completed events
+# 1. chorus_acp.completed events.
+# Query across all jobs, NOT job="chorus-api": chorus_acp.completed is emitted
+# via chorus-log (appName=chorus-events) and lands under job=platform-chorus,
+# not chorus-api. The old hardcode found 0 acps -> total=0 -> "idle; skipping"
+# -> exit 0, a green that never saw a single /acp (#3119). Same drift fix as #3.
 acps = []
-resp = loki_query('{job="chorus-api"} |~ "chorus_acp.completed"')
+resp = loki_query('{job=~".+"} |~ "chorus_acp.completed"')
 if resp:
     for s in resp.get('data', {}).get('result', []):
         for _ts, line in s.get('values', []):
@@ -90,9 +94,9 @@ if resp:
             except (json.JSONDecodeError, ValueError):
                 pass
 
-# 2. chorus_acp.release-trigger.completed events
+# 2. chorus_acp.release-trigger.completed events (same label-drift fix as #1/#3).
 triggers = []
-resp = loki_query('{job="chorus-api"} |~ "chorus_acp.release-trigger.completed"')
+resp = loki_query('{job=~".+"} |~ "chorus_acp.release-trigger.completed"')
 if resp:
     for s in resp.get('data', {}).get('result', []):
         for _ts, line in s.get('values', []):
