@@ -10,7 +10,9 @@
     },
     "cclsp": {
       "command": "cclsp",
-      "args": ["--config", "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json"]
+      "env": {
+        "CCLSP_CONFIG_PATH": "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json"
+      }
     },
     "ast-grep": {
       "command": "uvx",
