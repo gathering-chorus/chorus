@@ -109,6 +109,31 @@ describe('emit', () => {
       }
     });
 
+    it('#3121 / ADR-032 §3: mints AND persists /tmp/<card>-trace so two emits in one process share one card-run trace (no env, no demo file)', () => {
+      const savedTrace = process.env.CHORUS_TRACE_ID;
+      delete process.env.CHORUS_TRACE_ID;
+      const card = 999321;
+      const carrier = `/tmp/${card}-trace`;
+      const demoFile = `/tmp/demo-trace-${card}.txt`;
+      try { fs.unlinkSync(carrier); } catch { /* ignore */ }
+      try { fs.unlinkSync(demoFile); } catch { /* ignore */ }
+      try {
+        // one cards-CLI operation fires multiple emits in one process — today each mints
+        // its own random trace (the #3119 fragmentation). They must share one trace.
+        const a = emit('card.item.set', 'kade', { card_id: card }, { logFile: tmpFile });
+        const b = emit('card.item.updated', 'kade', { card_id: card }, { logFile: tmpFile });
+        expect(typeof a.trace_id).toBe('string');
+        expect(b.trace_id).toBe(a.trace_id);
+        // the first emit minted AND persisted the carrier per ADR-032 §3 (one filename: /tmp/<card>-trace)
+        expect(fs.existsSync(carrier)).toBe(true);
+        expect(fs.readFileSync(carrier, 'utf-8').trim()).toBe(a.trace_id);
+      } finally {
+        try { fs.unlinkSync(carrier); } catch { /* ignore */ }
+        if (savedTrace === undefined) delete process.env.CHORUS_TRACE_ID;
+        else process.env.CHORUS_TRACE_ID = savedTrace;
+      }
+    });
+
     it('AC3: stamps branch from env on git/werk events (card.*)', () => {
       process.env.CHORUS_BRANCH = 'kade/3023';
       const e = emit('card.demo.started', 'kade', {}, { logFile: tmpFile }) as Record<string, unknown>;

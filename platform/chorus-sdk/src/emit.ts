@@ -150,8 +150,28 @@ function errorFields(level: string, extra: Partial<Record<string, string | numbe
   };
 }
 
+// #3121 / ADR-032 §3 — per-card-run trace carrier. Read the canonical /tmp/<card>-trace,
+// fall back to the legacy /tmp/demo-trace-<card>.txt (back-compat until werk-demo +
+// chorus_log.rs migrate to the one filename), else MINT-AND-PERSIST to /tmp/<card>-trace
+// so every emit of one card-operation shares one trace instead of each minting its own
+// (the #3119 fragmentation: setCard fires 4-5 emits in one process). Best-effort write —
+// a failed persist never blocks the emit. acp cleans the carrier (Silas follow-on).
+function resolveCardTrace(card: string): string {
+  const fs = require('fs') as typeof import('fs');
+  const carrier = `/tmp/${card}-trace`;
+  for (const p of [carrier, `/tmp/demo-trace-${card}.txt`]) {
+    try {
+      const t = fs.readFileSync(p, 'utf-8').trim();
+      if (t) return t;
+    } catch { /* not present — try next, else mint */ }
+  }
+  const minted = crypto.randomUUID();
+  try { fs.writeFileSync(carrier, `${minted}\n`); } catch { /* best-effort; never block emit */ }
+  return minted;
+}
+
 // #3023 trace precedence: explicit extra.trace_id > CHORUS_TRACE_ID env >
-// /tmp/demo-trace-<card>.txt (written by demo_preflight) > random. Mirrors
+// per-card carrier (read-or-mint-and-persist, #3121/ADR-032 §3) > random. Mirrors
 // chorus_log.rs (#2897) so the TS + Rust emitters of one action share a trace.
 // Split out of buildSpineEntry to hold it under the complexity ceiling.
 function resolveTraceId(
@@ -160,16 +180,10 @@ function resolveTraceId(
 ): string {
   if (typeof extra.trace_id === 'string') return extra.trace_id;
   if (envTrace && envTrace.length > 0) return envTrace;
-  const cardForTrace = typeof extra.card_id === 'number'
+  const card = typeof extra.card_id === 'number'
     ? String(extra.card_id)
     : (typeof extra.card_id === 'string' && /^\d+$/.test(extra.card_id) ? extra.card_id : null);
-  if (cardForTrace) {
-    try {
-      const fs = require('fs') as typeof import('fs');
-      const t = fs.readFileSync(`/tmp/demo-trace-${cardForTrace}.txt`, 'utf-8').trim();
-      if (t) return t;
-    } catch { /* no /demo in flight for this card — fall through to random */ }
-  }
+  if (card) return resolveCardTrace(card);
   return crypto.randomUUID();
 }
 
