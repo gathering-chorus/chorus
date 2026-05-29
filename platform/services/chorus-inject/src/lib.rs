@@ -169,6 +169,38 @@ return "no claude window found for tty {tty}""#,
     )
 }
 
+/// #3130 — build the inject script for a session hosted in VS Code's integrated
+/// terminal. VS Code is an Electron app ("Code"), NOT Terminal.app: it exposes
+/// no tabs/tty to AppleScript, so the Terminal `--tty` match (build_inject_by_tty_script)
+/// returns "no claude window found" for a VS Code pseudo-tty — the no-window-found
+/// failure. The only osascript delivery is: activate the Code app and keystroke
+/// into its FOCUSED window.
+///
+/// KNOWN LIMITATION (by AppleScript constraint, not laziness): Electron exposes
+/// no per-pane/tty handle, so this lands in whichever Code window/pane is focused
+/// — it cannot select a specific terminal pane by pseudo-tty. Acceptable for the
+/// Chorus model because Jeff lives in the Code window (he IS the focused presence);
+/// a role per Code window means the focused pane is the intended target. If that
+/// assumption breaks (multiple Claude panes in one Code window, editor focused),
+/// the keystroke lands in the focused surface — the cost of Electron having no
+/// addressable terminal API.
+pub fn build_inject_vscode_script(escaped_text: &str) -> String {
+    format!(
+        r#"tell application "Code" to activate
+delay 0.15
+tell application "System Events"
+    tell process "Code"
+        keystroke "{text}"
+        delay 0.3
+        key code 36
+    end tell
+end tell
+delay 0.3
+return "ok""#,
+        text = escaped_text
+    )
+}
+
 /// Seam for osascript execution. `RealOsaRunner` shells out; tests use a fake.
 pub trait OsaRunner {
     fn run(&self, script: &str) -> io::Result<Output>;
@@ -268,6 +300,36 @@ pub fn inject_by_tty<R: OsaRunner, W: io::Write>(
     }
 }
 
+/// #3130: inject `text` into the focused VS Code window. dry_run writes a
+/// DRY-RUN line naming the vscode path. Mirrors `inject_by_tty`'s ok/err parse.
+pub fn inject_vscode<R: OsaRunner, W: io::Write>(
+    runner: &R,
+    writer: &mut W,
+    text: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    let escaped = escape_for_applescript(text);
+
+    if dry_run {
+        writeln!(writer, "DRY-RUN inject-vscode (Code app, focused window) escaped={}", escaped)
+            .map_err(|e| format!("write failed: {}", e))?;
+        return Ok(());
+    }
+
+    let script = build_inject_vscode_script(&escaped);
+    let output = runner
+        .run(&script)
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
+        Ok(())
+    } else {
+        Err(format!("{} stderr: {}", result, stderr))
+    }
+}
+
 /// Outcome of `dispatch` — main.rs maps this to ExitCode + stdout/stderr.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Dispatch {
@@ -292,6 +354,16 @@ pub fn dispatch<R: OsaRunner, W: io::Write>(
     if args.len() == 2 && args[0] == "--count-windows" {
         return match count_windows(runner, &args[1]) {
             Ok(s) => Dispatch::PrintOut(s),
+            Err(e) => Dispatch::Err(e),
+        };
+    }
+
+    // #3130: `--vscode <text...>` routes to the Code-app focused-window inject
+    // (VS Code's pseudo-tty isn't a Terminal tab, so --tty can't reach it).
+    if args.len() >= 2 && args[0] == "--vscode" {
+        let text = args[1..].join(" ");
+        return match inject_vscode(runner, writer, &text, dry_run) {
+            Ok(()) => Dispatch::Ok,
             Err(e) => Dispatch::Err(e),
         };
     }
