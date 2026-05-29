@@ -94,13 +94,39 @@ pub fn ts_service_for_path(path: &str) -> Option<String> {
     None
 }
 
-/// #3092 — what kind of thing was changed, and what's its identifier. Either a
-/// Rust crate (built via build-signed.sh, emits cdhash) or a TS service (built
-/// via `npm run build`, emits sha256-of-dist). The two flow through the same
-/// `<name>=<identity>` summary contract that werk-deploy parses (ADR-032 §1,
-/// §5 amended: cdhash and sha256(dist) are both "stable identity hashes").
+/// #3126 — map a changed repo path to its owning shared-library name, or None.
+/// A shared library (chorus-sdk today) is a TS package at platform/<name>/ that
+/// other packages import via a `file:` dependency. It is NOT a service (no
+/// LaunchAgent, no standalone runtime) — its dist is consumed by bundlers/linkers.
+///
+/// #3092 covered three classes (Rust crate, TS service, CLI verb) but NOT this:
+/// a shared lib matched no rule, so a change to it yielded ZERO build units → acp
+/// shipped nothing → and nothing cascaded to rebuild the consumers that bundle it
+/// → PROD SILENTLY RAN STALE (#3121: emit.ts merged + accepted, cards CLI kept
+/// running old compiled chorus-sdk until a manual rebuild). This rule closes that.
+///
+/// Today only chorus-sdk; a future shared lib adds a rule here, exactly mirroring
+/// `ts_service_for_path` — the mechanism (SharedLib unit + graph-discovered consumer
+/// cascade) generalizes; the path rule is the per-lib registration.
+pub fn shared_lib_for_path(path: &str) -> Option<String> {
+    if path.starts_with("platform/chorus-sdk/") {
+        return Some("chorus-sdk".to_string());
+    }
+    None
+}
+
+/// #3092/#3126 — what kind of thing was changed, and what's its identifier. A Rust
+/// crate (build-signed.sh, cdhash), a TS service (`npm run build`, sha256-of-dist),
+/// or a shared library (`npm run build` + cascade-rebuild every graph-discovered
+/// consumer, identity = sha256-of-dist). All flow through the same `<name>=<identity>`
+/// summary contract that werk-deploy parses (ADR-032 §1, §5 amended: cdhash and
+/// sha256(dist) are both "stable identity hashes").
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BuildUnit {
+    /// Shared library at platform/<name>/ (chorus-sdk) — `npm run build` its dist,
+    /// then cascade a rebuild of every consumer that imports it (#3126). Sorts FIRST
+    /// so it builds before consumers (a consumer's tsc needs the lib's fresh .d.ts).
+    SharedLib(String),
     /// Rust crate at platform/services/<name>/ — cargo+codesign+cdhash.
     RustCrate(String),
     /// TS service at platform/api/ etc. — `npm run build` in service dir, hash dist.
@@ -111,7 +137,9 @@ impl BuildUnit {
     /// Stable display name used in the summary (`<name>=<identity>`).
     pub fn name(&self) -> &str {
         match self {
-            BuildUnit::RustCrate(n) | BuildUnit::TsService(n) => n.as_str(),
+            BuildUnit::SharedLib(n) | BuildUnit::RustCrate(n) | BuildUnit::TsService(n) => {
+                n.as_str()
+            }
         }
     }
 }
@@ -131,13 +159,82 @@ where
     let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
     for line in diff_lines {
         let p = line.as_ref().trim();
-        if let Some(c) = crate_for_path(p) {
+        // #3126 — shared-lib check FIRST (platform/chorus-sdk/ is not under
+        // platform/services/ or platform/api/, so the rules don't overlap; the
+        // ordering just makes intent explicit).
+        if let Some(l) = shared_lib_for_path(p) {
+            units.insert(BuildUnit::SharedLib(l));
+        } else if let Some(c) = crate_for_path(p) {
             units.insert(BuildUnit::RustCrate(c));
         } else if let Some(s) = ts_service_for_path(p) {
             units.insert(BuildUnit::TsService(s));
         }
     }
     units.into_iter().collect()
+}
+
+/// #3126 — pure: extract `(dep_name, file_target)` for every `"x": "file:<path>"`
+/// dependency in a package.json. This is the primitive of graph-driven consumer
+/// discovery: a consumer of a shared lib declares it as a `file:` dep, so scanning
+/// every package.json for file-deps whose target resolves to the lib yields the
+/// bundler set WITHOUT a hardcoded list that rots. JSON-shape tolerant (no serde:
+/// std-only per ADR-032 §1) — keys on the literal `"file:` value prefix.
+pub fn extract_file_deps(pkg_json: &str) -> Vec<(String, String)> {
+    // Tokenize into ordered double-quoted strings — robust against nesting/newlines
+    // (the comma/colon-split approach broke on the `dependencies: { ... }` object).
+    // A file dep is the token PAIR ["<name>", "file:<target>"]: in JSON the value
+    // string immediately follows its key string, so tokens[i-1] is the dep name.
+    let tokens = quoted_tokens(pkg_json);
+    let mut out = Vec::new();
+    for i in 0..tokens.len() {
+        if let Some(target) = tokens[i].strip_prefix("file:") {
+            if i > 0 && !tokens[i - 1].is_empty() && !target.is_empty() {
+                out.push((tokens[i - 1].clone(), target.to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// Collect every double-quoted string token, in order. std-only JSON-lite scan.
+fn quoted_tokens(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_str = false;
+    let mut cur = String::new();
+    let mut prev = '\0';
+    for ch in s.chars() {
+        if ch == '"' && prev != '\\' {
+            if in_str {
+                out.push(std::mem::take(&mut cur));
+                in_str = false;
+            } else {
+                in_str = true;
+            }
+        } else if in_str {
+            cur.push(ch);
+        }
+        prev = ch;
+    }
+    out
+}
+
+/// #3126 — pure: read the `"name"` field of a package.json (the consumer's deploy
+/// identity in the build summary). std-only, shape-tolerant.
+pub fn pkg_name(pkg_json: &str) -> Option<String> {
+    let tokens = quoted_tokens(pkg_json);
+    // the top-level "name" key's value is the token immediately after the first
+    // "name" token. (Sufficient: package.json's top-level name precedes any nested
+    // "name" in deps, which are version-range values not bare "name" keys.)
+    for i in 0..tokens.len() {
+        if tokens[i] == "name" {
+            if let Some(v) = tokens.get(i + 1) {
+                if !v.is_empty() {
+                    return Some(v.clone());
+                }
+            }
+        }
+    }
+    None
 }
 
 // --- side-effecting helpers ---
@@ -331,6 +428,134 @@ fn build_ts_service(werk_s: &str, service: &str) -> R<String> {
     Ok(sha.to_string())
 }
 
+/// #3126 — sha256 of a dist tree, RELATIVE PATHS so the hash is location-independent
+/// (werk-build hashes the werk's dist; werk-deploy hashes canonical's after cp —
+/// both MUST agree for byte-identical content at different absolute paths). Same
+/// scheme as `build_ts_service` and werk-deploy's identity verify.
+fn dist_sha(dist_dir: &str) -> R<String> {
+    if !Path::new(dist_dir).is_dir() {
+        return Err(format!("dist not found at {}", dist_dir));
+    }
+    let cmd = format!(
+        "cd {} && find . -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        dist_dir
+    );
+    let out = run("sh", &["-c", &cmd])?;
+    let sha = out.trim();
+    if sha.is_empty() || sha.len() < 32 {
+        return Err(format!("dist hash invalid ({:?}) for {}", sha, dist_dir));
+    }
+    Ok(sha.to_string())
+}
+
+/// #3126 — source dir of a shared lib inside the werk. Today only chorus-sdk; a
+/// future shared lib adds a rule (mirrors ts_service_dir).
+fn shared_lib_dir(werk_s: &str, lib: &str) -> R<String> {
+    match lib {
+        "chorus-sdk" => Ok(format!("{}/platform/chorus-sdk", werk_s)),
+        other => Err(format!(
+            "unknown shared lib '{}' (only 'chorus-sdk' is registered; add a rule in shared_lib_dir)",
+            other
+        )),
+    }
+}
+
+/// A graph-discovered consumer of a shared lib: its package `name` (deploy identity)
+/// and its directory relative to the repo root (where dist lives, where to build).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Consumer {
+    pub name: String,
+    pub dir_rel: String,
+}
+
+/// #3126 — DISCOVER every consumer of `lib` from the dependency graph: walk all
+/// package.json files in the werk (git-tracked, so node_modules is excluded), and
+/// for each that declares a `file:` dep resolving to the lib's directory, record it.
+/// The bundler set is therefore DISCOVERED, never a hardcoded list that rots — the
+/// exact failure #3092 left open. Returns consumers sorted by name (stable summary).
+pub fn discover_consumers(werk_s: &str, lib: &str) -> R<Vec<Consumer>> {
+    let lib_dir = shared_lib_dir(werk_s, lib)?;
+    let lib_canon = fs::canonicalize(&lib_dir)
+        .map_err(|e| format!("cannot canonicalize lib dir {}: {}", lib_dir, e))?;
+    // git-tracked package.json files only (excludes node_modules, which is untracked).
+    let listing = run("git", &["-C", werk_s, "ls-files", "*package.json", "**/package.json"])?;
+    let mut consumers: BTreeSet<(String, String)> = BTreeSet::new();
+    for rel in listing.lines() {
+        let rel = rel.trim();
+        if rel.is_empty() {
+            continue;
+        }
+        let abs = format!("{}/{}", werk_s, rel);
+        let Ok(content) = fs::read_to_string(&abs) else { continue };
+        // skip the lib's own package.json.
+        let pkg_dir = Path::new(&abs).parent().map(|p| p.to_path_buf());
+        for (_dep, target) in extract_file_deps(&content) {
+            let Some(ref dir) = pkg_dir else { continue };
+            let resolved = dir.join(&target);
+            if let Ok(rc) = fs::canonicalize(&resolved) {
+                if rc == lib_canon {
+                    let name = pkg_name(&content).unwrap_or_else(|| {
+                        // fall back to the dir name if "name" is absent.
+                        dir.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+                    });
+                    let dir_rel = Path::new(rel).parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if !name.is_empty() && !dir_rel.is_empty() {
+                        consumers.insert((name, dir_rel));
+                    }
+                }
+            }
+        }
+    }
+    Ok(consumers.into_iter().map(|(name, dir_rel)| Consumer { name, dir_rel }).collect())
+}
+
+/// #3126 — build ONE shared lib IN THE WERK and CASCADE-rebuild its consumers.
+/// (1) `npm run build` the lib → its dist; identity = sha256(dist).
+/// (2) DISCOVER consumers from the graph; for each, `npm install` (refresh the
+///     `file:` link so a bundler/linker sees the new dist) + `npm run build`
+///     (re-bundle/re-transpile against it). A consumer that can't build against the
+///     new lib is a real breaking change — it fails the build LOUDLY (the whole
+///     point: no silent stale prod).
+/// Returns the LIB's identity hash — the contract werk-deploy keys the anti-stale
+/// verify on. Consumer dists are produced here (in the werk) for werk-deploy to copy.
+fn build_shared_lib(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, lib: &str) -> R<String> {
+    let lib_dir = shared_lib_dir(werk_s, lib)?;
+    if !Path::new(&lib_dir).is_dir() {
+        return Err(format!("shared lib dir not found at {}", lib_dir));
+    }
+    run_in_env(&lib_dir, &[], "npm", &["run", "build"])?;
+    let lib_dist = format!("{}/dist", lib_dir);
+    let identity = dist_sha(&lib_dist)?;
+    jsonl(home, role, card, trace, "sharedlib.built", &format!(",\"lib\":\"{}\",\"identity\":\"{}\"", lib, identity));
+
+    let consumers = discover_consumers(werk_s, lib)?;
+    jsonl(
+        home, role, card, trace, "sharedlib.consumers.discovered",
+        &format!(",\"lib\":\"{}\",\"count\":{},\"consumers\":\"{}\"", lib,
+            consumers.len(),
+            consumers.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join("|")),
+    );
+    if consumers.is_empty() {
+        // A shared lib with zero consumers is suspicious (why is it shared?) but not
+        // an error — log it loudly so a real "consumers vanished from the graph"
+        // regression is visible rather than silent.
+        jsonl(home, role, card, trace, "sharedlib.consumers.none", &format!(",\"lib\":\"{}\"", lib));
+    }
+    for c in &consumers {
+        let cdir = format!("{}/{}", werk_s, c.dir_rel);
+        jsonl(home, role, card, trace, "consumer.rebuild.started", &format!(",\"name\":\"{}\",\"dir\":\"{}\"", c.name, c.dir_rel));
+        // refresh the file: link, then rebuild against the new lib dist.
+        run_in_env(&cdir, &[], "npm", &["install", "--no-audit", "--no-fund"])
+            .map_err(|e| format!("consumer {} npm install failed (cascade): {}", c.name, e))?;
+        run_in_env(&cdir, &[], "npm", &["run", "build"])
+            .map_err(|e| format!("consumer {} rebuild failed against new {} — breaking change, refusing: {}", c.name, lib, e))?;
+        jsonl(home, role, card, trace, "consumer.rebuild.completed", &format!(",\"name\":\"{}\"", c.name));
+    }
+    Ok(identity)
+}
+
 /// gh: set chorus/build/<card> success on the werk HEAD carrying the cdhash, and
 /// carry prior chorus/*/<card> statuses forward onto this SHA (ADR-032 §5).
 /// Best-effort: gh failure does not fail a successful build (build is non-mutating;
@@ -474,6 +699,7 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     let mut summary: Vec<String> = Vec::new();
     for unit in &units {
         let (kind_str, name) = match unit {
+            BuildUnit::SharedLib(n) => ("sharedlib", n.as_str()),
             BuildUnit::RustCrate(n) => ("rust", n.as_str()),
             BuildUnit::TsService(n) => ("ts", n.as_str()),
         };
@@ -489,6 +715,7 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         // (cdhash for Rust, sha256-of-dist for TS — same contract, different forms,
         // per ADR-032 §1/§5 widened: "stable identity hash").
         let identity = match unit {
+            BuildUnit::SharedLib(l) => build_shared_lib(home, role, card, &trace, &werk_s, l)?,
             BuildUnit::RustCrate(c) => build_crate(&werk_s, c)?,
             BuildUnit::TsService(s) => build_ts_service(&werk_s, s)?,
         };
