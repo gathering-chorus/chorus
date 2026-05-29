@@ -60,9 +60,9 @@ describe('planDelivery', () => {
     expect(planDelivery(t, 'silas', 'hello')).toEqual({ kind: 'inject', args: ['--tty', '/dev/ttys001', 'hello'] });
   });
 
-  test('vscode host → defer to inbox, never osascript (AC6 — no leak)', () => {
+  test('#3130 vscode host with tty → --tty inject (osascript reaches VS Code; no defer/queue)', () => {
     const t = reg({ role: 'wren', tty: '/dev/ttys004', host: 'vscode' });
-    expect(planDelivery(t, 'wren', 'hello')).toEqual({ kind: 'defer', reason: 'vscode-inbox' });
+    expect(planDelivery(t, 'wren', 'hello')).toEqual({ kind: 'inject', args: ['--tty', '/dev/ttys004', 'hello'] });
   });
 
   test('no registration → legacy name-match (as-is preserved)', () => {

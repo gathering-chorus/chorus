@@ -106,18 +106,20 @@ export type DeliveryPlan =
  * This is the routing/transport seam: routing produces the plan, the caller
  * (pulse runInject) executes it. Pure + fully testable.
  *
- *  - vscode host          → defer to inbox/fold (osascript would leak into the
- *                           focused app; the fold delivers inline instead).
- *  - terminal/iterm + tty → exact tty match via `chorus-inject --tty` (no
- *                           title guess, no stale-tab false-match, focus-gated).
+ *  - any host + tty       → exact tty match via `chorus-inject --tty`. #3130:
+ *                           vscode is NO LONGER deferred. osascript reaches a
+ *                           VS Code session by its tty just like Terminal, so a
+ *                           vscode target injects instead of queueing to the
+ *                           fold. The old `vscode → defer` rule silently dropped
+ *                           every nudge to a VS-Code-hosted session (silas→wren
+ *                           never delivered — it queued and only surfaced on the
+ *                           next prompt). Routing now treats all hosts the same
+ *                           once a tty is known.
  *  - no registration      → legacy `chorus-inject <role> <text>` name-match.
  *                           As-is delivery is preserved whenever the registry
  *                           is empty or stale — the new path can never strand.
  */
 export function planDelivery(target: SessionReg | null, role: string, content: string): DeliveryPlan {
-  if (target && target.host === 'vscode') {
-    return { kind: 'defer', reason: 'vscode-inbox' };
-  }
   if (target && target.tty) {
     return { kind: 'inject', args: ['--tty', target.tty, content] };
   }
