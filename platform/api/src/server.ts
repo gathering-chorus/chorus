@@ -141,7 +141,7 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
 // #3029 — pain board endpoints. Same queryPainRollup the MCP tool + regression
 // test use (one source, can't drift). Validated contract: {job} selector +
 // event-field anchor. The HTML pages under public/borg/ consume these.
-import { queryPainRollup, type RollupWindow, logsForCard } from './handlers/logs-query';
+import { queryPainRollup, type RollupWindow, logsForCard, logsForTrace } from './handlers/logs-query';
 const painLokiDeps = { fetchImpl: fetch, lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102', now: () => Date.now() };
 app.get('/api/chorus/pain/rollup', async (req, res) => {
   // Pass the raw window through; queryPainRollup is the single validator (don't
@@ -156,6 +156,23 @@ app.get('/api/chorus/pain/card/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ ok: false, reason: 'bad-card-id' }); return; }
   const result = await logsForCard({ card_id: id, time_window: '1d' }, painLokiDeps);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+
+// #3122 — trace-reader data source. Same single-source query the MCP tools use
+// (logsForCard / logsForTrace); the /borg/trace.html page renders this verbatim
+// so a human view and an agent view can never diverge. Purpose-named routes
+// (vs /pain/card which is failure-triage-flavored) — same function underneath.
+app.get('/api/chorus/logs/card/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ ok: false, reason: 'bad-card-id' }); return; }
+  const result = await logsForCard({ card_id: id, time_window: '1d' }, painLokiDeps);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
+  const traceId = req.params.traceId;
+  if (!traceId) { res.status(400).json({ ok: false, reason: 'bad-trace-id' }); return; }
+  const result = await logsForTrace({ trace_id: traceId, time_window: '1d' }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
 
