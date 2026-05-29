@@ -3,12 +3,12 @@
     {
       "extensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs"],
       "command": ["typescript-language-server", "--stdio"],
-      "rootDir": "."
+      "rootDir": "/Users/jeffbridwell/CascadeProjects/chorus"
     },
     {
       "extensions": ["rs"],
       "command": ["rust-analyzer"],
-      "rootDir": ".",
+      "rootDir": "/Users/jeffbridwell/CascadeProjects/chorus",
       "initializationOptions": {
         "linkedProjects": [
           "platform/services/werk-pull/Cargo.toml",
