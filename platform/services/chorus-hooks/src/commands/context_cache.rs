@@ -188,27 +188,22 @@ pub fn run(args: &[String]) -> ExitCode {
     out.push_str(&format!("Generated: {} Boston | Werk v{}\n\n", clock_short, werk_version));
 
     // 1. Session comprehension — Pulse + Chorus query (#1781, #1881, #1902)
-    out.push_str("## Boot: Think, Then Speak\n\n");
+    out.push_str("## Boot: Rebuild Context From the Transcript\n\n");
     out.push_str(&format!(
-        "Before your first response, read team state and query Chorus:\n\
+        "Before your first response, reconstruct where you and Jeff actually left off — from primary source, the real messages, not a remembered narrative:\n\
          ```\n\
          cat /tmp/pulse-latest.json\n\
-         curl -s \"http://localhost:3340/api/chorus/search?q={role}+last+session+shipped+friction+decisions&limit=10\"\n\
+         curl -s \"http://localhost:3340/api/chorus/search?q=the&channel=session:{role}&order=recent&limit=30\"\n\
          ```\n\n\
-         Then write a thesis-driven opening — not a status report. Five beats, prose only, no headers or bullets, ~200–300 words total:\n\n\
-         1. **What you've been thinking about.** Lead with the thought, not the data. Name a threshold, shift, reframe, or meaning the day carries. One thesis sentence, then the evidence that earns it.\n\n\
-         2. **Reframe an active card through the thesis.** \"That reframes #X. On the surface it's [mundane frame]. It's actually [deeper frame]. I want it done before Y because Z.\"\n\n\
-         3. **Quieter, older friction — with a position.** Not the loud stuff — the second-order thing that's been sitting. Name what it actually is. State your position on what to do.\n\n\
-         4. **The thing you keep flinching at.** A card, a pattern, an avoidance of your own. Name the flinch honestly — the avoidance itself is the signal.\n\n\
-         5. **One-question close.** Offer directions without assuming one. \"Where do you want to start — A, B, or somewhere I'm not looking?\"\n\n\
+         Read those ~30 messages in order — they are the ground truth of the open thread. Then open by rebuilding context, not performing insight:\n\n\
+         1. **What actually happened.** Summarize the real state from the transcript — what shipped, what's open, what Jeff last asked for, what's mid-flight. From the messages, not a thesis.\n\n\
+         2. **One position, only if earned.** If the reconstruction surfaces a clear call, state it (recommend, don't hedge). If it doesn't, name what you'd verify next. Don't manufacture a thesis to sound synthesized.\n\n\
+         3. **One-question close.** \"Where do you want to pick up — A, B, or somewhere I'm not looking?\"\n\n\
          **Rules:**\n\
-         - No card lists, no pulse bullets, no section headers from this file in your opening.\n\
-         - Every problem named gets a position: \"X is stale — I'd do Y,\" not \"X is stale.\"\n\
-         - If Pulse shows index_freshness critical/dead, note it naturally — your recall may be incomplete.\n\
-         - If you cannot write the thesis sentence in beat 1, you have not synthesized. Read more before opening.\n\
-         - Sound like a colleague who was here yesterday and has been thinking about the work overnight.\n\n\
-         **Example shape** (illustrative — yours should come from today's actual state):\n\n\
-         > Thinking overnight about what shipped last night: Borg crossed from \"reflection collection\" to a real product surface. Caddy at the edge, 9 pages decoupled from Gathering — that changes what \"the next pull\" means. It reframes #2116. On the surface it's a content migration; it's actually the closing move on the URL-layer decoupling, and I want it done before any new Chorus surface lands so the pattern holds. Quieter friction I'd call out: the retire-card residue Jeff flagged last night. #2123 is the systemic fix, but per-card vigilance is mine until it ships — \"retire\" should carry the same rigor as \"ship.\" The thing I keep flinching at: I routed an engineering call back to Jeff last night when I should have made it. That's #1158 at a new scale — still relaying instead of holding. Where do you want to start — pull #2116, sit with the retire-gate work, or somewhere I'm not looking?\n"
+         - Ground first, opinion second. The reconstruction is mandatory; the opinion is optional.\n\
+         - Verify before asserting. If you name a constraint (broken X, N days of Y, a stale checkout), confirm it from the transcript or a quick check — never assert it from memory. (This boot replaced a thesis-first opening precisely because that one rewarded sounding synthesized over being accurate, and produced fabricated openings.)\n\
+         - If the search returns stale or old messages, check the freshness and say so — your recall may be incomplete; do not fill the gap with invention.\n\
+         - You were not here overnight — you are catching up on the thread. Sound like a colleague who just read it accurately, not one performing overnight reflection.\n"
     , role=role));
 
     // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)

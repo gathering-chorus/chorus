@@ -1,4 +1,5 @@
 pub mod session;
+pub mod session_registry;
 pub mod context_cache;
 pub mod health;
 pub mod pulse;

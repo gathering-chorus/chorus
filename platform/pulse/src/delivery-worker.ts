@@ -20,7 +20,10 @@
 
 import { MessageStore } from './store';
 
-export type InjectResult = { rc: number; stderr: string };
+// #3125: `deferred` signals the target is a host osascript can't reach
+// safely (VS Code) — runInject declined to push and the nudge should be
+// handed to the inbox/fold instead of surfaced or failed.
+export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string };
 export type RunInject = (to: string, content: string) => Promise<InjectResult>;
 export type EmitSpine = (event: string, fields: Record<string, unknown>) => Promise<void>;
 
@@ -132,6 +135,33 @@ export class DeliveryWorker {
 
       // #2765 — trace_id propagated to every spine event in lifecycle
       const traceFields = row.trace_id ? { trace_id: row.trace_id } : {};
+
+      // #3125 AC6/AC4: hand off to the inbox/fold instead of pushing. Two
+      // triggers:
+      //  - result.deferred — VS-Code-hosted target (runInject declined; a
+      //    keystroke would leak into the focused app).
+      //  - focus-gate-miss — chorus-inject's tty path refused to type because
+      //    Terminal wasn't frontmost (the target's window wasn't focused).
+      //    Recoverable, NOT a failure — failing would drop it from the fold.
+      // Emit nudge.deferred — deliberately NOT nudge.surfaced (it wasn't
+      // pushed) and NOT nudge.surface.failed (the fold subtracts surface.failed,
+      // which would drop it). The spine fold (emitted − surfaced −
+      // surface.failed) thus keeps it pending and the receiver's
+      // UserPromptSubmit drain injects it inline. markDelivered makes the
+      // messages.db row terminal so it isn't re-scanned forever.
+      const focusDeferred = (result.stderr || '').includes('focus-gate-miss');
+      if (result.deferred || focusDeferred) {
+        await this.emitSpine('nudge.deferred', {
+          ...traceFields,
+          id: row.id,
+          from: row.from,
+          to: row.to,
+          attempt,
+          reason: result.deferReason || (focusDeferred ? 'focus-gate-miss' : 'inbox'),
+        });
+        this.store.markDelivered(row.id);
+        return;
+      }
 
       if (classified.kind === 'success') {
         try {

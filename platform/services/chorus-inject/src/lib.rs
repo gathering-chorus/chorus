@@ -39,6 +39,16 @@ pub fn escape_for_applescript(text: &str) -> String {
         .replace('\u{2014}', "--")
         .replace(['\u{2018}', '\u{2019}'], "'")
         .replace(['\u{201C}', '\u{201D}'], "\\\"")
+        // #3125: non-BMP codepoints (emoji ≥ U+10000, e.g. the role prefix
+        // 🪶 U+1FAB6) are mangled by AppleScript's `keystroke` interpreter —
+        // they arrive as "aa…" garbage (observed 2026-05-29). The design names
+        // this the non-BMP encoding boundary (nudge-service-design.md). Strip
+        // them rather than emit garbage: decorative prefixes drop cleanly and
+        // BMP message text is untouched. Refusing the whole nudge over a
+        // decorative emoji would be worse than dropping the glyph.
+        .chars()
+        .filter(|c| (*c as u32) <= 0xFFFF)
+        .collect()
 }
 
 /// Map a role name to the Terminal window-name pattern it's matched by.
@@ -110,6 +120,58 @@ end tell"#,
     )
 }
 
+/// #3125: build an inject script that targets the Terminal TAB whose `tty`
+/// equals `tty` exactly — routing by tty, not by window-title substring.
+///
+/// Why: title-matching (`build_inject_script`) breaks two ways — a role in a
+/// non-Terminal host is invisible, and a stale same-named shell tab
+/// ("wren — -zsh") false-matches. The tty is an exact, unique key per session.
+///
+/// Focus-gate: if Terminal is not the frontmost app, return "focus-gate-miss"
+/// WITHOUT typing. System Events `keystroke` always lands in the FOCUSED app,
+/// so typing while another app (e.g. VS Code) is focused leaks the nudge into
+/// the wrong window — the observed wren-pane misroute. Refusing instead of
+/// leaking leaves the nudge for the inbox/fold to deliver. #2277 invariant
+/// preserved: no app-level `activate` (no focus-steal from Jeff).
+pub fn build_inject_by_tty_script(tty: &str, escaped_text: &str) -> String {
+    let safe_tty = tty.replace('"', "");
+    format!(
+        r#"tell application "System Events"
+    set frontApp to name of first application process whose frontmost is true
+end tell
+if frontApp is not "Terminal" then
+    return "focus-gate-miss (front app " & frontApp & " is not Terminal; tty {tty} not delivered)"
+end if
+tell application "Terminal"
+    set winCount to count of windows
+    repeat with i from 1 to winCount
+        set w to window i
+        repeat with t in tabs of w
+            try
+                if (tty of t) is "{tty}" then
+                    set selected tab of w to t
+                    set frontmost of w to true
+                    delay 0.15
+                    tell application "System Events"
+                        tell process "Terminal"
+                            keystroke "{text}"
+                            delay 0.3
+                            key code 36
+                        end tell
+                    end tell
+                    delay 0.3
+                    return "ok"
+                end if
+            end try
+        end repeat
+    end repeat
+end tell
+return "no claude window found for tty {tty}""#,
+        tty = safe_tty,
+        text = escaped_text
+    )
+}
+
 /// Seam for osascript execution. `RealOsaRunner` shells out; tests use a fake.
 pub trait OsaRunner {
     fn run(&self, script: &str) -> io::Result<Output>;
@@ -175,6 +237,40 @@ pub fn inject<R: OsaRunner, W: io::Write>(
     }
 }
 
+/// #3125: inject `text` into the Terminal tab identified by `tty` (the routing
+/// key resolved upstream from the session registry). dry_run writes a DRY-RUN
+/// line naming the tty and returns Ok without invoking the runner. Mirrors
+/// `inject`'s ok/err parse. This is the additive tty path — the legacy
+/// `inject` (name-match) remains the default; callers opt in via `--tty`.
+pub fn inject_by_tty<R: OsaRunner, W: io::Write>(
+    runner: &R,
+    writer: &mut W,
+    tty: &str,
+    text: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    let escaped = escape_for_applescript(text);
+
+    if dry_run {
+        writeln!(writer, "DRY-RUN inject-by-tty tty={} escaped={}", tty, escaped)
+            .map_err(|e| format!("write failed: {}", e))?;
+        return Ok(());
+    }
+
+    let script = build_inject_by_tty_script(tty, &escaped);
+    let output = runner
+        .run(&script)
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
+        Ok(())
+    } else {
+        Err(format!("{} stderr: {}", result, stderr))
+    }
+}
+
 /// Outcome of `dispatch` — main.rs maps this to ExitCode + stdout/stderr.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Dispatch {
@@ -199,6 +295,17 @@ pub fn dispatch<R: OsaRunner, W: io::Write>(
     if args.len() == 2 && args[0] == "--count-windows" {
         return match count_windows(runner, &args[1]) {
             Ok(s) => Dispatch::PrintOut(s),
+            Err(e) => Dispatch::Err(e),
+        };
+    }
+
+    // #3125: `--tty <tty> <text...>` routes by tty (exact tab match + focus
+    // gate). Additive — the legacy `<role> <text...>` form below is unchanged.
+    if args.len() >= 2 && args[0] == "--tty" {
+        let tty = &args[1];
+        let text = args[2..].join(" ");
+        return match inject_by_tty(runner, writer, tty, &text, dry_run) {
+            Ok(()) => Dispatch::Ok,
             Err(e) => Dispatch::Err(e),
         };
     }

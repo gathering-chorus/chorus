@@ -227,6 +227,12 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", lines);
     }
 
+    // #3125: register this session's {role, pid, tty, host} so nudge delivery
+    // can route by tty instead of guessing by window title. Best-effort, writes
+    // only to ~/.chorus/sessions/ (never stdout — the envelope below must stay
+    // clean). Empty registry → pulse falls back to name-match (as-is).
+    super::session_registry::register(role);
+
     // #2311 rescope: emit Claude Code SessionStart hookSpecificOutput JSON.
     // The harness reads `hookSpecificOutput.additionalContext` and appends it
     // to the model's system view — no "please read /tmp/session-start-<role>.md"
@@ -251,6 +257,11 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
     }
     let role_dir = state_paths::role_dir(role).unwrap();
     let role_path = format!("{}/{}", repo_root(), role_dir);
+
+    // #3125: drop this session's nudge-routing registration (AC2 tear-down).
+    // Liveness already prevents a dead session being resolved; this keeps the
+    // registry tidy.
+    super::session_registry::deregister(role);
 
     let _ = chorus_log::run(&["protocol.close.started".to_string(), role.to_string()]);
 
