@@ -136,28 +136,28 @@ export class DeliveryWorker {
       // #2765 — trace_id propagated to every spine event in lifecycle
       const traceFields = row.trace_id ? { trace_id: row.trace_id } : {};
 
-      // #3125 AC6/AC4: hand off to the inbox/fold instead of pushing. Two
-      // triggers:
-      //  - result.deferred — VS-Code-hosted target (runInject declined; a
-      //    keystroke would leak into the focused app).
-      //  - focus-gate-miss — chorus-inject's tty path refused to type because
-      //    Terminal wasn't frontmost (the target's window wasn't focused).
-      //    Recoverable, NOT a failure — failing would drop it from the fold.
-      // Emit nudge.deferred — deliberately NOT nudge.surfaced (it wasn't
-      // pushed) and NOT nudge.surface.failed (the fold subtracts surface.failed,
-      // which would drop it). The spine fold (emitted − surfaced −
-      // surface.failed) thus keeps it pending and the receiver's
-      // UserPromptSubmit drain injects it inline. markDelivered makes the
-      // messages.db row terminal so it isn't re-scanned forever.
-      const focusDeferred = (result.stderr || '').includes('focus-gate-miss');
-      if (result.deferred || focusDeferred) {
+      // #3125 AC6/AC4: hand off to the inbox/fold instead of pushing for a
+      // VS-Code-hosted target (runInject declined — the session isn't a
+      // Terminal tab osascript can address). Recoverable, NOT a failure —
+      // failing would drop it from the fold. Emit nudge.deferred — deliberately
+      // NOT nudge.surfaced (it wasn't pushed) and NOT nudge.surface.failed (the
+      // fold subtracts surface.failed, which would drop it). The spine fold
+      // (emitted − surfaced − surface.failed) thus keeps it pending and the
+      // receiver's UserPromptSubmit drain injects it inline. markDelivered makes
+      // the messages.db row terminal so it isn't re-scanned forever.
+      //
+      // #3128: the focus-gate-miss deferral is GONE. chorus-inject no longer
+      // refuses on frontmost-app — it ALWAYS WAKES (activates Terminal on a tty
+      // match), so a focus-gate-miss stderr can no longer occur. Nudges deliver,
+      // they don't defer behind a focus check.
+      if (result.deferred) {
         await this.emitSpine('nudge.deferred', {
           ...traceFields,
           id: row.id,
           from: row.from,
           to: row.to,
           attempt,
-          reason: result.deferReason || (focusDeferred ? 'focus-gate-miss' : 'inbox'),
+          reason: result.deferReason || 'inbox',
         });
         this.store.markDelivered(row.id);
         return;

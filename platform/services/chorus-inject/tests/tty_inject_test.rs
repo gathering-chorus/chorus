@@ -3,9 +3,12 @@
 //!   - stale same-named shell tab ("wren — -zsh") false-matching the role
 //!   - the focus-leak: a keystroke landing in whatever app is FOCUSED rather
 //!     than the addressed window (silas's nudge appearing in wren's VS Code pane)
-//! The script matches the Terminal TAB whose `tty of t` equals the target and
-//! gates delivery on Terminal being the frontmost app — so a nudge can never
-//! leak into a different focused application.
+//!
+//! The script matches the Terminal TAB whose `tty of t` equals the target.
+//! #3128 — ALWAYS WAKE: the old focus-gate (refuse when Terminal isn't
+//! frontmost) is removed. It didn't protect Jeff's focus, it silently dropped
+//! the nudge. Instead the script `activate`s Terminal on a tty match so the
+//! keystroke reliably lands in the matched tab (overrides #2277 by decision).
 
 use chorus_inject::{build_inject_by_tty_script, dispatch, Dispatch, OsaRunner};
 use std::io;
@@ -21,12 +24,13 @@ fn script_matches_tab_by_tty_not_title() {
 }
 
 #[test]
-fn script_has_focus_gate_against_leak() {
+fn script_always_wakes_no_focus_gate() {
     let s = build_inject_by_tty_script("/dev/ttys004", "hi");
-    // Gate on the frontmost app being Terminal — prevents the keystroke
-    // leaking into a different focused app (the observed wren-pane misroute).
-    assert!(s.contains("frontmost is true"), "must read the frontmost app");
-    assert!(s.contains("focus-gate-miss"), "must refuse (not type) when not frontmost");
+    // #3128 — always wake: no frontmost-app gate, no focus-gate-miss refusal.
+    assert!(!s.contains("focus-gate-miss"), "must NOT refuse on focus; always wake");
+    assert!(!s.contains("frontApp"), "frontmost-app gate must be gone");
+    // Instead, activate Terminal on a tty match so the keystroke lands.
+    assert!(s.contains("activate"), "must activate Terminal to land the keystroke");
 }
 
 #[test]
@@ -41,8 +45,9 @@ fn script_keystrokes_and_submits() {
     let s = build_inject_by_tty_script("/dev/ttys004", "payload");
     assert!(s.contains(r#"keystroke "payload""#));
     assert!(s.contains("key code 36"), "must submit with Return");
-    // #2277 invariant preserved: no app-level activate (focus-steal).
-    assert!(!s.contains("activate"));
+    // #3128 — always wake: app-level `activate` is now REQUIRED so the
+    // keystroke lands in the matched tab (overrides the #2277 no-steal rule).
+    assert!(s.contains("activate"));
 }
 
 // --- dispatch: the --tty arg form routes to the tty path; name-match unchanged ---

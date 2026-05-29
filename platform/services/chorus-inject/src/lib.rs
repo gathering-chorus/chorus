@@ -127,22 +127,18 @@ end tell"#,
 /// non-Terminal host is invisible, and a stale same-named shell tab
 /// ("wren — -zsh") false-matches. The tty is an exact, unique key per session.
 ///
-/// Focus-gate: if Terminal is not the frontmost app, return "focus-gate-miss"
-/// WITHOUT typing. System Events `keystroke` always lands in the FOCUSED app,
-/// so typing while another app (e.g. VS Code) is focused leaks the nudge into
-/// the wrong window — the observed wren-pane misroute. Refusing instead of
-/// leaking leaves the nudge for the inbox/fold to deliver. #2277 invariant
-/// preserved: no app-level `activate` (no focus-steal from Jeff).
+/// #3128: ALWAYS WAKE. No focus-gate. `System Events keystroke` lands in the
+/// FOCUSED app, so to deliver into the matched tab we must make Terminal the
+/// frontmost app — we `activate` it on a tty match before typing. This
+/// OVERRIDES the #2277 no-focus-steal invariant by explicit Jeff decision:
+/// the old gate (refuse-when-not-frontmost) didn't protect focus, it silently
+/// dropped the nudge, leaving Jeff to chase roles by hand. A nudge that lands
+/// and costs a focus-blip beats a nudge that dies. `activate` fires only inside
+/// the tty match, so a no-match scan never steals focus.
 pub fn build_inject_by_tty_script(tty: &str, escaped_text: &str) -> String {
     let safe_tty = tty.replace('"', "");
     format!(
-        r#"tell application "System Events"
-    set frontApp to name of first application process whose frontmost is true
-end tell
-if frontApp is not "Terminal" then
-    return "focus-gate-miss (front app " & frontApp & " is not Terminal; tty {tty} not delivered)"
-end if
-tell application "Terminal"
+        r#"tell application "Terminal"
     set winCount to count of windows
     repeat with i from 1 to winCount
         set w to window i
@@ -150,6 +146,7 @@ tell application "Terminal"
             try
                 if (tty of t) is "{tty}" then
                     set selected tab of w to t
+                    activate
                     set frontmost of w to true
                     delay 0.15
                     tell application "System Events"
@@ -480,5 +477,49 @@ mod inject_script_tests {
     fn escaped_text_embeds_verbatim() {
         let s = build("wren", r#"hi \"quoted\""#, "wren");
         assert!(s.contains(r#"keystroke "hi \"quoted\"""#));
+    }
+}
+
+#[cfg(test)]
+mod inject_by_tty_script_tests {
+    use super::build_inject_by_tty_script as build;
+
+    #[test]
+    fn no_focus_gate() {
+        // #3128 — always wake: the focus-gate refusal is gone. The script must
+        // NOT bail out when another app is frontmost, and must not emit the
+        // focus-gate-miss sentinel.
+        let s = build("ttys003", "hello");
+        assert!(!s.contains("focus-gate-miss"));
+        assert!(!s.contains("frontApp"));
+    }
+
+    #[test]
+    fn activates_terminal_to_land_keystroke() {
+        // #3128 — keystroke lands in the frontmost app, so we must activate
+        // Terminal on a tty match to deliver reliably (overrides #2277 by
+        // explicit decision).
+        let s = build("ttys003", "hello");
+        assert!(s.contains("activate"));
+    }
+
+    #[test]
+    fn still_routes_by_exact_tty() {
+        let s = build("ttys042", "msg");
+        assert!(s.contains(r#"(tty of t) is "ttys042""#));
+        assert!(s.contains("no claude window found for tty ttys042"));
+    }
+
+    #[test]
+    fn uses_keystroke_and_key_code_36() {
+        let s = build("ttys003", "hi");
+        assert!(s.contains("keystroke"));
+        assert!(s.contains("key code 36"));
+    }
+
+    #[test]
+    fn returns_ok_on_delivery() {
+        let s = build("ttys003", "msg");
+        assert!(s.contains(r#"return "ok""#));
     }
 }

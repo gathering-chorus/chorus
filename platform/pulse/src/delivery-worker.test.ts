@@ -289,19 +289,35 @@ describe('DeliveryWorker VS-Code deferral (#3125 AC6)', () => {
   });
 });
 
-describe('DeliveryWorker focus-gate-miss defers, never fails (#3125 AC4)', () => {
-  test('focus-gate-miss → nudge.deferred (stays in fold), no retry, no surface.failed', async () => {
-    expect(DeliveryWorker.prototype.enqueue).toBeDefined();
-    // silas is in Terminal but Jeff is focused in VS Code, so the keystroke
-    // would land in the wrong app. chorus-inject refuses with focus-gate-miss.
-    // That must NOT be a failure (which would drop it from the fold) — it
-    // defers so silas's UserPromptSubmit drain delivers it inline.
+describe('DeliveryWorker #3128 — always wake: focus-gate-miss no longer defers', () => {
+  test('a focus-gate-miss stderr is NOT special-cased as a deferral', async () => {
+    // #3128 reverses #3125 AC4: chorus-inject no longer refuses on frontmost-app
+    // (it always wakes by activating Terminal), so focus-gate-miss can't occur.
+    // Even if such a stderr appeared, the worker must NOT route it to the
+    // nudge.deferred/fold path — that focus-string match is gone.
+    const id = store.sendNudge('silas', 'silas', 'hi');
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => ({ rc: 1, stderr: 'focus-gate-miss (legacy stderr; should no longer defer)' }),
+      async (event, fields) => { events.push({ event, fields }); },
+      [10, 20],
+      async () => { /* no real sleep */ },
+    );
+    await worker.enqueue(rowFor(id, 'silas'));
+    const deferred = events.filter(e => e.event === 'nudge.deferred');
+    expect(deferred.every(e => e.fields.reason !== 'focus-gate-miss')).toBe(true);
+  });
+
+  test('a genuine VS-Code-host deferral (result.deferred) still defers to the fold', async () => {
+    // The host-mismatch deferral path remains: when runInject declines because
+    // the target isn't an addressable Terminal tab, it defers with reason inbox.
     const id = store.sendNudge('silas', 'silas', 'hi');
     let calls = 0;
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
     const worker = new DeliveryWorker(
       store,
-      async () => { calls++; return { rc: 1, stderr: 'focus-gate-miss (front app Code is not Terminal; tty /dev/ttys001 not delivered)' }; },
+      async () => { calls++; return { rc: 0, stderr: '', deferred: true, deferReason: 'inbox' }; },
       async (event, fields) => { events.push({ event, fields }); },
       [10, 20],
       async () => { /* no real sleep */ },
@@ -311,8 +327,7 @@ describe('DeliveryWorker focus-gate-miss defers, never fails (#3125 AC4)', () =>
     const types = events.map(e => e.event);
     expect(types).toContain('nudge.deferred');
     expect(types).not.toContain('nudge.surface.failed');
-    expect(types).not.toContain('nudge.surfaced');
-    expect(events[0].fields.reason).toBe('focus-gate-miss');
+    expect(events[0].fields.reason).toBe('inbox');
   });
 });
 
