@@ -88,12 +88,14 @@ pub fn run(args: &[String]) -> ExitCode {
         scan_briefs_pending(std::path::Path::new(&briefs_dir_c))
     });
 
-    // Memory context from Chorus API
-    let board_ts_c = board_ts.clone();
-    let role_s = role.to_string();
-    let memory_ctx = std::thread::spawn(move || {
-        fetch_memory_context(&board_ts_c, &role_s)
-    });
+    // #3129: the board-keyed memory search (fetch_memory_context) was removed,
+    // not hardened. It queried `q=<wip-card-domain>` on every session-start AND
+    // every 5 min via the context-cache-5min cron — the broadest term over the
+    // largest corpus (q=chorus ≈ 5.4s), which blew its own timeout and drove a
+    // ~33/hr `session.context.error — failed: memory` storm fleet-wide while
+    // returning a domain-wide blob nobody asked for. Memory relevance is the
+    // per-prompt path's job (hooks::context_inject scans memory on the actual
+    // prompt keywords); this boot/cron builder has no prompt and shouldn't guess.
 
     // Wait for threads — track failures for spine event
     let mut failed_sources: Vec<&str> = Vec::new();
@@ -109,9 +111,6 @@ pub fn run(args: &[String]) -> ExitCode {
 
     let handoff_text = handoff_check.join().unwrap_or_default();
     ok_sources.push("handoffs"); // handoffs returning empty is normal (no pending)
-
-    let memory_text = memory_ctx.join().unwrap_or_default();
-    if !memory_text.is_empty() { ok_sources.push("memory"); } else { failed_sources.push("memory"); }
 
     // Health checks — APFS disk via Finder free space (includes purgeable, matches Finder)
     let disk_pct = {
@@ -256,13 +255,9 @@ pub fn run(args: &[String]) -> ExitCode {
     out.push_str(&format!("- Activity.md: updated {} ago\n", activity_age));
     out.push_str(&format!("- CLAUDE.md: {}\n", claude_status));
 
-    // 7. Memory Context
-    if !memory_text.is_empty() {
-        out.push_str("\n## Memory Context\n");
-        let line_count = memory_text.lines().count();
-        out.push_str(&format!("Related memories for WIP cards ({} found):\n\n", line_count));
-        out.push_str(&memory_text);
-    }
+    // 7. Memory Context — REMOVED (#3129). Memory relevance is the per-prompt
+    // path's job (hooks::context_inject), keyed off Jeff's actual words. The
+    // boot/cron builder has no prompt and produced a board-keyed blob.
     out.push('\n');
 
     let _ = fs::write(&out_path, &out);
@@ -398,83 +393,9 @@ fn fetch_last_session_log(role: &str) -> (String, Vec<(String, String)>) {
     (own_commits.join("\n"), other_summaries)
 }
 
-/// Fetch memory context from Chorus API for WIP card domains
-fn fetch_memory_context(board_ts: &str, role: &str) -> String {
-    // Get WIP card IDs
-    let mine_out = Cmd::new("zsh").arg("-lc").arg(format!("{} mine {}", board_ts, role))
-        .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
-
-    let wip_ids: Vec<String> = mine_out.lines()
-        .filter(|l| l.to_lowercase().contains("[wip]"))
-        .filter_map(|l| l.split_whitespace().find(|w| w.parse::<u32>().is_ok()).map(|s| s.to_string()))
-        .take(3).collect();
-
-    if wip_ids.is_empty() {
-        return "No WIP cards — no memory context to load.".to_string();
-    }
-
-    // Get domains from WIP cards
-    let mut domains = std::collections::HashSet::new();
-    for cid in &wip_ids {
-        let info = Cmd::new("zsh").arg("-lc").arg(format!("{} view {}", board_ts, cid))
-            .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
-        for part in info.split_whitespace() {
-            if part.starts_with("domain:") {
-                domains.insert(part.replace("domain:", ""));
-            }
-        }
-    }
-
-    if domains.is_empty() { return String::new(); }
-
-    // Query Chorus API for each domain
-    let mut results = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for domain in &domains {
-        let url = format!("http://localhost:3340/api/chorus/search?q={}&limit=5", domain);
-        let resp = Cmd::new("curl").args(["-s", "--max-time", "3", &url])
-            .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
-
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
-            if let Some(arr) = v.get("results").and_then(|r| r.as_array()) {
-                for r in arr.iter().take(5) {
-                    let src = r.get("source").and_then(|s| s.as_str()).unwrap_or("");
-                    let content = r.get("content").and_then(|s| s.as_str()).unwrap_or("");
-                    let ts = r.get("timestamp").and_then(|s| s.as_str()).unwrap_or("");
-                    let key: String = content.chars().take(60).collect();
-                    if seen.contains(&key) { continue; }
-                    seen.insert(key);
-
-                    let ts_short: String = ts.chars().take(10).collect();
-                    let content_short: String = content.chars().take(120).collect();
-                    let content_clean = content_short.replace('\n', " ");
-
-                    match src {
-                        "memory" | "state" | "story" | "decision" | "brief" | "adr" | "artifact" | "spine" => {
-                            results.push(format!("  - [{}] [{}] {}", ts_short, src, content_clean));
-                        }
-                        "claude" => {
-                            let author = r.get("author").and_then(|a| a.as_str()).unwrap_or("");
-                            if author == "assistant" && content.len() > 40
-                                && !content.starts_with('<') && !content.starts_with('{')
-                                && !content.starts_with('[') && !content.starts_with('/')
-                                && !content.starts_with("bash ") && !content.starts_with("curl ")
-                            {
-                                results.push(format!("  - [{}] [session] {}", ts_short, content_clean));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    results.sort();
-    results.dedup();
-    results.truncate(10);
-    results.join("\n")
-}
+// #3129: fetch_memory_context removed — see the note in run() above. The
+// board-keyed memory search was the storm source and produced a domain-wide
+// blob; per-prompt memory relevance lives in hooks::context_inject.
 
 // #2113: filesystem-as-truth brief scanner. handoffs.log retained for audit but
 // no longer consulted — it had no "received" writer, so pending never cleared.
