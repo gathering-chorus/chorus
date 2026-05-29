@@ -8,7 +8,20 @@
     {
       "extensions": ["rs"],
       "command": ["rust-analyzer"],
-      "rootDir": "."
+      "rootDir": ".",
+      "initializationOptions": {
+        "linkedProjects": [
+          "platform/services/werk-pull/Cargo.toml",
+          "platform/services/werk-commit/Cargo.toml",
+          "platform/services/werk-push/Cargo.toml",
+          "platform/services/werk-build/Cargo.toml",
+          "platform/services/werk-deploy/Cargo.toml",
+          "platform/services/werk-accept/Cargo.toml",
+          "platform/services/werk-demo/Cargo.toml",
+          "platform/services/chorus-hooks/Cargo.toml",
+          "platform/services/chorus-inject/Cargo.toml"
+        ]
+      }
     }
   ]
 }
