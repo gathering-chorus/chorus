@@ -8,6 +8,7 @@
 import express, { Express } from 'express';
 import { MessageStore } from './store';
 import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
+import { planDelivery, resolveRoleTarget } from './session-registry';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
 import { appendFile } from 'fs/promises';
@@ -193,7 +194,18 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   const chorusLog = process.env.CHORUS_LOG || path.join(os.homedir(), '.chorus', 'chorus.log');
 
   const runInject: RunInject = (to, content) => new Promise(resolve => {
-    const proc = spawn(injectBin, [to, content], {
+    // #3125: route by tty when the target role has a LIVE registration.
+    // planDelivery returns the legacy `[role, content]` name-match args when
+    // nothing is registered, so this is inert (= today's behavior) until the
+    // SessionStart registry is populated — as-is delivery can never strand.
+    const plan = planDelivery(resolveRoleTarget(to), to, content);
+    if (plan.kind === 'defer') {
+      // VS-Code-hosted target: osascript would leak into the focused app.
+      // Hand to the inbox/fold via the worker's deferred path — no keystroke.
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: plan.reason });
+      return;
+    }
+    const proc = spawn(injectBin, plan.args, {
       stdio: ['ignore', 'ignore', 'pipe'],
       // #2804 — _NUDGE_PULSE_INTERNAL marks this as the canonical caller;
       // chorus-inject rejects shell-direct calls that lack this env.

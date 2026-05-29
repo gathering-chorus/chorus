@@ -259,6 +259,63 @@ describe('DeliveryWorker scanAndRequeue (AC8)', () => {
   });
 });
 
+describe('DeliveryWorker VS-Code deferral (#3125 AC6)', () => {
+  test('deferred result → nudge.deferred (not surfaced/failed), terminal, no retry', async () => {
+    expect(DeliveryWorker.prototype.enqueue).toBeDefined();
+    // wren is VS-Code-hosted: runInject declines to osascript-push (would leak
+    // into the focused app) and signals deferral. The nudge must NOT be marked
+    // surfaced (it wasn't pushed) nor surface.failed (that would drop it from
+    // the fold). nudge.deferred keeps it pending so the UserPromptSubmit drain
+    // delivers it inline.
+    const id = store.sendNudge('silas', 'wren', 'hi');
+    let injectCalls = 0;
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => { injectCalls++; return { rc: 0, stderr: '', deferred: true, deferReason: 'vscode-inbox' }; },
+      async (event, fields) => { events.push({ event, fields }); },
+      [10, 20],
+      async () => { /* no real sleep */ },
+    );
+    await worker.enqueue(rowFor(id, 'wren'));
+    expect(injectCalls).toBe(1); // no retry churn
+    const types = events.map(e => e.event);
+    expect(types).toContain('nudge.deferred');
+    expect(types).not.toContain('nudge.surfaced');
+    expect(types).not.toContain('nudge.surface.failed');
+    expect(events[0].fields.reason).toBe('vscode-inbox');
+    // row reaches terminal state so it isn't re-scanned forever
+    expect(store.getDeliveryRecord(id).delivery_status).toBe('delivered');
+  });
+});
+
+describe('DeliveryWorker focus-gate-miss defers, never fails (#3125 AC4)', () => {
+  test('focus-gate-miss → nudge.deferred (stays in fold), no retry, no surface.failed', async () => {
+    expect(DeliveryWorker.prototype.enqueue).toBeDefined();
+    // silas is in Terminal but Jeff is focused in VS Code, so the keystroke
+    // would land in the wrong app. chorus-inject refuses with focus-gate-miss.
+    // That must NOT be a failure (which would drop it from the fold) — it
+    // defers so silas's UserPromptSubmit drain delivers it inline.
+    const id = store.sendNudge('silas', 'silas', 'hi');
+    let calls = 0;
+    const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => { calls++; return { rc: 1, stderr: 'focus-gate-miss (front app Code is not Terminal; tty /dev/ttys001 not delivered)' }; },
+      async (event, fields) => { events.push({ event, fields }); },
+      [10, 20],
+      async () => { /* no real sleep */ },
+    );
+    await worker.enqueue(rowFor(id, 'silas'));
+    expect(calls).toBe(1); // no retry churn
+    const types = events.map(e => e.event);
+    expect(types).toContain('nudge.deferred');
+    expect(types).not.toContain('nudge.surface.failed');
+    expect(types).not.toContain('nudge.surfaced');
+    expect(events[0].fields.reason).toBe('focus-gate-miss');
+  });
+});
+
 describe('DEFAULT_BACKOFF_MS exported', () => {
   test('matches the AC2 schedule (5 attempts: 250ms→5s)', () => {
     expect(DEFAULT_BACKOFF_MS.length).toBe(5);

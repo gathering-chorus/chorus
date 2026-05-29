@@ -27,6 +27,17 @@ CCLSP_CONFIG="$RUNTIME_HOME/cclsp.json"
 # at a fixed sha). Resolve it; fall back to the conventional uv tool bin path.
 ASTGREP="$(command -v ast-grep-server || echo "$HOME/.local/bin/ast-grep-server")"
 
+# cclsp MCP server (#3125): cclsp is a Node script (shebang `#!/usr/bin/env
+# node`), so a bare `command: "cclsp"` needs BOTH cclsp AND node resolvable on
+# PATH. A VS-Code-hosted session doesn't carry nvm's PATH, so both vanish and
+# cclsp silently fails to load (Wren's LSP block, 2026-05-29). Bake both
+# absolute paths at gen time — same approach as ASTGREP. Resolve via PATH (gen
+# normally runs in an nvm-active shell); fall back to the current pinned nvm
+# node version if gen runs PATH-limited. (Fallback is coupled to the nvm node
+# version — `command -v` is the primary path and self-heals on node upgrades.)
+NODE_BIN="$(command -v node || echo "$HOME/.nvm/versions/node/v20.20.2/bin/node")"
+CCLSP_BIN="$(command -v cclsp || echo "$HOME/.nvm/versions/node/v20.20.2/bin/cclsp")"
+
 ROLES=(wren silas kade)
 
 for role in "${ROLES[@]}"; do
@@ -42,7 +53,8 @@ for role in "${ROLES[@]}"; do
       "headers": { "X-Chorus-Role": "$role" }
     },
     "cclsp": {
-      "command": "cclsp",
+      "command": "$NODE_BIN",
+      "args": ["$CCLSP_BIN"],
       "env": { "CCLSP_CONFIG_PATH": "$CCLSP_CONFIG" }
     },
     "ast-grep": {
