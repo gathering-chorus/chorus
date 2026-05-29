@@ -1,0 +1,141 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Chorus trace reader</title>
+<style>
+ body{font:13px -apple-system,Segoe UI,sans-serif;margin:0;background:#fafafa;color:#202124}
+ header{padding:12px 18px;background:#fff;border-bottom:1px solid #e0e0e0;position:sticky;top:0;z-index:2}
+ h1{font-size:15px;margin:0 0 6px}
+ .sub{font-size:12px;color:#9aa0a6;font-weight:400}
+ .sum{font-size:12px;color:#5f6368;margin:4px 0 8px} .sum b{color:#202124}
+ .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+ input[type=text],input[type=number]{padding:5px 9px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+ #q{width:230px}
+ button{padding:5px 12px;border:1px solid #1a73e8;background:#1a73e8;color:#fff;border-radius:6px;font-size:13px;cursor:pointer}
+ .chip-f{font-size:12px;color:#3c4043;cursor:pointer;user-select:none}
+ .anomaly{margin:10px 18px 0;padding:8px 12px;background:#fef7e0;border:1px solid #f0d178;border-radius:6px;font-size:12px;color:#7a5b00}
+ .err-msg{margin:10px 18px;padding:10px 12px;background:#fce8e6;border:1px solid #f0b4ae;border-radius:6px;font-size:13px;color:#a50e0e}
+ .stream{padding:8px 10px}
+ .row{display:flex;align-items:baseline;gap:10px;padding:3px 8px;border-left:3px solid transparent;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.5;cursor:pointer}
+ .row:hover{background:#f1f3f4} .row.nt{margin-top:6px}
+ .row.err{background:#fce8e6} .row.err .ev{color:#c5221f;font-weight:600} .row.err .msg{color:#a50e0e}
+ .tw{color:#bdc1c6;width:12px;flex:none}
+ .t{color:#80868b;width:62px;flex:none}
+ .chip{color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-family:-apple-system,sans-serif;flex:none;min-width:54px;text-align:center}
+ .ev{flex:none;min-width:240px} .role{color:#9aa0a6;width:46px;flex:none}
+ .msg{color:#5f6368;flex:1;white-space:pre-wrap;word-break:break-word}
+ pre.detail{margin:0 8px 6px 34px;padding:10px 12px;background:#202124;color:#e8eaed;border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-word;overflow:auto}
+ mark{background:#fff176}
+</style></head><body>
+<header>
+ <h1>Chorus trace reader <span class="sub">— logs + errors interleaved, by card or trace · same query agents see</span></h1>
+ <div class="sum" id="sum">—</div>
+ <div class="controls">
+  card # <input type="number" id="card" placeholder="3119">
+  or trace <input type="text" id="trace" placeholder="trace_id" style="width:160px">
+  <button id="load">Load</button>
+  <span style="border-left:1px solid #e0e0e0;height:18px"></span>
+  <input type="text" id="q" placeholder="search events / errors / payload...">
+  <span style="font-size:12px;color:#80868b">workflow:</span> <span id="filters"></span>
+ </div>
+</header>
+<div id="banner"></div>
+<div class="stream" id="stream"><div style="padding:20px;color:#80868b">Enter a card # or trace and Load.</div></div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (''+s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const hl = (s,q) => { s = esc(s); if(!q) return s; return s.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'),'<mark>$1</mark>'); };
+const bostonTime = ts => { try { return new Date(ts).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour12:false}); } catch(e){ return ''; } };
+const isErr = e => { const ev=e.event||''; return ev.endsWith('.refused')||ev.endsWith('.failed')||ev.endsWith('.error')||ev==='mcp.tool.error'||e.level==='error'; };
+const fullMsg = e => {
+  const p = e.payload || {};
+  if (isErr(e)) return e.error_message || p.detail || p.error_message || p.error || p.stack || p.reason || e.reason || p.step || '';
+  const raw = p.reason || p.detail || e.reason || p.step || '';
+  return (''+raw).replace(/\s+/g,' ').slice(0,160);
+};
+const NOISE = new Set(['tool_call','observer.digest','search.query.executed','nudge.requested','nudge.emitted','mcp.cards.set.invoked','mcp.cards.set.delivered','mcp.cards.add.invoked','mcp.cards.add.delivered']);
+let DATA = [];
+function wfLabel(trace, all){
+  const names = all.filter(x=>x.trace===trace).map(x=>x.event);
+  const rules = [['chorus_pull_card','pull'],['chorus_acp','acp'],['chorus_commit','commit'],['chorus_cards_done','done'],['demo.','demo'],['env.','env'],['build.','build'],['ac.ticked','card'],['card.item','card'],['card.pulled','card'],['card.blast','card'],['card.werk','card'],['card.quality','quality'],['card.branch','acp'],['search','search']];
+  for(const [pre,lab] of rules) if(names.some(n=>n&&n.startsWith(pre))) return lab;
+  return 'other';
+}
+function color(trace){ if(!trace) return '#9aa0a6'; let h=0; for(const c of trace) h=(h*31+c.charCodeAt(0))%360; return `hsl(${h},55%,42%)`; }
+function normalize(events){
+  const seen=new Set(); const out=[];
+  for(const e of events){
+    const ev=e.event||''; if(!ev) continue;
+    const tr=(e.trace_id||'').slice(0,8)||'-';
+    const msg=fullMsg(e);
+    const key=ev+'|'+msg+'|'+(e.trace_id||'');
+    if(seen.has(key)) continue; seen.add(key);
+    out.push({ts:e.ts,event:ev,role:e.role||'',trace:tr,full_trace:e.trace_id||'',msg,err:isErr(e),pl:e.payload||{},noise:NOISE.has(ev)});
+  }
+  out.sort((a,b)=> (a.ts<b.ts?-1:a.ts>b.ts?1:0)); // oldest -> newest
+  for(const x of out){ x.wf=wfLabel(x.trace,out); x.color=color(x.full_trace); }
+  return out;
+}
+async function load(){
+  const card=$('#card').value.trim(), trace=$('#trace').value.trim();
+  // Single source = logsForCard / logsForTrace. Prefer the purpose-named /logs/*
+  // routes; fall back to /pain/card (same logsForCard) so the page works even
+  // before the /logs/* routes deploy. Both hit the identical query.
+  const urls = trace ? [`/api/chorus/logs/trace/${encodeURIComponent(trace)}`]
+             : card ? [`/api/chorus/logs/card/${encodeURIComponent(card)}`, `/api/chorus/pain/card/${encodeURIComponent(card)}`]
+             : null;
+  if(!urls){ $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Enter a card # or trace.</div>'; return; }
+  $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Loading…</div>';
+  let j=null, lastErr='';
+  for(const url of urls){
+    try { const r=await fetch(url); if(r.ok){ j=await r.json(); break; } lastErr='HTTP '+r.status; }
+    catch(e){ lastErr=e.message; }
+  }
+  if(!j){ $('#stream').innerHTML='<div class="err-msg">Fetch failed: '+esc(lastErr)+'</div>'; return; }
+  if(!j.ok){ $('#stream').innerHTML='<div class="err-msg">Query refused: '+esc(j.reason||'unknown')+(j.detail?' — '+esc(j.detail):'')+'</div>'; return; }
+  DATA = normalize(j.events||[]);
+  // workflow filter chips
+  const wfs=[...new Set(DATA.filter(x=>!x.noise).map(x=>x.wf))].sort();
+  $('#filters').innerHTML = wfs.map(w=>`<label class="chip-f"><input type="checkbox" value="${w}" checked> ${w}</label>`).join(' ');
+  $('#filters').querySelectorAll('input').forEach(c=>c.addEventListener('change',render));
+  const traces=new Set(DATA.map(x=>x.trace)), singletons=[...traces].filter(t=>DATA.filter(x=>x.trace===t).length===1).length, errs=DATA.filter(x=>x.err).length;
+  $('#sum').innerHTML=`<b>${DATA.length}</b> events · <b>${traces.size}</b> traces · <b>${errs}</b> errors · oldest→newest · click a row for full payload`;
+  $('#banner').innerHTML = singletons>3 ? `<div class="anomaly">⚠ ${singletons} of ${traces.size} traces are single-event — likely a trace-generation anomaly (see #3121). Rendered truthfully, not coalesced.</div>` : '';
+  render();
+}
+function render(){
+  const q=$('#q').value.trim();
+  const on=new Set([...$('#filters').querySelectorAll('input:checked')].map(c=>c.value));
+  let last=null,out='';
+  DATA.forEach((e,i)=>{
+    if(e.noise) return;
+    if(!on.has(e.wf)) return;
+    const hay=(e.event+' '+e.msg+' '+e.role+' '+JSON.stringify(e.pl)).toLowerCase();
+    if(q && !hay.includes(q.toLowerCase())) return;
+    const nt=e.trace!==last?' nt':''; last=e.trace;
+    out+=`<div class="row${e.err?' err':''}${nt}" data-i="${i}" style="border-left-color:${e.color}">`+
+      `<span class="tw">▸</span><span class="t">${bostonTime(e.ts)}</span>`+
+      `<span class="chip" style="background:${e.color}">${esc(e.wf)}</span>`+
+      `<span class="ev">${hl(e.event,q)}</span>`+
+      `<span class="role">${esc(e.role)}</span>`+
+      `<span class="msg">${hl(e.msg,q)}</span></div>`;
+  });
+  $('#stream').innerHTML = out || '<div style="padding:20px;color:#80868b">no events match</div>';
+}
+$('#stream').addEventListener('click',ev=>{
+  const row=ev.target.closest('.row'); if(!row) return;
+  const nx=row.nextElementSibling;
+  if(nx && nx.classList.contains('detail')){ nx.remove(); row.querySelector('.tw').textContent='▸'; return; }
+  const e=DATA[+row.dataset.i];
+  const pre=document.createElement('pre'); pre.className='detail';
+  pre.textContent=JSON.stringify({event:e.event,ts:e.ts,role:e.role,trace_id:e.full_trace,payload:e.pl},null,2);
+  row.after(pre); row.querySelector('.tw').textContent='▾';
+});
+$('#load').addEventListener('click',load);
+$('#q').addEventListener('input',render);
+$('#card').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
+$('#trace').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
+// deep-link: ?card= or ?trace=
+const p=new URLSearchParams(location.search);
+if(p.get('card')){ $('#card').value=p.get('card'); load(); }
+else if(p.get('trace')){ $('#trace').value=p.get('trace'); load(); }
+</script></body></html>
