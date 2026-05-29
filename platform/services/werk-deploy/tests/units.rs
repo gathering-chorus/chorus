@@ -61,14 +61,29 @@ fn target_class_resolves_werk_cli_verbs_to_cli_verb() {
 }
 
 #[test]
+fn target_class_resolves_chorus_sdk_as_shared_lib() {
+    // #3126 — chorus-sdk is the shared-library path: deploy its dist to canonical,
+    // then cascade-redeploy + verify graph-discovered consumers. Carries the lib's
+    // dist dir so the deploy step doesn't hardcode it.
+    match target_class("chorus-sdk").unwrap() {
+        TargetClass::SharedLib { name, lib_dist_rel } => {
+            assert_eq!(name, "chorus-sdk");
+            assert_eq!(lib_dist_rel, "platform/chorus-sdk/dist");
+        }
+        other => panic!("expected SharedLib, got {:?}", other),
+    }
+}
+
+#[test]
 fn target_class_refuses_unknown_names_with_actionable_message() {
     // Unknown names surface; don't silent-mis-deploy. The error names the three
     // possible kinds so the next-card path is obvious.
     let err = target_class("chorus-future-thing").unwrap_err();
     assert!(err.contains("unknown name"), "error must name 'unknown'; got {}", err);
     assert!(
-        err.contains("Rust service") && err.contains("TS service") && err.contains("CLI verb"),
-        "error must enumerate the three kinds; got {}",
+        err.contains("Rust service") && err.contains("TS service")
+            && err.contains("CLI verb") && err.contains("shared lib"),
+        "error must enumerate the kinds; got {}",
         err
     );
 }

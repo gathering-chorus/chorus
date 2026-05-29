@@ -1,7 +1,7 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
-    branch_name, crate_for_path, discover_build_units, extract_cdhash, jsonl_line, resolve_trace,
-    ts_service_for_path, BuildUnit,
+    branch_name, crate_for_path, discover_build_units, extract_cdhash, extract_file_deps,
+    jsonl_line, pkg_name, resolve_trace, shared_lib_for_path, ts_service_for_path, BuildUnit,
 };
 
 #[test]
@@ -30,6 +30,59 @@ fn ts_service_for_path_maps_api_paths_to_chorus_api() {
     // docs/state are not TS services.
     assert_eq!(ts_service_for_path("roles/silas/adr/ADR-032.md"), None);
     assert_eq!(ts_service_for_path("platform/api"), None); // needs trailing slash to be inside the dir
+}
+
+#[test]
+fn shared_lib_for_path_maps_chorus_sdk_paths() {
+    // #3126 — platform/chorus-sdk/* is the shared library chorus-sdk. A change to
+    // it MUST yield a build unit (the silent-stale-prod gap #3092 left: it matched
+    // no class → zero units → acp shipped nothing → consumers ran stale).
+    assert_eq!(shared_lib_for_path("platform/chorus-sdk/src/emit.ts"), Some("chorus-sdk".to_string()));
+    assert_eq!(shared_lib_for_path("platform/chorus-sdk/package.json"), Some("chorus-sdk".to_string()));
+    // a service / api / docs path is NOT the shared lib.
+    assert_eq!(shared_lib_for_path("platform/services/werk-build/src/lib.rs"), None);
+    assert_eq!(shared_lib_for_path("platform/api/src/server.ts"), None);
+    assert_eq!(shared_lib_for_path("platform/chorus-sdk"), None); // needs trailing slash to be inside
+}
+
+#[test]
+fn discover_build_units_recognizes_shared_lib_never_zero() {
+    // The crux of #3126: a chorus-sdk-only diff used to yield ZERO units. It must
+    // now yield the SharedLib unit so the cascade fires and prod can't run stale.
+    let diff = ["platform/chorus-sdk/src/emit.ts", "platform/chorus-sdk/src/index.ts"];
+    let units = discover_build_units(diff.iter());
+    assert_eq!(units, vec![BuildUnit::SharedLib("chorus-sdk".to_string())]);
+    assert!(!units.is_empty(), "a shared-lib change must NEVER yield zero build units (#3126)");
+}
+
+#[test]
+fn build_unit_name_covers_shared_lib() {
+    assert_eq!(BuildUnit::SharedLib("chorus-sdk".to_string()).name(), "chorus-sdk");
+}
+
+#[test]
+fn extract_file_deps_pulls_name_and_file_target() {
+    // #3126 — consumer discovery is graph-driven: a consumer declares the lib as a
+    // `file:` dependency. extract_file_deps yields (dep_name, file_target) pairs so
+    // the bundler set is DISCOVERED, never a hardcoded list that rots.
+    let pkg = r#"{
+        "name": "cards",
+        "dependencies": { "chorus-sdk": "file:../../../platform/chorus-sdk", "express": "^4.0.0" }
+    }"#;
+    let deps = extract_file_deps(pkg);
+    assert_eq!(deps, vec![("chorus-sdk".to_string(), "../../../platform/chorus-sdk".to_string())]);
+}
+
+#[test]
+fn extract_file_deps_empty_when_no_file_deps() {
+    let pkg = r#"{ "name": "x", "dependencies": { "express": "^4.0.0" } }"#;
+    assert!(extract_file_deps(pkg).is_empty());
+}
+
+#[test]
+fn pkg_name_reads_name_field() {
+    assert_eq!(pkg_name(r#"{ "name": "cards", "version": "1.0.0" }"#), Some("cards".to_string()));
+    assert_eq!(pkg_name(r#"{ "version": "1.0.0" }"#), None);
 }
 
 #[test]

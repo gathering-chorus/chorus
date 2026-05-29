@@ -150,6 +150,11 @@ pub enum TargetClass {
     TsService { svc: String, dist_dir_rel: String, smoke_url: String },
     /// Rust binary, no LaunchAgent. werk-* CLI verbs.
     CliVerb { bin: String },
+    /// #3126 — Shared TypeScript library (chorus-sdk). No LaunchAgent, no kickstart.
+    /// Deploy: copy the lib's dist to canonical, then cascade-redeploy + verify every
+    /// graph-discovered consumer resolves the just-built lib identity. `lib_dist_rel`
+    /// is the lib's dist dir relative to repo root (e.g. "platform/chorus-sdk/dist").
+    SharedLib { name: String, lib_dist_rel: String },
 }
 
 /// #3092 — classify a name from the build summary. Returns Err for unknown
@@ -184,8 +189,13 @@ pub fn target_class(name: &str) -> R<TargetClass> {
         }),
         // CLI verbs (no LaunchAgent, no kickstart): the #3092 second net-new path.
         n if n.starts_with("werk-") => Ok(TargetClass::CliVerb { bin: n.to_string() }),
+        // #3126 — shared library: dist→canonical + cascade-redeploy consumers.
+        "chorus-sdk" => Ok(TargetClass::SharedLib {
+            name: "chorus-sdk".to_string(),
+            lib_dist_rel: "platform/chorus-sdk/dist".to_string(),
+        }),
         other => Err(format!(
-            "target_class: unknown name '{}' — add a rule (Rust service, TS service, or CLI verb)",
+            "target_class: unknown name '{}' — add a rule (Rust service, TS service, CLI verb, or shared lib)",
             other
         )),
     }
@@ -417,6 +427,11 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
             TargetClass::CliVerb { bin } => {
                 deploy_cli_verb(
                     home, &werk_s, role, card, target, &trace, name, built_identity, bin,
+                )?;
+            }
+            TargetClass::SharedLib { name: lib, lib_dist_rel } => {
+                deploy_shared_lib(
+                    home, &werk_s, role, card, target, &trace, lib, built_identity, lib_dist_rel,
                 )?;
             }
         }
@@ -724,6 +739,238 @@ exec \"{bin_path}\" \"$@\"\n",
         jsonl(home, role, card, trace, "wrapper-installed", &format!(",\"name\":\"{}\",\"wrapper\":\"{}\",\"bin\":\"{}\"", crate_name, wrapper_path, bin_path));
     }
     Ok(())
+}
+
+/// #3126 — relative-path sha256 of a dist tree (location-independent: werk dist and
+/// canonical dist hash equal for byte-identical content). Mirrors werk-build's dist_sha.
+fn dist_sha(dist_dir: &str) -> R<String> {
+    if !Path::new(dist_dir).is_dir() {
+        return Err(format!("dist not found at {}", dist_dir));
+    }
+    let cmd = format!(
+        "cd {} && find . -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1",
+        dist_dir
+    );
+    let sha = run_env(None, &[], "sh", &["-c", &cmd]).map(|o| o.trim().to_string()).unwrap_or_default();
+    if sha.is_empty() || sha.len() < 32 {
+        return Err(format!("dist hash invalid ({:?}) for {}", sha, dist_dir));
+    }
+    Ok(sha)
+}
+
+/// #3126 — std-only `(dep_name, file_target)` for every `"x":"file:<path>"` dep.
+/// Self-contained per ADR-032 §1 (verbs don't import each other); mirrors
+/// werk-build::extract_file_deps so consumer discovery is identical on both sides.
+fn extract_file_deps(pkg_json: &str) -> Vec<(String, String)> {
+    let tokens = quoted_tokens(pkg_json);
+    let mut out = Vec::new();
+    for i in 0..tokens.len() {
+        if let Some(target) = tokens[i].strip_prefix("file:") {
+            if i > 0 && !tokens[i - 1].is_empty() && !target.is_empty() {
+                out.push((tokens[i - 1].clone(), target.to_string()));
+            }
+        }
+    }
+    out
+}
+
+fn pkg_name(pkg_json: &str) -> Option<String> {
+    let tokens = quoted_tokens(pkg_json);
+    for i in 0..tokens.len() {
+        if tokens[i] == "name" {
+            if let Some(v) = tokens.get(i + 1) {
+                if !v.is_empty() {
+                    return Some(v.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn quoted_tokens(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let (mut in_str, mut cur, mut prev) = (false, String::new(), '\0');
+    for ch in s.chars() {
+        if ch == '"' && prev != '\\' {
+            if in_str {
+                out.push(std::mem::take(&mut cur));
+                in_str = false;
+            } else {
+                in_str = true;
+            }
+        } else if in_str {
+            cur.push(ch);
+        }
+        prev = ch;
+    }
+    out
+}
+
+/// #3126 — a graph-discovered consumer: package name + its dir relative to repo root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Consumer {
+    name: String,
+    dir_rel: String,
+}
+
+/// #3126 — DISCOVER consumers of `lib_dir_abs` from the dependency graph: every
+/// git-tracked package.json declaring a `file:` dep that resolves to the lib dir.
+/// NOT a hardcoded list (the rot #3092 left). Sorted by dir for stable ordering.
+fn discover_consumers(werk_s: &str, lib_dir_abs: &Path) -> Vec<Consumer> {
+    let listing = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "ls-files", "*package.json", "**/package.json"]).unwrap_or_default();
+    let mut found: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for rel in listing.lines() {
+        let rel = rel.trim();
+        if rel.is_empty() {
+            continue;
+        }
+        let abs = format!("{}/{}", werk_s, rel);
+        let Ok(content) = fs::read_to_string(&abs) else { continue };
+        let pkg_dir = match Path::new(&abs).parent() {
+            Some(d) => d.to_path_buf(),
+            None => continue,
+        };
+        for (_dep, target) in extract_file_deps(&content) {
+            if let Ok(rc) = fs::canonicalize(pkg_dir.join(&target)) {
+                if rc == lib_dir_abs {
+                    let dir_rel = Path::new(rel).parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                    let name = pkg_name(&content).unwrap_or_else(|| dir_rel.clone());
+                    if !name.is_empty() && !dir_rel.is_empty() {
+                        found.insert(dir_rel, name);
+                    }
+                }
+            }
+        }
+    }
+    found.into_iter().map(|(dir_rel, name)| Consumer { name, dir_rel }).collect()
+}
+
+/// #3126 — deploy a SHARED LIBRARY (chorus-sdk). The fix for the silent-stale-prod
+/// class #3092 left open. Steps, all-or-nothing under the deploy lock:
+///  1. Install the lib's dist to canonical (preserve .prev), identity-verify
+///     installed == built (the merged lib identity H).
+///  2. DISCOVER consumers from the dependency graph (never hardcoded) and install
+///     each consumer's freshly-rebuilt dist to canonical (preserve .prev).
+///  3. AC4 — anti-stale verify: for each consumer, hash the chorus-sdk it RESOLVES
+///     at runtime (canonical <consumer>/node_modules/chorus-sdk/dist, following the
+///     symlink) and assert it equals H. This is the real "a shared-lib change can no
+///     longer merge green while prod runs stale" — a deployed consumer that doesn't
+///     resolve the merged identity fails the deploy and rolls everything back.
+///
+/// No kickstart: a shared lib has no LaunchAgent; consumers (cards CLI) run
+/// per-invocation. target=werk is a no-op (the werk dist IS what the role resolves).
+#[allow(clippy::too_many_arguments)]
+fn deploy_shared_lib(
+    home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
+    lib: &str, built_identity: &str, lib_dist_rel: &str,
+) -> R<()> {
+    if target == "werk" {
+        // The role's session resolves chorus-sdk through the werk's own symlink to
+        // the werk's dist (already built by werk-build) — no canonical mutation.
+        jsonl(home, role, card, trace, "deploy.sharedlib.werk-noop", &format!(",\"lib\":\"{}\"", lib));
+        return Ok(());
+    }
+
+    let canonical_root = canonical_root_path(home);
+    let werk_lib_dist = format!("{}/{}", werk_s, lib_dist_rel);
+    if !Path::new(&werk_lib_dist).is_dir() {
+        return Err(format!("shared-lib deploy: werk dist not found at {} (werk-build should have produced it)", werk_lib_dist));
+    }
+    let lib_dir_abs = fs::canonicalize(format!("{}/{}", werk_s, lib_dist_rel).trim_end_matches("/dist"))
+        .map_err(|e| format!("cannot canonicalize werk lib dir: {}", e))?;
+
+    // Rollback stack: (canonical_path_we_replaced, its_.prev_backup). Restored in
+    // reverse on any failure so a partial cascade never leaves prod half-deployed.
+    let mut moved: Vec<(String, String)> = Vec::new();
+    let restore = |moved: &[(String, String)]| {
+        for (canonical, prev) in moved.iter().rev() {
+            let _ = fs::remove_dir_all(canonical);
+            if Path::new(prev).is_dir() {
+                let _ = fs::rename(prev, canonical);
+            }
+        }
+    };
+
+    // 1. Install lib dist → canonical (preserve .prev).
+    let canonical_lib_dist = format!("{}/{}", canonical_root, lib_dist_rel);
+    if let Err(e) = install_dist(&werk_lib_dist, &canonical_lib_dist, &mut moved) {
+        restore(&moved);
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"sharedlib-install-fail\"");
+        return Err(format!("install of {} dist failed; rolled back: {}", lib, e));
+    }
+    // identity verify: installed lib dist == built H.
+    let installed_lib_sha = dist_sha(&canonical_lib_dist).unwrap_or_default();
+    if installed_lib_sha != built_identity {
+        restore(&moved);
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"sharedlib-identity-mismatch\"");
+        return Err(format!("installed {} dist sha != built: built={} installed={} — rolled back", lib, built_identity, installed_lib_sha));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"shared-lib\",\"target\":\"{}\",\"identity\":\"{}\"", lib, target, installed_lib_sha));
+
+    // 2. Discover consumers from the graph + install each rebuilt dist → canonical.
+    let consumers = discover_consumers(werk_s, &lib_dir_abs);
+    jsonl(home, role, card, trace, "sharedlib.consumers.discovered",
+        &format!(",\"lib\":\"{}\",\"count\":{},\"consumers\":\"{}\"", lib, consumers.len(),
+            consumers.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join("|")));
+    for c in &consumers {
+        let werk_consumer_dist = format!("{}/{}/dist", werk_s, c.dir_rel);
+        let canonical_consumer_dist = format!("{}/{}/dist", canonical_root, c.dir_rel);
+        if !Path::new(&werk_consumer_dist).is_dir() {
+            restore(&moved);
+            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-dist-missing\"");
+            return Err(format!("consumer {} werk dist not found at {} (werk-build cascade should have produced it)", c.name, werk_consumer_dist));
+        }
+        if let Err(e) = install_dist(&werk_consumer_dist, &canonical_consumer_dist, &mut moved) {
+            restore(&moved);
+            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-install-fail\"");
+            return Err(format!("install of consumer {} dist failed; rolled back: {}", c.name, e));
+        }
+        jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"consumer\",\"target\":\"{}\"", c.name, target));
+    }
+
+    // 3. AC4 — anti-stale verify: each consumer must RESOLVE the merged lib identity.
+    for c in &consumers {
+        let resolved_sdk_dist = format!("{}/{}/node_modules/{}/dist", canonical_root, c.dir_rel, lib);
+        if !Path::new(&resolved_sdk_dist).exists() {
+            restore(&moved);
+            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-cannot-resolve-lib\"");
+            return Err(format!(
+                "anti-stale: consumer {} cannot resolve {} (no {}); it would run a missing/old lib — rolled back",
+                c.name, lib, resolved_sdk_dist
+            ));
+        }
+        let resolved_sha = dist_sha(&resolved_sdk_dist).unwrap_or_default();
+        if resolved_sha != built_identity {
+            restore(&moved);
+            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-resolves-stale-lib\"");
+            return Err(format!(
+                "anti-stale: consumer {} resolves {} dist sha {} != merged {} — prod would run STALE, rolled back (#3126)",
+                c.name, lib, resolved_sha, built_identity
+            ));
+        }
+        jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"kind\":\"consumer-resolves\",\"lib\":\"{}\",\"identity\":\"{}\"", c.name, lib, resolved_sha));
+    }
+    Ok(())
+}
+
+/// #3126 — copy a werk dist dir to canonical, preserving the prior canonical dist as
+/// `<dist>.prev` and recording the move on the rollback stack. cp -R matches the
+/// TS-service install's atomic intent.
+fn install_dist(werk_dist: &str, canonical_dist: &str, moved: &mut Vec<(String, String)>) -> R<()> {
+    let prev = format!("{}.prev", canonical_dist);
+    if Path::new(canonical_dist).is_dir() {
+        let _ = fs::remove_dir_all(&prev);
+        fs::rename(canonical_dist, &prev).map_err(|e| format!("preserve {} → {}: {}", canonical_dist, prev, e))?;
+        moved.push((canonical_dist.to_string(), prev.clone()));
+    } else {
+        // fresh install — record with an empty prev so rollback just removes it.
+        if let Some(parent) = Path::new(canonical_dist).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        moved.push((canonical_dist.to_string(), prev.clone()));
+    }
+    run_env(None, &[], "cp", &["-R", werk_dist, canonical_dist]).map(|_| ())
 }
 
 /// #3092 — canonical repo root path (where TS service dist gets installed).
