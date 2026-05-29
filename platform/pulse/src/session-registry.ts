@@ -106,20 +106,22 @@ export type DeliveryPlan =
  * This is the routing/transport seam: routing produces the plan, the caller
  * (pulse runInject) executes it. Pure + fully testable.
  *
- *  - any host + tty       → exact tty match via `chorus-inject --tty`. #3130:
- *                           vscode is NO LONGER deferred. osascript reaches a
- *                           VS Code session by its tty just like Terminal, so a
- *                           vscode target injects instead of queueing to the
- *                           fold. The old `vscode → defer` rule silently dropped
- *                           every nudge to a VS-Code-hosted session (silas→wren
- *                           never delivered — it queued and only surfaced on the
- *                           next prompt). Routing now treats all hosts the same
- *                           once a tty is known.
+ *  - vscode host          → `chorus-inject --vscode` (#3130 layer 2). A VS Code
+ *                           pseudo-tty is NOT a Terminal tab, so `--tty` returns
+ *                           no-window-found. The vscode path targets the Code app
+ *                           and keystrokes into its focused window. (#3130 layer 1
+ *                           had removed the old `vscode → defer` silent-queue;
+ *                           layer 2 gives vscode a transport that actually lands.)
+ *  - other host + tty     → exact tty match via `chorus-inject --tty` (Terminal/
+ *                           iTerm expose a tab tty; vscode does not).
  *  - no registration      → legacy `chorus-inject <role> <text>` name-match.
  *                           As-is delivery is preserved whenever the registry
  *                           is empty or stale — the new path can never strand.
  */
 export function planDelivery(target: SessionReg | null, role: string, content: string): DeliveryPlan {
+  if (target && target.host === 'vscode') {
+    return { kind: 'inject', args: ['--vscode', content] };
+  }
   if (target && target.tty) {
     return { kind: 'inject', args: ['--tty', target.tty, content] };
   }

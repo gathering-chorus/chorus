@@ -60,9 +60,11 @@ describe('planDelivery', () => {
     expect(planDelivery(t, 'silas', 'hello')).toEqual({ kind: 'inject', args: ['--tty', '/dev/ttys001', 'hello'] });
   });
 
-  test('#3130 vscode host with tty → --tty inject (osascript reaches VS Code; no defer/queue)', () => {
+  test('#3130 vscode host → --vscode inject (Code app, not the Terminal --tty path that no-window-founds)', () => {
     const t = reg({ role: 'wren', tty: '/dev/ttys004', host: 'vscode' });
-    expect(planDelivery(t, 'wren', 'hello')).toEqual({ kind: 'inject', args: ['--tty', '/dev/ttys004', 'hello'] });
+    // A VS Code pseudo-tty is not a Terminal tab, so --tty returns no-window-found.
+    // Route vscode to the Code-app focused-window inject instead.
+    expect(planDelivery(t, 'wren', 'hello')).toEqual({ kind: 'inject', args: ['--vscode', 'hello'] });
   });
 
   test('no registration → legacy name-match (as-is preserved)', () => {
