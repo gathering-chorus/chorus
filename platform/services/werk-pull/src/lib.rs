@@ -37,6 +37,37 @@ pub fn trace_id() -> String {
     format!("{:x}-{:x}", ns, std::process::id())
 }
 
+/// Shared trace per ADR-032 §3 (#3135 CONSISTENT): resolve by precedence —
+/// `CHORUS_TRACE_ID` env → `<trace_dir>/<card>-trace` file → mint-and-persist
+/// (write the file so downstream verbs inherit). The persisted file is the
+/// cross-process carrier that threads ONE trace across pull → demo → acp,
+/// replacing pull's #3063 fresh-mint drift. `resolve_trace_in` is the testable
+/// core (trace dir injected, all inputs explicit); `resolve_trace` is the real
+/// entry (env + /tmp). Mirrors werk-build's resolve_trace.
+pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) -> String {
+    if let Some(t) = env_trace {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let p = trace_dir.join(format!("{}-trace", card));
+    if let Ok(t) = fs::read_to_string(&p) {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let t = trace_id();
+    let _ = fs::write(&p, &t); // best-effort persist; downstream verbs read it
+    t
+}
+
+pub fn resolve_trace(card: u64) -> String {
+    let env = env::var("CHORUS_TRACE_ID").ok();
+    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+}
+
 pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, extra: &str) -> String {
     format!(
         "{{\"ts\":{},\"event\":\"{}\",\"role\":\"{}\",\"card_id\":{},\"trace_id\":\"{}\"{}}}\n",
@@ -58,6 +89,34 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&p) {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+/// The spine event contract (#3135 AUDITABLE): the args handed to `chorus-log` so
+/// a verb's lifecycle is queryable in Loki, keyed by card + trace. Pure → testable.
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str) -> Vec<String> {
+    vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ]
+}
+
+/// Emit one lifecycle event to the ONE spine (`~/.chorus/chorus.log`) via the
+/// canonical `chorus-log` subprocess — best-effort, like the jsonl witness, never
+/// blocks the verb. Mirrors werk-demo / werk-accept. The jsonl witness stays
+/// (verbose local trace); the spine is the Loki-queryable record (#3135 replaces
+/// werk-pull's jsonl-witness-only, which promtail never tailed).
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
+    let log = home.join("platform/scripts/chorus-log");
+    let log_s = match path(&log) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let args = spine_args(event, role, card, trace);
+    let mut argv: Vec<&str> = vec![log_s];
+    argv.extend(args.iter().map(|s| s.as_str()));
+    let _ = run("bash", &argv);
 }
 
 /// Run a CLI, capture stdout; any non-zero exit is a typed error (no silent failure).
@@ -216,7 +275,7 @@ pub fn run_pull() -> R<String> {
 /// repo (deps injected via PATH: real `git`, `cards`). No gh, no store: the
 /// worktree + board ARE the state; this only writes them.
 pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
-    let trace = trace_id();
+    let trace = resolve_trace(card); // #3135: thread one trace across pull→demo→acp (was fresh-mint)
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     let home_s = path(home)?.to_string();
@@ -279,6 +338,14 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
     jsonl(home, role, card, &trace, "gh.registered", "");
 
+    // role-state: declare building (parity with the live card-pull, which werk-pull
+    // lacked). Best-effort — a local status declaration; its failure doesn't unwind
+    // a pull that already moved the board + made the werk.
+    let _ = run("role-state", &[role, "building"]);
+
     jsonl(home, role, card, &trace, "pull.completed", &format!(",\"branch\":\"{}\"", branch));
+    // #3135 AUDITABLE: card.pulled to the ONE spine (Loki-queryable), carrying the
+    // shared trace so this pull correlates with the card's demo + acp.
+    emit_spine(home, "card.pulled", role, card, &trace);
     Ok(branch)
 }
