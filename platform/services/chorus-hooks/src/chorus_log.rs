@@ -17,6 +17,46 @@ fn log_file() -> String {
 }
 fn schema_file() -> String { format!("{}/designing/schemas/spine-events.json", crate::shared::state_paths::chorus_root()) }
 
+/// #3140 — PURE: resolve an event alias + derive the shared-envelope extras from
+/// the spine schema. Returns (resolved_event, derived_json_fragment). The fragment
+/// is a leading-comma JSON snippet (`,"product":"Chorus",...`) ready to splice into
+/// the log line. Single source of truth = spine-events.json (product_map /
+/// value_stream_map / events[].vertebra); mirrors spine-event-write.ts (TS).
+/// Pure so it's hermetically testable without env/cwd/global-state.
+pub fn resolve_and_derive(schema: &serde_json::Value, event: &str) -> (String, String) {
+    // alias resolution first — vertebra is keyed on the canonical name.
+    let resolved = schema
+        .get("aliases")
+        .and_then(|a| a.as_object())
+        .and_then(|a| a.get(event))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| event.to_string());
+
+    let mut derived = String::new();
+    // product + value_stream from product_map[chorus-events].
+    if let Some(product) = schema
+        .get("product_map")
+        .and_then(|m| m.get("chorus-events"))
+        .and_then(|v| v.as_str())
+    {
+        derived.push_str(&format!(r#","product":"{}","value_stream":"{}""#, product, product));
+    }
+    // value_stream_step from the resolved event's vertebra via value_stream_map.
+    if let Some(step) = schema
+        .get("events")
+        .and_then(|e| e.get(&resolved))
+        .and_then(|e| e.get("vertebra"))
+        .and_then(|v| v.as_str())
+        .and_then(|vert| {
+            schema.get("value_stream_map").and_then(|m| m.get(vert)).and_then(|v| v.as_str())
+        })
+    {
+        derived.push_str(&format!(r#","value_stream_step":"{}""#, step));
+    }
+    (resolved, derived)
+}
+
 /// Eastern timezone offset — standalone for shim binary (#1850)
 fn eastern_offset() -> chrono::FixedOffset {
     let output = std::process::Command::new("date")
@@ -57,16 +97,22 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     let mut event = args[0].clone();
     let role = &args[1];
 
-    // Alias translation from schema
-    if let Ok(schema) = fs::read_to_string(schema_file()) {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&schema) {
-            if let Some(aliases) = parsed.get("aliases").and_then(|a| a.as_object()) {
-                if let Some(new_name) = aliases.get(&event).and_then(|v| v.as_str()) {
-                    event = new_name.to_string();
-                }
-            }
+    // #3140 — shared spine-envelope enrichment from the ONE schema source
+    // (spine-events.json). resolve_and_derive does alias resolution + product/
+    // value_stream/value_stream_step derivation (pure, unit-tested). Best-effort:
+    // a missing/bad schema yields the event unchanged + no enrichment (back-compat).
+    let schema_json = fs::read_to_string(schema_file()).ok();
+    let parsed = schema_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+    let derived = match &parsed {
+        Some(schema) => {
+            let (resolved, extras) = resolve_and_derive(schema, &event);
+            event = resolved;
+            extras
         }
-    }
+        None => String::new(),
+    };
 
     // Timestamp — Eastern time (#1850), matching wall-clock.txt and gemba output
     let offset = eastern_offset();
@@ -173,10 +219,12 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
         level = "info".to_string();
     }
 
-    // Write to log
+    // Write to log. #3140: derived shared-envelope fields (product/value_stream/
+    // value_stream_step) follow the core fields; domain + caller fields ride in
+    // `extras` (domain is already first-class via key=value passthrough).
     let line = format!(
-        r#"{{"timestamp":"{}","level":"{}","appName":"chorus-events","component":"lifecycle","event":"{}","role":"{}"{}}}"#,
-        ts, level, event, role, extras
+        r#"{{"timestamp":"{}","level":"{}","appName":"chorus-events","component":"lifecycle","event":"{}","role":"{}"{}{}}}"#,
+        ts, level, event, role, derived, extras
     );
 
     let path = PathBuf::from(&log_file());
@@ -514,6 +562,53 @@ mod tests {
     }
 
     // --- AC3: special characters in values ---
+
+    // --- #3140: shared-envelope enrichment (PURE resolve_and_derive) ---
+    // Hermetic: build the schema value inline (no env/cwd/global state), mirroring
+    // the product_map / value_stream_map / events[].vertebra shape in spine-events.json.
+
+    fn fixture_schema() -> serde_json::Value {
+        serde_json::json!({
+            "aliases": { "card_created": "card.item.created" },
+            "product_map": { "chorus-events": "Chorus", "jeff-bridwell-personal-site": "Gathering" },
+            "value_stream_map": { "capturing": "Capturing", "building": "Building" },
+            "events": { "card.item.created": { "vertebra": "capturing" } }
+        })
+    }
+
+    #[test]
+    fn derive_stamps_product_and_value_stream() {
+        let (_ev, derived) = resolve_and_derive(&fixture_schema(), "test.anything");
+        assert!(derived.contains(r#""product":"Chorus""#), "product from product_map: {}", derived);
+        assert!(derived.contains(r#""value_stream":"Chorus""#), "value_stream = product: {}", derived);
+    }
+
+    #[test]
+    fn derive_stamps_value_stream_step_from_vertebra() {
+        let (_ev, derived) = resolve_and_derive(&fixture_schema(), "card.item.created");
+        assert!(derived.contains(r#""value_stream_step":"Capturing""#), "step from vertebra: {}", derived);
+    }
+
+    #[test]
+    fn derive_resolves_alias_before_vertebra_lookup() {
+        // alias card_created -> card.item.created (capturing); step must still resolve.
+        let (ev, derived) = resolve_and_derive(&fixture_schema(), "card_created");
+        assert_eq!(ev, "card.item.created", "alias resolved");
+        assert!(derived.contains(r#""value_stream_step":"Capturing""#), "step via resolved name: {}", derived);
+    }
+
+    #[test]
+    fn derive_is_best_effort_on_empty_schema() {
+        // missing maps -> no enrichment, event unchanged (back-compat).
+        let (ev, derived) = resolve_and_derive(&serde_json::json!({}), "some.event");
+        assert_eq!(ev, "some.event");
+        assert_eq!(derived, "");
+    }
+
+    // Note: end-to-end emit() of the derived fields is proven hermetically by the
+    // pure resolve_and_derive tests above + the manual CHORUS_ROOT=werk emit (which
+    // showed product/value_stream/value_stream_step/domain on a real line). domain
+    // passthrough specifically is already covered by emit_multiple_key_values.
 
     #[test]
     fn handles_quotes_in_values() {

@@ -6,16 +6,49 @@
 //   with synthesized correlation id when absent.
 
 import type { Request as Req, Response as Res } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /** Prepared-statement run — any retained due to better-sqlite3 Statement variance. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RunFn = (...args: any[]) => unknown;
+
+// #3140 — shared spine-envelope enrichment from the ONE schema source
+// (spine-events.json), mirroring chorus_log.rs (Rust) and Gathering's #1817
+// emitter: product/value_stream from product_map[chorus-events]; value_stream_step
+// from events[event].vertebra -> value_stream_map[vertebra]. No hardcoded maps
+// here (A1: single source). Cached; best-effort (missing/bad schema = no enrichment).
+interface SpineSchema {
+  product_map?: Record<string, string>;
+  value_stream_map?: Record<string, string>;
+  events?: Record<string, { vertebra?: string }>;
+}
+let schemaCache: { path: string; schema: SpineSchema } | null = null;
+function loadSpineSchema(schemaPath?: string): SpineSchema {
+  const p = schemaPath ?? path.resolve(__dirname, '../../../designing/schemas/spine-events.json');
+  if (schemaCache && schemaCache.path === p) return schemaCache.schema;
+  let schema: SpineSchema = {};
+  try { schema = JSON.parse(fs.readFileSync(p, 'utf-8')) as SpineSchema; } catch { /* best-effort */ }
+  schemaCache = { path: p, schema };
+  return schema;
+}
+function deriveEnvelope(event: string, schema: SpineSchema): Record<string, string> {
+  const out: Record<string, string> = {};
+  const product = schema.product_map?.['chorus-events'];
+  if (product) { out.product = product; out.value_stream = product; }
+  const vertebra = schema.events?.[event]?.vertebra;
+  const step = vertebra ? schema.value_stream_map?.[vertebra] : undefined;
+  if (step) out.value_stream_step = step;
+  return out;
+}
 
 export interface SpineEventDeps {
   appendFileSync: typeof import('fs').appendFileSync;
   chorusLogPath: string;
   now: () => string;
   traceDbPath: string;
+  /** #3140 — optional spine schema path override (tests). */
+  schemaPath?: string;
   DatabaseCtor: new (path: string) => {
     pragma: (s: string) => void;
     prepare: (sql: string) => { run: RunFn };
@@ -24,7 +57,7 @@ export interface SpineEventDeps {
   ensureTraceTable: () => void;
 }
 
-function buildSpineEntry(event: string, role: string | undefined, fields: Record<string, unknown>, now: string): Record<string, unknown> {
+function buildSpineEntry(event: string, role: string | undefined, fields: Record<string, unknown>, now: string, schema: SpineSchema): Record<string, unknown> {
   return {
     timestamp: now,
     level: 'info',
@@ -32,6 +65,8 @@ function buildSpineEntry(event: string, role: string | undefined, fields: Record
     component: 'spine-service',
     event,
     role: role || 'system',
+    // #3140 — derived shared envelope fields; domain is first-class via `fields`.
+    ...deriveEnvelope(event, schema),
     ...fields,
   };
 }
@@ -77,7 +112,7 @@ export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void
     res.status(400).json!({ error: 'event is required' });
     return;
   }
-  appendSpineLog(deps, buildSpineEntry(event, role, fields, deps.now()));
+  appendSpineLog(deps, buildSpineEntry(event, role, fields, deps.now(), loadSpineSchema(deps.schemaPath)));
   if (typeof fields.hop === 'number' && !isNaN(fields.hop)) {
     insertTraceRow(deps, event, fields);
   }
