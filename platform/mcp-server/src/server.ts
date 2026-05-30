@@ -2057,6 +2057,18 @@ async function executeAcp(
 // inject deps, run the steps deterministically, emit step-by-step spine
 // events, refuse with typed reasons that name the failing step and what
 // the operator must fix.
+//
+// ───────────────────────────────────────────────────────────────────────────
+// #3135 RETIRED (2026-05-30): pull's logic moved to the rust `werk-pull` core.
+// `chorus_pull_card` now execs ~/.chorus/bin/werk-pull via executeWerkVerb —
+// ONE implementation (LEGIBLE), resolve_trace instead of fresh-mint (CONSISTENT),
+// card.pulled to the chorus-log spine instead of stderr (AUDITABLE). This TS impl
+// is COMMENTED OUT, not deleted, so back-out is uncomment + redeploy the chorus-mcp
+// daemon (the merged≠live reversibility — source revert alone isn't live; see #3138).
+// Remove fully once werk-pull is proven live across roles. Aligns with the
+// coding-language ADR (#3139): logic in the rust core, server.ts is the thin shim.
+// ───────────────────────────────────────────────────────────────────────────
+/*
 async function executePullCard(
   args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
   emit: SpineEmitter,
@@ -2185,7 +2197,7 @@ async function executePullCard(
     ],
   };
 }
-
+*/
 // #2759 — chorus_unpull_card atomic teardown. /pull's natural inverse.
 // Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
 // uncommitted work. Uses chorus-werk remove to tear down the card's
@@ -2768,7 +2780,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -3320,7 +3332,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executePullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree);
+        // #3135: pull logic now lives in the rust `werk-pull` core; the skin just execs it.
+        return executeWerkVerb('werk-pull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
       }
       case 'chorus_unpull_card': {
         const parsed = UnpullCardInput.safeParse(req.params.arguments);
