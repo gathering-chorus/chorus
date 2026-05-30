@@ -23,25 +23,8 @@
  *   cadence       — source → cadence_seconds map
  */
 import type Database from 'better-sqlite3';
-import * as fs from 'fs';
-
-// #3060 - count newlines without loading the whole (170MB) spine log into a
-// string + building an 838K-element split() array. Streams in 1MB chunks; same
-// answer, no heap spike, ~halves the read cost.
-function streamingCountLines(p: string): number {
-  const fd = fs.openSync(p, 'r');
-  try {
-    const buf = Buffer.alloc(1 << 20);
-    let lines = 0;
-    let n: number;
-    while ((n = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
-      for (let i = 0; i < n; i++) if (buf[i] === 10) lines++;
-    }
-    return lines;
-  } finally {
-    fs.closeSync(fd);
-  }
-}
+// #3136 — streamingCountLines + the `fs` import were removed; they existed only to
+// count the spine log's on-disk lines, which is no longer a freshness input.
 
 export interface FreshnessDeps {
   db: Database.Database;
@@ -49,13 +32,15 @@ export interface FreshnessDeps {
   countLines?: (p: string) => number;
   now?: () => number;
   timestamp?: () => string;
-  spineLogPath: string;
+  spineLogPath?: string; // #3136 — retained for callers; spine no longer counted
   cadence?: Record<string, number>;
 }
 
 const DEFAULT_CADENCE: Record<string, number> = {
   claude: 3600,
-  spine: 3600,
+  // #3136 — spine delisted as a freshness source. It is no longer indexed (telemetry
+  // lives in Loki), so spineIndexed is 0 while the (untouched, by-design) chorus.log
+  // still has ~1.1M lines → an unbounded false drift that pages 'dead' every cycle.
   brief: 86400,
   decision: 86400,
   clearing: 86400,
@@ -94,13 +79,12 @@ interface Count { cnt: number }
 
 export function fetchFreshness({
   db,
-  exists = () => false,
-  countLines = streamingCountLines,
   now = Date.now,
   timestamp = () => new Date().toISOString(),
-  spineLogPath,
   cadence = DEFAULT_CADENCE,
 }: FreshnessDeps): FreshnessResult {
+  // #3136 — exists/countLines/spineLogPath deps retained on FreshnessDeps for callers
+  // but no longer consumed here: spine is delisted, claude is the only countable source.
   const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source').all() as Watermark[];
 
   const nowMs = now();
@@ -118,12 +102,8 @@ export function fetchFreshness({
   const claudeWatermarks = (db.prepare("SELECT COUNT(*) as cnt FROM watermarks WHERE source LIKE 'claude:%'").get() as Count).cnt;
   const claudeOnDisk = claudeWatermarks;
 
-  const spineOnDisk = exists(spineLogPath) ? countLines(spineLogPath) : 0;
-  const spineIndexed = (db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE source='spine'").get() as Count).cnt;
-
   const driftMap: Partial<Record<string, { onDisk: number; indexed: number }>> = {
     claude: { onDisk: claudeOnDisk, indexed: claudeIndexed },
-    spine: { onDisk: spineOnDisk, indexed: spineIndexed },
   };
 
   const sources: FreshnessSource[] = Array.from(aggregated.entries()).map(([source, lastIndexed]) => {

@@ -51,6 +51,14 @@ export interface IndexAllSourcesDeps {
   // rotated/truncated so `offset` > size), and the current byte size. Optional —
   // falls back to a readFileSync-from-offset for tests / pre-wire systems.
   readSince?: (path: string, offset: number) => { content: string; startOffset: number; size: number };
+  // #3136 REFINE — graph knowledge (principles/policies/practices) from Fuseki.
+  // Prefetched ONCE (async) before the sync per-source loop, so the Fuseki round-trip
+  // never runs inside runSource. Optional — omitted in tests → graph sources skip.
+  fetchGraph?: () => Promise<Array<{ source: string; id: string; content: string }>>;
+  // #3136 REFINE — full doc catalog (all ~402 docs from the SOURCE_DIRS scan, not the
+  // 33-entry curated registry). Returns path-bearing entries; indexDocsFrom reads each
+  // absPath's content. Injected so the indexer stays hermetic; tests stub it.
+  listDocs?: () => Array<{ href: string; title?: string; group?: string; absPath?: string }>;
 }
 
 interface IndexCtx {
@@ -70,17 +78,6 @@ interface IndexCtx {
 // #3077 AC2 supersedes that: read only the bytes appended since the last cycle's
 // persisted offset, so the JSON.parse cost is O(new) instead of O(16MB) per reindex.
 
-/** Indexed spine event row — columns the insert statement binds. */
-interface IndexEvent {
-  source: string;
-  source_id: string;
-  channel: string;
-  role: string;
-  author: string;
-  content: string;
-  timestamp: string;
-}
-
 function runSource(name: string, results: Record<string, string>, fn: () => string | void): void {
   try {
     const summary = fn();
@@ -90,65 +87,19 @@ function runSource(name: string, results: Record<string, string>, fn: () => stri
   }
 }
 
-function indexSpine(ctx: IndexCtx): string | void {
-  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
-  if (!ctx.fs.existsSync(logPath)) return;
-  // #3077 AC2: read ONLY the bytes appended since the last cycle, not the whole 16MB
-  // tail every reindex. #3067 bounded the read to 16MB, but the JSON.parse of that
-  // overlap re-ran every ~15-min cycle (the residual multi-second block, since the
-  // insert is INSERT OR IGNORE so re-inserting was already a no-op — the PARSE was
-  // the cost). The byte offset is persisted in watermarks('spine:offset').
-  const offsetRow = ctx.db.prepare('SELECT last_indexed FROM watermarks WHERE source = ?')
-    .get!('spine:offset') as { last_indexed?: string } | undefined;
-  const storedOffset = offsetRow?.last_indexed ? (parseInt(offsetRow.last_indexed, 10) || 0) : 0;
-  // readSince resets startOffset to 0 if the log was rotated/truncated (offset > size).
-  const { content, startOffset } = ctx.readSince(logPath, storedOffset);
-  // Process only COMPLETE (newline-terminated) lines; a trailing partial line — or a
-  // byte range that split a multibyte char at the end — is left for the next cycle.
-  // newOffset advances only past the last complete line, so nothing is dropped or
-  // double-counted across cycles.
-  const lastNl = content.lastIndexOf('\n');
-  const complete = lastNl >= 0 ? content.slice(0, lastNl + 1) : '';
-  const newOffset = startOffset + Buffer.byteLength(complete, 'utf-8');
-  const lines = complete.length ? complete.trimEnd().split('\n') : [];
-  let indexed = 0;
-  const insertMany = ctx.db.transaction((events: IndexEvent[]) => {
-    for (const e of events) {
-      ctx.insert.run!(e.source, e.source_id, e.channel, e.role, e.author, e.content, e.timestamp);
-      indexed++;
-    }
-  });
-  // #2323: exclude self-referential search telemetry — the index was eating
-  // its own tail (4.8% of spine volume; ~40% of a typical query result was
-  // the query-log echoing itself). Extend if another event type emits
-  // search-of-search.
-  const EXCLUDED_EVENTS = new Set([
-    'search.query.executed',
-    'search.result.returned',
-    'search.hierarchy.enrichment',
-  ]);
-  const events: IndexEvent[] = [];
-  for (const line of lines) {
-    try {
-      const evt = JSON.parse(line);
-      const role = evt.role || 'system';
-      const event = evt.event || 'unknown';
-      if (EXCLUDED_EVENTS.has(event)) continue;
-      events.push({
-        source: 'spine',
-        source_id: `spine-${evt.timestamp}-${event}`,
-        channel: `spine:${role}`,
-        role, author: role, content: line,
-        timestamp: evt.timestamp || ctx.now,
-      });
-    } catch { /* skip malformed */ }
-  }
-  insertMany(events);
-  // Persist the new byte offset (last_indexed column is what the next cycle reads)
-  // and the freshness timestamp on the 'spine' row.
-  ctx.updateWatermark.run!('spine:offset', ctx.now, String(newOffset));
-  ctx.updateWatermark.run!('spine', ctx.now, ctx.now);
-  return `${indexed} events indexed`;
+// #3136 — spine REMOVED from the semantic index. Spine is telemetry: queried by
+// trace_id / card / time via Loki (chorus.log → promtail), never by meaning. It was
+// 82% of the corpus and the ~3s search-latency floor (1.1M rows to scan), and it
+// drowned the durable knowledge that semantic search exists *for*. Verified nothing
+// semantic-searches source=spine — context_inject reads chorus.log recent-N directly
+// (query_recent_spine) — so removal costs no access path. The semantic index now
+// holds only meaning-searchable content; telemetry stays in Loki.
+//
+// Neutered (not ripped out) as the minimal, non-cascading change that stops
+// ingestion. The now-dead spine reader machinery (readTail / readSince deps,
+// IndexEvent) + the server.ts injection are a flagged follow-up cleanup.
+function indexSpine(_ctx: IndexCtx): string {
+  return 'spine NOT indexed — telemetry lives in Loki (#3136)';
 }
 
 function indexRoleDir(
@@ -295,6 +246,106 @@ function indexStories(ctx: IndexCtx): string {
   return `${indexed} stories indexed`;
 }
 
+// #3136 REFINE — doc-catalog. The 33 design docs in the catalog registry were
+// never in the semantic index — searching "version-control-service-design" hit
+// nothing. Index the rendered .html CONTENT (stripped to prose so matches land on
+// the writing, not CSS/JS). filePaths may point at the sibling gathering repo or be
+// absent on a given machine — existsSync-skip, same as every other indexer.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function indexDocsFrom(ctx: IndexCtx, docs: Array<{ href: string; title?: string; group?: string; absPath?: string }>): string {
+  let indexed = 0;
+  for (const doc of docs) {
+    const p = doc.absPath;
+    if (!p || !ctx.fs.existsSync(p)) continue;
+    const text = htmlToText(String(ctx.fs.readFileSync(p, 'utf-8')));
+    if (!text) continue;
+    const ts = ctx.fs.statSync(p).mtime.toISOString();
+    // Lead with title/href/group so a doc is findable by its name, not just its prose.
+    const head = [doc.title, doc.href, doc.group].filter(Boolean).join(' — ');
+    ctx.insert.run!('doc', `doc:${doc.href}`, 'doc-catalog', 'system', 'system', `${head}\n${text}`, ts);
+    indexed++;
+  }
+  ctx.updateWatermark.run!('artifact:doc-catalog', ctx.now, ctx.now);
+  return `${indexed} docs indexed`;
+}
+
+// #3136 REFINE — domains. The canonical product/domain/service model (tree.json):
+// 7 products + 33 domains + services, each label+comment+owner+step+status+gaps.
+// File-read — the graph's chorus:Domain count is 0, the tree IS the source. Answers
+// "what is athena v2 / which domains exist / who owns X" — none of which the index
+// could answer before.
+function indexDomains(ctx: IndexCtx): string {
+  const treePath = ctx.path.join(ctx.repoRoot, 'data/athena/tree.json');
+  if (!ctx.fs.existsSync(treePath)) return '0 domains indexed (no tree)';
+  const tree = JSON.parse(String(ctx.fs.readFileSync(treePath, 'utf-8'))) as Record<string, unknown>;
+  let indexed = 0;
+  for (const kind of ['products', 'domains', 'services']) {
+    const arr = (tree[kind] as Array<Record<string, unknown>> | undefined) ?? [];
+    for (const node of arr) {
+      const iri = String(node.iri ?? '');
+      if (!iri) continue;
+      const gaps = Array.isArray(node.gaps) ? (node.gaps as string[]).join('; ') : '';
+      const content = [
+        `${node.label ?? iri} (${kind.replace(/s$/, '')})`,
+        node.comment ?? '',
+        node.ownedBy ? `owner: ${String(node.ownedBy)}` : '',
+        node.atStep ? `step: ${String(node.atStep)}` : '',
+        node.status ? `status: ${String(node.status)}` : '',
+        gaps ? `gaps: ${gaps}` : '',
+      ].filter(Boolean).join('\n');
+      ctx.insert.run!('domain', `domain:${iri}`, 'athena-tree', 'system', 'system', content, ctx.now);
+      indexed++;
+    }
+  }
+  ctx.updateWatermark.run!('artifact:domains', ctx.now, ctx.now);
+  return `${indexed} domains indexed`;
+}
+
+// #3136 REFINE — graph knowledge. principles (28) / policies (14) / practices (40)
+// live in Fuseki and were never semantically searchable. Rows are prefetched once
+// (deps.fetchGraph) so the Fuseki round-trip stays out of the sync loop; here we
+// just insert the in-memory rows for one source. Searching "ship small" or
+// "actor-bdd" now reaches the principle / practice, not 8 claude echoes.
+function indexGraphRows(ctx: IndexCtx, rows: Array<{ source: string; id: string; content: string }>, source: string): string {
+  const subset = rows.filter((r) => r.source === source);
+  for (const r of subset) {
+    ctx.insert.run!(source, r.id, `loom:${source}`, 'system', 'system', r.content, ctx.now);
+  }
+  ctx.updateWatermark.run!(`graph:${source}`, ctx.now, ctx.now);
+  return `${subset.length} ${source} indexed`;
+}
+
+// #3136 — coverage signal. The failure this card exists to prevent is a knowledge
+// source silently ingesting nothing (the invisible-canon bug). After every reindex,
+// flag any source that SHOULD be present but came back absent or zero. Minimal: the
+// per-source summaries already carry leading counts — parse + check, warn on miss.
+// Not a new processing layer; a guard on the existing return value.
+function coverageCheck(results: Record<string, string>, expected: string[]): string {
+  const missing: string[] = [];
+  for (const src of expected) {
+    const summary = results[src];
+    if (!summary) { missing.push(`${src}=absent`); continue; }
+    const n = parseInt(summary, 10);
+    if (Number.isFinite(n) && n === 0) missing.push(`${src}=0`);
+  }
+  if (missing.length) {
+    const msg = `WARN coverage — knowledge source(s) empty: ${missing.join(', ')}`;
+    // eslint-disable-next-line no-console -- coverage miss must surface; worker stderr → Loki.
+    console.warn(`[index-all-sources] ${msg}`);
+    return msg;
+  }
+  return `ok (${expected.length} knowledge sources present)`;
+}
+
 function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): void {
   try {
     db.prepare('DELETE FROM watermarks WHERE source LIKE \'slack%\'').run!();
@@ -361,7 +412,27 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     runSource('clearing', results, () => indexClearing(ctx));
     runSource('journal', results, () => indexJournal(ctx));
     runSource('stories', results, () => indexStories(ctx));
+    const docList = deps.listDocs ? deps.listDocs() : [];
+    runSource('docs', results, () => indexDocsFrom(ctx, docList));
+    runSource('domains', results, () => indexDomains(ctx));
+
+    // #3136 REFINE — prefetch graph knowledge once (async). Fuseki-down must not tank
+    // the file-source indexers, so isolate in its own try and fall back to empty (the
+    // coverage signal below then flags principles/policies/practices=0).
+    let graphRows: Array<{ source: string; id: string; content: string }> = [];
+    if (deps.fetchGraph) {
+      try { graphRows = await deps.fetchGraph(); }
+      catch (err: unknown) { results.graph = `error: ${err instanceof Error ? err.message : String(err)}`; }
+    }
+    runSource('principles', results, () => indexGraphRows(ctx, graphRows, 'principle'));
+    runSource('policies', results, () => indexGraphRows(ctx, graphRows, 'policy'));
+    runSource('practices', results, () => indexGraphRows(ctx, graphRows, 'practice'));
     clearSlackWatermarks(db, results);
+
+    // #3136 coverage signal — flag any knowledge source that came back empty.
+    const expected = ['briefs', 'decisions', 'adrs', 'memory', 'docs', 'domains'];
+    if (deps.fetchGraph) expected.push('principles', 'policies', 'practices');
+    results._coverage = coverageCheck(results, expected);
 
     db.close();
     return { indexed: results, elapsed_ms: Date.now() - startTime };
