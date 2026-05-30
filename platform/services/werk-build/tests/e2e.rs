@@ -90,8 +90,13 @@ fn e2e_build_in_werk() {
     assert!(build(8001, "silas", &home, &werk_base).is_err(), "no werk => refuse");
 
     // --- create the card's werk on silas/8001 with a changed Rust crate ---
+    // #3132: a crate is structurally a platform/services/<name>/ dir WITH a Cargo.toml
+    // (a real crate always has one). Build is now GLOBAL — it enumerates the werk's
+    // crates rather than diffing — so the fixture writes a proper crate manifest.
     let werk = werk_base.join("silas-8001");
     git(&home, &["worktree", "add", "-q", "-b", "silas/8001", werk.to_str().unwrap(), "origin/main"]);
+    fs::create_dir_all(werk.join("platform/services/widget/src")).unwrap();
+    fs::write(werk.join("platform/services/widget/Cargo.toml"), "[package]\nname=\"widget\"\n").unwrap();
     commit_file(&werk, "platform/services/widget/src/lib.rs", "// widget\n");
 
     // --- happy path: builds the werk crate, emits cdhash ---

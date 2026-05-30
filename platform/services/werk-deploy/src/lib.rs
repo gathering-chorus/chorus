@@ -123,82 +123,215 @@ pub fn service_for_crate(crate_name: &str) -> String {
     format!("com.chorus.{}", crate_name.strip_prefix("chorus-").unwrap_or(crate_name))
 }
 
-/// #3092 — what KIND of thing is this name, and what does it need at deploy time?
+/// What KIND of thing is this unit, and what does it need at deploy time?
 ///
-/// Three classes today, all foreseeable from the existing repo + LaunchAgent layout:
-/// - **RustService:** signed Rust binary with a com.chorus.<svc> LaunchAgent
-///   (chorus-hooks/chorus-inject/chorus-mcp). Install + kickstart + cdhash verify.
-/// - **TsService:** TypeScript service with a com.chorus.<svc> LaunchAgent that runs
-///   `node dist/server.js` (chorus-api today). Install dist + kickstart + health smoke.
-/// - **CliVerb:** standalone Rust binary, no LaunchAgent — runs once per invocation
-///   (werk-pull/commit/push/build/deploy/accept/demo). Install + installed-cdhash
-///   verify; NO kickstart (no service to restart).
-///
-/// Per Jeff's framing (2026-05-26 #3092): "build all things that need a build based
-/// on the branch; deploy all things that get built." The class is data not enum —
-/// the rule here recognizes the existing names today; new buildable things add a
-/// rule. The kickstart-or-not question reduces to "does the LaunchAgent exist?"
-/// — which is exactly what `RustService` / `TsService` carry vs `CliVerb` doesn't.
+/// #3132 — these classes are now DERIVED FROM STRUCTURE (`target_class` below scans
+/// the werk), not from a hardcoded name allowlist. The kickstart-or-not question
+/// reduces to "is there a committed LaunchAgent plist referencing this unit?" — a
+/// fact read from the repo, not a list a human keeps in sync.
+/// - **RustService:** signed Rust crate with a committed `com.chorus.<svc>` plist.
+/// - **TsService:** TS package whose dist a committed plist runs (`node dist/...`).
+/// - **CliVerb:** standalone Rust binary, no plist — runs once per invocation.
+/// - **SharedLib:** TS package that is the target of a `file:` dep (cascade consumers).
+/// - **TsPackage:** TS package with a build script but no plist and no consumers
+///   (a CLI like `cards`/`clearing`) — copy dist to canonical, no restart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetClass {
-    /// Rust binary + LaunchAgent. Existing chorus-hooks/inject/mcp path.
+    /// Rust binary + LaunchAgent.
     RustService { svc: String, bin: String },
-    /// TypeScript service + LaunchAgent. New path: dist install + smoke.
-    /// `dist_dir_rel` is the service's dist directory relative to repo root
-    /// (e.g., "platform/api/dist" for chorus-api). `smoke_url` is the health
-    /// endpoint to wait on after kickstart.
+    /// TypeScript service + LaunchAgent: dist install + kickstart + (declared) smoke.
+    /// `dist_dir_rel` is the dist dir relative to repo root. `smoke_url` is the
+    /// self-declared health endpoint (empty = fall back to launchd liveness, never
+    /// gate the deploy on a missing declaration — #3132 Kade constraint).
     TsService { svc: String, dist_dir_rel: String, smoke_url: String },
     /// Rust binary, no LaunchAgent. werk-* CLI verbs.
     CliVerb { bin: String },
-    /// #3126 — Shared TypeScript library (chorus-sdk). No LaunchAgent, no kickstart.
-    /// Deploy: copy the lib's dist to canonical, then cascade-redeploy + verify every
-    /// graph-discovered consumer resolves the just-built lib identity. `lib_dist_rel`
-    /// is the lib's dist dir relative to repo root (e.g. "platform/chorus-sdk/dist").
+    /// #3126 — shared TS library: dist→canonical + cascade-redeploy graph consumers.
     SharedLib { name: String, lib_dist_rel: String },
+    /// #3132 — TS package, build script, no plist, not a lib: copy dist, no restart.
+    TsPackage { name: String, dist_dir_rel: String },
 }
 
-/// #3092 — classify a name from the build summary. Returns Err for unknown
-/// names so unfamiliar additions get surfaced rather than silently mis-deployed.
-///
-/// The known set is the union of what werk-build can produce today; expanding
-/// this list and the corresponding werk-build path is the same one-card move.
-pub fn target_class(name: &str) -> R<TargetClass> {
-    match name {
-        // Rust services (LaunchAgents): the original werk-deploy slice.
-        "chorus-hooks" => Ok(TargetClass::RustService {
-            svc: "com.chorus.hooks".to_string(),
-            bin: "chorus-hook-shim".to_string(),
-        }),
-        "chorus-inject" => Ok(TargetClass::RustService {
-            svc: "com.chorus.inject".to_string(),
-            bin: "chorus-inject".to_string(),
-        }),
-        "chorus-mcp" => Ok(TargetClass::RustService {
-            svc: "com.chorus.mcp".to_string(),
-            bin: "chorus-mcp".to_string(),
-        }),
-        // TS service (LaunchAgent runs `node dist/server.js`): the #3092 net-new path.
-        "chorus-api" => Ok(TargetClass::TsService {
-            svc: "com.chorus.api".to_string(),
-            dist_dir_rel: "platform/api/dist".to_string(),
-            // Health endpoint that v1 chorus-deploy.sh's CHORUS_API_HEALTH_URL also
-            // hits post-kickstart. Bypassing MCP-init smoke because chorus-api no
-            // longer hosts /mcp (#2998); a 200 on /health is the served-the-new-code
-            // signal, same as v1's wait_for_chorus_api_mcp_ready inner branch.
-            smoke_url: "http://localhost:3340/api/chorus/health".to_string(),
-        }),
-        // CLI verbs (no LaunchAgent, no kickstart): the #3092 second net-new path.
-        n if n.starts_with("werk-") => Ok(TargetClass::CliVerb { bin: n.to_string() }),
-        // #3126 — shared library: dist→canonical + cascade-redeploy consumers.
-        "chorus-sdk" => Ok(TargetClass::SharedLib {
-            name: "chorus-sdk".to_string(),
-            lib_dist_rel: "platform/chorus-sdk/dist".to_string(),
-        }),
-        other => Err(format!(
-            "target_class: unknown name '{}' — add a rule (Rust service, TS service, CLI verb, or shared lib)",
-            other
-        )),
+/// #3132 — std-only: collect paths named `filename` under `root`, skipping
+/// node_modules/.git/target. Mirrors werk-build's helper (verbs don't import each
+/// other, ADR-032 §1). Sorted for deterministic results.
+fn find_files(root: &Path, filename: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let nm = e.file_name();
+            let nm = nm.to_string_lossy();
+            if p.is_dir() {
+                if nm == "node_modules" || nm == ".git" || nm == "target" {
+                    continue;
+                }
+                stack.push(p);
+            } else if nm == filename {
+                out.push(p);
+            }
+        }
     }
+    out.sort();
+    out
+}
+
+/// #3132 — does this package.json declare a `build` script? (mirror of werk-build's.)
+fn has_build_script(pkg_json: &str) -> bool {
+    let tokens = quoted_tokens(pkg_json);
+    let Some(at) = tokens.iter().position(|t| t == "scripts") else { return false };
+    tokens[at + 1..].iter().any(|t| t == "build")
+}
+
+/// #3132 — self-declared health URL: package.json `"chorus":{"health":"<url>"}` or
+/// Cargo.toml `chorus_health = "<url>"` under `[package.metadata.chorus]`. The token
+/// scan keys on a `health` token followed by its value (JSON) — shape-tolerant,
+/// std-only. Absent = empty string = liveness floor (never gates the deploy).
+fn declared_health(manifest: &str) -> String {
+    // JSON: ... "chorus" ... "health" "<url>" ...
+    let tokens = quoted_tokens(manifest);
+    if let Some(i) = tokens.iter().position(|t| t == "health") {
+        if let Some(v) = tokens.get(i + 1) {
+            if v.starts_with("http") {
+                return v.clone();
+            }
+        }
+    }
+    // TOML: chorus_health = "<url>"  (quoted_tokens grabs "<url>" as the only http token
+    // following a line we can't see; fall back to first http(s) quoted token).
+    for t in &tokens {
+        if t.starts_with("http") {
+            return t.clone();
+        }
+    }
+    String::new()
+}
+
+/// #3132 — the committed LaunchAgent label whose plist references `dir_rel`, or None.
+/// Scans committed `*.plist` (find_files) for one whose body contains the unit's
+/// directory path (`node dist/...` or WorkingDirectory) and is NOT a per-role `.werk.`
+/// variant. The label is the plist's filename stem (`com.gathering.messaging`).
+/// This replaces the hardcoded svc-name map: "is it a service?" is now read from the
+/// repo's own plists, including a brand-new committed-but-not-yet-loaded one (#3132
+/// Kade constraint #3 — never derive targets from loaded agents alone).
+fn service_label_for_dir(werk_root: &Path, dir_rel: &str) -> Option<String> {
+    let needle = format!("{}/", dir_rel.trim_end_matches('/'));
+    let mut best: Option<String> = None;
+    for pl in find_plists(werk_root) {
+        let stem = pl.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem.is_empty() || stem.contains(".werk.") {
+            continue;
+        }
+        let Ok(body) = fs::read_to_string(&pl) else { continue };
+        if body.contains(&needle) || body.contains(dir_rel.trim_end_matches('/')) {
+            // Prefer a label that isn't a probe/herald sidecar; first wins otherwise.
+            best.get_or_insert_with(|| stem.to_string());
+        }
+    }
+    best
+}
+
+/// #3132 — committed `*.plist` files under the werk (any depth), excl node_modules.
+fn find_plists(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let nm = e.file_name();
+            let nm = nm.to_string_lossy();
+            if p.is_dir() {
+                if nm == "node_modules" || nm == ".git" || nm == "target" {
+                    continue;
+                }
+                stack.push(p);
+            } else if nm.ends_with(".plist") {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// #3132 — locate a built unit (by its build-summary name) in the werk and classify
+/// it STRUCTURALLY. The name is a Rust crate dir under platform/services/, or the
+/// `"name"` of a TS package.json with a build script. Returns Err only if the name
+/// can't be located at all (a real contract break between build and deploy), never
+/// for "not on a list".
+pub fn target_class(name: &str) -> R<TargetClass> {
+    // Backwards-compatible entry: resolve the werk root from env, then derive.
+    let werk_root = env::var("CHORUS_DEPLOY_WERK_ROOT")
+        .map(PathBuf::from)
+        .map_err(|_| "target_class: CHORUS_DEPLOY_WERK_ROOT not set (use target_class_in)".to_string())?;
+    target_class_in(name, &werk_root)
+}
+
+/// #3132 — structural classification rooted at an explicit werk dir (testable).
+pub fn target_class_in(name: &str, werk_root: &Path) -> R<TargetClass> {
+    // werk-* CLI verbs short-circuit: standalone Rust binaries, no plist.
+    if name.starts_with("werk-") {
+        return Ok(TargetClass::CliVerb { bin: name.to_string() });
+    }
+
+    // Rust crate? platform/services/<name>/Cargo.toml.
+    let crate_dir = werk_root.join(format!("platform/services/{}", name));
+    if crate_dir.join("Cargo.toml").is_file() {
+        let bin = crate_binary(name);
+        let svc = service_for_crate(name);
+        // RustService iff a committed plist with that label exists in the repo.
+        let has_plist = find_plists(werk_root).iter().any(|p| {
+            p.file_stem().and_then(|s| s.to_str()).map(|st| st == svc).unwrap_or(false)
+        });
+        return if has_plist {
+            Ok(TargetClass::RustService { svc, bin })
+        } else {
+            Ok(TargetClass::CliVerb { bin })
+        };
+    }
+
+    // TS package: find the package.json whose "name" matches.
+    let pkg_files = find_files(werk_root, "package.json");
+    // Shared-lib dirs = canonicalized `file:` dep targets across all packages.
+    let mut sharedlib_dirs: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+    for pj in &pkg_files {
+        let Ok(content) = fs::read_to_string(pj) else { continue };
+        let pdir = pj.parent().unwrap_or(werk_root);
+        for (_d, target) in extract_file_deps(&content) {
+            if let Ok(c) = fs::canonicalize(pdir.join(&target)) {
+                sharedlib_dirs.insert(c);
+            }
+        }
+    }
+    for pj in &pkg_files {
+        let Ok(content) = fs::read_to_string(pj) else { continue };
+        if pkg_name(&content).as_deref() != Some(name) || !has_build_script(&content) {
+            continue;
+        }
+        let pdir = pj.parent().unwrap_or(werk_root);
+        let dir_rel = pdir.strip_prefix(werk_root).unwrap_or(pdir).to_string_lossy().to_string();
+        let dist_dir_rel = format!("{}/dist", dir_rel);
+        let is_lib = fs::canonicalize(pdir).map(|c| sharedlib_dirs.contains(&c)).unwrap_or(false);
+        if is_lib {
+            return Ok(TargetClass::SharedLib { name: name.to_string(), lib_dist_rel: dist_dir_rel });
+        }
+        if let Some(svc) = service_label_for_dir(werk_root, &dir_rel) {
+            return Ok(TargetClass::TsService {
+                svc,
+                dist_dir_rel,
+                smoke_url: declared_health(&content),
+            });
+        }
+        return Ok(TargetClass::TsPackage { name: name.to_string(), dist_dir_rel });
+    }
+
+    Err(format!(
+        "target_class: '{}' is in the build summary but no matching crate or build-script package was found in the werk — build/deploy contract break",
+        name
+    ))
 }
 
 // --- side-effecting helpers ---
@@ -411,7 +544,8 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     // walks its own deploy path; no class enum on the verb's top level, just per-unit
     // dispatch (Jeff's framing: deploy all things that got built).
     for (name, built_identity) in &built {
-        let class = target_class(name)?;
+        // #3132 — classify STRUCTURALLY from the werk (no name allowlist).
+        let class = target_class_in(name, &werk)?;
         match &class {
             TargetClass::RustService { svc, bin } => {
                 deploy_rust_service(
@@ -432,6 +566,11 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
             TargetClass::SharedLib { name: lib, lib_dist_rel } => {
                 deploy_shared_lib(
                     home, &werk_s, role, card, target, &trace, lib, built_identity, lib_dist_rel,
+                )?;
+            }
+            TargetClass::TsPackage { name: pkg, dist_dir_rel } => {
+                deploy_ts_package(
+                    home, &werk_s, role, card, target, &trace, pkg, built_identity, dist_dir_rel,
                 )?;
             }
         }
@@ -458,18 +597,28 @@ fn deploy_rust_service(
 ) -> R<()> {
     let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
 
-    // AC2 stale-build guard (canonical only).
+    // AC2 stale-build guard + #3132 hash-gate (canonical only).
     if target == "canonical" {
         let installed = installed_path(target, role, bin);
         let current = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed])
             .ok()
             .and_then(|o| extract_running_cdhash(&o));
-        if current.as_deref() == Some(built_cdhash) && crate_source_changed(werk_s, crate_name) {
-            jsonl(home, role, card, trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
-            return Err(format!(
-                "cdhash-divergence: rebuild of {} gave the running cdhash {} but its source changed this card — stale build, refusing (werk-build invariance suspect)",
-                crate_name, built_cdhash
-            ));
+        if current.as_deref() == Some(built_cdhash) {
+            if crate_source_changed(werk_s, crate_name) {
+                // Same cdhash but source changed this card → the rebuild didn't take
+                // (build-invariance suspect). Refuse rather than ship stale.
+                jsonl(home, role, card, trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
+                return Err(format!(
+                    "cdhash-divergence: rebuild of {} gave the running cdhash {} but its source changed this card — stale build, refusing (werk-build invariance suspect)",
+                    crate_name, built_cdhash
+                ));
+            }
+            // #3132 HASH-GATE: installed cdhash already == built AND source unchanged
+            // → this crate didn't change. Skip install + kickstart (don't bounce an
+            // unchanged service every card).
+            jsonl(home, role, card, trace, "deploy.skipped",
+                &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"reason\":\"unchanged\",\"cdhash\":\"{}\"", crate_name, built_cdhash));
+            return Ok(());
         }
     }
 
@@ -559,6 +708,19 @@ fn deploy_ts_service(
         ));
     }
 
+    // #3132 HASH-GATE: if the live canonical dist already hashes to the just-built
+    // identity, this service DID NOT CHANGE — skip the copy AND the kickstart. This is
+    // the "don't restart everything every card" fix: build is global, but a unchanged
+    // service is never bounced. The gate is keyed on byte-identity vs what's running,
+    // computed fresh — it can't go stale and it can't be forgotten (unlike a path list).
+    if let Ok(live_sha) = dist_sha(&canonical_dist) {
+        if live_sha == built_dist_sha {
+            jsonl(home, role, card, trace, "deploy.skipped",
+                &format!(",\"name\":\"{}\",\"kind\":\"ts-service\",\"reason\":\"unchanged\",\"identity\":\"{}\"", svc_name, built_dist_sha));
+            return Ok(());
+        }
+    }
+
     // Preserve current canonical dist (v1 #2925 AC4 pattern). Best-effort —
     // a non-existent canonical/dist just means this is a fresh install.
     if Path::new(&canonical_dist).is_dir() {
@@ -623,17 +785,27 @@ fn deploy_ts_service(
         return Err(format!("kickstart {} failed; restored prev dist: {}", svc, e));
     }
 
-    // Health smoke — wait for the new process to start serving. The endpoint comes
-    // from TargetClass::TsService (chorus-api uses /api/chorus/health per v1 #2998).
-    // ~30s budget mirrors v1's CHORUS_MCP_SMOKE_TIMEOUT_S.
-    if let Err(e) = wait_for_health(smoke_url, Duration::from_secs(30)) {
+    // #3132 — VERIFY the restart took. If the service self-declared a health URL,
+    // smoke it (proves it SERVES the new code — the strong proof, e.g. chorus-api).
+    // Otherwise fall back to launchd LIVENESS (proves the process came up and isn't
+    // crash-looping). A MISSING health declaration NEVER fails the deploy — it only
+    // downgrades the proof. (Kade's #3132 floor: optional metadata must not gate the
+    // structural deploy, or "not declared" becomes the new "not on the list → stale".)
+    let verify = if smoke_url.is_empty() {
+        jsonl(home, role, card, trace, "deploy.verify.liveness", &format!(",\"name\":\"{}\",\"svc\":\"{}\"", svc_name, svc));
+        wait_for_liveness(svc, Duration::from_secs(15))
+    } else {
+        jsonl(home, role, card, trace, "deploy.verify.smoke", &format!(",\"name\":\"{}\",\"url\":\"{}\"", svc_name, smoke_url));
+        wait_for_health(smoke_url, Duration::from_secs(30))
+    };
+    if let Err(e) = verify {
         let _ = fs::remove_dir_all(&canonical_dist);
         if Path::new(&canonical_dist_prev).is_dir() {
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-smoke-timeout\"");
-        return Err(format!("health smoke for {} failed; restored prev dist: {}", svc_name, e));
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-verify-fail\"");
+        return Err(format!("post-restart verify for {} failed; restored prev dist: {}", svc_name, e));
     }
 
     // #3092 — identity verify happens BEFORE kickstart (above). The running
@@ -1002,6 +1174,88 @@ fn wait_for_health(url: &str, timeout: Duration) -> R<()> {
         }
         sleep(Duration::from_millis(500));
     }
+}
+
+/// #3132 — launchd LIVENESS floor: after a kickstart, poll `launchctl print
+/// gui/<uid>/<svc>` until the job reports a running pid, or fail. This is the
+/// universal "did the restart take" check for a service that did NOT self-declare a
+/// health URL — it proves the process came up and isn't spawn-throttled/crash-looping,
+/// without claiming it serves correctly (that's what a health URL would add). Weaker
+/// than smoke, but it never blocks a deploy for a missing declaration.
+fn wait_for_liveness(svc: &str, timeout: Duration) -> R<()> {
+    let label = format!("gui/{}/{}", uid(), svc);
+    let start = Instant::now();
+    let mut last = String::new();
+    loop {
+        if let Ok(out) = run_env(None, &[], "launchctl", &["print", &label]) {
+            // A live job prints `state = running` and a `pid = <n>`. A crash-looping
+            // one prints `state = spawn scheduled`/`waiting` with no pid, or a
+            // nonzero `last exit code`. Require a pid + running to pass.
+            let running = out.contains("state = running");
+            let has_pid = out.lines().any(|l| l.trim_start().starts_with("pid ="));
+            if running && has_pid {
+                return Ok(());
+            }
+            last = out;
+        }
+        if start.elapsed() >= timeout {
+            let tail: String = last.lines().take(6).collect::<Vec<_>>().join(" | ");
+            return Err(format!("{} not running within {:?} (launchctl: {})", svc, timeout, tail));
+        }
+        sleep(Duration::from_millis(500));
+    }
+}
+
+/// #3132 — deploy a plain TS PACKAGE (build script, no LaunchAgent, not a shared lib):
+/// a CLI/tool like `cards` or `clearing`. Copy its dist to canonical (preserve .prev),
+/// identity-verify installed == built, NO kickstart (nothing to restart). Hash-gated:
+/// an unchanged package is skipped (no copy). This closes the stale gap for CLIs that
+/// changed on their own (not via a shared-lib cascade) — they were previously
+/// unreachable by the deploy verb and silently ran old code.
+#[allow(clippy::too_many_arguments)]
+fn deploy_ts_package(
+    home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
+    name: &str, built_dist_sha: &str, dist_dir_rel: &str,
+) -> R<()> {
+    if target == "werk" {
+        // The role's session runs the package from its own werk dist (already built).
+        jsonl(home, role, card, trace, "deploy.tspackage.werk-noop", &format!(",\"name\":\"{}\"", name));
+        return Ok(());
+    }
+    let canonical_root = canonical_root_path(home);
+    let canonical_dist = format!("{}/{}", canonical_root, dist_dir_rel);
+    let werk_dist = format!("{}/{}", werk_s, dist_dir_rel);
+    if !Path::new(&werk_dist).is_dir() {
+        return Err(format!("TS package deploy: werk dist not found at {} (werk-build should have produced it)", werk_dist));
+    }
+    // HASH-GATE: unchanged → skip the copy.
+    if let Ok(live_sha) = dist_sha(&canonical_dist) {
+        if live_sha == built_dist_sha {
+            jsonl(home, role, card, trace, "deploy.skipped",
+                &format!(",\"name\":\"{}\",\"kind\":\"ts-package\",\"reason\":\"unchanged\",\"identity\":\"{}\"", name, built_dist_sha));
+            return Ok(());
+        }
+    }
+    let mut moved: Vec<(String, String)> = Vec::new();
+    if let Err(e) = install_dist(&werk_dist, &canonical_dist, &mut moved) {
+        for (canonical, prev) in moved.iter().rev() {
+            let _ = fs::remove_dir_all(canonical);
+            if Path::new(prev).is_dir() { let _ = fs::rename(prev, canonical); }
+        }
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"tspackage-install-fail\"");
+        return Err(format!("install of {} dist failed; rolled back: {}", name, e));
+    }
+    let installed_sha = dist_sha(&canonical_dist).unwrap_or_default();
+    if installed_sha != built_dist_sha {
+        for (canonical, prev) in moved.iter().rev() {
+            let _ = fs::remove_dir_all(canonical);
+            if Path::new(prev).is_dir() { let _ = fs::rename(prev, canonical); }
+        }
+        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"tspackage-identity-mismatch\"");
+        return Err(format!("installed {} dist sha != built: built={} installed={} — rolled back", name, built_dist_sha, installed_sha));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-package\",\"target\":\"{}\",\"identity\":\"{}\"", name, target, installed_sha));
+    Ok(())
 }
 
 /// Did this card change the crate's source (vs origin/main)? Drives the AC2

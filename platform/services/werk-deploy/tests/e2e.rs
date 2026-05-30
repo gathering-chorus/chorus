@@ -81,7 +81,14 @@ fn e2e_deploy_both_slots_and_guards() {
 
     let werk = werk_base.join("silas-7001");
     git(&home, &["worktree", "add", "-q", "-b", "silas/7001", werk.to_str().unwrap(), "origin/main"]);
+    // #3132: a Rust SERVICE is structurally a crate (Cargo.toml) WITH a committed
+    // com.chorus.<svc> plist (the "is it kickstarted?" signal read from the repo, not
+    // a hardcoded name). This synthetic crate stands in for the RustService path.
     fs::create_dir_all(werk.join("platform/services/chorus-inject/src")).unwrap();
+    fs::write(werk.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
+    fs::create_dir_all(werk.join("config/launchagents")).unwrap();
+    fs::write(werk.join("config/launchagents/com.chorus.inject.plist"),
+        "<plist><string>chorus-inject</string></plist>").unwrap();
     fs::write(werk.join("platform/services/chorus-inject/src/lib.rs"), "// w\n").unwrap();
     git(&werk, &["add", "."]); git(&werk, &["commit", "-q", "-m", "chorus-inject"]);
 
@@ -170,7 +177,7 @@ fn e2e_shared_lib_cascade_and_anti_stale() {
     let origin = tmp("slorigin");
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::create_dir_all(origin.join("platform/chorus-sdk")).unwrap();
-    fs::write(origin.join("platform/chorus-sdk/package.json"), r#"{ "name": "chorus-sdk", "main": "dist/index.js" }"#).unwrap();
+    fs::write(origin.join("platform/chorus-sdk/package.json"), r#"{ "name": "chorus-sdk", "main": "dist/index.js", "scripts": { "build": "tsc" } }"#).unwrap();
     fs::create_dir_all(origin.join("products/cards")).unwrap();
     fs::write(origin.join("products/cards/package.json"), r#"{ "name": "cards", "dependencies": { "chorus-sdk": "file:../../platform/chorus-sdk" } }"#).unwrap();
     fs::create_dir_all(origin.join("products/vendored")).unwrap();

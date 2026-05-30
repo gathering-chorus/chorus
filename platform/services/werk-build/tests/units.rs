@@ -1,58 +1,29 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
-    branch_name, crate_for_path, discover_build_units, extract_cdhash, extract_file_deps,
-    jsonl_line, pkg_name, resolve_trace, shared_lib_for_path, ts_service_for_path, BuildUnit,
+    branch_name, discover_build_units_in_tree, extract_cdhash, extract_file_deps, has_build_script,
+    jsonl_line, pkg_name, resolve_trace, BuildUnit,
 };
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Unique temp dir for a fixture (no tempfile dep; std-only, per ADR-032 §1).
+fn fixture(tag: &str) -> PathBuf {
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let p = std::env::temp_dir().join(format!("wb-tree-{}-{}-{}", tag, std::process::id(), nanos));
+    fs::create_dir_all(&p).unwrap();
+    p
+}
+
+fn write(root: &PathBuf, rel: &str, body: &str) {
+    let p = root.join(rel);
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(&p, body).unwrap();
+}
 
 #[test]
 fn branch_name_is_role_slash_card() {
     assert_eq!(branch_name("silas", 3061), "silas/3061");
-}
-
-#[test]
-fn crate_for_path_maps_services_paths_only() {
-    assert_eq!(crate_for_path("platform/services/werk-build/src/lib.rs"), Some("werk-build".to_string()));
-    assert_eq!(crate_for_path("platform/services/chorus-hooks/Cargo.toml"), Some("chorus-hooks".to_string()));
-    // not a services crate -> None (TS paths handled by ts_service_for_path; docs etc. ignored)
-    assert_eq!(crate_for_path("platform/api/src/server.ts"), None);
-    assert_eq!(crate_for_path("roles/silas/adr/ADR-032.md"), None);
-    assert_eq!(crate_for_path("platform/services/"), None);
-}
-
-#[test]
-fn ts_service_for_path_maps_api_paths_to_chorus_api() {
-    // #3092 — platform/api/* is chorus-api (the TS service); other paths are None.
-    assert_eq!(ts_service_for_path("platform/api/src/server.ts"), Some("chorus-api".to_string()));
-    assert_eq!(ts_service_for_path("platform/api/src/handlers/chorus-crawl.ts"), Some("chorus-api".to_string()));
-    assert_eq!(ts_service_for_path("platform/api/package.json"), Some("chorus-api".to_string()));
-    // a Rust crate path is NOT a TS service.
-    assert_eq!(ts_service_for_path("platform/services/werk-build/src/lib.rs"), None);
-    // docs/state are not TS services.
-    assert_eq!(ts_service_for_path("roles/silas/adr/ADR-032.md"), None);
-    assert_eq!(ts_service_for_path("platform/api"), None); // needs trailing slash to be inside the dir
-}
-
-#[test]
-fn shared_lib_for_path_maps_chorus_sdk_paths() {
-    // #3126 — platform/chorus-sdk/* is the shared library chorus-sdk. A change to
-    // it MUST yield a build unit (the silent-stale-prod gap #3092 left: it matched
-    // no class → zero units → acp shipped nothing → consumers ran stale).
-    assert_eq!(shared_lib_for_path("platform/chorus-sdk/src/emit.ts"), Some("chorus-sdk".to_string()));
-    assert_eq!(shared_lib_for_path("platform/chorus-sdk/package.json"), Some("chorus-sdk".to_string()));
-    // a service / api / docs path is NOT the shared lib.
-    assert_eq!(shared_lib_for_path("platform/services/werk-build/src/lib.rs"), None);
-    assert_eq!(shared_lib_for_path("platform/api/src/server.ts"), None);
-    assert_eq!(shared_lib_for_path("platform/chorus-sdk"), None); // needs trailing slash to be inside
-}
-
-#[test]
-fn discover_build_units_recognizes_shared_lib_never_zero() {
-    // The crux of #3126: a chorus-sdk-only diff used to yield ZERO units. It must
-    // now yield the SharedLib unit so the cascade fires and prod can't run stale.
-    let diff = ["platform/chorus-sdk/src/emit.ts", "platform/chorus-sdk/src/index.ts"];
-    let units = discover_build_units(diff.iter());
-    assert_eq!(units, vec![BuildUnit::SharedLib("chorus-sdk".to_string())]);
-    assert!(!units.is_empty(), "a shared-lib change must NEVER yield zero build units (#3126)");
 }
 
 #[test]
@@ -83,42 +54,6 @@ fn extract_file_deps_empty_when_no_file_deps() {
 fn pkg_name_reads_name_field() {
     assert_eq!(pkg_name(r#"{ "name": "cards", "version": "1.0.0" }"#), Some("cards".to_string()));
     assert_eq!(pkg_name(r#"{ "version": "1.0.0" }"#), None);
-}
-
-#[test]
-fn discover_build_units_finds_rust_and_ts_in_one_diff() {
-    // A mixed diff produces both kinds, deduplicated, ordered.
-    let diff = [
-        "platform/services/werk-build/src/lib.rs",
-        "platform/services/werk-build/tests/units.rs", // same crate -> dedup
-        "platform/api/src/server.ts",
-        "platform/api/src/handlers/chorus-crawl.ts", // same service -> dedup
-        "roles/silas/adr/ADR-032.md",                 // not buildable
-    ];
-    let units = discover_build_units(diff.iter());
-    // BTreeSet over (kind, name) sorts: RustCrate < TsService by enum-variant order.
-    assert_eq!(
-        units,
-        vec![
-            BuildUnit::RustCrate("werk-build".to_string()),
-            BuildUnit::TsService("chorus-api".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn discover_build_units_empty_on_no_buildable_paths() {
-    let diff = ["roles/silas/adr/ADR-032.md", "designing/docs/x.html"];
-    let units = discover_build_units(diff.iter());
-    assert!(units.is_empty(), "non-buildable paths must yield empty unit list");
-}
-
-#[test]
-fn discover_build_units_handles_empty_lines_and_whitespace() {
-    // git diff output may have trailing whitespace; the function trims per-line.
-    let diff = ["", "  platform/services/chorus-hooks/src/lib.rs  ", "\n"];
-    let units = discover_build_units(diff.iter());
-    assert_eq!(units, vec![BuildUnit::RustCrate("chorus-hooks".to_string())]);
 }
 
 #[test]
@@ -153,6 +88,77 @@ fn resolve_trace_mints_and_persists_when_absent() {
     let t2 = resolve_trace(card);
     assert_eq!(t1, t2, "trace must persist to /tmp/<card>-trace so the chain threads");
     let _ = std::fs::remove_file(&p);
+}
+
+// --- #3132: structural enumeration (build everything by structure, no allowlist) ---
+
+#[test]
+fn has_build_script_detects_build_in_scripts() {
+    assert!(has_build_script(r#"{"name":"x","scripts":{"build":"tsc","test":"jest"}}"#));
+    assert!(has_build_script(r#"{"name":"x","scripts":{"start":"node .","build":"tsc"}}"#));
+    // no build script -> false (a runtime-only or lib package without a build step).
+    assert!(!has_build_script(r#"{"name":"x","scripts":{"start":"node ."}}"#));
+    assert!(!has_build_script(r#"{"name":"x","dependencies":{"express":"^4"}}"#));
+}
+
+#[test]
+fn discover_in_tree_finds_pulse_and_every_service_not_just_an_allowlist() {
+    // THE #3132 CRUX: platform/pulse matched no hardcoded rule, so the old
+    // diff-discovery built ZERO units for a pulse change -> #3130 merged green and
+    // ran stale. Structural enumeration finds it because it IS a build-script
+    // package — no rule to add, no list to forget.
+    let root = fixture("pulse");
+    write(&root, "platform/services/werk-build/Cargo.toml", "[package]\nname=\"werk-build\"\n");
+    write(&root, "platform/services/chorus-hooks/Cargo.toml", "[package]\nname=\"chorus-hooks\"\n");
+    write(&root, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
+    write(&root, "platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
+    write(&root, "platform/mcp-server/package.json", r#"{"name":"chorus-mcp","scripts":{"build":"tsc"}}"#);
+    // a docs dir + a no-build package are NOT build units.
+    write(&root, "designing/docs/x.html", "<html>");
+    write(&root, "platform/configonly/package.json", r#"{"name":"configonly","scripts":{"start":"node ."}}"#);
+
+    let units = discover_build_units_in_tree(&root);
+    assert!(units.contains(&BuildUnit::TsService("chorus-messaging".to_string())),
+        "pulse (chorus-messaging) MUST be discovered structurally — this is the #3130/#3132 stale gap");
+    assert!(units.contains(&BuildUnit::TsService("chorus-api".to_string())));
+    assert!(units.contains(&BuildUnit::TsService("chorus-mcp".to_string())));
+    assert!(units.contains(&BuildUnit::RustCrate("werk-build".to_string())));
+    assert!(units.contains(&BuildUnit::RustCrate("chorus-hooks".to_string())));
+    // no-build package and docs are absent.
+    assert!(!units.iter().any(|u| u.name() == "configonly"));
+    assert_eq!(units.len(), 5, "exactly the 2 crates + 3 build-script services");
+}
+
+#[test]
+fn discover_in_tree_classifies_shared_lib_by_file_dep_target() {
+    // SharedLib vs TsService is STRUCTURAL: a package that is the target of a `file:`
+    // dependency is a library (its consumers cascade-rebuild on deploy); one that
+    // isn't is a service. No hardcoded "chorus-sdk is special" rule.
+    let root = fixture("sharedlib");
+    write(&root, "platform/chorus-sdk/package.json", r#"{"name":"chorus-sdk","scripts":{"build":"tsc"}}"#);
+    write(&root, "platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
+    // a consumer (the cards CLI) declares chorus-sdk as a file: dep -> sdk is a lib.
+    write(&root, "directing/products/cards/package.json",
+        r#"{"name":"cards","scripts":{"build":"tsc"},"dependencies":{"chorus-sdk":"file:../../../platform/chorus-sdk"}}"#);
+
+    let units = discover_build_units_in_tree(&root);
+    assert!(units.contains(&BuildUnit::SharedLib("chorus-sdk".to_string())),
+        "chorus-sdk is a file:-dep target -> SharedLib (cascade), discovered not hardcoded");
+    assert!(units.contains(&BuildUnit::TsService("chorus-messaging".to_string())),
+        "pulse is no one's file: dep -> a service, not a lib");
+    assert!(units.contains(&BuildUnit::TsService("cards".to_string())),
+        "the consumer itself is also a build unit (built directly, not only via cascade)");
+}
+
+#[test]
+fn discover_in_tree_skips_node_modules() {
+    // A build-script package vendored under node_modules must NOT become a build unit.
+    let root = fixture("nm");
+    write(&root, "platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
+    write(&root, "platform/pulse/node_modules/dep/package.json", r#"{"name":"dep","scripts":{"build":"tsc"}}"#);
+    let units = discover_build_units_in_tree(&root);
+    assert!(units.contains(&BuildUnit::TsService("chorus-messaging".to_string())));
+    assert!(!units.iter().any(|u| u.name() == "dep"), "node_modules packages are not build units");
 }
 
 #[test]

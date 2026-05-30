@@ -69,52 +69,6 @@ pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, ext
     )
 }
 
-/// Map a changed repo path to its owning Rust crate name, or None.
-/// Rust crates live under platform/services/<crate>/ (signed binaries via build-signed.sh).
-pub fn crate_for_path(path: &str) -> Option<String> {
-    let rest = path.strip_prefix("platform/services/")?;
-    let name = rest.split('/').next()?;
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    }
-}
-
-/// #3092 — map a changed repo path to its owning TS service name, or None.
-/// TS services are tsc-built; identity is sha256(dist tree), not cdhash.
-/// Today only chorus-api lives at platform/api/; future TS services would add
-/// rules here. The detection is intentionally a function returning a unit,
-/// not an enum class — the work IS the data (Jeff's framing): a Cargo.toml means
-/// cargo-build; platform/api/ means npm-build. New buildable kind = new rule.
-pub fn ts_service_for_path(path: &str) -> Option<String> {
-    if path.starts_with("platform/api/") {
-        return Some("chorus-api".to_string());
-    }
-    None
-}
-
-/// #3126 — map a changed repo path to its owning shared-library name, or None.
-/// A shared library (chorus-sdk today) is a TS package at platform/<name>/ that
-/// other packages import via a `file:` dependency. It is NOT a service (no
-/// LaunchAgent, no standalone runtime) — its dist is consumed by bundlers/linkers.
-///
-/// #3092 covered three classes (Rust crate, TS service, CLI verb) but NOT this:
-/// a shared lib matched no rule, so a change to it yielded ZERO build units → acp
-/// shipped nothing → and nothing cascaded to rebuild the consumers that bundle it
-/// → PROD SILENTLY RAN STALE (#3121: emit.ts merged + accepted, cards CLI kept
-/// running old compiled chorus-sdk until a manual rebuild). This rule closes that.
-///
-/// Today only chorus-sdk; a future shared lib adds a rule here, exactly mirroring
-/// `ts_service_for_path` — the mechanism (SharedLib unit + graph-discovered consumer
-/// cascade) generalizes; the path rule is the per-lib registration.
-pub fn shared_lib_for_path(path: &str) -> Option<String> {
-    if path.starts_with("platform/chorus-sdk/") {
-        return Some("chorus-sdk".to_string());
-    }
-    None
-}
-
 /// #3092/#3126 — what kind of thing was changed, and what's its identifier. A Rust
 /// crate (build-signed.sh, cdhash), a TS service (`npm run build`, sha256-of-dist),
 /// or a shared library (`npm run build` + cascade-rebuild every graph-discovered
@@ -144,32 +98,105 @@ impl BuildUnit {
     }
 }
 
-/// #3092 — walk a diff line-set and yield every buildable unit (Rust crate OR
-/// TS service) the branch touched. Deduplicated + ordered. Pure (no IO);
-/// callers pass the output of `git diff origin/main --name-only`.
-///
-/// This is Jeff's "build all things that need a build based on the branch" —
-/// no language enum on the verb, just per-path detection rules. Adding a new
-/// language = a new `<lang>_for_path` rule + an arm here.
-pub fn discover_build_units<I, S>(diff_lines: I) -> Vec<BuildUnit>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
-    for line in diff_lines {
-        let p = line.as_ref().trim();
-        // #3126 — shared-lib check FIRST (platform/chorus-sdk/ is not under
-        // platform/services/ or platform/api/, so the rules don't overlap; the
-        // ordering just makes intent explicit).
-        if let Some(l) = shared_lib_for_path(p) {
-            units.insert(BuildUnit::SharedLib(l));
-        } else if let Some(c) = crate_for_path(p) {
-            units.insert(BuildUnit::RustCrate(c));
-        } else if let Some(s) = ts_service_for_path(p) {
-            units.insert(BuildUnit::TsService(s));
+/// #3132 — recursively collect paths named `filename` under `root`, skipping
+/// node_modules / .git / target (build + VCS noise). std-only walk so it's
+/// testable against a temp dir without a git repo. Sorted for stable output.
+fn find_files(root: &Path, filename: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            if p.is_dir() {
+                if name == "node_modules" || name == ".git" || name == "target" {
+                    continue;
+                }
+                stack.push(p);
+            } else if name == filename {
+                out.push(p);
+            }
         }
     }
+    out.sort();
+    out
+}
+
+/// #3132 — does this package.json declare a `build` script? std-only, shape-tolerant:
+/// a `build` token appearing after the `scripts` token. (Sufficient for this repo's
+/// package.json layout, where the scripts object precedes deps; a dep literally named
+/// "build" would be a false positive, but none exists and a global build is harmless
+/// anyway — worst case is building a unit with no build step, which `npm run build`
+/// itself would reject loudly.)
+pub fn has_build_script(pkg_json: &str) -> bool {
+    let tokens = quoted_tokens(pkg_json);
+    let Some(scripts_at) = tokens.iter().position(|t| t == "scripts") else { return false };
+    tokens[scripts_at + 1..].iter().any(|t| t == "build")
+}
+
+/// #3132 — STRUCTURAL enumeration: every buildable unit in the werk, discovered by
+/// what it IS (a Rust crate / a TS package with a build script), NOT by what a diff
+/// touched. This is the fix for the merged-but-stale class (#3126/#3130/#3133): the
+/// old `discover_build_units(diff)` only built units whose path matched a hardcoded
+/// rule (`ts_service_for_path` / `shared_lib_for_path`), so a service not on the list
+/// built NOTHING → merged green → ran stale. There is no list here: if it's a crate or
+/// a build-script package, it's a unit. Building everything is cheap — the toolchains
+/// no-op unchanged units (~10s TS, 0.07s cargo for an unchanged crate set) — and
+/// werk-deploy gates the actual copy+restart on hash-difference, so unchanged units
+/// are never bounced. Build-all (nothing missed) + restart-only-what-differs.
+///
+/// SharedLib vs TsService is itself structural: a TS package that is the target of a
+/// `file:` dependency from another package IS a library (its consumers must be
+/// cascade-rebuilt on deploy); one that isn't is a service/CLI.
+pub fn discover_build_units_in_tree(werk_root: &Path) -> Vec<BuildUnit> {
+    let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
+
+    // Rust crates: platform/services/<name>/Cargo.toml.
+    let services = werk_root.join("platform/services");
+    if let Ok(entries) = fs::read_dir(&services) {
+        for e in entries.flatten() {
+            if e.path().join("Cargo.toml").is_file() {
+                if let Some(n) = e.file_name().to_str() {
+                    units.insert(BuildUnit::RustCrate(n.to_string()));
+                }
+            }
+        }
+    }
+
+    // Shared-lib dirs = canonicalized targets of every `file:` dep in any tracked
+    // package.json. Discovered from the dependency graph, never hardcoded.
+    let pkg_files = find_files(werk_root, "package.json");
+    let mut sharedlib_dirs: BTreeSet<PathBuf> = BTreeSet::new();
+    for pj in &pkg_files {
+        let Ok(content) = fs::read_to_string(pj) else { continue };
+        let pkg_dir = pj.parent().unwrap_or(werk_root);
+        for (_dep, target) in extract_file_deps(&content) {
+            if let Ok(canon) = fs::canonicalize(pkg_dir.join(&target)) {
+                sharedlib_dirs.insert(canon);
+            }
+        }
+    }
+
+    // TS packages with a build script → SharedLib (a file:-dep target) or TsService.
+    for pj in &pkg_files {
+        let Ok(content) = fs::read_to_string(pj) else { continue };
+        if !has_build_script(&content) {
+            continue;
+        }
+        let Some(name) = pkg_name(&content) else { continue };
+        let pkg_dir = pj.parent().unwrap_or(werk_root);
+        let is_lib = fs::canonicalize(pkg_dir)
+            .map(|c| sharedlib_dirs.contains(&c))
+            .unwrap_or(false);
+        if is_lib {
+            units.insert(BuildUnit::SharedLib(name));
+        } else {
+            units.insert(BuildUnit::TsService(name));
+        }
+    }
+
     units.into_iter().collect()
 }
 
@@ -373,19 +400,25 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
         .ok_or_else(|| format!("build of {} produced no cdhash (build-signed.sh output had no 'cdhash=' line)", crate_name))
 }
 
-/// #3092 — map a TS service name to its source directory inside the werk.
-/// Today only chorus-api at platform/api/; future TS services add a rule here.
-/// Separate from `ts_service_for_path` so the path→name rule and the name→dir
-/// rule can evolve independently (e.g., a different repo layout for a future
-/// TS service).
-fn ts_service_dir(werk_s: &str, service: &str) -> R<String> {
-    match service {
-        "chorus-api" => Ok(format!("{}/platform/api", werk_s)),
-        other => Err(format!(
-            "unknown TS service '{}' (only 'chorus-api' is registered today; add a rule in ts_service_dir)",
-            other
-        )),
+/// #3132 — resolve a TS package's source dir inside the werk by STRUCTURE: find the
+/// package.json whose `"name"` matches. No hardcoded name→dir map (the executor-side
+/// twin of the old discovery allowlist — the live run of #3132 caught that fixing only
+/// discovery left this stale). Errs only if the named package can't be found at all.
+fn pkg_dir_for_name(werk_s: &str, name: &str) -> R<String> {
+    let root = Path::new(werk_s);
+    for pj in find_files(root, "package.json") {
+        if let Ok(content) = fs::read_to_string(&pj) {
+            if pkg_name(&content).as_deref() == Some(name) {
+                let dir = pj.parent().unwrap_or(root);
+                return path(dir).map(|s| s.to_string());
+            }
+        }
     }
+    Err(format!("TS package '{}' not found in werk (no package.json with that name)", name))
+}
+
+fn ts_service_dir(werk_s: &str, service: &str) -> R<String> {
+    pkg_dir_for_name(werk_s, service)
 }
 
 /// #3092 — build ONE TS service IN THE WERK, return its identity hash
@@ -448,16 +481,10 @@ fn dist_sha(dist_dir: &str) -> R<String> {
     Ok(sha.to_string())
 }
 
-/// #3126 — source dir of a shared lib inside the werk. Today only chorus-sdk; a
-/// future shared lib adds a rule (mirrors ts_service_dir).
+/// #3132 — source dir of a shared lib inside the werk, resolved structurally by
+/// package name (mirrors ts_service_dir; no hardcoded chorus-sdk rule).
 fn shared_lib_dir(werk_s: &str, lib: &str) -> R<String> {
-    match lib {
-        "chorus-sdk" => Ok(format!("{}/platform/chorus-sdk", werk_s)),
-        other => Err(format!(
-            "unknown shared lib '{}' (only 'chorus-sdk' is registered; add a rule in shared_lib_dir)",
-            other
-        )),
-    }
+    pkg_dir_for_name(werk_s, lib)
 }
 
 /// A graph-discovered consumer of a shared lib: its package `name` (deploy identity)
@@ -664,29 +691,19 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
 
-    // #3092 — discover ALL build units (Rust crates + TS services) from the branch
-    // diff. The verb doesn't classify by language; it walks the diff and dispatches
-    // each unit through its own builder. Adding a new buildable kind = a new
-    // detection rule (ts_service_for_path / crate_for_path / future), no orchestrator
-    // change. This is Jeff's "build all things that need a build based on the branch."
-    let diff = run("git", &["-C", &werk_s, "diff", "origin/main", "--name-only"])?;
-    let units = discover_build_units(diff.lines());
+    // #3132 — STRUCTURAL enumeration: build EVERY unit in the werk (Rust crate + TS
+    // package with a build script), NOT a diff-filtered subset. The diff-driven
+    // `discover_build_units` was a second incrementality layer on top of the one
+    // cargo/tsc already do natively — it saved ~nothing and was the source of
+    // merged-but-stale prod (a unit not matching a hardcoded path rule built NOTHING).
+    // Building everything is cheap (toolchains no-op unchanged units) and can't miss a
+    // unit; werk-deploy gates the actual copy+restart on hash-difference so nothing
+    // unchanged is bounced. Build-all + restart-only-what-differs.
+    let units = discover_build_units_in_tree(&werk);
     if units.is_empty() {
-        // #3107 — "buildable" was the wrong question. Some artifacts have a build
-        // cycle (Rust compile, TS bundle), others don't (docs, graph data, principles,
-        // config). Build's job is "compile what needs compiling, then get out of the
-        // way" — not gate the demo on whether anything compiled. werk-deploy is
-        // universal and dispatches by what changed (catalog register for docs, etc.);
-        // build returns a clean no-op success so the demo chain proceeds.
-        let changed = diff.lines().filter(|l| !l.is_empty()).count();
-        jsonl(
-            home,
-            role,
-            card,
-            &trace,
-            "build.skipped",
-            &format!(",\"reason\":\"no-build-cycle\",\"changed_paths\":{}", changed),
-        );
+        // Degenerate werk with no buildable units at all (no crates, no build-script
+        // packages). Keep the clean no-op so the demo/acp chain proceeds (#3107).
+        jsonl(home, role, card, &trace, "build.skipped", ",\"reason\":\"no-build-units\"");
         jsonl(home, role, card, &trace, "build.completed", ",\"built\":\"\"");
         return Ok(String::new());
     }
