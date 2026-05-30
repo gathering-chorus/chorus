@@ -553,6 +553,36 @@ fn role_wip_domain(role: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// #3134 — format one context-inject OUTCOME spine line (pure, testable).
+/// Matches the chorus.log JSONL shape so promtail/Loki ingest it like any spine
+/// event, which makes the per-prompt result queryable via `logs_*`/pulse.
+pub fn format_spine_line(
+    ts: &str, role: &str, event: &str,
+    chorus_hits: usize, memory_hits: usize, log_errors: usize,
+    injected_bytes: usize, elapsed_ms: u64,
+) -> String {
+    format!(
+        r#"{{"timestamp":"{}","level":"info","appName":"chorus-events","component":"context-inject","event":"{}","role":"{}","chorus_hits":{},"memory_hits":{},"log_errors":{},"injected_bytes":{},"elapsed_ms":{}}}"#,
+        ts, event, role, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms
+    )
+}
+
+/// #3134 — emit the per-prompt context-inject outcome to the spine
+/// (`~/.chorus/chorus.log`). The `info!` calls in check() only reach daemon
+/// stderr → /tmp/chorus-api.log (the 3-sink split that made the GET/USE outcome
+/// unmeasurable). Append-only, fail-open — logging never blocks a prompt.
+fn emit_spine_observation(
+    role: &str, event: &str,
+    chorus_hits: usize, memory_hits: usize, log_errors: usize,
+    injected_bytes: usize, elapsed_ms: u64,
+) {
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let line = format_spine_line(&ts, role, event, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms);
+    let path = crate::shared::state_paths::chorus_log_file();
+    let _ = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+        .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", line) });
+}
+
 /// Main hook: extract keywords, search, synthesize, inject
 /// Stores results in AppState so other hooks can read them (#2225)
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
@@ -612,25 +642,33 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
     // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
     let card_tag = role_wip_domain(&role_name);
-    let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query, card_tag.as_deref());
 
-    // Scan memory files (local, cheap)
-    let memory_hits = scan_memory(&keywords);
-
-    // Foundational context primitives — read every prompt, not just when search
-    // returns hits. These are the team's shared present tense: team state,
-    // recent events, active domain. Jeff has asked repeatedly for them on every
-    // envelope; the spec test in platform/tests/context-inject-envelope-spec.bats
-    // locks that contract.
-    let pulse_block = read_pulse_snapshot();
-    let spine_events = query_recent_spine(8);
-    let athena_block = cached_query_athena_domain(&role_name);
-
-    // Live log signal (#3032) — recent errors from Loki, the half Chorus search
-    // can't see (logs aren't indexed). Runs every prompt now, uncapped (#3048);
-    // a genuine failure logs loudly (see query_recent_log_errors) rather than
-    // vanishing into an empty result.
-    let log_errors = query_recent_log_errors();
+    // #3134: PARALLEL fan-out. The six sub-queries are independent reads with no
+    // ordering dependency until assembly — running them sequentially made the
+    // per-prompt latency the SUM of two chorus-api round-trips + Loki + the file
+    // reads (search/memory/pulse/spine/athena/logs). spawn_blocking starts each
+    // on the blocking pool immediately; we then await all, so wall-clock = the
+    // slowest single query, not the sum. Output is byte-identical (the
+    // envelope-spec bats locks the assembled block — only the fetch is concurrent).
+    let (chorus_results, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
+        let (r1, kw1, q1, tag1) = (role_name.clone(), keywords.clone(), query.clone(), card_tag.clone());
+        let kw2 = keywords.clone();
+        let r3 = role_name.clone();
+        let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
+        let t_memory = tokio::task::spawn_blocking(move || scan_memory(&kw2));
+        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
+        let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
+        let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
+        let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
+        (
+            t_chorus.await.unwrap_or_default(),
+            t_memory.await.unwrap_or_default(),
+            t_pulse.await.unwrap_or_default(),
+            t_spine.await.unwrap_or_default(),
+            t_athena.await.unwrap_or_default(),
+            t_logs.await.unwrap_or_default(),
+        )
+    };
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
@@ -699,13 +737,16 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // useful even when search/Loki/spine turn up nothing this prompt.
     if pulse_block.is_none() && spine_events.is_empty() && athena_block.is_none()
         && chorus_results.is_empty() && memory_hits.is_empty() && log_errors.is_empty() {
+        let elapsed = envelope_start.elapsed().as_millis() as u64;
         info!(
             gate = "context-inject",
             event = "no-results",
             role = %role_name,
             query = %query,
-            elapsed_ms = envelope_start.elapsed().as_millis() as u64,
+            elapsed_ms = elapsed,
         );
+        // #3134: observability — outcome on the spine, not just daemon stderr.
+        emit_spine_observation(&role_name, "context.inject.empty", 0, 0, 0, manifest_block.len(), elapsed);
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
     }
 
@@ -722,6 +763,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }).await;
 
     let cycle_id = state.get_cycle_id(session_id).await.unwrap_or_default();
+    let elapsed = envelope_start.elapsed().as_millis() as u64;
     info!(
         gate = "context-inject",
         event = "injected",
@@ -731,11 +773,19 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         chorus_hits = chorus_results.len(),
         memory_hits = memory_hits.len(),
         log_errors = log_errors.len(),
-        elapsed_ms = envelope_start.elapsed().as_millis() as u64,
+        elapsed_ms = elapsed,
     );
 
     // #3048: manifest (orientation) + dynamic synthesis (grounding), both pushed.
-    HookResponse::warn_stderr(&format!("\n{}\n{}", manifest_block, context))
+    let out = format!("\n{}\n{}", manifest_block, context);
+    // #3134: observability — emit the actual outcome (hits + injected bytes) to
+    // the spine so GET/USE can be measured, not just the daemon's stderr log.
+    emit_spine_observation(
+        &role_name, "context.inject.injected",
+        chorus_results.len(), memory_hits.len(), log_errors.len(),
+        out.len(), elapsed,
+    );
+    HookResponse::warn_stderr(&out)
 }
 
 #[cfg(test)]

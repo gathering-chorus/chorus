@@ -9,6 +9,22 @@
 //! AC: prompt drives the query; card domain is an optional tag; zero-card works.
 
 use chorus_hooks::build_search_url;
+use chorus_hooks::format_spine_line;
+
+#[test]
+fn spine_line_is_valid_json_with_outcome_fields() {
+    // #3134 observability: the per-prompt outcome must land on the spine as a
+    // parseable JSONL event with the measurable fields (hits + injected bytes).
+    let line = format_spine_line("2026-05-30T10:00:00.000+0000", "wren", "context.inject.injected", 5, 3, 1, 2048, 240);
+    // valid JSON
+    let v: serde_json::Value = serde_json::from_str(&line).expect("spine line must be valid JSON");
+    assert_eq!(v["event"], "context.inject.injected");
+    assert_eq!(v["role"], "wren");
+    assert_eq!(v["chorus_hits"], 5);
+    assert_eq!(v["injected_bytes"], 2048);
+    assert_eq!(v["component"], "context-inject");
+    assert_eq!(v["appName"], "chorus-events"); // so promtail/Loki ingest it
+}
 
 #[test]
 fn prompt_drives_query_with_no_card() {
