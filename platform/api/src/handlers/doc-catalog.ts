@@ -50,6 +50,7 @@ export interface DocEntry {
   artifactType: ArtifactType;
   date: string;
   sizeKB: number | null;
+  absPath?: string; // #3136 — absolute path on disk, so the search indexer can read content
 }
 
 export interface DocGroup { name: string; docs: DocEntry[]; }
@@ -276,7 +277,7 @@ function scanDirectory(sd: SourceDir): DocEntry[] {
     const artifactType = classifyArtifactType(title, filename);
     const date = stat.mtime.toISOString().slice(0, 10);
     const sizeKB = Math.round(stat.size / 1024) || null;
-    entries.push({ title, href, source: sd.source, group, artifactType, date, sizeKB });
+    entries.push({ title, href, source: sd.source, group, artifactType, date, sizeKB, absPath });
   }
   return entries;
 }
@@ -303,7 +304,7 @@ function registeredToEntry(reg: RegisteredDoc): DocEntry | null {
   const artifactType = classifyArtifactType(title, filename);
   const date = stat.mtime.toISOString().slice(0, 10);
   const sizeKB = Math.round(stat.size / 1024) || null;
-  return { title, href: reg.href, source: 'manual', group, artifactType, date, sizeKB };
+  return { title, href: reg.href, source: 'manual', group, artifactType, date, sizeKB, absPath: reg.filePath };
 }
 
 function loadLinks(): DomainLink[] {
@@ -386,6 +387,14 @@ export function buildDocCatalog(sourceDirs?: SourceDir[]): DocCatalogResult {
   const allDocs = collectDocs(sourceDirs);
   const groups = buildGroups(allDocs);
   return { totalDocs: allDocs.length, groups };
+}
+
+// #3136 — flat, path-bearing doc list for the search indexer. Same scan as
+// buildDocCatalog (full SOURCE_DIRS walk + registry overrides → all 402 docs), just
+// ungrouped and carrying absPath so the indexer can read each doc's content. The
+// scan stays the single source of truth here; the indexer consumes, doesn't re-walk.
+export function collectAllDocs(sourceDirs?: SourceDir[]): DocEntry[] {
+  return collectDocs(sourceDirs);
 }
 
 // Exported for hermetic tests (#2517 AC3)

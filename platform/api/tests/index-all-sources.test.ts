@@ -44,11 +44,13 @@ describe('createIndexAllSources', () => {
     expect(r.indexed.state).toBe('0 state files indexed');
   });
 
-  it('indexes spine events when the log file exists', async () => {
+  it('does NOT index spine even when the log exists — telemetry lives in Loki (#3136)', async () => {
+    // #3136 REMOVE — spine was 82% of the corpus and the search-latency floor; it is
+    // telemetry, queried by trace/card/time via Loki, never by meaning. Removal means
+    // zero spine rows regardless of the log's presence or content.
     const log = [
       JSON.stringify({ timestamp: '2026-04-19T00:00:00Z', event: 'card.pulled', role: 'kade' }),
       JSON.stringify({ timestamp: '2026-04-19T00:01:00Z', event: 'card.accepted' }),
-      'malformed-json-line',
     ].join('\n');
     const { ctor, runs } = fakeDbFactory();
     const fs = {
@@ -63,11 +65,9 @@ describe('createIndexAllSources', () => {
       repoRoot: '/r', homedir: () => '/h',
     });
     const r = await run();
-    expect(r.indexed.spine).toMatch(/\d+ events indexed/);
-    // Filter by the INSERT INTO messages sql shape (7 args) to exclude the
-    // updateWatermark.run('spine', ...) call which also uses first-arg 'spine'.
+    expect(r.indexed.spine).toBe('spine NOT indexed — telemetry lives in Loki (#3136)');
     const spineInserts = runs.filter(e => e.sql.includes('INTO messages') && e.args[0] === 'spine');
-    expect(spineInserts.length).toBe(2); // malformed line was skipped
+    expect(spineInserts.length).toBe(0); // a full log present, yet zero spine rows
   });
 
   it('indexes brief files per role when the brief dir exists', async () => {
@@ -178,9 +178,11 @@ describe('createIndexAllSources', () => {
   });
 
   it('records per-source error strings when an indexer throws', async () => {
+    // Retargeted off spine (#3136 neutered it) onto a file-reading source: a failing
+    // read in indexDecisions must be caught and recorded, not tank the whole reindex.
     const { ctor } = fakeDbFactory();
     const fs = {
-      existsSync: (p: string) => p.endsWith('chorus.log'),
+      existsSync: (p: string) => p.endsWith('decisions.md'),
       readdirSync: jest.fn(() => []),
       readFileSync: jest.fn(() => { throw new Error('disk fail'); }),
       statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
@@ -191,8 +193,122 @@ describe('createIndexAllSources', () => {
       repoRoot: '/r', homedir: () => '/h',
     });
     const r = await run();
-    expect(r.indexed.spine).toContain('error:');
-    expect(r.indexed.spine).toContain('disk fail');
+    expect(r.indexed.decisions).toContain('error:');
+    expect(r.indexed.decisions).toContain('disk fail');
+  });
+
+  it('indexes doc-catalog content (full scan) with tags stripped (#3136 REFINE)', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const html = '<style>.x{color:red}</style><h1>Version Control Design</h1><script>boot()</script><p>Atomic verbs compose</p>';
+    const fs = {
+      existsSync: (p: string) => p === '/docs/vc.html',
+      readdirSync: jest.fn(() => []),
+      readFileSync: jest.fn(() => html),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
+    };
+    // listDocs is the full SOURCE_DIRS scan (402 docs in prod); stubbed to one here.
+    const listDocs = jest.fn(() => ([{ href: '/version-control-service-design.html', title: 'Version Control Design', group: 'Architecture', absPath: '/docs/vc.html' }]));
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+      listDocs: listDocs as any,
+    });
+    const r = await run();
+    expect(r.indexed.docs).toBe('1 docs indexed');
+    const doc = runs.find(e => e.sql.includes('INTO messages') && e.args[0] === 'doc');
+    expect(doc!.args[5]).toContain('Version Control Design'); // title + prose kept
+    expect(doc!.args[5]).toContain('Atomic verbs compose');
+    expect(doc!.args[5]).not.toContain('color:red'); // <style> stripped
+    expect(doc!.args[5]).not.toContain('boot()'); // <script> stripped
+  });
+
+  it('indexes athena tree products/domains/services (#3136 REFINE)', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const tree = JSON.stringify({
+      products: [{ iri: 'chorus:loom', label: 'Loom', comment: 'Knowledge layer', ownedBy: 'chorus:role-wren', gaps: [] }],
+      domains: [{ iri: 'chorus:roles', label: 'roles', comment: 'identities', gaps: ['no lifecycle'] }],
+      services: [],
+    });
+    const fs = {
+      existsSync: (p: string) => p.endsWith('tree.json'),
+      readdirSync: jest.fn(() => []),
+      readFileSync: jest.fn(() => tree),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
+    };
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+    });
+    const r = await run();
+    expect(r.indexed.domains).toBe('2 domains indexed');
+    const rows = runs.filter(e => e.sql.includes('INTO messages') && e.args[0] === 'domain');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].args[5]).toContain('Loom (product)');
+    expect(rows[0].args[5]).toContain('owner: chorus:role-wren');
+    expect(rows.some(x => x.args[5].includes('gaps: no lifecycle'))).toBe(true);
+  });
+
+  it('indexes prefetched graph knowledge into principle/policy/practice (#3136 REFINE)', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const fs = {
+      existsSync: () => false, readdirSync: jest.fn(() => []), readFileSync: jest.fn(() => ''),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
+    };
+    const fetchGraph = jest.fn(async () => ([
+      { source: 'principle', id: 'principle:observe', content: 'Observe\nprotracted observation' },
+      { source: 'policy', id: 'policy:heartbeat', content: '60s heartbeat' },
+      { source: 'practice', id: 'practice:actor-bdd', content: 'Actor-BDD\nmodel actors first' },
+    ]));
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+      fetchGraph: fetchGraph as any,
+    });
+    const r = await run();
+    expect(r.indexed.principles).toBe('1 principle indexed');
+    expect(r.indexed.policies).toBe('1 policy indexed');
+    expect(r.indexed.practices).toBe('1 practice indexed');
+    const graph = runs.filter(e => e.sql.includes('INTO messages') && ['principle', 'policy', 'practice'].includes(e.args[0]));
+    expect(graph).toHaveLength(3);
+  });
+
+  it('coverage signal WARNs when a knowledge source is empty (#3136)', async () => {
+    const { ctor } = fakeDbFactory();
+    const fs = {
+      existsSync: () => false, readdirSync: jest.fn(() => []), readFileSync: jest.fn(() => ''),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
+    };
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+    });
+    const r = await run();
+    expect(r.indexed._coverage).toContain('WARN');
+    expect(r.indexed._coverage).toContain('docs'); // docs came back empty → flagged
+  });
+
+  it('coverage signal reports ok when sources are populated (#3136)', async () => {
+    const { ctor } = fakeDbFactory();
+    // Every knowledge source present: briefs/decisions/adrs/memory dirs + docs + tree.
+    const tree = JSON.stringify({ products: [{ iri: 'chorus:loom', label: 'Loom', comment: 'c', gaps: [] }], domains: [], services: [] });
+    const fs = {
+      existsSync: () => true,
+      readdirSync: jest.fn((p: string) => {
+        if (p.endsWith('.claude/projects')) return ['chorus-x'];
+        if (p.endsWith('memory')) return ['m.md'];
+        if (p.endsWith('/briefs')) return ['b.md'];
+        if (p.endsWith('/adr')) return ['a.md'];
+        return [];
+      }),
+      readFileSync: jest.fn((p: string) => {
+        if (p.endsWith('tree.json')) return tree;
+        if (p.endsWith('decisions.md')) return '## DEC-001 x\nbody';
+        return 'content';
+      }),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
+    };
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+      listDocs: () => ([{ href: '/a.html', title: 'A', absPath: '/d/a.html' }]),
+    });
+    const r = await run();
+    expect(r.indexed._coverage).toContain('ok');
   });
 
   it('removes deprecated slack watermarks as the final indexer', async () => {

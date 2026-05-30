@@ -10,10 +10,65 @@ import path from 'path';
 import os from 'os';
 import Database from 'better-sqlite3';
 import { createIndexAllSources, type IndexAllSourcesDeps } from './index-all-sources';
+import { createAthenaSparqlClient, createSparqlLoader } from './athena-sparql';
+import { fetchLoomPrinciples } from './handlers/loom-principles';
+import { fetchLoomPolicies } from './handlers/loom-policies';
+import { collectAllDocs } from './handlers/doc-catalog';
 
 export interface IndexAllSourcesEnv {
   dbPath: string;
   repoRoot: string;
+}
+
+// #3136 REFINE — graph knowledge fetch (principles/policies/practices from Fuseki).
+// principles + policies reuse the existing in-process loom fetch fns (no new query);
+// practices has no handler, so a small inline SELECT against the same client — the
+// least-surface way to ingest its 40 existing instances (no new ontology, no new
+// handler file). Wired here so both the server and the worker get the same path.
+const FUSEKI_SPARQL = process.env.ATHENA_SPARQL || 'http://localhost:3030/pods/sparql';
+const FUSEKI_UPDATE = process.env.ATHENA_UPDATE || 'http://localhost:3030/pods/update';
+
+const PRACTICES_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT DISTINCT ?practice ?label ?comment WHERE {
+  GRAPH <urn:chorus:instances> {
+    ?practice a chorus:Practice .
+    OPTIONAL { ?practice rdfs:label ?label }
+    OPTIONAL { ?practice rdfs:comment ?comment }
+  }
+}`;
+
+type GraphRow = { source: string; id: string; content: string };
+
+function lines(...parts: Array<string | undefined | false>): string {
+  return parts.filter((p): p is string => Boolean(p)).join('\n');
+}
+
+async function fetchGraphKnowledge(repoRoot: string): Promise<GraphRow[]> {
+  const athena = createAthenaSparqlClient({ sparqlUrl: FUSEKI_SPARQL, updateUrl: FUSEKI_UPDATE });
+  const loadQuery = createSparqlLoader({ fs, sparqlDir: path.join(repoRoot, 'platform/api/src/sparql') });
+  const rows: GraphRow[] = [];
+
+  const pr = (await fetchLoomPrinciples({ sparql: athena.query, loadQuery })).body as
+    { data?: { principles?: Array<{ id: string; label: string; comment: string; techReading?: string; jeffReading?: string }> } };
+  for (const p of pr.data?.principles ?? []) {
+    rows.push({ source: 'principle', id: `principle:${p.id}`, content: lines(p.label, p.comment, p.techReading && `tech: ${p.techReading}`, p.jeffReading && `jeff: ${p.jeffReading}`) });
+  }
+
+  const po = (await fetchLoomPolicies({ sparql: athena.query, loadQuery })).body as
+    { data?: { policies?: Array<{ id: string; label: string; comment: string; surface: string; enforces: Array<{ label: string }> }> } };
+  for (const p of po.data?.policies ?? []) {
+    rows.push({ source: 'policy', id: `policy:${p.id}`, content: lines(p.label, p.comment, p.surface && `surface: ${p.surface}`, p.enforces.length > 0 && `enforces: ${p.enforces.map((e) => e.label).join(', ')}`) });
+  }
+
+  const prac = (await athena.query(PRACTICES_QUERY)) as
+    { results?: { bindings?: Array<{ practice?: { value: string }; label?: { value: string }; comment?: { value: string } }> } };
+  for (const b of prac.results?.bindings ?? []) {
+    const uri = b.practice?.value;
+    if (!uri) continue;
+    rows.push({ source: 'practice', id: `practice:${uri.split('#').pop()}`, content: lines(b.label?.value, b.comment?.value) });
+  }
+  return rows;
 }
 
 export function buildIndexAllSourcesDeps(env: IndexAllSourcesEnv): IndexAllSourcesDeps {
@@ -54,6 +109,10 @@ export function buildIndexAllSourcesDeps(env: IndexAllSourcesEnv): IndexAllSourc
         fs.closeSync(fd);
       }
     },
+    // #3136 REFINE — graph knowledge, prefetched once per reindex cycle.
+    fetchGraph: () => fetchGraphKnowledge(env.repoRoot),
+    // #3136 REFINE — the full doc catalog (all ~402 docs via the SOURCE_DIRS scan).
+    listDocs: () => collectAllDocs().map((d) => ({ href: d.href, title: d.title, group: d.group, absPath: d.absPath })),
   };
 }
 
