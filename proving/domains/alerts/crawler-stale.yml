@@ -1,8 +1,12 @@
 # crawler-stale.yml — Alert when chorus crawler hasn't indexed recently
 # Card #2817 (#2861 — bash-only check; python moved to sibling)
 #
-# #3068 (2026-05-24): crawler now on StartInterval=1800 (30 min) only.
-# Business-hours threshold bumped 300→1800 to match; off-hours was already 1800.
+# #3068 (2026-05-24): crawler on StartInterval=1800 (30 min).
+# #3138 (2026-05-30): THRESHOLD_SEC 1800→3000 (50 min). 1800 == the interval left
+# ZERO grace, and a run spans ~5 min (last-indexed = the last domain to finish), so
+# AGE crossed 1800 right before each tick → guaranteed false page. 3000 = interval +
+# run duration + */5 poll jitter. (The old business/off-hours if/else was dead — both
+# arms set 1800 — so it's collapsed to one value.)
 #
 # alert-runner contract: stdout must equal literal "ok" for success.
 
@@ -14,12 +18,7 @@ schedule: "*/5 * * * *"
 
 check: |
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-stale-check.py"
-  HOUR=$(date +%H)
-  if [ "$HOUR" -ge 8 ] && [ "$HOUR" -lt 22 ]; then
-    THRESHOLD_SEC=1800
-  else
-    THRESHOLD_SEC=1800
-  fi
+  THRESHOLD_SEC=3000
   LAST=$(grep "crawler.domain.indexed" "$HOME/.chorus/chorus.log" 2>/dev/null | tail -1)
   if [ -z "$LAST" ]; then
     echo "no-indexed-events-in-log"
