@@ -3307,6 +3307,7 @@ if (require.main === module) {
   startEventloopAlert({
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
+        'domain=chorus',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
     threshold: 3000,

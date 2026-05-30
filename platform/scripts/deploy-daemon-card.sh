@@ -35,7 +35,7 @@ _emit_deploy_failed() {
     local err_msg="card=${card_id:-unknown} exit=${exit_code} step=${_current_step:-unknown}"
     if command -v chorus-log >/dev/null 2>&1; then
       chorus-log deploy.failed "${_deploy_role:-silas}" \
-        "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
+        "domain=chorus" "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
     fi
   fi
 }

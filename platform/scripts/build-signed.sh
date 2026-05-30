@@ -81,11 +81,11 @@ _emit_build_failed() {
   local err_msg="line=${line_no} cmd=${failed_cmd} exit=${exit_code}"
   if command -v chorus-log >/dev/null 2>&1; then
     chorus-log build.failed "$_build_role" \
-      "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
+      "domain=chorus" "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
   elif [ -x "${CHORUS_HOME:-$ROOT}/platform/scripts/chorus-log" ]; then
     "${CHORUS_HOME:-$ROOT}/platform/scripts/chorus-log" \
       build.failed "$_build_role" \
-      "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
+      "domain=chorus" "result=fail" "error=$err_msg" "exit_code=$exit_code" >/dev/null 2>&1 || true
   fi
 }
 trap '_emit_build_failed $? $LINENO "$BASH_COMMAND"' ERR
@@ -175,12 +175,12 @@ emit_artifact_records() {
   # build.artifact.hashed spine event (existing — used by test-build-invariance.sh)
   if command -v chorus-log >/dev/null 2>&1; then
     chorus-log build.artifact.hashed "$role" \
-      "commit=$commit" "crate=$crate" "identifier=$installed_name" \
+      "domain=chorus" "commit=$commit" "crate=$crate" "identifier=$installed_name" \
       "cdhash=$cdhash" "sha256=$sha256" "builder_host=$builder_host" >/dev/null 2>&1 || true
   elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" ]; then
     "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log" \
       build.artifact.hashed "$role" \
-      "commit=$commit" "crate=$crate" "identifier=$installed_name" \
+      "domain=chorus" "commit=$commit" "crate=$crate" "identifier=$installed_name" \
       "cdhash=$cdhash" "sha256=$sha256" "builder_host=$builder_host" >/dev/null 2>&1 || true
   fi
 

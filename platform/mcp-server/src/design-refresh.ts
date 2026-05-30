@@ -396,7 +396,7 @@ export async function executeDesignRefresh(
     designPath = resolveDesignPath(deps.designsDir, design_name, deps.readFile);
   } catch (err) {
     if (err instanceof DesignRefreshError) {
-      deps.emit('design.refresh.failed', { role, design_name, reason: err.reason, detail: err.detail });
+      deps.emit('design.refresh.failed', { role, domain: 'chorus', design_name, reason: err.reason, detail: err.detail });
     }
     throw err;
   }
@@ -423,7 +423,7 @@ export async function executeDesignRefresh(
     validateTemplate(working);
   } catch (err) {
     if (err instanceof DesignRefreshError) {
-      deps.emit('design.refresh.failed', { role, design_name, reason: err.reason, detail: err.detail });
+      deps.emit('design.refresh.failed', { role, domain: 'chorus', design_name, reason: err.reason, detail: err.detail });
     }
     throw err;
   }
@@ -458,7 +458,7 @@ export async function executeDesignRefresh(
       deps.writeFile(designPath, working);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      deps.emit('design.refresh.failed', { role, design_name, reason: 'regenerate-fail', detail });
+      deps.emit('design.refresh.failed', { role, domain: 'chorus', design_name, reason: 'regenerate-fail', detail });
       throw new DesignRefreshError('regenerate-fail', `write failed: ${detail}`);
     }
   }

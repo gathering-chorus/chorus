@@ -67,12 +67,12 @@ emit_verified() {
   local label="$2"
   if command -v chorus-log >/dev/null 2>&1; then
     chorus-log deploy.artifact.verified "$ROLE" \
-      "artifact_sha256=$SRC_SHA" "target=$TARGET" \
+      "domain=chorus" "artifact_sha256=$SRC_SHA" "target=$TARGET" \
       "installed_cdhash=$cdhash" "deployed_at=$INSTALL_LOC" >/dev/null 2>&1 || true
   elif [ -x "${CHORUS_HOME}/platform/scripts/chorus-log" ]; then
     "${CHORUS_HOME}/platform/scripts/chorus-log" \
       deploy.artifact.verified "$ROLE" \
-      "artifact_sha256=$SRC_SHA" "target=$TARGET" \
+      "domain=chorus" "artifact_sha256=$SRC_SHA" "target=$TARGET" \
       "installed_cdhash=$cdhash" "deployed_at=$INSTALL_LOC" >/dev/null 2>&1 || true
   fi
   echo "test-deploy-invariance: $label — deploy.artifact.verified emitted"
