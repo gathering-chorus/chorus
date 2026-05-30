@@ -81,10 +81,13 @@ fn cached_query_chorus_hybrid(
     role: &str,
     keywords: &[String],
     query: &str,
+    domain_tag: Option<&str>,
 ) -> Vec<(String, String, String)> {
     let mut sorted = keywords.to_vec();
     sorted.sort();
-    let key = format!("{}|{}", role, sorted.join(","));
+    // #3134: the domain tag is part of the cache identity — same keywords under
+    // a different WIP card must not return the other card's scoped results.
+    let key = format!("{}|{}|{}", role, sorted.join(","), domain_tag.unwrap_or(""));
 
     if let Ok(cache) = HYBRID_CACHE.lock() {
         if let Some((stamp, results)) = cache.get(&key) {
@@ -94,7 +97,7 @@ fn cached_query_chorus_hybrid(
         }
     }
 
-    let results = query_chorus_hybrid(query);
+    let results = query_chorus_hybrid(query, domain_tag);
     if let Ok(mut cache) = HYBRID_CACHE.lock() {
         cache.insert(key, (Instant::now(), results.clone()));
     }
@@ -118,24 +121,40 @@ fn cached_query_athena_domain(role: &str) -> Option<String> {
     value
 }
 
-/// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
-/// Replaces direct SQLite FTS with API call for richer context (233ms measured)
-fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
-    let encoded: String = query
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
-                c.to_string()
-            } else {
-                format!("%{:02X}", c as u32)
-            }
-        })
-        .collect();
-
-    let url = format!(
+/// Build the hybrid-search URL (#3134). The prompt keywords ARE the query —
+/// the per-prompt search is driven by what Jeff actually typed. When the role
+/// has a WIP card, its domain is passed as an optional `&domain=` tag so results
+/// are scoped to the card's area (card-as-tag); with `None` (the common case —
+/// no card, venting, ideating) the query runs on the prompt alone. Pure +
+/// unit-tested (tests/context_inject_card_tag_3134.rs) so the tag wiring can't
+/// silently regress. `pub` for that integration test — it's a stateless helper.
+pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
+    fn enc(s: &str) -> String {
+        s.chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c.to_string()
+                } else {
+                    format!("%{:02X}", c as u32)
+                }
+            })
+            .collect()
+    }
+    let mut url = format!(
         "http://localhost:3340/api/chorus/search?q={}&mode=hybrid&limit=5",
-        encoded
+        enc(query)
     );
+    if let Some(domain) = domain_tag.map(str::trim).filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&domain={}", enc(domain)));
+    }
+    url
+}
+
+/// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
+/// Replaces direct SQLite FTS with API call for richer context (233ms measured).
+/// #3134: optional `domain_tag` scopes results to the WIP card's area.
+fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, String, String)> {
+    let url = build_search_url(query, domain_tag);
 
     let resp = match ureq::get(&url)
         .call()
@@ -518,6 +537,52 @@ fn parse_pulse_orientation(role: &str) -> (String, usize, usize, Option<String>)
     (health, team_wip, role_wip, card)
 }
 
+/// The role's WIP card domain from the pulse snapshot, if any (#3134). Used as
+/// the optional card-as-tag filter on the per-prompt search. Returns None when
+/// the role has no WIP card — the common case — so the search runs prompt-only.
+fn role_wip_domain(role: &str) -> Option<String> {
+    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let wip = v.pointer("/board/wip_cards")?.as_array()?;
+    let card = wip.iter().find(|c| {
+        c.get("owner").and_then(|o| o.as_str()).map(|s| s.to_lowercase()) == Some(role.to_lowercase())
+    })?;
+    card.get("domain")
+        .and_then(|d| d.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// #3134 — format one context-inject OUTCOME spine line (pure, testable).
+/// Matches the chorus.log JSONL shape so promtail/Loki ingest it like any spine
+/// event, which makes the per-prompt result queryable via `logs_*`/pulse.
+pub fn format_spine_line(
+    ts: &str, role: &str, event: &str,
+    chorus_hits: usize, memory_hits: usize, log_errors: usize,
+    injected_bytes: usize, elapsed_ms: u64,
+) -> String {
+    format!(
+        r#"{{"timestamp":"{}","level":"info","appName":"chorus-events","component":"context-inject","event":"{}","role":"{}","chorus_hits":{},"memory_hits":{},"log_errors":{},"injected_bytes":{},"elapsed_ms":{}}}"#,
+        ts, event, role, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms
+    )
+}
+
+/// #3134 — emit the per-prompt context-inject outcome to the spine
+/// (`~/.chorus/chorus.log`). The `info!` calls in check() only reach daemon
+/// stderr → /tmp/chorus-api.log (the 3-sink split that made the GET/USE outcome
+/// unmeasurable). Append-only, fail-open — logging never blocks a prompt.
+fn emit_spine_observation(
+    role: &str, event: &str,
+    chorus_hits: usize, memory_hits: usize, log_errors: usize,
+    injected_bytes: usize, elapsed_ms: u64,
+) {
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let line = format_spine_line(&ts, role, event, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms);
+    let path = crate::shared::state_paths::chorus_log_file();
+    let _ = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+        .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", line) });
+}
+
 /// Main hook: extract keywords, search, synthesize, inject
 /// Stores results in AppState so other hooks can read them (#2225)
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
@@ -572,33 +637,65 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // log the real cost (AC5), never to skip a fetch.
     let envelope_start = std::time::Instant::now();
 
-    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). Cached per
-    // (role, keywords-hash) with HYBRID_CACHE_TTL so successive prompts that
-    // share keywords don't re-query.
-    let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query);
+    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). The PROMPT
+    // drives the query; the WIP card domain (if any) rides along as an optional
+    // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
+    // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
+    let card_tag = role_wip_domain(&role_name);
 
-    // Scan memory files (local, cheap)
-    let memory_hits = scan_memory(&keywords);
-
-    // Foundational context primitives — read every prompt, not just when search
-    // returns hits. These are the team's shared present tense: team state,
-    // recent events, active domain. Jeff has asked repeatedly for them on every
-    // envelope; the spec test in platform/tests/context-inject-envelope-spec.bats
-    // locks that contract.
-    let pulse_block = read_pulse_snapshot();
-    let spine_events = query_recent_spine(8);
-    let athena_block = cached_query_athena_domain(&role_name);
-
-    // Live log signal (#3032) — recent errors from Loki, the half Chorus search
-    // can't see (logs aren't indexed). Runs every prompt now, uncapped (#3048);
-    // a genuine failure logs loudly (see query_recent_log_errors) rather than
-    // vanishing into an empty result.
-    let log_errors = query_recent_log_errors();
+    // #3134: PARALLEL fan-out. The six sub-queries are independent reads with no
+    // ordering dependency until assembly — running them sequentially made the
+    // per-prompt latency the SUM of two chorus-api round-trips + Loki + the file
+    // reads (search/memory/pulse/spine/athena/logs). spawn_blocking starts each
+    // on the blocking pool immediately; we then await all, so wall-clock = the
+    // slowest single query, not the sum. Output is byte-identical (the
+    // envelope-spec bats locks the assembled block — only the fetch is concurrent).
+    let (chorus_results, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
+        let (r1, kw1, q1, tag1) = (role_name.clone(), keywords.clone(), query.clone(), card_tag.clone());
+        let kw2 = keywords.clone();
+        let r3 = role_name.clone();
+        let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
+        let t_memory = tokio::task::spawn_blocking(move || scan_memory(&kw2));
+        let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
+        let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
+        let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));
+        let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
+        (
+            t_chorus.await.unwrap_or_default(),
+            t_memory.await.unwrap_or_default(),
+            t_pulse.await.unwrap_or_default(),
+            t_spine.await.unwrap_or_default(),
+            t_athena.await.unwrap_or_default(),
+            t_logs.await.unwrap_or_default(),
+        )
+    };
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
     let mut context = String::from("\n<context-synthesis>\n");
     context.push_str(&format!("Keywords: {}\n", query));
+
+    // #3134: lead with the PROMPT-driven signal — the Chorus hybrid hits and
+    // memory matches for what Jeff actually asked. These used to render last,
+    // buried under the always-on board primitives; now they come first so the
+    // relevant context isn't drowned. The board primitives (Pulse/Spine/Athena/
+    // Logs) follow as orientation — still present (the envelope-spec contract
+    // locks them), just demoted below the prompt answer.
+    if !chorus_results.is_empty() {
+        context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
+        for (role, content, ts) in &chorus_results {
+            let short: String = content.replace('\n', " ").chars().take(200).collect();
+            let ts_short: String = ts.chars().take(16).collect();
+            context.push_str(&format!("  [{}] {} — {}\n", ts_short, role, short));
+        }
+    }
+
+    if !memory_hits.is_empty() {
+        context.push_str(&format!("\nMemory ({} hits):\n", memory_hits.len()));
+        for hit in &memory_hits {
+            context.push_str(&format!("  {}\n", hit));
+        }
+    }
 
     if let Some(pulse) = &pulse_block {
         context.push('\n');
@@ -636,33 +733,20 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         }
     }
 
-    if !chorus_results.is_empty() {
-        context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
-        for (role, content, ts) in &chorus_results {
-            let short: String = content.replace('\n', " ").chars().take(200).collect();
-            let ts_short: String = ts.chars().take(16).collect();
-            context.push_str(&format!("  [{}] {} — {}\n", ts_short, role, short));
-        }
-    }
-
-    if !memory_hits.is_empty() {
-        context.push_str(&format!("\nMemory ({} hits):\n", memory_hits.len()));
-        for hit in &memory_hits {
-            context.push_str(&format!("  {}\n", hit));
-        }
-    }
-
     // If every dynamic source is empty, still push the manifest — orientation is
     // useful even when search/Loki/spine turn up nothing this prompt.
     if pulse_block.is_none() && spine_events.is_empty() && athena_block.is_none()
         && chorus_results.is_empty() && memory_hits.is_empty() && log_errors.is_empty() {
+        let elapsed = envelope_start.elapsed().as_millis() as u64;
         info!(
             gate = "context-inject",
             event = "no-results",
             role = %role_name,
             query = %query,
-            elapsed_ms = envelope_start.elapsed().as_millis() as u64,
+            elapsed_ms = elapsed,
         );
+        // #3134: observability — outcome on the spine, not just daemon stderr.
+        emit_spine_observation(&role_name, "context.inject.empty", 0, 0, 0, manifest_block.len(), elapsed);
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
     }
 
@@ -679,6 +763,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }).await;
 
     let cycle_id = state.get_cycle_id(session_id).await.unwrap_or_default();
+    let elapsed = envelope_start.elapsed().as_millis() as u64;
     info!(
         gate = "context-inject",
         event = "injected",
@@ -688,11 +773,19 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         chorus_hits = chorus_results.len(),
         memory_hits = memory_hits.len(),
         log_errors = log_errors.len(),
-        elapsed_ms = envelope_start.elapsed().as_millis() as u64,
+        elapsed_ms = elapsed,
     );
 
     // #3048: manifest (orientation) + dynamic synthesis (grounding), both pushed.
-    HookResponse::warn_stderr(&format!("\n{}\n{}", manifest_block, context))
+    let out = format!("\n{}\n{}", manifest_block, context);
+    // #3134: observability — emit the actual outcome (hits + injected bytes) to
+    // the spine so GET/USE can be measured, not just the daemon's stderr log.
+    emit_spine_observation(
+        &role_name, "context.inject.injected",
+        chorus_results.len(), memory_hits.len(), log_errors.len(),
+        out.len(), elapsed,
+    );
+    HookResponse::warn_stderr(&out)
 }
 
 #[cfg(test)]
