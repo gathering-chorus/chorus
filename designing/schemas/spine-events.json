@@ -37,7 +37,7 @@
       "event": {
         "type": "string",
         "required": true,
-        "description": "Event type name \u2014 domain.noun.verb_past format (must match an entry in events)"
+        "description": "Event type name — domain.noun.verb_past format (must match an entry in events)"
       },
       "role": {
         "type": "string",
@@ -50,28 +50,48 @@
         ],
         "required": true,
         "description": "Role that triggered the event"
+      },
+      "product": {
+        "type": "string",
+        "required": false,
+        "description": "Product derived from appName via product_map (#3140)"
+      },
+      "domain": {
+        "type": "string",
+        "required": false,
+        "description": "Owning domain — first-class for owner-routing (#3140)"
+      },
+      "value_stream": {
+        "type": "string",
+        "required": false,
+        "description": "Value stream = product (#3140)"
+      },
+      "value_stream_step": {
+        "type": "string",
+        "required": false,
+        "description": "Werk stage from event vertebra via value_stream_map (#3140)"
       }
     }
   },
   "vertebrae": {
     "capturing": {
-      "description": "Card creation \u2014 Jeff pulls work into the flow",
+      "description": "Card creation — Jeff pulls work into the flow",
       "color": "#ede9fe"
     },
     "directing": {
-      "description": "Card sequencing \u2014 moving cards through the board",
+      "description": "Card sequencing — moving cards through the board",
       "color": "#fef3c7"
     },
     "building": {
-      "description": "Engineering work \u2014 commits, tests, builds",
+      "description": "Engineering work — commits, tests, builds",
       "color": "#d1fae5"
     },
     "proving": {
-      "description": "Deploy pipeline \u2014 verification and release",
+      "description": "Deploy pipeline — verification and release",
       "color": "#fce7f3"
     },
     "operations": {
-      "description": "Operating \u2014 infrastructure health, deploys, and system lifecycle",
+      "description": "Operating — infrastructure health, deploys, and system lifecycle",
       "color": "#f3f4f6"
     }
   },
@@ -172,11 +192,25 @@
     "protocol_step": "protocol.step.completed",
     "role.nudge.consumed": "role.nudge.consumed"
   },
+  "product_map": {
+    "chorus-events": "Chorus",
+    "jeff-bridwell-personal-site": "Gathering",
+    "cards": "Chorus"
+  },
+  "value_stream_map": {
+    "capturing": "Capturing",
+    "directing": "Directing",
+    "designing": "Designing",
+    "building": "Building",
+    "proving": "Proving",
+    "operating": "Operating",
+    "operations": "Operating"
+  },
   "events": {
     "ac.ticked": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "AC item checked on a card \u2014 `- [ ]` \u2192 `- [x]`. Emitted per update that advances the check count. #2193.",
+      "description": "AC item checked on a card — `- [ ]` → `- [x]`. Emitted per update that advances the check count. #2193.",
       "keys": [
         "card_id"
       ],
@@ -269,7 +303,7 @@
       "vertebra": "directing",
       "legacy_name": "board_audit_close",
       "source": "cards",
-      "description": "Board audit at session close \u2014 checks for retroactive cards",
+      "description": "Board audit at session close — checks for retroactive cards",
       "fields": {
         "board": "Board name",
         "new_cards": "Cards created during session",
@@ -312,7 +346,7 @@
       "vertebra": "designing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Brief surfaced at boot by werk-init \u2014 closes the send/receive chain (#616)",
+      "description": "Brief surfaced at boot by werk-init — closes the send/receive chain (#616)",
       "fields": {
         "artifact": "Brief filename"
       }
@@ -352,7 +386,7 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Built+signed binary hashed post-codesign \u2014 invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
+      "description": "Built+signed binary hashed post-codesign — invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
       "fields": {
         "commit": "Source commit SHA (short)",
         "crate": "Cargo crate name (e.g., chorus-hooks, chorus-inject)",
@@ -399,7 +433,7 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases \u2014 never to absence of build.completed.",
+      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases — never to absence of build.completed.",
       "fields": {
         "commit": "Source commit SHA (short) at build time",
         "crate": "Cargo crate name",
@@ -547,7 +581,7 @@
       "vertebra": "operating",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "chorus-werk-sync recover finished \u2014 stashed zero or more files and synced canonical to origin/main tip (#2909). Pairs each `canonical.recovery.stashed` emit with a completion record so a fitness function can detect started-without-completed cases.",
+      "description": "chorus-werk-sync recover finished — stashed zero or more files and synced canonical to origin/main tip (#2909). Pairs each `canonical.recovery.stashed` emit with a completion record so a fitness function can detect started-without-completed cases.",
       "fields": {
         "recovered": "Count of files stashed in this run (0 = no-op, tree was already clean)",
         "to": "Short sha of canonical HEAD after sync"
@@ -561,7 +595,7 @@
       "fields": {
         "path": "Original path inside canonical (relative)",
         "recovery_path": "Absolute path under ~/.chorus/recovery/<ts>/ where the content was copied",
-        "sha": "sha256 of stashed content (empty if file was D-state \u2014 already deleted from disk)"
+        "sha": "sha256 of stashed content (empty if file was D-state — already deleted from disk)"
       }
     },
     "canonical.sync.repaired": {
@@ -586,7 +620,7 @@
       "vertebra": "designing",
       "legacy_name": null,
       "source": "cards",
-      "description": "Blast radius generation failed \u2014 card has 0 files on a code card",
+      "description": "Blast radius generation failed — card has 0 files on a code card",
       "fields": {
         "card_id": "Card identifier",
         "reason": "Failure reason"
@@ -750,7 +784,7 @@
     "card.pulled": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Card pulled to WIP \u2014 role started building",
+      "description": "Card pulled to WIP — role started building",
       "keys": [
         "card_id"
       ],
@@ -765,7 +799,7 @@
       "vertebra": "capturing",
       "legacy_name": "quality_gate_warn",
       "source": "cards",
-      "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
+      "description": "Quality gate warning — title too short, empty description, or no comments at done",
       "fields": {
         "gate": "Gate type (title_short, description_empty, no_comments)",
         "stage": "Vertebra stage where warning fired",
@@ -822,7 +856,7 @@
       "vertebra": "capturing",
       "legacy_name": null,
       "source": "cards",
-      "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
+      "description": "SWAT card created — crisis fast-lane card outside WIP limit (DEC-055)",
       "fields": {
         "card_id": "Card identifier",
         "title": "Card title",
@@ -886,7 +920,7 @@
       "vertebra": "operating",
       "legacy_name": null,
       "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler hydrator failed to write to Fuseki \u2014 batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
+      "description": "Crawler hydrator failed to write to Fuseki — batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
       "fields": {
         "class": "Hydratable class identifier; '*' when Fuseki itself is unreachable",
         "reason": "Failure reason (e.g., batch-insert-fail-count-N, stale-update-fail-http-N, fuseki-unreachable)",
@@ -934,7 +968,7 @@
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Installed artifact post-deploy verification \u2014 invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
+      "description": "Installed artifact post-deploy verification — invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
       "fields": {
         "artifact_sha256": "Expected sha256 (from build.artifact.hashed)",
         "target": "Install target name (e.g., chorus-hook-shim)",
@@ -959,19 +993,19 @@
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures \u2014 never to absence of deploy.completed.",
+      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures — never to absence of deploy.completed.",
       "fields": {
         "commit": "Source commit SHA (short)",
         "crate": "Cargo crate name",
         "duration_ms": "Time elapsed before failure (ms)",
-        "reason": "Failure class \u2014 install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
+        "reason": "Failure class — install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
       }
     },
     "deploy.freeze.activated": {
       "vertebra": "proving",
       "legacy_name": "deploy_freeze",
       "source": "chorus-events",
-      "description": "Deploy freeze activated \u2014 blocks all deploys",
+      "description": "Deploy freeze activated — blocks all deploys",
       "fields": {
         "message": "Freeze message",
         "role": "Role that activated freeze"
@@ -1059,7 +1093,7 @@
       "description": "Card verification completed (board-ts done triggers this)",
       "fields": {
         "card_id": "Card identifier",
-        "result": "pass (always \u2014 manual verification)",
+        "result": "pass (always — manual verification)",
         "method": "manual"
       }
     },
@@ -1103,14 +1137,14 @@
       "description": "chorus_design_refresh auto-conformed a service-design doc that lacked the canonical template structure (#2900). Inserted summary-block scaffold and/or data-section attributes on standard H2 headings so the same refresh command works on any next doc with one command. Emits before design.refreshed in the same run.",
       "fields": {
         "design_name": "Filename stem of the design",
-        "scaffolded": "Comma-separated list of what was scaffolded \u2014 e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
+        "scaffolded": "Comma-separated list of what was scaffolded — e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
       }
     },
     "guard.classify.decided": {
       "vertebra": "building",
       "legacy_name": "data_classification",
       "source": "chorus-events",
-      "description": "Sensitive paths hook fired \u2014 classified file read attempt",
+      "description": "Sensitive paths hook fired — classified file read attempt",
       "fields": {
         "decision": "deny or ask",
         "tier": "Data classification tier (private or internal)",
@@ -1121,7 +1155,7 @@
       "vertebra": "building",
       "legacy_name": "guardrail_decision",
       "source": "chorus-events",
-      "description": "Infrastructure guardrail hook fired \u2014 deny/ask/allow on prohibited commands",
+      "description": "Infrastructure guardrail hook fired — deny/ask/allow on prohibited commands",
       "fields": {
         "decision": "deny, ask, or allow",
         "pattern": "Pattern that matched (docker-exec, kill, etc.)",
@@ -1132,7 +1166,7 @@
       "vertebra": "building",
       "legacy_name": "write_scrub",
       "source": "chorus-events",
-      "description": "Write scrubber hook fired \u2014 credential or internal pattern detected in shared file write",
+      "description": "Write scrubber hook fired — credential or internal pattern detected in shared file write",
       "fields": {
         "decision": "deny or warn",
         "tier": "Data classification tier (private or internal)",
@@ -1221,16 +1255,16 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign \u2014 the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
+      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign — the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
       "fields": {
-        "commit": "Source commit SHA (short) \u2014 same as build.artifact.hashed",
-        "crate": "Cargo crate name \u2014 same as build.artifact.hashed",
-        "identifier": "Installed binary identifier \u2014 same as build.artifact.hashed",
-        "cdhash": "Codesign cdhash \u2014 same as build.artifact.hashed; the binding identity",
-        "sha256": "SHA-256 of signed binary \u2014 same as build.artifact.hashed; informational",
+        "commit": "Source commit SHA (short) — same as build.artifact.hashed",
+        "crate": "Cargo crate name — same as build.artifact.hashed",
+        "identifier": "Installed binary identifier — same as build.artifact.hashed",
+        "cdhash": "Codesign cdhash — same as build.artifact.hashed; the binding identity",
+        "sha256": "SHA-256 of signed binary — same as build.artifact.hashed; informational",
         "build_time": "ISO 8601 UTC timestamp of the build",
-        "builder_host": "Hostname of machine that built it \u2014 same as build.artifact.hashed",
-        "builder_role": "Role attribution \u2014 wren/silas/kade/system"
+        "builder_host": "Hostname of machine that built it — same as build.artifact.hashed",
+        "builder_role": "Role attribution — wren/silas/kade/system"
       }
     },
     "observer.digest": {
@@ -1276,7 +1310,7 @@
       "vertebra": "proving",
       "legacy_name": "audit_check",
       "source": "chorus-events",
-      "description": "Chorus audit check result \u2014 pass/warn/fail for a specific gate",
+      "description": "Chorus audit check result — pass/warn/fail for a specific gate",
       "fields": {
         "check": "Check name",
         "result": "pass, warn, or fail",
@@ -1326,7 +1360,7 @@
       "vertebra": "proving",
       "legacy_name": "disk_check",
       "source": "chorus-events",
-      "description": "Disk usage check \u2014 emitted on session start, full audit, and periodic health",
+      "description": "Disk usage check — emitted on session start, full audit, and periodic health",
       "fields": {
         "disk_pct": "Disk usage percentage",
         "status": "ok, warning, or critical",
@@ -1368,7 +1402,7 @@
     "pair.session.started": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Pair programming session started \u2014 strong-style pairing with navigator and driver",
+      "description": "Pair programming session started — strong-style pairing with navigator and driver",
       "fields": {
         "card": "Card being worked on",
         "partner": "Partner role"
@@ -1378,7 +1412,7 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol boot sequence completed \u2014 envelope close with summary",
+      "description": "Protocol boot sequence completed — envelope close with summary",
       "fields": {
         "steps": "Number of steps executed",
         "ok": "Steps that passed",
@@ -1391,14 +1425,14 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol boot sequence started \u2014 envelope open for grouping boot steps",
+      "description": "Protocol boot sequence started — envelope open for grouping boot steps",
       "fields": {}
     },
     "protocol.close.completed": {
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol close-out sequence completed \u2014 envelope close with summary",
+      "description": "Protocol close-out sequence completed — envelope close with summary",
       "fields": {
         "steps": "Number of steps executed",
         "ok": "Steps that passed",
@@ -1410,7 +1444,7 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol close-out sequence started \u2014 envelope open for grouping close steps",
+      "description": "Protocol close-out sequence started — envelope open for grouping close steps",
       "fields": {}
     },
     "protocol.step.completed": {
@@ -1461,7 +1495,7 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Search query executed \u2014 covers FTS, semantic, and hybrid across Chorus API and Gathering app (#1107)",
+      "description": "Search query executed — covers FTS, semantic, and hybrid across Chorus API and Gathering app (#1107)",
       "fields": {
         "system": "Source system (chorus-api or gathering-app)",
         "query": "Search query text (truncated to 200 chars)",
@@ -1504,7 +1538,7 @@
     "seed.dropped": {
       "vertebra": "capturing",
       "source": "jeff-bridwell-personal-site",
-      "description": "Seed dropped \u2014 no routable content, no hashtag, no correlation",
+      "description": "Seed dropped — no routable content, no hashtag, no correlation",
       "keys": [
         "slug"
       ],
@@ -1530,7 +1564,7 @@
     "seed.received": {
       "vertebra": "capturing",
       "source": "jeff-bridwell-personal-site",
-      "description": "SMS webhook received \u2014 Twilio payload validated, before dedup check",
+      "description": "SMS webhook received — Twilio payload validated, before dedup check",
       "keys": [
         "messageSid"
       ],
@@ -1543,7 +1577,7 @@
     "seed.recovered": {
       "vertebra": "capturing",
       "source": "chorus-events",
-      "description": "Seed recovered \u2014 spine event emitted retroactively for a seed that arrived during app downtime",
+      "description": "Seed recovered — spine event emitted retroactively for a seed that arrived during app downtime",
       "keys": [
         "slug"
       ],
@@ -1570,7 +1604,7 @@
     "self.biometric.transposition_rate": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Typing correction rate \u2014 backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
+      "description": "Typing correction rate — backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
       "fields": {
         "rate": "Corrections / keystrokes ratio (0.0 to 1.0)",
         "errors_30s": "Correction count in window",
@@ -1679,7 +1713,7 @@
       "vertebra": "directing",
       "legacy_name": "doc_scan",
       "source": "chorus-events",
-      "description": "Domain doc scan at session close \u2014 role validated their vertical docs for staleness (DEC-058, #312)",
+      "description": "Domain doc scan at session close — role validated their vertical docs for staleness (DEC-058, #312)",
       "fields": {
         "checked": "Number of files scanned",
         "updated": "Number of files updated"
@@ -1718,7 +1752,7 @@
       "vertebra": "building",
       "legacy_name": "session_turn",
       "source": "chorus-events",
-      "description": "Session turn \u2014 user/assistant exchange",
+      "description": "Session turn — user/assistant exchange",
       "fields": {
         "duration_seconds": "Turn duration",
         "message": "Turn summary"

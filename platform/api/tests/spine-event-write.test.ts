@@ -55,6 +55,28 @@ describe('handleSpineEvent', () => {
     expect(res.body_).toEqual({ ok: true });
   });
 
+  // #3140 — shared-envelope enrichment from spine-events.json (matches chorus_log.rs).
+  it('enriches with product/value_stream/value_stream_step + first-class domain', () => {
+    const append = jest.fn();
+    const res = fakeRes();
+    handleSpineEvent(
+      // card.item.created has vertebra=capturing -> value_stream_step=Capturing.
+      { body: { event: 'card.item.created', role: 'silas', domain: 'chorus' } } as any,
+      res,
+      {
+        appendFileSync: append, chorusLogPath: '/p/chorus.log',
+        now: () => 'now',
+        traceDbPath: '/db', DatabaseCtor: jest.fn() as any,
+        ensureTraceTable: jest.fn(),
+      },
+    );
+    const entry = JSON.parse(append.mock.calls[0][1].trim());
+    expect(entry.product).toBe('Chorus');            // from product_map[chorus-events]
+    expect(entry.value_stream).toBe('Chorus');        // = product
+    expect(entry.value_stream_step).toBe('Capturing'); // from vertebra via value_stream_map
+    expect(entry.domain).toBe('chorus');              // first-class, owner-routable
+  });
+
   it('carries through role and other fields to the entry', () => {
     const append = jest.fn();
     const res = fakeRes();
