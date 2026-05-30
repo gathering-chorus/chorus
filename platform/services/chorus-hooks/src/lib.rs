@@ -21,6 +21,9 @@ mod state;
 mod types;
 mod session_cache;
 pub use hooks::session_init_gate;
+// #3134 — expose the pure per-prompt search URL-builder for its integration
+// test (tests/context_inject_card_tag_3134.rs). Stateless helper, narrow surface.
+pub use hooks::context_inject::build_search_url;
 pub use state::AppState;
 pub use types::HookInput;
 // #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every

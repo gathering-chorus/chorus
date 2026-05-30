@@ -81,10 +81,13 @@ fn cached_query_chorus_hybrid(
     role: &str,
     keywords: &[String],
     query: &str,
+    domain_tag: Option<&str>,
 ) -> Vec<(String, String, String)> {
     let mut sorted = keywords.to_vec();
     sorted.sort();
-    let key = format!("{}|{}", role, sorted.join(","));
+    // #3134: the domain tag is part of the cache identity — same keywords under
+    // a different WIP card must not return the other card's scoped results.
+    let key = format!("{}|{}|{}", role, sorted.join(","), domain_tag.unwrap_or(""));
 
     if let Ok(cache) = HYBRID_CACHE.lock() {
         if let Some((stamp, results)) = cache.get(&key) {
@@ -94,7 +97,7 @@ fn cached_query_chorus_hybrid(
         }
     }
 
-    let results = query_chorus_hybrid(query);
+    let results = query_chorus_hybrid(query, domain_tag);
     if let Ok(mut cache) = HYBRID_CACHE.lock() {
         cache.insert(key, (Instant::now(), results.clone()));
     }
@@ -118,24 +121,40 @@ fn cached_query_athena_domain(role: &str) -> Option<String> {
     value
 }
 
-/// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
-/// Replaces direct SQLite FTS with API call for richer context (233ms measured)
-fn query_chorus_hybrid(query: &str) -> Vec<(String, String, String)> {
-    let encoded: String = query
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
-                c.to_string()
-            } else {
-                format!("%{:02X}", c as u32)
-            }
-        })
-        .collect();
-
-    let url = format!(
+/// Build the hybrid-search URL (#3134). The prompt keywords ARE the query —
+/// the per-prompt search is driven by what Jeff actually typed. When the role
+/// has a WIP card, its domain is passed as an optional `&domain=` tag so results
+/// are scoped to the card's area (card-as-tag); with `None` (the common case —
+/// no card, venting, ideating) the query runs on the prompt alone. Pure +
+/// unit-tested (tests/context_inject_card_tag_3134.rs) so the tag wiring can't
+/// silently regress. `pub` for that integration test — it's a stateless helper.
+pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
+    fn enc(s: &str) -> String {
+        s.chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c.to_string()
+                } else {
+                    format!("%{:02X}", c as u32)
+                }
+            })
+            .collect()
+    }
+    let mut url = format!(
         "http://localhost:3340/api/chorus/search?q={}&mode=hybrid&limit=5",
-        encoded
+        enc(query)
     );
+    if let Some(domain) = domain_tag.map(str::trim).filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&domain={}", enc(domain)));
+    }
+    url
+}
+
+/// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
+/// Replaces direct SQLite FTS with API call for richer context (233ms measured).
+/// #3134: optional `domain_tag` scopes results to the WIP card's area.
+fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, String, String)> {
+    let url = build_search_url(query, domain_tag);
 
     let resp = match ureq::get(&url)
         .call()
@@ -518,6 +537,22 @@ fn parse_pulse_orientation(role: &str) -> (String, usize, usize, Option<String>)
     (health, team_wip, role_wip, card)
 }
 
+/// The role's WIP card domain from the pulse snapshot, if any (#3134). Used as
+/// the optional card-as-tag filter on the per-prompt search. Returns None when
+/// the role has no WIP card — the common case — so the search runs prompt-only.
+fn role_wip_domain(role: &str) -> Option<String> {
+    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let wip = v.pointer("/board/wip_cards")?.as_array()?;
+    let card = wip.iter().find(|c| {
+        c.get("owner").and_then(|o| o.as_str()).map(|s| s.to_lowercase()) == Some(role.to_lowercase())
+    })?;
+    card.get("domain")
+        .and_then(|d| d.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Main hook: extract keywords, search, synthesize, inject
 /// Stores results in AppState so other hooks can read them (#2225)
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
@@ -572,10 +607,12 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // log the real cost (AC5), never to skip a fetch.
     let envelope_start = std::time::Instant::now();
 
-    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). Cached per
-    // (role, keywords-hash) with HYBRID_CACHE_TTL so successive prompts that
-    // share keywords don't re-query.
-    let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query);
+    // Search Chorus API — hybrid mode (FTS + semantic + SPARQL). The PROMPT
+    // drives the query; the WIP card domain (if any) rides along as an optional
+    // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
+    // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
+    let card_tag = role_wip_domain(&role_name);
+    let chorus_results = cached_query_chorus_hybrid(&role_name, &keywords, &query, card_tag.as_deref());
 
     // Scan memory files (local, cheap)
     let memory_hits = scan_memory(&keywords);
@@ -599,6 +636,28 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // present, regardless of whether search turned up hits.
     let mut context = String::from("\n<context-synthesis>\n");
     context.push_str(&format!("Keywords: {}\n", query));
+
+    // #3134: lead with the PROMPT-driven signal — the Chorus hybrid hits and
+    // memory matches for what Jeff actually asked. These used to render last,
+    // buried under the always-on board primitives; now they come first so the
+    // relevant context isn't drowned. The board primitives (Pulse/Spine/Athena/
+    // Logs) follow as orientation — still present (the envelope-spec contract
+    // locks them), just demoted below the prompt answer.
+    if !chorus_results.is_empty() {
+        context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
+        for (role, content, ts) in &chorus_results {
+            let short: String = content.replace('\n', " ").chars().take(200).collect();
+            let ts_short: String = ts.chars().take(16).collect();
+            context.push_str(&format!("  [{}] {} — {}\n", ts_short, role, short));
+        }
+    }
+
+    if !memory_hits.is_empty() {
+        context.push_str(&format!("\nMemory ({} hits):\n", memory_hits.len()));
+        for hit in &memory_hits {
+            context.push_str(&format!("  {}\n", hit));
+        }
+    }
 
     if let Some(pulse) = &pulse_block {
         context.push('\n');
@@ -633,22 +692,6 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         context.push_str(&format!("## Logs ({} recent errors, 15m)\n", log_errors.len()));
         for (_ts, summary) in &log_errors {
             context.push_str(&format!("  {}\n", summary));
-        }
-    }
-
-    if !chorus_results.is_empty() {
-        context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
-        for (role, content, ts) in &chorus_results {
-            let short: String = content.replace('\n', " ").chars().take(200).collect();
-            let ts_short: String = ts.chars().take(16).collect();
-            context.push_str(&format!("  [{}] {} — {}\n", ts_short, role, short));
-        }
-    }
-
-    if !memory_hits.is_empty() {
-        context.push_str(&format!("\nMemory ({} hits):\n", memory_hits.len()));
-        for hit in &memory_hits {
-            context.push_str(&format!("  {}\n", hit));
         }
     }
 
