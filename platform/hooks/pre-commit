@@ -256,7 +256,7 @@ if [ -f "$REPO_ROOT/eslint.config.js" ]; then
     # Emit spine event per cog-override applied (#2627 AC3).
     if [ "${OVR_N:-0}" != "0" ]; then
       echo "$sonar_report" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const o=JSON.parse(s).cogOverrides||[];for(const ov of o)process.stdout.write(`${ov.file}:${ov.line}\t${ov.reason}\n`)}catch{}})' 2>/dev/null | while IFS=$'\t' read -r loc reason; do
-        "$REPO_ROOT/platform/scripts/chorus-log" cog.override.used "${ROLE:-unknown}" "loc=${loc}" "reason=${reason}" >/dev/null 2>&1 || true
+        "$REPO_ROOT/platform/scripts/chorus-log" cog.override.used "${ROLE:-unknown}" "domain=chorus" "loc=${loc}" "reason=${reason}" >/dev/null 2>&1 || true
       done
     fi
     TOTAL_FAIL=$((${DUPE_N:-0} + ${COG_N:-0}))
