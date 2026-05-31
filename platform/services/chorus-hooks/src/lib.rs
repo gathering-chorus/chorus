@@ -3,6 +3,14 @@
 //! continue to declare modules privately via #[path]; this lib.rs only
 //! re-exports the modules tests outside the binary need to import.
 
+// #3150: the bins (chorus-hooks server, chorus-hook-shim) declare these modules
+// privately via #[path] and USE their items; this lib re-exports only a narrow
+// test surface. So the lib target's dead_code analysis flags ~235 items as "never
+// used" that the bins actually use — false positives that swamp the real signal
+// (cognitive_complexity, too_many_arguments) and trip the clippy-ratchet on noise.
+// Suppress dead_code crate-wide; the real clippy lints stay on.
+#![allow(dead_code)]
+
 pub mod mcp_client;
 // #2505 — expose `shared` so integration tests can call
 // `chorus_hooks::shared::state_paths::chorus_root()` instead of hardcoding
