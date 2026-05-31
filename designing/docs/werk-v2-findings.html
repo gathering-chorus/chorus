@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Werk v2 To-Be — Validation Findings &amp; Card Sequence</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'dark',securityLevel:'loose'});</script>
+<style>
+  :root{
+    --bg:#0d0b14; --panel:#16121f; --panel2:#1b1626; --ink:#e9e3ff; --muted:#a99fc4;
+    --kade:#a78bfa; --rust:#34d399; --amber:#f0c879; --blue:#38bdf8; --red:#f87171;
+    --line:#2a2438;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;line-height:1.5;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 28px 80px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 6px}
+  .meta{color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:26px}
+  .meta b{color:var(--ink)}
+  h2{font-size:18px;margin:34px 0 12px;padding-top:6px;border-top:1px solid var(--line)}
+  h2 .n{color:var(--kade);font-variant-numeric:tabular-nums}
+  p{margin:8px 0}
+  code{background:#241d33;color:#d6ccff;padding:1px 6px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  .lead{color:var(--muted);max-width:74ch}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  td.req{color:var(--ink)}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.3px}
+  .met{background:#13261d;color:var(--rust);border:1px solid #1e4434}
+  .partial{background:#2a2418;color:var(--amber);border:1px solid #4a3f1e}
+  .missing{background:#2a1620;color:var(--red);border:1px solid #4a1e2c}
+  .diverged{background:#2a1620;color:var(--red);border:1px solid #4a1e2c}
+  .card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--kade);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .card h3{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .step{background:var(--kade);color:#1a1230;font-weight:800;font-size:12px;border-radius:6px;padding:2px 9px}
+  .pill{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 9px}
+  .pill.p1{color:var(--red);border-color:#4a1e2c}
+  .dep{font-size:12px;color:var(--amber)}
+  .card ul{margin:8px 0 0;padding-left:18px}
+  .card li{margin:3px 0;font-size:13.5px}
+  .receipts{font-size:12px;color:var(--rust);margin-top:8px}
+  .receipts b{color:var(--muted);font-weight:600}
+  .verdict{background:var(--panel2);border:1px solid #1e4434;border-radius:10px;padding:14px 18px;margin:16px 0}
+  .verdict .v{color:var(--rust);font-weight:800;font-size:15px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
+  .stat .k{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+  .mermaid{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0;text-align:center}
+  .src{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--blue)}
+  .foot{color:var(--muted);font-size:12px;margin-top:34px;border-top:1px solid var(--line);padding-top:14px}
+  em{color:var(--amber);font-style:normal}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Werk v2 To-Be — Validation Findings &amp; Card Sequence</h1>
+  <p class="sub">Did the live source match the to-be? What's the real, parity-first plan to close the gap?</p>
+  <p class="meta">
+    owner: <b>Kade</b> (version-control + pipelines) &nbsp;&middot;&nbsp;
+    method: <b>7-agent dynamic workflow</b> &mdash; 5 parallel validators against live source, synthesize, adversarial verify &nbsp;&middot;&nbsp;
+    validated against: <span class="src">server.ts</span>, <span class="src">git-queue.sh</span>, <span class="src">werk-*/src</span> &nbsp;&middot;&nbsp;
+    2026-05-31 &nbsp;&middot;&nbsp; companion to <b>werk-v2-tobe.html</b>
+  </p>
+
+  <p class="lead">The to-be doc says: <em>"get the core loop's integration right before we use v2 more."</em> This session we did the opposite &mdash; hammered v2 and hit a failure at every seam. The workflow checked each seam against the actual files (not the doc's word) and turned the gaps into a dependency-ordered card chain. Every claim below traces to a file:line; the adversarial pass confirmed <b>no fabrication</b>.</p>
+
+  <h2><span class="n">1</span> &nbsp;Findings &mdash; to-be vs. live source</h2>
+
+  <table>
+    <thead><tr><th>Requirement (to-be)</th><th>Live source</th><th>Gap</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="req">The acp saga lives in a <b>rust werk-acp core</b>, not inline TS.</td>
+        <td><code>executeAcp</code> is still ~460 lines of inline TS orchestration in the MCP layer; carries all 8 receipts inline.</td>
+        <td><span class="tag diverged">diverged</span></td>
+        <td class="src">server.ts:1515&ndash;2054</td>
+      </tr>
+      <tr>
+        <td class="req"><code>pull</code> moved to its rust core; <b>acp should follow</b>.</td>
+        <td><code>pull</code> retired to <code>werk-pull</code> core; <b>acp never did</b> &mdash; the asymmetry.</td>
+        <td><span class="tag diverged">diverged</span></td>
+        <td class="src">server.ts:2062&ndash;2070 (#3135 comment)</td>
+      </tr>
+      <tr>
+        <td class="req">Cores <b>SHELL git-queue.sh</b> &mdash; inherit the one lock, <code>check_branch</code>, the sentinels.</td>
+        <td>Cores reimplement under <b>private flocks on a different lock file</b> and <b>drop <code>check_branch</code></b> (#2580 cross-role + #2641 same-role-wrong-card).</td>
+        <td><span class="tag diverged">diverged</span></td>
+        <td class="src">werk-commit/push/src/lib.rs</td>
+      </tr>
+      <tr>
+        <td class="req">Verbs resolve <code>cards</code>/<code>role-state</code> by <b>absolute path</b> from <code>CHORUS_HOME</code>.</td>
+        <td><b>bare-name</b> invocation survives in two cores &mdash; the #3151 daemon-minimal-PATH crash class.</td>
+        <td><span class="tag missing">missing</span></td>
+        <td class="src">werk-accept: 2 refs &middot; werk-demo: 5 refs</td>
+      </tr>
+      <tr>
+        <td class="req"><b>One trace, one spine</b> &mdash; every verb emits to <code>~/.chorus/chorus.log</code> via <code>chorus-log</code>.</td>
+        <td><code>commit/push/build/deploy</code> emit <b>zero spine</b> &mdash; only local <code>*.jsonl</code> witness (not promtail-tailed).</td>
+        <td><span class="tag missing">missing</span></td>
+        <td class="src">no chorus-log call in 4 cores</td>
+      </tr>
+      <tr>
+        <td class="req">Trace inheritance via <b>Chorus-Trace-Id git trailers</b> (#2931); no fresh-mint.</td>
+        <td><code>commit/push/accept</code> <b>fresh-mint</b> a trace; <b>no git trailers exist in any crate</b>.</td>
+        <td><span class="tag missing">missing</span></td>
+        <td class="src">resolve_trace absent in atomics</td>
+      </tr>
+      <tr>
+        <td class="req"><b>MCP is skin</b> &mdash; every werk verb exec's its rust binary.</td>
+        <td><b>4 tools missing</b>: <code>chorus_push</code>, <code>chorus_accept</code>, <code>chorus_demo</code>, <code>chorus_env_down</code> (#3113).</td>
+        <td><span class="tag missing">missing</span></td>
+        <td class="src">server.ts tool registrations</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2><span class="n">2</span> &nbsp;Adversarial verdict</h2>
+  <div class="verdict">
+    <span class="v">&#10003; ship-with-corrections</span>
+    <div class="grid2">
+      <div class="stat"><div class="k">Ordering</div>valid &mdash; parity gate first, executeAcp deletion strictly last</div>
+      <div class="stat"><div class="k">Receipt coverage</div>all 8 covered at the gate; none uncovered</div>
+      <div class="stat"><div class="k">Fabrication</div>none &mdash; every card traces to a finding &amp; file:line</div>
+      <div class="stat"><div class="k">Corrections applied</div>split two mega-cards into a clean 5-step chain; receipt count 7&rarr;8; <code>env_down</code> added; "parity-green-before-delete" made an explicit AC</div>
+    </div>
+  </div>
+
+  <h2><span class="n">3</span> &nbsp;The sequence &mdash; parity-first dependency chain</h2>
+
+  <div class="mermaid">
+flowchart LR
+  C0["Card 0&#60;br/&#62;parity harness GATE"]:::gate
+  C1["Card 1&#60;br/&#62;atomics to one spine&#60;br/&#62;+ trace trailers"]:::k
+  C2["Card 2&#60;br/&#62;werk-acp rust core&#60;br/&#62;shell git-queue, port 8"]:::k
+  C3["Card 3&#60;br/&#62;skin to core&#60;br/&#62;DELETE executeAcp, #3113"]:::cut
+  C4["Card 4&#60;br/&#62;pull + demo parity&#60;br/&#62;cutover-rep clock"]:::k
+  C0 --> C1 --> C2 --> C3 --> C4
+  C0 -.->|"gate must be GREEN before delete"| C3
+  classDef gate fill:#2a2418,stroke:#f0c879,color:#f6e6c8;
+  classDef k fill:#1d1832,stroke:#a78bfa,color:#e9e3ff;
+  classDef cut fill:#2a1620,stroke:#f87171,color:#ffe0e0;
+  </div>
+
+  <div class="card">
+    <h3><span class="step">Step 0</span> werk-acp parity harness gate <span class="pill p1">P1</span><span class="pill">size L</span><span class="dep">depends on: nothing</span></h3>
+    <p class="lead">Run today's <code>executeAcp</code> against the new core on the same card; assert identical end-state &mdash; <code>sha</code>, board status, werk-gone, promoted-cdhash, idempotent-on-rerun. <b>This is the cutover gate: it must exist and be green before anything below rewrites acp.</b></p>
+    <div class="receipts"><b>preserves all 8 receipts:</b> #2925 #2782 #2868 #2923 #2943 #2931 #3012 #2995</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="step">Step 1</span> atomics to one spine + trace inheritance <span class="pill p1">P1</span><span class="pill">size M</span><span class="dep">depends on: Card 0</span></h3>
+    <ul>
+      <li><code>werk-commit/push/build/deploy</code> emit lifecycle to <code>~/.chorus/chorus.log</code> via <code>chorus-log</code> (zero today).</li>
+      <li>Replace fresh-mint with <code>resolve_trace</code> inheritance for commit/push/accept.</li>
+      <li>Write <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> git trailers so build/deploy inherit the trace.</li>
+    </ul>
+    <div class="receipts"><b>owns:</b> #2931 (trace trailers)</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="step">Step 2</span> werk-acp rust core <span class="pill p1">P1</span><span class="pill">size L</span><span class="dep">depends on: Card 1</span></h3>
+    <ul>
+      <li>Compose <code>commit/push/accept</code> cores in-process.</li>
+      <li><b>Shell <code>git-queue.sh</code></b> for git ops &mdash; restore <code>check_branch</code> (#2580 + #2641).</li>
+      <li>Port <b>all 8 receipts</b> into the rust core; pass the Card 0 harness.</li>
+    </ul>
+    <div class="receipts"><b>ports:</b> #2925 #2782 #2868 #2923 #2943 #2931 #3012 #2995</div>
+  </div>
+
+  <div class="card" style="border-left-color:var(--red)">
+    <h3><span class="step" style="background:var(--red);color:#2a0d12">Step 3</span> point skin at core, delete executeAcp <span class="pill p1">P1</span><span class="pill">size M</span><span class="dep">depends on: Card 2</span></h3>
+    <ul>
+      <li><code>chorus_acp</code> becomes a thin skin exec'ing the binary.</li>
+      <li><b>Delete <code>executeAcp</code></b> (server.ts:1515&ndash;2054) &mdash; <em>AC precondition: parity harness GREEN against the new core first.</em></li>
+      <li>Register the 4 missing MCP tools: <code>chorus_push</code>, <code>chorus_accept</code>, <code>chorus_demo</code>, <code>chorus_env_down</code> &mdash; <b>subsumes #3113</b>.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3><span class="step">Step 4</span> pull + demo parity, start cutover clock <span class="pill p1">P1</span><span class="pill">size M</span><span class="dep">depends on: Card 3</span></h3>
+    <ul>
+      <li>Harden <code>werk-demo</code>'s 5 bare-<code>cards</code> refs to absolute resolution (#3151 class).</li>
+      <li>Add spine emission + trace inheritance to <code>werk-build</code> / <code>werk-deploy</code> (both zero today).</li>
+      <li>Once all three integrate identically, the "N clean real runs before we use v2 more" clock starts.</li>
+    </ul>
+  </div>
+
+  <h2><span class="n">4</span> &nbsp;The 8 receipts &mdash; non-negotiable parity assertions</h2>
+  <p class="lead">Each is a real past failure. A greenfield rewrite that "just composes the cores" drops them silently &mdash; so the harness (Card 0) asserts every one, and Card 2 ports every one.</p>
+  <table>
+    <tbody>
+      <tr><td class="src">#2925</td><td>Resolve the exact <code>&lt;role&gt;-&lt;card&gt;</code> werk when <code>card_id</code> asserted &mdash; else 2+ werks &rarr; fallback to canonical &rarr; git runs from main &rarr; pre-push refuses.</td></tr>
+      <tr><td class="src">#2782</td><td>Derive <code>cardId</code> from the branch first, board as fallback &mdash; the board lags (merged&rarr;Done&rarr;0 WIP).</td></tr>
+      <tr><td class="src">#2868</td><td>Intent-assertion guard: asserted <code>card_id</code> must equal derived &mdash; silent substitution shipped the wrong card.</td></tr>
+      <tr><td class="src">#2923</td><td>No false-success fast-path: <code>git cherry -empty</code> can't tell already-merged from never-committed. Idempotency is per-step.</td></tr>
+      <tr><td class="src">#2943</td><td>Idempotent re-run = Done + orphan remote branch &rarr; werk-close only (agents can't <code>push --delete</code>, #2598).</td></tr>
+      <tr><td class="src">#2931</td><td>Write <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> git trailers so build/deploy inherit the trace.</td></tr>
+      <tr><td class="src">#3012</td><td>Ordering keystone: PR-merge &rarr; promote-werk-bin &rarr; werk-close &rarr; cards-done; every step throws (card stays WIP).</td></tr>
+      <tr><td class="src">#2995</td><td>promote-werk-bin: werk&rarr;canonical only post-merge; skip if cdhash matches; any promote-fail throws (no orphan-canonical).</td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    Generated from a dynamic workflow (7 agents, ~524K subagent tokens, 112 tool uses). Findings validated against live source; adversarially verified for ordering, receipt coverage, and fabrication. Draft on Desktop &mdash; permanent home is <code>designing/docs/werk-v2-findings.html</code>, to land alongside <code>werk-v2-tobe.html</code> when the sequence cards are filed.
+  </p>
+
+</div>
+</body>
+</html>
