@@ -8,6 +8,11 @@
 //! This replaces the "search and throw away results" failure mode.
 //! The role sees accumulated context before they start thinking.
 
+// These helpers are consumed by the binary target via check() (main.rs:650); the
+// lib target lints them as dead. Suppress to match the crate-wide lib-vs-bin baseline.
+#![allow(dead_code)]
+#![allow(clippy::cognitive_complexity)]
+
 use crate::state::{AppState, ContextSearchResults};
 use crate::types::{HookInput, HookResponse};
 use std::collections::HashMap;
@@ -556,6 +561,10 @@ fn role_wip_domain(role: &str) -> Option<String> {
 /// #3134 — format one context-inject OUTCOME spine line (pure, testable).
 /// Matches the chorus.log JSONL shape so promtail/Loki ingest it like any spine
 /// event, which makes the per-prompt result queryable via `logs_*`/pulse.
+// #3147 — flat structured-record formatter (8 fixed metric fields, not a complex fn);
+// #[allow] is the codebase's intentional-many-arg marker, omitted in #3134. Unblocks
+// the clippy-ratchet (too_many_arguments isn't in baseline) without loosening it.
+#[allow(clippy::too_many_arguments)]
 pub fn format_spine_line(
     ts: &str, role: &str, event: &str,
     chorus_hits: usize, memory_hits: usize, log_errors: usize,
@@ -578,9 +587,90 @@ fn emit_spine_observation(
 ) {
     let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
     let line = format_spine_line(&ts, role, event, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms);
+    emit_inject_event(&line);
+}
+
+// #3147 — append one JSONL line to the spine log (→ promtail → Loki). Same path as
+// emit_spine_observation; factored out so the request/response events reuse it.
+// chorus.log is NOT the semantic index (spine ingestion removed #3136), so inject
+// observability lands in Loki only — telemetry, not searchable knowledge.
+fn emit_inject_event(line: &str) {
     let path = crate::shared::state_paths::chorus_log_file();
     let _ = std::fs::OpenOptions::new().create(true).append(true).open(&path)
         .and_then(|mut f| { use std::io::Write; writeln!(f, "{}", line) });
+}
+
+// #3147 — what context_inject asked for (REQUEST) and what came back (RESPONSE),
+// as named-field structs so the formatters take 2 args, not a dozen positional ones
+// (clippy::too_many_arguments). This is also the shape Kade's crate emit_request /
+// emit_response API will take, so it's the right interim form, not throwaway.
+pub struct InjectRequest<'a> {
+    pub inject_id: &'a str,
+    pub role: &'a str,
+    pub session_id: &'a str,
+    pub prompt: &'a str,
+    pub keywords: &'a [String],
+    pub domain_tag: Option<&'a str>,
+    pub calls: &'a [(&'a str, String, bool)],
+}
+
+pub struct InjectResponse<'a> {
+    pub inject_id: &'a str,
+    pub role: &'a str,
+    // ranked order; rank = position (score needs plumbing through query_chorus_hybrid — follow-on)
+    pub candidates: &'a [(String, String, String)],
+    pub memory_hits: usize,
+    pub pulse_present: bool,
+    pub spine_events: usize,
+    pub athena_present: bool,
+    pub log_errors: usize,
+    pub assembled_bytes: usize,
+    pub elapsed_ms: u64,
+    pub drops: &'a [&'a str], // sources that returned nothing (the silent-drop class, #3048)
+}
+
+// Pure + testable. Paired to the response by inject_id (a span the controller's
+// emit_request will mint once Kade's crate lands; minted inline here for now).
+pub fn format_inject_request(ts: &str, r: &InjectRequest) -> String {
+    let calls_json: Vec<serde_json::Value> = r.calls.iter()
+        .map(|(target, query, fired)| serde_json::json!({"target": target, "query": query, "fired": fired}))
+        .collect();
+    serde_json::json!({
+        "timestamp": ts, "level": "info", "appName": "chorus-events",
+        "component": "context-inject", "event": "context.inject.request",
+        "inject_id": r.inject_id, "role": r.role, "session_id": r.session_id,
+        "prompt": r.prompt, "keywords": r.keywords, "domain_tag": r.domain_tag,
+        "calls": calls_json,
+    }).to_string()
+}
+
+pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
+    let cands: Vec<serde_json::Value> = r.candidates.iter().enumerate()
+        .map(|(i, (source, content, cts))| {
+            let snippet: String = content.replace('\n', " ").chars().take(120).collect();
+            serde_json::json!({"source": source, "rank": i + 1, "snippet": snippet, "ts": cts})
+        })
+        .collect();
+    serde_json::json!({
+        "timestamp": ts, "level": "info", "appName": "chorus-events",
+        "component": "context-inject", "event": "context.inject.response",
+        "inject_id": r.inject_id, "role": r.role,
+        "candidates": cands,
+        "memory_hits": r.memory_hits, "pulse": r.pulse_present, "spine_events": r.spine_events,
+        "athena": r.athena_present, "log_errors": r.log_errors,
+        "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
+    }).to_string()
+}
+
+// #3147 — emit with a fresh timestamp.
+fn emit_inject_request(r: &InjectRequest) {
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    emit_inject_event(&format_inject_request(&ts, r));
+}
+
+fn emit_inject_response(r: &InjectResponse) {
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    emit_inject_event(&format_inject_response(&ts, r));
 }
 
 /// Main hook: extract keywords, search, synthesize, inject
@@ -600,6 +690,11 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     let role_name = format!("{:?}", input.role()).to_lowercase();
     let query = keywords.join(" ");
+
+    // #3147 — one inject_id spans this prompt's request + response events (the pairing
+    // key). Minted inline now; migrates to the span Kade's emit_request() will return.
+    let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    let inject_id = format!("inj-{}-{}", role_name, chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
 
     // #3048: push BOTH the manifest (orientation: pulse + endpoints + nudges) AND
     // the live search/Loki synthesis (grounding) on every prompt. Pre-#3048 the
@@ -642,6 +737,21 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // `&domain=` tag (#3134) — card-as-tag, not card-as-driver. No card → the
     // search runs prompt-only. Cached per (role, keywords-hash, domain-tag).
     let card_tag = role_wip_domain(&role_name);
+
+    // #3147 — emit the REQUEST (what we're about to ask for) BEFORE the fan-out, so it
+    // lands even if every source drops. The 6 calls mirror the spawn_blocking set below.
+    let request_calls: Vec<(&str, String, bool)> = vec![
+        ("chorus", build_search_url(&query, card_tag.as_deref()), true),
+        ("memory", keywords.join(" "), true),
+        ("pulse", "snapshot".to_string(), true),
+        ("spine", "recent-8".to_string(), true),
+        ("athena", role_name.clone(), true),
+        ("logs", "loki-errors-15m".to_string(), true),
+    ];
+    emit_inject_request(&InjectRequest {
+        inject_id: &inject_id, role: &role_name, session_id, prompt,
+        keywords: &keywords, domain_tag: card_tag.as_deref(), calls: &request_calls,
+    });
 
     // #3134: PARALLEL fan-out. The six sub-queries are independent reads with no
     // ordering dependency until assembly — running them sequentially made the
@@ -747,14 +857,21 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         );
         // #3134: observability — outcome on the spine, not just daemon stderr.
         emit_spine_observation(&role_name, "context.inject.empty", 0, 0, 0, manifest_block.len(), elapsed);
+        // #3147 — response event for the empty path: all six sources dropped.
+        emit_inject_response(&InjectResponse {
+            inject_id: &inject_id, role: &role_name, candidates: &[],
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            log_errors: 0, assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
+            drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
+        });
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
     }
 
     context.push_str("\nMANDATORY: You MUST reference this context before responding. Do not search filesystem or git for information already provided here. If Chorus returned results, cite them. Ignoring injected context is a protocol violation.\n");
     context.push_str("</context-synthesis>");
 
-    // Store results in AppState for other hooks to read (#2225)
-    let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    // Store results in AppState for other hooks to read (#2225). session_id declared
+    // at the top (#3147) so the request event can carry it.
     state.store_context_results(session_id, ContextSearchResults {
         chorus_hits: chorus_results.clone(),
         memory_hits: memory_hits.clone(),
@@ -778,6 +895,21 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
     // #3048: manifest (orientation) + dynamic synthesis (grounding), both pushed.
     let out = format!("\n{}\n{}", manifest_block, context);
+    // #3147 — RESPONSE event: candidates (ranked), per-source presence, drops, bytes, ms.
+    let mut drops: Vec<&str> = Vec::new();
+    if chorus_results.is_empty() { drops.push("chorus"); }
+    if memory_hits.is_empty() { drops.push("memory"); }
+    if pulse_block.is_none() { drops.push("pulse"); }
+    if spine_events.is_empty() { drops.push("spine"); }
+    if athena_block.is_none() { drops.push("athena"); }
+    if log_errors.is_empty() { drops.push("logs"); }
+    emit_inject_response(&InjectResponse {
+        inject_id: &inject_id, role: &role_name, candidates: &chorus_results,
+        memory_hits: memory_hits.len(), pulse_present: pulse_block.is_some(),
+        spine_events: spine_events.len(), athena_present: athena_block.is_some(),
+        log_errors: log_errors.len(), assembled_bytes: out.len(), elapsed_ms: elapsed,
+        drops: &drops,
+    });
     // #3134: observability — emit the actual outcome (hits + injected bytes) to
     // the spine so GET/USE can be measured, not just the daemon's stderr log.
     emit_spine_observation(
@@ -791,6 +923,106 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #3147 — the REQUEST event captures exactly what context_inject asked for.
+    #[test]
+    fn inject_request_captures_what_was_asked() {
+        let kw = vec!["self".to_string(), "healing".to_string()];
+        let calls = vec![
+            ("chorus", "http://localhost:3340/api/chorus/search?q=self+healing".to_string(), true),
+            ("memory", "self healing".to_string(), true),
+        ];
+        let line = format_inject_request("2026-05-30T18:00:00.000+0000", &InjectRequest {
+            inject_id: "inj-wren-42", role: "wren", session_id: "sess-1",
+            prompt: "so chorus is self-healing", keywords: &kw, domain_tag: Some("loom"), calls: &calls,
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["event"], "context.inject.request");
+        assert_eq!(v["inject_id"], "inj-wren-42");
+        assert_eq!(v["prompt"], "so chorus is self-healing");
+        assert_eq!(v["keywords"][1], "healing");
+        assert_eq!(v["domain_tag"], "loom");
+        assert_eq!(v["calls"][0]["target"], "chorus");
+        assert_eq!(v["calls"][0]["fired"], true);
+    }
+
+    // #3147 — the RESPONSE event captures the ranked candidates + the silent drops.
+    #[test]
+    fn inject_response_captures_candidates_and_drops() {
+        let cands = vec![
+            ("claude".to_string(), "what did you get\nas a chorus-inject".to_string(), "2026-05-30T18:00".to_string()),
+            ("principle".to_string(), "Collaborate with succession".to_string(), "2026-05-26T17:40".to_string()),
+        ];
+        let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
+            inject_id: "inj-wren-42", role: "wren", candidates: &cands,
+            memory_hits: 5, pulse_present: true, spine_events: 8, athena_present: false,
+            log_errors: 0, assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["event"], "context.inject.response");
+        assert_eq!(v["inject_id"], "inj-wren-42");
+        assert_eq!(v["candidates"][0]["source"], "claude");
+        assert_eq!(v["candidates"][0]["rank"], 1);
+        assert!(v["candidates"][0]["snippet"].as_str().unwrap().contains("what did you get as a chorus-inject"));
+        assert_eq!(v["candidates"][1]["rank"], 2);
+        assert_eq!(v["memory_hits"], 5);
+        assert_eq!(v["athena"], false);
+        assert_eq!(v["assembled_bytes"], 4876);
+        assert_eq!(v["elapsed_ms"], 3278);
+        assert_eq!(v["drops"][0], "athena");
+    }
+
+    // #3147 — request + response are the SAME prompt, paired by inject_id.
+    #[test]
+    fn request_and_response_pair_by_inject_id() {
+        let req = format_inject_request("t", &InjectRequest {
+            inject_id: "inj-X", role: "wren", session_id: "s", prompt: "p",
+            keywords: &[], domain_tag: None, calls: &[],
+        });
+        let resp = format_inject_response("t", &InjectResponse {
+            inject_id: "inj-X", role: "wren", candidates: &[],
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &[],
+        });
+        let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
+        let pv: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(rv["inject_id"], pv["inject_id"]);
+    }
+
+    // #3147 — "just show me": run the real formatters against a LIVE chorus search
+    // for a real prompt, pretty-print the request+response. Not a UI — a runnable
+    // window. `cargo test inject_live_demo -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn inject_live_demo() {
+        fn show(label: &str, line: &str) {
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            println!("\n=== {} ===\n{}", label, serde_json::to_string_pretty(&v).unwrap());
+        }
+        let prompt = "so chorus is self-healing lol";
+        let keywords = extract_keywords(prompt);
+        let query = keywords.join(" ");
+        let candidates = query_chorus_hybrid(&query, None); // LIVE HTTP to :3340
+        let calls = vec![
+            ("chorus", build_search_url(&query, None), true),
+            ("memory", query.clone(), true),
+            ("pulse", "snapshot".to_string(), true),
+            ("spine", "recent-8".to_string(), true),
+            ("athena", "wren".to_string(), true),
+            ("logs", "loki-errors-15m".to_string(), true),
+        ];
+        let id = "inj-demo-1";
+        show("REQUEST", &format_inject_request("2026-05-30T14:50:00.000+0000", &InjectRequest {
+            inject_id: id, role: "wren", session_id: "sess-demo", prompt,
+            keywords: &keywords, domain_tag: None, calls: &calls,
+        }));
+        let drops: Vec<&str> = if candidates.is_empty() { vec!["chorus"] } else { vec![] };
+        show("RESPONSE", &format_inject_response("2026-05-30T14:50:03.000+0000", &InjectResponse {
+            inject_id: id, role: "wren", candidates: &candidates,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
+        }));
+    }
 
     #[test]
     fn extracts_meaningful_keywords() {

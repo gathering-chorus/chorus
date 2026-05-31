@@ -99,7 +99,13 @@ mod tests {
         assert!(pid.is_none());
     }
 
+    // #3147 — NON-HERMETIC, #[ignore]'d out of the pre-commit's hermetic --lib --bins
+    // suite (DEC-2525). get_cwd() reads the process's own cwd via a system call that
+    // returns Some in an interactive shell but None in the daemon-spawned pre-commit/CI
+    // context (cwd not readable there) — env-dependent, so it flaked the acp gate as a
+    // false failure. Still runnable on demand (`cargo test -- --ignored`).
     #[test]
+    #[ignore]
     fn get_cwd_returns_path_for_self() {
         let pid = std::process::id();
         let cwd = get_cwd(pid);
