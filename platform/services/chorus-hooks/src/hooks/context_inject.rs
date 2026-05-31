@@ -627,7 +627,7 @@ pub struct InjectResponse<'a> {
     pub memory_hits: usize,
     pub pulse_present: bool,
     pub spine_events: usize,
-    pub athena_present: bool,
+    pub athena: Option<&'a str>,
     pub log_errors: usize,
     pub assembled_bytes: usize,
     pub elapsed_ms: u64,
@@ -652,8 +652,8 @@ pub fn format_inject_request(ts: &str, r: &InjectRequest) -> String {
 pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
     let cands: Vec<serde_json::Value> = r.candidates.iter().enumerate()
         .map(|(i, (source, content, cts, score))| {
-            let snippet: String = content.replace('\n', " ").chars().take(120).collect();
-            serde_json::json!({"source": source, "rank": i + 1, "snippet": snippet, "ts": cts, "score": score})
+            // #3147 — log the ACTUAL payload (full content), not a 120-char snippet (Jeff: chorus MUST include the actual payload)
+            serde_json::json!({"source": source, "rank": i + 1, "content": content, "ts": cts, "score": score})
         })
         .collect();
     serde_json::json!({
@@ -662,7 +662,7 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
         "inject_id": r.inject_id, "role": r.role,
         "candidates": cands,
         "memory_hits": r.memory_hits, "pulse": r.pulse_present, "spine_events": r.spine_events,
-        "athena": r.athena_present, "log_errors": r.log_errors,
+        "athena": r.athena, "log_errors": r.log_errors,
         "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
     }).to_string()
 }
@@ -865,7 +865,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         // #3147 — response event for the empty path: all six sources dropped.
         emit_inject_response(&InjectResponse {
             inject_id: &inject_id, role: &role_name, candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
             drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
         });
@@ -911,7 +911,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     emit_inject_response(&InjectResponse {
         inject_id: &inject_id, role: &role_name, candidates: &chorus_results,
         memory_hits: memory_hits.len(), pulse_present: pulse_block.is_some(),
-        spine_events: spine_events.len(), athena_present: athena_block.is_some(),
+        spine_events: spine_events.len(), athena: athena_block.as_deref(),
         log_errors: log_errors.len(), assembled_bytes: out.len(), elapsed_ms: elapsed,
         drops: &drops,
     });
@@ -960,7 +960,7 @@ mod tests {
         ];
         let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
             inject_id: "inj-wren-42", role: "wren", candidates: &cands,
-            memory_hits: 5, pulse_present: true, spine_events: 8, athena_present: false,
+            memory_hits: 5, pulse_present: true, spine_events: 8, athena: None,
             log_errors: 0, assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -968,10 +968,10 @@ mod tests {
         assert_eq!(v["inject_id"], "inj-wren-42");
         assert_eq!(v["candidates"][0]["source"], "claude");
         assert_eq!(v["candidates"][0]["rank"], 1);
-        assert!(v["candidates"][0]["snippet"].as_str().unwrap().contains("what did you get as a chorus-inject"));
+        assert!(v["candidates"][0]["content"].as_str().unwrap().contains("what did you get"));
         assert_eq!(v["candidates"][1]["rank"], 2);
         assert_eq!(v["memory_hits"], 5);
-        assert_eq!(v["athena"], false);
+        assert!(v["athena"].is_null());
         assert_eq!(v["assembled_bytes"], 4876);
         assert_eq!(v["elapsed_ms"], 3278);
         assert_eq!(v["drops"][0], "athena");
@@ -989,7 +989,7 @@ mod tests {
         ];
         let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
             inject_id: "inj-wren-99", role: "wren", candidates: &cands,
-            memory_hits: 1, pulse_present: true, spine_events: 1, athena_present: false,
+            memory_hits: 1, pulse_present: true, spine_events: 1, athena: None,
             log_errors: 0, assembled_bytes: 100, elapsed_ms: 10, drops: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -1006,7 +1006,7 @@ mod tests {
         });
         let resp = format_inject_response("t", &InjectResponse {
             inject_id: "inj-X", role: "wren", candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &[],
         });
         let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
@@ -1044,7 +1044,7 @@ mod tests {
         let drops: Vec<&str> = if candidates.is_empty() { vec!["chorus"] } else { vec![] };
         show("RESPONSE", &format_inject_response("2026-05-30T14:50:03.000+0000", &InjectResponse {
             inject_id: id, role: "wren", candidates: &candidates,
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
         }));
     }
