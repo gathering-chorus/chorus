@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chorus — Logging / Invariant-Observability Findings</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1c1f26; --line:#2b2f38; --ink:#e7e9ee; --dim:#9aa3b2;
+    --green:#5fb87a; --amber:#d9a441; --red:#d96a6a; --blue:#6aa0d9; --purple:#a98cd9;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,system-ui,sans-serif;padding:32px 40px 80px}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:34px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--dim);margin:0 0 6px}
+  .tag{display:inline-block;font:11px var(--mono);padding:1px 7px;border-radius:10px;border:1px solid var(--line);color:var(--dim)}
+  code,.mono{font-family:var(--mono);font-size:12.5px}
+  .headline{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:16px 18px;margin:14px 0}
+  .headline b{color:var(--amber)}
+  table{border-collapse:collapse;width:100%;margin:8px 0;font-size:13px}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.num,th.num{text-align:right;font-family:var(--mono)}
+  .v{color:var(--green)} .p{color:var(--amber)} .b{color:var(--red)}
+  tr.total td{border-top:2px solid var(--line);font-weight:700}
+  .owner{font:11px var(--mono);padding:1px 6px;border-radius:4px}
+  .o-silas{background:#23303a;color:#7fc4e0} .o-kade{background:#2e2640;color:#c3a6ee}
+  .o-wren{background:#1f3328;color:#7fd49a} .o-hook{background:#3a3326;color:#e0c47f} .o-rt{background:#2a2d34;color:#9aa3b2}
+  .layers{counter-reset:l;list-style:none;padding:0;margin:8px 0}
+  .layers li{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px 10px 46px;margin:7px 0;position:relative}
+  .layers li::before{counter-increment:l;content:counter(l);position:absolute;left:12px;top:10px;width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--ink);font:12px/22px var(--mono);text-align:center}
+  .layers li.now{border-color:var(--amber)}
+  .layers b{color:var(--ink)} .layers .meta{color:var(--dim)}
+  .bs{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:8px 0}
+  .bs h4{margin:0 0 4px;font-size:14px}
+  .bs .freq{float:right;font:11px var(--mono);padding:1px 7px;border-radius:10px}
+  .freq.high{background:#3a2424;color:var(--red)} .freq.med{background:#3a3324;color:var(--amber)}
+  .bs .why{color:var(--dim);margin:2px 0 6px} .bs .fix{color:var(--green)}
+  ol.steps{padding-left:20px} ol.steps li{margin:8px 0}
+  ol.steps b{color:var(--blue)}
+  .open{background:#1f1c14;border:1px solid var(--amber);border-radius:8px;padding:14px 16px;margin:12px 0}
+  .open b{color:var(--amber)}
+  .foot{color:var(--dim);font-size:12px;margin-top:30px;border-top:1px solid var(--line);padding-top:12px}
+  .def{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:10px 0}
+  .def b{color:var(--purple)}
+</style>
+</head>
+<body>
+
+<h1>Logging &amp; Invariant-Observability — Findings</h1>
+<p class="sub">Silas · 2026-05-31 · what we've peeled, what's confirmed, what's next. <span class="tag">pre-workflow checkpoint</span></p>
+
+<div class="def">
+<b>Definition (Jeff's):</b> the <b>harness</b> = our <i>automated invariant-execution protocol</i> — the verbs, gates, hooks, and guards that automatically enforce the workflow's invariants (AC must exist · no commit on main · no canonical write · demo-before-accept · no secrets). The matrix below audits <i>that</i> harness. The one row that is <i>not</i> the harness is the <b>agent-runtime layer</b> (Claude Code's classifier/permission machinery) — the substrate the harness runs on.
+</div>
+
+<div class="headline">
+<b>The harness automatically executes its invariants — but records only 13% of the times it does.</b><br>
+Across 238 failure paths in 14 surfaces: <span class="v">31 VISIBLE (13%)</span> reach the error metric as counted, card-bound events · <span class="p">88 PARTIAL (37%)</span> emit something the rollup can't/won't count · <span class="b">119 BLIND (50%)</span> emit nothing. An invariant fires — a commit refused, a write blocked, a deploy rolled back — and 87% of the time the enforcement leaves no trace the metric can see.
+<br><br>
+<b style="color:var(--green)">BUT — corrected this layer:</b> the failures are <i>captured</i> (in the <code>tool_telemetry</code> stream — every command + output + error-regex). They aren't <i>surfaced</i>, because the pain rollup reads named spine events, not the telemetry stream. <b>Captured ≠ surfaced.</b> Not data absence — the metric reads the sparse source while the rich one sits right there.
+</div>
+
+<h2>The onion — layers peeled so far</h2>
+<ul class="layers">
+  <li><b>Lived experience</b> — the workflow <i>feels</i> like far more friction than the metric reports. <span class="meta">(Jeff's instinct — the thread that started this.)</span></li>
+  <li><b>Trace reader works</b> — <code>/borg/trace.html?card=N</code> renders any card's events end-to-end (the #3122 tool I'd lost the URL to). <span class="meta">Proved the per-card data exists.</span></li>
+  <li><b>Error count suspiciously low</b> — first workflow found only 20 card-bound errors across 20 cards. Smelled wrong.</li>
+  <li><b>Undercount diagnosed</b> — per-card endpoint caps at <b>1d</b> (old cards return 0 → false zeros), counts only <b>card-bound</b> events, and <b>90% of all errors (2345/2591 over 7d) carry no card_id</b> → invisible to per-card analysis.</li>
+  <li><b>Coverage audit</b> — 14 auditors read real source, classified 238 failure paths: <span class="v">13% visible</span> / <span class="p">37% partial</span> / <span class="b">50% blind</span>.</li>
+  <li class="now"><b>tool_telemetry layer (this layer)</b> — every tool command (PreToolUse) + output with error-regex (PostToolUse) <i>is</i> logged via <code>append_log</code>. So the audit measured the wrong thing: emit-coverage (13%), not observability-coverage. The friction is captured; it just isn't read by the metric.</li>
+</ul>
+
+<h2>Coverage matrix — by owner</h2>
+<table>
+<thead><tr><th>Owner</th><th>Surface</th><th class="num">Paths</th><th class="num">Vis</th><th class="num">Part</th><th class="num">Blind</th><th class="num">%Vis</th></tr></thead>
+<tbody>
+  <tr><td><span class="owner o-silas">Silas</span></td><td>rollup inclusion rule <span class="meta mono">(the multiplier)</span></td><td class="num">17</td><td class="num v">3</td><td class="num p">11</td><td class="num b">3</td><td class="num">18%</td></tr>
+  <tr><td><span class="owner o-silas">Silas</span></td><td>werk-deploy</td><td class="num">43</td><td class="num v">5</td><td class="num p">20</td><td class="num b">18</td><td class="num">12%</td></tr>
+  <tr><td><span class="owner o-silas">Silas</span></td><td>werk-build</td><td class="num">16</td><td class="num v">2</td><td class="num p">1</td><td class="num b">13</td><td class="num">12%</td></tr>
+  <tr><td><span class="owner o-kade">Kade</span></td><td>werk-pull</td><td class="num">11</td><td class="num v">0</td><td class="num p">0</td><td class="num b">11</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-kade">Kade</span></td><td>werk-commit / chorus_commit</td><td class="num">16</td><td class="num v">6</td><td class="num p">2</td><td class="num b">8</td><td class="num">38%</td></tr>
+  <tr><td><span class="owner o-kade">Kade</span></td><td>werk-push</td><td class="num">9</td><td class="num v">3</td><td class="num p">1</td><td class="num b">5</td><td class="num">33%</td></tr>
+  <tr><td><span class="owner o-kade">Kade</span></td><td>git-queue + pre-commit</td><td class="num">27</td><td class="num v">0</td><td class="num p">14</td><td class="num b">13</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-wren">Wren</span></td><td>werk-demo <span class="meta mono">(best — built as a gate)</span></td><td class="num">21</td><td class="num v">12</td><td class="num p">3</td><td class="num b">6</td><td class="num">57%</td></tr>
+  <tr><td><span class="owner o-wren">Wren</span></td><td>werk-accept</td><td class="num">15</td><td class="num v">0</td><td class="num p">7</td><td class="num b">8</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-hook">by hook</span></td><td>gate hooks (quality/accept/tdd/...)</td><td class="num">13</td><td class="num v">0</td><td class="num p">4</td><td class="num b">9</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-hook">by hook</span></td><td>write + command guards</td><td class="num">9</td><td class="num v">0</td><td class="num p">6</td><td class="num b">3</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-hook">by hook</span></td><td>safety / content guards</td><td class="num">18</td><td class="num v">0</td><td class="num p">9</td><td class="num b">9</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-hook">by hook</span></td><td>bouncer + MCP tool layer</td><td class="num">18</td><td class="num v">0</td><td class="num p">10</td><td class="num b">8</td><td class="num">0%</td></tr>
+  <tr><td><span class="owner o-rt">runtime</span></td><td>agent-runtime layer <span class="meta mono">(NOT the harness)</span></td><td class="num">5</td><td class="num v">0</td><td class="num p">0</td><td class="num b">5</td><td class="num">0%</td></tr>
+  <tr class="total"><td></td><td>TOTAL</td><td class="num">238</td><td class="num v">31</td><td class="num p">88</td><td class="num b">119</td><td class="num">13%</td></tr>
+</tbody>
+</table>
+<p class="sub">Ownership is Jeff's map, not Athena's — the graph still says Silas owns Gates + Version Control, now confirmed wrong. <b>Wren</b>: demo + accept · <b>Kade</b>: commit + push + pull · <b>Silas</b>: build + deploy + the rollup rule (observability) · gate hooks split by the hook's domain.</p>
+
+<h2>Blind-spot categories (from the audit)</h2>
+<div class="bs"><span class="freq high">HIGH</span><h4>1 · Failure emits go to a stream promtail never tails</h4>
+<p class="why"><code>werk-pull</code> writes <code>pull.refused</code>/<code>rolledback</code> only to a jsonl the source itself says (L109) isn't scraped; <code>emit_spine</code> fires on success only. Same for <code>werk-accept</code>. → why #3152's pull-rollback logged nothing.</p>
+<p class="fix">Fix: promote failure-path jsonl to a real spine emit, or point promtail at the file.</p></div>
+
+<div class="bs"><span class="freq high">HIGH</span><h4>2 · Silent Err exits with no event — the ACT failures</h4>
+<p class="why"><code>werk-build</code> and <code>werk-deploy</code> have <b>no <code>*.failed</code> event anywhere</b>. Compile/sign/cdhash, build-subprocess, demo deploy-fails all <code>?</code>-propagate to exit-1 with zero emit. The merged≠live class.</p>
+<p class="fix">Fix: one top-level error handler per binary emits <code>&lt;verb&gt;.failed{reason}</code> before exit.</p></div>
+
+<div class="bs"><span class="freq high">HIGH</span><h4>3 · Rollbacks fire but aren't counted (success-but-wrong)</h4>
+<p class="why"><code>deploy.rolledback{cdhash-mismatch}</code> carries card_id + reason, but the rollup counts only <code>.failed/.refused/.error</code> — so every stale-deploy rollback is invisible, and a degraded <code>deploy.completed</code> logging the old cdhash counts as clean success.</p>
+<p class="fix">Fix: count <code>.rolledback</code> + a <code>degraded</code> flag in the rollup rule.</p></div>
+
+<div class="bs"><span class="freq high">HIGH</span><h4>4 · Guard/hook bites are decisions, not errors</h4>
+<p class="why">Every PreToolUse <code>deny</code> = <code>permissionDecision:deny</code>, which the rollup explicitly doesn't count. <code>canonical_write_guard</code> emits nothing on deny. The git-on-main / canonical-write blocks (most frequent friction) count as zero.</p>
+<p class="fix">Fix: each deny emits <code>gate.&lt;name&gt;.refused</code>/<code>guard.&lt;name&gt;.blocked</code> with card_id + decision=deny; rollup counts deny.</p></div>
+
+<div class="bs"><span class="freq med">MED</span><h4>5 · Gates fail OPEN on infra error</h4>
+<p class="why"><code>accept_gate</code> defaults to PASS when its subprocess errors, with only a <code>warn!</code> — a gate that should block silently allows. The protection is gone, not just unlogged.</p>
+<p class="fix">Fix: fail-closed by default + emit <code>gate.&lt;name&gt;.error{reason=infra}</code>.</p></div>
+
+<h2>Next steps — ordered (peel inward)</h2>
+<div class="open">
+<b>⟶ NEXT LAYER TO VERIFY (do this before any fix):</b> does the <code>tool_telemetry</code> stream actually reach a <i>queryable</i> sink (Loki / the streams domain)? I confirmed the <i>code</i> captures it via <code>append_log</code>; I did <b>not</b> confirm the scrape path end-to-end. <b>This single fact decides the whole fix strategy</b> — if the stream is queryable, the cheap read-side fix is real; if not, we're back to per-verb emits.
+</div>
+<ol class="steps">
+  <li><b>Verify the sink</b> (above). One check: where does <code>append_log</code> write, and is that path in a promtail job / queryable in Loki?</li>
+  <li><b>If queryable → read-side fix first (cheapest):</b> point the error analysis at the telemetry stream that already does <code>ERROR_RE</code> + severity on every command's output. Surfaces the whole BLIND mass <i>without touching a single verb.</i> <span class="meta">(Silas — observability)</span></li>
+  <li><b>Rollup-rule fix (the multiplier):</b> change from event-name-suffix gate → count <code>level=error/warn</code> OR <code>deny/refuse/rollback</code> disposition. Reclassifies everyone's failures at once. <span class="meta">(Silas)</span></li>
+  <li><b>Per-owner emit-on-failure (refinement, clean typed signal):</b> Silas build/deploy · Kade pull/commit/push · Wren demo/accept · gate-hooks by hook. Each adds a card-bound <code>*.failed</code>/<code>*.refused</code> on its Err/deny paths.</li>
+  <li><b>Agent-runtime denials (the one non-harness slice):</b> classifier/permission blocks — capturable only via a wrapper around tool invocation, or accept-blind. Decide later.</li>
+</ol>
+
+<div class="foot">
+Caveats kept honest: tool-telemetry error-detection is regex-on-output (lossy heuristic, has skip rules) — good for surfacing friction, not clean enough to be system-of-record. Pre-execution classifier denials may not fire PostToolUse (tool never ran) → only the attempt is logged, not the denial result — unconfirmed.<br>
+Provenance: coverage audit = 15-agent workflow, 238 paths, 975k tokens. Undercount numbers from <code>/api/chorus/pain/rollup?window=7d</code>. Matrix from the audit's per-surface verdicts. No workflow run this turn (per Jeff).
+</div>
+
+</body>
+</html>
