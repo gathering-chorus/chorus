@@ -3,7 +3,7 @@
 | Project | Location | Machine | Role |
 |---------|----------|---------|------|
 | jeff-bridwell-personal-site | `../jeff-bridwell-personal-site` | Primary | App — SOLID pods, Express, TypeScript, RDF/Fuseki |
-| wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress, Docker, Terraform |
+| wordpress-blog | `../wordpress-blog` | Primary | Content — WordPress + MySQL (native launchd: `com.gathering.wordpress`, `com.gathering.mysql`) |
 | shared-observability | `../shared-observability` | Primary | Monitoring — Prometheus, Grafana, Loki |
 | images-api | (secondary Mac) | Secondary | Media serving — ~178TB video/photo library |
 | chorus | `../../` | Primary | Protocol service — bridge, scripts, hooks, board |

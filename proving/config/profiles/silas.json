@@ -1,5 +1,5 @@
 {
-  "_comment": "Silas (Architect) — infrastructure queries, observability APIs, docker-compose for obs stack",
+  "_comment": "Silas (Architect) — infrastructure queries, observability APIs, native launchd lifecycle for the obs stack",
   "permissions": {
     "allow": [
       "Bash(curl*localhost:9090*)",
