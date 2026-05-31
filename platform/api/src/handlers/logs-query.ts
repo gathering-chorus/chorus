@@ -214,7 +214,9 @@ export function windowToSeconds(w: string): number | null {
 // and Grafana self-logs ~6x. We fetch the raw lines and group client-side so each
 // class keeps its cards / latest / sample-detail (v1's server-side count threw
 // those away — that's why the board was "barely like" the sketch).
-const FAIL_QUERY = '{job=~".+"} |~ `"event":"[^"]*(\\.refused|\\.failed|\\.error)"`';
+// #3165 — widened from event-suffix-only to also key on disposition + level=error
+// (one Loki OR-regex, field-anchored). Mirrored by lineMatchesPainFilter below.
+const FAIL_QUERY = '{job=~".+"} |~ `("event":"[^"]*(\\.refused|\\.failed|\\.error|\\.rolledback)")|("disposition":"(deny|refuse|rollback)")|("level":"error")`';
 
 // Synthetic/test card ids excluded so a test card never ranks #1 (99998 = the
 // show-gate test-card sentinel; demo.show.failed for it was ~85% of the headline).
@@ -232,15 +234,27 @@ export type PainRollupResult =
 // `event` value ends in one of these. Excludes the high-volume non-failures the
 // original substring filter false-counted (heartbeat.probe ~484/day,
 // system.heartbeat, clearing.probe.passed, Grafana self-logs).
-export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error'] as const;
+export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error', '.rolledback'] as const;
+// #3165 — failure DISPOSITIONS counted regardless of event-name suffix. The emit
+// slice (werk-pull/commit/push refusals, gate denies, deploy rollbacks) tags the
+// disposition without always naming the event `*.refused`; a suffix-only filter
+// counted none of them. Field-anchored ("disposition":"deny" / "level":"error"),
+// NOT substring — preserves the #3029 anchor that excludes the pulse heartbeat
+// (~484/day) and grafana self-logs. level=warn deliberately NOT counted (benign-warn
+// flood); level=error verified low-volume + clean on live Loki (8 lines/6h, 2026-05-31).
+export const PAIN_DISPOSITIONS = ['deny', 'refuse', 'rollback'] as const;
 // eslint-disable-next-line security/detect-non-literal-regexp -- built from the PAIN_EVENT_SUFFIXES module constant, never user input
 const PAIN_LINE_RE = new RegExp(`"event":"[^"]*(${PAIN_EVENT_SUFFIXES.map((s) => s.replace('.', '\\.')).join('|')})"`);
+// eslint-disable-next-line security/detect-non-literal-regexp -- built from the PAIN_DISPOSITIONS module constant, never user input
+const PAIN_DISPOSITION_RE = new RegExp(`"disposition":"(${PAIN_DISPOSITIONS.join('|')})"`);
+const PAIN_LEVEL_RE = /"level":"error"/;
 
 // Pure predicate: does a raw Loki line match the pain filter? Mirrors FAIL_QUERY
 // so the regression test can prove the exclusion (pulse heartbeat / grafana) on a
-// fixture without a live Loki.
+// fixture without a live Loki. A line counts if its event ends in a pain suffix,
+// OR it carries a failure disposition (deny/refuse/rollback), OR level=error.
 export function lineMatchesPainFilter(line: string): boolean {
-  return PAIN_LINE_RE.test(line);
+  return PAIN_LINE_RE.test(line) || PAIN_DISPOSITION_RE.test(line) || PAIN_LEVEL_RE.test(line);
 }
 
 // One-line "Sample detail" for a failure (ported from logform.py detail()):

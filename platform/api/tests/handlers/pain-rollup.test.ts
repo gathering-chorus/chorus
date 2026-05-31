@@ -42,8 +42,37 @@ describe('lineMatchesPainFilter — line-anchored, excludes the false-positives'
     expect(lineMatchesPainFilter('{"event":"system.heartbeat"}')).toBe(false);
     expect(lineMatchesPainFilter('{"event":"clearing.probe.passed"}')).toBe(false);
   });
-  it('PAIN_EVENT_SUFFIXES is the closed set', () => {
-    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error']);
+  it('every PAIN_EVENT_SUFFIXES suffix actually matches via the filter (#3165 adds .rolledback)', () => {
+    for (const sfx of PAIN_EVENT_SUFFIXES) {
+      expect(lineMatchesPainFilter(`{"event":"some.op${sfx}"}`)).toBe(true);
+    }
+    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error', '.rolledback']);
+  });
+});
+
+// #3165 — the rollup keys on DISPOSITION (deny/refuse/rollback) + level, not just
+// event-name suffix. Upstream blocker for the team's emit slice (Kade #3161-3164,
+// #2834 gate-denies): those emits carry disposition=deny/refuse/rollback but no
+// matching event-suffix, so a suffix-only filter counted none of them.
+describe('lineMatchesPainFilter — disposition/level keying (#3165)', () => {
+  it('counts existing deploy.rolledback via the .rolledback suffix (it carries reason, no disposition field)', () => {
+    expect(lineMatchesPainFilter('{"event":"deploy.rolledback","reason":"cdhash-divergence","card_id":3165}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"deploy.rolledback","reason":"consumer-resolves-stale-lib"}')).toBe(true);
+  });
+  it('counts disposition-tagged failures regardless of event name (the emit slice)', () => {
+    expect(lineMatchesPainFilter('{"event":"guard.canonical_write.blocked","disposition":"deny"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"werk_pull.bailed","disposition":"refuse"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"some.op","disposition":"rollback"}')).toBe(true);
+  });
+  it('counts level=error even with no failure-suffix and no event field', () => {
+    expect(lineMatchesPainFilter('{"event":"some.op","level":"error","card_id":1}')).toBe(true);
+    expect(lineMatchesPainFilter('{"level":"error","msg":"boom"}')).toBe(true);
+  });
+  it('does NOT reopen the #3029 over-count (heartbeat, grafana, level=warn/info, benign disposition)', () => {
+    expect(lineMatchesPainFilter('{"event":"heartbeat.probe"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"system.heartbeat","level":"info"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"clearing.probe.passed","level":"warn"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"deploy.completed","disposition":"ok"}')).toBe(false);
   });
 });
 
