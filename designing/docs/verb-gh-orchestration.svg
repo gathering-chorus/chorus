@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1140" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#444"/></marker>
+    <marker id="arrowg" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#1a7f37"/></marker>
+  </defs>
+  <style>
+    .t{font-size:13px;fill:#1d1d1f} .sm{font-size:11px;fill:#555} .xs{font-size:10px;fill:#777}
+    .h{font-size:15px;font-weight:700;fill:#1d1d1f} .lbl{font-size:11px;font-weight:700;letter-spacing:.04em}
+    .leaf{fill:#eaf2ff;stroke:#2563eb} .orch{fill:#f3eeff;stroke:#7c3aed}
+    .mono{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;fill:#444}
+    .ghrow{font-family:ui-monospace,Menlo,monospace;font-size:11px;fill:#24292f}
+  </style>
+
+  <text x="40" y="34" class="h" font-size="19">Werk Verb Pipeline — gh State Model, Orchestration &amp; Workflow  ·  ADR-032</text>
+  <text x="40" y="54" class="sm">Kade v1 draft — Silas to co-refine. 6 leaf verbs + 2 orchestrators · one trace · gh = process holder · ONE env = production.</text>
+
+  <!-- GitHub band -->
+  <rect x="40" y="72" width="1200" height="74" rx="12" fill="#eef7f0" stroke="#1a7f37" stroke-width="2"/>
+  <text x="58" y="96" class="lbl" fill="#1a7f37">GITHUB — SOURCE OF TRUTH (main) + PROCESS HOLDER</text>
+  <text x="58" y="116" class="t">Per card, per verb: commit-status <tspan class="mono">chorus/&lt;verb&gt;/&lt;card&gt;</tspan>. Carry prior statuses forward onto the new SHA → branch tip is the single queryable point.</text>
+  <text x="58" y="134" class="t">Two state surfaces: <tspan font-weight="700">commit-status</tspan> = the PROCESS state (per verb) · <tspan font-weight="700">PR + branch + main</tspan> = the LIFECYCLE state. NOT gh DEPLOYMENTS (one-env).</text>
+
+  <!-- ON GITHUB panel -->
+  <rect x="40" y="160" width="1200" height="270" rx="12" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+  <text x="58" y="184" class="lbl" fill="#24292f">ON GITHUB — WHAT A CARD'S PROCESS LOOKS LIKE   (live: branch kade/3056, tip def222, trace T1)</text>
+
+  <!-- state machine -->
+  <text x="58" y="208" class="sm" font-weight="700">Each verb's commit-status state machine:</text>
+  <circle cx="70" cy="228" r="6" fill="#d0d7de"/><text x="82" y="232" class="xs">none</text>
+  <line x1="118" y1="228" x2="146" y2="228" stroke="#888" stroke-width="1.3" marker-end="url(#arrow)"/>
+  <circle cx="158" cy="228" r="6" fill="#d4a017"/><text x="170" y="232" class="xs">pending (running)</text>
+  <line x1="262" y1="228" x2="290" y2="228" stroke="#888" stroke-width="1.3" marker-end="url(#arrow)"/>
+  <circle cx="302" cy="228" r="6" fill="#1a7f37"/><text x="314" y="232" class="xs">success</text>
+  <text x="372" y="232" class="xs">| or →</text>
+  <circle cx="420" cy="228" r="6" fill="#cf222e"/><text x="432" y="232" class="xs">failure (work failed: tests/cdhash)</text>
+  <circle cx="638" cy="228" r="6" fill="#bc4c00"/><text x="650" y="232" class="xs">error (couldn't run: infra/gh)</text>
+
+  <!-- commit-status list (gh checks) -->
+  <text x="58" y="262" class="sm" font-weight="700">Commit statuses on the branch tip  (the "Checks" list GitHub shows on the commit / PR):</text>
+  <g>
+    <circle cx="70" cy="282" r="6" fill="#1a7f37"/><text x="84" y="286" class="ghrow">chorus/pull/3056</text>     <text x="300" y="286" class="ghrow" fill="#1a7f37">success</text><text x="392" y="286" class="mono">role=kade trace=T1 branch=kade/3056 status=pulled</text>
+    <circle cx="70" cy="304" r="6" fill="#1a7f37"/><text x="84" y="308" class="ghrow">chorus/commit/3056</text>   <text x="300" y="308" class="ghrow" fill="#1a7f37">success</text><text x="392" y="308" class="mono">trace=T1 sha=def222 status=committed (remote branch pushed)</text>
+    <circle cx="70" cy="326" r="6" fill="#1a7f37"/><text x="84" y="330" class="ghrow">chorus/build/3056</text>    <text x="300" y="330" class="ghrow" fill="#1a7f37">success</text><text x="392" y="330" class="mono">trace=T1 cdhash=7938df… status=built</text>
+    <circle cx="70" cy="348" r="6" fill="#d4a017"/><text x="84" y="352" class="ghrow">chorus/deploy/3056</text>   <text x="300" y="352" class="ghrow" fill="#9a6700">pending</text><text x="392" y="352" class="mono">trace=T1 slot=CHORUS_BIN status=deploying…</text>
+    <circle cx="70" cy="370" r="6" fill="#d0d7de"/><text x="84" y="374" class="ghrow" fill="#888">chorus/verify/3056</text>   <text x="300" y="374" class="ghrow" fill="#888">— queued</text>
+    <circle cx="70" cy="392" r="6" fill="#d0d7de"/><text x="84" y="396" class="ghrow" fill="#888">chorus/accept/3056</text>   <text x="300" y="396" class="ghrow" fill="#888">— queued</text>
+  </g>
+  <text x="58" y="416" class="xs">The SET on the tip = how far the pipeline got (carry-forward keeps them all on the current SHA).  Query: <tspan class="mono">gh api repos/{o}/{r}/commits/kade/3056/statuses</tspan></text>
+
+  <!-- PR lifecycle strip -->
+  <rect x="40" y="444" width="1200" height="44" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="58" y="463" class="sm" font-weight="700">PR + branch + main lifecycle:</text>
+  <circle cx="270" cy="468" r="6" fill="#1a7f37"/><text x="282" y="472" class="ghrow">PR kade/3056 → main: Open</text>
+  <line x1="470" y1="468" x2="510" y2="468" stroke="#1a7f37" stroke-width="1.4" marker-end="url(#arrowg)"/>
+  <text x="468" y="481" class="xs" fill="#1a7f37" text-anchor="middle">accept merges</text>
+  <circle cx="522" cy="468" r="6" fill="#8250df"/><text x="534" y="472" class="ghrow">Merged</text>
+  <text x="612" y="472" class="ghrow" fill="#555">→ branch deleted · main advanced · card Done (card.accepted)</text>
+
+  <!-- act band -->
+  <rect x="40" y="504" width="1200" height="42" rx="10" fill="#efe6fb" stroke="#7c3aed" stroke-width="2"/>
+  <text x="58" y="530" class="t"><tspan class="lbl" fill="#7c3aed">act</tspan>  — local engine that runs the DSL verbs. Execution local; state + source live in GitHub. ONE environment = production (no preview slot).</text>
+
+  <!-- lifecycle flow -->
+  <text x="40" y="582" class="lbl">CARD LIFECYCLE  (one shared trace /tmp/&lt;card&gt;-trace → every verb's gh-status + jsonl)   — each verb writes + carries-forward its commit-status (above)</text>
+  <rect x="40" y="596" width="150" height="64" rx="10" class="leaf" stroke-width="1.5"/>
+  <text x="115" y="622" text-anchor="middle" class="t" font-weight="700">pull</text>
+  <text x="115" y="640" text-anchor="middle" class="xs">#3045 · leaf</text>
+  <text x="115" y="654" text-anchor="middle" class="mono">chorus/pull</text>
+  <text x="205" y="622" text-anchor="middle" class="sm">agent</text><text x="205" y="636" text-anchor="middle" class="sm">codes</text>
+  <line x1="192" y1="628" x2="232" y2="628" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="248" y="586" width="362" height="84" rx="10" class="orch" stroke-width="1.5"/>
+  <text x="262" y="608" class="t" font-weight="700">demo <tspan class="xs" font-weight="400">#3046 · orchestrator · PROVE (pre-accept)</tspan></text>
+  <text x="262" y="630" class="mono">build → deploy → verify</text>
+  <text x="262" y="649" class="sm">→ <tspan class="mono" fill="#7c3aed">WERK_&lt;ROLE&gt;_BIN</tspan> (role slot; Jeff watches live)</text>
+  <text x="262" y="664" class="xs">gh: chorus/build · deploy · verify</text>
+  <line x1="610" y1="628" x2="648" y2="628" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="650" y="586" width="470" height="84" rx="10" class="orch" stroke-width="1.5"/>
+  <text x="664" y="608" class="t" font-weight="700">acp <tspan class="xs" font-weight="400">#3064 · orchestrator · LAND (post-prove)</tspan></text>
+  <text x="664" y="630" class="mono">commit → push → build → deploy → verify → accept</text>
+  <text x="664" y="649" class="sm">→ <tspan class="mono" fill="#7c3aed">CHORUS_BIN</tspan> (prod) · accept = merge→Done→close</text>
+  <text x="664" y="664" class="xs">gh: chorus/commit · build · deploy · verify · accept</text>
+  <line x1="1120" y1="628" x2="1158" y2="628" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowg)"/>
+  <text x="1185" y="624" text-anchor="middle" class="sm" fill="#1a7f37">main</text><text x="1185" y="638" text-anchor="middle" class="xs" fill="#1a7f37">updated</text>
+
+  <rect x="248" y="680" width="872" height="40" rx="8" fill="#fff8e6" stroke="#c9931f"/>
+  <text x="262" y="697" class="sm" fill="#7a5b10">OPEN (Silas pins): demo deploys WERK_&lt;ROLE&gt;_BIN, acp deploys CHORUS_BIN — two deploys, different targets, NOT redundant.</text>
+  <text x="262" y="712" class="xs" fill="#7a5b10">To pin: acp build/deploy/verify PRE-merge on werk-branch (ADR §4 accept-last) vs POST-accept on merged-canonical (defends werk-stale-vs-main).</text>
+
+  <!-- leaf palette -->
+  <text x="40" y="764" class="lbl">LEAF VERBS — shell raw CLIs (git/gh/cargo/codesign/launchctl/build-signed.sh/chorus-bin-install). Each: typed R&lt;T&gt;, flock, all-or-nothing rollback, jsonl witness.</text>
+  <g>
+    <rect x="40"  y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="115" y="796" text-anchor="middle" class="t" font-weight="700">pull</text><text x="115" y="814" text-anchor="middle" class="xs">#3045 · worktree</text>
+    <rect x="205" y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="280" y="796" text-anchor="middle" class="t" font-weight="700">commit</text><text x="280" y="814" text-anchor="middle" class="xs">#3056 · +push</text>
+    <rect x="370" y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="445" y="796" text-anchor="middle" class="t" font-weight="700">build</text><text x="445" y="814" text-anchor="middle" class="xs">#3061 · cdhash</text>
+    <rect x="535" y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="610" y="796" text-anchor="middle" class="t" font-weight="700">deploy</text><text x="610" y="814" text-anchor="middle" class="xs">#3062 · slot</text>
+    <rect x="700" y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="775" y="796" text-anchor="middle" class="t" font-weight="700">verify</text><text x="775" y="814" text-anchor="middle" class="xs">running==built</text>
+    <rect x="865" y="776" width="150" height="50" rx="8" class="leaf" stroke-width="1.5"/><text x="940" y="796" text-anchor="middle" class="t" font-weight="700">accept</text><text x="940" y="814" text-anchor="middle" class="xs">#3057 · merge/done</text>
+  </g>
+
+  <text x="40" y="868" class="lbl" fill="#7c3aed">ORCHESTRATORS — shell the SIBLING VERB BINARIES (zero-dep subprocess), not raw CLIs. Sequence + check exit; cascade-rollback on failure.</text>
+  <rect x="40"  y="880" width="362" height="40" rx="8" class="orch" stroke-width="1.5"/><text x="221" y="904" text-anchor="middle" class="t"><tspan font-weight="700">demo</tspan> = build → deploy → verify  (proof → WERK_ROLE_BIN)</text>
+  <rect x="420" y="880" width="595" height="40" rx="8" class="orch" stroke-width="1.5"/><text x="717" y="904" text-anchor="middle" class="t"><tspan font-weight="700">acp</tspan> = commit → push → build → deploy → verify → accept  (land → CHORUS_BIN / main)</text>
+
+  <!-- trace + env footer -->
+  <rect x="40" y="952" width="1200" height="100" rx="12" fill="#fafafa" stroke="#ddd"/>
+  <text x="58" y="976" class="lbl">SHARED TRACE — one thread across the whole card run</text>
+  <text x="58" y="998" class="t">Resolve by precedence: <tspan class="mono">CHORUS_TRACE_ID</tspan> env → <tspan class="mono">/tmp/&lt;card&gt;-trace</tspan> file → mint-and-persist (write the file so downstream verbs inherit).</text>
+  <text x="58" y="1016" class="t">One trace keys every verb's <tspan class="mono">chorus/&lt;verb&gt;/&lt;card&gt;</tspan> gh-status AND its <tspan class="mono">ops/logs/werk-&lt;verb&gt;.jsonl</tspan> witness line.</text>
+  <text x="58" y="1036" class="sm">ENV: <tspan class="mono">CHORUS_HOME · CHORUS_WERK_BASE · DEPLOY_ROLE</tspan> (chorus-env-setup.sh) · slots: <tspan class="mono">WERK_&lt;ROLE&gt;_BIN</tspan> (demo) / <tspan class="mono">CHORUS_BIN</tspan> (acp) · Witness = local jsonl, NEVER chorus-log (zero-dep).</text>
+
+  <text x="40" y="1082" class="xs">no-werk-refuse guard (ADR §4): every verb refuses if &lt;role&gt;/&lt;card&gt; werk/branch doesn't exist — never operates on canonical main.   ·   blueprint: platform/services/werk-pull/src/lib.rs</text>
+</svg>
