@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Werk v2 — Core Workflow To-Be (pull → demo → acp)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{--bg:#0e1116;--panel:#161b22;--line:#2a3340;--ink:#e6edf3;--dim:#9aa7b4;--faint:#6b7785;--warn:#fb7185;--ok:#34d399;--accent:#38bdf8;--seam:#f0c879;--purp:#a78bfa;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;padding:30px 22px 90px}
+  .wrap{max-width:1240px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:4px}
+  .verticals{font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:4px}
+  .meta{color:var(--faint);font-size:12px;font-family:var(--mono);margin-bottom:20px}
+  .meta b{color:var(--dim)}
+  h2{font-size:16px;margin:34px 0 4px}
+  .cap{color:var(--dim);font-size:13px;margin:2px 0 10px}
+  .cap code,p code,li code,td code{font-family:var(--mono);font-size:12px;background:#1c2330;padding:1px 5px;border-radius:4px;color:var(--seam)}
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 10px;overflow-x:auto}
+  pre.code{background:#0c1622;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;color:#cfe0ef;line-height:1.45}
+  pre.code .c{color:#5f7287} pre.code .k{color:#7fd0ff} pre.code .s{color:var(--seam)}
+  .banner{background:#241420;border:1px solid #5b2a3a;border-left:3px solid var(--warn);border-radius:10px;padding:14px 18px;margin-bottom:24px}
+  .banner h3{margin:0 0 8px;font-size:14px;color:var(--warn)}
+  .banner ol{margin:0;padding-left:20px} .banner li{margin:6px 0;font-size:13px}
+  .banner code{font-family:var(--mono);font-size:12px;color:var(--seam)}
+  .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--ok);border-radius:8px;padding:13px 16px;margin-top:22px;font-size:13px}
+  .note b{color:var(--ok)} .note code{color:var(--seam)}
+  ul{margin:6px 0 0;padding-left:20px} li{margin:4px 0;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:12.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border-radius:999px}
+  .tag.r{background:#3a2330;color:var(--warn)} .tag.k{background:#1d1832;color:var(--purp)}
+  .rcpt{font-family:var(--mono);font-size:11px;color:var(--seam)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Werk v2 — Core Workflow To-Be <span style="font-size:13px;color:var(--purp);font-family:var(--mono)">· pull → demo → acp</span></h1>
+  <div class="sub">Get the core loop's <b>integration</b> right before we use v2 more. One shape. One trace. Explicit handoffs. Cores shell the proven mechanism; orchestrations compose cores; MCP is skin.</div>
+  <div class="verticals">verticals: Agent · MCP skin · Rust orchestration · Rust atomic cores · git-queue.sh · gh · Board · one spine</div>
+  <div class="meta"><b>owner:</b> Kade (version-control + pipelines) &nbsp;·&nbsp; <b>validated against source:</b> server.ts (executeAcp/executeCommit), git-queue.sh, werk-* · 2026-05-30 &nbsp;·&nbsp; supersedes the pass-3 draft</div>
+
+  <div class="banner">
+    <h3>What validation corrected — the to-be must NOT inherit these</h3>
+    <ol>
+      <li><b>Cores SHELL <code>git-queue.sh</code> — they do not reimplement it.</b> git-queue is the shared-repo coordination substrate: one FIFO <code>lockf</code> on <code>.git-commit.lock</code>, <code>check_branch</code> (cross-role #2580 + same-role-wrong-card #2641), and the <code>_GIT_QUEUE_*</code> sentinels the pre-commit/pre-push hooks require. The rust <code>werk-commit</code>/<code>werk-push</code> today reimplement it with their <b>own flock on a different lock file</b> — two lock regimes on one <code>.git</code> that don't mutually exclude, and they drop <code>check_branch</code>. That's a bug, not a base.</li>
+      <li><b>The saga lives in rust (<code>werk-acp</code> core), not inline TS in <code>server.ts</code>.</b> Today <code>executeAcp</code> is ~460 lines of version-control orchestration in the MCP layer — the domain-boundary leak. The MCP tool should be skin.</li>
+      <li><b>One trace, one spine.</b> Thread a single trace pull→demo→acp; every verb emits to <code>~/.chorus/chorus.log</code> via <code>chorus-log</code>. Retire the 3-sink fragmentation (local <code>*.jsonl</code> witness not tailed / MCP stderr→<code>/tmp</code>).</li>
+      <li><b>Parity harness before any rewrite.</b> <code>executeAcp</code> carries 8 receipts (§4). A clean rewrite drops them silently. Build the harness first; it's the cutover gate.</li>
+      <li><b>"act" = the rust orchestration tier, not the GHA <code>act</code> runner.</b> No GHA <code>act</code> in the live path (the empty-<code>GITHUB_TOKEN</code> dead end). Orchestration is a rust saga composing cores in-process. This supersedes #3064's <code>acp.yml</code>, doesn't build on it.</li>
+    </ol>
+  </div>
+
+  <h2>1 · The core loop as ONE integration</h2>
+  <div class="cap">Three verbs, one card lifecycle. The integration is the <b>handoffs</b>: pull leaves a werk + branch; demo builds/proves the binaries in the <b>role slot</b>; acp promotes the <em>same</em> binaries to <b>canonical</b> and tears the werk down. One trace minted at pull threads all three (git trailers + <code>CHORUS_TRACE_ID</code> env), so the whole lifecycle reads as a single flow.</div>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph PULL["pull · skin → werk-pull core"]
+    p1["create werk from origin/main<br/>branch role/card · role slot ready<br/>card → WIP · trace MINTED"]:::k
+  end
+  subgraph DEMO["demo · skin → werk-demo core"]
+    d1["build_core → deploy_core<br/>→ ROLE SLOT (WERK_ROLE_BIN)<br/>running==built · gates · evidence"]:::r
+  end
+  subgraph ACP["acp · skin → werk-acp core"]
+    a1["base-currency (merge origin/main)<br/>commit→push→PR-merge (gh edge)<br/>promote SAME bins → CANONICAL<br/>accept · teardown werk"]:::k
+  end
+  PULL -->|"werk + branch<br/>+ trace"| DEMO
+  DEMO -->|"proven binaries<br/>+ demo evidence<br/>+ trace"| ACP
+  SP[("one spine · ~/.chorus/chorus.log")]:::sp
+  PULL -.->|chorus-log| SP
+  DEMO -.->|chorus-log| SP
+  ACP -.->|chorus-log| SP
+  classDef k fill:#1d1832,stroke:#a78bfa,color:#e9e3ff;
+  classDef r fill:#13261d,stroke:#34d399,color:#d6f5e6;
+  classDef sp fill:#241420,stroke:#f0c879,color:#f6e6c8;
+  </pre></div>
+  <table>
+    <tr><th>seam</th><th>what crosses it (the integration contract)</th></tr>
+    <tr><td><code>pull → demo</code></td><td>The ephemeral werk exists on branch <code>&lt;role&gt;/&lt;card&gt;</code> from origin/main; role slot present; <b>trace id</b> persisted for the card. demo refuses if the werk/branch isn't there.</td></tr>
+    <tr><td><code>demo → acp</code></td><td>The <b>same proven binaries</b> demo built (role slot) are what acp promotes to canonical — not a rebuild. Demo evidence + the <b>same trace</b> carry forward. (Closes the demo→acp "rebuild drift" risk.)</td></tr>
+    <tr><td>slot rule</td><td><b>demo → role slot</b> (<code>WERK_ROLE_BIN</code>, proof-only). <b>acp → canonical</b> (<code>CHORUS_BIN</code>/<code>~/.chorus/bin</code>), and only after PR-merge. Build-invariance (same cdhash) is what makes "promote not rebuild" safe.</td></tr>
+  </table>
+
+  <h2>2 · The layering — one shape per verb</h2>
+  <div class="cap">Three coats: a <b>core</b> (logic, testable), a <b>binary</b> (thin CLI), an <b>MCP skin</b> (boundary). Orchestrations crate-link the atomic cores and call them in-process. Critically — the core's "one thing" differs by verb class:</div>
+  <table>
+    <tr><th>verb class</th><th>core's "one thing"</th></tr>
+    <tr><td>commit · push · pull · rebase</td><td><b>shell <code>git-queue.sh</code></b> — inherit the one lock, <code>check_branch</code>, the sentinels, the pre-commit chain. The core adds only the typed contract + spine emit.</td></tr>
+    <tr><td>build · deploy</td><td><b>native</b> — <code>cargo</code> / install directly. No shared-repo coordination needed.</td></tr>
+  </table>
+  <div class="diagram"><pre class="mermaid">
+flowchart TB
+  subgraph SK[MCP skins · server.ts · thin]
+    direction LR
+    s1[chorus_pull]:::sk
+    s2[chorus_demo]:::sk
+    s3[chorus_acp]:::sk
+  end
+  subgraph OR[orchestration cores · rust saga]
+    direction LR
+    o3["werk-acp core<br/>commit→push→accept"]:::or
+    o2["werk-demo core<br/>build→deploy→verify"]:::or
+  end
+  subgraph AT[atomic cores · rust]
+    direction LR
+    a1["commit_core →shell→ git-queue"]:::at
+    a2["push_core →shell→ git-queue"]:::at
+    a3[accept_core]:::at
+    a4["build_core · native"]:::at
+    a5["deploy_core · native"]:::at
+  end
+  GQ[("git-queue.sh<br/>one lock · branch guard · sentinels")]:::gq
+  SP[("one spine<br/>~/.chorus/chorus.log")]:::sp
+  s3 -->|exec binary · one boundary| o3
+  s2 -->|exec binary| o2
+  o3 -.->|crate link · in-process| a1
+  o3 -.-> a2
+  o3 -.-> a3
+  o2 -.-> a4
+  o2 -.-> a5
+  a1 --> GQ
+  a2 --> GQ
+  AT -->|chorus-log via binary| SP
+  OR -->|chorus-log| SP
+  classDef sk fill:#13212e,stroke:#38bdf8,color:#dbeafe;
+  classDef or fill:#1d1832,stroke:#a78bfa,color:#e9e3ff;
+  classDef at fill:#13261d,stroke:#34d399,color:#d6f5e6;
+  classDef gq fill:#2a2418,stroke:#f0c879,color:#f6e6c8;
+  classDef sp fill:#241420,stroke:#f0c879,color:#f6e6c8;
+  </pre></div>
+
+  <h2>3 · The atomic core contract</h2>
+  <div class="cap">The pull-v2 blueprint made the rule. All inputs explicit → testable. Spine emit happens in the <b>binary wrapper</b>, not the core — so a unit test of a core doesn't write the global spine.</div>
+  <pre class="code"><span class="c">// commit_core / push_core: "do_the_one_thing" = shell git-queue.sh</span>
+<span class="k">pub fn</span> commit_core(ctx: VerbCtx) -> R&lt;Outcome&gt; {
+    preflight(&ctx)?;                              <span class="c">// typed refusal on bad state</span>
+    <span class="k">let</span> out = git_queue(&ctx, <span class="s">"commit"</span>, &ctx.paths)?; <span class="c">// inherits lock + branch-guard + sentinels + hooks</span>
+    Ok(out)                                        <span class="c">// typed: { sha, branch }</span>
+}
+<span class="c">// build_core / deploy_core: "do_the_one_thing" = native cargo/install (no git coordination)</span>
+<span class="c">// binary : argv → VerbCtx → core → emit chorus-log(verb.completed) → print</span>
+<span class="c">// skin   : chorus_&lt;verb&gt; (server.ts) → exec werk-&lt;verb&gt; binary (one process boundary)</span></pre>
+
+  <h2>4 · <code>werk-acp</code> core — the saga + the receipts it MUST preserve</h2>
+  <div class="cap">acp's value is not its git mechanics (those are git-queue + gh) — it's the <b>saga</b>: ordering, idempotency, and the card↔werk↔binary lifecycle. Each row below is a receipt (a real failure). A greenfield rewrite that "just composes the cores" drops these silently. <b>These are the parity-harness assertions.</b></div>
+  <table>
+    <tr><th>receipt</th><th>what it guards · why a rewrite must keep it</th></tr>
+    <tr><td class="rcpt">#2925</td><td>Resolve the exact <code>&lt;role&gt;-&lt;card&gt;</code> werk when card_id asserted — else 2+ werks → fallback to canonical → git runs from <code>main</code> → pre-push refuses.</td></tr>
+    <tr><td class="rcpt">#2782</td><td>Derive cardId from the <b>branch</b> first, board as fallback — the board lags (merged→Done→0 WIP); board-only left cards stuck at Later.</td></tr>
+    <tr><td class="rcpt">#2868</td><td>Intent-assertion guard: asserted card_id must equal derived — silent substitution shipped the wrong card.</td></tr>
+    <tr><td class="rcpt">#2923</td><td>NO false-success fast-path: <code>git cherry</code>-empty can't tell already-merged from never-committed. Idempotency must be <b>per-step</b>.</td></tr>
+    <tr><td class="rcpt">#2943</td><td>Idempotent re-run = Done + orphan remote branch → werk-close only (agents can't <code>push --delete</code> directly, #2598).</td></tr>
+    <tr><td class="rcpt">#2931</td><td>Write <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> git trailers so build/deploy inherit the trace. <b>This is the trace solution — the rust verbs' fresh-mint is the regression.</b></td></tr>
+    <tr><td class="rcpt">#3012</td><td><b>Ordering keystone:</b> PR-merge → promote-werk-bin → werk-close → cards-done; every substrate step <b>throws</b> (card stays WIP). Old order leaked 5 abandoned werks → resolver fell back to canonical → dirty-tree cascade.</td></tr>
+    <tr><td class="rcpt">#2995</td><td>promote-werk-bin: werk→canonical only post-merge; skip if cdhash already matches (safe re-run); any promote-fail throws (no orphan-canonical-with-werk-gone); kickstart services after.</td></tr>
+  </table>
+
+  <h2>5 · Sequencing — parity-first</h2>
+  <div class="note">
+    <ul>
+      <li><b>Step 0 — parity harness.</b> Run <code>executeAcp</code> (today) and the new <code>werk-acp</code> core against the same card; assert identical end-state: sha, board status, werk-gone, binaries-promoted (cdhash), idempotent-on-rerun. Build it <b>before</b> any rewrite — it's the safety net and the cutover gate.</li>
+      <li><b>Step 1 — atomics → spine.</b> commit/push/build/deploy emit lifecycle via <code>chorus-log</code> (they don't today) → every verb queryable in Loki. Makes the rest observable.</li>
+      <li><b>Step 2 — <code>werk-acp</code> core.</b> Shell git-queue for git ops; port the 8 receipts; compose commit/push/accept cores in-process.</li>
+      <li><b>Step 3 — point the skin, delete <code>executeAcp</code>.</b> <code>chorus_acp</code> becomes thin; the domain-boundary leak closes. Behind the parity gate.</li>
+      <li><b>Step 4 — same treatment for pull + demo</b> so all three integrate identically; then the cutover-rep clock starts (N clean real runs → use v2 more).</li>
+    </ul>
+  </div>
+</div>
+<script>mermaid.initialize({startOnLoad:true,theme:'dark',flowchart:{useMaxWidth:true,htmlLabels:true},sequence:{useMaxWidth:true,mirrorActors:false,actorMargin:44},themeVariables:{fontFamily:'ui-monospace,Menlo,monospace',actorBkg:'#1d1832',actorBorder:'#a78bfa',actorTextColor:'#e6edf3',signalColor:'#9aa7b4',signalTextColor:'#cdd7e0',noteBkgColor:'#13261d',noteBorderColor:'#34d399',noteTextColor:'#d6f5e6',altBackground:'#11161e',labelBoxBkgColor:'#161b22',labelBoxBorderColor:'#2a3340'}});</script>
+</body>
+</html>
