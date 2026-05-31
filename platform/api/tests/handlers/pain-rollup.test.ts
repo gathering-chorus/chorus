@@ -42,8 +42,39 @@ describe('lineMatchesPainFilter — line-anchored, excludes the false-positives'
     expect(lineMatchesPainFilter('{"event":"system.heartbeat"}')).toBe(false);
     expect(lineMatchesPainFilter('{"event":"clearing.probe.passed"}')).toBe(false);
   });
-  it('PAIN_EVENT_SUFFIXES is the closed set', () => {
-    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error']);
+  it('every PAIN_EVENT_SUFFIXES suffix actually matches via the filter (#3165 adds .rolledback)', () => {
+    for (const sfx of PAIN_EVENT_SUFFIXES) {
+      expect(lineMatchesPainFilter(`{"event":"some.op${sfx}"}`)).toBe(true);
+    }
+    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error', '.rolledback']);
+  });
+});
+
+// #3165 — the rollup keys on DISPOSITION (deny/refuse/rollback) + level, not just
+// event-name suffix. Upstream blocker for the team's emit slice (Kade #3161-3164,
+// #2834 gate-denies): those emits carry disposition=deny/refuse/rollback but no
+// matching event-suffix, so a suffix-only filter counted none of them.
+describe('lineMatchesPainFilter — disposition/level keying (#3165)', () => {
+  it('counts existing deploy.rolledback via the .rolledback suffix (it carries reason, no disposition field)', () => {
+    expect(lineMatchesPainFilter('{"event":"deploy.rolledback","reason":"cdhash-divergence","card_id":3165}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"deploy.rolledback","reason":"consumer-resolves-stale-lib"}')).toBe(true);
+  });
+  it('counts disposition-tagged failures regardless of event name (the emit slice)', () => {
+    expect(lineMatchesPainFilter('{"event":"guard.canonical_write.blocked","disposition":"deny"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"werk_pull.bailed","disposition":"refuse"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"some.op","disposition":"rollback"}')).toBe(true);
+  });
+  it('does NOT count bare level=error in v1 — deferred (live Loki: 166/193 are gathering-app/daemon logs with no event/role/card_id; they need their own grouping, not the spine schema)', () => {
+    expect(lineMatchesPainFilter('{"event":"some.op","level":"error","card_id":1}')).toBe(false);
+    expect(lineMatchesPainFilter('{"level":"error","msg":"boom"}')).toBe(false);
+    // but a level=error line that ALSO has a pain-suffix event still counts (via the suffix)
+    expect(lineMatchesPainFilter('{"event":"mcp.cards.add.failed","level":"error"}')).toBe(true);
+  });
+  it('does NOT reopen the #3029 over-count (heartbeat, grafana, level=warn/info, benign disposition)', () => {
+    expect(lineMatchesPainFilter('{"event":"heartbeat.probe"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"system.heartbeat","level":"info"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"clearing.probe.passed","level":"warn"}')).toBe(false);
+    expect(lineMatchesPainFilter('{"event":"deploy.completed","disposition":"ok"}')).toBe(false);
   });
 });
 
@@ -81,6 +112,18 @@ describe('rollupRawLines — group with cards/latest/detail, drop synthetic card
     const { classes, total } = rollupRawLines(lokiBody(rows), { role: 'silas' });
     expect(total).toBe(2);
     expect(classes.every((c) => c.role === 'silas')).toBe(true);
+  });
+
+  it('#3165 — a disposition line with no card_id is counted + surfaced (unattributed), not dropped or mis-grouped', () => {
+    const noCard: Array<[string, Record<string, unknown>]> = [
+      ['3000000000000000010', { role: 'silas', event: 'guard.canonical_write.blocked', disposition: 'deny' }],  // no card_id
+      ['3000000000000000011', { role: 'silas', event: 'werk_pull.bailed', disposition: 'refuse' }],            // no card_id
+    ];
+    const { classes, total } = rollupRawLines(lokiBody(noCard));
+    expect(total).toBe(2); // counted, not silently dropped
+    const deny = classes.find((c) => c.event === 'guard.canonical_write.blocked')!;
+    expect(deny.count).toBe(1);
+    expect(deny.cards).toEqual([]); // unattributed — surfaced with no card, never mis-attributed
   });
 
   it('is empty-safe on malformed / empty bodies', () => {
