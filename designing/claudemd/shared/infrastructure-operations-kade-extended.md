@@ -6,25 +6,25 @@ A `PreToolUse` hook at `.claude/hooks/infra-guardrails.sh` **blocks** prohibited
 
 **This is non-negotiable.** Two apps, two scripts — do not mix:
 
-- **Gathering personal-site** (`com.gathering.*` — app, fuseki, prometheus, grafana, loki, promtail): `../jeff-bridwell-personal-site/app-state.sh`. Commands: `start`, `stop`, `restart`, `status`, `deploy`, `rollback`.
+- **Gathering personal-site** (`com.gathering.*` — app, fuseki, prometheus, grafana, loki, promtail): all run as native launchd LaunchAgents. Lifecycle via `../jeff-bridwell-personal-site/app-state.sh` (commands: `start`, `stop`, `restart`, `status`, `deploy`, `rollback`).
 - **Chorus services** (`com.chorus.*`): `agent-state.sh` for lifecycle, `chorus-deploy <crate>` for binary deploys (chorus-api, chorus-hooks, chorus-inject — that script handles build → install → `launchctl kickstart`).
 
-**NEVER** use `docker stop/rm/restart/kill`, `docker compose down`, `docker exec`, `kill/pkill/killall`, or `terraform apply/destroy` directly. The hook will block these commands. The lifecycle scripts handle graceful shutdown, port cleanup, Docker lifecycle, and health checks.
+**NEVER** use `kill/pkill/killall` or `terraform apply/destroy` directly. The hook will block these commands. The lifecycle scripts handle graceful shutdown, port cleanup, and health checks.
 
-### ALWAYS use Loki for log search — NEVER `docker logs`
+### ALWAYS use Loki for log search
 
-All container logs are indexed in Loki. Query via Grafana (http://localhost:3100 → Explore) or Loki API at http://localhost:3102 (NOT 3100 — that's Grafana).
+All service logs are indexed in Loki by native promtail. Query via Grafana (http://localhost:3100 → Explore) or the Loki API at http://localhost:3102 (NOT 3100 — that's Grafana). Services are keyed by the `job` label, not container name.
 
 ```
-{container_name="jeff-bridwell-personal-site-app"} |= "error"
-{container_name=~".*fuseki.*"} | json | level="ERROR"
+{job="gathering-app"} |= "error"
+{job="fuseki"} | json | level="ERROR"
 ```
 
-`docker logs` is ephemeral, unstructured, and lost on restart. The hook blocks it.
+Tailing an individual service's log file is ephemeral and lost on restart — Loki is the durable superset.
 
 ### What IS allowed
 
-`docker ps`, `docker images` (read-only), `docker build`, normal dev commands (npm, git, node), and the appropriate lifecycle script for each app (`app-state.sh` for gathering, `agent-state.sh` / `chorus-deploy` for chorus).
+Normal dev commands (npm, git, node) and the appropriate lifecycle script for each app (`app-state.sh` for gathering, `agent-state.sh` / `chorus-deploy` for chorus).
 
 ### Deploy freeze
 

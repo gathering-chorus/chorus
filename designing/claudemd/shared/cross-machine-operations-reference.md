@@ -9,7 +9,6 @@ ssh jeffbridwell@192.168.86.242 "df -h"
 ```
 
 ### Service Registry (Library LaunchAgents)
-- `com.chorus.docker-services` — Boot-order orchestration (run-once)
 - `com.chorus.api` — Chorus context index HTTP API (KeepAlive)
 - `com.chorus.alert-notifier` — Alert notifications (KeepAlive)
 - `com.chorus.session-watcher` — Ambient index daemon (KeepAlive)

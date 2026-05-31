@@ -60,17 +60,9 @@
       "Bash(*/cost-report.sh*)",
       "Bash(*/system-state.sh*)",
 
-      "Bash(open -a*)",
-      "Bash(docker ps*)",
-      "Bash(docker images*)",
-      "Bash(docker inspect*)"
+      "Bash(open -a*)"
     ],
     "deny": [
-      "Bash(docker kill*)",
-      "Bash(docker rm *)",
-      "Bash(docker exec*)",
-      "Bash(docker stop*)",
-      "Bash(docker restart*)",
       "Bash(rm -rf *)",
       "Bash(rm -r *)",
       "Bash(git push --force*)",
