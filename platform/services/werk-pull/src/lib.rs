@@ -186,6 +186,17 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
+/// Resolve a chorus script (cards, role-state, ...) to its absolute path under
+/// $CHORUS_HOME/platform/scripts. #3151: werk-pull is exec'd by the chorus-mcp
+/// daemon, whose PATH does NOT include platform/scripts, so bare-name lookups
+/// ("cards", "role-state") failed with "No such file or directory" — breaking
+/// /pull team-wide after #3135. Resolve them absolutely from `home`, the same
+/// hermetic pattern emit_spine uses for chorus-log, so werk-pull never depends on
+/// the caller's PATH. (git/gh stay bare — they're on the system PATH.)
+fn script(home: &Path, name: &str) -> String {
+    home.join("platform/scripts").join(name).to_string_lossy().into_owned()
+}
+
 /// Minimal whitespace-tolerant extractor for a JSON string field: finds `"key"`,
 /// then the next quoted value. Zero-dep. The brittle alternative (substring match
 /// on `"key":"val"`) broke against real `cards --json` pretty-printing (a space
@@ -250,7 +261,7 @@ fn rollback(
     }
     // if the card was already moved to WIP, put it back where it was (all-or-nothing).
     if let Some(s) = restore_status {
-        let _ = run("cards", &["move", &card.to_string(), s]);
+        let _ = run(&script(home, "cards"), &["move", &card.to_string(), s]);
     }
 }
 
@@ -294,7 +305,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
 
     // card must exist and be pullable.
-    let cj = run("cards", &["view", &card.to_string(), "--json"])
+    let cj = run(&script(home, "cards"), &["view", &card.to_string(), "--json"])
         .map_err(|e| format!("card #{} not viewable: {}", card, e))?;
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "Next" && status != "Later" {
@@ -323,7 +334,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // process-state per v6, so a pull that can't record itself didn't happen.
     // Tradeoff (accepted): gh is on pull's critical path — a GitHub outage fails
     // the pull. Consistency over availability, consistent with gh-as-authoritative.
-    if let Err(e) = run("cards", &["move", &card.to_string(), "WIP"]) {
+    if let Err(e) = run(&script(home, "cards"), &["move", &card.to_string(), "WIP"]) {
         // card never moved; nothing to restore, just undo the worktree.
         rollback(home, &home_s, &werk_s, &branch, role, card, &trace, "cards-move-fail", None);
         return Err(format!("board move failed; rolled back: {}", e));
@@ -341,7 +352,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // role-state: declare building (parity with the live card-pull, which werk-pull
     // lacked). Best-effort — a local status declaration; its failure doesn't unwind
     // a pull that already moved the board + made the werk.
-    let _ = run("role-state", &[role, "building"]);
+    let _ = run(&script(home, "role-state"), &[role, "building"]);
 
     jsonl(home, role, card, &trace, "pull.completed", &format!(",\"branch\":\"{}\"", branch));
     // #3135 AUDITABLE: card.pulled to the ONE spine (Loki-queryable), carrying the

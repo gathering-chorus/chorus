@@ -52,12 +52,11 @@ fn remote_has(home: &Path, branch: &str) -> bool {
 
 #[test]
 fn e2e_pull_to_gh_diagram() {
-    // --- shims on PATH: cards + gh ---
+    // --- gh shim on PATH (production keeps gh bare — system binary). cards +
+    // role-state are NOT on PATH here on purpose: #3151 resolves them at
+    // $CHORUS_HOME/platform/scripts, so they're shimmed there (below). Keeping
+    // cards off PATH makes this a real guard — a revert to bare-PATH lookup fails. ---
     let bin = tmp("bin");
-    write_exec(
-        &bin.join("cards"),
-        "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-Next}\\\" }\" ;;\n move) exit \"${CARDS_MOVE_EXIT:-0}\" ;;\n *) exit 0 ;;\nesac\n",
-    );
     write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
     std::env::set_var(
         "PATH",
@@ -79,6 +78,17 @@ fn e2e_pull_to_gh_diagram() {
         .status()
         .unwrap()
         .success());
+    // #3151: pull() now resolves `cards`/`role-state` at $CHORUS_HOME/platform/scripts
+    // (absolute, PATH-independent — the chorus-mcp daemon's PATH lacks platform/scripts).
+    // Place the shims where production actually looks, not just on PATH. (gh stays on
+    // PATH — production keeps gh bare since it's a system binary.)
+    let scripts = home.join("platform/scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    write_exec(
+        &scripts.join("cards"),
+        "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-Next}\\\" }\" ;;\n move) exit \"${CARDS_MOVE_EXIT:-0}\" ;;\n *) exit 0 ;;\nesac\n",
+    );
+    write_exec(&scripts.join("role-state"), "#!/bin/sh\nexit 0\n");
     let werk_base = tmp("werk");
 
     // --- happy path ---
