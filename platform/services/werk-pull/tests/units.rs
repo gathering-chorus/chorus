@@ -79,9 +79,27 @@ fn resolve_trace_blank_env_falls_through_to_mint() {
 
 #[test]
 fn spine_args_carry_event_role_card_trace() {
-    let a = spine_args("card.pulled", "kade", 3135, "abc-1");
+    let a = spine_args("card.pulled", "kade", 3135, "abc-1", &[]);
     assert_eq!(a[0], "card.pulled", "event is first");
     assert_eq!(a[1], "kade", "role is second");
     assert!(a.contains(&"card=3135".to_string()), "card stamped for chorus_logs_for_card join");
     assert!(a.contains(&"trace=abc-1".to_string()), "trace stamped so pull correlates with demo+acp");
+}
+
+// #3161: failure emits carry disposition + reason so the #3165 rollup counts them
+// and the trace reader shows WHY a pull was refused/rolled-back, not just that it was.
+#[test]
+fn spine_args_carry_disposition_and_reason_extras() {
+    let a = spine_args(
+        "pull.refused",
+        "kade",
+        3161,
+        "abc-1",
+        &[("disposition", "refuse"), ("reason", "wrong-status")],
+    );
+    assert_eq!(a[0], "pull.refused", "event is first");
+    assert!(a.contains(&"card=3161".to_string()), "card still stamped");
+    assert!(a.contains(&"trace=abc-1".to_string()), "trace still stamped");
+    assert!(a.contains(&"disposition=refuse".to_string()), "rollup keys on disposition (#3165)");
+    assert!(a.contains(&"reason=wrong-status".to_string()), "reason explains the refusal");
 }

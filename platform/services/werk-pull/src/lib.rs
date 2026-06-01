@@ -93,13 +93,17 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
 
 /// The spine event contract (#3135 AUDITABLE): the args handed to `chorus-log` so
 /// a verb's lifecycle is queryable in Loki, keyed by card + trace. Pure → testable.
-pub fn spine_args(event: &str, role: &str, card: u64, trace: &str) -> Vec<String> {
-    vec![
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
         event.to_string(),
         role.to_string(),
         format!("card={}", card),
         format!("trace={}", trace),
-    ]
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
 }
 
 /// Emit one lifecycle event to the ONE spine (`~/.chorus/chorus.log`) via the
@@ -107,13 +111,13 @@ pub fn spine_args(event: &str, role: &str, card: u64, trace: &str) -> Vec<String
 /// blocks the verb. Mirrors werk-demo / werk-accept. The jsonl witness stays
 /// (verbose local trace); the spine is the Loki-queryable record (#3135 replaces
 /// werk-pull's jsonl-witness-only, which promtail never tailed).
-fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
     let log = home.join("platform/scripts/chorus-log");
     let log_s = match path(&log) {
         Ok(s) => s,
         Err(_) => return,
     };
-    let args = spine_args(event, role, card, trace);
+    let args = spine_args(event, role, card, trace, extras);
     let mut argv: Vec<&str> = vec![log_s];
     argv.extend(args.iter().map(|s| s.as_str()));
     let _ = run("bash", &argv);
@@ -254,6 +258,9 @@ fn rollback(
     restore_status: Option<&str>,
 ) {
     jsonl(home, role, card, trace, "pull.rolledback", &format!(",\"reason\":\"{}\"", reason));
+    // #3161: a rollback is a real failure — emit it to the ONE spine (not just the
+    // untailed jsonl witness) so it's Loki-queryable and counts in the #3165 rollup.
+    emit_spine(home, "pull.rolledback", role, card, trace, &[("disposition", "rollback"), ("reason", reason)]);
     if let Ok(_lock) = lock(home, Duration::from_secs(30)) {
         let _ = run("git", &["-C", home_s, "worktree", "remove", "--force", werk_s]);
         let _ = run("git", &["-C", home_s, "branch", "-D", branch]);
@@ -305,11 +312,20 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
 
     // card must exist and be pullable.
-    let cj = run(&script(home, "cards"), &["view", &card.to_string(), "--json"])
-        .map_err(|e| format!("card #{} not viewable: {}", card, e))?;
+    let cj = match run(&script(home, "cards"), &["view", &card.to_string(), "--json"]) {
+        Ok(s) => s,
+        Err(e) => {
+            // #3161: card-not-found is a refusal — emit to the spine, not silence.
+            jsonl(home, role, card, &trace, "pull.refused", ",\"reason\":\"card-not-found\"");
+            emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "card-not-found")]);
+            return Err(format!("card #{} not viewable: {}", card, e));
+        }
+    };
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "Next" && status != "Later" {
         jsonl(home, role, card, &trace, "pull.refused", ",\"reason\":\"wrong-status\"");
+        // #3161: refusal to the ONE spine (was jsonl-witness-only, invisible to Loki).
+        emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-status")]);
         return Err(format!("card #{} is in '{}', not Next/Later", card, status));
     }
 
@@ -357,6 +373,6 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     jsonl(home, role, card, &trace, "pull.completed", &format!(",\"branch\":\"{}\"", branch));
     // #3135 AUDITABLE: card.pulled to the ONE spine (Loki-queryable), carrying the
     // shared trace so this pull correlates with the card's demo + acp.
-    emit_spine(home, "card.pulled", role, card, &trace);
+    emit_spine(home, "card.pulled", role, card, &trace, &[]);
     Ok(branch)
 }
