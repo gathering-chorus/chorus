@@ -538,6 +538,27 @@ pub fn discover_consumers(werk_s: &str, lib: &str) -> R<Vec<Consumer>> {
     Ok(consumers.into_iter().map(|(name, dir_rel)| Consumer { name, dir_rel }).collect())
 }
 
+/// #3168 — pure: did the shared lib's SOURCE change? Given the repo-relative paths
+/// from `git diff --name-only origin/main` and the lib's repo-relative dir, true iff a
+/// changed path is under the lib dir but NOT under its generated `dist/`. The consumer
+/// cascade (rebuild every consumer to catch a breaking change) only needs to run when
+/// the lib actually changed — an unchanged lib yields a byte-identical dist so nothing
+/// can break against it. Gating the CASCADE on this (the lib still builds unconditionally)
+/// keeps #3132's build-everything while not turning an untouched lib into a phantom
+/// "breaking change, refusing" on every unrelated card.
+pub fn lib_source_changed(changed_paths: &[String], lib_rel_dir: &str) -> bool {
+    let base = lib_rel_dir.trim_end_matches('/');
+    if base.is_empty() {
+        return false;
+    }
+    let under = format!("{}/", base);
+    let dist = format!("{}/dist/", base);
+    changed_paths.iter().any(|p| {
+        let p = p.trim();
+        (p == base || p.starts_with(&under)) && !p.starts_with(&dist)
+    })
+}
+
 /// #3126 — build ONE shared lib IN THE WERK and CASCADE-rebuild its consumers.
 /// (1) `npm run build` the lib → its dist; identity = sha256(dist).
 /// (2) DISCOVER consumers from the graph; for each, `npm install` (refresh the
@@ -557,6 +578,25 @@ fn build_shared_lib(home: &Path, role: &str, card: u64, trace: &str, werk_s: &st
     let identity = dist_sha(&lib_dist)?;
     jsonl(home, role, card, trace, "sharedlib.built", &format!(",\"lib\":\"{}\",\"identity\":\"{}\"", lib, identity));
 
+    // #3168 — only cascade-rebuild consumers when the lib's SOURCE actually changed vs
+    // origin/main. An unchanged lib -> byte-identical dist -> no consumer can break, so
+    // the (env-fragile) consumer rebuild is pointless and was turning every unrelated card
+    // into a phantom "chorus-sdk breaking change, refusing". The lib itself still built
+    // above; this gates the CASCADE only, leaving #3132's build-everything intact.
+    let lib_rel = Path::new(&lib_dir)
+        .strip_prefix(werk_s)
+        .map(|p| p.to_string_lossy().trim_start_matches('/').to_string())
+        .unwrap_or_else(|_| lib.to_string());
+    let changed: Vec<String> = run("git", &["-C", werk_s, "diff", "--name-only", "origin/main"])?
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+    if !lib_source_changed(&changed, &lib_rel) {
+        jsonl(home, role, card, trace, "sharedlib.cascade.skipped",
+            &format!(",\"lib\":\"{}\",\"reason\":\"lib-source-unchanged\"", lib));
+        return Ok(identity);
+    }
+
     let consumers = discover_consumers(werk_s, lib)?;
     jsonl(
         home, role, card, trace, "sharedlib.consumers.discovered",
@@ -570,13 +610,22 @@ fn build_shared_lib(home: &Path, role: &str, card: u64, trace: &str, werk_s: &st
         // regression is visible rather than silent.
         jsonl(home, role, card, trace, "sharedlib.consumers.none", &format!(",\"lib\":\"{}\"", lib));
     }
+    // #3168 — consumers resolve `tsc` (and other bins) from the workspace-root
+    // node_modules/.bin (hoisted); npm does not add the root .bin to PATH when building an
+    // isolated package dir, so the cascade died on "tsc: command not found" even for a real
+    // lib change. Prepend the root .bin explicitly so the rebuild can actually run.
+    let root_bin = format!("{}/node_modules/.bin", werk_s);
+    let cascade_path = match env::var("PATH") {
+        Ok(p) => format!("{}:{}", root_bin, p),
+        Err(_) => root_bin.clone(),
+    };
     for c in &consumers {
         let cdir = format!("{}/{}", werk_s, c.dir_rel);
         jsonl(home, role, card, trace, "consumer.rebuild.started", &format!(",\"name\":\"{}\",\"dir\":\"{}\"", c.name, c.dir_rel));
         // refresh the file: link, then rebuild against the new lib dist.
-        run_in_env(&cdir, &[], "npm", &["install", "--no-audit", "--no-fund"])
+        run_in_env(&cdir, &[("PATH", cascade_path.as_str())], "npm", &["install", "--no-audit", "--no-fund"])
             .map_err(|e| format!("consumer {} npm install failed (cascade): {}", c.name, e))?;
-        run_in_env(&cdir, &[], "npm", &["run", "build"])
+        run_in_env(&cdir, &[("PATH", cascade_path.as_str())], "npm", &["run", "build"])
             .map_err(|e| format!("consumer {} rebuild failed against new {} — breaking change, refusing: {}", c.name, lib, e))?;
         jsonl(home, role, card, trace, "consumer.rebuild.completed", &format!(",\"name\":\"{}\"", c.name));
     }
