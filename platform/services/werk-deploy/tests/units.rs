@@ -1,7 +1,7 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
-    branch_name, crate_binary, extract_running_cdhash, parse_build_summary, parse_target,
-    resolve_trace, service_for_crate, target_class_in, TargetClass,
+    branch_name, crate_binaries, crate_binary, extract_running_cdhash, parse_build_summary,
+    parse_target, resolve_trace, service_for_crate, target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -44,6 +44,42 @@ fn werk_fixture(tag: &str) -> PathBuf {
     root
 }
 
+// --- #3179: a crate can emit MORE THAN ONE binary; werk-deploy must deploy them all
+// and verify the DAEMON binary, not whichever one crate_binary happened to name. ---
+
+#[test]
+fn crate_binaries_lists_all_binaries_with_the_daemon_flagged() {
+    // chorus-hooks emits TWO: the daemon (chorus-hooks/main.rs → com.chorus.hooks) and
+    // the PreToolUse shim (chorus-hook-shim). Installing only one left the daemon on
+    // stale code behind a green deploy (#3179 false-green). is_service=true marks the
+    // binary the launchd service runs — that's the one whose cdhash gates the deploy.
+    assert_eq!(
+        crate_binaries("chorus-hooks"),
+        vec![
+            ("chorus-hooks".to_string(), true),
+            ("chorus-hook-shim".to_string(), false),
+        ]
+    );
+    // exactly one service binary, and it's the daemon (not the shim)
+    assert_eq!(
+        crate_binaries("chorus-hooks").into_iter().filter(|(_, s)| *s).map(|(b, _)| b).collect::<Vec<_>>(),
+        vec!["chorus-hooks".to_string()]
+    );
+
+    // single-binary crates unchanged: just themselves, as the service binary (AC5 no-regression)
+    assert_eq!(crate_binaries("chorus-inject"), vec![("chorus-inject".to_string(), true)]);
+    assert_eq!(crate_binaries("chorus-mcp"), vec![("chorus-mcp".to_string(), true)]);
+}
+
+#[test]
+fn crate_binary_returns_the_service_daemon_binary() {
+    // #3179 — crate_binary feeds RustService.bin (the kickstart-verify target). For
+    // chorus-hooks it must be the DAEMON, not the shim. Single-binary crates: themselves.
+    assert_eq!(crate_binary("chorus-hooks"), "chorus-hooks");
+    assert_eq!(crate_binary("chorus-inject"), "chorus-inject");
+    assert_eq!(crate_binary("chorus-mcp"), "chorus-mcp");
+}
+
 #[test]
 fn target_class_resolves_rust_service_when_a_plist_exists() {
     // #3132 — RustService iff a committed `com.chorus.<svc>` plist exists in the repo.
@@ -52,7 +88,11 @@ fn target_class_resolves_rust_service_when_a_plist_exists() {
     match target_class_in("chorus-hooks", &root).unwrap() {
         TargetClass::RustService { svc, bin } => {
             assert_eq!(svc, "com.chorus.hooks");
-            assert_eq!(bin, "chorus-hook-shim");
+            // #3179 — the service binary is the DAEMON (chorus-hooks/main.rs), the
+            // binary com.chorus.hooks actually runs. Was wrongly "chorus-hook-shim"
+            // (the PreToolUse shim), which made the deploy verify the wrong binary
+            // and leave the daemon on stale code (merged≠live false-green).
+            assert_eq!(bin, "chorus-hooks");
         }
         other => panic!("expected RustService, got {:?}", other),
     }
@@ -179,8 +219,11 @@ fn extract_running_cdhash_parses_codesign() {
 }
 
 #[test]
-fn crate_binary_maps_hooks_shim_else_identity() {
-    assert_eq!(crate_binary("chorus-hooks"), "chorus-hook-shim");
+fn crate_binary_maps_hooks_to_daemon_else_identity() {
+    // #3179 — was "chorus-hook-shim" (the bug): the service binary must be the DAEMON
+    // (chorus-hooks/main.rs, the binary com.chorus.hooks runs), so the deploy verifies
+    // the right thing. Everything else is identity.
+    assert_eq!(crate_binary("chorus-hooks"), "chorus-hooks");
     assert_eq!(crate_binary("chorus-inject"), "chorus-inject");
     assert_eq!(crate_binary("werk-build"), "werk-build");
 }

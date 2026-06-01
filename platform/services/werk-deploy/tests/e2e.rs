@@ -60,8 +60,13 @@ fn e2e_deploy_both_slots_and_guards() {
     // install: log argv + touch the marker (so codesign returns the NEW cdhash after).
     write_exec(&bin.join("chorus-bin-install"), &format!("#!/bin/sh\necho \"$@\" >> {inst:?}\ntouch \"$CS_MARKER\"\nexit 0\n"));
     write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nexit 0\n"));
-    // marker present => post-install/new ($CS_CDHASH); absent => pre-install/old ($CS_PRE).
-    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\necho \"$@\" >> {csl:?}\nif [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi\n"));
+    // #3179 — path-aware: codesign of the WERK's BUILT file (…/target/release/…) is
+    // always the freshly-built hash ($CS_BUILT, default DEADBEEF, matching werk-build's
+    // echo). codesign of the INSTALLED file is marker-based: post-install/new
+    // ($CS_CDHASH) vs pre-install/old ($CS_PRE). werk-deploy now verifies built==installed
+    // per-file (not against the build summary's single per-crate hash), so the shim must
+    // distinguish the two paths.
+    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\necho \"$@\" >> {csl:?}\ncase \"$*\" in\n  *target/release*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
     write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
     std::env::remove_var("CHORUS_TRACE_ID");
