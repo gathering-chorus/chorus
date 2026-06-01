@@ -387,13 +387,32 @@ pub fn crate_spec(crate_name: &str) -> (String, String) {
 /// Build + sign ONE crate IN THE WERK, build-only, return its cdhash.
 /// 3-arg build-signed.sh form against the werk's crate dir (not $ROOT/canonical);
 /// BUILD_SKIP_INSTALL=1 (the flag exists per #2774) — no install, no mutation.
+/// #3168 — PATH for an isolated npm build inside the werk. tsc (and other bins) are
+/// hoisted to the workspace-root node_modules/.bin; npm does NOT add the root .bin to
+/// PATH when building a package subdir, so a bare `tsc` in a build script fails with
+/// "tsc: command not found". Prepend the root .bin explicitly. Used by every npm build
+/// site — shared-lib, its consumer cascade, and TS services — so they behave identically.
+fn npm_path(werk_s: &str) -> String {
+    let root_bin = format!("{}/node_modules/.bin", werk_s);
+    match env::var("PATH") {
+        Ok(p) => format!("{}:{}", root_bin, p),
+        Err(_) => root_bin,
+    }
+}
+
 fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     let crate_dir = format!("{}/platform/services/{}", werk_s, crate_name);
     let (identifier, binary) = crate_spec(crate_name);
+    // #3168 — resolve build-signed.sh by absolute path inside the werk. The build env's
+    // PATH does not include platform/scripts where it lives, so a bare "build-signed.sh"
+    // fails to start ("No such file or directory") — same daemon-PATH/bare-name class as
+    // the #3151 werk-pull fix. Surfaced once the cascade gate above stopped masking the
+    // crate-build stage.
+    let build_signed = format!("{}/platform/scripts/build-signed.sh", werk_s);
     let out = run_in_env(
         werk_s,
         &[("BUILD_SKIP_INSTALL", "1")],
-        "build-signed.sh",
+        &build_signed,
         &[&crate_dir, &identifier, &binary],
     )?;
     extract_cdhash(&out)
@@ -436,7 +455,9 @@ fn build_ts_service(werk_s: &str, service: &str) -> R<String> {
         return Err(format!("TS service dir not found at {}", service_dir));
     }
     // npm run build in the service dir (mirrors v1 chorus-deploy.sh #2831 path).
-    run_in_env(&service_dir, &[], "npm", &["run", "build"])?;
+    // #3168 — augment PATH so the service's `tsc` (hoisted to root .bin) resolves.
+    let path_env = npm_path(werk_s);
+    run_in_env(&service_dir, &[("PATH", path_env.as_str())], "npm", &["run", "build"])?;
     let dist_dir = format!("{}/dist", service_dir);
     if !Path::new(&dist_dir).is_dir() {
         return Err(format!("expected dist/ after `npm run build` at {}", dist_dir));
@@ -573,7 +594,8 @@ fn build_shared_lib(home: &Path, role: &str, card: u64, trace: &str, werk_s: &st
     if !Path::new(&lib_dir).is_dir() {
         return Err(format!("shared lib dir not found at {}", lib_dir));
     }
-    run_in_env(&lib_dir, &[], "npm", &["run", "build"])?;
+    let lib_path_env = npm_path(werk_s);
+    run_in_env(&lib_dir, &[("PATH", lib_path_env.as_str())], "npm", &["run", "build"])?;
     let lib_dist = format!("{}/dist", lib_dir);
     let identity = dist_sha(&lib_dist)?;
     jsonl(home, role, card, trace, "sharedlib.built", &format!(",\"lib\":\"{}\",\"identity\":\"{}\"", lib, identity));
@@ -614,11 +636,7 @@ fn build_shared_lib(home: &Path, role: &str, card: u64, trace: &str, werk_s: &st
     // node_modules/.bin (hoisted); npm does not add the root .bin to PATH when building an
     // isolated package dir, so the cascade died on "tsc: command not found" even for a real
     // lib change. Prepend the root .bin explicitly so the rebuild can actually run.
-    let root_bin = format!("{}/node_modules/.bin", werk_s);
-    let cascade_path = match env::var("PATH") {
-        Ok(p) => format!("{}:{}", root_bin, p),
-        Err(_) => root_bin.clone(),
-    };
+    let cascade_path = npm_path(werk_s);
     for c in &consumers {
         let cdir = format!("{}/{}", werk_s, c.dir_rel);
         jsonl(home, role, card, trace, "consumer.rebuild.started", &format!(",\"name\":\"{}\",\"dir\":\"{}\"", c.name, c.dir_rel));
