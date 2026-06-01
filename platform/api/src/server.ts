@@ -142,7 +142,15 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
 // test use (one source, can't drift). Validated contract: {job} selector +
 // event-field anchor. The HTML pages under public/borg/ consume these.
 import { queryPainRollup, type RollupWindow, logsForCard, logsForTrace } from './handlers/logs-query';
-const painLokiDeps = { fetchImpl: fetch, lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102', now: () => Date.now() };
+const painLokiDeps = {
+  fetchImpl: fetch,
+  lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102',
+  now: () => Date.now(),
+  // #3149-fix — read-time domain derivation: resolve a card_id to its domain from
+  // the LIVE board-cache (getBoardCards refreshes on an interval). No stale index,
+  // no emit-time stamping — the rollup joins card_id -> current domain at query time.
+  domainOf: (id: string): string | undefined => getBoardCards().find((c) => c.id === id)?.domain || undefined,
+};
 app.get('/api/chorus/pain/rollup', async (req, res) => {
   // Pass the raw window through; queryPainRollup is the single validator (don't
   // silently coerce a bad window to 7d — that returns mislabeled data). Invalid

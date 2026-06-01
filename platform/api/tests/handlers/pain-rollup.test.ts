@@ -131,4 +131,22 @@ describe('rollupRawLines — group with cards/latest/detail, drop synthetic card
     expect(rollupRawLines({ data: { result: [] } }).total).toBe(0);
     expect(rollupRawLines(null).total).toBe(0);
   });
+
+  // #3149-fix — read-time domain derivation: the class's domain comes from the
+  // card via the injected resolver (live board), NOT from the event itself.
+  it('derives domain from the card via the resolver, not the event', () => {
+    const rows: Array<[string, Record<string, unknown>]> = [
+      ['3000000000000000020', { role: 'silas', event: 'deploy.rolledback', reason: 'x', card_id: 1320 }],
+    ];
+    const domainOf = (id: string): string | undefined => ({ '1320': 'photos' }[id]);
+    const { classes } = rollupRawLines(lokiBody(rows), undefined, domainOf);
+    expect(classes[0].domain).toBe('photos'); // card 1320's live domain, not stamped on the event
+  });
+  it('domain is empty with no resolver or unknown card', () => {
+    const rows: Array<[string, Record<string, unknown>]> = [
+      ['3000000000000000021', { role: 'silas', event: 'x.failed', reason: 'y', card_id: 9999 }],
+    ];
+    expect(rollupRawLines(lokiBody(rows)).classes[0].domain).toBe('');                       // no resolver
+    expect(rollupRawLines(lokiBody(rows), undefined, () => undefined).classes[0].domain).toBe(''); // unknown card
+  });
 });
