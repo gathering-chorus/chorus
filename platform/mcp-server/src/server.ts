@@ -168,20 +168,14 @@ const CommitStatusInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service queries the board for this role\'s active WIP card.'),
 }).strict();
 
-// #2682 — chorus_commit (write) input schema. Service derives the active
-// card from the board (boardReader), validates branch, runs hooks, commits
-// + pushes via existing git-queue.sh. No card_id / branch / force / bypass /
-// env-overrides on the wire.
+// #3178 — werk-commit input (v1 chorus_commit/git-queue.sh contract CUT). Card-
+// scoped: the rust werk-commit stages the card's werk changes (add -A in the
+// ephemeral werk, which IS the card's file set) and formats the message
+// "<role>: #<card> — <summary>". No explicit `paths` — that was the v1 contract.
 const CommitInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service derives the active card from the board.'),
-  paths: z.array(z.string().min(1)).min(1).describe('Paths to stage and commit, relative to repo root. Same files passed to `git add` and `git commit -- <paths>` to prevent cross-role staging collisions.'),
-  message: z.string().min(1).describe('Commit message body. Service does not modify it; agent supplies the full text including role prefix and card reference.'),
-  // #2778 — passes --no-add through to git-queue.sh do_commit (#2731 substrate
-  // mechanism, previously not exposed at the MCP surface). Required when the
-  // index is already arranged exactly as the commit should look — e.g.,
-  // `git rm --cached` of newly-ignored files: `git add` would refuse the
-  // ignored paths and the staged deletion could not land.
-  no_add: z.boolean().optional().describe('Skip the `git add` step; commit the index as-staged. Use when committing staged deletes of paths that are now in .gitignore — without this, git add refuses ignored paths and the commit cannot land. Default false.'),
+  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being committed.'),
+  card_id: z.number().int().positive().describe('Card ID whose werk changes to commit.'),
+  summary: z.string().min(1).optional().describe('Optional short summary; werk-commit formats the message as "<role>: #<card> — <summary>".'),
 }).strict();
 
 // #2750 slice 2 — chorus_acp atomic transaction input.
@@ -200,6 +194,20 @@ const AcpInput = z.object({
 const PullCardInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
   card_id: z.number().int().positive().describe('Card ID to pull. Must be in Next or Later status with AC + Experience populated.'),
+}).strict();
+
+// #3178 — werk-push input. Thin skin over the rust werk-push verb.
+const WerkPushInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being pushed.'),
+  card_id: z.number().int().positive().describe('Card ID whose werk branch to push.'),
+}).strict();
+
+// #3178 — werk-accept input. `role` is the BUILDER (werk location); the ACCEPTER
+// is the calling identity (DEPLOY_ROLE), set by the handler from getCallerRole —
+// only jeff/wren may finalize (DEC-048).
+const WerkAcceptInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role whose card/werk is being accepted (werk location).'),
+  card_id: z.number().int().positive().describe('Card ID to finalize.'),
 }).strict();
 
 // #2900 — chorus_design_refresh input. Refreshes cite-density layers of a
@@ -708,30 +716,17 @@ const CHORUS_COMMIT_INVOKED = 'chorus_commit.invoked';
 // boardReader, branch-mismatch / hook-fail / push-conflict from git-queue
 // exit + stderr classification).
 const COMMIT_TOOL_DEF = {
-  name: 'chorus_commit',
+  name: 'werk-commit',
   description:
-    'Use this to commit + push changes for the card you\'re currently building. Service derives the active card from the board (status=WIP, owner=role), validates HEAD matches `<role>/<card-id>`, runs the canonical pre-commit hook chain, and pushes via the serialized queue. Returns SHA + branch + card_id on success, or a typed refusal: no-wip-card / multi-wip / board-unreachable / branch-mismatch / path-not-found / hook-fail / push-conflict. Do NOT use raw `git commit` or `bash git-queue.sh` — those bypass the typed refusal taxonomy and the board-derived card binding.',
+    'Commit the card\'s werk changes. Thin skin over the rust werk-commit verb — MCP just execs it. Stages the card\'s ephemeral-werk changes (add -A; the werk IS the card\'s file set) and commits with message "<role>: #<card> — <summary>" through the pre-commit gate chain. Returns the sha. Do NOT use raw `git commit` or `bash git-queue.sh` (the retired v1 path). The /commit flow calls this and nothing else.',
   inputSchema: {
     type: 'object',
     properties: {
-      role: {
-        type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — pick one: kade (engineer), wren (PM), silas (architect/ops). Determines DEPLOY_ROLE attribution and which board WIP-card the commit is bound to.',
-      },
-      paths: {
-        type: 'array',
-        items: { type: 'string', minLength: 1 },
-        minItems: 1,
-        description: 'Paths to stage and commit, relative to repo root',
-      },
-      message: { type: 'string', minLength: 1, description: 'Commit message body' },
-      no_add: {
-        type: 'boolean',
-        description: 'Skip the `git add` step; commit the index as-staged (#2778). Required when committing staged deletes of paths now in .gitignore — git add would refuse the ignored paths and the staged deletion could not land. Default false.',
-      },
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk being committed.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card ID whose werk changes to commit.' },
+      summary: { type: 'string', minLength: 1, description: 'Optional short summary; message becomes "<role>: #<card> — <summary>".' },
     },
-    required: ['role', 'paths', 'message'],
+    required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -769,7 +764,7 @@ const UNPULL_CARD_TOOL_DEF = {
 } as const;
 
 const PULL_CARD_TOOL_DEF = {
-  name: 'chorus_pull_card',
+  name: 'werk-pull',
   description:
     'Use this to pull a card to WIP and ready the role\'s werk for building. Service runs validate + cards move WIP + chorus-werk add (creates the card\'s ephemeral worktree chorus-werk/<role>-<card>/ on branch <role>/<card-id>) + role-state building + card.pulled spine event in one atomic transaction. Returns { role, card_id, branch }. Refusal taxonomy: card-not-found | wrong-status | ac-missing | experience-missing | move-fail | branch-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy. The /pull skill calls this and nothing else.',
   inputSchema: {
@@ -785,6 +780,36 @@ const PULL_CARD_TOOL_DEF = {
         minimum: 1,
         description: 'Card ID to pull. Must be in Next or Later status with AC + Experience populated.',
       },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const WERK_PUSH_TOOL_DEF = {
+  name: 'werk-push',
+  description:
+    'Push the role\'s werk branch <role>/<card> to origin (rebases onto origin/main under the lock first). Thin skin over the rust werk-push verb — MCP just execs it. Returns the pushed sha. The /push flow calls this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk being pushed.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card ID whose werk branch to push.' },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const WERK_ACCEPT_TOOL_DEF = {
+  name: 'werk-accept',
+  description:
+    'Finalize an accepted card: merge <role>/<card> to main, cards-done (emits card.accepted), close branch + werk. Thin skin over the rust werk-accept verb. `role` is the builder (werk location); the accepter is the calling identity — only jeff/wren may finalize (DEC-048). The /accept flow calls this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose card/werk is being accepted.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card ID to finalize.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -2528,7 +2553,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-accept',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2887,6 +2912,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
+      WERK_PUSH_TOOL_DEF,
+      WERK_ACCEPT_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
       DESIGN_REFRESH_TOOL_DEF,
@@ -3054,12 +3081,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         return executeCommitStatus(parsed.data, boardReader, emitSpineEvent);
       }
-      case 'chorus_commit': {
+      case 'werk-commit': {
         const parsed = CommitInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
+        // #3178: thin skin → rust werk-commit (v1 executeCommit/git-queue.sh cut).
+        const commitArgs = [String(parsed.data.card_id), parsed.data.role];
+        if (parsed.data.summary) commitArgs.push(parsed.data.summary);
+        return executeWerkVerb('werk-commit', commitArgs, parsed.data.role, parsed.data.card_id, {});
       }
       case 'chorus_acp': {
         const parsed = AcpInput.safeParse(req.params.arguments);
@@ -3068,13 +3098,29 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         return executeAcp(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, cardsPath, resolveWorkingTree);
       }
-      case 'chorus_pull_card': {
+      case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        // #3135: pull logic now lives in the rust `werk-pull` core; the skin just execs it.
+        // #3135: pull logic lives in the rust `werk-pull` core; the skin just execs it.
         return executeWerkVerb('werk-pull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+      }
+      case 'werk-push': {
+        const parsed = WerkPushInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #3178: thin skin → rust werk-push.
+        return executeWerkVerb('werk-push', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+      }
+      case 'werk-accept': {
+        const parsed = WerkAcceptInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #3178: role = builder (werk location); accepter = caller identity via DEPLOY_ROLE (DEC-048).
+        return executeWerkVerb('werk-accept', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, { DEPLOY_ROLE: getCallerRole() });
       }
       case 'chorus_unpull_card': {
         const parsed = UnpullCardInput.safeParse(req.params.arguments);
