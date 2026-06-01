@@ -50,8 +50,8 @@ test('the conformant pull surface chorus_pull_card remains (allow-listed named t
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
     assert.ok(
-      names.includes('chorus_pull_card'),
-      'chorus_pull_card (the ADR-031 allow-listed pull transaction, ADR-032 skin over werk-pull) must remain',
+      names.includes('werk-pull'),
+      'werk-pull (the pull verb tool, renamed from chorus_pull_card in #3178) must remain — thin skin over the werk-pull binary',
     );
   } finally {
     await client.close();

@@ -6,7 +6,7 @@ user-invocable: true
 
 # /pull — Pull Card to WIP and Start Building
 
-Jeff says `/pull <card-id>` (or `/pull` to let the role pick) and the card goes from Next/Later to WIP with the role's werk on a fresh branch off origin/main, ready to build. **One MCP call. The skill does NOT execute the steps directly — `chorus_pull_card` does.**
+Jeff says `/pull <card-id>` (or `/pull` to let the role pick) and the card goes from Next/Later to WIP with the role's werk on a fresh branch off origin/main, ready to build. **One MCP call. The skill does NOT execute the steps directly — `werk-pull` does.**
 
 ## Argument
 
@@ -26,10 +26,10 @@ The skill's only job is collecting the args and invoking the MCP. Two things to 
 
 That's it. Validate / preflight / WIP-check / werk-pre-flight / move / branch / role-state / spine event — all owned by the MCP.
 
-## Step 1: Invoke `chorus_pull_card`
+## Step 1: Invoke `werk-pull`
 
 ```
-mcp__chorus-api__chorus_pull_card({ role: "<target-role>", card_id: <CARD_ID> })
+mcp__chorus-api__werk-pull({ role: "<target-role>", card_id: <CARD_ID> })
 ```
 
 That's the entire skill. The MCP runs the atomic transaction:
@@ -56,8 +56,8 @@ Then start building immediately. Pull = go.
 
 ## Hard rules
 
-- **Use `chorus_pull_card` MCP — never raw `cards`, `git`, `chorus-werk`, `role-state`, or `chorus-log` from this skill.** Those bypass the typed refusal taxonomy and the atomic transaction. The MCP is the contract.
-- **The skill's job is invocation, nothing else.** It does NOT call `cards move`, `chorus-werk add`, `role-state`, or emit spine events directly. Those are all owned by `chorus_pull_card`. No overlap. No race.
+- **Use `werk-pull` MCP — never raw `cards`, `git`, `chorus-werk`, `role-state`, or `chorus-log` from this skill.** Those bypass the typed refusal taxonomy and the atomic transaction. The MCP is the contract.
+- **The skill's job is invocation, nothing else.** It does NOT call `cards move`, `chorus-werk add`, `role-state`, or emit spine events directly. Those are all owned by `werk-pull`. No overlap. No race.
 - **MCP unreachable is the only escape hatch.** If `chorus-api` itself is down, escalate to ops to bring it back up. Do not improvise raw `cards move` / `chorus-werk add` — those bypass the atomic transaction.
 - **No confirmation prompt.** Jeff said pull, so pull. Pull = go signal.
 - **Cross-role pull**: if Jeff says `/pull 1092 kade` and the invoking role isn't kade, the MCP still runs (DEPLOY_ROLE attribution comes from the `role` arg). The kade session sees `card.pulled` in its session-start envelope.

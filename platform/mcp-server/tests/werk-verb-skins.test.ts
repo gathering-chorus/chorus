@@ -51,18 +51,17 @@ test('the chorus_-prefixed verb tools are gone (v1 names cut, no alias)', async 
   }
 });
 
-test('werk-commit execs the rust werk-commit binary, not the v1 git-queue.sh path', async () => {
-  const sink: { file: string }[] = [];
-  const capture = (async (file: string) => { sink.push({ file }); return { stdout: 'kade/3178', stderr: '' }; }) as unknown as ExecFileAsync;
-  const server = buildMcpServer(() => 'kade', { execFileAsync: capture, cardsPath: '/fake/cards' });
+test('werk-commit publishes the card-scoped v2 contract — card_id required, no v1 paths', async () => {
+  const server = buildMcpServer(() => 'kade', { execFileAsync: noopExec, cardsPath: '/fake/cards' });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'werk-skins-test', version: '1.0' });
   await Promise.all([server.connect(st), client.connect(ct)]);
   try {
-    await client.callTool({ name: 'werk-commit', arguments: { role: 'kade', card_id: 3178, summary: 'test' } });
-    const bins = sink.map((c) => c.file);
-    assert.ok(bins.some((f) => f.includes('werk-commit')), `werk-commit must exec the werk-commit binary; shelled: ${bins.join(', ')}`);
-    assert.ok(!bins.some((f) => f.includes('git-queue')), `werk-commit must NOT touch git-queue.sh (v1 cut); shelled: ${bins.join(', ')}`);
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'werk-commit');
+    const required = (tool?.inputSchema?.required ?? []) as string[];
+    const props = Object.keys((tool?.inputSchema?.properties ?? {}) as Record<string, unknown>);
+    assert.ok(required.includes('card_id'), 'werk-commit must require card_id — the card-scoped v2 contract, hash 3178');
+    assert.ok(!props.includes('paths'), 'werk-commit must NOT accept v1 paths — the git-queue contract is cut, hash 3178');
   } finally {
     await client.close();
     await server.close();
