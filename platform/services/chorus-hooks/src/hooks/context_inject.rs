@@ -63,6 +63,10 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
         .collect();
 
     keywords.dedup();
+    // #3171 - significance-order before the cap so the meaningful word survives instead of being
+    // dropped by sentence position (the bug: "...about cults" kept ok/jeff/test, dropped "cults").
+    // Cheap proxy for significance: length (longer ~= more specific/content-bearing). Stable sort.
+    keywords.sort_by(|a, b| b.len().cmp(&a.len()));
     keywords.truncate(6); // Max 6 keywords
     keywords
 }
@@ -1119,6 +1123,16 @@ mod tests {
         assert!(kw.contains(&"cause".to_string()));
         assert!(!kw.contains(&"is".to_string()));
         assert!(!kw.contains(&"me".to_string()));
+    }
+
+    // #3171 - the search string must carry the SIGNIFICANT word, not be evicted by position+cap.
+    // RED before the fix: extract_keywords kept early filler (ok/jeff/test) and dropped "cults"
+    // at truncate(6) - the inject searched the least-important words. Jeff: "u searched the least important words."
+    #[test]
+    fn keeps_significant_word_over_filler() {
+        let kw = extract_keywords("ok a jeff test - have i ever talked with the team about cults");
+        assert!(kw.contains(&"cults".to_string()), "subject must survive the cap; got: {:?}", kw);
+        assert!(!kw.contains(&"ok".to_string()), "short filler should be evicted first; got: {:?}", kw);
     }
 
     #[test]
