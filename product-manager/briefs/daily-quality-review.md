@@ -1,45 +1,43 @@
-# Daily Quality Review — 2026-05-29
+# Daily Quality Review — 2026-06-01
 
 > **Path note:** Spec paths `jeff-bridwell-personal-site/` and `messages/{board-client,slack-bridge}/` do not exist.
 > Mapped to: `directing/clearing` (app), `platform/{workflow-engine,chorus-sdk,pulse,mcp-server,api}`.
 
 ## App Tests (`directing/clearing`)
-**RED** — 53 failed / 309 passed / 362 total | 1 suite failing (`clearing-ui.test.ts`)
-- Root cause: `dist/server.js` not built; tests launch server from hardcoded Mac path.
-- **Action:** Build clearing before test run; fix server path to be repo-relative. Persistent from baseline.
+**RED** — 0 run / 0 passed / 0 failed (suite blocked)
+- `ts-jest` preset not found: node_modules not installed in `directing/clearing`.
+- **Action:** Run `npm ci` in `directing/clearing` before test run. Was 53 fail / 309 pass last run.
 
-## Lint (`platform/` + `directing/` via root eslint)
-**RED** — 2730 problems: 2688 errors, 42 warnings (up from 147 errors / 40 warnings on 2026-05-23)
-- Dominant issues: `no-undef` for Node globals (`process`, `module`, `fetch`, `Buffer`) across platform files.
-- **Action:** Add `node: true` environment to eslint config for platform/* — likely a rule-tightening regression.
+## Lint (`platform/` + `directing/`)
+**YELLOW** — Glob `platform/**/src/**/*.ts` matched 0 files from repo root.
+- Actual src dirs are nested deeper (`platform/services/*/src/`, `platform/mcp-server/src/`).
+- **Action:** Update lint script glob or run eslint per-package. Status unverifiable this run.
 
 ## Build (`platform/api` TypeScript)
-**GREEN** — 0 TypeScript errors
+**RED** — 419 errors (was 0 on 2026-05-29)
+- Root cause: `@types/node` missing — `process`, `path`, `fs`, `fetch`, `Buffer` all unresolved.
+- **Action:** Run `npm ci` in `platform/api`. Likely affects all platform packages.
 
 ## Board-Client
 **N/A** — `messages/board-client` not in repo.
 
 ## Workflow-Engine (`platform/workflow-engine`)
-**GREEN** — 3 suites / 62 tests passed / 0 failed
+**RED** — 0 run (suite blocked) — `ts-jest` not found. Was 62/62 pass on 2026-05-29.
+- **Action:** `npm ci` in `platform/workflow-engine`.
 
 ## Chorus-SDK (`platform/chorus-sdk`)
-**GREEN** — 3 suites / 51 tests passed / 0 failed
+**RED** — 0 run (suite blocked) — `ts-jest` not found. Was 51/51 pass on 2026-05-29.
+- **Action:** `npm ci` in `platform/chorus-sdk`.
 
 ## Slack-Bridge
-**N/A** — `messages/slack-bridge` not in repo.
+**N/A** — `messages/slack-bridge` not in repo. (`platform/pulse` substituted: also blocked — ts-jest missing. Was 57/57 pass.)
 
-## Coverage (`directing/clearing`)
-| Metric | % | vs baseline |
-|--------|------|-------------|
-| Stmts | 86.32 | = |
-| Branch | 77.65 | = |
-| Funcs | 88.47 | = |
-| Lines | 88.41 | = |
+## Coverage
+**UNAVAILABLE** — No tests could run; coverage not extractable this cycle.
 
-Branch at 77.65% — below 80% floor. No change from baseline.
-
-## Failure Delta (vs 2026-05-23)
-- **App Tests:** No change — same 53 failures. Persistent unresolved.
-- **Lint:** REGRESSION — errors jumped from 147 → 2688 (+2541). New `no-undef` violations dominate.
-- **Build/Platform tests:** No change — all stable.
-- *Also checked: `platform/mcp-server` (51/51 pass), `platform/pulse` (57/57 pass). Both green.*
+## Failure Delta (vs 2026-05-29)
+- **REGRESSION — all packages**: `ts-jest` missing across every TS package (fresh clone, deps not installed).
+- **Build**: 0 → 419 errors. `@types/node` not installed in `platform/api`.
+- **MCP-Server**: 51/51 pass → 13/13 suites fail (`SyntaxError: import outside module` — Jest config mismatch).
+- **Root cause**: `npm ci` not run post-clone. Workspace-level `npm ci` or per-package installs needed.
+- **Unblocked last run**: Lint (2688 errors) and 53 app-test failures remain unresolved but untestable this cycle.
