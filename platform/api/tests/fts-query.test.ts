@@ -66,3 +66,54 @@ describe('runFtsQueryOnDb', () => {
     db.close();
   });
 });
+
+// #3171 — the context-inject queries mode=hybrid. Mixed-source fixture: a knowledge
+// doc (OLDER) vs session chatter (NEWER). Recency would surface the chatter; authority
+// must surface the doc. This is the bug the inject hit (candidates were jeff/wren chatter).
+function makeMixedSourceDb(): Database.Database {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE messages (id INTEGER PRIMARY KEY, source TEXT, channel TEXT,
+      role TEXT, author TEXT, content TEXT, timestamp TEXT);
+    CREATE VIRTUAL TABLE messages_fts USING fts5(content);
+  `);
+  const rows = [
+    // knowledge doc — OLDEST (loses on recency, must win on authority)
+    { id: 1, source: 'doc',    content: 'heidegger versammlung gathering philosophy', timestamp: '2026-01-01T00:00:00Z' },
+    // session chatter — NEWER (wins on recency, must lose on authority)
+    { id: 2, source: 'claude', content: 'can u run the heidegger search again',      timestamp: '2026-06-01T00:00:00Z' },
+    { id: 3, source: 'claude', content: 'ran the heidegger query here is the log',   timestamp: '2026-06-01T01:00:00Z' },
+  ];
+  const ins = db.prepare(
+    `INSERT INTO messages (id, source, channel, role, author, content, timestamp)
+     VALUES (@id, @source, 'session', 'wren', 'assistant', @content, @timestamp)`,
+  );
+  const insF = db.prepare('INSERT INTO messages_fts (rowid, content) VALUES (?, ?)');
+  for (const r of rows) { ins.run(r); insF.run(r.id, r.content); }
+  return db;
+}
+
+describe('runFtsQueryOnDb — #3171 authority ranking reaches hybrid (the inject query)', () => {
+  it('hybrid mode ranks a knowledge doc above NEWER session chatter (authority, not recency)', () => {
+    const db = makeMixedSourceDb();
+    const rows = runFtsQueryOnDb(db, 'heidegger', 10, undefined, 'hybrid') as Array<{ id: number; source: string }>;
+    // pre-#3171: hybrid → timestamp DESC → newest chatter (id 3) first. authority must surface the doc.
+    expect(rows[0].source).toBe('doc');
+    expect(rows[0].id).toBe(1);
+    db.close();
+  });
+
+  it('relevance mode still ranks the doc above chatter (unchanged by #3171)', () => {
+    const db = makeMixedSourceDb();
+    const rows = runFtsQueryOnDb(db, 'heidegger', 10, undefined, 'relevance') as Array<{ source: string }>;
+    expect(rows[0].source).toBe('doc');
+    db.close();
+  });
+
+  it('recency mode stays pure-recency — #3171 must NOT change the conversation-rebuild path', () => {
+    const db = makeMixedSourceDb();
+    const rows = runFtsQueryOnDb(db, 'heidegger', 10, undefined, 'recency') as Array<{ id: number }>;
+    expect(rows[0].id).toBe(3); // newest chatter first — correct for recency
+    db.close();
+  });
+});

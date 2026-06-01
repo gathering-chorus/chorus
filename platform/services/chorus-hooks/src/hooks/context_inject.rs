@@ -625,10 +625,16 @@ pub struct InjectResponse<'a> {
     // ranked order; rank = position; score = rrf/semantic relevance (#3147 — plumbed through query_chorus_hybrid)
     pub candidates: &'a [(String, String, String, f64)],
     pub memory_hits: usize,
+    // #3171 — actual per-source CONTENT, not just counts/bools. Counts kept for back-compat
+    // (consumers read memory_hits/spine_events/log_errors); content added so payloads are reviewable.
+    pub memory: &'a [String],                     // the matched memory text
     pub pulse_present: bool,
+    pub pulse: Option<&'a str>,                    // the actual pulse snapshot
     pub spine_events: usize,
+    pub spine: &'a [(String, String, String)],     // the actual recent events (ts, role, event)
     pub athena: Option<&'a str>,
     pub log_errors: usize,
+    pub logs: &'a [(String, String)],              // the actual log error lines (ts, summary)
     pub assembled_bytes: usize,
     pub elapsed_ms: u64,
     pub drops: &'a [&'a str], // sources that returned nothing (the silent-drop class, #3048)
@@ -656,13 +662,25 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
             serde_json::json!({"source": source, "rank": i + 1, "content": content, "ts": cts, "score": score})
         })
         .collect();
+    // #3171 — log the ACTUAL per-source response content (not just counts/bools), so the
+    // real payloads are reviewable. spine/logs are tuples → map to objects like candidates.
+    let spine_json: Vec<serde_json::Value> = r.spine.iter()
+        .map(|(ts, role, event)| serde_json::json!({"ts": ts, "role": role, "event": event}))
+        .collect();
+    let logs_json: Vec<serde_json::Value> = r.logs.iter()
+        .map(|(ts, summary)| serde_json::json!({"ts": ts, "summary": summary}))
+        .collect();
     serde_json::json!({
         "timestamp": ts, "level": "info", "appName": "chorus-events",
         "component": "context-inject", "event": "context.inject.response",
         "inject_id": r.inject_id, "role": r.role,
         "candidates": cands,
-        "memory_hits": r.memory_hits, "pulse": r.pulse_present, "spine_events": r.spine_events,
-        "athena": r.athena, "log_errors": r.log_errors,
+        // counts/bools kept (back-compat); actual content added alongside (#3171)
+        "memory_hits": r.memory_hits, "memory": r.memory,
+        "pulse": r.pulse_present, "pulse_snapshot": r.pulse,
+        "spine_events": r.spine_events, "spine": spine_json,
+        "athena": r.athena,
+        "log_errors": r.log_errors, "logs": logs_json,
         "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
     }).to_string()
 }
@@ -865,8 +883,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         // #3147 — response event for the empty path: all six sources dropped.
         emit_inject_response(&InjectResponse {
             inject_id: &inject_id, role: &role_name, candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
-            log_errors: 0, assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
+            memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
+            spine_events: 0, spine: &[], athena: None,
+            log_errors: 0, logs: &[], assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
             drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
         });
         return HookResponse::warn_stderr(&format!("\n{}\n", manifest_block));
@@ -910,9 +929,10 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if log_errors.is_empty() { drops.push("logs"); }
     emit_inject_response(&InjectResponse {
         inject_id: &inject_id, role: &role_name, candidates: &chorus_results,
-        memory_hits: memory_hits.len(), pulse_present: pulse_block.is_some(),
-        spine_events: spine_events.len(), athena: athena_block.as_deref(),
-        log_errors: log_errors.len(), assembled_bytes: out.len(), elapsed_ms: elapsed,
+        memory_hits: memory_hits.len(), memory: &memory_hits,
+        pulse_present: pulse_block.is_some(), pulse: pulse_block.as_deref(),
+        spine_events: spine_events.len(), spine: &spine_events, athena: athena_block.as_deref(),
+        log_errors: log_errors.len(), logs: &log_errors, assembled_bytes: out.len(), elapsed_ms: elapsed,
         drops: &drops,
     });
     // #3134: observability — emit the actual outcome (hits + injected bytes) to
@@ -960,8 +980,9 @@ mod tests {
         ];
         let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
             inject_id: "inj-wren-42", role: "wren", candidates: &cands,
-            memory_hits: 5, pulse_present: true, spine_events: 8, athena: None,
-            log_errors: 0, assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
+            memory_hits: 5, memory: &[], pulse_present: true, pulse: None,
+            spine_events: 8, spine: &[], athena: None,
+            log_errors: 0, logs: &[], assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["event"], "context.inject.response");
@@ -989,12 +1010,39 @@ mod tests {
         ];
         let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
             inject_id: "inj-wren-99", role: "wren", candidates: &cands,
-            memory_hits: 1, pulse_present: true, spine_events: 1, athena: None,
-            log_errors: 0, assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+            memory_hits: 1, memory: &[], pulse_present: true, pulse: None,
+            spine_events: 1, spine: &[], athena: None,
+            log_errors: 0, logs: &[], assembled_bytes: 100, elapsed_ms: 10, drops: &[],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert!(v["candidates"][0]["score"].is_number(),
             "candidate must carry its relevance score (rrf/semantic), not just rank — got: {}", v["candidates"][0]);
+    }
+
+    // #3171 — the per-source RESPONSE must carry actual CONTENT, not just counts/bools.
+    // The live inject audit showed memory_hits:5 / spine_events:8 / pulse:true hide WHAT
+    // each source returned (and chorus candidates looked fine while being chatter — the trap).
+    // RED until format_inject_response logs the real payloads alongside the counts.
+    #[test]
+    fn inject_response_carries_per_source_content() {
+        let mem = vec!["Wren owns search + nudges — stop punting to Kade".to_string()];
+        let spine = vec![("2026-06-01T14:00".to_string(), "wren".to_string(), "card.pulled".to_string())];
+        let logs = vec![("2026-06-01T14:00".to_string(), "mcp.tool.error: timeout".to_string())];
+        let line = format_inject_response("2026-06-01T14:00:01.000+0000", &InjectResponse {
+            inject_id: "inj-wren-3171", role: "wren", candidates: &[],
+            memory_hits: 1, memory: &mem,
+            pulse_present: true, pulse: Some("health=green wip=2"),
+            spine_events: 1, spine: &spine,
+            athena: Some("domain: chorus"),
+            log_errors: 1, logs: &logs,
+            assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        // not just counts/bools — the ACTUAL per-source content must be reviewable in the log
+        assert_eq!(v["memory"][0], "Wren owns search + nudges — stop punting to Kade");
+        assert_eq!(v["pulse_snapshot"], "health=green wip=2");
+        assert_eq!(v["spine"][0]["event"], "card.pulled");
+        assert_eq!(v["logs"][0]["summary"], "mcp.tool.error: timeout");
     }
 
     // #3147 — request + response are the SAME prompt, paired by inject_id.
@@ -1006,8 +1054,9 @@ mod tests {
         });
         let resp = format_inject_response("t", &InjectResponse {
             inject_id: "inj-X", role: "wren", candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
-            log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &[],
+            memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
+            spine_events: 0, spine: &[], athena: None,
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &[],
         });
         let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
         let pv: serde_json::Value = serde_json::from_str(&resp).unwrap();
@@ -1044,8 +1093,9 @@ mod tests {
         let drops: Vec<&str> = if candidates.is_empty() { vec!["chorus"] } else { vec![] };
         show("RESPONSE", &format_inject_response("2026-05-30T14:50:03.000+0000", &InjectResponse {
             inject_id: id, role: "wren", candidates: &candidates,
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
-            log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
+            memory_hits: 0, memory: &[], pulse_present: false, pulse: None,
+            spine_events: 0, spine: &[], athena: None,
+            log_errors: 0, logs: &[], assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
         }));
     }
 
