@@ -184,15 +184,6 @@ const CommitInput = z.object({
   no_add: z.boolean().optional().describe('Skip the `git add` step; commit the index as-staged. Use when committing staged deletes of paths that are now in .gitignore — without this, git add refuses ignored paths and the commit cannot land. Default false.'),
 }).strict();
 
-// #2688 — chorus_pull (read+rebase) input schema. Sister to chorus_commit:
-// thin wrapper over git-queue.sh do_pull. branch/remote optional with sensible
-// defaults (current branch + origin). No bypasses on the wire.
-const PullInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
-  branch: z.string().min(1).optional().describe('Optional branch to pull. Defaults to current HEAD branch via git-queue.sh.'),
-  remote: z.string().min(1).optional().describe('Optional remote name. Defaults to origin.'),
-}).strict();
-
 // #2750 slice 2 — chorus_acp atomic transaction input.
 // #2868 — card_id is now an optional intent-assertion. When present, the
 // MCP refuses with `card-mismatch` if the branch-derived card_id differs.
@@ -753,30 +744,6 @@ const COMMIT_TOOL_DEF = {
 // in executeCommit directly.
 const CHORUS_COMMIT_COORDINATION_OBSERVED = 'chorus_commit.coordination_observed';
 
-// #2688 — chorus_pull (read+rebase) tool def. Mirrors chorus_commit shape:
-// thin wrapper over git-queue.sh do_pull, --force-branch escape, typed
-// refusal taxonomy expanded per #2689 lesson (rebase-conflict | flock-timeout
-// | dirty-tree | pull-fail) — narrow taxonomies create false-positives.
-const PULL_TOOL_DEF = {
-  name: 'chorus_pull',
-  description:
-    'Use this to pull + rebase the role\'s current branch from origin. Service runs `git pull --rebase` via the existing v2.5 substrate (git-queue.sh do_pull) under the lock. Returns fetched status on success, or a typed refusal: rebase-conflict / flock-timeout / dirty-tree / pull-fail. On rebase-conflict, do_pull aborts cleanly to pre-rebase state. Do NOT use raw `git pull` — that bypasses the lock + classification + spine attribution.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      role: {
-        type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — pick one: kade (engineer), wren (PM), silas (architect/ops). Determines DEPLOY_ROLE attribution.',
-      },
-      branch: { type: 'string', minLength: 1, description: 'Optional branch to pull. Defaults to current HEAD branch.' },
-      remote: { type: 'string', minLength: 1, description: 'Optional remote name. Defaults to origin.' },
-    },
-    required: ['role'],
-    additionalProperties: false,
-  },
-} as const;
-
 // #2759 — chorus_unpull_card tool def. /pull's atomic inverse.
 const UNPULL_CARD_TOOL_DEF = {
   name: 'chorus_unpull_card',
@@ -899,8 +866,6 @@ const ACP_TOOL_DEF = {
 
 const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
 const CARD_ACCEPTED = 'card.accepted';
-const CHORUS_PULL_CARD_REFUSED = 'chorus_pull_card.refused';
-const CARD_PULLED = 'card.pulled';
 
 // #2840 — typed agent surface for log + error investigation. Earns its keep
 // on top of #2857's trace_id + card_id propagation: agents query by id and
@@ -1143,30 +1108,6 @@ const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 interface AcpArgs {
   role: 'kade' | 'wren' | 'silas';
   card_id?: number; // #2868 — optional intent assertion
-}
-
-// #2688 — chorus_pull spine event names. Same extraction reason as commit
-// (sonarjs no-duplicate-string).
-const CHORUS_PULL_REFUSED = 'chorus_pull.refused';
-const CHORUS_PULL_FETCHED = 'chorus_pull.fetched';
-const CHORUS_PULL_REBASE_ATTEMPTED = 'chorus_pull.rebase.attempted';
-const CHORUS_PULL_REBASE_ABORTED = 'chorus_pull.rebase.aborted';
-const CHORUS_PULL_COORDINATION_OBSERVED = 'chorus_pull.coordination_observed';
-
-interface PullArgs {
-  role: 'kade' | 'wren' | 'silas';
-  branch?: string;
-  remote?: string;
-}
-
-// #2688 — pull-phase classifier. 4 labels per #2689 lesson (narrow taxonomy
-// reproduces classifier-collapse false-positives). Each pattern requires a
-// failure marker, not just a substring match.
-function classifyPullFailure(stderr: string): 'rebase-conflict' | 'flock-timeout' | 'dirty-tree' | 'pull-fail' {
-  if (/CONFLICT|merge conflict|could not apply/i.test(stderr)) return 'rebase-conflict';
-  if (/timeout.*lock|holding the lock/i.test(stderr)) return 'flock-timeout';
-  if (/unstaged changes|cannot pull with rebase|please commit or stash/i.test(stderr)) return 'dirty-tree';
-  return 'pull-fail';
 }
 
 interface CommitArgs {
@@ -1452,76 +1393,6 @@ async function executeCommit(
         type: 'text',
         text: JSON.stringify({ role, card_id: cardId, branch, sha }, null, 2),
       },
-    ],
-  };
-}
-
-async function executePull(
-  args: PullArgs,
-  boardReader: BoardReader,
-  emit: SpineEmitter,
-  execFileAsync: ExecFileAsync,
-  gitQueuePath: string,
-  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role, branch, remote } = args;
-
-  // Best-effort board lookup for spine attribution. Same shape as executeCommit
-  // (#2687 strip): coordination state observed via chorus_pull.coordination_observed,
-  // pull proceeds regardless. Refusal taxonomy is pull-safety only.
-  const board = await boardReader(role);
-  let cardId: number | null = null;
-  if (!board.ok) {
-    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: board.reason, detail: board.detail });
-  } else if (board.cards.length === 0) {
-    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: 'no-wip-card' });
-  } else if (board.cards.length > 1) {
-    const ids = board.cards.map((c) => c.id).join(',');
-    emit(CHORUS_PULL_COORDINATION_OBSERVED, { role, reason: 'multi-wip', card_ids: ids });
-    cardId = board.cards[0].id;
-  } else {
-    cardId = board.cards[0].id;
-  }
-
-  // Same env shape as executeCommit (#2662 + #2687 PATH leaks).
-  const path = require('path') as typeof import('path');
-  const parentNodeBinDir = path.dirname(process.execPath);
-  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
-  const env = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-  // #2750 — werk-aware cwd (mirror of executeCommit's change).
-  const repoRoot = resolveWorkingTree(role as 'kade' | 'wren' | 'silas');
-
-  // Emit attempted before the call so audit captures the intent even if the
-  // call throws unexpectedly. Pull-rebase is the operation; chorus_pull.fetched
-  // fires on success below.
-  emit(CHORUS_PULL_REBASE_ATTEMPTED, { role, card_id: cardId, branch, remote });
-
-  const pullArgs: string[] = ['pull', FORCE_BRANCH_FLAG];
-  if (branch) pullArgs.push('--branch', branch);
-  if (remote) pullArgs.push('--remote', remote);
-
-  try {
-    await execFileAsync(gitQueuePath, pullArgs, { env, timeout: 60_000, cwd: repoRoot });
-  } catch (err) {
-    const stderr = extractStderr(err);
-    const reason = classifyPullFailure(stderr);
-    if (reason === 'rebase-conflict') {
-      // do_pull aborts cleanly to pre-rebase state on conflict; the abort
-      // event lets observers tail recovery without parsing stderr.
-      emit(CHORUS_PULL_REBASE_ABORTED, { role, card_id: cardId, detail: stderr.slice(0, 500) });
-    }
-    emit(CHORUS_PULL_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_pull refused: ${reason} — ${stderr.split('\n')[0]}`);
-  }
-
-  emit(CHORUS_PULL_FETCHED, { role, card_id: cardId, branch, remote });
-  return {
-    content: [
-      { type: 'text', text: JSON.stringify({ role, card_id: cardId, branch, remote, status: 'fetched' }, null, 2) },
     ],
   };
 }
@@ -2074,151 +1945,6 @@ async function executeAcp(
   };
 }
 
-// #2751 — chorus_pull_card atomic transaction. Mirrors executeAcp's shape:
-// inject deps, run the steps deterministically, emit step-by-step spine
-// events, refuse with typed reasons that name the failing step and what
-// the operator must fix.
-//
-// ───────────────────────────────────────────────────────────────────────────
-// #3135 RETIRED (2026-05-30): pull's logic moved to the rust `werk-pull` core.
-// `chorus_pull_card` now execs ~/.chorus/bin/werk-pull via executeWerkVerb —
-// ONE implementation (LEGIBLE), resolve_trace instead of fresh-mint (CONSISTENT),
-// card.pulled to the chorus-log spine instead of stderr (AUDITABLE). This TS impl
-// is COMMENTED OUT, not deleted, so back-out is uncomment + redeploy the chorus-mcp
-// daemon (the merged≠live reversibility — source revert alone isn't live; see #3138).
-// Remove fully once werk-pull is proven live across roles. Aligns with the
-// coding-language ADR (#3139): logic in the rust core, server.ts is the thin shim.
-// ───────────────────────────────────────────────────────────────────────────
-/*
-async function executePullCard(
-  args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
-  emit: SpineEmitter,
-  execFileAsync: ExecFileAsync,
-  cardsPath: string,
-  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role, card_id: cardId } = args;
-  // #2913: at pull time the card's ephemeral werk does not exist yet —
-  // `chorus-werk add` creates it below. resolveWorkingTree finds no
-  // <role>-<card> match and returns canonical; that is the correct root
-  // for invoking the substrate scripts (chorus-werk, role-state).
-  const repoRoot = resolveWorkingTree(role);
-  const branch = `${role}/${cardId}`;
-
-  // #2857 — flow trace. card_id is known at entry (from args), so wrap once.
-  const baseEmit = emit;
-  const trace_id = mintTraceIdV7();
-  emit = createSpineEmitter(trace_id, baseEmit, cardId);
-
-  // #2931: per-step duration_ms — same shape as chorus_acp stepEmit. Map is
-  // closure-local; key is step name; only completed events carry duration.
-  const stepStartedAt = new Map<string, number>();
-  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) => {
-    if (status === 'started') stepStartedAt.set(step, Date.now());
-    const dur = status === 'completed' ? stepStartedAt.get(step) : undefined;
-    const duration = dur !== undefined ? { duration_ms: Date.now() - dur } : {};
-    emit(`chorus_pull_card.${step}.${status}`, { role, card_id: cardId, ...duration, ...(detail ?? {}) });
-  };
-
-  emit('chorus_pull_card.invoked', { role, card_id: cardId, repo_root: repoRoot });
-
-  const path = require('path') as typeof import('path');
-  const parentNodeBinDir = path.dirname(process.execPath);
-  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
-  const env = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    CHORUS_CARD_ID: String(cardId),
-    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-
-  const refuse = (step: string, reason: string, detail: string): never => {
-    emit(CHORUS_PULL_CARD_REFUSED, { role, card_id: cardId, step, reason, detail: detail.slice(0, 500) });
-    throw new Error(`chorus_pull_card refused: ${reason} — ${detail.split('\n')[0]}`);
-  };
-
-  // Step 1 — validate card via cards CLI (read-only).
-  stepEmit('validate', 'started');
-  // Real `cards view --json` returns: index/title/owner/status/priority/description/domains/comments/created/updated.
-  // (Field is `description`, not `desc`. The mock in mcp-pull-card.test.ts uses `desc` for brevity; the
-  // executor accepts either to keep tests honest.)
-  let cardJson: { id?: number; index?: number; status?: string; owner?: string; desc?: string; description?: string } = {};
-  try {
-    const { stdout } = await execFileAsync(cardsPath, ['view', String(cardId), '--json'], { env, timeout: 10_000 });
-    cardJson = JSON.parse(stdout) as typeof cardJson;
-  } catch (err) {
-    refuse('validate', 'card-not-found', extractStderr(err) || `card ${cardId} not viewable`);
-  }
-  const status = cardJson.status ?? '';
-  if (status !== 'Next' && status !== 'Later') {
-    refuse('validate', 'wrong-status', `card #${cardId} is in '${status}' — must be Next or Later`);
-  }
-  const desc = cardJson.description ?? cardJson.desc ?? '';
-  if (!/^\s*-\s*\[[ x]\]/m.test(desc)) {
-    refuse('validate', 'ac-missing', `card #${cardId} description has no AC checklist (no '- [ ]' or '- [x]' line)`);
-  }
-  if (!/##\s*Experience/im.test(desc)) {
-    refuse('validate', 'experience-missing', `card #${cardId} description has no '## Experience' section`);
-  }
-  stepEmit('validate', 'completed', { status });
-
-  // #2913: no werk pre-flight. Under the persistent-werk model this step
-  // checked one stable chorus-werk/<role>/ dir for dirty/wrong-branch state
-  // carried over from a prior card. The ephemeral model has no carry-over —
-  // each card gets a fresh worktree, created below by `chorus-werk add`,
-  // which is idempotent and refuses (exit 3) if a dir already exists on a
-  // different branch. The protection moved into `add` itself; pre-flighting
-  // a werk that does not exist yet was checking the wrong thing (and would
-  // false-refuse if canonical happened to be dirty).
-
-  // Step 2 — cards move WIP. Idempotent on already-WIP via cards CLI's own check.
-  stepEmit(STEP_CARDS_MOVE, 'started');
-  try {
-    await execFileAsync(cardsPath, ['move', String(cardId), 'WIP'], { env, timeout: 15_000 });
-    stepEmit(STEP_CARDS_MOVE, 'completed');
-  } catch (err) {
-    const stderr = extractStderr(err);
-    if (!/already.*WIP|already in WIP/i.test(stderr)) {
-      refuse(STEP_CARDS_MOVE, 'move-fail', stderr);
-    }
-    stepEmit(STEP_CARDS_MOVE, 'completed', { idempotent: true });
-  }
-
-  // Step 3 — chorus-werk add: create the card's ephemeral worktree at
-  // chorus-werk/<role>-<card>/ on branch <role>/<card-id>, branched from
-  // origin/main. Idempotent — a re-pull of the same card is a no-op.
-  stepEmit('werk-add', 'started', { branch });
-  try {
-    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
-    await execFileAsync(chorusWerkPath, ['add', role, String(cardId)], { env, timeout: 30_000 });
-    stepEmit('werk-add', 'completed', { branch });
-  } catch (err) {
-    refuse('werk-add', 'branch-fail', extractStderr(err));
-  }
-
-  // Step 4 — role-state declare building.
-  stepEmit(STEP_ROLE_STATE, 'started');
-  try {
-    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', STEP_ROLE_STATE);
-    await execFileAsync(roleStatePath, [role, 'building'], { env, timeout: 10_000 });
-    stepEmit(STEP_ROLE_STATE, 'completed');
-  } catch {
-    // Non-fatal — board state is already updated; role-state is a session-attention hint.
-    stepEmit(STEP_ROLE_STATE, 'completed', { warning: 'role-state declare failed (non-fatal)' });
-  }
-
-  // Step 5 — spine event card.pulled.
-  emit(CARD_PULLED, { role, card_id: cardId, branch });
-  emit('chorus_pull_card.completed', { role, card_id: cardId, branch });
-
-  return {
-    content: [
-      { type: 'text', text: JSON.stringify({ role, card_id: cardId, branch }, null, 2) },
-    ],
-  };
-}
-*/
 // #2759 — chorus_unpull_card atomic teardown. /pull's natural inverse.
 // Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
 // uncommitted work. Uses chorus-werk remove to tear down the card's
@@ -3160,7 +2886,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_VIEW_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
-      PULL_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
@@ -3335,13 +3060,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCommit(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
-      }
-      case 'chorus_pull': {
-        const parsed = PullInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        return executePull(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, resolveWorkingTree);
       }
       case 'chorus_acp': {
         const parsed = AcpInput.safeParse(req.params.arguments);
