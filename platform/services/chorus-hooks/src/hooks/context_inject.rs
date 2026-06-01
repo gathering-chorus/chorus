@@ -146,7 +146,7 @@ pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
             .collect()
     }
     let mut url = format!(
-        "http://localhost:3340/api/chorus/search?q={}&mode=hybrid&limit=5",
+        "http://localhost:3340/api/chorus/search?q={}&mode=relevance&limit=5",
         enc(query)
     );
     if let Some(domain) = domain_tag.map(str::trim).filter(|s| !s.is_empty()) {
@@ -1043,6 +1043,17 @@ mod tests {
         assert_eq!(v["pulse_snapshot"], "health=green wip=2");
         assert_eq!(v["spine"][0]["event"], "card.pulled");
         assert_eq!(v["logs"][0]["summary"], "mcp.tool.error: timeout");
+    }
+
+    // #3171 — the inject MUST query mode=relevance (authority-ranked; surfaces knowledge on the
+    // LIVE endpoint), NOT mode=hybrid. Proven live: :3340 heidegger&mode=hybrid returned session
+    // chatter (RRF merge dilutes the FTS authority ordering), while mode=relevance returned the
+    // Versammlung doc. The AC's first option (relevance) is the one that actually works.
+    #[test]
+    fn inject_queries_relevance_not_hybrid() {
+        let url = build_search_url("heidegger", None);
+        assert!(url.contains("mode=relevance"), "inject must query relevance (works live); got: {url}");
+        assert!(!url.contains("mode=hybrid"), "inject must NOT query hybrid (RRF dilutes authority); got: {url}");
     }
 
     // #3147 — request + response are the SAME prompt, paired by inject_id.
