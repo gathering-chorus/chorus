@@ -283,7 +283,7 @@
       "iri": "chorus:search",
       "label": "search",
       "comment": "Semantic retrieval across all indexed team knowledge and session history.",
-      "ownedBy": "chorus:role-jeff",
+      "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
       "consumes": ["chorus:service-crawler"],
