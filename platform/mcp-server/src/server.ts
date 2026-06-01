@@ -1249,6 +1249,24 @@ function extractStderr(err: unknown): string {
 // No caching (the #2779 lesson): the set of werk dirs changes within a session
 // as cards are pulled and acp'd. readdir is microseconds; this is per-MCP-
 // request. Correctness over a cache that silently goes stale.
+// #3173 — resolve acp's promote SOURCE to the ONE live deploy slot:
+// $WERK_<ROLE>_BIN (chorus-werk/<role>-bin/), exactly where chorus-deploy /
+// werk-deploy --target werk installs and the verb wrapper reads. Prefers the
+// explicit env var (the same one deploy + wrapper use — one convention); derives
+// chorus-werk/<role>-bin only as a fallback. The retired `repoRoot/.werk-bin`
+// path (chorus-env-setup.sh:104) is gone. Pure for test.
+export function resolveWerkBinDir(
+  role: string,
+  env: Record<string, string | undefined>,
+  repoRoot: string,
+): string {
+  const explicit = env[`WERK_${role.toUpperCase()}_BIN`];
+  if (explicit) return explicit;
+  const p = require('node:path') as typeof import('node:path');
+  const werkBase = env.CHORUS_WERK_BASE ?? p.join(p.dirname(repoRoot), 'chorus-werk');
+  return p.join(werkBase, `${role}-bin`);
+}
+
 export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs') as typeof import('node:fs');
@@ -1861,9 +1879,9 @@ async function executeAcp(
   // then fell back to canonical on ambiguous-multiple werks, firing
   // dirty-tree refusals on subsequent git ops.
 
-  // Step 4 — #2995: promote werk-bin to canonical. If the role's werk has
-  // a .werk-bin/ directory with installed binaries (the "preview slot"
-  // populated by chorus-deploy --target werk during the build phase), move
+  // Step 4 — #2995: promote werk-bin to canonical. If the role's bin slot
+  // ($WERK_<ROLE>_BIN = chorus-werk/<role>-bin/, the "preview slot" populated by
+  // chorus-deploy --target werk during the build phase) has installed binaries, move
   // each binary into ~/.chorus/bin/ and emit binary.promoted per binary.
   // This is the moment werk-scoped code becomes canonical for the team.
   // Kickstart fires once per known service after promotion.
@@ -1885,7 +1903,10 @@ async function executeAcp(
   if (cardId !== null) {
     const fsBoot = require('node:fs') as typeof import('node:fs');
     const pathBoot = require('node:path') as typeof import('node:path');
-    const werkBinDir = pathBoot.join(repoRoot, '.werk-bin');
+    // #3173: read the ONE live deploy slot ($WERK_<ROLE>_BIN), not the retired
+    // repoRoot/.werk-bin — see resolveWerkBinDir. The old path no longer existed,
+    // so promote silently no-op'd and canonical verb binaries stayed stale.
+    const werkBinDir = resolveWerkBinDir(role, process.env, repoRoot);
     if (fsBoot.existsSync(werkBinDir)) {
       stepEmit('promote-werk-bin', 'started', { werk_bin_dir: werkBinDir });
       const canonicalBinDir = pathBoot.join(process.env.HOME ?? '', '.chorus', 'bin');
@@ -2499,6 +2520,7 @@ async function executePrinciplesCreate(
 // to registerDoc() in handlers/doc-catalog.ts. Same code path the HTTP endpoint
 // uses; this is the typed agent-facing surface. Refusal taxonomy mirrors
 // registerDoc's HTTP status codes: 400/404/409.
+// cog-override: registerDoc 400/404/409 outcome branches — pre-existing MCP-monolith complexity, not in #3173 (promote-slot fix) scope
 async function executeDocCatalogAdd(
   args: { filePath: string; href: string; group?: string },
   fetchImpl: FetchImpl,
@@ -3168,6 +3190,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
     const errorToolName = req.params.name;
     const errorTraceId = mintTraceIdV7();
     try {
+      // cog-override: MCP tool-dispatch switch — one branch per tool by construction; pre-existing, not in #3173 scope
       const result = await (async () => { switch (req.params.name) {
       case 'chorus_nudge_message': {
         const parsed = NudgeInput.safeParse(req.params.arguments);
