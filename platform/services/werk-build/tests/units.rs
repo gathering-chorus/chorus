@@ -1,7 +1,7 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
     branch_name, discover_build_units_in_tree, extract_cdhash, extract_file_deps, has_build_script,
-    jsonl_line, lib_source_changed, pkg_name, resolve_trace, BuildUnit,
+    jsonl_line, lib_source_changed, pkg_name, resolve_trace, spine_args, BuildUnit,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -193,6 +193,23 @@ fn cascade_skipped_when_only_lib_dist_changed() {
     // so it must not trigger the cascade (defends against a future where dist is tracked).
     let changed = vec!["platform/chorus-sdk/dist/emit.js".to_string()];
     assert!(!lib_source_changed(&changed, "platform/chorus-sdk"));
+}
+
+// --- #3166: build.failed reaches the spine (not just the jsonl witness) ---
+
+#[test]
+fn spine_args_builds_chorus_log_argv_for_build_failed() {
+    // build.failed must be Loki-queryable + counted in the #3165 rollup, so it goes
+    // to the ONE spine via chorus-log. spine_args is the pure arg-builder emit_spine
+    // shells to chorus-log with — mirrors werk-pull #3161.
+    let a = spine_args("build.failed", "silas", 3166, "tr1", &[("disposition", "fail"), ("kind", "rust"), ("name", "chorus-hooks")]);
+    assert_eq!(a[0], "build.failed");
+    assert_eq!(a[1], "silas");
+    assert!(a.contains(&"card=3166".to_string()), "carries card");
+    assert!(a.contains(&"trace=tr1".to_string()), "carries trace");
+    assert!(a.contains(&"disposition=fail".to_string()), "rollup keys on disposition (#3165)");
+    assert!(a.contains(&"kind=rust".to_string()));
+    assert!(a.contains(&"name=chorus-hooks".to_string()));
 }
 
 #[test]

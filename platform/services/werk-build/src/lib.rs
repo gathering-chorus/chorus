@@ -278,6 +278,34 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
+/// #3166 — pure arg-builder for a chorus-log spine emit (mirrors werk-pull #3161).
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
+/// #3166 — emit an event to the ONE spine via chorus-log (a subprocess, so werk-build
+/// stays zero-dep per ADR-032 §6 — NOT a code dep). Best-effort: never affects the build.
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
+    let log = home.join("platform/scripts/chorus-log");
+    let log_s = match path(&log) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let args = spine_args(event, role, card, trace, extras);
+    let mut argv: Vec<&str> = vec![log_s];
+    argv.extend(args.iter().map(|s| s.as_str()));
+    let _ = run("bash", &argv);
+}
+
 /// Run a CLI, capture stdout; any non-zero exit is a typed error.
 fn run(cmd: &str, args: &[&str]) -> R<String> {
     let out = Command::new(cmd)
@@ -739,6 +767,32 @@ pub fn run_build() -> R<String> {
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
 /// (deps injected via PATH: real `git`, shimmed `build-signed.sh`/`gh`).
 /// Returns a comma-joined `crate=cdhash` summary.
+/// #3166 — build one unit; on failure emit build.failed to the ONE spine (+ jsonl
+/// witness) with disposition/kind/name, then propagate the Err unchanged. Without this,
+/// compile/sign/tsc failures were a stderr exit only — invisible to Loki + the #3165
+/// rollup (the build-blindness that hid merged≠live all day). Extracted so build()'s
+/// loop stays under the cog-complexity limit.
+fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, unit: &BuildUnit) -> R<String> {
+    let (kind, name): (&str, &str) = match unit {
+        BuildUnit::SharedLib(n) => ("sharedlib", n.as_str()),
+        BuildUnit::RustCrate(n) => ("rust", n.as_str()),
+        BuildUnit::TsService(n) => ("ts", n.as_str()),
+    };
+    let res = match unit {
+        BuildUnit::SharedLib(l) => build_shared_lib(home, role, card, trace, werk_s, l),
+        BuildUnit::RustCrate(c) => build_crate(werk_s, c),
+        BuildUnit::TsService(s) => build_ts_service(werk_s, s),
+    };
+    res.inspect_err(|e| {
+        let reason: String = e.chars().take(80).collect();
+        emit_spine(home, "build.failed", role, card, trace, &[("disposition", "fail"), ("kind", kind), ("name", name)]);
+        jsonl(
+            home, role, card, trace, "build.failed",
+            &format!(",\"kind\":\"{}\",\"name\":\"{}\",\"reason\":\"{}\"", kind, name, reason.replace('"', "'")),
+        );
+    })
+}
+
 pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     let trace = resolve_trace(card);
     let branch = branch_name(role, card);
@@ -798,11 +852,9 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         // Dispatch by unit kind. Each returns the unit's stable identity hash
         // (cdhash for Rust, sha256-of-dist for TS — same contract, different forms,
         // per ADR-032 §1/§5 widened: "stable identity hash").
-        let identity = match unit {
-            BuildUnit::SharedLib(l) => build_shared_lib(home, role, card, &trace, &werk_s, l)?,
-            BuildUnit::RustCrate(c) => build_crate(&werk_s, c)?,
-            BuildUnit::TsService(s) => build_ts_service(&werk_s, s)?,
-        };
+        // #3166: build_unit emits build.failed to the spine on compile/sign/tsc failure,
+        // then propagates — so a failure is Loki-queryable, not just a stderr exit.
+        let identity = build_unit(home, role, card, &trace, &werk_s, unit)?;
         jsonl(
             home,
             role,
