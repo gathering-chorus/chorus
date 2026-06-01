@@ -1,7 +1,7 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
     branch_name, discover_build_units_in_tree, extract_cdhash, extract_file_deps, has_build_script,
-    jsonl_line, pkg_name, resolve_trace, BuildUnit,
+    jsonl_line, lib_source_changed, pkg_name, resolve_trace, BuildUnit,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -159,6 +159,40 @@ fn discover_in_tree_skips_node_modules() {
     let units = discover_build_units_in_tree(&root);
     assert!(units.contains(&BuildUnit::TsService("chorus-messaging".to_string())));
     assert!(!units.iter().any(|u| u.name() == "dep"), "node_modules packages are not build units");
+}
+
+// --- #3168: gate the consumer cascade on the lib's SOURCE actually changing ---
+
+#[test]
+fn cascade_skipped_when_lib_untouched() {
+    // Wren #3147 (the bite): a chorus-api-only card. chorus-sdk source is untouched,
+    // so the consumer cascade must NOT fire. Before #3168 it fired unconditionally and
+    // the cards-consumer rebuild died on hoisted-tsc -> false "breaking change, refusing"
+    // that blocked every unrelated card team-wide.
+    let changed = vec![
+        "platform/api/src/lib/fts-query.ts".to_string(),
+        "designing/docs/chorus-search-tobe.svg".to_string(),
+    ];
+    assert!(!lib_source_changed(&changed, "platform/chorus-sdk"));
+}
+
+#[test]
+fn cascade_runs_when_lib_source_changed() {
+    // A real chorus-sdk change DOES need the cascade — consumers must rebuild to catch
+    // a genuine breaking change.
+    let changed = vec![
+        "platform/chorus-sdk/src/emit.ts".to_string(),
+        "platform/api/src/server.ts".to_string(),
+    ];
+    assert!(lib_source_changed(&changed, "platform/chorus-sdk"));
+}
+
+#[test]
+fn cascade_skipped_when_only_lib_dist_changed() {
+    // dist/ is generated output, not source — a dist-only diff is not a source change,
+    // so it must not trigger the cascade (defends against a future where dist is tracked).
+    let changed = vec!["platform/chorus-sdk/dist/emit.js".to_string()];
+    assert!(!lib_source_changed(&changed, "platform/chorus-sdk"));
 }
 
 #[test]
