@@ -57,6 +57,33 @@ pub fn resolve_and_derive(schema: &serde_json::Value, event: &str) -> (String, S
     (resolved, derived)
 }
 
+/// #3149-fix — DERIVE domain from the card (Jeff's design, replacing the
+/// hardcoded `domain=chorus` stamps). PURE + unit-tested: given the card arg,
+/// whether the caller already set domain, and the card->domain index, return the
+/// domain to inject (None = inject nothing). Explicit domain is never overridden;
+/// an unknown card or absent card_id yields None (back-compat).
+pub fn derive_domain(
+    card_arg: Option<&str>,
+    extras_has_domain: bool,
+    index: &serde_json::Value,
+) -> Option<String> {
+    if extras_has_domain {
+        return None;
+    }
+    let c = card_arg?;
+    index.get(c).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+/// Read the card->domain index ($HOME/.chorus/card-domains.json), best-effort.
+/// Maintained by board-cache (the card list already carries each card's domain
+/// tag — #3149-fix coordinates the index home into board-cache via Wren).
+/// Missing/unparseable file -> None, so emit degrades to no-domain, never fails.
+fn card_domain_index() -> Option<serde_json::Value> {
+    let home = std::env::var("HOME").ok()?;
+    let s = fs::read_to_string(format!("{}/.chorus/card-domains.json", home)).ok()?;
+    serde_json::from_str(&s).ok()
+}
+
 /// Eastern timezone offset — standalone for shim binary (#1850)
 fn eastern_offset() -> chrono::FixedOffset {
     let output = std::process::Command::new("date")
@@ -213,6 +240,24 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
         display.push_str(&format!(" trace={}", trace));
     }
 
+    // #3149-fix — derive domain from the card. If a card_id was passed and the
+    // caller didn't already set domain=, look up the card's domain and inject it
+    // (this is what #3149 should have done instead of hardcoding domain=chorus
+    // on 9 sites). Best-effort: no index / unknown card leaves domain unset.
+    // Only touch the index when there's a card_id and the caller didn't set
+    // domain — so the hot path (non-card events like observer.digest) never
+    // reads the file at all.
+    let extras_has_domain = extras.contains(r#""domain":"#);
+    if card_arg.is_some() && !extras_has_domain {
+        if let Some(dom) = card_domain_index()
+            .and_then(|idx| derive_domain(card_arg.as_deref(), false, &idx))
+        {
+            let escaped = serde_json::to_string(&dom).unwrap_or_else(|_| "\"\"".to_string());
+            extras.push_str(&format!(r#","domain":{}"#, escaped));
+            display.push_str(&format!(" domain={}", dom));
+        }
+    }
+
     // Validate level
     if !["info", "warn", "critical"].contains(&level.as_str()) {
         eprintln!("Invalid level '{}' — use info, warn, or critical", level);
@@ -248,6 +293,26 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
 mod tests {
     use super::*;
     use std::fs;
+
+    // --- #3149-fix: derive domain from the card (PURE) ---
+    #[test]
+    fn derive_domain_looks_up_card_in_index() {
+        let idx = serde_json::json!({ "3149": "chorus", "1320": "photos" });
+        assert_eq!(derive_domain(Some("3149"), false, &idx).as_deref(), Some("chorus"));
+        assert_eq!(derive_domain(Some("1320"), false, &idx).as_deref(), Some("photos"));
+    }
+    #[test]
+    fn derive_domain_never_overrides_explicit_domain() {
+        let idx = serde_json::json!({ "3149": "chorus" });
+        // caller already passed domain= -> do not derive (respect explicit)
+        assert_eq!(derive_domain(Some("3149"), true, &idx), None);
+    }
+    #[test]
+    fn derive_domain_unknown_card_or_no_card_is_none() {
+        let idx = serde_json::json!({ "3149": "chorus" });
+        assert_eq!(derive_domain(Some("9999"), false, &idx), None); // card not in index
+        assert_eq!(derive_domain(None, false, &idx), None);          // no card_id passed
+    }
 
     /// Find the log line containing the given event name (tests run in parallel,
     /// so we can't rely on "last line").
