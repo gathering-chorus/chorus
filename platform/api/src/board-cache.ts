@@ -15,6 +15,9 @@ export interface CachedCard {
   owner: string;
   type: string;
   priority: string;
+  /** #3149-fix — the card's domain (from the `domain:X` tag). The live source for
+   * read-time domain derivation: consumers join an event's card_id to this. */
+  domain: string;
   tags: string;
 }
 
@@ -35,6 +38,27 @@ export interface BoardCache {
 const STATUS_HEADER = /^(WIP|Blocked|Now|Next|Later|Done|Won't Do)\s*\(\d+\)/;
 const CARD_ROW = /^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/;
 
+/** Parse one matched card row into a CachedCard. Extracted from the loop so the
+ *  per-field tag extraction (owner/type/priority/domain) doesn't inflate the
+ *  loop's cognitive complexity (#3149-fix). */
+function cardFromRow(cardMatch: RegExpMatchArray, status: string): CachedCard {
+  const tags = cardMatch[3];
+  const ownerMatch = tags.match(/^(Wren|Silas|Kade|Jeff)/i);
+  const typeMatch = tags.match(/type:(\w+)/);
+  const priorityMatch = tags.match(/P([1-3])/);
+  const domainMatch = tags.match(/domain:([\w-]+)/);
+  return {
+    id: cardMatch[1],
+    title: cardMatch[2].trim(),
+    status,
+    owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
+    type: typeMatch ? typeMatch[1] : '',
+    priority: priorityMatch ? priorityMatch[0] : '',
+    domain: domainMatch ? domainMatch[1] : '',
+    tags,
+  };
+}
+
 /**
  * Parse the stdout of `cards list` into a flat array of CachedCard.
  * Pure function — same input always yields the same output.
@@ -50,19 +74,7 @@ export function parseCardsListOutput(stdout: string): CachedCard[] {
     }
     const cardMatch = line.trim().match(CARD_ROW);
     if (!cardMatch) continue;
-    const tags = cardMatch[3];
-    const ownerMatch = tags.match(/^(Wren|Silas|Kade|Jeff)/i);
-    const typeMatch = tags.match(/type:(\w+)/);
-    const priorityMatch = tags.match(/P([1-3])/);
-    cards.push({
-      id: cardMatch[1],
-      title: cardMatch[2].trim(),
-      status: currentStatus,
-      owner: ownerMatch ? ownerMatch[1].toLowerCase() : '',
-      type: typeMatch ? typeMatch[1] : '',
-      priority: priorityMatch ? priorityMatch[0] : '',
-      tags,
-    });
+    cards.push(cardFromRow(cardMatch, currentStatus));
   }
   return cards;
 }

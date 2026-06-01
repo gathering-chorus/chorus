@@ -14,6 +14,7 @@ describe('parseCardsListOutput', () => {
       owner: 'kade',
       type: 'enhance',
       priority: 'P2',
+      domain: 'chorus', // #3149-fix — parsed from the domain:chorus tag
       tags: 'Kade|P2|chunk:ops|domain:chorus|type:enhance',
     });
   });

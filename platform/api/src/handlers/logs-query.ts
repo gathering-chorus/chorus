@@ -34,6 +34,9 @@ export type LogsQueryDeps = {
   fetchImpl: typeof fetch;
   lokiUrl: string;
   now: () => number;
+  // #3149-fix — read-time domain resolver (card_id -> live domain via board-cache).
+  // Optional; when absent the rollup leaves domain empty (back-compat / tests).
+  domainOf?: (cardId: string) => string | undefined;
 };
 
 const TIME_WINDOW_SECONDS: Record<TimeWindow, number> = {
@@ -226,6 +229,10 @@ const SYNTHETIC_CARD_IDS = new Set(['99998', '99999']);
 export type PainClass = {
   role: string; event: string; reason: string;
   count: number; cards: string[]; latest: string; detail: string; product: string;
+  // #3149-fix — domain DERIVED at read time from the event's card_id via the live
+  // board (board-cache), not stamped on the event. Empty when no card_id / unknown
+  // card. Part of the group key so failures split by domain, not merge across them.
+  domain: string;
 };
 export type PainRollupResult =
   | { ok: true; window: string; total: number; classes: PainClass[]; byProduct: Record<string, number> }
@@ -300,6 +307,9 @@ function productOf(event: string): string {
 export function rollupRawLines(
   body: unknown,
   opts?: { role?: string },
+  // #3149-fix — read-time domain resolver: card_id -> live domain (board-cache).
+  // Optional so the pure regression tests run without a board (domain stays '').
+  domainOf?: (cardId: string) => string | undefined,
 ): { classes: PainClass[]; total: number; byProduct: Record<string, number> } {
   const result = (body as { data?: { result?: Array<{ values?: Array<[string, string]> }> } } | undefined)?.data?.result ?? [];
   const roll = new Map<string, PainAcc>();
@@ -311,7 +321,13 @@ export function rollupRawLines(
     }
   }
   const classes: PainClass[] = [...roll.values()]
-    .map((a) => ({ role: a.role, event: a.event, reason: a.reason, count: a.count, cards: [...a.cards].sort(), latest: utcStamp(a.latestNs), detail: a.detail, product: a.product }))
+    .map((a) => {
+      const cards = [...a.cards].sort();
+      // Derive domain from the class's representative card via the live board —
+      // not stamped on the event, never stale. Empty when no card / unknown card.
+      const domain = cards[0] && domainOf ? domainOf(cards[0]) ?? '' : '';
+      return { role: a.role, event: a.event, reason: a.reason, count: a.count, cards, latest: utcStamp(a.latestNs), detail: a.detail, product: a.product, domain };
+    })
     .sort((a, b) => b.count - a.count);
   return { classes, total, byProduct };
 }
@@ -393,6 +409,6 @@ export async function queryPainRollup(args: { window?: string; role?: string }, 
     if (res.status === 429) return { ok: false, reason: 'rate-limited', detail: body.slice(0, 200) };
     return { ok: false, reason: 'loki-unreachable', detail: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   }
-  const { classes, total, byProduct } = rollupRawLines(await res.json(), { role: args.role });
+  const { classes, total, byProduct } = rollupRawLines(await res.json(), { role: args.role }, deps.domainOf);
   return { ok: true, window, total, classes, byProduct };
 }
