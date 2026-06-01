@@ -110,12 +110,31 @@ pub fn extract_running_cdhash(codesign_out: &str) -> Option<String> {
     None
 }
 
-/// (identifier, binary) for a crate — mirrors werk-build::crate_spec (build-signed.sh map).
-pub fn crate_binary(crate_name: &str) -> String {
+/// #3179 — every binary a crate emits, each flagged `is_service` (true = the binary
+/// the crate's launchd service runs; that's the one whose cdhash gates the deploy).
+/// Mirrors build-signed.sh's chorus-hooks shortcut, which signs+installs BOTH the
+/// daemon (chorus-hooks/main.rs, runs com.chorus.hooks) and the PreToolUse shim
+/// (chorus-hook-shim). werk-deploy previously installed/verified only ONE binary per
+/// crate (the shim for chorus-hooks), so the daemon ran stale code behind a green
+/// deploy — a merged≠live false-green caught only by content hash.
+pub fn crate_binaries(crate_name: &str) -> Vec<(String, bool)> {
     match crate_name {
-        "chorus-hooks" => "chorus-hook-shim".to_string(),
-        other => other.to_string(),
+        "chorus-hooks" => vec![
+            ("chorus-hooks".to_string(), true),       // the daemon (com.chorus.hooks)
+            ("chorus-hook-shim".to_string(), false),  // PreToolUse shim, no daemon
+        ],
+        other => vec![(other.to_string(), true)],
     }
+}
+
+/// The single binary the crate's launchd service runs (RustService.bin / verify target).
+/// Derived from `crate_binaries` so there is one source of truth (#3179).
+pub fn crate_binary(crate_name: &str) -> String {
+    crate_binaries(crate_name)
+        .into_iter()
+        .find(|(_, is_service)| *is_service)
+        .map(|(b, _)| b)
+        .unwrap_or_else(|| crate_name.to_string())
 }
 
 /// launchd service name for a crate (kickstart target on prod deploy).
@@ -591,64 +610,83 @@ fn summary(built: &[(String, String)]) -> String {
 /// codesign cdhash verify running==built. The stale-build guard (cdhash-divergence
 /// refuse) fires only on canonical (where there's a running binary to compare).
 #[allow(clippy::too_many_arguments)]
+/// codesign cdhash of a binary file (the linker's ad-hoc signature is enough to read
+/// one). None if the file is absent / unsigned. #3179 — per-binary cdhash, computed
+/// from the werk's built files, replacing reliance on the build summary's single
+/// per-crate hash (which for chorus-hooks was the shim's).
+fn file_cdhash(path: &str) -> Option<String> {
+    run_env(None, &[], "codesign", &["-d", "--verbose=4", path])
+        .ok()
+        .and_then(|o| extract_running_cdhash(&o))
+}
+
+// ADR-032 §1 testable-core: every input explicit (no hidden env/global reads) so the
+// deploy path is exercisable against a temp repo with shimmed CLIs — hence the arg count.
+#[allow(clippy::too_many_arguments)]
 fn deploy_rust_service(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
-    crate_name: &str, built_cdhash: &str, svc: &str, bin: &str,
+    crate_name: &str, built_summary_cdhash: &str, svc: &str, bin: &str,
 ) -> R<()> {
-    let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
+    // #3179 — install EVERY binary the crate emits, not just `bin`. chorus-hooks emits
+    // the daemon (chorus-hooks, runs com.chorus.hooks) + the shim (chorus-hook-shim).
+    let bins = crate_binaries(crate_name);
+    let built_path = |b: &str| format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, b);
 
-    // AC2 stale-build guard + #3132 hash-gate (canonical only).
+    // AC2 stale-build guard + #3132 hash-gate (canonical only). Skip install+kickstart
+    // only when EVERY binary is already installed == built AND source unchanged.
     if target == "canonical" {
-        let installed = installed_path(target, role, bin);
-        let current = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed])
-            .ok()
-            .and_then(|o| extract_running_cdhash(&o));
-        if current.as_deref() == Some(built_cdhash) {
+        let all_match = bins.iter().all(|(b, _)| {
+            let built = file_cdhash(&built_path(b));
+            built.is_some() && built == file_cdhash(&installed_path(target, role, b))
+        });
+        if all_match {
             if crate_source_changed(werk_s, crate_name) {
-                // Same cdhash but source changed this card → the rebuild didn't take
-                // (build-invariance suspect). Refuse rather than ship stale.
+                // All binaries match the installed cdhash but source changed this card →
+                // the rebuild didn't take. Refuse rather than ship stale.
                 jsonl(home, role, card, trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
                 return Err(format!(
-                    "cdhash-divergence: rebuild of {} gave the running cdhash {} but its source changed this card — stale build, refusing (werk-build invariance suspect)",
-                    crate_name, built_cdhash
+                    "cdhash-divergence: rebuild of {} matches the installed cdhash but its source changed this card — stale build, refusing (werk-build invariance suspect)",
+                    crate_name
                 ));
             }
-            // #3132 HASH-GATE: installed cdhash already == built AND source unchanged
-            // → this crate didn't change. Skip install + kickstart (don't bounce an
-            // unchanged service every card).
             jsonl(home, role, card, trace, "deploy.skipped",
-                &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"reason\":\"unchanged\",\"cdhash\":\"{}\"", crate_name, built_cdhash));
+                &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"reason\":\"unchanged\",\"cdhash\":\"{}\"", crate_name, built_summary_cdhash));
             return Ok(());
         }
     }
 
-    if let Err(e) = run_env(
-        Some(werk_s),
-        &[("CHORUS_ROLE", role)],
-        "chorus-bin-install",
-        &["--target", target, &built_path, bin],
-    ) {
-        rollback(home, werk_s, role, card, trace, target, bin, "install-fail");
-        return Err(format!("install of {} failed; rolled back: {}", bin, e));
+    for (b, _) in &bins {
+        if let Err(e) = run_env(
+            Some(werk_s), &[("CHORUS_ROLE", role)], "chorus-bin-install",
+            &["--target", target, &built_path(b), b],
+        ) {
+            rollback(home, werk_s, role, card, trace, target, b, "install-fail");
+            return Err(format!("install of {} failed; rolled back: {}", b, e));
+        }
+        jsonl(home, role, card, trace, "installed",
+            &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"kind\":\"rust-service\",\"target\":\"{}\"", crate_name, b, target));
     }
-    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"target\":\"{}\"", crate_name, target));
 
     if target == "canonical" {
         if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
             rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
             return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
         }
-        let installed = installed_path(target, role, bin);
-        let cs = run_env(None, &[], "codesign", &["-d", "--verbose=4", &installed]).unwrap_or_default();
-        match extract_running_cdhash(&cs) {
-            Some(running) if running == built_cdhash => {
-                jsonl(home, role, card, trace, "verified", &format!(",\"name\":\"{}\",\"cdhash\":\"{}\"", crate_name, running));
+        // #3179 — verify the DAEMON (service) binary specifically: `bin` is the
+        // is_service binary com.chorus.<svc> runs. Installed cdhash == its built
+        // cdhash. Targeting the shim here was the false-green that left the daemon stale.
+        let built = file_cdhash(&built_path(bin));
+        let installed = file_cdhash(&installed_path(target, role, bin));
+        match (&built, &installed) {
+            (Some(b), Some(i)) if b == i => {
+                jsonl(home, role, card, trace, "verified",
+                    &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\"", crate_name, bin, i));
             }
-            other => {
+            _ => {
                 rollback(home, werk_s, role, card, trace, target, bin, "cdhash-mismatch");
                 return Err(format!(
-                    "running != built for {}: built={} running={:?} — rolled back (stale-binary guard)",
-                    bin, built_cdhash, other
+                    "running != built for daemon binary {} of {}: built={:?} installed={:?} — rolled back (stale-binary guard)",
+                    bin, crate_name, built, installed
                 ));
             }
         }
