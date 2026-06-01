@@ -36,8 +36,16 @@ export function runFtsQueryOnDb(
   // chatter outrank authoritative docs/decisions/memory (proven: "heidegger" returned 5×
   // "check the research" chatter, burying the Versammlung research doc + DEC-031). Penalize
   // chatter sources so knowledge surfaces. Verified on the live index before landing.
-  const ftsOrderBy = mode === 'relevance'
-    ? "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC"
+  // #3171 (Wren) — the context-inject queries mode=hybrid (context_inject.rs build_search_url).
+  // Pre-#3171, hybrid fell through to `timestamp DESC` (recency), so the inject surfaced recent
+  // session chatter, NOT knowledge — the #3147 authority fix was relevance-only and never reached
+  // the inject (proven: live inject candidates were jeff/wren session messages; unit test red).
+  // Extend the authority weight to hybrid so its FTS half ranks knowledge over chatter; hybrid
+  // still blends semantic via RRF at the merge layer. recency stays pure-recency (rebuild path).
+  const authorityOrder =
+    "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC";
+  const ftsOrderBy = mode === 'relevance' || mode === 'hybrid'
+    ? authorityOrder
     : 'm.timestamp DESC';
   const params: unknown[] = role ? [ftsQuery, role, fetchLimit] : [ftsQuery, fetchLimit];
   const roleFilter = role ? 'AND m.role = ?' : '';
