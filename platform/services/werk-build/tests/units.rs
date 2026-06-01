@@ -1,10 +1,10 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
-    branch_name, discover_build_units_in_tree, extract_cdhash, extract_file_deps, has_build_script,
-    jsonl_line, lib_source_changed, pkg_name, resolve_trace, spine_args, BuildUnit,
+    branch_name, discover_build_units_in_tree, ensure_node_modules, extract_cdhash, extract_file_deps,
+    has_build_script, jsonl_line, lib_source_changed, pkg_name, resolve_trace, spine_args, BuildUnit,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Unique temp dir for a fixture (no tempfile dep; std-only, per ADR-032 §1).
@@ -15,7 +15,7 @@ fn fixture(tag: &str) -> PathBuf {
     p
 }
 
-fn write(root: &PathBuf, rel: &str, body: &str) {
+fn write(root: &Path, rel: &str, body: &str) {
     let p = root.join(rel);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
     fs::write(&p, body).unwrap();
@@ -210,6 +210,34 @@ fn spine_args_builds_chorus_log_argv_for_build_failed() {
     assert!(a.contains(&"disposition=fail".to_string()), "rollup keys on disposition (#3165)");
     assert!(a.contains(&"kind=rust".to_string()));
     assert!(a.contains(&"name=chorus-hooks".to_string()));
+}
+
+// --- #3169: build preamble ensures werk node_modules mirror canonical (symlink-replace partials) ---
+
+#[test]
+fn ensure_node_modules_replaces_partial_with_canonical_symlink() {
+    // The bug: a werk package's node_modules is a stale PARTIAL real dir (missing
+    // @types/node), so in-werk tsc fails. ensure must replace it with a symlink to
+    // canonical's COMPLETE tree, so @types resolves — the keystone for #3174/#3171
+    // (build mcp-server/chorus-hooks in-werk instead of hand-deploying).
+    let root = fixture("ensure-nm");
+    let home = root.join("chorus");
+    let werk = root.join("chorus-werk/silas-3169");
+    // canonical: complete node_modules (has @types/node)
+    write(&home, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
+    fs::create_dir_all(home.join("platform/api/node_modules/@types/node")).unwrap();
+    // werk: same package, but a PARTIAL real node_modules (no @types/node)
+    write(&werk, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
+    fs::create_dir_all(werk.join("platform/api/node_modules")).unwrap();
+
+    let n = ensure_node_modules(werk.to_str().unwrap(), &home);
+    let werk_nm = werk.join("platform/api/node_modules");
+    assert_eq!(n, 1, "relinked exactly the one package");
+    assert!(werk_nm.is_symlink(), "werk node_modules is now a symlink, not the partial real dir");
+    assert!(werk_nm.join("@types/node").exists(), "resolves canonical's @types/node through the symlink");
+
+    // idempotent: a second run is a no-op (already the right symlink)
+    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home), 0, "idempotent — no relink on re-run");
 }
 
 #[test]

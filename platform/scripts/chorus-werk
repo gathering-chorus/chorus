@@ -75,38 +75,16 @@ require_card_id() {
   fi
 }
 
-# Symlink node_modules from canonical into the werk for every npm-managed
-# subdirectory that exists in both. Eliminates the ~30s npm-install tax per
-# add (#2758). Skips silently when canonical has no node_modules at the
-# matching path. Idempotent: existing werk node_modules (file, dir, or
-# symlink) are left alone — bootstrap only fills empty slots.
-#
-# #2913 caveat: a symlink means the werk shares canonical's installed deps.
-# For same-version work that is a clean disk saving; two cards needing
-# different dependency versions would corrupt each other. Resolving that
-# (per-werk install for divergent deps, or a content-addressed store) is
-# left to a follow-on — named in version-control-service-design.html.
-bootstrap_node_modules() {
-  local werk="$1"
-  local pkg_files
-  pkg_files=$(find "$CHORUS_HOME" -name node_modules -prune -o -type f -name package.json -print 2>/dev/null)
-  local pkg
-  while IFS= read -r pkg; do
-    [ -n "$pkg" ] || continue
-    local canonical_dir="${pkg%/package.json}"
-    local rel="${canonical_dir#$CHORUS_HOME/}"
-    [ "$rel" = "$canonical_dir" ] && continue
-    local canonical_nm="$canonical_dir/node_modules"
-    [ -d "$canonical_nm" ] || continue
-    local werk_dir="$werk/$rel"
-    [ -d "$werk_dir" ] || continue
-    local werk_nm="$werk_dir/node_modules"
-    if [ -e "$werk_nm" ] || [ -L "$werk_nm" ]; then
-      continue
-    fi
-    ln -s "$canonical_nm" "$werk_nm" 2>/dev/null || true
-  done <<< "$pkg_files"
-}
+# node_modules bootstrap RETIRED here (#3169). The werk-build preamble
+# (werk_build::ensure_node_modules) is now the SINGLE owner of werk
+# node_modules: it symlinks every werk package's node_modules to canonical's
+# complete tree right before building, REPLACING stale partial real dirs /
+# broken symlinks — which this skip-if-exists one-shot never did (it only
+# filled empty slots, so a partial node_modules left in-werk tsc unable to
+# resolve @types, the merged≠live root for #3174/#3171). One execution path,
+# nothing to drift against (coherence-is-one-execution-path). Skipping the
+# pull-time link costs nothing: no TS runs between pull and the first build,
+# and the build preamble is idempotent + runs every build.
 
 # Emit a spine event, best-effort — never fails the caller.
 emit_spine() {
@@ -187,7 +165,7 @@ cmd_add() {
   git -C "$werk" config user.email "$role@chorus.local"
   git -C "$werk" config user.name "$role"
 
-  bootstrap_node_modules "$werk"
+  # node_modules now ensured by the werk-build preamble (#3169), not here.
 
   emit_spine card.werk.added "$role" "card=$card_id" "branch=$branch" "werk=$werk"
   echo "chorus-werk: added $role-$card_id at $werk (branch $branch)"

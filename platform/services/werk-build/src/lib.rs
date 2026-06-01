@@ -793,6 +793,42 @@ fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, uni
     })
 }
 
+/// #3169 — node_modules ensure (the build preamble, single owner): make every werk
+/// package's node_modules a SYMLINK to canonical's complete tree, replacing a stale
+/// partial real dir or a wrong/broken symlink. Idempotent. The werk never keeps its own
+/// (partial) node_modules — it mirrors canonical, so in-werk tsc resolves @types exactly
+/// like canonical. This is what lets the verbs build mcp-server/chorus-hooks in-werk
+/// instead of being hand-deployed. Returns the count of (re)linked packages.
+/// (Open item flagged on #3169: build_shared_lib's cascade `npm install` fights a
+/// symlinked consumer when chorus-sdk actually changes — rare path, not resolved here.)
+pub fn ensure_node_modules(werk_s: &str, home: &Path) -> usize {
+    let mut linked = 0usize;
+    for pj in find_files(home, "package.json") {
+        let Some(canon_dir) = pj.parent() else { continue };
+        let canon_nm = canon_dir.join("node_modules");
+        if !canon_nm.is_dir() {
+            continue;
+        }
+        let Ok(rel) = canon_dir.strip_prefix(home) else { continue };
+        let werk_nm = Path::new(werk_s).join(rel).join("node_modules");
+        if !werk_nm.parent().map(|p| p.is_dir()).unwrap_or(false) {
+            continue; // package not present in the werk
+        }
+        if fs::read_link(&werk_nm).ok().as_deref() == Some(canon_nm.as_path()) {
+            continue; // already the right symlink — idempotent
+        }
+        if werk_nm.is_symlink() {
+            let _ = fs::remove_file(&werk_nm);
+        } else if werk_nm.exists() {
+            let _ = fs::remove_dir_all(&werk_nm);
+        }
+        if std::os::unix::fs::symlink(&canon_nm, &werk_nm).is_ok() {
+            linked += 1;
+        }
+    }
+    linked
+}
+
 pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     let trace = resolve_trace(card);
     let branch = branch_name(role, card);
@@ -811,6 +847,13 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"branch-mismatch\"");
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
+
+    // #3169 — node_modules ensure (single owner): before building any unit, make every
+    // werk package's node_modules a symlink to canonical's complete tree, so in-werk tsc
+    // resolves @types. Replaces chorus-werk's skip-if-exists bootstrap, which never fixed
+    // a stale partial. Idempotent; runs every build.
+    let nm_linked = ensure_node_modules(&werk_s, home);
+    jsonl(home, role, card, &trace, "node-modules.ensured", &format!(",\"linked\":{}", nm_linked));
 
     // #3132 — STRUCTURAL enumeration: build EVERY unit in the werk (Rust crate + TS
     // package with a build script), NOT a diff-filtered subset. The diff-driven
