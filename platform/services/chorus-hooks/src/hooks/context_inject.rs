@@ -27,7 +27,7 @@ const HYBRID_CACHE_TTL: Duration = Duration::from_secs(30);
 const ATHENA_CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[allow(clippy::type_complexity)]
-static HYBRID_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Vec<(String, String, String)>)>>> =
+static HYBRID_CACHE: LazyLock<Mutex<HashMap<String, (Instant, Vec<(String, String, String, f64)>)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[allow(clippy::type_complexity)]
@@ -87,7 +87,7 @@ fn cached_query_chorus_hybrid(
     keywords: &[String],
     query: &str,
     domain_tag: Option<&str>,
-) -> Vec<(String, String, String)> {
+) -> Vec<(String, String, String, f64)> {
     let mut sorted = keywords.to_vec();
     sorted.sort();
     // #3134: the domain tag is part of the cache identity — same keywords under
@@ -158,7 +158,7 @@ pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
 /// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
 /// Replaces direct SQLite FTS with API call for richer context (233ms measured).
 /// #3134: optional `domain_tag` scopes results to the WIP card's area.
-fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, String, String)> {
+fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, String, String, f64)> {
     let url = build_search_url(query, domain_tag);
 
     let resp = match ureq::get(&url)
@@ -185,8 +185,13 @@ fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, St
             let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let ts = item.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // #3147 — carry the relevance score so ranking is tunable from the log.
+            // RRF (fusion) is primary; semantic is the fallback; 0.0 if neither present.
+            let score = item.get("_rrf_score").and_then(|v| v.as_f64())
+                .or_else(|| item.get("_semantic_score").and_then(|v| v.as_f64()))
+                .unwrap_or(0.0);
             if !content.is_empty() {
-                results.push((role, content, ts));
+                results.push((role, content, ts, score));
             }
         }
     }
@@ -617,12 +622,12 @@ pub struct InjectRequest<'a> {
 pub struct InjectResponse<'a> {
     pub inject_id: &'a str,
     pub role: &'a str,
-    // ranked order; rank = position (score needs plumbing through query_chorus_hybrid — follow-on)
-    pub candidates: &'a [(String, String, String)],
+    // ranked order; rank = position; score = rrf/semantic relevance (#3147 — plumbed through query_chorus_hybrid)
+    pub candidates: &'a [(String, String, String, f64)],
     pub memory_hits: usize,
     pub pulse_present: bool,
     pub spine_events: usize,
-    pub athena_present: bool,
+    pub athena: Option<&'a str>,
     pub log_errors: usize,
     pub assembled_bytes: usize,
     pub elapsed_ms: u64,
@@ -646,9 +651,9 @@ pub fn format_inject_request(ts: &str, r: &InjectRequest) -> String {
 
 pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
     let cands: Vec<serde_json::Value> = r.candidates.iter().enumerate()
-        .map(|(i, (source, content, cts))| {
-            let snippet: String = content.replace('\n', " ").chars().take(120).collect();
-            serde_json::json!({"source": source, "rank": i + 1, "snippet": snippet, "ts": cts})
+        .map(|(i, (source, content, cts, score))| {
+            // #3147 — log the ACTUAL payload (full content), not a 120-char snippet (Jeff: chorus MUST include the actual payload)
+            serde_json::json!({"source": source, "rank": i + 1, "content": content, "ts": cts, "score": score})
         })
         .collect();
     serde_json::json!({
@@ -657,7 +662,7 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
         "inject_id": r.inject_id, "role": r.role,
         "candidates": cands,
         "memory_hits": r.memory_hits, "pulse": r.pulse_present, "spine_events": r.spine_events,
-        "athena": r.athena_present, "log_errors": r.log_errors,
+        "athena": r.athena, "log_errors": r.log_errors,
         "assembled_bytes": r.assembled_bytes, "elapsed_ms": r.elapsed_ms, "drops": r.drops,
     }).to_string()
 }
@@ -793,7 +798,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // locks them), just demoted below the prompt answer.
     if !chorus_results.is_empty() {
         context.push_str(&format!("\nChorus hybrid ({} hits):\n", chorus_results.len()));
-        for (role, content, ts) in &chorus_results {
+        for (role, content, ts, _score) in &chorus_results {
             let short: String = content.replace('\n', " ").chars().take(200).collect();
             let ts_short: String = ts.chars().take(16).collect();
             context.push_str(&format!("  [{}] {} — {}\n", ts_short, role, short));
@@ -860,7 +865,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         // #3147 — response event for the empty path: all six sources dropped.
         emit_inject_response(&InjectResponse {
             inject_id: &inject_id, role: &role_name, candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: manifest_block.len(), elapsed_ms: elapsed,
             drops: &["chorus", "memory", "pulse", "spine", "athena", "logs"],
         });
@@ -873,7 +878,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // Store results in AppState for other hooks to read (#2225). session_id declared
     // at the top (#3147) so the request event can carry it.
     state.store_context_results(session_id, ContextSearchResults {
-        chorus_hits: chorus_results.clone(),
+        chorus_hits: chorus_results.iter().map(|(r, c, t, _)| (r.clone(), c.clone(), t.clone())).collect(),
         memory_hits: memory_hits.clone(),
         query: query.clone(),
         stored_at: chrono::Utc::now().timestamp(),
@@ -906,7 +911,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     emit_inject_response(&InjectResponse {
         inject_id: &inject_id, role: &role_name, candidates: &chorus_results,
         memory_hits: memory_hits.len(), pulse_present: pulse_block.is_some(),
-        spine_events: spine_events.len(), athena_present: athena_block.is_some(),
+        spine_events: spine_events.len(), athena: athena_block.as_deref(),
         log_errors: log_errors.len(), assembled_bytes: out.len(), elapsed_ms: elapsed,
         drops: &drops,
     });
@@ -950,12 +955,12 @@ mod tests {
     #[test]
     fn inject_response_captures_candidates_and_drops() {
         let cands = vec![
-            ("claude".to_string(), "what did you get\nas a chorus-inject".to_string(), "2026-05-30T18:00".to_string()),
-            ("principle".to_string(), "Collaborate with succession".to_string(), "2026-05-26T17:40".to_string()),
+            ("claude".to_string(), "what did you get\nas a chorus-inject".to_string(), "2026-05-30T18:00".to_string(), 0.065),
+            ("principle".to_string(), "Collaborate with succession".to_string(), "2026-05-26T17:40".to_string(), 0.061),
         ];
         let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
             inject_id: "inj-wren-42", role: "wren", candidates: &cands,
-            memory_hits: 5, pulse_present: true, spine_events: 8, athena_present: false,
+            memory_hits: 5, pulse_present: true, spine_events: 8, athena: None,
             log_errors: 0, assembled_bytes: 4876, elapsed_ms: 3278, drops: &["athena", "logs"],
         });
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -963,13 +968,33 @@ mod tests {
         assert_eq!(v["inject_id"], "inj-wren-42");
         assert_eq!(v["candidates"][0]["source"], "claude");
         assert_eq!(v["candidates"][0]["rank"], 1);
-        assert!(v["candidates"][0]["snippet"].as_str().unwrap().contains("what did you get as a chorus-inject"));
+        assert!(v["candidates"][0]["content"].as_str().unwrap().contains("what did you get"));
         assert_eq!(v["candidates"][1]["rank"], 2);
         assert_eq!(v["memory_hits"], 5);
-        assert_eq!(v["athena"], false);
+        assert!(v["athena"].is_null());
         assert_eq!(v["assembled_bytes"], 4876);
         assert_eq!(v["elapsed_ms"], 3278);
         assert_eq!(v["drops"][0], "athena");
+    }
+
+    // #3147 (real scope) — the RESPONSE must carry the relevance SCORE per candidate, not just
+    // rank+snippet. Tuning ranking is the whole point; you can't tune what isn't logged. Today the
+    // candidate tuple is (source, content, ts) with no score, so this is RED until the score is
+    // plumbed through query_chorus_hybrid (the line-620 follow-on). NOTE: this unit test is
+    // scaffolding only — the real bar is a live inject response carrying a real _rrf_score.
+    #[test]
+    fn inject_response_candidate_carries_score() {
+        let cands = vec![
+            ("claude".to_string(), "some content".to_string(), "2026-05-30T18:00".to_string(), 0.065),
+        ];
+        let line = format_inject_response("2026-05-30T18:00:01.000+0000", &InjectResponse {
+            inject_id: "inj-wren-99", role: "wren", candidates: &cands,
+            memory_hits: 1, pulse_present: true, spine_events: 1, athena: None,
+            log_errors: 0, assembled_bytes: 100, elapsed_ms: 10, drops: &[],
+        });
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(v["candidates"][0]["score"].is_number(),
+            "candidate must carry its relevance score (rrf/semantic), not just rank — got: {}", v["candidates"][0]);
     }
 
     // #3147 — request + response are the SAME prompt, paired by inject_id.
@@ -981,7 +1006,7 @@ mod tests {
         });
         let resp = format_inject_response("t", &InjectResponse {
             inject_id: "inj-X", role: "wren", candidates: &[],
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &[],
         });
         let rv: serde_json::Value = serde_json::from_str(&req).unwrap();
@@ -1019,7 +1044,7 @@ mod tests {
         let drops: Vec<&str> = if candidates.is_empty() { vec!["chorus"] } else { vec![] };
         show("RESPONSE", &format_inject_response("2026-05-30T14:50:03.000+0000", &InjectResponse {
             inject_id: id, role: "wren", candidates: &candidates,
-            memory_hits: 0, pulse_present: false, spine_events: 0, athena_present: false,
+            memory_hits: 0, pulse_present: false, spine_events: 0, athena: None,
             log_errors: 0, assembled_bytes: 0, elapsed_ms: 0, drops: &drops,
         }));
     }

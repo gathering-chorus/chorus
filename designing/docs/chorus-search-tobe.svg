@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="940" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
-  <rect width="1260" height="940" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="1110" font-family="-apple-system, Segoe UI, Helvetica, sans-serif">
+  <rect width="1260" height="1110" fill="#ffffff"/>
 
   <text x="40" y="38" font-size="23" font-weight="700" fill="#1a1a1a">Chorus search — TO-BE  (v2: life graph is first-class)</text>
   <text x="40" y="60" font-size="13" fill="#6b7280">One retrieval capability, off the spine, over distinct corpora — spanning <tspan font-weight="700">what the team did</tspan> AND <tspan font-weight="700">what the team works on (your life)</tspan>.</text>
@@ -87,11 +87,18 @@
 
   <!-- worker -> corpus arrows -->
   <g stroke="#cbd5e1" stroke-width="2" fill="none">
-    <path d="M172 350 V464" marker-end="url(#a)"/>
-    <path d="M407 350 V464" marker-end="url(#a)"/>
-    <path d="M646 350 C646 420 1010 430 1010 464" marker-end="url(#a)"/>
-    <path d="M407 350 C407 560 620 565 620 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
-    <path d="M646 350 C646 560 640 565 640 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
+    <!-- lexical → messages (FTS5) -->
+    <path d="M172 350 C172 420 230 430 230 464" marker-end="url(#a)"/>
+    <!-- semantic → memory (LanceDB — the semantic corpus) -->
+    <path d="M390 350 C390 420 620 430 620 464" marker-end="url(#a)"/>
+    <!-- semantic → knowledge (knowledge is structured + semantic) -->
+    <path d="M450 350 C450 405 990 415 990 464" marker-end="url(#a)"/>
+    <!-- structured → knowledge -->
+    <path d="M660 350 C660 418 1040 428 1040 464" marker-end="url(#a)"/>
+    <!-- semantic → Gathering life-graph (embedded; dashed) -->
+    <path d="M407 350 C407 560 600 565 600 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
+    <!-- structured → Gathering life-graph (facts; dashed) -->
+    <path d="M646 350 C646 560 670 565 670 580" marker-end="url(#a)" stroke-dasharray="4 3"/>
   </g>
 
   <!-- ============ footer ============ -->
@@ -105,5 +112,28 @@
   <text x="40" y="816" font-size="12" fill="#475569">• <tspan font-weight="700">Warm-cached context</tspan> — context_inject reads a background-refreshed cache, not a sync per-prompt search.</text>
 
   <text x="40" y="846" font-size="11.5" fill="#94a3b8">Open: (1) own process vs worker-pool? (2) embed the life graph into the semantic space, or keep a distinct structured path? (3) who owns the service — jeff (model) or wren?</text>
-  <text x="40" y="866" font-size="10.5" fill="#cbd5e1">first run v2 — drawn to be argued with. Wren · 2026-05-24</text>
+  <text x="40" y="866" font-size="10.5" fill="#cbd5e1">first run v2 — drawn to be argued with. Wren · 2026-05-24 · revised 2026-06-01 (domain-architect pass)</text>
+
+  <!-- ============ ADDED 2026-06-01: the two pieces the to-be NAMES but doesn't GATE ============ -->
+  <rect x="40" y="888" width="1180" height="200" rx="10" fill="#fdf4ff" stroke="#a21caf" stroke-width="2"/>
+  <text x="58" y="912" font-size="14" font-weight="800" fill="#86198f">Added 2026-06-01 — two gates the to-be left implicit</text>
+
+  <!-- (1) projection / ingest contract -->
+  <text x="58" y="938" font-size="12.5" font-weight="700" fill="#1a1a1a">① Projection / ingest contract — how knowledge ENTERS a corpus (the gap behind "heidegger = 0")</text>
+  <rect x="58" y="948" width="296" height="48" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="73" y="968" font-size="11" fill="#334155" font-weight="600">knowledge sources</text>
+  <text x="73" y="984" font-size="9.5" fill="#64748b">About · design docs · research · Gathering content</text>
+  <line x1="354" y1="972" x2="402" y2="972" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="404" y="948" width="296" height="48" rx="6" fill="#fce7f3" stroke="#db2777" stroke-width="1.6"/>
+  <text x="419" y="968" font-size="11" font-weight="700" fill="#9d174d">doc-catalog / ICD gate</text>
+  <text x="419" y="984" font-size="9.5" fill="#be185d">registered → projected → retrievable; else invisible</text>
+  <line x1="700" y1="972" x2="748" y2="972" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="750" y="948" width="300" height="48" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="765" y="968" font-size="11" fill="#334155" font-weight="600">feeds chorus:knowledge / memory / life-graph</text>
+  <text x="765" y="984" font-size="9.5" fill="#64748b">same shape as the existing ICD harvester gate</text>
+  <text x="58" y="1016" font-size="11" font-weight="600" fill="#b91c1c">Today About docs are unprojected → "heidegger" returns 0. A MISSING PROJECTION, not a ranking bug.</text>
+
+  <!-- (2) authority ranking -->
+  <text x="58" y="1044" font-size="12.5" font-weight="700" fill="#1a1a1a">② Authority ranking — refines the "honest integration" note above</text>
+  <text x="58" y="1066" font-size="11" fill="#334155">Within a class (don't blend scales — the to-be already says that), rank <tspan font-weight="700">authority &#215; relevance</tspan>: a doc / decision / principle outranks chatter <tspan font-style="italic">about</tspan> it, so volume can't drown knowledge. (The 5&#215; "check the heidegger research" echo is exactly this gap.)</text>
 </svg>

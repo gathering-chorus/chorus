@@ -32,7 +32,13 @@ export function runFtsQueryOnDb(
 ): unknown[] {
   const ftsQuery = toFtsMatchQuery(q);
   if (!ftsQuery) return []; // no word tokens — nothing to match, never scan
-  const ftsOrderBy = mode === 'relevance' ? 'bm25(messages_fts) ASC' : 'm.timestamp DESC';
+  // #3147 (Wren · search relevance) — AUTHORITY weight. Plain bm25 lets dense session
+  // chatter outrank authoritative docs/decisions/memory (proven: "heidegger" returned 5×
+  // "check the research" chatter, burying the Versammlung research doc + DEC-031). Penalize
+  // chatter sources so knowledge surfaces. Verified on the live index before landing.
+  const ftsOrderBy = mode === 'relevance'
+    ? "bm25(messages_fts) + CASE m.source WHEN 'claude' THEN 8.0 WHEN 'clearing' THEN 8.0 WHEN 'slack' THEN 4.0 ELSE 0 END ASC"
+    : 'm.timestamp DESC';
   const params: unknown[] = role ? [ftsQuery, role, fetchLimit] : [ftsQuery, fetchLimit];
   const roleFilter = role ? 'AND m.role = ?' : '';
   try {
