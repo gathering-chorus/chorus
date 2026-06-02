@@ -1,12 +1,12 @@
 {
   "counts": {
     "platform/services/chorus-hooks": {
-      "clippy::cognitive_complexity": 52,
-      "clippy::collapsible_str_replace": 4,
-      "clippy::new_without_default": 2
+      "clippy::cognitive_complexity": 32,
+      "clippy::new_without_default": 2,
+      "clippy::unnecessary_sort_by": 4
     },
     "platform/services/chorus-inject": {}
   },
-  "generatedAt": "2026-05-02T00:08:36Z",
+  "generatedAt": "2026-06-02T17:25:38Z",
   "note": "Per-lint cargo clippy count ratchet (#2532). Counts may only decrease. Run `platform/scripts/clippy-ratchet.sh --regenerate` after a legitimate drop. Retired by Phase 1 disconnect (#2526)."
 }

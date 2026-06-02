@@ -7,6 +7,12 @@
 # workflow-engine) are gated by path-presence and no-op in this repo.
 set -euo pipefail
 
+# #3187: werk-commit runs this hook from the chorus-api daemon, whose PATH lacks
+# ~/.cargo/bin → `cargo` not found → clippy-ratchet + cargo-test crash (daemon-PATH
+# class, sibling of #3183). Make the hook self-sufficient about its Rust toolchain.
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+case ":$PATH:" in *":$HOME/.cargo/bin:"*) ;; *) export PATH="$HOME/.cargo/bin:$PATH" ;; esac
+
 # Block commits that bypass git-queue.sh
 if [ ! -f "$(git rev-parse --show-toplevel)/.git-commit.meta" ] && [ -z "${_GIT_QUEUE_INTERNAL:-}" ]; then
   echo "pre-commit: 🔴 blocked — all commits must go through git-queue.sh"

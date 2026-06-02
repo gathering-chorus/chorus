@@ -5,7 +5,7 @@
   "_versioning_rule": "_build is a monotonic integer that bumps on protocol changes (CLAUDE.md fragments, scripts, manifest schema, boot sequence, hooks, spine events). It is NOT a human-facing version string and must never be rendered as 'Werk v<N>'. The only source for 'Werk v' render is designing/claudemd/PROTOCOL_VERSION. DEC-036, DEC-065, #2311.",
   "changelog": [
     {
-      "version": "471",
+      "version": "472",
       "card": "#auto",
       "date": "2026-04-17",
       "summary": "Auto-bump: fragment or variable changes detected"

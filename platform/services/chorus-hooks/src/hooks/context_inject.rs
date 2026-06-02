@@ -67,8 +67,19 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     // dropped by sentence position (the bug: "...about cults" kept ok/jeff/test, dropped "cults").
     // Cheap proxy for significance: length (longer ~= more specific/content-bearing). Stable sort.
     keywords.sort_by(|a, b| b.len().cmp(&a.len()));
-    keywords.truncate(6); // Max 6 keywords
+    keywords.truncate(6); // Max 6 keywords (memory scan uses the full set)
     keywords
+}
+
+/// #3187 - the chorus search ANDs every keyword (FTS5: space = implicit AND), so a
+/// 6-keyword query collapses to 0 when no single doc contains all of them - and one
+/// typo (e.g. "doamins") zeroes it outright (RCA: designing/docs/context-inject-rca.html).
+/// The MEMORY scan keeps the full keyword set; ONLY the chorus query is capped to the
+/// top-N most-significant terms (keywords arrive significance-sorted from extract_keywords).
+/// Top-2: two ANDed significant terms still match broadly (empirically ~100 vs 0 at 6),
+/// and a typo in a lower-ranked slot never reaches the AND.
+fn search_query(keywords: &[String]) -> String {
+    keywords.iter().take(2).cloned().collect::<Vec<_>>().join(" ")
 }
 
 /// Return true when /tmp/pulse-latest.json is missing or older than the
@@ -199,6 +210,18 @@ fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, St
             }
         }
     }
+
+    // #3187 (AC3) — log the RAW search-response shape, not just the parsed candidates,
+    // so a future debug can tell "search returned 0" from "returned N but parse kept 0"
+    // (the exact gap the RCA hit: the drop was logged, the raw payload was not).
+    let raw_count = body.get("results").and_then(|r| r.as_array()).map(|a| a.len()).unwrap_or(0);
+    let total = body.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+    emit_inject_event(&format!(
+        "{{\"ts\":\"{}\",\"event\":\"context.inject.chorus.raw\",\"q\":{},\"raw_results\":{},\"total\":{},\"parsed\":{}}}",
+        chrono::Utc::now().to_rfc3339(),
+        serde_json::to_string(query).unwrap_or_else(|_| String::from("\"\"")),
+        raw_count, total, results.len()
+    ));
 
     results
 }
@@ -716,7 +739,9 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     }
 
     let role_name = format!("{:?}", input.role()).to_lowercase();
-    let query = keywords.join(" ");
+    // #3187: chorus search query is the top-2 significant keywords (the search ANDs
+    // them), NOT all 6 - which over-constrained to 0. Memory below uses the full set.
+    let query = search_query(&keywords);
 
     // #3147 — one inject_id spans this prompt's request + response events (the pairing
     // key). Minted inline now; migrates to the span Kade's emit_request() will return.
@@ -1133,6 +1158,19 @@ mod tests {
         let kw = extract_keywords("ok a jeff test - have i ever talked with the team about cults");
         assert!(kw.contains(&"cults".to_string()), "subject must survive the cap; got: {:?}", kw);
         assert!(!kw.contains(&"ok".to_string()), "short filler should be evicted first; got: {:?}", kw);
+    }
+
+    // #3187 - the chorus search ANDs keywords; sending all 6 over-constrained to 0
+    // (one typo, e.g. "doamins", zeroed it). The chorus query is now the top-2
+    // significant terms only; the memory scan still uses the full keyword set.
+    // RED before search_query() exists.
+    #[test]
+    fn chorus_query_caps_to_top_two_and_excludes_typo() {
+        let kws: Vec<String> = ["instances", "products", "doamins", "domains", "child", "know"]
+            .iter().map(|s| s.to_string()).collect();
+        let q = search_query(&kws);
+        assert_eq!(q, "instances products", "chorus query must be the top-2 significant terms");
+        assert!(!q.contains("doamins"), "the lower-ranked typo must not reach the AND'd chorus query");
     }
 
     #[test]
