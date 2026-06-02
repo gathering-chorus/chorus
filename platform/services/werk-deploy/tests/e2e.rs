@@ -255,3 +255,37 @@ fn e2e_shared_lib_cascade_and_anti_stale() {
     std::env::remove_var("CHORUS_HOME");
     std::env::remove_var("SL_LIB_CONTENT");
 }
+
+// #3186 AC4 — the refuse-if-stale guard. A canonical (prod) deploy from a werk that is
+// behind origin/main must REFUSE before it builds — building from a stale tree would
+// revert a peer's merged change live (the #3182 failure mode). The guard fires before
+// the lock/build, so no PATH shims are needed. Demo (target=werk) is intentionally NOT
+// guarded (canonical-only, like the cdhash guard) — a stale role slot is isolated.
+#[test]
+fn canonical_deploy_refuses_a_stale_werk() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
+    let origin = tmp("dsorigin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+
+    let home = tmp("dshome");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("dswerk");
+    let werk = werk_base.join("silas-7301");
+    git(&home, &["worktree", "add", "-q", "-b", "silas/7301", werk.to_str().unwrap(), "origin/main"]);
+
+    // a peer advances origin/main AFTER the werk was created -> the werk is now behind.
+    fs::write(origin.join("peer.txt"), "peer").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer moved main"]);
+
+    let e = deploy(7301, "silas", "canonical", &home, &werk_base).expect_err("stale werk must be refused");
+    assert!(e.contains("werk-stale"), "typed werk-stale refusal, got: {}", e);
+    assert!(e.contains("behind"), "names how far behind origin/main: {}", e);
+}

@@ -539,6 +539,30 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
 
+    // #3186 — refuse-if-stale guard (defense-in-depth for the residual commit->deploy
+    // window). werk-commit (#3186) rebases the werk onto current origin/main, so a deploy
+    // normally sees a current werk BY CONSTRUCTION. But if a peer merged between commit and
+    // this deploy — or the commit-time fetch failed — the werk is behind origin/main and a
+    // build from it would ship a stale tree that REVERTS the peer's merged change (the #3182
+    // failure mode). Canonical (prod) ONLY: a stale werk in the role's own demo slot is
+    // isolated, not a live revert (mirrors the canonical-only cdhash guard below). Refuse —
+    // re-commit (werk-commit rebases onto current main) then re-demo before deploy.
+    if target == "canonical" {
+        let _ = run_env(Some(&werk_s), &[], "git", &["-C", &werk_s, "fetch", "-q", "origin", "main"]);
+        let behind = run_env(Some(&werk_s), &[], "git", &["-C", &werk_s, "rev-list", "--count", "HEAD..origin/main"])
+            .unwrap_or_default()
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(0);
+        if behind > 0 {
+            jsonl(home, role, card, &trace, "deploy.refused", ",\"reason\":\"werk-stale\"");
+            return Err(format!(
+                "werk-stale: #{} werk is {} commit(s) behind origin/main — a build from it would revert merged peer work (the #3182 class). Re-commit (werk-commit rebases onto current main) then re-demo before deploy.",
+                card, behind
+            ));
+        }
+    }
+
     // serialize all system mutation under one lock.
     let _lock = lock(&werk, Duration::from_secs(180))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");

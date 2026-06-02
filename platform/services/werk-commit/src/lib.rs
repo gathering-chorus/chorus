@@ -18,7 +18,13 @@
 //! file pathspec dance (#3053 was a shared-werk relic), and untracked NEW files
 //! are staged too (the #3085 gap).
 //!
-//! - Lock: one flock around the canonical-touching git steps (add + commit).
+//! #3186 — rebase-or-refuse: before the commit lands, the werk is rebased onto
+//! CURRENT origin/main (fetched first), closing the pull->commit staleness window.
+//! Everything downstream (push/merge/build/deploy) then operates on a current base
+//! BY CONSTRUCTION. all-or-nothing: a rebase conflict aborts and refuses cleanly
+//! (typed `rebase-conflict`, werk preserved) rather than landing on a stale base.
+//!
+//! - Lock: one flock around the canonical-touching git steps (add + commit + rebase).
 //! - No rollback step: add + commit is atomic (a failed pre-commit gate leaves
 //!   staged changes but no commit; a re-run is idempotent). Nothing fragile follows.
 //! - JSONL log per step: best-effort, NEVER affects the operation (not transactional).
@@ -112,6 +118,42 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
     run_in_env(dir, cmd, args, &[])
 }
 
+/// #3186 — the rebase-or-refuse invariant. Rebase the card's commit(s) onto the
+/// CURRENT origin/main, closing the pull->commit staleness window so push / merge
+/// / build / deploy all operate on a current base BY CONSTRUCTION. all-or-nothing:
+/// a no-op when already current (behind == 0), and on conflict `git rebase --abort`
+/// restores the branch EXACTLY to its pre-rebase state (the card commit is
+/// preserved) before returning a typed `rebase-conflict` refusal — never a
+/// swallowed half-merge. (origin/main must already be fetched-current by the caller.)
+fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, trace: &str) -> R<()> {
+    let behind = run_in(werk_s, "git", &["rev-list", "--count", "HEAD..origin/main"])
+        .unwrap_or_default()
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0);
+    if behind == 0 {
+        return Ok(()); // already on current origin/main — nothing to rebase.
+    }
+    jsonl(home, role, card, trace, "rebase.started", &format!(",\"behind\":{}", behind));
+    // sentinel set defensively in case any commit-path hook fires during replay.
+    match run_in_env(werk_s, "git", &["rebase", "origin/main"], &[("_GIT_QUEUE_INTERNAL", "1")]) {
+        Ok(_) => {
+            jsonl(home, role, card, trace, "rebase.done", &format!(",\"onto\":\"origin/main\",\"behind\":{}", behind));
+            Ok(())
+        }
+        Err(e) => {
+            // restore the branch to its pre-rebase state — werk untouched, work kept.
+            let _ = run_in(werk_s, "git", &["rebase", "--abort"]);
+            jsonl(home, role, card, trace, "rebase.refused", ",\"reason\":\"rebase-conflict\"");
+            Err(format!(
+                "rebase-conflict: #{} conflicts with current origin/main — resolve and re-run \
+                 (werk restored, commit preserved): {}",
+                card, e
+            ))
+        }
+    }
+}
+
 /// flock guard — auto-releases on drop (and on process exit/crash, kernel-level).
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
@@ -184,18 +226,23 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
         return Err(format!("werk is on '{}', not '{}' — refusing to commit", cur, branch));
     }
 
-    // idempotent: clean tree already ahead of origin/main -> already committed.
+    // #3186: refresh origin/main so the rebase below targets CURRENT main, not the
+    // stale pull-time ref. Best-effort — a LOCAL commit should not hard-require the
+    // network; if fetch fails we rebase onto the freshest known main and the
+    // downstream refuse-if-stale guard (werk-deploy / werk-merge) is the backstop.
+    if run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]).is_err() {
+        jsonl(home, role, card, &trace, "fetch.warn", ",\"reason\":\"fetch-failed\"");
+    }
+
     let dirty = !run_in(&werk_s, "git", &["status", "--porcelain"])?.trim().is_empty();
     let ahead = run_in(&werk_s, "git", &["rev-list", "--count", "origin/main..HEAD"])
         .unwrap_or_default()
         .trim()
         .parse::<u64>()
         .unwrap_or(0);
-    if !dirty && ahead > 0 {
-        let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
-        jsonl(home, role, card, &trace, "commit.idempotent", &format!(",\"sha\":\"{}\"", sha));
-        return Ok(sha);
-    }
+    // Nothing to commit AND nothing already committed -> genuine no-op. (A clean werk
+    // that is merely BEHIND has no card work to preserve, so there is nothing to
+    // rebase either — the next real commit rebases it.)
     if !dirty && ahead == 0 {
         return Err(format!("#{}: nothing to commit (werk clean, no commits ahead of origin/main)", card));
     }
@@ -203,27 +250,38 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
     let msg = commit_message(role, card, summary);
 
     // --- canonical-touching steps, serialized under one flock ---
+    // Both the commit (if dirty) and the rebase-onto-current-main run under the same
+    // lock. The idempotent case (clean + already-ahead) skips the commit but STILL
+    // rebases — so re-running werk-commit on a now-stale already-committed werk brings
+    // it current (the rebase-or-refuse invariant is unconditional, not only-on-fresh-work).
     {
         let _lock = lock(home, Duration::from_secs(30))?;
         jsonl(home, role, card, &trace, "lock.acquired", "");
 
-        // ephemeral per-card werk => `add -A` stages EXACTLY this card's changes
-        // (gitignore filters dist/node_modules); untracked NEW files included (#3085).
-        run_in(&werk_s, "git", &["add", "-A"])?;
-        jsonl(home, role, card, &trace, "staged", "");
+        if dirty {
+            // ephemeral per-card werk => `add -A` stages EXACTLY this card's changes
+            // (gitignore filters dist/node_modules); untracked NEW files included (#3085).
+            run_in(&werk_s, "git", &["add", "-A"])?;
+            jsonl(home, role, card, &trace, "staged", "");
 
-        // commit runs the pre-commit hook (the quality gate). #2936: only a non-zero
-        // exit is a failure — `run_in_env` returns Err only on non-zero, so a green
-        // hook with warnings on stdout is success, never misread as commit-fail.
-        //
-        // _GIT_QUEUE_INTERNAL=1 is the sanctioned-committer sentinel (mirrors
-        // git-queue.sh:301): the pre-commit hook blocks any commit lacking it ("all
-        // commits must go through git-queue.sh"). werk-commit is git-queue.sh's v2
-        // peer, so it sets the sentinel — every quality gate still runs, only the
-        // bypass-block is satisfied. (Found by the #3047 pull->commit integration test.)
-        run_in_env(&werk_s, "git", &["commit", "-m", &msg], &[("_GIT_QUEUE_INTERNAL", "1")])
-            .map_err(|e| format!("commit failed (pre-commit gate?): {}", e))?;
-        jsonl(home, role, card, &trace, "committed", "");
+            // commit runs the pre-commit hook (the quality gate). #2936: only a non-zero
+            // exit is a failure — `run_in_env` returns Err only on non-zero, so a green
+            // hook with warnings on stdout is success, never misread as commit-fail.
+            //
+            // _GIT_QUEUE_INTERNAL=1 is the sanctioned-committer sentinel (mirrors
+            // git-queue.sh:301): the pre-commit hook blocks any commit lacking it ("all
+            // commits must go through git-queue.sh"). werk-commit is git-queue.sh's v2
+            // peer, so it sets the sentinel — every quality gate still runs, only the
+            // bypass-block is satisfied. (Found by the #3047 pull->commit integration test.)
+            run_in_env(&werk_s, "git", &["commit", "-m", &msg], &[("_GIT_QUEUE_INTERNAL", "1")])
+                .map_err(|e| format!("commit failed (pre-commit gate?): {}", e))?;
+            jsonl(home, role, card, &trace, "committed", "");
+        }
+
+        // #3186 — close the pull->commit staleness window: rebase the card's commit(s)
+        // onto current origin/main. all-or-nothing — conflict aborts cleanly and refuses
+        // (werk preserved). This makes everything downstream current by construction.
+        rebase_onto_origin_main(&werk_s, home, role, card, &trace)?;
     } // flock released
 
     // Commit only — the atomic verb stops here. The commit is LOCAL: not pushed,
@@ -231,10 +289,6 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
     // gap is the point of the split — "committed but not pushed" is now a distinct,
     // visible state, not hidden inside a fused commit+push. Pushing + the
     // chorus/push gh status is the separate werk-push verb.
-    //
-    // No rollback needed: `git add -A` + `git commit` is atomic — a failed
-    // pre-commit gate leaves staged changes but no commit, and a re-run is
-    // idempotent (the clean-and-ahead branch above). Nothing fragile follows.
     let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
     jsonl(home, role, card, &trace, "commit.completed", &format!(",\"sha\":\"{}\"", sha));
     Ok(sha)
