@@ -22,6 +22,7 @@ Phase 1 disconnect (#2526) will retire. Build-then-retire matches the AC at
 import json
 import os
 import subprocess
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -41,8 +42,9 @@ def collect_counts(crate: str) -> dict[str, int]:
         print(f"clippy-ratchet: missing crate dir {crate_dir}", file=sys.stderr)
         sys.exit(3)
     try:
+        cargo = shutil.which("cargo") or os.path.expanduser("~/.cargo/bin/cargo")  # #3187: resolve absolutely
         proc = subprocess.run(
-            ["cargo", "clippy", "--all-targets", "--message-format=json"],
+            [cargo, "clippy", "--all-targets", "--message-format=json"],
             cwd=crate_dir,
             capture_output=True,
             text=True,
