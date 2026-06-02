@@ -789,35 +789,20 @@ async fn user_prompt_submit(
     // Merge all stderr signals: classifier + context injection + autonomy guard
     let guard_result = hooks::autonomy_guard::check(&input, &state).await;
 
-    // Context synthesis goes FIRST so it's visible, not buried (#2225)
-    let mut stderr_parts: Vec<String> = Vec::new();
-    if let Some(ref msg) = context_result.stderr {
-        stderr_parts.push(msg.clone());
-    }
-    if let Some(ref msg) = clock_result.stderr {
-        stderr_parts.push(msg.clone());
-    }
-    if let Some(ref msg) = classifier_result.stderr {
-        stderr_parts.push(msg.clone());
-    }
-    if let Some(ref msg) = guard_result.stderr {
-        stderr_parts.push(msg.clone());
-    }
-    if let Some(ref msg) = pattern_signal {
-        stderr_parts.push(msg.clone());
-    }
-
-    let merged_stderr = if stderr_parts.is_empty() {
-        None
-    } else {
-        Some(stderr_parts.join("\n"))
-    };
-
-    Json(HookResponse {
-        stdout: guard_result.stdout,
-        stderr: merged_stderr,
-        exit_code: guard_result.exit_code,
-    })
+    // #3191 — route the assembled context block to stdout (it INJECTS via
+    // additionalContext), ephemeral warnings to stderr. Pure builder in context_inject,
+    // unit-tested in tests/prompt_response_3191.rs.
+    Json(hooks::context_inject::build_user_prompt_response(
+        context_result.stderr.as_deref(),
+        guard_result.stdout.as_deref(),
+        guard_result.exit_code,
+        &[
+            clock_result.stderr.as_deref(),
+            classifier_result.stderr.as_deref(),
+            guard_result.stderr.as_deref(),
+            pattern_signal.as_deref(),
+        ],
+    ))
 }
 
 /// Stop hook — autonomy guard (permission-seeking scan)
