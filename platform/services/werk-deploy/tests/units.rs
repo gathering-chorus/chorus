@@ -1,7 +1,8 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
-    branch_name, crate_binaries, crate_binary, extract_running_cdhash, parse_build_summary,
-    parse_target, resolve_trace, service_for_crate, target_class_in, TargetClass,
+    branch_name, chorus_bin_install_cmd, crate_binaries, crate_binary, extract_running_cdhash,
+    parse_build_summary, parse_target, resolve_trace, service_for_crate, target_class_in,
+    TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -247,4 +248,43 @@ fn resolve_trace_prefers_env_then_persists() {
     assert!(!t1.is_empty());
     assert_eq!(t1, resolve_trace(card), "trace persists so the chain threads");
     let _ = std::fs::remove_file(&p);
+}
+
+/// #3192 — chorus-bin-install is a script in platform/scripts, NOT a deployed binary,
+/// so it is absent from the werk PATH (~/.chorus/bin + role bin-slots). Spawning it by
+/// bare name ENOENTs and breaks every canonical deploy. The resolver must return an
+/// ABSOLUTE path, sourced from canonical (main) first so a card's branch can't redefine
+/// how installs happen.
+fn cbi_dir(tag: &str) -> PathBuf {
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    std::env::temp_dir().join(format!("wd-cbi-{}-{}-{}", tag, std::process::id(), nanos))
+}
+
+#[test]
+fn chorus_bin_install_resolves_absolute_canonical_first() {
+    std::env::remove_var("CHORUS_BIN_INSTALL");
+    let home = cbi_dir("home");
+    let werk = cbi_dir("werk");
+    // Both roots carry the script; canonical (home) must win.
+    let home_script = home.join("platform/scripts/chorus-bin-install");
+    let werk_script = werk.join("platform/scripts/chorus-bin-install");
+    fs::create_dir_all(home_script.parent().unwrap()).unwrap();
+    fs::create_dir_all(werk_script.parent().unwrap()).unwrap();
+    fs::write(&home_script, "#!/bin/sh\n").unwrap();
+    fs::write(&werk_script, "#!/bin/sh\n").unwrap();
+
+    let got = chorus_bin_install_cmd(&home, werk.to_str().unwrap());
+    assert_eq!(got, home_script.to_string_lossy(), "canonical platform/scripts wins, absolute");
+}
+
+#[test]
+fn chorus_bin_install_falls_back_to_bare_when_absent() {
+    std::env::remove_var("CHORUS_BIN_INSTALL");
+    // Neither root has the script → bare name, so PATH-shimmed e2e tests still resolve.
+    let home = cbi_dir("h-absent");
+    let werk = cbi_dir("w-absent");
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&werk).unwrap();
+    let got = chorus_bin_install_cmd(&home, werk.to_str().unwrap());
+    assert_eq!(got, "chorus-bin-install", "bare-name fallback preserves the test shim path");
 }
