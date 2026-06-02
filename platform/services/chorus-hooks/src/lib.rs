@@ -34,6 +34,9 @@ pub use hooks::session_init_gate;
 pub use hooks::context_inject::build_search_url;
 // #3134 — expose the spine-line formatter for its observability test.
 pub use hooks::context_inject::format_spine_line;
+// #3191 — expose the pure UserPromptSubmit response router for its delivery test
+// (tests/prompt_response_3191.rs): context block → stdout additionalContext, warnings → stderr.
+pub use hooks::context_inject::build_user_prompt_response;
 pub use state::AppState;
 pub use types::HookInput;
 // #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every

@@ -170,6 +170,54 @@ pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
     url
 }
 
+/// #3191 — build the UserPromptSubmit hook response so the assembled context block
+/// INJECTS into the model. For UserPromptSubmit the harness reads stdout
+/// `hookSpecificOutput.additionalContext` (the path SessionStart uses); stderr (exit 0)
+/// is shown to the user but never reaches the model. #2225 put the synthesis on stderr
+/// "so it's visible" — visible only to the user. Route the block to stdout as
+/// additionalContext; keep ephemeral warnings (clock/classifier/guard/pattern) on stderr.
+///
+/// Pure (no AppState/async/HTTP) so the stdout-vs-stderr routing is unit-testable.
+pub fn build_user_prompt_response(
+    context_block: Option<&str>,
+    guard_stdout: Option<&str>,
+    guard_exit_code: i32,
+    stderr_signals: &[Option<&str>],
+) -> HookResponse {
+    let stdout = match (context_block, guard_stdout) {
+        // Normal prompt-submit path: autonomy_guard returns allow() (stdout free) —
+        // inject the context block as additionalContext.
+        (Some(block), None) => Some(
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": block,
+                }
+            })
+            .to_string(),
+        ),
+        // A guard decision already owns stdout (permission JSON) — don't clobber it.
+        (_, Some(g)) => Some(g.to_string()),
+        (None, None) => None,
+    };
+
+    let parts: Vec<String> = stderr_signals
+        .iter()
+        .filter_map(|s| s.map(|x| x.to_string()))
+        .collect();
+    let stderr = if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    };
+
+    HookResponse {
+        stdout,
+        stderr,
+        exit_code: guard_exit_code,
+    }
+}
+
 /// Query Chorus API hybrid search — FTS + semantic + SPARQL via RRF (#2003)
 /// Replaces direct SQLite FTS with API call for richer context (233ms measured).
 /// #3134: optional `domain_tag` scopes results to the WIP card's area.
