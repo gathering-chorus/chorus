@@ -370,6 +370,29 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
+/// #3192 — resolve `chorus-bin-install` to an ABSOLUTE path; never rely on PATH.
+/// werk-deploy runs under the werk PATH (`~/.chorus/bin` + role bin-slots), which does
+/// NOT include `platform/scripts/`, so spawning the helper by bare name ENOENTs and
+/// breaks every canonical deploy (the same bare-PATH class as #3151). Resolution order:
+/// explicit `CHORUS_BIN_INSTALL` override → canonical (`home`)/platform/scripts →
+/// werk/platform/scripts → bare name. Canonical is tried before the werk so a card's own
+/// branch cannot redefine how installs happen; the bare-name tail lets PATH-shimmed tests
+/// resolve their shim when no real `platform/scripts` is present.
+pub fn chorus_bin_install_cmd(home: &Path, werk_s: &str) -> String {
+    if let Ok(p) = env::var("CHORUS_BIN_INSTALL") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
+    for root in [home.to_string_lossy().to_string(), werk_s.to_string()] {
+        let cand = format!("{}/platform/scripts/chorus-bin-install", root);
+        if Path::new(&cand).exists() {
+            return cand;
+        }
+    }
+    "chorus-bin-install".to_string()
+}
+
 fn run_env(dir: Option<&str>, envs: &[(&str, &str)], cmd: &str, args: &[&str]) -> R<String> {
     let mut c = Command::new(cmd);
     c.args(args);
@@ -679,9 +702,10 @@ fn deploy_rust_service(
         }
     }
 
+    let cbi = chorus_bin_install_cmd(home, werk_s);
     for (b, _) in &bins {
         if let Err(e) = run_env(
-            Some(werk_s), &[("CHORUS_ROLE", role)], "chorus-bin-install",
+            Some(werk_s), &[("CHORUS_ROLE", role)], &cbi,
             &["--target", target, &built_path(b), b],
         ) {
             rollback(home, werk_s, role, card, trace, target, b, "install-fail");
@@ -915,7 +939,7 @@ fn deploy_cli_verb(
     if let Err(e) = run_env(
         Some(werk_s),
         &[("CHORUS_ROLE", role)],
-        "chorus-bin-install",
+        &chorus_bin_install_cmd(home, werk_s),
         &["--target", target, &built_path, &install_bin_name],
     ) {
         rollback(home, werk_s, role, card, trace, target, bin, "install-fail");
@@ -1367,7 +1391,7 @@ fn register_gh(werk_s: &str, card: u64, role: &str, trace: &str, crate_name: &st
 #[allow(clippy::too_many_arguments)]
 fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, target: &str, bin: &str, reason: &str) {
     jsonl(home, role, card, trace, "deploy.rolledback", &format!(",\"reason\":\"{}\",\"target\":\"{}\"", reason, target));
-    let _ = run_env(Some(werk_s), &[("CHORUS_ROLE", role)], "chorus-bin-install", &["--target", target, "--rollback", bin]);
+    let _ = run_env(Some(werk_s), &[("CHORUS_ROLE", role)], &chorus_bin_install_cmd(home, werk_s), &["--target", target, "--rollback", bin]);
     if target == "canonical" {
         let svc = service_for_crate(bin);
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
