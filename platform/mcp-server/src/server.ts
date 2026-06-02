@@ -178,13 +178,13 @@ const CommitInput = z.object({
   summary: z.string().min(1).optional().describe('Optional short summary; werk-commit formats the message as "<role>: #<card> — <summary>".'),
 }).strict();
 
-// #2750 slice 2 — chorus_acp atomic transaction input.
-// #2868 — card_id is now an optional intent-assertion. When present, the
-// MCP refuses with `card-mismatch` if the branch-derived card_id differs.
-// When absent, derivation is identical to today (branch first, board fallback).
+// #3176 — chorus_acp input (thin skin over the rust werk-acp verb). `role` is the
+// BUILDER (werk location); the ACCEPTER is the calling identity (getCallerRole).
+// card_id is now REQUIRED — werk-acp takes it explicit; the v1 branch-derivation
+// (#2868) is retired with the shared-HEAD class it depended on.
 const AcpInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Card derived from branch then board if card_id absent.'),
-  card_id: z.number().int().min(1).optional().describe('Optional intent assertion (#2868). When present, MCP refuses if branch-derived card_id differs.'),
+  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being accepted.'),
+  card_id: z.number().int().positive().describe('Card ID to accept end-to-end.'),
 }).strict();
 
 // #2751 — chorus_pull_card atomic transaction input. Role + explicit card_id;
@@ -856,22 +856,22 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
 const ACP_TOOL_DEF = {
   name: 'chorus_acp',
   description:
-    'Use this to accept the current WIP card end-to-end. Service derives card_id from HEAD branch (`<role>/<card-id>`) with board fallback, then runs verify-after sequenced steps with typed refusal at each step: commit + push, PR open/merge, werk-close, cards-done, spine event, release-trigger. Idempotent on re-run. Returns { role, card_id, sha, pr_url, branch_closed }. Refusal taxonomy: card-mismatch | hook-fail | commit-fail | push-conflict | push-fail | pr-create-fail | pr-merge-fail | werk-close-fail | cards-done-fail | branch-close-fail (legacy: idempotent recovery path for pre-#3012 cards already in Done with orphan branches). werk-close-fail blocks acceptance (#3012) — card stays WIP, cards-done is NOT called, card.accepted is NOT emitted. Pass optional `card_id` to assert intent — MCP refuses with `card-mismatch` if branch-derived id differs (#2868). Do NOT use raw git, gh, or cards CLI — those bypass the typed refusal taxonomy.',
+    'Accept a WIP card end-to-end. Thin skin over the rust werk-acp verb — MCP just execs it; the orchestration is NOT in this layer (#3176). werk-acp composes the atomic verbs as ONE all-or-nothing accept: werk-commit → werk-push → werk-deploy(target=canonical, build+deploy+VERIFY running==built) → werk-accept. The deploy-verify is GATING: if prod does not come up == built, acp FAILS there and the source never merges (the merged≠live fix). `role` is the BUILDER (werk location); the ACCEPTER is the calling identity — only jeff/wren may finalize (DEC-048, enforced by werk-accept). Returns the per-step summary. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusals.',
   inputSchema: {
     type: 'object',
     properties: {
       role: {
         type: 'string',
         enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — kade / wren / silas. Card derived from HEAD branch then board fallback if card_id absent.',
+        description: 'Builder role — owns the werk <role>/<card> being accepted.',
       },
       card_id: {
         type: 'integer',
         minimum: 1,
-        description: 'Optional intent assertion (#2868). When present, MCP refuses with card-mismatch if branch-derived id differs. When absent, derivation is purely from branch / board.',
+        description: 'Card ID to accept end-to-end.',
       },
     },
-    required: ['role'],
+    required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -1248,553 +1248,6 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
 // #3182 — executeCommit deleted: dead since #3178 repointed chorus_commit→werk-commit
 // (the rust verb). The git-queue.sh commit/push it wrapped is now werk-commit/werk-push.
 
-// #2750 slice 2 — atomic /acp transaction. Wraps the existing executeCommit
-// path then runs PR-merge + cards-done + spine + werk-close as one
-// deterministic flow. Idempotent on re-run: gh pr view detects existing PR.
-// cog-override: orchestrates 7-step acp transaction with per-step idempotency, error classification, and werk routing; splitting obscures linear flow (#2627)
-async function executeAcp(
-  args: AcpArgs,
-  boardReader: BoardReader,
-  emit: SpineEmitter,
-  execFileAsync: ExecFileAsync,
-  gitQueuePath: string,
-  cardsPath: string,
-  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role } = args;
-  // #2925 — when caller asserts card_id, prefer that card's exact ephemeral
-  // werk over the glob resolver's fallback-to-canonical. Closes a bootstrap
-  // recursion: a role with 2+ active werks (e.g. silas/2605 + silas/2925)
-  // hits the ambiguous-multiple case and the default returns canonical →
-  // executeAcp runs git from main → pre-push hook #2598 refuses
-  // "branch 'main' does not match role prefix 'silas/'".
-  const acpRequireBoot = require as NodeJS.Require;
-  const acpFsBoot = acpRequireBoot('node:fs') as typeof import('node:fs');
-  const acpPathBoot = acpRequireBoot('node:path') as typeof import('node:path');
-  let repoRoot = resolveWorkingTree(role);
-  if (args.card_id !== undefined) {
-    const werkBase = process.env.CHORUS_WERK_BASE
-      ?? acpPathBoot.join(
-        acpPathBoot.dirname(process.env.CHORUS_ROOT ?? '/Users/jeffbridwell/CascadeProjects/chorus'),
-        CHORUS_WERK
-      );
-    const cardWerk = acpPathBoot.join(werkBase, `${role}-${args.card_id}`);
-    if (acpFsBoot.existsSync(cardWerk)) {
-      repoRoot = cardWerk;
-    }
-  }
-  // #2857 — flow trace. Mint trace_id at handler entry, wrap emit so every
-  // event in this flow carries it. Re-wrap with card_id once derived. Bash
-  // subprocesses (git-queue, gh, cards CLI) inherit via CHORUS_TRACE_ID +
-  // CHORUS_CARD_ID env vars set on the env objects below.
-  const baseEmit = emit;
-  const trace_id = mintTraceIdV7();
-  // #2752 bug-4 — step-by-step logging. Each step emits .started before the
-  // subprocess and .completed after success. Refusals already named the
-  // step. Now any failure mode shows the exact step that ran/failed without
-  // re-running with verbose flags.
-  let cardId: number | null = null;
-  emit = createSpineEmitter(trace_id, baseEmit);
-  // #2931: auto-inject duration_ms on every completed step. Map records the
-  // wall-clock start of each `${step}.started` emit; on `${step}.completed`
-  // we subtract and attach duration_ms before emitting. Per-step keys so
-  // overlapping or re-entered steps (idempotent re-runs of commit/push)
-  // remeasure cleanly. No shared state across handler invocations — Map is
-  // closure-local to this chorus_acp call.
-  const stepStartedAt = new Map<string, number>();
-  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) => {
-    if (status === 'started') stepStartedAt.set(step, Date.now());
-    const dur = status === 'completed' ? stepStartedAt.get(step) : undefined;
-    const duration = dur !== undefined ? { duration_ms: Date.now() - dur } : {};
-    emit(`chorus_acp.${step}.${status}`, { role, card_id: cardId, ...duration, ...(detail ?? {}) });
-  };
-
-  emit('chorus_acp.invoked', { role, repo_root: repoRoot });
-
-  // Step 0 — derive cardId from HEAD branch FIRST (#2782). The branch name
-  // `<role>/<card-id>` is the source-of-truth for which card a commit is
-  // for; the board is a coordination view that can lag (just-merged card
-  // moves to Done before the next /acp invocation). Pre-#2782 the cardId
-  // was board-only, gated on cards.length===1, which silently dropped to
-  // null on idempotent re-runs (board has 0 WIP) AND on multi-WIP races.
-  // Result: cards-done step skipped, branch_closed=true returned, card
-  // stuck at "Later" — receipt: #2777, #2778, #2779 on 2026-05-07.
-  const acpRequire = require as NodeJS.Require;
-  const acpPathMod = acpRequire('node:path') as typeof import('node:path');
-  const _envForBranchProbe = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    PATH: `${acpPathMod.dirname(process.execPath)}:${process.env.HOME ?? ''}/.cargo/bin:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-  let initialBranch = '';
-  try {
-    const { stdout: branchOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env: _envForBranchProbe, cwd: repoRoot, timeout: 5_000 });
-    initialBranch = branchOut.trim();
-  } catch {
-    /* no branch; fall back to board */
-  }
-  const branchMatch = initialBranch.match(/^([a-z]+)\/(\d+)$/);
-  if (branchMatch && branchMatch[1] === role) {
-    cardId = parseInt(branchMatch[2], 10);
-  }
-
-  // Step 1 — board lookup. Used as a fallback only when branch didn't yield
-  // a cardId (e.g. branch is `main` or some non-canonical name). Branch wins.
-  stepEmit('board-lookup', 'started');
-  const board = await boardReader(role);
-  if (cardId === null && board.ok && board.cards.length === 1) cardId = board.cards[0].id;
-  // #2857 — re-wrap emit with cardId now that it's resolved, so every
-  // downstream emit carries both trace_id and card_id automatically.
-  if (cardId !== null) emit = createSpineEmitter(trace_id, baseEmit, cardId);
-  stepEmit('board-lookup', 'completed', { card_id: cardId, board_ok: board.ok, source: branchMatch ? 'branch' : 'board' });
-
-  // #2868 — intent-assertion guard. If the caller passed args.card_id, it
-  // must match the derived cardId. Silent substitution is the failure
-  // mode this card closes (today: wren werk on wren/2851, /acp 2847 ran
-  // against 2851 with no signal). Refuse loudly with both ids named.
-  if (args.card_id !== undefined && cardId !== null && args.card_id !== cardId) {
-    emit('chorus_acp.refused', {
-      role,
-      step: 'intent-check',
-      reason: 'card-mismatch',
-      requested_card_id: args.card_id,
-      branch_card_id: cardId,
-      detail: `Caller asked for card ${args.card_id} but werk branch ${initialBranch} derives card ${cardId}. Repoint werk to ${role}/${args.card_id} or omit card_id to accept current branch.`,
-    });
-    throw new Error(`chorus_acp refused: card-mismatch — requested=${args.card_id} branch=${cardId}`);
-  }
-
-  // #2923: the fast-path (alreadyMerged → skip commit/push/PR → cards-done)
-  // was removed. It was a false-success shortcut — `git cherry` showing no
-  // commits ahead is identical whether the work is already merged OR never
-  // committed, so an uncommitted werk took the shortcut and got marked Done
-  // with nothing shipped. The normal path below is idempotent on re-runs
-  // (commit catches "nothing to commit", push catches "up to date",
-  // pr-merge catches "already merged"), so it handles the already-merged
-  // case correctly without a separate branch.
-
-  // Step 2 — commit + push via existing executeCommit machinery. Reuse the
-  // CommitArgs path: paths=['.'] commits everything staged in werk; the role
-  // already staged what they want via Edit/Write before invoking /acp.
-  // The skill's pre-flight ensures clean diff matches intent.
-  // We can't reuse executeCommit directly because it takes pre-set paths;
-  // for /acp the contract is "everything in the current branch."
-  // Run git-queue.sh commit with `.` as the path argument.
-  const path = require('path') as typeof import('path');
-  const parentNodeBinDir = path.dirname(process.execPath);
-  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
-  const env = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
-    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-
-  let sha = 'unknown';
-  let branch = '';
-
-  // Detect existing branch first (if commit already landed in a previous run)
-  stepEmit('detect-branch', 'started');
-  try {
-    const { stdout: refOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
-    branch = refOut.trim();
-    stepEmit('detect-branch', 'completed', { branch });
-  } catch {
-    /* fall through; will fail at commit */
-  }
-
-  // #2943 — idempotent re-run path: detect "card already accepted, only
-  // werk-close pending." Pre-#2943, a transient branch-close failure left
-  // an orphan remote branch that no path could clean up from agent sessions
-  // (#2598 hook prohibits direct git push --delete). Re-running /acp on the
-  // same card retried commit/push/PR, which all returned idempotent no-ops,
-  // and then re-attempted werk-close — works in principle but burned cycles
-  // re-validating already-merged state. New shape: detect the condition
-  // upfront (card status=Done on the board AND remote branch <role>/<id>
-  // still exists), skip directly to werk-close, return cleanly.
-  if (cardId !== null && board.ok) {
-    const acceptedCard = board.cards.find((c) => c.id === cardId);
-    const cardIsDone = acceptedCard === undefined; // boardReader returns WIP-only; absent = not WIP = Done or other
-    if (cardIsDone) {
-      const expectedBranch = `${role}/${cardId}`;
-      let remoteHasOrphan = false;
-      try {
-        const { stdout: lsOut } = await execFileAsync('git', ['ls-remote', '--heads', 'origin', expectedBranch], { env, cwd: repoRoot, timeout: 10_000 });
-        remoteHasOrphan = lsOut.trim().length > 0;
-      } catch { /* ls-remote failure is itself a signal we shouldn't run cleanup */ }
-
-      if (remoteHasOrphan) {
-        emit('chorus_acp.idempotent-cleanup.detected', { role, card_id: cardId, branch: expectedBranch });
-        stepEmit(STEP_WERK_CLOSE, 'started');
-        try {
-          const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
-          await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
-          stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true, idempotent_cleanup: true });
-          emit('chorus_acp.completed', { role, card_id: cardId, sha: 'idempotent-cleanup', pr_url: 'idempotent-cleanup', branch_closed: true });
-          return {
-            content: [
-              { type: 'text', text: JSON.stringify({ role, card_id: cardId, sha: 'idempotent-cleanup', pr_url: 'idempotent-cleanup', branch_closed: true, idempotent_cleanup: true }, null, 2) },
-            ],
-          };
-        } catch (err) {
-          const stderr = extractStderr(err);
-          stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200), idempotent_cleanup: true });
-          emit(CHORUS_ACP_REFUSED, {
-            role,
-            card_id: cardId,
-            step: STEP_WERK_CLOSE,
-            reason: 'branch-close-fail',
-            detail: stderr.slice(0, 500),
-            recoverable: true,
-            recovery_hint: `re-run \`/acp ${cardId}\` again, or have silas (DEC-022) run \`git push origin --delete ${expectedBranch}\``,
-            idempotent_cleanup_attempted: true,
-          });
-          throw new Error(`chorus_acp refused: branch-close-fail — ${stderr.split('\n')[0]}`);
-        }
-      }
-    }
-  }
-
-  // Commit (skip if no staged changes — gh push will be no-op).
-  // #2931 — write Chorus-Trace-Id / Chorus-Card-Id git trailers so the build
-  // pipeline picks up the ACP trace_id from the commit it's building. Without
-  // this, build/deploy events mint their own trace_id and ACP→build→deploy
-  // can't be joined in chorus_logs_for_trace.
-  stepEmit('commit', 'started', { branch });
-  try {
-    const trailers = [`Chorus-Trace-Id: ${trace_id}`];
-    if (cardId !== null) trailers.push(`Chorus-Card-Id: ${cardId}`);
-    const commitMessage = `${role}: acp #${cardId ?? 'unknown'}\n\n${trailers.join('\n')}`;
-    const commitArgs = ['commit', FORCE_BRANCH_FLAG, '.', '--', '-m', commitMessage];
-    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 60_000, cwd: repoRoot });
-    const shaMatch = stdout.match(/\[\S+\s+([a-f0-9]+)\]/);
-    if (shaMatch) sha = shaMatch[1];
-    stepEmit('commit', 'completed', { sha, idempotent: false });
-  } catch (err) {
-    const stderr = extractStderr(err);
-    // "nothing to commit" is a successful idempotent path — already committed
-    if (!/nothing to commit|no changes added/i.test(stderr)) {
-      const reason = classifyCommitFailure(stderr);
-      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'commit', reason, detail: stderr.slice(0, 500) });
-      // #3011 — surface the real failure line, not pre-commit's success output.
-      throw new Error(`chorus_acp refused: ${reason} — ${commitFailureDetail(stderr)}`);
-    }
-    stepEmit('commit', 'completed', { idempotent: true, reason: 'nothing-to-commit' });
-  }
-
-  // Push (idempotent; fast no-op if already pushed)
-  // #2799 — pass --force-with-lease for the post-rebase push step.
-  // chorus_acp's pre-push internal rebase moves local SHAs forward of
-  // origin's pre-rebase ref; force-with-lease is safe (refuses on
-  // concurrent peer push). Same flag chorus_commit passes (line ~858).
-  stepEmit(STEP_PUSH, 'started', { branch });
-  try {
-    const pushArgs = branch
-      ? [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG, '--branch', branch]
-      : [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG];
-    await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
-    stepEmit(STEP_PUSH, 'completed');
-  } catch (err) {
-    const stderr = extractStderr(err);
-    const reason = classifyPushFailure(stderr);
-    emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: STEP_PUSH, reason, detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_acp refused: ${reason} — ${stderr.split('\n')[0]}`);
-  }
-
-  // Step 3 — gh pr view (detect usable existing PR) → gh pr create (if missing
-  // or stale) → gh pr merge.
-  stepEmit('pr-view', 'started', { branch });
-  let prUrl = '';
-  let prAlreadyExists = false;
-  let prAlreadyMerged = false; // #3040 — set when pr-create reports "no commits between" (squash-merged)
-  try {
-    const { stdout } = await execFileAsync('gh', ['pr', 'view', branch, '--json', 'url,state'], { env, cwd: repoRoot, timeout: 15_000 });
-    const pr = JSON.parse(stdout) as { url: string; state: string };
-    if (pr.state === 'OPEN') {
-      prUrl = pr.url;
-      prAlreadyExists = true;
-      stepEmit('pr-view', 'completed', { pr_url: prUrl, exists: true, state: pr.state });
-    } else {
-      // #2913: `gh pr view <branch>` resolves to the *most recent* PR for the
-      // branch name. On a reused branch — the card's branch already shipped a
-      // merged PR, then accrued new commits — that's a stale MERGED/CLOSED PR,
-      // not the PR for this work. The already-merged fast-path upstream already
-      // confirmed there ARE unmerged commits, so this PR is definitively stale.
-      // Treat it as "no usable PR" and fall through to pr-create — otherwise
-      // gh pr merge hits the merged PR, "already merged" is caught as idempotent
-      // success, and the new commits ship nothing (the #2913 self-acp failure).
-      stepEmit('pr-view', 'completed', { exists: false, stale_pr_url: pr.url, stale_pr_state: pr.state });
-    }
-  } catch {
-    // No PR for this branch at all.
-    stepEmit('pr-view', 'completed', { exists: false });
-  }
-
-  if (!prAlreadyExists) {
-    // No usable PR (none exists, or the only one is a stale merged/closed PR
-    // on a reused branch) — create a fresh one for the unmerged commits.
-    stepEmit('pr-create', 'started', { branch });
-    try {
-      const { stdout } = await execFileAsync(
-        'gh',
-        ['pr', 'create', '--title', `${role}: acp #${cardId ?? 'unknown'}`, '--body', `Automated /acp via chorus_acp MCP for #${cardId ?? 'unknown'}.`],
-        { env, cwd: repoRoot, timeout: 30_000 },
-      );
-      prUrl = stdout.trim().split('\n').pop() ?? '';
-      stepEmit('pr-create', 'completed', { pr_url: prUrl });
-    } catch (err) {
-      const stderr = extractStderr(err);
-      // #3040 — "No commits between main and <branch>" means the work is already
-      // squash-merged: nothing to PR. Recover (skip pr-merge, fall through to
-      // werk-close + cards-done) instead of refusing pr-create-fail.
-      if (prCreateMeansAlreadyMerged(stderr)) {
-        prAlreadyMerged = true;
-        stepEmit('pr-create', 'completed', { idempotent: true, reason: ALREADY_MERGED });
-      } else {
-        emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-create', reason: 'pr-create-fail', detail: stderr.slice(0, 500) });
-        throw new Error(`chorus_acp refused: pr-create-fail — ${stderr.split('\n')[0]}`);
-      }
-    }
-  }
-
-  if (!prAlreadyMerged) {
-  stepEmit('pr-merge', 'started', { pr_url: prUrl, pr_already_exists: prAlreadyExists });
-  try {
-    // #2753 — no --delete-branch flag: gh's branch deletion does an implicit
-    // `git checkout main` which collides with canonical's worktree (dual-
-    // checkout refusal). chorus-werk remove (called below) handles the
-    // worktree + local branch + remote-ref cleanup correctly.
-    // #2913 — merge by the resolved prUrl, not the branch name: on a reused
-    // branch a stale merged PR and the fresh PR both share the branch name, so
-    // `gh pr merge <branch>` is ambiguous. prUrl is unambiguously the PR we
-    // resolved (OPEN existing) or just created.
-    await execFileAsync('gh', ['pr', 'merge', prUrl, '--squash'], { env, cwd: repoRoot, timeout: 60_000 });
-    stepEmit('pr-merge', 'completed', { idempotent: false });
-  } catch (err) {
-    const stderr = extractStderr(err);
-    // "already merged" is idempotent success
-    if (!/already.*merged|state.*MERGED/i.test(stderr)) {
-      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'pr-merge', reason: 'pr-merge-fail', detail: stderr.slice(0, 500) });
-      throw new Error(`chorus_acp refused: pr-merge-fail — ${stderr.split('\n')[0]}`);
-    }
-    stepEmit('pr-merge', 'completed', { idempotent: true, reason: ALREADY_MERGED });
-  }
-  } // #3040 — end if(!prAlreadyMerged): squash-merged path skips pr-merge, recovers via werk-close + cards-done below
-
-  // #3012 — REORDER: substrate-clean steps (promote-werk-bin, werk-close)
-  // run BEFORE cards-done + card.accepted. The card is not actually
-  // "accepted" until the substrate is back to clean main state for the
-  // next pull. If any substrate step throws, the card stays WIP and /acp
-  // re-runs idempotently (promote-werk-bin via cdhash-equality skip;
-  // werk-close via its own re-attempt).
-  //
-  // Order (per Silas #2995 + Kade #3012 alignment):
-  //   PR-merge → promote-werk-bin (throws) → werk-close (throws) →
-  //   cards-done → card.accepted
-  //
-  // Reverses #2943's non-throwing branch-close-fail decision. Receipt:
-  // 5 abandoned werks accumulated on disk because the old order moved
-  // cards to Done while leaving werks live. Roles never re-ran /acp
-  // because cards looked accepted; werks leaked silently. The resolver
-  // then fell back to canonical on ambiguous-multiple werks, firing
-  // dirty-tree refusals on subsequent git ops.
-
-  // Step 4 — #2995: promote werk-bin to canonical. If the role's bin slot
-  // ($WERK_<ROLE>_BIN = chorus-werk/<role>-bin/, the "preview slot" populated by
-  // chorus-deploy --target werk during the build phase) has installed binaries, move
-  // each binary into ~/.chorus/bin/ and emit binary.promoted per binary.
-  // This is the moment werk-scoped code becomes canonical for the team.
-  // Kickstart fires once per known service after promotion.
-  //
-  // Idempotency (Kade #2995 review): for each binary, compare its cdhash to
-  // the canonical-installed binary's cdhash. If equal, the promotion has
-  // already happened (either earlier in this run, or a prior /acp partial
-  // that landed promote but failed werk-close); skip without re-installing
-  // or re-emitting binary.promoted. Required so /acp re-run after a
-  // werk-close failure is safe under #3012's werk-close-must-succeed
-  // invariant.
-  //
-  // Failure semantics: if any binary fails to PROMOTE (not skip — actual
-  // install failure), throw. This refuses werk-close entirely and leaves
-  // the operator with werk intact + canonical state partial; recovery is
-  // re-run /acp once the promote issue is fixed. Pre-fix this was
-  // non-throwing best-effort, which produced orphan canonical state with
-  // werk already torn down (the failure mode Kade flagged).
-  if (cardId !== null) {
-    const fsBoot = require('node:fs') as typeof import('node:fs');
-    const pathBoot = require('node:path') as typeof import('node:path');
-    // #3173: read the ONE live deploy slot ($WERK_<ROLE>_BIN), not the retired
-    // repoRoot/.werk-bin — see resolveWerkBinDir. The old path no longer existed,
-    // so promote silently no-op'd and canonical verb binaries stayed stale.
-    const werkBinDir = resolveWerkBinDir(role, process.env, repoRoot);
-    if (fsBoot.existsSync(werkBinDir)) {
-      stepEmit('promote-werk-bin', 'started', { werk_bin_dir: werkBinDir });
-      const canonicalBinDir = pathBoot.join(process.env.HOME ?? '', '.chorus', 'bin');
-      const binaries: string[] = [];
-      try {
-        for (const entry of fsBoot.readdirSync(werkBinDir, { withFileTypes: true })) {
-          if (entry.isFile() && !entry.name.startsWith('.')) binaries.push(entry.name);
-        }
-      } catch { /* unreadable — falls through to completed-with-zero */ }
-
-      // Compute cdhash via codesign; returns empty on any failure (test
-      // fixtures, missing codesign, unsigned binary). Empty values mean
-      // "no equality" so the binary promotes normally.
-      const cdhashFor = async (binPath: string): Promise<string> => {
-        try {
-          const { stdout, stderr } = await execFileAsync('codesign', ['-dvvv', binPath], { env, timeout: 5_000 });
-          const match = `${stdout}\n${stderr}`.match(/^CDHash=([0-9a-f]+)/m);
-          return match ? match[1] : '';
-        } catch { return ''; }
-      };
-
-      const promoted: string[] = [];
-      const skipped: string[] = [];
-      const promoteFailed: Array<{ name: string; error: string }> = [];
-      for (const name of binaries) {
-        const src = pathBoot.join(werkBinDir, name);
-        const dest = pathBoot.join(canonicalBinDir, name);
-
-        // Idempotency check: if canonical already has matching cdhash, skip.
-        if (fsBoot.existsSync(dest)) {
-          const srcHash = await cdhashFor(src);
-          const destHash = await cdhashFor(dest);
-          if (srcHash !== '' && destHash !== '' && srcHash === destHash) {
-            skipped.push(name);
-            continue;
-          }
-        }
-
-        try {
-          await execFileAsync(pathBoot.join(repoRoot, 'platform', 'scripts', 'chorus-bin-install'), [src, name], { env, timeout: 15_000 });
-          promoted.push(name);
-          emit('binary.promoted', { role, card_id: cardId, binary: name, from: 'werk', to: 'canonical', canonical_path: dest });
-        } catch (err) {
-          promoteFailed.push({ name, error: extractStderr(err).slice(0, 200) });
-        }
-      }
-      stepEmit('promote-werk-bin', 'completed', { promoted, skipped, failed: promoteFailed });
-
-      // Hard refuse if ANY binary failed to promote. Leaves werk intact so
-      // /acp re-run picks up where this one stopped (already-promoted
-      // binaries skip via cdhash equality; failed ones retry).
-      if (promoteFailed.length > 0) {
-        emit(CHORUS_ACP_REFUSED, {
-          role,
-          card_id: cardId,
-          step: 'promote-werk-bin',
-          reason: 'promote-fail',
-          detail: promoteFailed.map((f) => `${f.name}: ${f.error}`).join('; ').slice(0, 500),
-          recoverable: true,
-          recovery_hint: `fix the underlying install failure, then re-run \`/acp ${cardId}\` — already-promoted binaries are skipped via cdhash match`,
-        });
-        throw new Error(`chorus_acp refused: promote-fail — ${promoteFailed.map((f) => f.name).join(', ')}`);
-      }
-
-      // Kickstart known services for promoted binaries only (skipped binaries
-      // mean canonical already has them — already running). chorus-hooks
-      // binaries → com.chorus.hooks; chorus-inject → spawn-on-demand, no
-      // kickstart. Map kept in sync with chorus-deploy's KICKSTART_SERVICE
-      // resolution.
-      const kickstartTargets = new Set<string>();
-      for (const name of promoted) {
-        if (name === 'chorus-hooks' || name === 'chorus-hook-shim') kickstartTargets.add('com.chorus.hooks');
-      }
-      for (const svc of kickstartTargets) {
-        try {
-          await execFileAsync('launchctl', ['kickstart', '-k', `gui/${process.getuid?.() ?? 0}/${svc}`], { env, timeout: 5_000 });
-          emit('chorus_acp.promote-kickstart.completed', { role, card_id: cardId, service: svc });
-        } catch (err) {
-          emit('chorus_acp.promote-kickstart.failed', { role, card_id: cardId, service: svc, error: extractStderr(err).slice(0, 200) });
-        }
-      }
-    }
-  }
-
-  // Step 5 — #3012: chorus-werk remove (throws on failure). Werks must not
-  // persist beyond /acp. If werk-close fails, refuse with werk-close-fail;
-  // card stays WIP; cards-done is NOT called below; card.accepted is NOT
-  // emitted. Re-run /acp after fixing the underlying cause.
-  let branchClosed = false;
-  if (cardId !== null) {
-    stepEmit(STEP_WERK_CLOSE, 'started');
-    try {
-      const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
-      await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
-      branchClosed = true;
-      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
-    } catch (err) {
-      const stderr = extractStderr(err);
-      stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: false, error: stderr.slice(0, 200) });
-      emit(CHORUS_ACP_REFUSED, {
-        role,
-        card_id: cardId,
-        step: STEP_WERK_CLOSE,
-        reason: 'werk-close-fail',
-        detail: stderr.slice(0, 500),
-        recoverable: true,
-        recovery_hint: `werk could not be torn down; card stays WIP. Fix the underlying issue (dirty werk, branch ref conflict, remote unreachable) and re-run /acp.`,
-      });
-      throw new Error(`chorus_acp refused: werk-close-fail — ${stderr.split('\n')[0]}`);
-    }
-  }
-
-  // Step 6 — cards done (only reached if promote-werk-bin + werk-close succeeded).
-  if (cardId !== null) {
-    stepEmit('cards-done', 'started');
-    try {
-      await execFileAsync(cardsPath, ['done', String(cardId)], { env, timeout: 15_000 });
-      stepEmit('cards-done', 'completed');
-    } catch (err) {
-      const stderr = extractStderr(err);
-      emit(CHORUS_ACP_REFUSED, { role, card_id: cardId, step: 'cards-done', reason: 'cards-done-fail', detail: stderr.slice(0, 500) });
-      throw new Error(`chorus_acp refused: cards-done-fail — ${stderr.split('\n')[0]}`);
-    }
-  }
-
-  // Step 7 — spine event card.accepted (only reached if all substrate steps succeeded).
-  emit(CARD_ACCEPTED, { role, card: cardId });
-
-  // #2863 — release event: kick building-pipeline so /build runs immediately
-  // against origin/main (whose first step fast-forwards canonical). Replaces
-  // the chorus-werk-sync 10-min poll. Best-effort: kickstart failure does
-  // not fail /acp because the merge already landed; flag in step event so
-  // an operator can recover manually.
-  // #3023 — hand this acp's trace to the building-pipeline. launchctl kickstart
-  // does NOT carry env across the launchd boundary, and the squash-merge strips
-  // commit trailers, so a file is the only channel that survives. The pipeline
-  // reads this and exports CHORUS_TRACE_ID/CHORUS_CARD_ID/CHORUS_BRANCH so its
-  // build/deploy emits link to this acp's trace instead of firing trace-less.
-  try {
-    const fsp = await import('fs/promises');
-    await fsp.writeFile('/tmp/chorus-acp-release-trace.json',
-      JSON.stringify({ trace_id, card_id: cardId, branch }) + '\n');
-  } catch { /* best-effort — pipeline falls back to no-trace if the file is absent */ }
-
-  stepEmit('release-trigger', 'started');
-  try {
-    await execFileAsync('launchctl', ['kickstart', `gui/${process.getuid?.() ?? 0}/com.chorus.building-pipeline`], { env, timeout: 5_000 });
-    stepEmit('release-trigger', 'completed');
-  } catch (err) {
-    const stderr = extractStderr(err);
-    stepEmit('release-trigger', 'completed', { ok: false, error: stderr.slice(0, 200) });
-  }
-
-  // #2897: cleanup demo trace file on /acp success (normal path)
-  try { const fsp = await import('fs/promises'); await fsp.unlink(`/tmp/demo-trace-${cardId}.txt`); } catch { /* file may not exist if /demo wasn't invoked this session */ }
-  emit('chorus_acp.completed', { role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed });
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify({ role, card_id: cardId, sha, pr_url: prUrl, branch_closed: branchClosed }, null, 2),
-      },
-    ],
-  };
-}
 
 // #2759 — chorus_unpull_card atomic teardown. /pull's natural inverse.
 // Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
@@ -2379,7 +1832,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-accept',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-accept' | 'werk-acp',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2932,7 +2385,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeAcp(parsed.data, boardReader, emitSpineEvent, execFileAsync, gitQueuePath, cardsPath, resolveWorkingTree);
+        // #3176 — thin skin → rust werk-acp. `role` is the BUILDER (werk location);
+        // the ACCEPTER is the calling identity (getCallerRole), which werk-accept's
+        // can_accept (DEC-048) gates on. werk-acp composes commit→push→deploy(canonical,
+        // GATING verify)→accept. The v1 executeAcp orchestration + its git-queue.sh
+        // calls are retired (#3182 unblock).
+        return executeWerkVerb('werk-acp', [String(parsed.data.card_id), parsed.data.role], getCallerRole(), parsed.data.card_id, {});
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
