@@ -26,8 +26,10 @@ OUT=$("$SCRIPT_DIR/session-close-thin.sh" "$ROLE" 2>&1) || ERRORS="${ERRORS}clos
 # 2. Board audit-close
 OUT=$("$SCRIPT_DIR/cards" audit-close "$ROLE" 2>&1) || ERRORS="${ERRORS}audit: ${OUT}\n"
 
-# 3. Commit via git-queue
-OUT=$("$SCRIPT_DIR/git-queue.sh" commit "$ROLE" "${ROLE}: ${SUMMARY}" 2>&1) || ERRORS="${ERRORS}commit: ${OUT}\n"
+# #3182 — commit step REMOVED. The v1 git-queue.sh commit-on-close is retired:
+# (a) we no longer commit on reboot/close (Jeff, 2026-06), (b) commits go through
+# the rust werk-commit verb, not git-queue.sh. Close = checks + board audit only.
+# $SUMMARY is intentionally unused now (kept in the signature for callers).
 
 if [ -n "$ERRORS" ]; then
   printf "Close: errors\n%b" "$ERRORS" >&2
