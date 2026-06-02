@@ -705,11 +705,6 @@ export function createSpineEmitter(
   };
 }
 
-// #2682 — spine event names. Extracted as consts because sonarjs flags
-// duplicated string literals (>5 occurrences across emit + throw paths).
-const CHORUS_COMMIT_REFUSED = 'chorus_commit.refused';
-const CHORUS_COMMIT_INVOKED = 'chorus_commit.invoked';
-
 // #2682 — chorus_commit (write) tool def. Wraps git-queue.sh commit + push
 // behind one declarative call. Service derives card via boardReader; refuses
 // with typed reasons (no-wip-card / multi-wip / board-unreachable from
@@ -730,14 +725,6 @@ const COMMIT_TOOL_DEF = {
     additionalProperties: false,
   },
 } as const;
-
-// #2687 — classifier collapsed: write-path refusal taxonomy is commit-safety
-// only. branch-mismatch retired (we pass --force-branch to git-queue, so its
-// internal branch-check no longer surfaces). path-not-found retired (git-add
-// failures fold into hook-fail with stderr detail intact). All commit-phase
-// non-zero exits → hook-fail. Push-phase failures route through push-conflict
-// in executeCommit directly.
-const CHORUS_COMMIT_COORDINATION_OBSERVED = 'chorus_commit.coordination_observed';
 
 // #2759 — chorus_unpull_card tool def. /pull's atomic inverse.
 const UNPULL_CARD_TOOL_DEF = {
@@ -1135,12 +1122,6 @@ interface AcpArgs {
   card_id?: number; // #2868 — optional intent assertion
 }
 
-interface CommitArgs {
-  role: 'kade' | 'wren' | 'silas';
-  paths: string[];
-  message: string;
-  no_add?: boolean;
-}
 
 // #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
 // complexity under threshold. Each returns the typed reason for its phase.
@@ -1264,163 +1245,8 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
   };
 }
 
-// cog-override: commit orchestration handles multiple typed-refusal branches — structurally complex
-async function executeCommit(
-  args: CommitArgs,
-  boardReader: BoardReader,
-  emit: SpineEmitter,
-  execFileAsync: ExecFileAsync,
-  gitQueuePath: string,
-  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role, paths, message, no_add } = args;
-
-  // #2857 — flow trace. Mint trace_id at entry, wrap emit so every event
-  // carries it. card_id resolves via board lookup below; re-wrap once known.
-  const baseEmit = emit;
-  const trace_id = mintTraceIdV7();
-  emit = createSpineEmitter(trace_id, baseEmit);
-
-  // #2687 — Step 1: best-effort board lookup for spine attribution. NEVER
-  // refuses. Coordination state (no-wip-card / multi-wip / board-unreachable)
-  // is observed via chorus_commit.coordination_observed event; the commit
-  // proceeds regardless. This is the v3-regression strip: the write-path
-  // refusal taxonomy is commit-safety only (hook-fail / push-conflict).
-  const board = await boardReader(role);
-  let cardId: number | null = null;
-  if (!board.ok) {
-    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: board.reason, detail: board.detail });
-  } else if (board.cards.length === 0) {
-    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: 'no-wip-card' });
-  } else if (board.cards.length > 1) {
-    const ids = board.cards.map((c) => c.id).join(',');
-    emit(CHORUS_COMMIT_COORDINATION_OBSERVED, { role, reason: 'multi-wip', card_ids: ids });
-    cardId = board.cards[0].id; // best-guess attribution for spine
-  } else {
-    cardId = board.cards[0].id;
-  }
-  if (cardId !== null) emit = createSpineEmitter(trace_id, baseEmit, cardId);
-  const branch = cardId ? `${role}/${cardId}` : `${role}/uncoordinated`;
-
-  // #2662 — chorus-api's launchctl PATH puts /opt/homebrew/bin first, which
-  // is Node 23. The chorus-api process itself runs the team's nvm Node 20
-  // (absolute path in launch plist), but subprocess PATH-resolution of
-  // `node`/`npx`/`npm` (used by pre-commit's `npx jest`) picks up the
-  // Homebrew binary, breaking native modules compiled for Node 20.
-  // Prepend the parent node's bin dir so the subprocess chain stays on the
-  // same Node version as chorus-api itself.
-  const path = require('path') as typeof import('path');
-  const parentNodeBinDir = path.dirname(process.execPath);
-  // #2687 — also prepend the user's cargo bin so chorus-hooks rust checks
-  // (clippy-ratchet) find cargo. chorus-api's launchctl PATH doesn't include
-  // ~/.cargo/bin; subprocess pre-commit hits FileNotFoundError on cargo.
-  // Same launchctl-PATH-leak shape as #2662's Node 20/23 mismatch.
-  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
-  const env = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    ...(cardId !== null ? { CHORUS_CARD_ID: String(cardId) } : {}),
-    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-
-  // #2662 — git-queue.sh stages paths via `git add <path>` which resolves
-  // them relative to cwd. chorus-api runs from platform/api, so without
-  // an explicit cwd, paths like "skills/acp/SKILL.md" became
-  // "platform/api/skills/acp/SKILL.md" (404).
-  // #2750 — werk-aware: when the role's flag is on, repoRoot is the role's
-  // werk; else canonical (#2662 contract). resolveWorkingTree owns the
-  // decision; chorus_commit just routes cwd accordingly.
-  const repoRoot = resolveWorkingTree(role as 'kade' | 'wren' | 'silas');
-
-  // #3011 — validate path existence before git-queue, so a non-existent path
-  // gets a precise `path-not-found` refusal naming the file instead of git's
-  // forwarded "pathspec did not match" error. Skipped for no_add (staged
-  // deletes have paths intentionally absent from disk).
-  if (!no_add) {
-    const fsMod = require('node:fs') as typeof import('node:fs');
-    const missing = findMissingPaths(paths, (p) => fsMod.existsSync(path.join(repoRoot, p)));
-    if (missing.length > 0) {
-      const reason = 'path-not-found';
-      emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: missing.join(', ') });
-      throw new Error(`chorus_commit refused: ${reason} — path(s) not found: ${missing.join(', ')}`);
-    }
-  }
-
-  // Step 2 — commit via git-queue.sh. `<paths> -- -m <message>` is the contract.
-  // #2687 — pass --force-branch so git-queue's branch-check (coordination
-  // refusal) doesn't surface. Branch naming is observed via spine, not
-  // enforced at the write surface.
-  let commitStdout: string;
-  try {
-    // #2778 — --no-add (after --force-branch) routes to git-queue.sh do_commit
-    // skip-add path (#2731). Required for committing staged deletes of now-
-    // ignored paths; without it, git add refuses ignored paths and the staged
-    // deletion cannot land via the typed surface.
-    const commitArgs = no_add
-      ? ['commit', FORCE_BRANCH_FLAG, '--no-add', ...paths, '--', '-m', message]
-      : ['commit', FORCE_BRANCH_FLAG, ...paths, '--', '-m', message];
-    const { stdout } = await execFileAsync(gitQueuePath, commitArgs, { env, timeout: 30_000, cwd: repoRoot });
-    commitStdout = stdout;
-  } catch (err) {
-    const stderr = extractStderr(err);
-    const reason = classifyCommitFailure(stderr);
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
-    // #3011 — surface the real failure line, not pre-commit's success output.
-    throw new Error(`chorus_commit refused: ${reason} — ${commitFailureDetail(stderr)}`);
-  }
-
-  // Extract SHA from `[branch sha] message` line (git's standard commit output).
-  const shaMatch = commitStdout.match(/\[\S+\s+([a-f0-9]+)\]/);
-  const sha = shaMatch ? shaMatch[1] : 'unknown';
-
-  // #2699 — Capture HEAD ref name immediately after commit lands. Defensive
-  // against Mode-A: a peer's checkout between this point and the push step
-  // would silently move HEAD; bare `git push` would then push the wrong branch
-  // (because #2689's --force-branch escape disabled do_push's check_branch).
-  // #2705 — Captured ref passes via explicit --branch arg (substrate-uniform
-  // with --force-branch shape; env-on-the-wire retired per silas gate-arch).
-  let pushRef = '';
-  try {
-    const { stdout: headOut } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { env, cwd: repoRoot, timeout: 5_000 });
-    pushRef = headOut.trim();
-  } catch {
-    // capture failed — fall through to bare push (current behavior, accepts Mode-A residual)
-  }
-
-  // Step 3 — push via git-queue.sh (rebase-on-conflict, race-safe under lock).
-  // #2689 — pass --force-branch (mirrors #2687's commit-side fix). Without it,
-  // a Mode-A bump between commit and push triggered do_push's check_branch and
-  // surfaced as a false-positive push-conflict (6001a6be / b53a7fe5 / e19588b0).
-  // #2705 — --branch <ref> targets origin REF:REF when set; mirrors the
-  // explicit-arg shape, no env-on-the-wire.
-  // #2799 — pass --force-with-lease so the rebase-then-push path
-  // (do_push: pull --rebase && push) survives the rebased-local-vs-origin
-  // case without falling back to a /tmp script. Order matches git-queue.sh
-  // parser: --force-branch, --force-with-lease, --branch <ref>.
-  const pushArgs = pushRef
-    ? [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG, '--branch', pushRef]
-    : [STEP_PUSH, FORCE_BRANCH_FLAG, FORCE_WITH_LEASE_FLAG];
-  try {
-    await execFileAsync(gitQueuePath, pushArgs, { env, timeout: 60_000, cwd: repoRoot });
-  } catch (err) {
-    const stderr = extractStderr(err);
-    const reason = classifyPushFailure(stderr);
-    emit(CHORUS_COMMIT_REFUSED, { role, card_id: cardId, reason, detail: stderr.slice(0, 500) });
-    throw new Error(`chorus_commit refused: ${reason} — ${stderr.split('\n')[0]}`);
-  }
-
-  // Step 4 — success. Emit invoked and return structured payload.
-  emit(CHORUS_COMMIT_INVOKED, { role, card_id: cardId, paths_count: paths.length, sha });
-  return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify({ role, card_id: cardId, branch, sha }, null, 2),
-      },
-    ],
-  };
-}
+// #3182 — executeCommit deleted: dead since #3178 repointed chorus_commit→werk-commit
+// (the rust verb). The git-queue.sh commit/push it wrapped is now werk-commit/werk-push.
 
 // #2750 slice 2 — atomic /acp transaction. Wraps the existing executeCommit
 // path then runs PR-merge + cards-done + spine + werk-close as one
