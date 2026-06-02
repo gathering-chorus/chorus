@@ -24,7 +24,6 @@ import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
-import { resolveGitQueuePath } from './git-queue-path';
 import { executeDesignRefresh } from './design-refresh';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -81,10 +80,6 @@ export interface McpServerDeps {
   // #2661 — spine event emitter DI seam. Default writes a JSON line to
   // stderr (same channel as logEvent); tests inject a capture function.
   emitSpineEvent?: SpineEmitter;
-  // #2682 — git-queue.sh path. The chorus_commit handler spawns it as
-  // the canonical commit+push surface. Default resolves to the repo's
-  // platform/scripts/git-queue.sh; tests inject a fake path + mock execFileAsync.
-  gitQueuePath?: string;
   // #2913 — resolve the working tree (cwd / script root) for a role. The
   // default impl globs chorus-werk/<role>-* : a single match is the role's
   // active card werk, zero/ambiguous returns canonical (#2662 cwd=repo-root
@@ -876,7 +871,6 @@ const ACP_TOOL_DEF = {
   },
 } as const;
 
-const CHORUS_ACP_REFUSED = 'chorus_acp.refused';
 const CARD_ACCEPTED = 'card.accepted';
 
 // #2840 — typed agent surface for log + error investigation. Earns its keep
@@ -1094,19 +1088,7 @@ const BLAST_RADIUS_TOOL_DEF = {
 
 const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
 const CARD_UNPULLED = 'card.unpulled';
-// #2752 — sonarjs no-duplicate-string: extract literals appearing >5x
-const FORCE_BRANCH_FLAG = '--force-branch';
-// #2799 — force-with-lease passthrough for the post-rebase push step.
-// chorus_commit / chorus_acp do an internal `pull --rebase` before push;
-// when the local branch already had commits on origin, the rebase changes
-// local SHAs and a regular push hits non-fast-forward. Force-with-lease
-// is the safe variant — refuses on concurrent peer push, pushes our
-// rebased history otherwise. Closes the variant-recovery class today
-// papered over by /tmp/wren-N-push.sh scripts running raw git outside
-// the typed surface.
-const FORCE_WITH_LEASE_FLAG = '--force-with-lease';
 const ALREADY_MERGED = 'already-merged';
-const STEP_PUSH = 'push';
 // Step-name constants — extracted to satisfy sonarjs/no-duplicate-string (threshold 5).
 const STEP_WERK_CLOSE = 'werk-close';
 const STEP_WERK_PREFLIGHT = 'werk-preflight';
@@ -1116,11 +1098,6 @@ const STEP_ROLE_STATE = 'role-state';
 const CHORUS_WERK = 'chorus-werk';
 // Spine event emitted by all three athena query tools.
 const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
-
-interface AcpArgs {
-  role: 'kade' | 'wren' | 'silas';
-  card_id?: number; // #2868 — optional intent assertion
-}
 
 
 // #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
@@ -1171,10 +1148,6 @@ export function commitFailureDetail(stderr: string): string {
 // Untracked NEW files DO exist on disk, so they pass — git add stages them.
 export function findMissingPaths(paths: string[], exists: (p: string) => boolean): string[] {
   return paths.filter((p) => !exists(p));
-}
-
-function classifyPushFailure(stderr: string): 'push-conflict' | 'push-fail' {
-  return /rebase|conflict|merge/i.test(stderr) ? 'push-conflict' : 'push-fail';
 }
 
 function extractStderr(err: unknown): string {
@@ -2140,12 +2113,18 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const apiBase = deps.apiBase ?? 'http://localhost:3340';
   const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
   const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
-  const gitQueuePath = deps.gitQueuePath ?? resolveGitQueuePath();
+  // #3182 — repo root resolved DIRECTLY (env → __dirname), no longer via the
+  // git-queue.sh path string. This decouples the MCP layer from git-queue.sh
+  // entirely (its last MCP reference; the inline executeAcp caller was retired by
+  // #3176). git-queue.sh itself stays for now (session-close.sh, #1623/Phase 2).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pathRepo = require('path') as typeof import('path');
+  const canonicalRepoRoot =
+    process.env.CHORUS_ROOT ?? process.env.CHORUS_HOME ?? pathRepo.resolve(__dirname, '..', '..', '..');
   // #2913 — ephemeral-worktree cwd resolver. Default globs chorus-werk/<role>-*;
   // a single match is the role's active card werk, zero/ambiguous falls back to
   // canonical (#2662 cwd=repo-root contract preserved). No CHORUS_WERK_ENABLE
   // flag — the ephemeral model is the model, not an opt-in.
-  const canonicalRepoRoot = gitQueuePath.replace(/\/platform\/scripts\/git-queue\.sh$/, '');
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
