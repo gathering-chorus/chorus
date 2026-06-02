@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1080" font-family="-apple-system, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="arrR" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/>
+    </marker>
+  </defs>
+
+  <rect width="1500" height="1080" fill="#fbfbfc"/>
+  <text x="40" y="44" font-size="26" font-weight="700" fill="#1a1a1a">Athena v1 ↔ v2 — Integration Dependency Map</text>
+  <text x="40" y="68" font-size="14" fill="#666">Consumers of both ownership sources · validated via Explore · 2026-06-02 · #3177</text>
+
+  <!-- column headers -->
+  <text x="370" y="100" font-size="17" font-weight="700" fill="#b03a2e" text-anchor="middle">v1 — Fuseki / SPARQL graph  (~88 consumers)</text>
+  <text x="1120" y="100" font-size="17" font-weight="700" fill="#1e8449" text-anchor="middle">v2 — data/athena/tree.json  (14 consumers)</text>
+  <line x1="745" y1="84" x2="745" y2="980" stroke="#ddd" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- layer labels -->
+  <text x="20" y="172" font-size="12" font-weight="700" fill="#999" transform="rotate(-90 20,172)" text-anchor="middle">CONSUMERS</text>
+  <text x="20" y="470" font-size="12" font-weight="700" fill="#999" transform="rotate(-90 20,470)" text-anchor="middle">MCP TOOLS</text>
+  <text x="20" y="700" font-size="12" font-weight="700" fill="#999" transform="rotate(-90 20,700)" text-anchor="middle">API / ROUTES</text>
+  <text x="20" y="900" font-size="12" font-weight="700" fill="#999" transform="rotate(-90 20,900)" text-anchor="middle">SOURCE</text>
+
+  <!-- ===================== CONSUMERS ===================== -->
+  <!-- Agents — straddle both (the confusion) -->
+  <rect x="560" y="120" width="370" height="92" rx="8" fill="#fff" stroke="#c0392b" stroke-width="2.5" stroke-dasharray="6,4"/>
+  <text x="745" y="146" font-size="15" font-weight="700" fill="#c0392b" text-anchor="middle">AI roles — Wren · Silas · Kade</text>
+  <text x="745" y="168" font-size="12" fill="#444" text-anchor="middle">DEC-058: "query Athena via MCP for ownership"</text>
+  <text x="745" y="188" font-size="12" fill="#c0392b" text-anchor="middle" font-weight="600">→ two MCP answers to "who owns X", and they disagree</text>
+  <text x="745" y="204" font-size="11" fill="#999" text-anchor="middle">(heralds, pipelines, chorus:search differ v1 vs v2)</text>
+
+  <!-- v1 consumers -->
+  <rect x="60" y="120" width="210" height="50" rx="6" fill="#fdf0ee" stroke="#d98880"/>
+  <text x="165" y="142" font-size="12.5" font-weight="600" fill="#922" text-anchor="middle">Views</text>
+  <text x="165" y="159" font-size="11" fill="#666" text-anchor="middle">doc-catalog.html · athena/index.html</text>
+
+  <rect x="60" y="184" width="210" height="52" rx="6" fill="#fdf0ee" stroke="#d98880"/>
+  <text x="165" y="205" font-size="12.5" font-weight="600" fill="#922" text-anchor="middle">Scripts</text>
+  <text x="165" y="222" font-size="10.5" fill="#666" text-anchor="middle">crawler-hydrate-graph · nightly-coverage</text>
+
+  <rect x="295" y="120" width="210" height="50" rx="6" fill="#fdf0ee" stroke="#d98880"/>
+  <text x="400" y="141" font-size="12.5" font-weight="600" fill="#922" text-anchor="middle">Skills (v1)</text>
+  <text x="400" y="158" font-size="11" fill="#666" text-anchor="middle">/card · /gate-ops</text>
+
+  <!-- dual skill -->
+  <rect x="295" y="184" width="210" height="52" rx="6" fill="#fef9e7" stroke="#d4ac0d" stroke-width="2"/>
+  <text x="400" y="205" font-size="12.5" font-weight="700" fill="#9a7d0a" text-anchor="middle">/gate-product  ⚠ DUAL</text>
+  <text x="400" y="222" font-size="10.5" fill="#666" text-anchor="middle">reads tree.json AND v1 routes</text>
+
+  <!-- v2 consumers -->
+  <rect x="985" y="120" width="220" height="50" rx="6" fill="#eafaf1" stroke="#7dcea0"/>
+  <text x="1095" y="141" font-size="12.5" font-weight="600" fill="#1e7045" text-anchor="middle">View</text>
+  <text x="1095" y="158" font-size="11" fill="#666" text-anchor="middle">tree.html (owner filter, blast preview)</text>
+
+  <rect x="985" y="184" width="220" height="52" rx="6" fill="#eafaf1" stroke="#7dcea0"/>
+  <text x="1095" y="205" font-size="12.5" font-weight="600" fill="#1e7045" text-anchor="middle">Regression test</text>
+  <text x="1095" y="222" font-size="10.5" fill="#666" text-anchor="middle">athena-v2-repoint.test.ts (#3025)</text>
+
+  <!-- ===================== MCP TOOLS ===================== -->
+  <!-- v1 mcp (to be commented out) -->
+  <rect x="300" y="410" width="300" height="92" rx="8" fill="#fdecea" stroke="#c0392b" stroke-width="2"/>
+  <text x="450" y="434" font-size="14" font-weight="700" fill="#c0392b" text-anchor="middle">v1 MCP ownership tools</text>
+  <text x="450" y="456" font-size="12.5" fill="#444" text-anchor="middle">chorus_subdomains_list</text>
+  <text x="450" y="474" font-size="12.5" fill="#444" text-anchor="middle">chorus_subdomains_get</text>
+  <text x="450" y="494" font-size="11" fill="#c0392b" text-anchor="middle" font-weight="600">◀ #3177: comment these out</text>
+
+  <!-- v2 mcp -->
+  <rect x="900" y="410" width="320" height="92" rx="8" fill="#eafaf1" stroke="#1e8449" stroke-width="2"/>
+  <text x="1060" y="434" font-size="14" font-weight="700" fill="#1e8449" text-anchor="middle">v2 MCP tools  (repointed #3025)</text>
+  <text x="1060" y="456" font-size="12.5" fill="#444" text-anchor="middle">chorus_tree_get  ·  chorus_ownership_lookup</text>
+  <text x="1060" y="474" font-size="12.5" fill="#444" text-anchor="middle">chorus_blast_radius</text>
+  <text x="1060" y="494" font-size="11" fill="#1e8449" text-anchor="middle" font-weight="600">sanctioned ownership path</text>
+
+  <!-- ===================== API / ROUTES ===================== -->
+  <rect x="120" y="620" width="540" height="120" rx="8" fill="#fbeee9" stroke="#cb4335"/>
+  <text x="390" y="646" font-size="13.5" font-weight="700" fill="#922" text-anchor="middle">chorus-api · ~23 athena-*.ts handlers (deps.sparql / loadQuery)</text>
+  <text x="390" y="668" font-size="11.5" fill="#555" text-anchor="middle">~63 routes /api/athena/* — products, subproducts, subdomains,</text>
+  <text x="390" y="686" font-size="11.5" fill="#555" text-anchor="middle">subdomains/:id + facets (code · coverage · pages · endpoints ·</text>
+  <text x="390" y="704" font-size="11.5" fill="#555" text-anchor="middle">services · completeness), steps, owners, blast-radius, validate,</text>
+  <text x="390" y="722" font-size="11.5" fill="#555" text-anchor="middle">health, discover-* — most NOT yet covered by v2</text>
+
+  <rect x="900" y="620" width="320" height="120" rx="8" fill="#eafaf1" stroke="#239b56"/>
+  <text x="1060" y="646" font-size="13.5" font-weight="700" fill="#1e7045" text-anchor="middle">athena-tree.ts  (loadTree)</text>
+  <text x="1060" y="670" font-size="11.5" fill="#555" text-anchor="middle">lookupOwnership() · computeBlastRadius()</text>
+  <text x="1060" y="688" font-size="11.5" fill="#555" text-anchor="middle">3 routes: /api/athena/tree · /ownership/:iri</text>
+  <text x="1060" y="706" font-size="11.5" fill="#555" text-anchor="middle">· /blast-radius/:iri  (via athena-tree-stub.ts)</text>
+  <text x="1060" y="726" font-size="11" fill="#888" text-anchor="middle">Zod-validated · mtime-cached</text>
+
+  <!-- ===================== SOURCES ===================== -->
+  <rect x="120" y="820" width="540" height="96" rx="8" fill="#f5b7b1" stroke="#922b21" stroke-width="2"/>
+  <text x="390" y="856" font-size="17" font-weight="700" fill="#641e16" text-anchor="middle">Athena v1 — Apache Fuseki</text>
+  <text x="390" y="882" font-size="13" fill="#641e16" text-anchor="middle">SPARQL named graphs · stays LIVE (80+ consumers depend on it)</text>
+
+  <rect x="900" y="820" width="320" height="96" rx="8" fill="#a9dfbf" stroke="#196f3d" stroke-width="2"/>
+  <text x="1060" y="856" font-size="17" font-weight="700" fill="#145a32" text-anchor="middle">Athena v2 — tree.json</text>
+  <text x="1060" y="882" font-size="13" fill="#145a32" text-anchor="middle">source of truth for ownership / step</text>
+
+  <!-- ===================== EDGES ===================== -->
+  <!-- agents -> v1 mcp (red, the confusing edge) -->
+  <line x1="640" y1="212" x2="500" y2="410" stroke="#c0392b" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arrR)"/>
+  <!-- agents -> v2 mcp -->
+  <line x1="850" y1="212" x2="1000" y2="410" stroke="#1e8449" stroke-width="2.5" marker-end="url(#arr)"/>
+  <!-- gate-product -> v1 mcp and v2 (dual) -->
+  <line x1="400" y1="236" x2="430" y2="410" stroke="#d4ac0d" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <line x1="505" y1="210" x2="900" y2="455" stroke="#d4ac0d" stroke-width="1.6" stroke-dasharray="3,3" marker-end="url(#arr)"/>
+
+  <!-- v1 mcp -> v1 api -->
+  <line x1="450" y1="502" x2="430" y2="620" stroke="#c0392b" stroke-width="2" marker-end="url(#arrR)"/>
+  <text x="455" y="565" font-size="10.5" fill="#c0392b">/api/athena/subdomains</text>
+  <!-- v2 mcp -> v2 api -->
+  <line x1="1060" y1="502" x2="1060" y2="620" stroke="#1e8449" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- v1 views/scripts -> v1 api -->
+  <line x1="165" y1="170" x2="220" y2="620" stroke="#cb4335" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="165" y1="236" x2="260" y2="620" stroke="#cb4335" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="400" y1="170" x2="360" y2="620" stroke="#cb4335" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <!-- v2 views/tests -> v2 -->
+  <line x1="1095" y1="170" x2="1080" y2="620" stroke="#239b56" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="1095" y1="236" x2="1010" y2="410" stroke="#239b56" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arr)"/>
+
+  <!-- api -> sources -->
+  <line x1="390" y1="740" x2="390" y2="820" stroke="#922b21" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="1060" y1="740" x2="1060" y2="820" stroke="#196f3d" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ===================== DECISION CALLOUT ===================== -->
+  <rect x="120" y="958" width="1100" height="96" rx="10" fill="#fff" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="140" y="984" font-size="14" font-weight="700" fill="#2c3e50">#3177 — narrow cut (not v1 deprecation):</text>
+  <text x="140" y="1006" font-size="12.5" fill="#333">Comment out the only v1 MCP ownership path — <tspan font-weight="700" fill="#c0392b">chorus_subdomains_list</tspan> + <tspan font-weight="700" fill="#c0392b">chorus_subdomains_get</tspan>. Agents then have ONE ownership answer:</text>
+  <text x="140" y="1026" font-size="12.5" fill="#333"><tspan font-weight="700" fill="#1e8449">chorus_tree_get / chorus_ownership_lookup</tspan> (v2, source of truth).  v1 SPARQL + its ~80 detail/facet/coverage consumers stay LIVE — v2 doesn't cover them yet.</text>
+  <text x="140" y="1046" font-size="11.5" fill="#777">Scope = 2 MCP tool registrations + dispatch cases in platform/mcp-server/src/server.ts. Watch: /gate-product (dual) — point its ownership read at v2 too.</text>
+</svg>

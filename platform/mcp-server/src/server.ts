@@ -2900,8 +2900,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PRINCIPLES_CREATE_TOOL_DEF,
       DECISIONS_LIST_TOOL_DEF,
       DECISIONS_GET_TOOL_DEF,
-      SUBDOMAINS_LIST_TOOL_DEF,
-      SUBDOMAINS_GET_TOOL_DEF,
+      // #3177: v1 SPARQL ownership tools removed from the advertised list so the
+      // team has ONE place to look for ownership — the v2 tree. Use
+      // chorus_tree_get / chorus_ownership_lookup (repointed to data/athena/tree.json
+      // in #3025) instead. v1 SPARQL stays live for the ~80 detail/facet/coverage
+      // consumers v2 doesn't cover yet; only the duplicate ownership path is cut.
+      // SUBDOMAINS_LIST_TOOL_DEF,
+      // SUBDOMAINS_GET_TOOL_DEF,
       CARDS_ADD_TOOL_DEF,
       CARD_ADD_JEFF_TOOL_DEF,
       CARDS_MOVE_TOOL_DEF,
@@ -3016,15 +3021,20 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         return executeDecisionsGet(parsed.data, fetchImpl, apiBase, from);
       }
-      case 'chorus_subdomains_list':
-        return executeSubdomainsList(fetchImpl, apiBase, from);
-      case 'chorus_subdomains_get': {
-        const parsed = SubdomainsGetInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        return executeSubdomainsGet(parsed.data, fetchImpl, apiBase, from);
-      }
+      // #3177: v1 SPARQL ownership tools de-listed (see TOOL_DEF registration above).
+      // Dispatch cases commented out so a hand-crafted call can't reach the v1 path —
+      // it falls through to the unknown-tool error. Use chorus_tree_get /
+      // chorus_ownership_lookup (v2) for ownership. executeSubdomainsList/Get +
+      // SubdomainsGetInput remain defined but unreferenced (noUnusedLocals off).
+      // case 'chorus_subdomains_list':
+      //   return executeSubdomainsList(fetchImpl, apiBase, from);
+      // case 'chorus_subdomains_get': {
+      //   const parsed = SubdomainsGetInput.safeParse(req.params.arguments);
+      //   if (!parsed.success) {
+      //     throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+      //   }
+      //   return executeSubdomainsGet(parsed.data, fetchImpl, apiBase, from);
+      // }
       case 'chorus_cards_add': {
         const parsed = CardsAddInput.safeParse(req.params.arguments);
         if (!parsed.success) {
