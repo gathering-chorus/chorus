@@ -146,6 +146,42 @@ fi
 CRATE="$1"
 MODE="${2:-deploy}"
 
+# #3181 — canonical build-source must be synced BEFORE building. chorus-deploy builds
+# from $ROOT's HEAD; when $ROOT is canonical (not a per-card werk), fast-forward it to
+# origin/main first, so a "merged" fix is never built from a stale canonical. This was
+# the merged≠live engine: canonical sat 13 commits behind all of 2026-06-01 and a
+# `chorus-deploy chorus-mcp` shipped a daemon missing the merged werk-* tool renames
+# while reporting success. A werk-sourced build ($ROOT under chorus-werk) builds from
+# the werk, so canonical sync is N/A and skipped. The guard no-ops when $ROOT has no
+# git / no origin/main ref (can't determine sync state → don't block). Refuses rather
+# than force-sync when canonical can't ff cleanly (ahead/diverged/dirty).
+if [ "$MODE" != "--rollback" ]; then
+  case "$ROOT" in
+    *chorus-werk/*) : ;;  # werk-sourced build — canonical sync N/A
+    *)
+      if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$ROOT" fetch -q origin main 2>/dev/null || true
+        if git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+          behind=$(git -C "$ROOT" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+          if [ "${behind:-0}" -gt 0 ]; then
+            ahead=$(git -C "$ROOT" rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+            dirty=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+            if [ "${ahead:-0}" -gt 0 ] || [ "${dirty:-0}" -gt 0 ]; then
+              echo "chorus-deploy: REFUSING — canonical is $behind behind origin/main but can't ff cleanly (ahead=$ahead, dirty=$dirty file(s)). Run 'chorus-werk-sync recover', then re-deploy." >&2
+              exit 1
+            fi
+            echo "chorus-deploy: canonical $behind behind origin/main — fast-forwarding before build (#3181)"
+            if ! git -C "$ROOT" merge --ff-only origin/main >/dev/null 2>&1; then
+              echo "chorus-deploy: REFUSING — ff to origin/main failed; run 'chorus-werk-sync recover'." >&2
+              exit 1
+            fi
+          fi
+        fi
+      fi
+      ;;
+  esac
+fi
+
 # #3110: chorus-deploy --all werk — build + deploy all 7 verb binaries in one
 # call. Retires install-werk-verbs.sh as the parallel orchestrator. Each verb
 # goes through chorus-build then chorus-deploy in sequence; failure of one
