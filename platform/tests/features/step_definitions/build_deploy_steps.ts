@@ -30,7 +30,6 @@ const CHORUS_LOG_BIN = `${CHORUS_ROOT}/platform/scripts/chorus-log`;
 const CHORUS_LOG_FILE = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
 const BIN_INSTALL = `${CHORUS_ROOT}/platform/scripts/chorus-bin-install`;
 const CHORUS_BUILD = `${CHORUS_ROOT}/platform/scripts/chorus-build`;
-const GIT_QUEUE = `${CHORUS_ROOT}/platform/scripts/git-queue.sh`;
 const CHORUS_BIN_DIR = `${process.env.HOME}/.chorus/bin`;
 
 interface Ctx {
@@ -321,38 +320,3 @@ Then('the affected card {int} appears in the verbose output', function (_cardId:
   return 'pending';
 });
 
-// --- Scenario 5: git-queue export_card_id_from_branch ---
-
-Given('a temp git repo on branch {word}', function (branch: string) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bdd-git-'));
-  execSync(`cd "${tmp}" && git init --quiet --initial-branch=main && git config user.email test@test && git config user.name test && git commit --allow-empty -m init --quiet`);
-  if (branch !== 'main') {
-    execSync(`cd "${tmp}" && git checkout -b "${branch}" --quiet`);
-  }
-  ctx.tempGitRepo = tmp;
-});
-
-When('the export_card_id_from_branch helper runs', function () {
-  assert.ok(ctx.tempGitRepo);
-  // Extract just the function from git-queue.sh and invoke it in a subshell
-  // with REPO_ROOT set to the fixture. Same pattern as the bats contract pin.
-  const cmd = `
-    REPO_ROOT="${ctx.tempGitRepo}"
-    eval "$(sed -n '/^export_card_id_from_branch()/,/^}/p' "${GIT_QUEUE}")"
-    export_card_id_from_branch
-    echo "CARD_ID=\${CHORUS_CARD_ID:-UNSET}"
-  `;
-  const out = execSync(`bash -c '${cmd.replace(/'/g, "'\\''")}'`, { encoding: 'utf-8' });
-  const match = out.match(/CARD_ID=(.+)/);
-  ctx.exportedCardId = match ? match[1].trim() : null;
-});
-
-Then('CHORUS_CARD_ID equals {string}', function (expected: string) {
-  assert.equal(ctx.exportedCardId, expected,
-    `expected CHORUS_CARD_ID="${expected}", got "${ctx.exportedCardId}"`);
-});
-
-Then('CHORUS_CARD_ID is unset', function () {
-  assert.equal(ctx.exportedCardId, 'UNSET',
-    `expected CHORUS_CARD_ID unset, got "${ctx.exportedCardId}"`);
-});

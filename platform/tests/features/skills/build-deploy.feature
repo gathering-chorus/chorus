@@ -74,14 +74,3 @@ Feature: /build + /deploy pipeline — substrate behaviors
     And the JSON output has unpaired_release_trigger>=1
     And the affected card 99200 appears in the verbose output
 
-  # --- Scenario 5: git-queue exports CHORUS_CARD_ID from branch (#2876) ---
-
-  Scenario: git-queue export_card_id_from_branch sets env from role/N branch
-    Given a temp git repo on branch silas/2876
-    When the export_card_id_from_branch helper runs
-    Then CHORUS_CARD_ID equals "2876"
-
-  Scenario: git-queue export_card_id_from_branch leaves CHORUS_CARD_ID unset on main
-    Given a temp git repo on branch main
-    When the export_card_id_from_branch helper runs
-    Then CHORUS_CARD_ID is unset
