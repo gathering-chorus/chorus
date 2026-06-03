@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HIP-001 — The Forcing Pattern</title>
+<style>
+  :root { --ink:#1a1a2e; --dim:#6b7280; --force:#137a4b; --ignore:#a23b3b; --line:#d9dce3; --bg:#fbfbfd; }
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color:var(--ink); background:var(--bg); max-width:880px; margin:0 auto; padding:2.5rem 1.5rem 5rem; }
+  h1 { font-size:1.9rem; margin:0 0 .2rem; }
+  .sub { color:var(--dim); font-size:1.05rem; margin:0 0 1.8rem; }
+  h2 { font-size:1.15rem; margin:2.2rem 0 .5rem; border-bottom:1px solid var(--line); padding-bottom:.3rem; }
+  code { background:#eef0f5; padding:.1em .35em; border-radius:4px; font-size:.9em; }
+  .tag { display:inline-block; font-size:.72rem; font-weight:600; padding:.1em .5em; border-radius:10px; background:#eef0f5; color:var(--dim); vertical-align:middle; }
+  table { border-collapse:collapse; width:100%; margin:.6rem 0; font-size:.92rem; }
+  th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; }
+  .door { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
+  .force { color:var(--force); font-weight:600; }
+  .ignore { color:var(--ignore); font-weight:600; }
+  ol li, ul li { margin:.25rem 0; }
+  .lede { background:#f3f6ff; border-left:3px solid #5b7cfa; padding:.8rem 1rem; border-radius:0 6px 6px 0; margin:1rem 0; }
+  figure { margin:1.5rem 0; text-align:center; }
+  figcaption { color:var(--dim); font-size:.85rem; margin-top:.4rem; }
+  .meta { color:var(--dim); font-size:.8rem; margin-top:3rem; border-top:1px solid var(--line); padding-top:.8rem; }
+</style>
+</head>
+<body>
+
+<h1>The Forcing Pattern <span class="tag">HIP-001</span></h1>
+<p class="sub">A Harness Integration Pattern — how a runtime makes an agent <em>actually heed</em> what it would otherwise ignore.</p>
+
+<div class="lede">
+<strong>One line:</strong> guarantee a behavior by putting a <strong>block at a choke point the flow must cross</strong> — not a reminder the actor can scroll past. The EIP move, for agents: <em>put the guarantee in the channel, not the endpoint's goodwill.</em>
+</div>
+
+<h2>Lineage — why "HIP"</h2>
+<p><strong>EIP</strong> (Hohpe &amp; Woolf, <em>Enterprise Integration Patterns</em>) catalogs patterns for integrating <em>systems</em> — the channel between applications. The 2025 <strong>agentic-design-pattern</strong> catalogs (Gullí, <em>Agentic Design Patterns</em>, Springer; Arsanjani) catalog agent <em>orchestration</em> — how agents chain, route, reflect, use tools. Neither covers the layer in between: <strong>the harness</strong> — the runtime wrapping the agent (hooks, gates, lifecycle doors) as the surface where control is integrated <em>into</em> the agent's loop. We call patterns at that layer <strong>HIPs — Harness Integration Patterns</strong>. The Forcing Pattern is HIP-001.</p>
+
+<h2>The gathering spine (Versammlung, not Gestell)</h2>
+<p>Heidegger's distinction is the deeper frame. <strong>Gestell</strong> (enframing) <em>collects</em> — it piles up standing-reserve to be drawn on, indifferently. <strong>Versammlung</strong> (gathering) <em>brings together so that it bears on the moment</em>. An inject that delivers context the agent scrolls past is collection — bytes stockpiled, un-gathered. A force makes the surfaced context <em>bear on the turn</em>: it cannot complete until the context has been used or consciously set aside. The Forcing Pattern is how the harness gathers rather than merely collects. <em>Chorus dis-integrated is Chorus un-gathered.</em></p>
+
+<h2>Problem</h2>
+<p>Passive guidance — docs, reminders, injected context, a "MANDATORY" footer — gets ignored. An AI agent has no smell-receptor for what it skips and pays no felt cost, so an <em>ask</em> is scrolled past. The tell: a mechanism that has to <em>say</em> "mandatory" is begging. A force never asks — it stops you.</p>
+
+<h2>Solution — the recipe</h2>
+<ol>
+  <li><strong>Find a choke point</strong> the flow must cross (a tool call; the turn's end).</li>
+  <li><strong>Check ONE specific, checkable condition</strong> there (not "engage more").</li>
+  <li><strong>Block + name exactly what's missing</strong> — actionable, not vague.</li>
+  <li><strong>Clean exit</strong>, or it loops and traps the actor.</li>
+  <li><strong>Log the decision</strong> — so bypass is visible, not invisible, and the log becomes tuning data.</li>
+</ol>
+
+<figure>
+<svg viewBox="0 0 860 560" width="100%" role="img" aria-label="The Forcing Pattern diagram" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .t{font:600 13px system-ui;fill:#1a1a2e}.s{font:11px ui-monospace,Menlo,monospace;fill:#374151}
+    .h{font:700 15px system-ui;fill:#1a1a2e}.lbl{font:600 11px system-ui;fill:#6b7280}
+    .fg{font:600 12px system-ui;fill:#137a4b}.ig{font:600 12px system-ui;fill:#a23b3b}
+  </style>
+  <rect x="0" y="0" width="860" height="560" fill="#fbfbfd"/>
+  <text x="24" y="34" class="h">THE FORCING PATTERN — block at a choke point vs an ignorable ask</text>
+
+  <!-- flow of a turn -->
+  <text x="24" y="74" class="lbl">FLOW OF A TURN — each door is either an IGNORE (append) or a FORCE (block)</text>
+  <line x1="40" y1="118" x2="820" y2="118" stroke="#cdd2dc" stroke-width="2"/>
+  <!-- node: prompt in -->
+  <circle cx="150" cy="118" r="7" fill="#a23b3b"/>
+  <text x="150" y="100" class="ig" text-anchor="middle">UserPromptSubmit</text>
+  <text x="150" y="142" class="s" text-anchor="middle">prompt in</text>
+  <text x="150" y="156" class="s" text-anchor="middle">(the inject — append only)</text>
+  <!-- node: pretooluse -->
+  <circle cx="430" cy="118" r="7" fill="#137a4b"/>
+  <text x="430" y="100" class="fg" text-anchor="middle">PreToolUse</text>
+  <text x="430" y="142" class="s" text-anchor="middle">before edit/cmd</text>
+  <text x="430" y="156" class="s" text-anchor="middle">(TDD / memory gate — blocks)</text>
+  <!-- node: stop -->
+  <circle cx="730" cy="118" r="7" fill="#137a4b"/>
+  <text x="730" y="100" class="fg" text-anchor="middle">Stop</text>
+  <text x="730" y="142" class="s" text-anchor="middle">turn end</text>
+  <text x="730" y="156" class="s" text-anchor="middle">(#3203 inject-force — blocks)</text>
+  <text x="44" y="122" class="s">you▸</text>
+  <text x="784" y="122" class="s">▸done</text>
+
+  <!-- ignore vs force columns -->
+  <rect x="40" y="200" width="370" height="180" rx="8" fill="#fdf3f3" stroke="#e7c9c9"/>
+  <text x="60" y="228" class="ig">IGNORE — appends / asks, can't stop the flow</text>
+  <text x="60" y="256" class="s">· dashboards   · alerts   · ratchets</text>
+  <text x="60" y="278" class="s">· principles-on-a-page</text>
+  <text x="60" y="300" class="s">· a "MANDATORY" footer (begging)</text>
+  <text x="60" y="338" class="s" font-style="italic">→ scrolled past. The tell: it has to SAY</text>
+  <text x="60" y="354" class="s" font-style="italic">   "mandatory."</text>
+
+  <rect x="450" y="200" width="370" height="180" rx="8" fill="#f1faf5" stroke="#bfe3cf"/>
+  <text x="470" y="228" class="fg">FORCE — blocks until a condition is met</text>
+  <text x="470" y="256" class="s">· PreToolUse block (edit/cmd gate)</text>
+  <text x="470" y="278" class="s">· Stop block (turn-end gate)</text>
+  <text x="470" y="300" class="s">· the deploy that died in your face</text>
+  <text x="470" y="338" class="s" font-style="italic">→ changes behavior. A force never asks —</text>
+  <text x="470" y="354" class="s" font-style="italic">   it just stops you.</text>
+
+  <!-- recipe -->
+  <text x="40" y="424" class="t">TO BUILD A FORCE:</text>
+  <text x="40" y="448" class="s">1  choke point — a door the flow MUST cross</text>
+  <text x="40" y="468" class="s">2  one specific, checkable condition  (not "engage more")</text>
+  <text x="40" y="488" class="s">3  block + name what's missing</text>
+  <text x="40" y="508" class="s">4  clean exit, or it traps you in a loop</text>
+  <text x="40" y="528" class="s">5  log the decision — bypass becomes visible + tuning data</text>
+</svg>
+<figcaption>HIP-001 — the Forcing Pattern. Mechanism (the force) is fixed; the verdict/policy is a swappable, well-scoped core.</figcaption>
+</figure>
+
+<h2>Variants — by which door is the choke point</h2>
+<table>
+  <tr><th>Door</th><th>Fires</th><th>Force?</th><th>Live instance</th></tr>
+  <tr><td class="door">UserPromptSubmit</td><td>prompt arrives</td><td class="ignore">weakest — append only</td><td>the context inject (#3191)</td></tr>
+  <tr><td class="door">PreToolUse</td><td>before an edit/command</td><td class="force">blocks the tool call</td><td>TDD gate, memory/git-history gate, DEC-074 search-hierarchy</td></tr>
+  <tr><td class="door">Stop</td><td>turn about to complete</td><td class="force">blocks completion</td><td>inject-force (#3203), DEC-025 phrase gate</td></tr>
+</table>
+
+<h2>Known uses</h2>
+<ul>
+  <li><strong>Search hierarchy</strong> — force Chorus + LSP + AST ahead of grep on code search. <span class="door">PreToolUse</span>. DEC-074 forces chorus&gt;grep today; the targeted extension is LSP/AST&gt;grep.</li>
+  <li><strong>TDD gate</strong> — no production edit without a test. <span class="door">PreToolUse</span>.</li>
+  <li><strong>Memory / git-history gate</strong> — no fix without reading the target file's prior commits. <span class="door">PreToolUse</span>.</li>
+  <li><strong>Inject-force (#3203)</strong> — the turn can't complete while the inject surfaced records the response neither used (👍) nor explicitly dismissed-with-reason (✋). Bare <code>dismiss-inject:</code> with no reason (🖕) → blocked (🛑). <span class="door">Stop</span>. Observe-mode live; enforce + a smarter verdict are the contained follow-ons.</li>
+  <li><strong>Phrase gate</strong> — block turn completion on a banned phrase. <span class="door">Stop</span> (DEC-025).</li>
+</ul>
+
+<h2>Forces (trade-offs)</h2>
+<ul>
+  <li><strong>Specific or it's costume.</strong> A vague "you didn't engage" gate produces flail → "stuck" → a card lands on the human. Demand a checkable artifact.</li>
+  <li><strong>Lenient vs strict.</strong> A too-lenient check never blocks (a pass-stamp, not a force); too strict traps. The verdict is a knob — tune it against the logged decisions.</li>
+  <li><strong>Mechanism vs policy.</strong> Keep the force (infrastructure) separate from the verdict (policy). Then improving it is one well-scoped block, not a scattered fight — the antidote to indiscriminate suboptimization.</li>
+  <li><strong>Self-trapping risk.</strong> A turn-blocking gate can trap every session if buggy. Ship <em>observe-only</em> first; flip to enforce once the log proves the verdict.</li>
+</ul>
+
+<h2>Anti-pattern — "the ignore"</h2>
+<p>Anything that appends or asks but cannot stop the flow: dashboards, alerts, ratchets, principles-on-a-page, MANDATORY footers. They read as covered while covering nothing. <strong>If it has to announce that it's mandatory, it isn't a force.</strong></p>
+
+<p class="meta">HIP-001 · card #3204 · domain:chorus subproduct:loom · companions: MEMORY_ARCHITECTURE, ATTENTION_ARCHITECTURE, memory-attention-awareness (the gathering/integration frame) · pulse-inject (#3205) is the integration wiring.</p>
+
+</body>
+</html>
