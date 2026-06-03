@@ -200,10 +200,26 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     }
 
     // --- push, serialized under the flock. Sanctioned-pusher sentinel for #2598. ---
+    // #3194: re-running the chain on an already-pushed card is THE common path (deploy
+    // fails often). werk-commit unconditionally rebases onto current main (#3186),
+    // rewriting history, so the branch diverges from its OWN earlier push and a plain
+    // push is non-ff. When the remote branch already exists, push with
+    // --force-with-lease=<branch> (NO explicit sha): git uses our remote-tracking ref
+    // as the expected value, so it re-points our own card branch to the rebased history
+    // but REFUSES if origin moved to anything we haven't fetched (a peer push) — a
+    // lease, never a blind force. wrong-branch above already proved it's our own branch.
+    // Fresh branch (remote absent) stays a plain push.
+    let remote_exists = !remote.trim().is_empty();
+    let lease = format!("--force-with-lease={}", branch);
+    let push_args: Vec<&str> = if remote_exists {
+        vec!["push", "origin", &branch, &lease]
+    } else {
+        vec!["push", "origin", &branch]
+    };
     {
         let _lock = lock(home, Duration::from_secs(30))?;
         jsonl(home, role, card, &trace, "lock.acquired", "");
-        run_in_env(&werk_s, "git", &["push", "origin", &branch], &[("_GIT_QUEUE_PUSH", "1")])
+        run_in_env(&werk_s, "git", &push_args, &[("_GIT_QUEUE_PUSH", "1")])
             .map_err(|e| format!("push failed: {}", e))?;
     }
     jsonl(home, role, card, &trace, "pushed", &format!(",\"sha\":\"{}\"", sha));
