@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Athena v2 — Instance Classification (skills) — DRAFT for red-line</title>
+<style>
+ body{font:14px -apple-system,Helvetica,Arial,sans-serif;margin:28px;color:#1a1a1a;background:#fbfbfc}
+ h1{font-size:22px;margin:0 0 4px} .sub{color:#666;margin:0 0 18px}
+ .legend{margin:0 0 18px;font-size:12.5px;color:#444}
+ .legend span{display:inline-block;margin-right:14px}
+ table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+ th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eee;font-size:13px}
+ th{background:#f4f5f7;position:sticky;top:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#777}
+ .dom{background:#eef2f7;font-weight:700;font-size:12px;color:#2c3e50}
+ .wren{color:#7d3c98;font-weight:600}.kade{color:#1f618d;font-weight:600}.silas{color:#117864;font-weight:600}.jeff{color:#b9770e;font-weight:600}
+ .ok{color:#1e8449;font-weight:700}.q{color:#cb4335}
+ .step{color:#555}.draft{background:#fffaf0}
+ code{background:#f0f0f3;padding:1px 4px;border-radius:3px;font-size:12px}
+</style></head><body>
+<h1>Athena v2 — Instance Classification · skills (43)</h1>
+<p class="sub">DRAFT for red-line · #3184 · 4 axes: domain (subject) · owner (implementer, ≠ domain owner OK) · atStep (value-stream) · shape</p>
+<p class="legend">
+ <span><b class="ok">✓</b> = you confirmed</span>
+ <span><b class="q">?</b> = my inference, red-line me</span>
+ <span class="wren">Wren</span><span class="kade">Kade</span><span class="silas">Silas</span><span class="jeff">Jeff</span>
+ <span>steps: Shaping · Designing · Directing · Building · Proving</span>
+</p>
+<table>
+<tr><th>instance</th><th>owner</th><th>atStep</th><th>shape</th><th>conf</th><th>note</th></tr>
+
+<tr class="dom"><td colspan="6">messages  (domain owner: Wren) — roles interact via messages</td></tr>
+<tr><td><code>nudge</code></td><td class="wren">Wren</td><td class="step">Directing</td><td>skill+hook</td><td class="ok">✓</td><td>you set: messages + Directing</td></tr>
+<tr><td><code>chat</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>role-to-role channel</td></tr>
+<tr><td><code>chat-tick</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>cron tick of chat</td></tr>
+<tr><td><code>interrupt</code></td><td class="wren q">Wren?</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>break into a session — messages or roles? owner?</td></tr>
+
+<tr class="dom"><td colspan="6">roles  (domain owner: Wren)</td></tr>
+<tr><td><code>interaction-pattern</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>hook-only</td><td class="ok">✓</td><td>the pattern OF interaction; step inferred</td></tr>
+
+<tr class="dom"><td colspan="6">memory  (domain owner: Jeff)</td></tr>
+<tr><td><code>context-inject</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>hook-only</td><td class="ok">✓</td><td>owner≠domain owner; step inferred</td></tr>
+
+<tr class="dom"><td colspan="6">knowledge  (domain owner: Jeff)</td></tr>
+<tr><td><code>input-classifier</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="ok">✓</td><td>owner≠domain owner; step inferred</td></tr>
+
+<tr class="dom"><td colspan="6">search  (domain owner: Wren)</td></tr>
+<tr><td><code>chorus</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>query the shared index</td></tr>
+
+<tr class="dom"><td colspan="6">cards  (domain owner: Wren)</td></tr>
+<tr><td><code>card</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill+hook</td><td class="q">?</td><td>file a card (bouncer hook)</td></tr>
+<tr><td><code>gate-product</code></td><td class="wren">Wren</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td><td>product gate</td></tr>
+<tr><td><code>board-sweep</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>flow</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>sb</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>scan board</td></tr>
+<tr><td><code>wtf</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>triage</td></tr>
+<tr><td><code>golfball</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>pre-sequence scan</td></tr>
+<tr><td><code>werk</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>work-state dashboard</td></tr>
+<tr><td><code>ab</code></td><td class="wren q">Wren?</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>analyze board (agent guessed analytics/Silas)</td></tr>
+
+<tr class="dom"><td colspan="6">practices  (domain owner: Wren)</td></tr>
+<tr><td><code>jdi</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>skill+hook</td><td class="q">?</td></tr>
+<tr><td><code>pair</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>skill+hook</td><td class="q">?</td></tr>
+<tr><td><code>gemba</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>observe a role working</td></tr>
+<tr><td><code>gemba-tick</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>cs</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>check seeds</td></tr>
+<tr><td><code>close</code></td><td class="wren">Wren</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td><td>session close-out</td></tr>
+<tr><td><code>reboot</code></td><td class="wren">Wren</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">decisions / rcas  (domain owner: Wren)</td></tr>
+<tr><td><code>retro</code></td><td class="wren">Wren</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td><td>retrospective</td></tr>
+
+<tr class="dom"><td colspan="6">version-control  (domain owner: Kade)</td></tr>
+<tr><td><code>acp</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td></tr>
+<tr><td><code>acp-v2</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td><td>sibling of acp — cutover?</td></tr>
+<tr><td><code>pull</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>unpull</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>skill-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">code / tests  (domain owner: Kade)</td></tr>
+<tr><td><code>gate-code</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td></tr>
+<tr><td><code>gate-quality</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td></tr>
+<tr><td><code>simplify</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>skill-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">pipelines  (domain owner: Kade)</td></tr>
+<tr><td><code>demo</code></td><td class="wren q">Wren?</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td><td>⚠ you said Wren; werk-demo is Kade's — confirm owner</td></tr>
+<tr><td><code>pipeline</code></td><td class="kade">Kade</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">domains  (domain owner: Wren)</td></tr>
+<tr><td><code>gate-arch</code></td><td class="silas">Silas</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td><td>owner≠domain owner (arch gate is Silas)</td></tr>
+
+<tr class="dom"><td colspan="6">deploys  (domain owner: Silas)</td></tr>
+<tr><td><code>gate-ops</code></td><td class="silas">Silas</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">toolchain  (domain owner: Silas)</td></tr>
+<tr><td><code>lk</code></td><td class="kade">Kade</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>owner≠domain owner (you locked lk=Kade)</td></tr>
+<tr><td><code>ls</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>lw</code></td><td class="silas q">Silas?</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>look at Wren — owner Silas or Wren?</td></tr>
+<tr><td><code>lc</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>look at Chrome</td></tr>
+<tr><td><code>look</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td></tr>
+<tr><td><code>ot</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>skill-only</td><td class="q">?</td><td>open in tab</td></tr>
+<tr><td><code>listen</code></td><td class="silas">Silas</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>voice input</td></tr>
+<tr><td><code>share</code></td><td class="silas">Silas</td><td class="step draft">Proving?</td><td>skill-only</td><td class="q">?</td><td>export page → PDF/PNG</td></tr>
+
+<tr class="dom"><td colspan="6">analytics  (domain owner: Silas)</td></tr>
+<tr><td><code>lm</code></td><td class="silas q">Silas?</td><td class="step draft">Shaping?</td><td>skill-only</td><td class="q">?</td><td>look at me (posture/sentiment)</td></tr>
+</table>
+
+<h1 style="margin-top:34px">Hooks — enforcement (≈39)</h1>
+<p class="sub">context-inject / input-classifier / interaction-pattern already shown above (Wren). Skill-paired hooks marked skill+hook; the rest are hook-only substrate.</p>
+<table>
+<tr><th>hook</th><th>owner</th><th>atStep</th><th>shape</th><th>conf</th><th>note</th></tr>
+
+<tr class="dom"><td colspan="6">knowledge / search  (domain owner: Jeff / Wren)</td></tr>
+<tr><td><code>memory_gate</code></td><td class="wren q">Wren?</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="q">?</td><td>context-synthesis gate (the one that blocks code w/o synthesis) — owner?</td></tr>
+<tr><td><code>memory_first</code></td><td class="wren q">Wren?</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="q">?</td><td>search-before-fs (DEC-074)</td></tr>
+<tr><td><code>search_hierarchy</code></td><td class="wren">Wren</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="q">?</td><td>DEC-074 enforce</td></tr>
+
+<tr class="dom"><td colspan="6">cards  (domain owner: Wren)</td></tr>
+<tr><td><code>card_add_probe</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>skill+hook</td><td class="q">?</td><td>↔ /card bouncer</td></tr>
+<tr><td><code>card_approval_responder</code></td><td class="wren">Wren</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>replays approved card</td></tr>
+
+<tr class="dom"><td colspan="6">practices  (domain owner: Wren)</td></tr>
+<tr><td><code>jdi_detector</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>skill+hook</td><td class="q">?</td><td>↔ /jdi</td></tr>
+<tr><td><code>pair_gate</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>skill+hook</td><td class="q">?</td><td>↔ /pair</td></tr>
+<tr><td><code>pair_enforcement</code></td><td class="wren">Wren</td><td class="step draft">Building?</td><td>skill+hook</td><td class="q">?</td><td>↔ /pair</td></tr>
+<tr><td><code>session_init_gate</code></td><td class="wren q">Wren?</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>story_write_gate</code></td><td class="wren q">Wren?</td><td class="step draft">Shaping?</td><td>hook-only</td><td class="q">?</td><td>stories are yours</td></tr>
+<tr><td><code>stop_on_error</code></td><td class="silas q">Silas?</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>error-handling discipline — owner?</td></tr>
+
+<tr class="dom"><td colspan="6">clearing / streams  (domain owner: Wren)</td></tr>
+<tr><td><code>e2e_responder</code></td><td class="wren q">Wren?</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>clearing API feedback</td></tr>
+<tr><td><code>handoff_logger</code></td><td class="wren q">Wren?</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>logs role handoffs</td></tr>
+
+<tr class="dom"><td colspan="6">version-control  (domain owner: Kade)</td></tr>
+<tr><td><code>accept_gate</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td><td>↔ /acp</td></tr>
+<tr><td><code>canonical_write_guard</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>redirect canonical writes → werk</td></tr>
+<tr><td><code>pre-push</code> (git)</td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>hook-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">code / tests  (domain owner: Kade)</td></tr>
+<tr><td><code>quality_gate</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>skill+hook</td><td class="q">?</td><td>↔ /gate-code, /gate-quality</td></tr>
+<tr><td><code>tdd_gate</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>TDD discipline (DEC-1674)</td></tr>
+<tr><td><code>test_quality_gate</code></td><td class="kade">Kade</td><td class="step draft">Proving?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>pre-commit</code> (git)</td><td class="kade">Kade</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">integrations / convergence  (domain owner: Kade)</td></tr>
+<tr><td><code>icd_pre_read</code></td><td class="kade">Kade</td><td class="step draft">Designing?</td><td>hook-only</td><td class="q">?</td><td>ICD gate (DEC-095)</td></tr>
+<tr><td><code>icd_write_gate</code></td><td class="kade">Kade</td><td class="step draft">Designing?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>nifi_discipline</code></td><td class="kade">Kade</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>convergence/NiFi</td></tr>
+
+<tr class="dom"><td colspan="6">security-trust  (domain owner: Silas)</td></tr>
+<tr><td><code>write_scrubber</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>blocks secrets to shared files</td></tr>
+<tr><td><code>sensitive_paths</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>autonomy_guard</code></td><td class="silas q">Silas?</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>csc_guard</code></td><td class="silas q">Silas?</td><td class="step draft">?</td><td>hook-only</td><td class="q">?</td><td>⚠ purpose unclear — confirm what csc_guard is</td></tr>
+
+<tr class="dom"><td colspan="6">infrastructure  (domain owner: Silas)</td></tr>
+<tr><td><code>infra_guardrails</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>bedroom_nfs_guard</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">logs / metrics / deploys / analytics  (domain owner: Silas)</td></tr>
+<tr><td><code>log_first_gate</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>tool_telemetry</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td></tr>
+<tr><td><code>ops_awareness</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>system-state on stderr</td></tr>
+<tr><td><code>observer</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">toolchain  (domain owner: Silas)</td></tr>
+<tr><td><code>chrome_tab_gate</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td></tr>
+
+<tr class="dom"><td colspan="6">domains / athena  (domain owner: Wren / Silas)</td></tr>
+<tr><td><code>sparql_guard</code></td><td class="silas q">Silas?</td><td class="step draft">?</td><td>hook-only</td><td class="q">?</td><td>⚠ v1-era SPARQL guard — possibly stale/dead (Athena v2). Confirm keep vs retire.</td></tr>
+</table>
+
+<h1 style="margin-top:34px">Heralds — delivery instances</h1>
+<p class="sub">The delivery substrate (notification routing). Distinct from the <code>nudge</code> skill (messages/Wren) — these are how messages physically land.</p>
+<table>
+<tr><th>instance</th><th>owner</th><th>atStep</th><th>shape</th><th>conf</th><th>note</th></tr>
+<tr class="dom"><td colspan="6">heralds  (domain owner: Silas)</td></tr>
+<tr><td><code>chorus-inject</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>osascript terminal injection</td></tr>
+<tr><td><code>chorus_nudge_message</code> (delivery)</td><td class="silas q">Silas?</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>MCP nudge delivery (skill side = nudge/messages/Wren)</td></tr>
+<tr><td><code>mcp-config-herald</code></td><td class="silas">Silas</td><td class="step draft">Building?</td><td>hook-only</td><td class="q">?</td><td>watches .mcp.json → role /reboot</td></tr>
+<tr><td><code>push-delivery</code></td><td class="silas">Silas</td><td class="step draft">Directing?</td><td>hook-only</td><td class="q">?</td><td>push notification path</td></tr>
+</table>
+
+<p class="sub" style="margin-top:20px"><b>Full set for review:</b> 43 skills + ~33 hooks + 4 heralds-delivery. Red-line anything — owners (?), the whole step column, the two ⚠ unknowns (csc_guard, sparql_guard). On your green-light I load it all into tree.json under the 4-axis model (domain · ownedBy · atStep · shape).</p>
+</body></html>

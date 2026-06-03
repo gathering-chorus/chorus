@@ -1,0 +1,206 @@
+# chorus-core.ttl — the importable CORE SPINE (extraction proposal, #3184 / #1771)
+#
+# Wren · 2026-06-02 · a SKETCH of the core's SHAPE, aligned to roles/wren/artifacts/
+#   chorus-product-ontology.owl (the athena product design — it matches Athena v2).
+#   NOT lifted from chorus.ttl (that's the v1 legacy, with the wrong vocabulary).
+# DRIVER (Jeff, 2026-06-02): Athena v2 = data/athena/tree.json (the clean JSON redesign) is the
+#   SOURCE OF TRUTH. Its domain names + the four axes (inDomain·ownedBy·atStep·shape) drive
+#   everything. The legacy RDF (chorus.ttl/borg.ttl, "v1") is migrated INTO v2's vocabulary.
+# OPEN: v2's authored form is JSON. The OWL is most likely GENERATED from v2 (LinkML-style),
+#   not hand-authored — so treat this .ttl as the core's *shape*, to be regenerated from v2,
+#   not as the canonical artifact. (See self-model-owl-framework.md "Open questions".)
+# This is a PROPOSAL, not a live replacement. It is the minimal, stable core that
+# every per-product module imports (owl:imports) — the contract products EXTEND and
+# never REDEFINE. See designing/docs/self-model-owl-framework.md for the why.
+#
+# Scope rule (the make-or-break): this file declares the SPINE classes + the four
+# axes + base SHACL. Per-product modules (loom/athena/werk/borg/convergence/clearing)
+# import THIS and add only their own classes. chorus.ttl is then refactored to
+# `owl:imports chorus:core` + keep its instances/extensions (resolves #1771 = compose,
+# not merge; lands on the schema-only side of ADR-025).
+#
+# Provenance markers:  [LIFT n] = faithful copy from chorus.ttl line n.  [NEW] = added here.
+
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+
+chorus:core a owl:Ontology ;
+    rdfs:label "Chorus Core Spine" ;
+    rdfs:comment "The stable, importable core. Per-product modules import this and extend it; they never redefine its classes or the four axes. The OWL is the contract the API is generated from." ;
+    owl:versionInfo "0.1-proposal" .
+
+# =============================================================================
+# SPINE CLASSES  (the structure every product shares)
+# =============================================================================
+
+# [LIFT 46] Roles
+chorus:Role a owl:Class ; rdfs:label "Role" ;
+    rdfs:comment "A persistent perspective within Chorus. Context (CLAUDE.md, state, briefs) shapes how it thinks. Same model, different lens." .
+chorus:HumanRole a owl:Class ; rdfs:subClassOf chorus:Role ; rdfs:label "Human Role" .
+chorus:AgentRole a owl:Class ; rdfs:subClassOf chorus:Role ; rdfs:label "Agent Role" .
+
+# Value stream + its phases. Vocabulary from chorus-product-ontology.owl (the athena
+# product design = v2's shape) — the step class is Phase, NOT chorus.ttl's Vertebra.
+chorus:ValueStream a owl:Class ; rdfs:label "Value Stream" ;
+    rdfs:comment "A named flow of value from signal to outcome. Stable; when it changes, the product fundamentally changed." .
+chorus:Phase a owl:Class ; rdfs:label "Phase" ;
+    rdfs:comment "A phase within a value stream — each stage is a stance, a posture that determines what you see, value, and produce. Order (Jeff-ruled 2026-06-02): Shaping → Designing → Directing → Building → Proving. The atStep axis ranges over this class. RECURSIVE: a Phase may host its own nested ValueStream (werk-v2 = the Building phase's stream) — the self-model is fractal." .
+chorus:Sequence a owl:Class ; rdfs:label "Sequence" ;
+    rdfs:comment "A temporal wave of work cutting across domains — born when the team focuses on a theme, retired when the wave passes." .
+
+# [NEW — Jeff/Silas, 2026-06-02] Recursive value streams — a step unfolds into its own stream.
+chorus:hasValueStream a owl:ObjectProperty ; rdfs:label "has value stream" ;
+    rdfs:domain chorus:Phase ; rdfs:range chorus:ValueStream ;
+    rdfs:comment "A Phase hosts a nested ValueStream. Example: werk-v2 IS the ValueStream hosted by the Building Phase (declared by Kade's werk domain) — entry=pull, exit=accept, its own proving=demo. A stream, not a flat verb list. This makes the model fractal." .
+
+# [NEW — Jeff, 2026-06-02] The products ARE the value stream — each Phase is
+# realized by its product(s). Shaping carries TWO (Loom = the principles/practices/
+# skills/roles content; Chorus = the protocol/coordination mechanism — both Wren).
+# Then Athena→Designing, Clearing→Directing, Werk→Building, Borg→Proving.
+# Convergence realizes the cross-cutting OPERATING substrate (the harvest/data-flow the
+# stream runs on — not a sequential vertebra; Kade, for role-balance).
+# Ownership: Wren = Loom, Chorus, Athena, Clearing (the front) ; Kade = Werk, Convergence ;
+# Silas = Borg ; Jeff = the human above the stream (judgment/direction, no step-product).
+chorus:realizesStep a owl:ObjectProperty ; rdfs:label "realizes step" ;
+    rdfs:domain chorus:Product ; rdfs:range chorus:Phase ;
+    rdfs:comment "Binds a product to the value-stream step it realizes. The product structure is not arbitrary — it is the value stream made concrete. A step may carry more than one product (Shaping = Loom + Chorus)." .
+
+chorus:loom    chorus:realizesStep chorus:Shaping .
+chorus:chorus  chorus:realizesStep chorus:Shaping .
+chorus:athena  chorus:realizesStep chorus:Designing .
+chorus:clearing chorus:realizesStep chorus:Directing .
+chorus:werk    chorus:realizesStep chorus:Building .
+chorus:borg    chorus:realizesStep chorus:Proving .
+# chorus:convergence → Operating (cross-cutting substrate; modeled via the Operating category, not realizesStep).
+
+# [NEW — Jeff, 2026-06-02] Jeff is OWNER + HEAD OF PRODUCT over the WHOLE (Gathering +
+# Chorus), NOT a builder. `ownedBy` names the implementer/tender and ranges over AgentRole
+# ONLY — Jeff's name never appears on ownedBy (he doesn't build the parts). His
+# relationship is `headsProduct`: judgment + direction across all products.
+chorus:headsProduct a owl:ObjectProperty ; rdfs:label "heads product" ;
+    rdfs:domain chorus:HumanRole ; rdfs:range chorus:Product ;
+    rdfs:comment "Owner / Head-of-Product over the whole — distinct from ownedBy (the building agent role). Jeff heads all products; he builds none." .
+chorus:jeff chorus:headsProduct chorus:loom, chorus:chorus, chorus:athena,
+    chorus:clearing, chorus:werk, chorus:borg, chorus:convergence .
+
+# Domain + its two subtypes (from the product design owl) — Domain splits into Chorus
+# vs Gathering, which IS the two-value-stream structure. (NOT chorus.ttl's SubProduct/SubDomain.)
+chorus:Domain a owl:Class ; rdfs:label "Domain" ;
+    rdfs:comment "A bounded context with its own data, handlers, ontology, and routes. Domains rarely change." .
+chorus:ChorusDomain a owl:Class ; rdfs:subClassOf chorus:Domain ; rdfs:label "Chorus Domain" ;
+    rdfs:comment "A domain of the Chorus product (team coordination) — the half migrated into v2 today." .
+chorus:GatheringDomain a owl:Class ; rdfs:subClassOf chorus:Domain ; rdfs:label "Gathering Domain" ;
+    rdfs:comment "A domain of Gathering (Jeff's collections — photos, music, books, …). The class exists in v2's shape; its instances still live in v1 and migrate later." .
+
+# [LIFT 697] Product (top level) ; [LIFT 416] Service (where the code lives)
+chorus:Product a owl:Class ; rdfs:label "Product" ;
+    rdfs:comment "A top-level product (Gathering, Chorus, Borg, …). Its substance is the union of its child Domains." .
+chorus:Service a owl:Class ; rdfs:label "Service" ;
+    rdfs:comment "A code/runtime unit hosted by a Domain. Provider-agnostic: the model knows 'service with port + health'; the herald carries the impl (plist/container)." .
+
+# [from product design owl] First-class product inputs the design owl carries.
+chorus:Experience a owl:Class ; rdfs:label "Experience" ;
+    rdfs:comment "Jeff's voice describing the desired user experience — first-class, not a string; has a validation lifecycle." .
+chorus:Story a owl:Class ; rdfs:label "Story" ;
+    rdfs:comment "Jeff's personal stories — product inputs, not anecdotes; carry more signal than feature requests." .
+
+# [NEW] Capability — the unit behind a skill/hook (Jeff's model: one capability,
+# two surfaces — invokable=skill, enforced=hook). The instance layer #3184 populates.
+chorus:Capability a owl:Class ; rdfs:label "Capability" ;
+    rdfs:comment "An invokable and/or enforced behavior. shape ∈ {skill-only, skill+hook, hook-only}." .
+chorus:Skill a owl:Class ; rdfs:subClassOf chorus:Capability ; rdfs:label "Skill" ;
+    rdfs:comment "The invokable surface of a capability (/name)." .
+chorus:Hook a owl:Class ; rdfs:subClassOf chorus:Capability ; rdfs:label "Hook" ;
+    rdfs:comment "The enforced surface of a capability (PreToolUse/UserPromptSubmit/PostToolUse)." .
+chorus:Herald a owl:Class ; rdfs:subClassOf chorus:Service ; rdfs:label "Herald" ;
+    rdfs:comment "A delivery/discovery instance — notification routing (nudge/inject/push) or a discover-* harvester that scans a source and writes structure to the graph." .
+
+# [NEW] Facet — superclass for harvested system-context entities (the harvest layer,
+# #3185). chorus.ttl already has CodeFile/PersistenceStore/LogSource/Machine/Tool;
+# borg module adds Engine/Environment/Resource/NetworkEndpoint/Monitor/AlertRule.
+chorus:Facet a owl:Class ; rdfs:label "Facet" ;
+    rdfs:comment "A harvested entity of system context (structural or operational). Building/proving facets self-tag (facet = domain); semantic capabilities are tagged by #3184." .
+
+# =============================================================================
+# THE FOUR AXES  (every Capability / Service / Facet carries these)
+# =============================================================================
+
+# [LIFT 2260] ownedBy — the IMPLEMENTER (may differ from the domain's owner)
+chorus:ownedBy a owl:ObjectProperty ; rdfs:label "owned by" ; rdfs:range chorus:Role ;
+    rdfs:comment "The role that implements/owns this instance. CAN differ from the owner of its domain (e.g. nudge: domain=roles[Wren-owned] and owner=Wren; gate-arch: domain=domains[Wren] but owner=Silas)." .
+
+# atStep — the value-stream phase this entity serves (ranges over Phase, per the product design owl)
+chorus:atStep a owl:ObjectProperty ; rdfs:label "at step" ; rdfs:range chorus:Phase ;
+    rdfs:comment "The value-stream phase this entity serves — a typed edge to a Phase (Shaping/Designing/Directing/Building/Proving)." .
+
+# [LIFT 2414] domain — the subject domain this entity belongs to
+chorus:inDomain a owl:ObjectProperty ; rdfs:label "in domain" ; rdfs:range chorus:Domain ;
+    rdfs:comment "The subject domain (e.g. nudge inDomain roles; context-inject inDomain memory). Distinct from ownedBy." .
+
+# [NEW] shape — the capability shape
+chorus:shape a owl:DatatypeProperty ; rdfs:label "shape" ; rdfs:range xsd:string ;
+    rdfs:comment "One of: skill-only | skill+hook | hook-only | verb | facet | herald." .
+
+# structural edges
+chorus:hasDomain a owl:ObjectProperty ; rdfs:label "has domain" ; rdfs:domain chorus:Product ; rdfs:range chorus:Domain .
+chorus:hosts a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Service .
+
+# [v2] RECURSIVE containment — Products and Domains nest into themselves.
+# Product → hasChild → Product, and Domain → hasChild → Domain. This is WHY v2 has no
+# SubProduct/SubDomain classes: a sub-product is a Product nested under a Product; a
+# sub-domain is a Domain nested under a Domain. Structural sibling of hasValueStream —
+# the self-model is fractal on BOTH the containment axis and the value-stream axis.
+chorus:hasChild a owl:ObjectProperty ; rdfs:label "has child" ;
+    rdfs:comment "Recursive containment for Products (Product→Product) and Domains (Domain→Domain). Replaces the SubProduct/SubDomain classes — nesting, not a separate type." .
+chorus:consumes a owl:ObjectProperty ; rdfs:label "consumes" ;
+    rdfs:comment "Cross-cutting dependency edge — lives at the composition layer so the whole answers blast-radius across products." .
+chorus:dependsOn a owl:ObjectProperty ; rdfs:label "depends on" .
+
+# [NEW — Silas #3185] harvests — connects a Herald (discover-*) to the Facets it lands.
+chorus:harvests a owl:ObjectProperty ; rdfs:label "harvests" ;
+    rdfs:domain chorus:Herald ; rdfs:range chorus:Facet ;
+    rdfs:comment "A discover-* herald harvests Facet entities into the graph. Without this edge nothing connects the harvester to what it produced." .
+
+# =============================================================================
+# BASE SHACL  (the four-axis contract — what the generated API validates against)
+# =============================================================================
+
+# [NEW — Silas #3185] shape is a CLOSED vocabulary, not a free string — else the
+# generated API can't validate it. Shared by Capability + Facet shapes below.
+chorus:shapeVocab sh:in ( "skill-only" "skill+hook" "hook-only" "verb" "facet" "herald" ) .
+
+chorus:CapabilityShape a sh:NodeShape ;
+    sh:targetClass chorus:Capability ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ;
+                  sh:message "every capability must declare its implementer (ownedBy)" ] ;
+    sh:property [ sh:path chorus:inDomain ; sh:minCount 1 ; sh:class chorus:Domain ;
+                  sh:message "every capability must declare its subject domain" ] ;
+    sh:property [ sh:path chorus:atStep ; sh:minCount 1 ; sh:class chorus:Phase ;
+                  sh:message "every capability must declare its value-stream step" ] ;
+    sh:property [ sh:path chorus:shape ; sh:minCount 1 ;
+                  sh:in ( "skill-only" "skill+hook" "hook-only" ) ;
+                  sh:message "capability shape must be skill-only | skill+hook | hook-only" ] .
+
+# [NEW — Silas #3185] FacetShape — the harvest entities carry the four axes too, or
+# the generated API validates half the graph. Operational facets self-tag domain
+# (facet = domain) and are owner Silas + atStep Building/Proving + shape:facet.
+chorus:FacetShape a sh:NodeShape ;
+    sh:targetClass chorus:Facet ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ;
+                  sh:message "every facet must declare its implementer (ownedBy)" ] ;
+    sh:property [ sh:path chorus:inDomain ; sh:minCount 1 ; sh:class chorus:Domain ;
+                  sh:message "every facet must declare its subject domain (self-tagged for deterministic facets)" ] ;
+    sh:property [ sh:path chorus:atStep ; sh:minCount 1 ; sh:class chorus:Phase ;
+                  sh:message "every facet must declare its value-stream step" ] ;
+    sh:property [ sh:path chorus:shape ; sh:minCount 1 ; sh:in ( "facet" ) ;
+                  sh:message "facet shape must be 'facet'" ] .
+
+# Open reconciliations (tracked in the design doc, not solved here):
+#  - chorus.ttl currently uses Vertebra membership / servesValueStream; this core
+#    proposes `atStep` as the single name. Pick one in the refactor.
+#  - ADR-025: 200 instances still mixed in the ontology graph; this core is schema-only.
+#  - tree.json (JSON authoring) must ingest INTO this graph (Move 5), not be a 2nd truth.

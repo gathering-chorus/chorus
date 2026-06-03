@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>OWL (athena + borg) → Athena v2 baseline</title>
+<style>
+  html{font-size:15px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:#1f2328;background:#fff;line-height:1.5;max-width:62rem;margin:0 auto;padding:2rem 1.8rem 4rem}
+  h1{font-size:1.6rem;margin:0 0 .15rem} .sub{color:#57606a;font-size:.9rem;margin:0 0 1.3rem}
+  h2{font-size:1.05rem;margin:1.8rem 0 .5rem;padding:.35rem .6rem;border-radius:6px;color:#fff}
+  table{border-collapse:collapse;width:100%;margin:.6rem 0 1.2rem;font-size:.83rem}
+  th,td{text-align:left;padding:.38rem .55rem;border-bottom:1px solid #e7e9ec;vertical-align:top}
+  th{font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:#57606a;background:#fafbfc;border-bottom:2px solid #d7dade}
+  code{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:.86em;background:#f6f7f9;border:1px solid #e7e9ec;border-radius:4px;padding:.03rem .3rem}
+  .v2{color:#1e7045;font-weight:600} .gap{color:#c0392b} .borg{color:#117864} .ath{color:#7d3c98}
+  .arr{color:#999}
+  .note{background:#f3f7fb;border-left:3px solid #3b6ea5;padding:.55rem 1rem;border-radius:0 5px 5px 0;font-size:.87rem;margin:.9rem 0}
+</style></head><body>
+<h1>OWL (athena + borg) → Athena v2 baseline</h1>
+<p class="sub">how the legacy OWL classes (<code>chorus:</code> structural + <code>borg:</code>) land on v2 (the 33 domains + the 4 axes). v2 is the target; this is what migrates into it.</p>
+
+<div class="note"><b>Two layers.</b> The OWL has <i>spine</i> classes (which <b>become v2's structure</b>) and <i>entity/facet</i> classes (which become <b>typed content inside a v2 domain</b>). A third bucket maps to nothing clean — that's the drift to resolve.</div>
+
+<h2 style="background:#3b6ea5">1 · Spine classes → v2 structure (these ARE v2)</h2>
+<p class="sub" style="margin:-.2rem 0 .5rem">Vocabulary from <code>chorus-product-ontology.owl</code> (the athena product design — it matches v2). <b>Corrected:</b> earlier I'd pulled chorus.ttl's vocabulary (Vertebra, SubProduct, SubDomain) — wrong; those are v1.</p>
+<table>
+<tr><th>product-design OWL class</th><th></th><th>v2 baseline element</th></tr>
+<tr><td><code>Product</code></td><td class="arr">→</td><td class="v2">v2 products (loom·athena·clearing·werk·borg·convergence·chorus)</td></tr>
+<tr><td><code>Product</code> + <code>Domain</code> are <b>recursive</b> (<code>hasChild</code>)</td><td class="arr">→</td><td class="v2">Products nest in Products, Domains in Domains — this is why v2 has <b>no SubProduct/SubDomain</b> (a sub-domain is just a child Domain). Fractal alongside <code>hasValueStream</code>.</td></tr>
+<tr><td><code>Domain → ChorusDomain / GatheringDomain</code></td><td class="arr">→</td><td class="v2">v2 domains — the subtype split <b>IS the two value streams</b> (Gathering's class exists; instances migrate later)</td></tr>
+<tr><td><code>Service</code></td><td class="arr">→</td><td class="v2">v2 services + the <code>services</code> domain</td></tr>
+<tr><td><code>Role</code> (kind: human/agent)</td><td class="arr">→</td><td class="v2">v2 roles + the <code>ownedBy</code> axis</td></tr>
+<tr><td><code>ValueStream</code> + <code>Phase</code></td><td class="arr">→</td><td class="v2">v2 value stream + its phases + the <code>atStep</code> axis <span class="gap">(Phase, not Vertebra)</span></td></tr>
+<tr><td><code>Sequence</code></td><td class="arr">→</td><td class="v2">temporal waves cutting across domains</td></tr>
+<tr><td><code>Experience · Story</code></td><td class="arr">→</td><td class="v2">first-class product inputs (Jeff's voice; not strings)</td></tr>
+</table>
+
+<h2 style="background:#117864">2 · borg: facet classes → a v2 (borg-product) domain</h2>
+<table>
+<tr><th>borg: class</th><th></th><th>v2 domain it populates</th></tr>
+<tr><td class="borg"><code>Engine</code></td><td class="arr">→</td><td class="v2">toolchain</td></tr>
+<tr><td class="borg"><code>Environment · Host · Surface(Compute/Storage/Network) · NetworkEndpoint</code></td><td class="arr">→</td><td class="v2">infrastructure</td></tr>
+<tr><td class="borg"><code>Resource</code></td><td class="arr">→</td><td class="v2">properties (storage resources)</td></tr>
+<tr><td class="borg"><code>Monitor · AlertRule</code></td><td class="arr">→</td><td class="v2">alerts-monitors</td></tr>
+</table>
+<p class="sub">borg-product v2 domains with <span class="gap">no borg class yet</span>: <code>builds · deploys · logs · security-trust · time · heralds · analytics · metrics</code>.</p>
+
+<h2 style="background:#7d3c98">3 · chorus: (athena) entity classes → a v2 domain</h2>
+<table>
+<tr><th>chorus: class</th><th></th><th>v2 domain it populates</th></tr>
+<tr><td class="ath"><code>CodeFile</code></td><td class="arr">→</td><td class="v2">code</td></tr>
+<tr><td class="ath"><code>LogSource</code></td><td class="arr">→</td><td class="v2">logs</td></tr>
+<tr><td class="ath"><code>Integration</code></td><td class="arr">→</td><td class="v2">integrations</td></tr>
+<tr><td class="ath"><code>Pipeline · Workflow · Step · WorkItem · StageTransition</code></td><td class="arr">→</td><td class="v2">pipelines</td></tr>
+<tr><td class="ath"><code>PersistenceStore</code></td><td class="arr">→</td><td class="v2">properties</td></tr>
+<tr><td class="ath"><code>Machine</code></td><td class="arr">→</td><td class="v2">infrastructure</td></tr>
+<tr><td class="ath"><code>Tool · ToolType</code></td><td class="arr">→</td><td class="v2">toolchain</td></tr>
+<tr><td class="ath"><code>Document</code></td><td class="arr">→</td><td class="v2">knowledge</td></tr>
+<tr><td class="ath"><code>Card · Handoff · BounceBack</code></td><td class="arr">→</td><td class="v2">cards</td></tr>
+<tr><td class="ath"><code>Decision</code></td><td class="arr">→</td><td class="v2">decisions</td></tr>
+<tr><td class="ath"><code>ServiceDesign</code></td><td class="arr">→</td><td class="v2">services</td></tr>
+<tr><td class="ath"><code>FitnessFunction · TrustMetric</code></td><td class="arr">→</td><td class="v2">metrics</td></tr>
+<tr><td class="ath"><code>Actor · Scenario · Contract</code></td><td class="arr">→</td><td class="v2">(per-domain completeness — cross-cutting attributes, not their own domain)</td></tr>
+</table>
+
+<h2 style="background:#c0392b">4 · No clean v2 home — the drift to resolve</h2>
+<table>
+<tr><th>thing</th><th>issue</th></tr>
+<tr><td><code>chorus:Page</code></td><td class="gap">no v2 domain for UI/presentation</td></tr>
+<tr><td><code>chorus:Gate / GateResult</code></td><td class="gap">no <code>gates</code> domain in v2 (gates attach to werk/code/tests)</td></tr>
+<tr><td><code>chorus:Gap · ArtifactType · EventCategory</code></td><td class="gap">cross-cutting; no domain home</td></tr>
+<tr><td><code>borg:Environment ≡ chorus:Service ≡ framework:Service</code></td><td class="gap">3 names, 1 concept — collapses to v2's single <code>Service</code></td></tr>
+<tr><td>v2 domains w/ <b>no OWL class</b> (tagged by #3184, not harvested)</td><td class="gap">principles · policies · practices · skills · rcas · roles · memory · search · messages · streams · spine · security-trust · time · heralds · builds · deploys · version-control · tests</td></tr>
+</table>
+
+<div class="note"><b>What this says for the rework:</b> the spine classes simply <i>are</i> v2 (§1). The borg + ops entity classes have clean v2 homes (§2–3) — they become typed content inside a domain. The work is §4: collapse the 3-name <code>Service</code>, drop classes with no home (or give them one), and fill the borg domains that have no class. Generate the OWL from v2 so this mapping is enforced, not maintained by hand.</div>
+</body></html>

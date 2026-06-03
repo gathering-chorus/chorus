@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>context-inject — exact calls + raw payloads (one cycle)</title>
+<style>
+  html{font-size:15px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:#1f2328;background:#fff;line-height:1.5;max-width:60rem;margin:0 auto;padding:2rem 1.8rem 4rem}
+  h1{font-size:1.55rem;margin:0 0 .15rem} .sub{color:#57606a;font-size:.9rem;margin:0 0 1.2rem}
+  h2{font-size:1.05rem;margin:1.7rem 0 .3rem;padding:.35rem .6rem;border-radius:6px;background:#eef2f7;color:#2c3e50}
+  .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:#57606a;margin:.7rem 0 .2rem;font-weight:700}
+  pre{background:#1f2430;color:#e6e6e6;padding:.7rem .9rem;border-radius:6px;overflow:auto;font-size:11.5px;line-height:1.45;margin:.2rem 0}
+  pre.call{background:#f6f7f9;color:#1a3a5a;border:1px solid #d7dade;word-break:break-all;white-space:pre-wrap}
+  .tag{font-size:.7rem;padding:.08rem .4rem;border-radius:4px;font-weight:700}
+  .hist{background:#eef2f7;color:#2c3e50} .live{background:#eafaf1;color:#1e7045} .drop{background:#fdecea;color:#c0392b}
+  .finding{background:#fff8e6;border-left:4px solid #b9770e;padding:.7rem 1rem;border-radius:0 6px 6px 0;margin:1rem 0;font-size:.9rem}
+</style></head><body>
+<h1>context-inject — exact calls &amp; raw payloads</h1>
+<p class="sub">cycle <code>inj-wren-1780409534942074000</code> · 2026-06-02 14:12:15 UTC · 132 ms · 6 sub-calls · payloads <span class="tag hist">historical (logged)</span> unless marked <span class="tag live">reproduced live</span></p>
+
+<div class="finding"><b>The data-return paradox (your hypothesis).</b> The <code>chorus</code> search was marked <span class="tag drop">dropped</span> at inject time (<code>candidates: []</code>, <code>drops:["chorus"]</code>) — yet re-running the <b>identical URL</b> minutes later returns a result. The API returns data; the inject either parsed a valid response as "no results" or hit the index before the row was queryable. The drop was real at injection; the data was (or became) there.</div>
+
+<h2>1 · chorus — hybrid search (HTTP GET)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">http://localhost:3340/api/chorus/search?q=instances%20products%20products%20domains%20doamins%20child&mode=relevance&limit=5&domain=chorus</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> <span class="tag drop">dropped</span></div>
+<pre>candidates: []        // logged as dropped — drops: ["chorus"]</pre>
+<div class="lbl">payload <span class="tag live">reproduced live</span> (same URL, ~14:24:00) — returns data</div>
+<pre>{
+  "results": [
+    {
+      "id": 6514371, "source": "claude", "channel": "session:wren", "role": "jeff",
+      "author": "user",
+      "content": "and u know that products and domains may have child instances of products and doamins",
+      "timestamp": "2026-06-02T14:12:14.925Z",
+      "snippet": "and u know that &lt;b&gt;products&lt;/b&gt; and &lt;b&gt;domains&lt;/b&gt; may have &lt;b&gt;child&lt;/b&gt; &lt;b&gt;instances&lt;/b&gt; ...",
+      "freshness_s": 1208
+    }
+  ],
+  "total": 1, "mode": "relevance",
+  "_meta": { "domain_coverage": 1, "newest_result_age_s": 1208, "stale": false,
+    "sources": { "claude": 1 }, "schema_version": "1.0.0",
+    "limit_applied": 5, "limit_default": false, "truncated": false }
+}</pre>
+
+<h2>2 · memory — local markdown scan (filesystem)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">scan ~/.claude/projects/*/memory/*.md   keywords: instances products products domains doamins child</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> — 5 hits</div>
+<pre>[project_athena_v1_to_v2_shift.md]  "⚠️ CORRECTION (2026-05-22) — the v1/v2 labels below are INVERTED. Read this first."
+[project_cmdb_ui_requirements.md]   "Jeff defined the information architecture for the CMDB UI (2026-04-10):"
+[project_slot_shortage_pattern.md]  "When Chorus accumulates a pile of things in one slot (48 principles, 13 required CI checks, ...)"
+[project_chorus_value_stream_steps.md] "Chorus value stream steps (in order): Shaping → Designing → Directing → Building → ..."
+[project_value_stream_is_the_products_model.md] "2026-06-02 (Jeff) — The value stream IS the products ..."</pre>
+
+<h2>3 · pulse — team-state snapshot (filesystem)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">read /tmp/pulse-latest.json   query: snapshot</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> (injected block)</div>
+<pre>health: unknown (failures=0, warnings=0)
+board.wip: 4 cards → GET /api/chorus/context/board/wip
+role kade: state=building card=
+role silas: state=idle card=
+role wren: state=idle card=</pre>
+
+<h2>4 · spine — recent events (filesystem)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">read ~/.chorus/chorus.log   last 8 lines, reverse-chronological</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> — 8 events</div>
+<pre>2026-06-02T10:11:47  wren            observer.digest
+2026-06-02T10:11:48  silas           system.heartbeat
+2026-06-02T10:11:59  silas           system.heartbeat
+2026-06-02T10:12:06  heartbeat-probe heartbeat.probe
+2026-06-02T10:12:08  system          clearing.probe.passed
+2026-06-02T10:12:09  silas           system.heartbeat
+2026-06-02T10:12:11  system          search.query.executed
+2026-06-02T14:12:15  wren            context.inject.request   ← this cycle</pre>
+
+<h2>5 · athena — domain context (HTTP GET)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">http://localhost:3340/api/chorus/domain/chorus</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> (injected summary)</div>
+<pre>domain: chorus (245 cards total, 4 WIP)
+Team coordination product. Hooks, gates, pulse, Clearing.</pre>
+<div class="lbl">payload <span class="tag live">reproduced live</span> — full JSON (truncated to shape)</div>
+<pre>{
+  "domain": "chorus", "product": "chorus", "step": "building",
+  "description": "Team coordination product. Hooks, gates, pulse, Clearing.",
+  "sections": { "pages": { "items": ["/chorus-system","/flow","/ontology-views/chorus","/chorus","/chorus-model-data","/werk"],
+    "itemDetails": [ {"label":"/chorus-system","owner":"Silas","ownerInherited":true}, ... ] } },
+  "cards": { "total": 245, "wip": 4, "blocked": 0,
+    "items": [
+      {"id":"3176","title":"Build werk-acp ...","status":"WIP","owner":"kade","type":"new"},
+      {"id":"3182","title":"Eliminate the v1 git/commit substrate ...","status":"WIP","owner":"kade","type":"chore"},
+      {"id":"3184","title":"Load skill/hook/herald instances into Athena v2 tree.json ...","status":"WIP","owner":"wren","type":"new"},
+      {"id":"3185","title":"Spike/design: the harvest layer ...","status":"WIP","owner":"silas","type":"new"}
+    ] }
+}</pre>
+
+<h2>6 · logs — Loki error query (HTTP GET)</h2>
+<div class="lbl">exact call</div>
+<pre class="call">http://localhost:3102/loki/api/v1/query_range
+  ?query={job=~".+"} |~ "\"event\":\"[a-z._]*\\.(failed|error)\""
+  &start=&lt;15m-ago-ns&gt;  &end=&lt;now-ns&gt;  &limit=5  &direction=backward</pre>
+<div class="lbl">payload <span class="tag hist">historical</span> <span class="tag drop">dropped</span> + <span class="tag live">reproduced live</span> — both empty</div>
+<pre>{ "status": "success",
+  "data": { "resultType": "streams", "result": [],
+    "stats": { "summary": { "totalLinesProcessed": 24171, "totalEntriesReturned": 0,
+      "execTime": 0.030485, "shards": 32, "totalPostFilterLines": 0 } } } }</pre>
+
+<div class="finding"><b>Two suspects for the chorus drop</b> (from re-running the exact call): (1) <b>index timing</b> — the matching row (your own prompt, logged 14:12:14.925) may not have been queryable at 14:12:15.078 (153 ms later); (2) <b>silent parse</b> — <code>query_chorus_hybrid()</code> treated a valid/empty response as "no results" and dropped without erroring. Both are <i>data-return</i> issues, not the keyword/query-AND theory. The control to run next: a query for a row known-indexed &gt;1 min ago — if that still drops, it's the parse/handling, not timing.</div>
+</body></html>
