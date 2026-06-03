@@ -31,7 +31,9 @@ fn prompt_drives_query_with_no_card() {
     // no WIP card → query is the prompt, NO &domain= clause
     let url = build_search_url("seeds pipeline broken", None);
     assert!(url.contains("q=seeds%20pipeline%20broken"), "prompt is the query: {url}");
-    assert!(url.contains("mode=hybrid"), "hybrid mode preserved: {url}");
+    // build_search_url is the FTS/authority leg: mode=relevance since #3171 (was hybrid in
+    // #3134; this assertion was left stale by #3171). The semantic leg is build_semantic_url (#3191).
+    assert!(url.contains("mode=relevance"), "FTS leg uses relevance (#3171): {url}");
     assert!(!url.contains("&domain="), "no card → no domain tag: {url}");
 }
 
