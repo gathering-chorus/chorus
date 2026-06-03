@@ -30,7 +30,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
     <key>CHORUS_ROOT</key>

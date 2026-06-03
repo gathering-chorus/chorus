@@ -18,7 +18,7 @@ PLIST="${1:-${CHORUS_ROOT}/platform/launchagents/com.chorus.mcp.plist}"
 # hardcodes canonical paths (the LaunchAgent always runs canonical's wrapper), so a
 # werk-vs-canonical CHORUS_ROOT must not change the expectation. The drift this guards
 # was BOTH dirs absent entirely, which the substring presence catches.
-REQUIRED=("/.chorus/bin" "/platform/scripts")
+REQUIRED=("/.chorus/bin" "/platform/scripts" "/.cargo/bin")
 
 if [ ! -f "$PLIST" ]; then
   echo "not ok - MCP daemon plist not found: $PLIST"
