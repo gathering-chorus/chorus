@@ -5,19 +5,19 @@
 //! other chorus code.
 //!
 //! ATOMIC VERB — accept ONLY, sequenced LAST (pull→commit→push→build→deploy→verify
-//! →accept). It FINALIZES a proven card: merge `<role>/<card>` → main, flip the
+//! →merge→accept). It FINALIZES a proven, ALREADY-MERGED card: flip the
 //! card WIP → Done (emitting `card.accepted` — the ONLY Done path), close the
 //! branch + werk, and stamp gh `chorus/accept/<card>`. It NEVER re-gates at entry
 //! (that's pull's job, ADR-032 §4); it only validates its EXIT preconditions.
 //!
-//! Mostly a VERSION-CONTROL operation (merge + close); the board flip (WIP→Done) is
-//! a consequence it emits. The one product concern it carries is the AUTHORITY GATE
+//! FINALIZE-ONLY (#3175): accept does NOT merge — werk-merge is the ONE merge
+//! mechanism, run earlier in the sequence. The one product concern is the AUTHORITY GATE
 //! (DEC-048): only Wren/Jeff may finalize, and a builder may NEVER self-accept its
 //! own card. That gate is `can_accept()` — pure, exhaustively unit-tested.
 //!
-//! - All-or-nothing: merge is the commit point. If a precondition or the merge
-//!   fails, nothing is done and the card stays WIP. Post-merge steps are idempotent
-//!   so a re-run completes a partial finalize (already-Done → no-op success).
+//! - All-or-nothing finalize, serialized under one flock so concurrent board flips
+//!   can't race. Steps are idempotent so a re-run completes a partial finalize
+//!   (already-Done → no-op success).
 //! - JSONL witness per step: best-effort, NEVER affects the operation.
 
 use std::env;
@@ -233,26 +233,16 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
         return Err(format!("#{}: branch {} not on origin — run push before accept", card, branch));
     }
 
-    // --- finalize, serialized under one flock. merge is the commit point. ---
-    {
-        let _lock = lock(home, Duration::from_secs(30))?;
-        jsonl(home, role, card, &trace, "lock.acquired", "");
+    // --- finalize, serialized under one flock. NO git merge here (#3175): werk-merge
+    // is the ONE merge mechanism and runs earlier in the sequence (…→merge→accept).
+    // accept is FINALIZE-ONLY — board Done + spine + close. The lock serializes the
+    // board flip so concurrent finalizes can't race. ---
+    let _lock = lock(home, Duration::from_secs(30))?;
+    jsonl(home, role, card, &trace, "lock.acquired", "");
 
-        // merge <role>/<card> -> main via gh PR (open if needed, then merge). gh pr
-        // create is idempotent-tolerant: if a PR already exists we proceed to merge.
-        let _ = run_in(&werk_s, "gh", &[
-            "pr", "create", "--base", "main", "--head", &branch,
-            "--title", &format!("accept #{} ({})", card, role),
-            "--body", &format!("Finalize #{} — accepter={} trace={}", card, accepter, trace),
-        ]); // tolerate "already exists"
-        run_in(&werk_s, "gh", &["pr", "merge", &branch, "--merge"])
-            .map_err(|e| format!("merge failed; card stays WIP, nothing finalized: {}", e))?;
-        jsonl(home, role, card, &trace, "merged", "");
-    }
-
-    // post-merge finalize (idempotent on re-run): board Done + spine + close + gh.
+    // finalize (idempotent on re-run): board Done + spine + close + gh.
     run("cards", &["done", &card.to_string()])
-        .map_err(|e| format!("merged but cards-done failed (re-run accept to finish): {}", e))?;
+        .map_err(|e| format!("cards-done failed (re-run accept to finish): {}", e))?;
     let _ = run("chorus-log", &["card.accepted", role, &format!("card={}", card)]);
     jsonl(home, role, card, &trace, "card.done", "");
 

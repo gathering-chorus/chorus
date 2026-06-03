@@ -197,6 +197,12 @@ const WerkPushInput = z.object({
   card_id: z.number().int().positive().describe('Card ID whose werk branch to push.'),
 }).strict();
 
+// #3175 — werk-merge input. Thin skin over the rust werk-merge verb.
+const WerkMergeInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk branch <role>/<card> being merged to main.'),
+  card_id: z.number().int().positive().describe('Card ID whose pushed branch to merge.'),
+}).strict();
+
 // #3178 — werk-accept input. `role` is the BUILDER (werk location); the ACCEPTER
 // is the calling identity (DEPLOY_ROLE), set by the handler from getCallerRole —
 // only jeff/wren may finalize (DEC-048).
@@ -777,6 +783,21 @@ const WERK_PUSH_TOOL_DEF = {
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk being pushed.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card ID whose werk branch to push.' },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const WERK_MERGE_TOOL_DEF = {
+  name: 'werk-merge',
+  description:
+    'Merge the role\'s pushed werk branch <role>/<card> to main. Thin skin over the rust werk-merge verb — MCP just execs it. Resolves the OPEN PR for the current HEAD oid (NOT the branch name — the #3175 fix for the stale-PR false-green), creates one if absent, squash-merges (the one merge mechanism), and CONTENT-VERIFIES the merge landed (PR MERGED + merge commit on origin/main) before returning the merged main sha. Refusal taxonomy: no-werk | branch-mismatch | no-open-pr | pr-create-fail | merge-conflict | not-mergeable | merge-fail. werk-accept is finalize-only and no longer merges (#3175). The /merge flow + werk-mcp.sh step 5 call this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk branch being merged.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card ID whose pushed branch to merge.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -1805,7 +1826,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-accept' | 'werk-acp',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-acp',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2176,6 +2197,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
       WERK_PUSH_TOOL_DEF,
+      WERK_MERGE_TOOL_DEF,
       WERK_ACCEPT_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       ACP_TOOL_DEF,
@@ -2386,6 +2408,14 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         // #3178: thin skin → rust werk-push.
         return executeWerkVerb('werk-push', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+      }
+      case 'werk-merge': {
+        const parsed = WerkMergeInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #3175: thin skin → rust werk-merge (resolve open PR by HEAD oid, squash, content-verify).
+        return executeWerkVerb('werk-merge', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
       }
       case 'werk-accept': {
         const parsed = WerkAcceptInput.safeParse(req.params.arguments);

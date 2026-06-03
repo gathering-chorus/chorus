@@ -17,7 +17,7 @@
 #   3 chorus_build  (build for the demo test)
 #   4 chorus_deploy target=werk + chorus_env_up (stand up the running test instance)
 #   — werk-acp boundary: land to prod; prod is a build of MAIN —
-#   5 werk-merge    [interim] no verb yet (#3175) — merge to main via gh pr merge
+#   5 werk-merge    (#3175) resolve OPEN pr by HEAD oid, squash, content-verify
 #   6 chorus_build  MUST build from MAIN
 #   7 chorus_deploy target=canonical, from MAIN
 #   8 werk-accept   X-Chorus-Role=accepter (jeff/wren); role-arg stays the builder
@@ -98,13 +98,11 @@ step "4 deploy-demo" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id"
 step "4 env-up"      "$BUILDER"  chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"
 
 # ═══ werk-acp boundary — land to prod; prod is a build of MAIN ═══
-# Step 5 — werk-merge: NO VERB YET (#3175). Interim: a real merge to main via gh pr merge.
-echo "-- 5 merge  ([interim] werk-merge not built #3175 — merging via gh pr merge) -----"
-if ( cd "$WERK" && gh pr merge "$BRANCH" --merge ); then
-  echo "   [ok] 5 merge ([interim] gh pr merge — replace with the werk-merge verb, #3175)"
-else
-  echo "   [FAIL] 5 merge — gh pr merge failed (interim path). Chain stops." >&2; exit 1
-fi
+# Step 5 — werk-merge (#3175): the atomic MERGE verb, through the same MCP path as
+# every other step. Resolves the OPEN PR for the current HEAD oid (NOT the branch
+# name — retires the stale-PR false-green the interim `gh pr merge <branch>` caused,
+# Wren + Kade 2026-06-03), squash-merges, and CONTENT-VERIFIES the merge landed.
+step "5 merge"       "$BUILDER"  werk-merge    "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"
 
 # Step 6 — werk-build for PROD, from MAIN. HARD-STOP: deploy-from-main is not built.
 cat >&2 <<'BLOCKED'

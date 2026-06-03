@@ -27,7 +27,8 @@ exit 0
 SHIM
 chmod +x "$TMP/curl"
 
-# gh shim: log the call (interim merge, step 5) + succeed.
+# gh shim: present for any incidental gh use + succeed. (Step 5 merge now goes through
+# the MCP werk-merge verb via the curl shim, #3175 — not inline gh.)
 cat > "$TMP/gh" <<'SHIM'
 #!/usr/bin/env bash
 echo "gh $*" >> "$CALLS_LOG"
@@ -46,14 +47,15 @@ fail() { echo "FAIL: $1"; echo "--- output ---"; echo "$out"; echo "--- calls --
 [ -f "$HERE/werk-mcp.sh" ]      || fail "werk-mcp.sh missing"
 [ -f "$HERE/werk-acp-mcp.sh" ]  && fail "old werk-acp-mcp.sh still present"
 
-# AC#2/#3/#4 — the demo half runs for real, in order, then step 5 merge (interim).
+# AC#2/#3/#4 — the demo half runs for real, in order, then step 5 merge via werk-merge.
 grep -q "1 commit"      <<<"$out" || fail "step 1 commit missing"
 grep -q "2 push"        <<<"$out" || fail "step 2 push missing"
 grep -q "3 build-demo"  <<<"$out" || fail "step 3 build-demo missing"
 grep -q "4 deploy-demo" <<<"$out" || fail "step 4 deploy-demo missing"
 grep -q "4 env-up"      <<<"$out" || fail "step 4 env-up (running instance) missing"
 grep -q "5 merge"       <<<"$out" || fail "step 5 werk-merge missing"
-grep -q "interim"       <<<"$out" || fail "step 5 not labeled interim (#3175)"
+# #3175: step 5 is the real werk-merge MCP verb now — NOT the interim gh path.
+grep -q "interim"       <<<"$out" && fail "step 5 still labeled interim — werk-merge (#3175) should have retired it"
 
 # AC#5 — hard-stop at the deploy-from-main gap; prod steps + accept do NOT run.
 grep -q "\[BLOCKED\] deploy-from-main" <<<"$out" || fail "step 6 hard-stop (BLOCKED deploy-from-main) missing"
@@ -62,11 +64,12 @@ grep -q "\[done\]" <<<"$out" && fail "reached [done] — prod steps ran; must ha
 
 # The demo-half MCP call sequence, in order, by tool name.
 seq="$(grep '^tools/call' "$CALLS_LOG" | awk '{print $2}' | paste -sd, -)"
-expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up"
+# #3175: step 5 merge is now a real MCP verb (werk-merge) in the sequence, not inline gh.
+expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up,werk-merge"
 [ "$seq" = "$expected" ] || fail "MCP call sequence: got [$seq] expected [$expected]"
 
 # AC#5/#6 — no canonical deploy and no accept ran (gated behind the blocked prod deploy).
 grep -q "werk-accept"      "$CALLS_LOG" && fail "werk-accept ran — accept must stay gated behind a real prod deploy"
 grep -q 'target.*canonical' "$CALLS_LOG" && fail "canonical deploy ran — must hard-stop before deploying werk-content to prod"
 
-echo "PASS: werk-mcp 8-step flow — demo real, merge interim (#3175), hard-stop at deploy-from-main, accept gated"
+echo "PASS: werk-mcp 8-step flow — demo real, merge via werk-merge verb (#3175), hard-stop at deploy-from-main, accept gated"
