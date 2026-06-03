@@ -1,0 +1,14 @@
+[package]
+name = "werk-merge"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern,
+# and the `git`/`gh` CLIs as subprocesses. The v2 verb-binary blueprint is
+# werk-pull (#3045); this is the atomic MERGE verb (#3175) that retires the
+# inline `gh pr merge` glue in werk-accept / the werk-mcp.sh interim path.
+[dependencies]
+
+[[bin]]
+name = "werk-merge"
+path = "src/main.rs"

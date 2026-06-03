@@ -77,10 +77,12 @@ fn accept_authority_gate_and_happy_path() {
     // #3108 AC#8: env-down sits post-merge; a refused accept must not reach it.
     assert!(!after_refuse.contains("werk-deploy env-down"), "refused accept must NOT tear down variants");
 
-    // (2) happy path: DEPLOY_ROLE=jeff accepting kade's card => Ok, merge + done called.
+    // (2) happy path: DEPLOY_ROLE=jeff accepting kade's card => Ok, FINALIZE only.
     accept(9001, "kade", "jeff", &home, &werk_base).expect("jeff finalizes");
     let after_ok = fs::read_to_string(&log).unwrap_or_default();
-    assert!(after_ok.contains("pr merge"), "happy path merges the PR");
+    // #3175: accept is FINALIZE-ONLY — werk-merge owns the merge. accept must NOT merge.
+    assert!(!after_ok.contains("pr merge"), "accept no longer merges — werk-merge owns the merge (#3175)");
+    assert!(!after_ok.contains("pr create"), "accept no longer opens a PR — that's werk-merge's job");
     assert!(after_ok.contains("cards done 9001"), "happy path marks the card Done");
     assert!(after_ok.contains("chorus-log card.accepted"), "happy path emits card.accepted");
     // #3108 AC#8: env-down called on happy path AND precedes chorus-werk remove
