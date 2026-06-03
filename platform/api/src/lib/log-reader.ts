@@ -11,8 +11,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-export const CHORUS_ROOT: string =
-  process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus');
+// #3197 — root resolution lives in one place (chorus-paths). Re-exported here
+// so existing importers of CHORUS_ROOT from log-reader keep their surface.
+import { CHORUS_ROOT } from './chorus-paths';
+export { CHORUS_ROOT };
 
 export const LOG_PATHS = {
   chorus: path.join(os.homedir(), '.chorus/chorus.log'),

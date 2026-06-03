@@ -9,15 +9,14 @@
  * Wired to MCP via `chorus_tree_get` / `chorus_ownership_lookup` /
  * `chorus_blast_radius` in mcp/server.ts.
  *
- * Path resolution: process.env.CHORUS_ROOT || ~/CascadeProjects/chorus —
- * matches the pattern used by chorus-cost.ts / chorus-perf.ts. Cached after
- * first read until the file mtime changes (operational reload without
- * service restart).
+ * Path resolution: imported from lib/chorus-paths (the one root source, #3197).
+ * Cached after first read until the file mtime changes (operational reload
+ * without service restart).
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { CHORUS_ROOT } from '../lib/chorus-paths'; // #3197 — single root source
 import {
   TreeSchema,
   type Tree,
@@ -36,7 +35,7 @@ interface CacheEntry {
 let cache: CacheEntry | null = null;
 
 function repoRoot(): string {
-  return process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus');
+  return CHORUS_ROOT;
 }
 
 function treePath(): string {

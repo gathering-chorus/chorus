@@ -13,8 +13,7 @@
  */
 
 import * as fs from 'fs';
-
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+import { CHORUS_ROOT } from './lib/chorus-paths'; // #3197 — single root source
 
 /** Coerce an unknown value to a string for display; non-primitives get the
  *  fallback instead of `[object Object]`. #2463 wave 2 (no-base-to-string). */
