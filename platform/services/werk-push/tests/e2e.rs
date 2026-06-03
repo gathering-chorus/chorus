@@ -116,8 +116,26 @@ fn push_pushes_committed_branch_and_registers_gh() {
     fs::write(werk.join("w2.txt"), "x").unwrap();
     git(&werk, &["add", "."]);
     git(&werk, &["commit", "-q", "-m", "more local work"]);
+
+    // #3163: a rejected push must surface push.failed on the ONE spine, keyed by card +
+    // the INHERITED trace (not a fresh mint). Capture-shim chorus-log at the path
+    // emit_spine invokes (home/platform/scripts/chorus-log); seed the inherited trace via
+    // the /tmp file carrier resolve_trace reads (no env mutation -> hermetic under parallelism).
+    let log = home.join("platform/scripts/chorus-log");
+    fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let cap = home.join("spine-capture.txt");
+    write_exec(&log, &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
+    fs::write("/tmp/9002-trace", "inherited-trace-9002").unwrap();
+
     assert!(push(9002, "kade", &home, &werk_base).is_err(),
         "force-with-lease REFUSES when origin moved out-of-band (lease guard, not blind force)");
+
+    // #3163: the refused push reached the spine with the INHERITED trace (was fully silent before).
+    let emitted = fs::read_to_string(&cap).unwrap_or_default();
+    assert!(emitted.contains("card=9002"), "push failure reached the spine keyed by card: {:?}", emitted);
+    assert!(emitted.contains("trace=inherited-trace-9002"),
+        "carries the INHERITED trace (#3045 contract), not a fresh mint: {:?}", emitted);
+    assert!(emitted.contains("push.failed"), "a push.failed event reached the spine: {:?}", emitted);
 
     // nothing-to-push: a fresh card whose werk has no commits ahead -> refuse.
     let werk2 = werk_base.join("kade-9003");

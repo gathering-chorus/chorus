@@ -46,6 +46,51 @@ pub fn trace_id() -> String {
     format!("{:x}-{:x}", ns, std::process::id())
 }
 
+/// #3163 — resolve the card's trace by the #3045 verb contract (inherit, don't mint):
+/// `CHORUS_TRACE_ID` env -> `<trace_dir>/<card>-trace` file -> mint+persist. The
+/// persisted file threads ONE trace across pull -> commit -> push -> acp, so a rejected
+/// push shows on the SAME card thread as its commit. Pure (dir injected) -> testable.
+/// Mirrors werk-commit::resolve_trace_in.
+pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) -> String {
+    if let Some(t) = env_trace {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let p = trace_dir.join(format!("{}-trace", card));
+    if let Ok(t) = fs::read_to_string(&p) {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let t = trace_id();
+    let _ = fs::write(&p, &t); // best-effort persist; downstream verbs read it
+    t
+}
+
+pub fn resolve_trace(card: u64) -> String {
+    let env = env::var("CHORUS_TRACE_ID").ok();
+    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+}
+
+/// #3163 — the spine event contract (#3135 AUDITABLE): the args handed to `chorus-log`
+/// so a push's failures/lifecycle are Loki-queryable, keyed by card + the inherited
+/// trace. Pure -> testable. Mirrors werk-commit::spine_args / werk-pull::spine_args.
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
 pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, extra: &str) -> String {
     format!(
         "{{\"ts\":{},\"event\":\"{}\",\"role\":\"{}\",\"card_id\":{},\"trace_id\":\"{}\"{}}}\n",
@@ -65,6 +110,26 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&p) {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+/// #3163 — emit one event to the ONE spine (`chorus.log` via the canonical `chorus-log`
+/// subprocess) so a push's failures/lifecycle are Loki-queryable, keyed by card + the
+/// inherited trace. Best-effort like the jsonl witness — it NEVER blocks or fails the
+/// push (logging can't affect the operation). The jsonl witness stays (verbose local);
+/// the spine is the queryable record (#3135). Mirrors werk-commit::emit_spine.
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
+    let log = home.join("platform/scripts/chorus-log");
+    let log_s = match log.to_str() {
+        Some(s) => s,
+        None => return,
+    };
+    let args = spine_args(event, role, card, trace, extras);
+    let mut c = Command::new("bash");
+    c.arg(log_s);
+    for a in &args {
+        c.arg(a);
+    }
+    let _ = c.output(); // best-effort; a missing/failing chorus-log never affects the push
 }
 
 /// Run a CLI in a working dir with extra env vars; non-zero exit is a typed error.
@@ -160,22 +225,27 @@ pub fn run_push() -> R<String> {
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
 /// (deps injected via PATH: real `git`, shimmed `gh`). Returns the pushed sha.
 pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
-    let trace = trace_id();
+    // #3163: inherit the card's trace (env -> /tmp/<card>-trace -> mint), so a rejected
+    // push lands on the SAME thread as its commit — not a fresh-minted orphan trace.
+    let trace = resolve_trace(card);
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     let werk_s = path(&werk)?.to_string();
 
     jsonl(home, role, card, &trace, "push.started", "");
+    emit_spine(home, "push.started", role, card, &trace, &[]);
 
     // #3012/#3013 fix: deterministic werk, REFUSE if absent. No canonical fallback.
     if !werk.is_dir() {
         jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"no-werk\"");
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "no-werk"), ("disposition", "refuse")]);
         return Err(format!("no werk for #{} at {} — pull + commit the card first", card, werk.display()));
     }
     // werk must be on the card's branch (carries the #2580 cross-role intent).
     let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
     if cur != branch {
         jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"wrong-branch\"");
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "wrong-branch"), ("disposition", "refuse")]);
         return Err(format!("werk is on '{}', not '{}' — refusing to push", cur, branch));
     }
 
@@ -187,6 +257,7 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         .unwrap_or(0);
     if ahead == 0 {
         jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"nothing-to-push\"");
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "nothing-to-push"), ("disposition", "refuse")]);
         return Err(format!("#{}: nothing to push (no commits ahead of origin/main — commit first)", card));
     }
 
@@ -196,6 +267,7 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     let remote = run_in(&werk_s, "git", &["ls-remote", "origin", &branch]).unwrap_or_default();
     if remote.split_whitespace().next() == Some(sha.as_str()) {
         jsonl(home, role, card, &trace, "push.idempotent", &format!(",\"sha\":\"{}\"", sha));
+        emit_spine(home, "push.idempotent", role, card, &trace, &[("sha", &sha)]);
         return Ok(sha);
     }
 
@@ -219,8 +291,16 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     {
         let _lock = lock(home, Duration::from_secs(30))?;
         jsonl(home, role, card, &trace, "lock.acquired", "");
-        run_in_env(&werk_s, "git", &push_args, &[("_GIT_QUEUE_PUSH", "1")])
-            .map_err(|e| format!("push failed: {}", e))?;
+        if let Err(e) = run_in_env(&werk_s, "git", &push_args, &[("_GIT_QUEUE_PUSH", "1")]) {
+            // #3163: the non-fast-forward reject (or the force-with-lease lease-guard
+            // refuse) — the most common real push failure in a shared repo — was fully
+            // silent before, returning Err with no record. Surface push.failed on the ONE
+            // spine, carrying the INHERITED trace + reason + disposition, so the break
+            // shows on the card's thread the instant it happens (merged-not-live precursor).
+            jsonl(home, role, card, &trace, "push.failed", ",\"reason\":\"push-rejected\"");
+            emit_spine(home, "push.failed", role, card, &trace, &[("reason", "push-rejected"), ("disposition", "refuse")]);
+            return Err(format!("push failed: {}", e));
+        }
     }
     jsonl(home, role, card, &trace, "pushed", &format!(",\"sha\":\"{}\"", sha));
 
@@ -228,6 +308,7 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // created (delete IS a push -> carries the sentinel) so there's no orphan ref.
     if let Err(e) = register_gh(&werk_s, card, role, &trace, &branch, &sha) {
         jsonl(home, role, card, &trace, "push.rolledback", ",\"reason\":\"gh-register-fail\"");
+        emit_spine(home, "push.rolledback", role, card, &trace, &[("reason", "gh-register-fail"), ("disposition", "refuse")]);
         if let Ok(_lock) = lock(home, Duration::from_secs(30)) {
             let _ = run_in_env(&werk_s, "git", &["push", "origin", "--delete", &branch], &[("_GIT_QUEUE_PUSH", "1")]);
         }
@@ -236,5 +317,6 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     jsonl(home, role, card, &trace, "gh.registered", "");
 
     jsonl(home, role, card, &trace, "push.completed", &format!(",\"sha\":\"{}\"", sha));
+    emit_spine(home, "push.completed", role, card, &trace, &[("sha", &sha)]);
     Ok(sha)
 }
