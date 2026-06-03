@@ -12,7 +12,7 @@
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import * as os from 'os';
+import { CHORUS_ROOT } from '../lib/chorus-paths'; // #3197 — single root source
 
 export type ExecFileFn = (
   cmd: string,
@@ -43,8 +43,7 @@ export interface PerfResult {
 }
 
 function defaultScriptPath(): string {
-  const root = process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus');
-  return path.join(root, 'platform/scripts/perf-baseline.sh');
+  return path.join(CHORUS_ROOT, 'platform/scripts/perf-baseline.sh');
 }
 
 function parsePerfRow(line: string): PerfRow | null {

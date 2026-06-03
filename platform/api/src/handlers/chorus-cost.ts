@@ -9,6 +9,7 @@ import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as os from 'os';
+import { CHORUS_ROOT } from '../lib/chorus-paths'; // #3197 — single root source
 
 export type ExecFileFn = (
   cmd: string,
@@ -29,8 +30,7 @@ export interface CostResult {
 }
 
 function defaultScriptPath(): string {
-  const root = process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus');
-  return path.join(root, 'platform/scripts/cost-report.sh');
+  return path.join(CHORUS_ROOT, 'platform/scripts/cost-report.sh');
 }
 
 export async function fetchCost(

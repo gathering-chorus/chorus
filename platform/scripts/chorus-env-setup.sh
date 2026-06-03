@@ -104,31 +104,39 @@ esac
 # live at <werk>/.werk-bin, which broke two ways: with more than one card open
 # the werk lookup grabbed the wrong (often stale) one, and the slot was deleted
 # when that card's werk was torn down at /acp. As a per-role peer it is stable
-# across cards, never resolves to a stale werk, and survives acp. The role's
-# session PATH-prefixes it before CHORUS_BIN, so the role resolves its own
-# deployed build before canonical; the promote step copies the slot into
-# CHORUS_BIN. Derived from CHORUS_ROLE alone — no dependence on which/how-many
-# card werks exist.
+# across cards, never resolves to a stale werk, and survives acp. The promote
+# step copies the slot into CHORUS_BIN.
 #
-# Other roles get their own peer slot (keyed on their CHORUS_ROLE) and stay
-# undisturbed by this role's in-flight build.
+# #3197 — these slots are GLOBAL, not role-scoped. Each is just
+# $CHORUS_WERK_BASE/<role>-bin (CHORUS_WERK_BASE is itself global), so the
+# derivation has ONE home — here — and every consumer (chorus-bin-install)
+# READS the exported var instead of re-deriving the formula. Exported
+# unconditionally so a role-LESS daemon (chorus-mcp / chorus-api) that sources
+# this file at boot can resolve ANY role's slot at request time. Before, these
+# were gated on CHORUS_ROLE, so a daemon with no boot role exported none — the
+# exit-7 "requires WERK_<ROLE>_BIN" that broke every werk-targeted deploy.
+export WERK_KADE_BIN="$CHORUS_WERK_BASE/kade-bin"
+export WERK_WREN_BIN="$CHORUS_WERK_BASE/wren-bin"
+export WERK_SILAS_BIN="$CHORUS_WERK_BASE/silas-bin"
+mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" 2>/dev/null || true
+
+# PATH-prefix only the CURRENT role's slot — that part IS session-scoped: a role
+# resolves its own in-flight build before canonical. A role-less daemon skips
+# this (it has the vars above for lookup, but prepends no one's slot to PATH).
 if [ -n "${CHORUS_ROLE:-}" ]; then
   case "$CHORUS_ROLE" in
-    kade|wren|silas)
-      __chorus_env_role_bin="$CHORUS_WERK_BASE/$CHORUS_ROLE-bin"
-      mkdir -p "$__chorus_env_role_bin" 2>/dev/null || true
-      case "$CHORUS_ROLE" in
-        kade)  export WERK_KADE_BIN="$__chorus_env_role_bin"  ;;
-        wren)  export WERK_WREN_BIN="$__chorus_env_role_bin"  ;;
-        silas) export WERK_SILAS_BIN="$__chorus_env_role_bin" ;;
-      esac
-      case ":$PATH:" in
-        *":$__chorus_env_role_bin:"*) ;;  # already present, no-op
-        *) export PATH="$__chorus_env_role_bin:$PATH" ;;
-      esac
-      unset __chorus_env_role_bin
-      ;;
+    kade)  __chorus_env_role_bin="$WERK_KADE_BIN"  ;;
+    wren)  __chorus_env_role_bin="$WERK_WREN_BIN"  ;;
+    silas) __chorus_env_role_bin="$WERK_SILAS_BIN" ;;
+    *)     __chorus_env_role_bin="" ;;
   esac
+  if [ -n "$__chorus_env_role_bin" ]; then
+    case ":$PATH:" in
+      *":$__chorus_env_role_bin:"*) ;;  # already present, no-op
+      *) export PATH="$__chorus_env_role_bin:$PATH" ;;
+    esac
+  fi
+  unset __chorus_env_role_bin
 fi
 
 # #3016 — CHORUS_MCP_PORT: per-session chorus-mcp endpoint for daemon

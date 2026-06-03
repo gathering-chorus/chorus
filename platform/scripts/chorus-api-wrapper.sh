@@ -5,8 +5,14 @@
 
 set -euo pipefail
 
-API_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/api"
-APP_ENV="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env"
+# #3197 — source the ONE env file. CHORUS_ROOT/HOME/WERK_BASE/BIN +
+# WERK_<ROLE>_BIN land in this process's env (and so in the node app's
+# process.env), instead of each consumer re-deriving them. This is also what
+# lets werk-targeted deploys spawned by the API resolve a role's bin slot.
+source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
+
+API_DIR="$CHORUS_ROOT/platform/api"
+APP_ENV="$CHORUS_ROOT/../jeff-bridwell-personal-site/.env"
 
 if [ -f "$APP_ENV" ]; then
   set -a

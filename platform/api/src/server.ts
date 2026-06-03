@@ -21,7 +21,12 @@ import * as lancedb from '@lancedb/lancedb';
 import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware } from './eventloop-alert';
 
 const execAsync = promisify(exec);
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
+// #3197 — single root source. Replaces a wrong inline default
+// ('/CascadeProjects', missing the /chorus segment) that had grown three pairs
+// of compensating dual-path lookups below; with the root always correct, the
+// `${ROOT}/chorus/...` and `${ROOT}/shared-observability` branches are dead and
+// have been removed.
+import { CHORUS_ROOT } from './lib/chorus-paths';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -388,8 +393,8 @@ const sparqlSearch = createSparqlSearch({ fusekiUrl: FUSEKI_URL });
 import { mergeUnified, enrichHit, resolveSearchLimit } from './search-fusion';
 
 // --- Spine event emitter (fire-and-forget to chorus-log.sh) ---
-const CHORUS_LOG = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/chorus-log');
-const OPS_NUDGE = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/ops-nudge');
+const CHORUS_LOG = path.join(CHORUS_ROOT, 'platform/scripts/chorus-log');
+const OPS_NUDGE = path.join(CHORUS_ROOT, 'platform/scripts/ops-nudge');
 
 // emitSearchEvent + getDb + DbNotFoundError moved to src/server-helpers.ts (#2205 wave 12).
 import {
@@ -563,16 +568,9 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       readdir: (p) => fs.readdirSync(p),
       chorusLogPath: path.resolve(__dirname, '../../logs/chorus.log'),
       memoryDir: path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory'),
-      alertDir: (() => {
-        // CHORUS_ROOT points to chorus/ in prod (LaunchAgent) and to its parent
-        // in dev fallback; same dual-shape pattern as tailSpineForRole. Pick
-        // whichever resolves to a real dir.
-        const candidates = [
-          path.join(CHORUS_ROOT, 'shared-observability/config/grafana/provisioning/alerting'),
-          path.join(CHORUS_ROOT, '..', 'shared-observability/config/grafana/provisioning/alerting'),
-        ];
-        return candidates.find((p) => fs.existsSync(p)) || candidates[0];
-      })(),
+      // shared-observability is a sibling of the chorus checkout (#3197 —
+      // CHORUS_ROOT is now always the chorus dir, so the path is unambiguous).
+      alertDir: path.join(CHORUS_ROOT, '..', 'shared-observability/config/grafana/provisioning/alerting'),
     });
     res.status(r.status).json(r.body);
   } finally { if (db) db.close(); }
@@ -924,7 +922,6 @@ const tailSpineForRole = (role: string): { timestamp: string; role: string; even
 app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
   const alertDir = [
     `${CHORUS_ROOT}/proving/domains/alerts`,
-    `${CHORUS_ROOT}/chorus/proving/domains/alerts`,
   ].find((p) => fs.existsSync(p));
   const r = await fetchContextAlerts(
     {
@@ -989,7 +986,6 @@ app.get('/api/chorus/context/coverage', async (req: Request, res: Response) => {
       readCoverageSummary: () => {
         const candidates = [
           `${CHORUS_ROOT}/platform/api/coverage/coverage-summary.json`,
-          `${CHORUS_ROOT}/chorus/platform/api/coverage/coverage-summary.json`,
         ];
         const p = candidates.find((c) => fs.existsSync(c));
         if (!p) return null;
@@ -1401,7 +1397,7 @@ app.get('/api/chorus/harvest', async (_req: Request, res: Response) => {
 
 // --- GET /api/chorus/cost — Cost summary (#1485) ---
 
-const COST_SCRIPT = path.join(process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus'), 'platform/scripts/cost-report.sh');
+const COST_SCRIPT = path.join(CHORUS_ROOT, 'platform/scripts/cost-report.sh');
 
 import { fetchCost } from './handlers/chorus-cost';
 app.get('/api/chorus/cost', async (req: Request, res: Response) => {
