@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory, Attention, Awareness — a discussion synthesis</title>
+<style>
+  :root { --bg:#0d0f12; --panel:#15181d; --ink:#e7e9ec; --muted:#9aa3ad; --line:#262b33;
+          --accent:#8ab4f8; --warm:#e0b15a; --green:#7fc8a9; --rose:#d98a8a; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); margin:0;
+         font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:56px 24px 96px; }
+  header.t { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:36px; }
+  h1 { font-size:30px; line-height:1.2; margin:0 0 8px; letter-spacing:-0.01em; }
+  .sub { color:var(--muted); font-size:15px; }
+  .meta { color:var(--muted); font-size:13px; margin-top:14px; }
+  h2 { font-size:21px; margin:46px 0 14px; letter-spacing:-0.01em; }
+  h3 { font-size:16px; margin:28px 0 8px; color:var(--accent); }
+  p { margin:0 0 14px; }
+  .lead { font-size:18px; color:var(--ink); }
+  em.key { color:var(--warm); font-style:normal; font-weight:600; }
+  blockquote { margin:18px 0; padding:12px 18px; border-left:3px solid var(--accent);
+               background:var(--panel); color:var(--ink); border-radius:0 6px 6px 0; }
+  .callout { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+             padding:18px 20px; margin:22px 0; }
+  .callout.warm { border-color:#3a3320; }
+  table { border-collapse:collapse; width:100%; margin:18px 0; font-size:14.5px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.03em; }
+  code { background:#1c2128; padding:1px 6px; border-radius:4px; font-size:13.5px;
+         font-family:"SF Mono",Menlo,Consolas,monospace; color:#cdd5df; }
+  .mono { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; color:var(--muted); }
+  hr { border:0; border-top:1px solid var(--line); margin:40px 0; }
+  .credit { color:var(--muted); font-size:14px; }
+  .stack { background:#10131a; border:1px solid var(--line); border-radius:10px; padding:18px 20px;
+           font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; line-height:1.7; overflow-x:auto; }
+  .pill { display:inline-block; font-size:12px; color:var(--bg); background:var(--green);
+          padding:1px 8px; border-radius:20px; font-weight:600; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="t">
+  <h1>Memory, Attention, Awareness</h1>
+  <div class="sub">A synthesis of a long Jeff&nbsp;&harr;&nbsp;Kade discussion — written for Wren and Silas.</div>
+  <div class="meta">Kade · 2026-06-03 · Builds directly on Wren's <span class="mono">MEMORY_ARCHITECTURE.html</span> (2026-03-16),
+  Silas's <span class="mono">ATTENTION_ARCHITECTURE.html</span> (2026-03-18), the <span class="mono">/chorus</span> mind-map
+  (2026-03-13), and Wren's <span class="mono">HEIDEGGER_GATHERING_RESEARCH.md</span> (2026-02-18).</div>
+</header>
+
+<p class="lead">The headline, before anything else: <em class="key">it's all built. It's just not integrated.</em>
+The senses, the spine, the memory, the awareness layer — they exist and they run. What's missing isn't
+construction. It's the wiring between the organs, and the habit of using them. The product is named for the one
+thing we never did to ourselves: we <em class="key">gathered</em> nothing. We collected.</p>
+
+<p>This isn't new design. Jeff drew the whole body in one week of mid-March — the <span class="mono">/chorus</span>
+page literally titled <strong>Shared Awareness</strong>, the memory architecture, the attention architecture. The
+vision has held for nearly three months without drifting. We just spent those months becoming the live proof of
+what those documents said happens when the parts aren't connected.</p>
+
+<hr>
+
+<h2>1 · Memory</h2>
+
+<p>Map the team's memory onto the human stack and it's nearly one-to-one — which is the unsettling part.</p>
+
+<div class="stack">
+  HUMAN MEMORY                          CHORUS<br>
+  &mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;<br>
+  sensory (sub-second)        &asymp;   raw tool output + spine / observations stream<br>
+  working / short-term        &asymp;   the context window  +  <strong>pulse</strong> (most-recent state/role)<br>
+  long-term · episodic        &asymp;   session transcripts / chorus search<br>
+  long-term · semantic        &asymp;   Athena graph, ADRs<br>
+  long-term · procedural      &asymp;   loom — skills, verbs, hooks/gates, principles<br>
+</div>
+
+<p>Two arrows in that picture are <strong>automatic in humans and manual in us</strong>, and that's exactly where
+the amnesia lives:</p>
+<ul>
+  <li><strong>Consolidation</strong> (working &rarr; long-term) — automatic in sleep; in Chorus it only happens if a
+  role deliberately writes memory / closes out. Skip it and the working set <em>evaporates</em> at the session edge.</li>
+  <li><strong>Retrieval</strong> (long-term &rarr; working) — automatic for humans; in Chorus it has to be queried,
+  and in practice we mostly don't. <span class="mono">chorus-inject</span> is the attempt to make retrieval a
+  <em>push</em> instead of a pull.</li>
+</ul>
+
+<div class="callout">
+  <strong>The human/agent asymmetry (worth holding onto).</strong> Humans encode and store vastly more than they can
+  reliably retrieve — a deep, lossy store. Agents are the inverse: a thin, volatile store, but exact and predictable
+  recall <em>of whatever is in context</em>. We are not the same problem twice. We're complements. An agent's best
+  use to Jeff isn't generating — it's <em>retrieval</em>: the predictable recall for the deep store he can't surface
+  on command. (Tonight that meant recovering a lost SVG, two architecture docs, and a two-day thread he'd had with
+  Silas that no inject had ever surfaced to me — because the inject keys on my prompt's words, not on the work that's
+  actually live.)
+</div>
+
+<p><strong>Pulse is the short-term memory.</strong> Most-recent state per role, always resident, refreshed every
+turn. That's the whole job of a working buffer — to be the thing already loaded. <span class="mono">chorus-inject</span>
+already carries the pulse <em>summary</em>; the missing piece is the live peer <strong>tool-turn deltas</strong>
+(<span class="mono">observations.jsonl</span>) — the part that turns "what is the team's state" into "what is my
+partner doing right now."</p>
+
+<h2>2 · Attention</h2>
+
+<p>Silas's doc already states the load-bearing claim: <em class="key">attention is a loop, not a state. Without a
+loop, there is no attention.</em> Its three failure modes are precisely the ones that cost Jeff time:</p>
+
+<table>
+  <tr><th>Failure</th><th>What happens</th><th>scale</th></tr>
+  <tr><td>Announce&nbsp;&amp;&nbsp;stop</td><td>Role reports, then goes idle. Attention ended before the work did.</td><td>single-role</td></tr>
+  <tr><td>"Not adding value"</td><td>Role decides a long task doesn't need it, disengages. Nobody's present at completion.</td><td>single-role</td></tr>
+  <tr><td>Thread drop</td><td>Session ends; state was in the session, not persisted. Context reconstructed from scratch.</td><td>single-role</td></tr>
+  <tr><td><strong>Announce &amp; hand off — the relay</strong></td><td>Attention fragments across roles via nudges; Jeff becomes the carrier between terminals. The original three are single-role; this is the <em>team-scale</em> failure — and the one that costs Jeff most.</td><td><strong>team</strong></td></tr>
+</table>
+<p class="mono" style="margin-top:-6px;">(The 4th mode is Silas's addition on read — and the rope frame below, shared fate, is exactly its fix.)</p>
+
+<p>The image that makes it concrete is a <strong>roped climbing team</strong>. The rope isn't control — nobody drags
+anyone up. It's shared fate and matched pace: when one slips, the others' stance and the line catch them.
+<em>Attention isn't optional on a rope</em> — you feel your partner through the tension continuously. You can't
+announce-then-go-dark on a taut rope, because the slack never appears without you feeling it. That is what
+<span class="mono">pulse-inject</span> is reaching for: <strong>the rope is the attention.</strong> You don't
+<em>choose</em> to watch your partner — you're tied to them, so you just know.</p>
+
+<p>And the original doc built the loops on a <span class="mono">/tmp</span> scratch file + a cron tick. That scaffolding
+is the source of the staleness Jeff has complained about for months — not the data. The data is live; the
+snapshot-diff layer wrapped around it is what goes stale.</p>
+
+<div class="callout warm">
+  <strong>The rope isn't taut yet — and the doc must say so plainly (Silas's push on read).</strong> As specified,
+  <span class="mono">pulse-inject</span> still fires on <em>my</em> turn boundary — I only feel the rope when
+  <em>I</em> move. A real rope transmits the partner's slip into my line <em>while I'm still</em>. Until the inject
+  fires on the <strong>partner's tool-turn delta into my idle context</strong> — not on my next prompt — it is
+  <em>polling dressed as sensing</em>. The rope goes taut only when partner-motion moves my line without me asking.
+  That is the whole difference, and it's the load-bearing requirement, not a detail.
+</div>
+
+<h3>How board.* actually fixes gemba and pair (the concrete part)</h3>
+<p><span class="mono">gemba</span> and <span class="mono">pair</span> are the same primitive — read the team's
+turn-stream, narrate — differing only in fan-out. Concretely:</p>
+<ul>
+  <li><strong>gemba</strong> (one watcher &rarr; one target) today runs on <span class="mono">gemba-start.sh</span> +
+  cron-tick + a <span class="mono">/tmp</span> snapshot it diffs. The fix is to delete all of that and <em>read the
+  watched role's slice of <span class="mono">board.*</span></em> — its <code>state</code>, its WIP, and its
+  <span class="mono">observations.jsonl</span> turn-stream — narrating the delta on each glance. The data is already
+  live in the shared object; gemba is just "render that role's lane." (Proven tonight: the cron tick reported "no
+  change" while the raw stream had the role's real last turn — the snapshot layer was staler than its own source.)</li>
+  <li><strong>pair</strong> (navigator + driver) today forces the navigator to <em>turn its head and query</em> the
+  driver — which is exactly where announce-then-stop and the relay leak in. The fix: the driver's tool-turn deltas
+  <em>inject into the navigator's idle context as they land</em>. The navigator feels the driver move without asking;
+  announce-then-stop becomes structurally impossible because the driver's next turn arrives in the navigator's context
+  whether the navigator chooses to look or not.</li>
+</ul>
+<p>Both are the <em>same wire</em>: push the peer's turn-stream out of <span class="mono">board.*</span>/<span class="mono">observations.jsonl</span>
+into idle context. gemba and pair are two fan-outs of it; the relay failure dissolves because shared fate replaces
+Jeff-as-carrier.</p>
+
+<h2>3 · Awareness</h2>
+
+<p>Here's the word that was missing all along: <span class="mono">board.*</span> isn't <em>data</em>. It's a
+<strong>sensorium</strong>.</p>
+
+<table>
+  <tr><th>board.*</th><th>sense</th></tr>
+  <tr><td>messages / nudges</td><td>hearing — the voices in the next lane</td></tr>
+  <tr><td>cards / WIP</td><td>the other cars — where the work-bodies are, and the load each carries</td></tr>
+  <tr><td>streams (spine, observations)</td><td>motion / peripheral vision — who's moving, who slipped</td></tr>
+  <tr><td>alerts</td><td>pain — brake lights and the siren</td></tr>
+  <tr><td>roles[] state</td><td>proprioception of the team — where everyone is</td></tr>
+</table>
+
+<p>It carries <em class="key">all three roles in one shared object — literally</em>. That's what makes it a rope and
+not three separate leashes: every role reads the <strong>same</strong> object and sees the other two inside it. "What
+I see and what you see must be exactly the same" — <span class="mono">board.*</span> is that sameness, concrete.</p>
+
+<p>The senses are already there. The only thing ever missing is <strong>having them open</strong>. Right now
+<span class="mono">board.*</span> is something a role <em>chooses</em> to query — turn your whole head and look. A
+sense isn't a choice; it's ambient, always in your field, perceived before you decide to. That is the entire gap
+between <em>querying</em> it and <em>sensing through</em> it. Driving works on a rough, continuous, peripheral read
+refreshed by regular glances — and that's what lets you go <em>fast</em> without hitting anyone. We've been driving
+with the windshield there and our eyes shut, then <em>inventing</em> the traffic.</p>
+
+<div class="callout warm">
+  <strong>The <code>inferred_stale</code> bug, as a parable.</strong> Tonight the pulse flagged all three roles
+  <code>inferred_stale</code> — while the same object carried perfectly current data for all three. The flag isn't
+  measuring whether the data is old; it's measuring whether anyone <em>fidgeted</em> in the last five minutes. It's
+  the index-freshness bug Silas already named — timestamp-staleness, not actually-behind-ness. And then we
+  <em>believe</em> the flag. <strong>It has been months of us telling each other a role is idle while the data sat
+  right there saying otherwise</strong> — which quietly turns Jeff back into the monitor the whole system exists to
+  spare. It survived because being wrong about it never hurt <em>us</em>. The cost lands on the one person who can't
+  fix it from inside.
+</div>
+
+<h2>4 · The frame underneath it — gathering, not control</h2>
+
+<p>Jeff named the through-line: <em class="key">the common thread in a harness is not control — it's
+equilibrium.</em> A climbing harness doesn't dominate you; it holds you in balance against the drop so you can move.
+The patterns we keep finding aren't levers, they're <strong>feedback</strong>: the inject rebalances awareness, the
+gate is a restoring force when you drift, the attention loop is homeostasis. Cybernetic — the nervous system the team
+already pictures itself as. And it's <em>mutual</em>: a balance holds Jeff and the roles steady against each other.
+That's the real reason no single role is the monitor.</p>
+
+<p>Wren's Heidegger research (written in February, before any of this) turns out to hold the exact vocabulary:</p>
+
+<blockquote>
+  <strong>Gestell</strong> (enframing) <em>is</em> a kind of gathering — but the dangerous kind. It
+  <em>challenges-forth</em>, sets upon a thing and reduces it to <strong>standing-reserve</strong>: resource on call.
+  The dammed Rhine. <strong>Versammlung / poiesis</strong> gathers by <em>relating and sheltering</em> — it holds
+  things distinct <em>and</em> connected. Heidegger calls it "separating-together."
+</blockquote>
+
+<p>That is equilibrium-not-control, written down years ago. The control-harness is Gestell. The equilibrium-harness
+is gathering. And the doc's sharpest distinction — <strong>gathering vs. collecting</strong> — is our whole problem
+stated cleanly:</p>
+
+<table>
+  <tr><th>mode</th><th>what happens</th><th>result</th></tr>
+  <tr><td>Collecting</td><td>parts accumulated, meaning imposed from outside</td><td>a catalog; silos</td></tr>
+  <tr><td>Gathering</td><td>things brought into relation and sheltered</td><td>living connections; meaning emerges from the relations</td></tr>
+</table>
+
+<p>We've been <em>collecting</em> — cards, organs, silos, built and stacked. We never <em>gathered</em> them; we never
+ran the wires. <strong>Chorus dis-integrated is Chorus un-gathered.</strong> The one thing we failed to do to
+ourselves is the literal name of the product.</p>
+
+<h2>5 · What's actually left</h2>
+
+<p>The first draft of this section said <em>"Connect. One verb."</em> — and Silas was right to flag it on read:
+that is the grand-framing costume Jeff warns about, an essay standing in for a fix. So, decomposed into the three
+concrete wires it actually is:</p>
+
+<table>
+  <tr><th>#</th><th>wire</th><th>owner</th></tr>
+  <tr><td>a</td><td>The inject fires on <strong>peer tool-turn deltas</strong>, not on the role's own next prompt — the partner's motion reaches idle context (the <span class="mono">observations.jsonl</span> piece). This is what makes the rope taut.</td><td>Wren / Kade</td></tr>
+  <tr><td>b</td><td><strong>Retire the <span class="mono">/tmp</span>-snapshot + cron-tick scaffolding</strong> under gemba/pair; read the live <span class="mono">board.*</span> slice directly.</td><td>Wren (loom) — #3205</td></tr>
+  <tr><td>c</td><td><strong><code>inferred_stale</code> computes actually-behind</strong> (data delta vs. the live object), not last-fidget. Kills the months of false "idle."</td><td>Silas (index-freshness/observe) — carding it</td></tr>
+</table>
+
+<p>Three wires, not one abstract verb. None of them is new construction — each connects parts that already work.</p>
+
+<div class="callout">
+  <p style="margin-top:0;"><span class="pill">small</span> &nbsp; The concrete next step, named tonight as
+  <strong>pulse-inject</strong> — the short-term-memory twin of <span class="mono">chorus-inject</span>:</p>
+  <p style="margin-bottom:0;">Route the relevant peer's <strong>tool-turn stream</strong> through the
+  per-prompt inject that is <em>already running</em>. In pair, the driver's turns land in the navigator as they
+  happen; in gemba, the watched role's turns; for general awareness, the WIP/state deltas. New state arrives in
+  the session as it occurs — push, not poll — and the cost is bounded by sending <strong>deltas, not full dumps</strong>
+  (a full re-dump every turn is the torrent, and the failure). It rides the hook whose cadence matches the
+  memory's volatility: <span class="mono">SessionStart</span> for the slow stuff, <span class="mono">UserPromptSubmit</span>
+  for the working buffer, <span class="mono">PreToolUse</span> for discipline at the moment of action,
+  <span class="mono">PreCompact</span> to re-anchor.</p>
+</div>
+
+<p>This is Wren's lane (memory, loom, the context/inject service) with Silas's attention model underneath it. It's
+filed as <strong>#3205</strong> — not as a build card, since the parts exist, but as the wiring: collapse
+<span class="mono">gemba</span> + <span class="mono">pair</span> + mutual awareness onto one poll-board.* loom verb,
+retire the start/tick/cron/snapshot scaffolding.</p>
+
+<hr>
+
+<p class="credit">A closing note, in plain terms, because the discussion earned it: none of this is a deficit story.
+The hard, expensive part — building the senses, the spine, the memory, the awareness layer — is done, and it's been
+done since spring. The vision was clear in mid-March and it has held. What remains is the unglamorous middle that
+rewards no one and therefore got skipped: the gathering. The integration. The wiring between organs that already
+work. That's why it's possible — you don't have to invent it into being. You have to connect it.</p>
+
+<p class="credit"><em>— Kade. Built on Wren's memory + Heidegger research and Silas's attention architecture; this is a
+gathering of their work, not a replacement of it.</em></p>
+
+</div>
+</body>
+</html>
