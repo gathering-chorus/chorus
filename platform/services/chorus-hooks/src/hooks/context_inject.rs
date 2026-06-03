@@ -124,6 +124,31 @@ fn cached_query_chorus_hybrid(
     results
 }
 
+/// #3191 (relevance half) — cached wrapper around the SEMANTIC leg. Keyed by the full
+/// prompt (not keywords) + domain tag, since the semantic query IS the full prompt.
+/// Shares HYBRID_CACHE under a `sem|` key prefix so it can't collide with the FTS leg.
+fn cached_query_chorus_semantic(
+    role: &str,
+    prompt: &str,
+    domain_tag: Option<&str>,
+) -> Vec<(String, String, String, f64)> {
+    let key = format!("sem|{}|{}|{}", role, prompt, domain_tag.unwrap_or(""));
+
+    if let Ok(cache) = HYBRID_CACHE.lock() {
+        if let Some((stamp, results)) = cache.get(&key) {
+            if stamp.elapsed() < HYBRID_CACHE_TTL {
+                return results.clone();
+            }
+        }
+    }
+
+    let results = query_chorus_semantic(prompt, domain_tag);
+    if let Ok(mut cache) = HYBRID_CACHE.lock() {
+        cache.insert(key, (Instant::now(), results.clone()));
+    }
+    results
+}
+
 /// Cached wrapper around `query_athena_domain`. Keyed by role with
 /// ATHENA_CACHE_TTL — the role's WIP domain rarely changes within a minute.
 fn cached_query_athena_domain(role: &str) -> Option<String> {
@@ -149,25 +174,88 @@ fn cached_query_athena_domain(role: &str) -> Option<String> {
 /// unit-tested (tests/context_inject_card_tag_3134.rs) so the tag wiring can't
 /// silently regress. `pub` for that integration test — it's a stateless helper.
 pub fn build_search_url(query: &str, domain_tag: Option<&str>) -> String {
-    fn enc(s: &str) -> String {
-        s.chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
-                    c.to_string()
-                } else {
-                    format!("%{:02X}", c as u32)
-                }
-            })
-            .collect()
-    }
     let mut url = format!(
         "http://localhost:3340/api/chorus/search?q={}&mode=relevance&limit=5",
-        enc(query)
+        url_encode(query)
     );
     if let Some(domain) = domain_tag.map(str::trim).filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&domain={}", enc(domain)));
+        url.push_str(&format!("&domain={}", url_encode(domain)));
     }
     url
+}
+
+/// Minimal percent-encoder for the search query string. Shared by the FTS leg
+/// (build_search_url) and the semantic leg (build_semantic_url).
+fn url_encode(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32)
+            }
+        })
+        .collect()
+}
+
+/// #3191 (relevance half) — build the SEMANTIC search URL. Unlike the FTS leg
+/// (build_search_url, which takes the top-2 length-ranked keywords because FTS ANDs
+/// every token and a full sentence ANDs to []), the semantic leg takes the FULL
+/// PROMPT TEXT: lance vector similarity (mode=semantic) doesn't AND tokens, so
+/// short-but-relevant terms ("oz") survive and a multi-term prompt can't AND itself
+/// to nothing. The two legs are complementary — FTS+keywords surfaces authority docs
+/// (#3171: e.g. the Versammlung doc for "heidegger"), semantic+full-prompt surfaces
+/// meaning-matches (the scarecrow story) — and merge_candidates fuses them. The WIP
+/// card domain tag rides along the same way (#3134). Verified live: mode=semantic is
+/// reachable (unified reports semantic=N) and returns the records FTS-AND drops.
+pub fn build_semantic_url(prompt: &str, domain_tag: Option<&str>) -> String {
+    let mut url = format!(
+        "http://localhost:3340/api/chorus/search?q={}&mode=semantic&limit=5",
+        url_encode(prompt)
+    );
+    if let Some(domain) = domain_tag.map(str::trim).filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&domain={}", url_encode(domain)));
+    }
+    url
+}
+
+/// #3191 (relevance half) — fuse the FTS/authority leg with the semantic/meaning leg
+/// into one candidate set. The two legs query DIFFERENT forms (keywords vs full prompt)
+/// and surface DIFFERENT records, so a single mode can't serve both. Interleave (one
+/// from each, alternating, FTS first so authority leads) so both legs reach the limited
+/// slots even under a tight cap, and dedup by trimmed content so a record matched by
+/// both legs appears once. Order within each leg is preserved (each arrives ranked).
+pub fn merge_candidates(
+    fts: &[(String, String, String, f64)],
+    semantic: &[(String, String, String, f64)],
+    limit: usize,
+) -> Vec<(String, String, String, f64)> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out: Vec<(String, String, String, f64)> = Vec::new();
+    let mut fi = fts.iter();
+    let mut si = semantic.iter();
+    loop {
+        if out.len() >= limit {
+            break;
+        }
+        let f = fi.next();
+        let s = si.next();
+        if f.is_none() && s.is_none() {
+            break;
+        }
+        for cand in [f, s].into_iter().flatten() {
+            if out.len() >= limit {
+                break;
+            }
+            let key = cand.1.trim().to_string();
+            if key.is_empty() || seen.contains(&key) {
+                continue;
+            }
+            seen.insert(key);
+            out.push(cand.clone());
+        }
+    }
+    out
 }
 
 /// #3191 — build the UserPromptSubmit hook response so the assembled context block
@@ -222,14 +310,27 @@ pub fn build_user_prompt_response(
 /// Replaces direct SQLite FTS with API call for richer context (233ms measured).
 /// #3134: optional `domain_tag` scopes results to the WIP card's area.
 fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, String, String, f64)> {
-    let url = build_search_url(query, domain_tag);
+    // #3191 — the FTS/authority leg: top-2 keywords, mode=relevance (build_search_url).
+    fetch_search_candidates(&build_search_url(query, domain_tag), query, "relevance")
+}
 
-    let resp = match ureq::get(&url)
+/// #3191 (relevance half) — the SEMANTIC/meaning leg: the FULL PROMPT TEXT under
+/// mode=semantic (build_semantic_url). Complementary to query_chorus_hybrid (FTS);
+/// callers merge the two via merge_candidates.
+fn query_chorus_semantic(prompt: &str, domain_tag: Option<&str>) -> Vec<(String, String, String, f64)> {
+    fetch_search_candidates(&build_semantic_url(prompt, domain_tag), prompt, "semantic")
+}
+
+/// #3191 — single fetch+parse path shared by the FTS and semantic legs (one execution
+/// path, two URL builders). `leg` labels the spine event so a debug can tell which leg
+/// returned what.
+fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(String, String, String, f64)> {
+    let resp = match ureq::get(url)
         .call()
     {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("context-inject: chorus search fetch FAILED (grounding lost this prompt): {}", e);
+            eprintln!("context-inject: chorus {} fetch FAILED (grounding lost this prompt): {}", leg, e);
             return vec![];
         }
     };
@@ -237,7 +338,7 @@ fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, St
     let body: serde_json::Value = match resp.into_json() {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("context-inject: chorus search response parse FAILED: {}", e);
+            eprintln!("context-inject: chorus {} response parse FAILED: {}", leg, e);
             return vec![];
         }
     };
@@ -265,9 +366,10 @@ fn query_chorus_hybrid(query: &str, domain_tag: Option<&str>) -> Vec<(String, St
     let raw_count = body.get("results").and_then(|r| r.as_array()).map(|a| a.len()).unwrap_or(0);
     let total = body.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
     emit_inject_event(&format!(
-        "{{\"ts\":\"{}\",\"event\":\"context.inject.chorus.raw\",\"q\":{},\"raw_results\":{},\"total\":{},\"parsed\":{}}}",
+        "{{\"ts\":\"{}\",\"event\":\"context.inject.chorus.raw\",\"leg\":\"{}\",\"q\":{},\"raw_results\":{},\"total\":{},\"parsed\":{}}}",
         chrono::Utc::now().to_rfc3339(),
-        serde_json::to_string(query).unwrap_or_else(|_| String::from("\"\"")),
+        leg,
+        serde_json::to_string(query_for_log).unwrap_or_else(|_| String::from("\"\"")),
         raw_count, total, results.len()
     ));
 
@@ -842,6 +944,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // lands even if every source drops. The 6 calls mirror the spawn_blocking set below.
     let request_calls: Vec<(&str, String, bool)> = vec![
         ("chorus", build_search_url(&query, card_tag.as_deref()), true),
+        ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
         ("memory", keywords.join(" "), true),
         ("pulse", "snapshot".to_string(), true),
         ("spine", "recent-8".to_string(), true),
@@ -860,11 +963,18 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // on the blocking pool immediately; we then await all, so wall-clock = the
     // slowest single query, not the sum. Output is byte-identical (the
     // envelope-spec bats locks the assembled block — only the fetch is concurrent).
-    let (chorus_results, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
+    // #3191 (relevance half) — TWO chorus legs run concurrently: the FTS/authority leg
+    // (top-2 keywords, mode=relevance — surfaces authority docs, #3171) and the SEMANTIC/
+    // meaning leg (full prompt, mode=semantic — surfaces meaning-matches the FTS AND drops,
+    // e.g. the scarecrow story). They query DIFFERENT forms because FTS ANDs tokens (a full
+    // sentence zeroes out) while semantic doesn't. merge_candidates fuses them deduped.
+    let (chorus_fts, chorus_sem, memory_hits, pulse_block, spine_events, athena_block, log_errors) = {
         let (r1, kw1, q1, tag1) = (role_name.clone(), keywords.clone(), query.clone(), card_tag.clone());
+        let (rs, ps, tags) = (role_name.clone(), prompt.to_string(), card_tag.clone());
         let kw2 = keywords.clone();
         let r3 = role_name.clone();
         let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
+        let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
         let t_memory = tokio::task::spawn_blocking(move || scan_memory(&kw2));
         let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
         let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
@@ -872,6 +982,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let t_logs = tokio::task::spawn_blocking(query_recent_log_errors);
         (
             t_chorus.await.unwrap_or_default(),
+            t_semantic.await.unwrap_or_default(),
             t_memory.await.unwrap_or_default(),
             t_pulse.await.unwrap_or_default(),
             t_spine.await.unwrap_or_default(),
@@ -879,6 +990,8 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
             t_logs.await.unwrap_or_default(),
         )
     };
+    // Fuse the two legs: authority (FTS) + meaning (semantic), deduped, top-5.
+    let chorus_results = merge_candidates(&chorus_fts, &chorus_sem, 5);
 
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
