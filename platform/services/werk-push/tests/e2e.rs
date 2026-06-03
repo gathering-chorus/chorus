@@ -25,6 +25,10 @@ fn git(dir: &Path, args: &[&str]) {
         .status().unwrap().success();
     assert!(ok, "git {:?} failed in {}", args, dir.display());
 }
+fn git_out(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git").args(args).current_dir(dir).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
 fn write_exec(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
     let mut perm = fs::metadata(path).unwrap().permissions();
@@ -79,6 +83,41 @@ fn push_pushes_committed_branch_and_registers_gh() {
 
     // idempotent: re-push the same already-pushed branch -> no-op success, same sha.
     assert_eq!(push(9002, "kade", &home, &werk_base).expect("idempotent re-push"), sha);
+
+    // --- #3194: re-run after a sanctioned rebase. werk-commit rebases (rewrites
+    // history), so the branch diverges from its OWN earlier push; a plain push is
+    // non-ff. force-with-lease (expected = the remote-tracking ref from our first
+    // push) re-points our own card branch to the rebased history. ---
+    git(&origin, &["checkout", "-q", "main"]);
+    fs::write(origin.join("peer.txt"), "p").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer work on main"]);
+    git(&werk, &["fetch", "-q", "origin", "main"]);
+    git(&werk, &["rebase", "-q", "origin/main"]);
+    let rebased = git_out(&werk, &["rev-parse", "HEAD"]);
+    assert_ne!(rebased, sha, "rebase rewrote the commit -> diverged from the pushed sha");
+    let sha2 = push(9002, "kade", &home, &werk_base)
+        .expect("re-push after a sanctioned rebase must succeed (force-with-lease)");
+    assert_eq!(sha2, rebased, "re-push lands the rebased sha on origin");
+
+    // --- #3194 safety: force-with-lease must REFUSE (not clobber) when origin's
+    // branch moved out-of-band — a peer pushed to it and our tracking ref is stale.
+    // Proves it is a lease, not a blind force. ---
+    let home2 = tmp("home2");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home2.to_str().unwrap()])
+        .status().unwrap().success());
+    git(&home2, &["checkout", "-q", "-B", "kade/9002", "origin/kade/9002"]);
+    fs::write(home2.join("peer2.txt"), "q").unwrap();
+    git(&home2, &["add", "."]);
+    git(&home2, &["commit", "-q", "-m", "peer hijacks the card branch"]);
+    git(&home2, &["push", "-q", "--force", "origin", "kade/9002"]);
+    // werk diverges again; its tracking ref still points at sha2, origin is now peer's.
+    fs::write(werk.join("w2.txt"), "x").unwrap();
+    git(&werk, &["add", "."]);
+    git(&werk, &["commit", "-q", "-m", "more local work"]);
+    assert!(push(9002, "kade", &home, &werk_base).is_err(),
+        "force-with-lease REFUSES when origin moved out-of-band (lease guard, not blind force)");
 
     // nothing-to-push: a fresh card whose werk has no commits ahead -> refuse.
     let werk2 = werk_base.join("kade-9003");
