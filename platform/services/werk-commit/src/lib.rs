@@ -69,6 +69,51 @@ pub fn trace_id() -> String {
     format!("{:x}-{:x}", ns, std::process::id())
 }
 
+/// #3162 — INHERIT the shared trace instead of fresh-minting (the #3045 verb
+/// contract): `CHORUS_TRACE_ID` env → `<trace_dir>/<card>-trace` file → mint+persist.
+/// The persisted file threads ONE trace across pull → commit → push → acp, so a
+/// failed commit shows on the SAME card thread the pull opened. `resolve_trace_in`
+/// is the testable core (all inputs explicit); `resolve_trace` is the real entry.
+pub fn resolve_trace_in(card: u64, env_trace: Option<&str>, trace_dir: &Path) -> String {
+    if let Some(t) = env_trace {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let p = trace_dir.join(format!("{}-trace", card));
+    if let Ok(t) = fs::read_to_string(&p) {
+        let t = t.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    let t = trace_id();
+    let _ = fs::write(&p, &t); // best-effort persist; downstream verbs read it
+    t
+}
+
+pub fn resolve_trace(card: u64) -> String {
+    let env = env::var("CHORUS_TRACE_ID").ok();
+    resolve_trace_in(card, env.as_deref(), Path::new("/tmp"))
+}
+
+/// #3162 — the spine event contract (#3135 AUDITABLE): the args handed to
+/// `chorus-log` so a commit's lifecycle + failures are Loki-queryable, keyed by
+/// card + the inherited trace. Pure → testable. Mirrors werk-pull::spine_args.
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
 pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, extra: &str) -> String {
     format!(
         "{{\"ts\":{},\"event\":\"{}\",\"role\":\"{}\",\"card_id\":{},\"trace_id\":\"{}\"{}}}\n",
@@ -90,6 +135,27 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&p) {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+/// #3162 — emit one event to the ONE spine (`chorus.log` via the canonical
+/// `chorus-log` subprocess) so a commit's failures/lifecycle are Loki-queryable,
+/// keyed by card + the inherited trace. Best-effort like the jsonl witness — it
+/// NEVER blocks or fails the commit (logging can't affect the operation). The
+/// jsonl witness stays (verbose local); the spine is the queryable record (#3135).
+/// Mirrors werk-pull::emit_spine.
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
+    let log = home.join("platform/scripts/chorus-log");
+    let log_s = match log.to_str() {
+        Some(s) => s,
+        None => return,
+    };
+    let args = spine_args(event, role, card, trace, extras);
+    let mut c = Command::new("bash");
+    c.arg(log_s);
+    for a in &args {
+        c.arg(a);
+    }
+    let _ = c.output(); // best-effort; a missing/failing chorus-log never affects the commit
 }
 
 /// Run a CLI in a working dir with extra env vars, capture stdout; any non-zero
@@ -145,6 +211,7 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
             // restore the branch to its pre-rebase state — werk untouched, work kept.
             let _ = run_in(werk_s, "git", &["rebase", "--abort"]);
             jsonl(home, role, card, trace, "rebase.refused", ",\"reason\":\"rebase-conflict\"");
+            emit_spine(home, "commit.failed", role, card, trace, &[("disposition", "refuse"), ("reason", "rebase-conflict")]);
             Err(format!(
                 "rebase-conflict: #{} conflicts with current origin/main — resolve and re-run \
                  (werk restored, commit preserved): {}",
@@ -207,22 +274,25 @@ pub fn run_commit() -> R<String> {
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
 /// (deps injected via PATH: real `git`, shimmed `cards`/`gh`). Returns the commit sha.
 pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path) -> R<String> {
-    let trace = trace_id();
+    let trace = resolve_trace(card); // #3162 — inherit the shared trace, not fresh-mint
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     let werk_s = path(&werk)?.to_string();
 
     jsonl(home, role, card, &trace, "commit.started", "");
+    emit_spine(home, "commit.started", role, card, &trace, &[]);
 
     // #3012/#3013 fix: deterministic werk, REFUSE if absent. No canonical fallback.
     if !werk.is_dir() {
         jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"no-werk\"");
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "no-werk")]);
         return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
     }
     // werk must be on the card's branch (guards same-role wrong-card, #2641 class).
     let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
     if cur != branch {
         jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"wrong-branch\"");
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-branch")]);
         return Err(format!("werk is on '{}', not '{}' — refusing to commit", cur, branch));
     }
 
@@ -244,6 +314,9 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
     // that is merely BEHIND has no card work to preserve, so there is nothing to
     // rebase either — the next real commit rebases it.)
     if !dirty && ahead == 0 {
+        // #3162 — this refusal was fully SILENT (the bug). Surface it on the spine + jsonl.
+        jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"nothing-to-commit\"");
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "nothing-to-commit")]);
         return Err(format!("#{}: nothing to commit (werk clean, no commits ahead of origin/main)", card));
     }
 
@@ -274,7 +347,13 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
             // peer, so it sets the sentinel — every quality gate still runs, only the
             // bypass-block is satisfied. (Found by the #3047 pull->commit integration test.)
             run_in_env(&werk_s, "git", &["commit", "-m", &msg], &[("_GIT_QUEUE_INTERNAL", "1")])
-                .map_err(|e| format!("commit failed (pre-commit gate?): {}", e))?;
+                .map_err(|e| {
+                    // #3162 — the pre-commit gate block was fully SILENT (the other key
+                    // bug). Surface commit.failed on the spine before bubbling the error.
+                    jsonl(home, role, card, &trace, "commit.failed", ",\"reason\":\"pre-commit-gate\"");
+                    emit_spine(home, "commit.failed", role, card, &trace, &[("disposition", "fail"), ("reason", "pre-commit-gate")]);
+                    format!("commit failed (pre-commit gate?): {}", e)
+                })?;
             jsonl(home, role, card, &trace, "committed", "");
         }
 
@@ -291,5 +370,6 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
     // chorus/push gh status is the separate werk-push verb.
     let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
     jsonl(home, role, card, &trace, "commit.completed", &format!(",\"sha\":\"{}\"", sha));
+    emit_spine(home, "commit.completed", role, card, &trace, &[("sha", &sha)]);
     Ok(sha)
 }

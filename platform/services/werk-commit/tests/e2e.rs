@@ -174,3 +174,51 @@ fn commit_refuses_on_rebase_conflict_and_preserves_the_werk() {
         .output().unwrap();
     assert!(String::from_utf8_lossy(&log.stdout).contains("#9102"), "card commit preserved");
 }
+
+// #3162 — werk-commit must surface its failures on the ONE spine, carrying the
+// INHERITED trace (the #3045 verb contract). RED now: werk-commit is jsonl-only
+// and fresh-mints its trace, so a failed commit emits NOTHING to chorus-log.
+#[test]
+fn commit_emits_failure_to_the_spine_with_the_inherited_trace() {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9301");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/9301", werk.to_str().unwrap(), "origin/main"]);
+
+    // capture-shim chorus-log at the path emit_spine invokes (home/platform/scripts/chorus-log).
+    let log = home.join("platform/scripts/chorus-log");
+    fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let cap = home.join("spine-capture.txt");
+    fs::write(&log, format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display())).unwrap();
+    assert!(Command::new("chmod").args(["+x", log.to_str().unwrap()]).status().unwrap().success());
+
+    // Seed the INHERITED trace via the /tmp file carrier (resolve_trace reads it) —
+    // no env mutation, so the test stays hermetic under parallelism.
+    fs::write("/tmp/9301-trace", "inherited-trace-9301").unwrap();
+
+    // FAILURE path: clean werk, nothing to commit → commit() returns Err. Today that
+    // return is fully silent (the exact #3162 bug).
+    let res = commit(9301, "kade", "noop", &home, &werk_base);
+    assert!(res.is_err(), "nothing-to-commit must be an Err");
+
+    let emitted = fs::read_to_string(&cap).unwrap_or_default();
+    assert!(emitted.contains("card=9301"), "the failure reached the spine, keyed by card: {:?}", emitted);
+    assert!(
+        emitted.contains("trace=inherited-trace-9301"),
+        "carries the INHERITED trace (#3045 contract), not a fresh mint: {:?}", emitted
+    );
+    assert!(
+        emitted.to_lowercase().contains("commit"),
+        "a commit.* lifecycle/failure event reached the spine: {:?}", emitted
+    );
+}
