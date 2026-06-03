@@ -30,6 +30,7 @@ pub mod tdd_gate;
 pub mod test_quality_gate;
 pub mod pair_gate;
 pub mod context_inject;
+pub mod inject_force; // #3203 — Stop-hook engagement verdict (forcing pattern / HIP-001)
 pub mod stop_on_error;
 // #3000 — mcp_health_gate retired (wrong-layer, never fired for MCP tools).
 // Server-side capture in chorus-mcp replaces it. Source file deleted.

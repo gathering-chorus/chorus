@@ -40,6 +40,11 @@ pub use hooks::context_inject::build_user_prompt_response;
 // #3191 (relevance half) — the semantic leg (full-prompt query) + the FTS/semantic
 // merge, pub for tests/relevance_3191.rs (AC6/AC7/AC8). Pure, stateless helpers.
 pub use hooks::context_inject::{build_semantic_url, merge_candidates};
+// #3203 — the inject FORCE verdict (forcing pattern / HIP-001), pub for tests/inject_force_3203.rs
+pub use hooks::inject_force::{
+    inject_engagement_verdict, last_assistant_text, read_surfaced_in, record_surfaced_in,
+    EngagementVerdict,
+};
 pub use state::AppState;
 pub use types::HookInput;
 // #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every
