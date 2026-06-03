@@ -35,7 +35,7 @@ impl Role {
 }
 
 /// Input from Claude Code hooks — union of all possible fields
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct HookInput {
     pub tool_name: Option<String>,
     pub tool_input: Option<serde_json::Value>,

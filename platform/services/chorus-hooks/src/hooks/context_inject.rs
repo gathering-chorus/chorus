@@ -993,6 +993,14 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // Fuse the two legs: authority (FTS) + meaning (semantic), deduped, top-5.
     let chorus_results = merge_candidates(&chorus_fts, &chorus_sem, 5);
 
+    // #3203 — record what the inject surfaced this turn so the Stop-hook FORCE can
+    // check whether the response engaged it (use 👍 / dismiss-with-reason ✋, else 🛑).
+    // Write-only + per-session; the gate reads it back. Observe→enforce.
+    {
+        let surfaced: Vec<String> = chorus_results.iter().map(|(_, c, _, _)| c.clone()).collect();
+        crate::hooks::inject_force::record_surfaced(session_id, &surfaced);
+    }
+
     // Build the context block — always inject the three primitives if any are
     // present, regardless of whether search turned up hits.
     let mut context = String::from("\n<context-synthesis>\n");

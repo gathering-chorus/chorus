@@ -805,10 +805,42 @@ async fn user_prompt_submit(
     ))
 }
 
-/// Stop hook — autonomy guard (permission-seeking scan)
+/// Stop hook — autonomy guard (permission-seeking scan) + #3203 inject-force OBSERVE.
+/// Takes the raw body so it can read `transcript_path` (a Stop-only field Claude Code
+/// sends) without adding it to HookInput, which is hand-built in 30+ test sites.
 async fn stop_hook(
     State(state): State<AppState>,
-    Json(input): Json<HookInput>,
+    Json(raw): Json<serde_json::Value>,
 ) -> Json<HookResponse> {
+    let input: HookInput = serde_json::from_value(raw.clone()).unwrap_or_default();
+    // #3203 — context-inject FORCE, observe-only phase. Did this turn's response
+    // engage what the inject surfaced? Read the surfaced records + my last assistant
+    // message (from the transcript), run the verdict, and LOG it (👍 pass / 🛑 block)
+    // to the spine. Does NOT block yet — the verdict must be proven on real turns
+    // before a turn-blocking gate goes live, or it traps every session. Enforce flips
+    // on once the observe log shows it's right.
+    if let Some(session_id) = input.session_id.as_deref() {
+        let surfaced = hooks::inject_force::read_surfaced(session_id);
+        if !surfaced.is_empty() {
+            let transcript = raw.get("transcript_path").and_then(|v| v.as_str());
+            if let Some(resp) = transcript.and_then(hooks::inject_force::last_assistant_text)
+            {
+                let verdict = hooks::inject_force::inject_engagement_verdict(&surfaced, &resp);
+                let role = format!("{:?}", input.role()).to_lowercase();
+                let n = surfaced.len().to_string();
+                let (label, detail) = match &verdict {
+                    hooks::inject_force::EngagementVerdict::Pass => ("pass", String::new()),
+                    hooks::inject_force::EngagementVerdict::Block { reason } => ("block", reason.clone()),
+                };
+                crate::state::chorus_log(
+                    "context.inject.force.verdict",
+                    &role,
+                    &[("mode", "observe"), ("verdict", label), ("surfaced", &n), ("detail", detail.as_str())],
+                )
+                .await;
+            }
+        }
+    }
+    // Existing behavior unchanged — observe-only, no block on the inject-force path.
     Json(hooks::autonomy_guard::check(&input, &state).await)
 }
