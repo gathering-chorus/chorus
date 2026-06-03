@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Athena v2 — the driver for the rework</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+    :root{ --ink:#1f2328; --soft:#57606a; --line:#e7e9ec; --accent:#3b6ea5; --accent2:#8a6d3b; --codebg:#f6f7f9; }
+    html{ font-size:16px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    body{ font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+          color:var(--ink); background:#fff; line-height:1.62; max-width:46rem; margin:0 auto; padding:3rem 2.4rem 5rem; }
+    h1,h2,h3,h4{ font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; line-height:1.25; color:#11161b; }
+    h1{ font-size:1.9rem; font-weight:700; margin:0 0 .2rem; letter-spacing:-.01em; }
+    h1.title{ font-size:2.1rem; }
+    h2{ font-size:1.28rem; margin:2.4rem 0 .7rem; padding-bottom:.35rem; border-bottom:2px solid var(--line); }
+    h3{ font-size:1.05rem; margin:1.5rem 0 .4rem; color:#2b3440; }
+    p{ margin:.7rem 0; } a{ color:var(--accent); text-decoration:none; } strong{ color:#11161b; } em{ color:var(--soft); }
+    hr{ border:0; border-top:1px solid var(--line); margin:2rem 0; }
+    blockquote{ margin:1rem 0; padding:.5rem 1.1rem; border-left:3px solid var(--accent2); background:#fbf8f1; color:#4a4233; border-radius:0 4px 4px 0; }
+    code{ font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.82em; background:var(--codebg); border:1px solid var(--line); border-radius:4px; padding:.05rem .32rem; color:#2b3440; }
+    pre{ background:var(--codebg); border:1px solid var(--line); border-radius:6px; padding:.9rem 1.1rem; overflow:auto; font-size:.8rem; line-height:1.45; }
+    pre code{ background:none; border:0; padding:0; }
+    pre.mermaid{ background:none; border:0; padding:.4rem 0; text-align:center; overflow:visible; }
+    ul,ol{ padding-left:1.4rem; } li{ margin:.25rem 0; }
+    table{ border-collapse:collapse; width:100%; margin:1.1rem 0; font-size:.85rem; }
+    th,td{ text-align:left; padding:.42rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+    th{ font-family:-apple-system,sans-serif; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--soft); border-bottom:2px solid #d7dade; background:#fafbfc; }
+    tbody tr:nth-child(even){ background:#fcfcfd; }
+    #TOC{ background:#fafbfc; border:1px solid var(--line); border-radius:8px; padding:.8rem 1.2rem; margin:1.4rem 0 2rem; font-family:-apple-system,sans-serif; font-size:.84rem; }
+    #TOC > ul{ margin:.2rem 0; } #TOC ul{ list-style:none; padding-left:.9rem; } #TOC a{ color:var(--soft); }
+    @media print{
+      @page{ margin:1.5cm 1.6cm; }
+      body{ max-width:none; margin:0; padding:0; font-size:11.2pt; }
+      h1,h2,h3,h4{ page-break-after:avoid; } table,pre,blockquote,svg{ page-break-inside:avoid; }
+      a{ color:var(--ink); } #TOC{ page-break-after:always; } tbody tr:nth-child(even){ background:#f5f6f7; }
+    }
+  </style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad:true, theme:'neutral', flowchart:{ htmlLabels:true, curve:'basis' } });
+  </script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Athena v2 — the driver for the rework</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#athena-v2-the-driver-for-the-rework"
+id="toc-athena-v2-the-driver-for-the-rework">Athena v2 — the driver for
+the rework</a>
+<ul>
+<li><a href="#thesis" id="toc-thesis">Thesis</a></li>
+<li><a
+href="#the-two-athenas-why-v2-is-the-driver-even-though-its-smaller"
+id="toc-the-two-athenas-why-v2-is-the-driver-even-though-its-smaller">The
+two Athenas (why v2 is the driver, even though it’s smaller)</a></li>
+<li><a href="#the-flow" id="toc-the-flow">The flow</a></li>
+<li><a href="#owls-role-corrected" id="toc-owls-role-corrected">OWL’s
+role (corrected)</a></li>
+<li><a href="#tooling-verify-dont-assume"
+id="toc-tooling-verify-dont-assume">Tooling (verify, don’t
+assume)</a></li>
+<li><a href="#what-exists-build-on-dont-reinvent"
+id="toc-what-exists-build-on-dont-reinvent">What exists (build on, don’t
+reinvent)</a></li>
+<li><a href="#whats-genuinely-missing-the-new-thing"
+id="toc-whats-genuinely-missing-the-new-thing">What’s genuinely missing
+(the new thing)</a></li>
+<li><a href="#the-composed-model-generated-from-v2"
+id="toc-the-composed-model-generated-from-v2">The composed model
+(generated from v2)</a></li>
+<li><a href="#stands" id="toc-stands">#3177 — stands</a></li>
+<li><a href="#rollout-anti-big-bang-chorus-scope"
+id="toc-rollout-anti-big-bang-chorus-scope">Rollout (anti-big-bang) —
+Chorus scope</a></li>
+<li><a href="#ownership" id="toc-ownership">Ownership</a></li>
+<li><a href="#open-questions-for-jeff-not-assumed"
+id="toc-open-questions-for-jeff-not-assumed">Open questions (for Jeff —
+not assumed)</a></li>
+<li><a href="#related" id="toc-related">Related</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="athena-v2-the-driver-for-the-rework">Athena v2 — the driver for
+the rework</h1>
+<p><strong>2026-06-02 · Wren + Jeff (+ Silas via #3185).</strong>
+Synthesis of a long architecture thread, corrected after Jeff clarified
+what Athena v2 actually is. Captures a direction; does not yet commit
+code beyond the core-spine sketch.</p>
+<h2 id="thesis">Thesis</h2>
+<p>The system holds <strong>one model of itself</strong>, and that model
+is <strong>Athena v2</strong> — the clean redesign in
+<code>data/athena/tree.json</code>. <strong>v2 is the driver.</strong>
+From v2 we <em>generate</em> the rest of the surface — the OWL, the
+SHACL shapes, the API, the MCP tools, the TS/Rust types — so the surface
+is <strong>defined by v2</strong> and divergence is structurally
+impossible because everything descends from one source.</p>
+<p>The legacy RDF graph (Fuseki, <code>chorus.ttl</code> /
+<code>borg.ttl</code>) is <strong>v1</strong> — what we migrate
+<em>from</em>, not the source we build on.</p>
+<blockquote>
+<p>Correction from earlier today: I briefly argued the bigger RDF graph
+(49 nodes) was “the real model.” Wrong — <strong>bigger ≠
+newer.</strong> v2 is defined by being the <em>clean rebuild</em>, not
+by row count.</p>
+</blockquote>
+<h2
+id="the-two-athenas-why-v2-is-the-driver-even-though-its-smaller">The
+two Athenas (why v2 is the driver, even though it’s smaller)</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th></th>
+<th><strong>v2 — the driver</strong></th>
+<th><strong>v1 — the legacy</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Where</td>
+<td><code>tree.json</code> (JSON) · <code>/api/athena/tree</code></td>
+<td>Fuseki / RDF · <code>/api/athena/subdomains</code></td>
+</tr>
+<tr>
+<td>Size</td>
+<td>33 domains</td>
+<td>49 nodes</td>
+</tr>
+<tr>
+<td>Shape</td>
+<td>clean: one namespace, consistent names, value-stream-aligned, the 4
+axes, today’s ownership</td>
+<td>messy: 3 namespaces bridged by <code>owl:equivalentClass</code>,
+drift (Proving catch-all, <code>loom-rcas</code> twice, services
+mistyped as subdomains)</td>
+</tr>
+<tr>
+<td>Coverage</td>
+<td><strong>Chorus stream only</strong> — Gathering not migrated
+yet</td>
+<td><strong>complete</strong> — includes the Gathering collections
+(photos, music, books, seeds, stories, people…)</td>
+</tr>
+<tr>
+<td>Role</td>
+<td>the redesign / the destination</td>
+<td>the organically-grown past</td>
+</tr>
+</tbody>
+</table>
+<p>v2 is <em>smaller</em> only because the <strong>v1 → v2 migration is
+partway</strong>: the Chorus side has been rebuilt cleanly into v2; the
+Gathering collections still live only in v1. Their absence from v2 is
+“not migrated yet,” not “incomplete baseline.”</p>
+<p><strong>So the rework has two halves:</strong> 1. <strong>Migrate
+v1’s content into v2’s clean structure</strong> — first and foremost the
+<strong>Gathering</strong> stream, which exists <em>only</em> in v1
+today. 2. <strong>Generate the surface from v2</strong> — OWL + SHACL +
+API + MCP + types, so v2 is the single source and the API can’t drift
+from the model.</p>
+<h2 id="the-flow">The flow</h2>
+<pre class="mermaid">
+graph LR
+  V1["v1 — Fuseki/RDF (49)<br/>legacy, incl. Gathering"] -.migrate into.-> V2
+  HARV["facet-heralds (#3185)<br/>discover-*"] -.instance data.-> V2
+  V2["<b>Athena v2 — tree.json</b><br/>the clean model · the SOURCE"] -->|generate| GEN["OWL · SHACL · API<br/>+ logging · security · MCP · types"]
+  GEN --> C["consumers:<br/>context-inject · ownership · werk-tests"]
+  classDef src fill:#eafaf1,stroke:#1e7045,stroke-width:2px,color:#11161b;
+  classDef old fill:#fdecea,stroke:#c0392b,color:#641e16;
+  class V2 src; class V1 old;
+</pre>
+<h2 id="owls-role-corrected">OWL’s role (corrected)</h2>
+<p>Jeff’s earlier phrase was “the OWL defines the API.” That still holds
+— <strong>but the OWL is downstream of v2, not the hand-authored
+source.</strong> v2 (JSON) is authored/migrated; the OWL + SHACL are
+<em>generated</em> from it (LinkML-style); the generated OWL is the API
+contract. The legacy <code>chorus.ttl</code> / <code>borg.ttl</code>
+aren’t the source either — their content gets reconciled into v2’s
+vocabulary, then the OWL is regenerated. One source (v2), many generated
+surfaces — that’s what makes impedance impossible.</p>
+<h2 id="tooling-verify-dont-assume">Tooling (verify, don’t assume)</h2>
+<ul>
+<li><strong>LinkML</strong> — a schema (YAML/JSON) as single source →
+generates <strong>OWL + SHACL + JSON-Schema + Pydantic/TS/Rust</strong>.
+This fits <strong>v2-as-JSON-source</strong> directly: model in v2’s
+form, generate everything else (incl. our types). Best match.</li>
+<li><strong>OBA</strong> — OWL → OpenAPI + SPARQL-backed REST server.
+Fits only if <strong>OWL is the source</strong>; since v2 is JSON, OBA
+would sit <em>downstream</em> of the generated OWL, not at the
+source.</li>
+<li>Both unverified against our exact stack / 2026 maintenance — a
+half-day spike, not a given.</li>
+</ul>
+<h2 id="what-exists-build-on-dont-reinvent">What exists (build on, don’t
+reinvent)</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Piece</th>
+<th>Where</th>
+<th>State vs v2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Athena v2</strong></td>
+<td><code>data/athena/tree.json</code> (33)</td>
+<td><strong>The driver.</strong> Clean, Chorus-only, JSON. Gathering
+pending migration.</td>
+</tr>
+<tr>
+<td>Legacy graph</td>
+<td><code>chorus.ttl</code> v0.3.0 (3499 lines) + <code>borg.ttl</code>
++ <code>framework.ttl</code></td>
+<td><strong>v1.</strong> Has the spine + facet classes
+(<code>CodeFile</code>, <code>LogSource</code>, <code>Engine</code>,
+<code>Monitor</code>…) and the Gathering data (<code>jb:</code>), but
+messy/divergent. Migrate the <em>content</em> into v2; regenerate OWL
+from v2.</td>
+</tr>
+<tr>
+<td>Borg module (designed)</td>
+<td><code>borg-service-design.md</code> (2026-04-15)</td>
+<td>The borg classes are specced; they become v2 facet/service classes
+once migrated.</td>
+</tr>
+<tr>
+<td>Harvest layer</td>
+<td><code>silas-3185/.../harvest-layer.html</code> (#3185)</td>
+<td>Feeds v2’s <em>instance</em> data (facet-heralds → the model).
+Silas’s build.</td>
+</tr>
+<tr>
+<td>ADRs</td>
+<td>ADR-025/021/020/028</td>
+<td>ADR-028 (zod canonical → SDK+HTTP+MCP derive) is the closest
+existing “one source → many surfaces.”</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Existing cards this touches (advance, don’t
+re-file):</strong> #1771 (reconcile ontology → answer: v2 is canonical,
+generate the rest), #2092 (declare products), #2676 (single-source
+derive), #3143 (codegen precedent), #3184 (semantic tagging — <em>this
+werk</em>), #3185 (harvest = instance feed).</p>
+<h2 id="whats-genuinely-missing-the-new-thing">What’s genuinely missing
+(the new thing)</h2>
+<p>The <strong>generator</strong>: nothing today turns the v2 model into
+OWL + API + types. <code>framework.ttl</code> is a hand-built bridge;
+#3143 is one narrow schema. The wedge is a v2 →
+(OWL/SHACL/API/MCP/types) generator, proven on one facet.</p>
+<h2 id="the-composed-model-generated-from-v2">The composed model
+(generated from v2)</h2>
+<pre class="mermaid">
+graph TD
+  v2["<b>Athena v2 (tree.json)</b> — source of truth"] -->|generates| core["chorus-core<br/>spine + 4 axes + base SHACL"]
+  core --> loom["loom · Wren"]
+  core --> ath["athena · Wren"]
+  core --> clr["clearing · Wren"]
+  core --> wk["werk · Kade"]
+  core --> bg["borg · Silas<br/>(+ harvest facets)"]
+  core --> cv["convergence · Kade"]
+  classDef s fill:#eafaf1,stroke:#1e7045,stroke-width:2px;
+  class v2 s;
+</pre>
+<p><strong>Make-or-break rule: products EXTEND the core, never REDEFINE
+it.</strong> One definition of <code>Domain</code> and the four axes;
+products only add their own classes. (Whether the modules are authored
+in v2’s form and the OWL generated, or authored as OWL — see open
+questions.)</p>
+<h3 id="the-products-are-the-value-stream">The products ARE the value
+stream</h3>
+<p>Each value-stream step is realized by its product(s):
+<strong>Shaping</strong> = Loom + Chorus (Wren) ·
+<strong>Designing</strong> = Athena (Wren) · <strong>Directing</strong>
+= Clearing (Wren) · <strong>Building</strong> = Werk (Kade) ·
+<strong>Proving</strong> = Borg (Silas) · <strong>Operating</strong>
+(cross-cutting) = Convergence (Kade). Order (Jeff-ruled): Shaping →
+Designing → Directing → Building → Proving.</p>
+<h3 id="four-axes-on-every-entity">Four axes on every entity</h3>
+<p><code>inDomain</code> (subject) · <code>ownedBy</code> (implementer —
+agent role only; <strong>never Jeff</strong>, who
+<code>headsProduct</code> over the whole) · <code>atStep</code>
+(value-stream step) · <code>shape</code> (skill-only | skill+hook |
+hook-only | verb | facet). #3184 tags the semantic instances
+(skills/hooks/heralds); building/proving facets self-tag (facet =
+domain).</p>
+<h3 id="recursive-fractal">Recursive (fractal)</h3>
+<p>A step can host its own value stream: <strong>werk-v2 IS the Building
+step’s stream</strong> (pull→commit→push→build→deploy→accept→demo). Zoom
+into any step → its substream.</p>
+<h3 id="bundled-per-service">Bundled per service</h3>
+<p>Declare a domain in v2 → generate <strong>API + logging + security +
+MCP</strong> uniformly (kills the per-service hand-wiring: services that
+log nothing, hand-written MCP thin-skin, uneven scrubbing).
+Provider-agnostic: the model knows “service with port + health”; the
+herald carries the impl.</p>
+<h2 id="stands">#3177 — stands</h2>
+<p>The cut of <code>chorus_subdomains_list/get</code> (the v1/49 MCP
+path) is <strong>correct for the Chorus scope we’re reworking</strong>:
+v2 holds the cleaner Chorus ownership, and restoring v1 would only
+re-add the divergence #3177 removed (and expose v1’s wrong ownership).
+The one thing v1 still has that v2 lacks is <strong>Gathering</strong>
+ownership — <strong>explicitly out of scope right now.</strong> Not a
+reason to revisit the cut.</p>
+<h2 id="rollout-anti-big-bang-chorus-scope">Rollout (anti-big-bang) —
+Chorus scope</h2>
+<ol type="1">
+<li><strong>Prove the generator on one facet</strong> in chorus, no NiFi
+— v2 → API for one domain (e.g. <code>tests</code>). Bounded; touches no
+live API.</li>
+<li><strong>Borg/harvest</strong> (#3185) feeds v2 instance data → rep
+proving the loop.</li>
+<li><strong>#3184</strong> finishes the semantic tags.</li>
+<li><strong>Migrate the variant live APIs</strong> (athena handlers like
+<code>athena-subdomains.ts</code>) onto the generated path, one at a
+time.</li>
+</ol>
+<p><em>Gathering migration — deferred; not part of the current
+rework.</em> <strong>Convergence (NiFi)</strong> is the likely eventual
+harvest substrate but heavy + stranded in gathering — not the current
+bet. Prove simply in chorus first.</p>
+<h2 id="ownership">Ownership</h2>
+<p>Core/v2 model — Wren (with Silas, who holds the legacy
+<code>chorus.ttl</code>). Per-product modules — loom/athena/clearing =
+Wren, werk/convergence = Kade, borg = Silas. The generator — likely Kade
+(build/codegen) on the v2 contract from Wren. werk-tests — Kade (#3185
+consumer).</p>
+<h2 id="open-questions-for-jeff-not-assumed">Open questions (for Jeff —
+not assumed)</h2>
+<ol type="1">
+<li><strong>v2’s canonical <em>form</em>:</strong> stays JSON
+(<code>tree.json</code>) with OWL generated from it (LinkML path)? Or do
+we move the authored form to OWL? My <code>chorus-core.ttl</code> is a
+<em>sketch of the core’s shape</em> — if v2 (JSON) drives, the core is
+authored in v2’s form and the OWL is generated, not hand-written
+TTL.</li>
+<li><em>(Gathering migration — parked; not a current concern.)</em></li>
+</ol>
+<h2 id="related">Related</h2>
+<ul>
+<li><code>athena-49-subdomains.html</code> — v1 (the legacy 49, both
+streams) · <code>athena-33-treejson.html</code> — v2 (the driver,
+Chorus-only)</li>
+<li><code>athena-borg-conceptual-model.html</code> — the v1 drift we
+migrate away from</li>
+<li><code>borg-service-design.md</code> ·
+<code>silas-3185/.../harvest-layer.html</code> (#3185) ·
+<code>chorus-core.ttl</code> (core sketch)</li>
+<li>ADR-025 / ADR-028</li>
+</ul>
+</body>
+</html>

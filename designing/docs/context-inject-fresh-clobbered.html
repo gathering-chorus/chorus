@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>context-inject — fresh capture: fix worked, then got clobbered</title>
+<style>
+  html{font-size:15px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:#1f2328;background:#fff;line-height:1.55;max-width:60rem;margin:0 auto;padding:2rem 1.8rem 4rem}
+  h1{font-size:1.55rem;margin:0 0 .15rem} .sub{color:#57606a;font-size:.9rem;margin:0 0 1.2rem}
+  h2{font-size:1.05rem;margin:1.6rem 0 .4rem;padding:.3rem .6rem;border-radius:6px}
+  .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:#57606a;margin:.5rem 0 .15rem;font-weight:700}
+  pre{background:#1f2430;color:#e6e6e6;padding:.6rem .9rem;border-radius:6px;overflow:auto;font-size:12px;margin:.2rem 0}
+  pre.good{border-left:4px solid #1e7045}.pre.bad{border-left:4px solid #c0392b}
+  table{border-collapse:collapse;width:100%;margin:.5rem 0;font-size:.85rem}
+  th,td{text-align:left;padding:.35rem .55rem;border-bottom:1px solid #e7e9ec}
+  th{font-size:.7rem;text-transform:uppercase;color:#57606a;background:#fafbfc}
+  .ok{color:#1e7045;font-weight:600}.bad{color:#c0392b;font-weight:600}
+  .box{padding:.7rem 1rem;border-radius:0 6px 6px 0;margin:.9rem 0;font-size:.9rem}
+  .green{background:#eafaf1;border-left:4px solid #1e7045}.red{background:#fdecea;border-left:4px solid #c0392b}.amber{background:#fff8e6;border-left:4px solid #b9770e}
+</style></head><body>
+<h1>context-inject — fresh capture (2026-06-02 ~18:45)</h1>
+<p class="sub">The fix worked live — then a canonical redeploy clobbered it. This page is the evidence.</p>
+
+<div class="green"><b>The fix DID work (while it was live, ~13:16–13:19).</b> AC3 raw-response log from the patched daemon — top-2 queries, returning 5 each:</div>
+<pre class="good">{"q":"relationships instances", "raw_results":5, "total":5, "parsed":5}
+{"q":"service chorus",          "raw_results":5, "total":5, "parsed":5}
+{"q":"surprised memory",        "raw_results":5, "total":5, "parsed":5}
+{"q":"authorize",               "raw_results":5, "total":5, "parsed":5}</pre>
+<p class="sub">Top-2 keywords → the chorus search returns hits. Exactly the #3187 fix. (And the new AC3 log line itself proves the patched binary was running.)</p>
+
+<div class="red"><b>But the LIVE daemon is now back to the OLD behavior.</b> Latest inject cycle (<code>inj-silas</code>, 18:42:08):</div>
+<div class="lbl">chorus call (still ALL keywords — 4, not top-2)</div>
+<pre>http://localhost:3340/api/chorus/search?q=worrisome%20script%20seeing%20tmp&mode=relevance&limit=5&domain=chorus</pre>
+<div class="lbl">result</div>
+<pre>candidates: 0   drops: ["chorus","logs"]   memory_hits: 5   (no context.inject.chorus.raw event — the AC3 log isn't in this binary)</pre>
+
+<h2 style="background:#fdecea;color:#641e16">The clobber — evidence</h2>
+<table>
+<tr><th>fact</th><th>value</th><th>means</th></tr>
+<tr><td>my fix installed</td><td>13:12 (build-signed → ~/.chorus/bin)</td><td>verified top-2 live at 13:16</td></tr>
+<tr><td>live binary mtime NOW</td><td><span class="bad">08:21</span> (older than 13:12)</td><td>a different (older) binary is in place — reverted</td></tr>
+<tr><td>marker in live binary</td><td><span class="bad">context.inject.chorus.raw → 0</span></td><td>my code is gone from the running daemon</td></tr>
+<tr><td>daemon PID</td><td>12153, started 13:19:37</td><td>restarted after my 13:16 — loaded the old binary</td></tr>
+</table>
+
+<div class="amber"><b>Why:</b> I hand-deployed an <b>un-merged werk binary</b> to the shared <code>~/.chorus/bin/chorus-hooks</code>. Since #3187 isn't on canonical, the next canonical chorus-hooks rebuild/redeploy (Silas/Kade's substrate work) put canonical's old binary back — my fix had nothing on main to survive on. <b>It cannot stay live until #3187 merges.</b></div>
+
+<div class="red"><b>And merging is stranded</b> (separate finding): #3187's branch is committed+pushed+verified but can't land — modify/delete vs #3182's pre-commit deletion, with rebase/reset/unpull all walled. So right now the fix is: <b>proven correct, briefly-live, now reverted, and unmergeable.</b> That's merged≠live turned all the way inside-out.</div>
+</body></html>

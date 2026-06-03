@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>RCA — context-inject returns 0 / drops chorus search</title>
+<style>
+  html{font-size:15px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:#1f2328;background:#fff;line-height:1.55;max-width:60rem;margin:0 auto;padding:2rem 1.8rem 4rem}
+  h1{font-size:1.6rem;margin:0 0 .1rem} .sub{color:#57606a;font-size:.9rem;margin:0 0 1.3rem}
+  h2{font-size:1.12rem;margin:1.8rem 0 .5rem;padding-bottom:.3rem;border-bottom:2px solid #e7e9ec}
+  h3{font-size:1rem;margin:1.1rem 0 .3rem;color:#2b3440}
+  code{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:.85em;background:#f6f7f9;border:1px solid #e7e9ec;border-radius:4px;padding:.03rem .3rem}
+  table{border-collapse:collapse;width:100%;margin:.7rem 0;font-size:.85rem}
+  th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #e7e9ec}
+  th{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#57606a;background:#fafbfc;border-bottom:2px solid #d7dade}
+  .rc{background:#fdecea;border-left:4px solid #c0392b;padding:.7rem 1rem;border-radius:0 6px 6px 0;margin:1rem 0}
+  .ok{background:#eafaf1;border-left:4px solid #1e7045;padding:.6rem 1rem;border-radius:0 6px 6px 0;margin:.8rem 0;font-size:.9rem}
+  .fix{background:#f3f7fb;border-left:4px solid #3b6ea5;padding:.6rem 1rem;border-radius:0 6px 6px 0;margin:.8rem 0;font-size:.9rem}
+  .no{color:#c0392b;font-weight:600} .yes{color:#1e7045;font-weight:600}
+</style></head><body>
+<h1>RCA — context-inject returns 0 (chorus search dropped)</h1>
+<p class="sub">2026-06-02 · 4 parallel Explore threads: indexing/freshness · search handler · inject query · live empirical · #3184/#3171 lineage</p>
+
+<h2>Problem</h2>
+<p>The context-inject's <code>chorus</code> search frequently returns 0 results and is dropped, so the inject surfaces little/no knowledge. Hypothesis on the table: "it's coded, but the data isn't returning properly."</p>
+
+<h2>Verdict</h2>
+<div class="rc"><b>Root cause: the inject builds an over-constrained query.</b> The search ANDs every keyword; the inject sends ~6 space-joined keywords (often including typos), so the AND intersects to 0 or a handful. <b>The index is healthy and the data returns fine</b> — this is a query-construction problem in the hook, not a data/index/endpoint failure.</div>
+
+<h2>Evidence (live, thread 4)</h2>
+<table>
+<tr><th>query</th><th>results</th><th>tells us</th></tr>
+<tr><td><code>chorus</code> (1 word)</td><td>100 (cap)</td><td>index alive, returning</td></tr>
+<tr><td><code>instances</code></td><td>100</td><td>single significant term → plenty</td></tr>
+<tr><td><code>instances domains</code> (2)</td><td>100</td><td>still plenty</td></tr>
+<tr><td><code>instances products domains child</code> (4)</td><td>8</td><td>AND narrows hard</td></tr>
+<tr><td>6 keywords incl. typo <code>doamins</code></td><td>0</td><td>one non-word term zeroes the AND</td></tr>
+<tr><td>22-day-old content</td><td>found</td><td><span class="no">NOT</span> a freshness/timing issue</td></tr>
+<tr><td><code>mode=relevance</code> vs default</td><td>identical</td><td><span class="no">NOT</span> a ranking-mode filter</td></tr>
+</table>
+
+<h2>What each thread found</h2>
+
+<h3>1 · Indexing / freshness — <span class="no">not the cause</span></h3>
+<p>FTS is <b>synchronous on insert</b> — a DB trigger (<code>messages_ai</code>) writes <code>messages_fts</code> inside the INSERT transaction (sub-ms queryable). The 15-min reindex worker only covers <i>file</i> sources (briefs/decisions/docs), not claude messages, and it's alive/healthy (the better-sqlite3 ABI crash is fixed via absolute node path). So a row is queryable ~instantly once written. Freshness lag does <span class="no">not</span> explain misses.</p>
+
+<h3>2 · Search handler — AND semantics, healthy otherwise</h3>
+<p><code>fts-query.ts:18</code> builds the match as <code>"tok1" "tok2" …</code> — space-separated quoted tokens = <b>FTS5 implicit AND</b>. <code>mode=relevance</code> is <b>ORDER BY only</b> (bm25 + source authority), it does not filter. <code>domain=</code> is a type-hint, <b>not</b> in the WHERE. Two robustness gaps (not the main cause): the worker <code>ftsSearch</code> call at <code>chorus-search.ts:185</code> has <b>no try/catch</b> (a worker rejection propagates uncaught rather than returning 0 cleanly), and FTS errors fail-closed to <code>[]</code> (correct, by design — avoids a 3.6s LIKE scan).</p>
+
+<h3>3 · Inject query — the over-constraint</h3>
+<p><code>extract_keywords</code> emits up to 6 keywords (significance/length-sorted per #3171) and <code>build_search_url</code> joins them with <b>spaces</b> → the search ANDs all 6. For "…products and domains may have child instances of products and doamins" it produced <code>instances products domains doamins child know</code> — the typo <b><code>doamins</code></b> matches nothing, so the AND is 0 before the real terms even matter. #3171 fixed <i>which</i> words survive the cap; it didn't lower the cap, so the AND still over-constrains.</p>
+
+<h3>4 · Empirical — confirms ANDing</h3>
+<p>(table above) Pattern is unambiguous: 1–2 keywords → 100; 4 → 8; 6-with-typo → 0; old content found; mode irrelevant. <b>ANDing of multi-keyword queries is the dominant effect.</b></p>
+
+<h2>The "drop despite re-run returns data" paradox — a separate, narrow issue</h2>
+<p>In the one cycle we examined, the dropped <code>chorus</code> call returned 1 row on re-run — but that row was <b>Jeff's own just-submitted prompt</b> (logged 153 ms before the query). That's a tiny <b>ingestion-timing edge</b> (the message wasn't written to the <code>messages</code> table yet — not an index lag), and it only ever matches the prompt you just typed (rarely useful to inject). It is <i>not</i> the general 0-result cause; the AND over-constraint is.</p>
+
+<h2>Fix (in order of leverage)</h2>
+<div class="fix"><b>1. Lower the keyword cap / OR the terms (the real fix, in the hook).</b> Send the top <b>2–3</b> most-significant keywords (extend #3171's significance sort with a lower <code>truncate</code>), or join with <code>OR</code> instead of space. Drop non-dictionary tokens/typos. This directly stops the AND collapse. <code>context_inject.rs</code> extract_keywords/build_search_url.</div>
+<div class="fix"><b>2. Log the raw search response, not just the drop flag.</b> Today the observability records <code>candidates:[]</code>/drop but not the raw payload — so <code>0-returned</code> vs <code>dropped-after-return</code> can't be told from logs. Log the raw <code>results</code>.</div>
+<div class="fix"><b>3. Robustness: try/catch the worker <code>ftsSearch</code></b> (<code>chorus-search.ts:185</code>) so a worker rejection returns a clean empty + logs, not an uncaught propagation.</div>
+<div class="ok"><b>Not needed:</b> no index rebuild, no reindex-worker fix, no relevance-mode change, no endpoint fix — the data layer is healthy.</div>
+</body></html>

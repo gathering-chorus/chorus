@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Athena + Borg — one conceptual model (naming drift)</title>
+<style>
+  :root{ --ink:#1f2328; --soft:#57606a; --line:#e7e9ec; --accent:#3b6ea5; --warn:#c0392b; --ok:#1e7045; }
+  html{ font-size:15px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; color:var(--ink); background:#fff;
+        line-height:1.55; max-width:60rem; margin:0 auto; padding:2.4rem 2rem 5rem; }
+  h1{ font-size:1.7rem; margin:0 0 .2rem; } .sub{ color:var(--soft); margin:0 0 1.4rem; font-size:.92rem; }
+  h2{ font-size:1.15rem; margin:2rem 0 .6rem; padding-bottom:.3rem; border-bottom:2px solid var(--line); }
+  code{ font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:.84em; background:#f6f7f9; border:1px solid var(--line); border-radius:4px; padding:.04rem .3rem; }
+  table{ border-collapse:collapse; width:100%; margin:1rem 0; font-size:.82rem; }
+  th,td{ text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--soft); background:#fafbfc; border-bottom:2px solid #d7dade; }
+  tbody tr:nth-child(even){ background:#fcfcfd; }
+  .warn{ color:var(--warn); font-weight:600; } .ok{ color:var(--ok); }
+  pre.mermaid{ background:none; border:0; text-align:center; margin:1.2rem 0; }
+  blockquote{ margin:1rem 0; padding:.5rem 1rem; border-left:3px solid var(--accent); background:#f3f7fb; color:#2b3440; border-radius:0 4px 4px 0; font-size:.9rem; }
+  @media print{ @page{ margin:1.4cm; } body{ max-width:none; } pre.mermaid,table{ page-break-inside:avoid; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad:true, theme:'neutral', flowchart:{ htmlLabels:true, curve:'basis' } });
+</script>
+</head><body>
+<h1>Athena + Borg — one conceptual model</h1>
+<p class="sub">#3184 · drawn from the live ontologies (chorus.ttl, borg.ttl, framework.ttl) · the OWL <b>class</b> names drift from our <b>domain</b> names — flagged below.</p>
+
+<h2>The model as it actually is (3 namespaces, bridged)</h2>
+<pre class="mermaid">
+graph TB
+  subgraph A["chorus: &nbsp;(Athena / structural) &nbsp;— jeffbridwell.com/chorus#"]
+    P["Product"] --> D["Domain"]
+    D --> SD["SubDomain"]
+    D --> SVC["Service"]
+    P -. consumes .-> SVC
+  end
+  subgraph B["borg: &nbsp;(infrastructure topology) &nbsp;— urn:borg:ontology/"]
+    E["Engine"] -->|instanceOf| ENV["Environment"]
+    ENV -->|servedBy| R["Resource"]
+    ENV -->|runs on| H["Host"]
+    SURF["Surface<br/>(Compute · Storage · Network)"]
+    NE["NetworkEndpoint"]
+    M["Monitor"] -->|triggers| AR["AlertRule"]
+    M -.monitors.-> ENV
+  end
+  ENV === SVC
+  linkStyle 9 stroke:#c0392b,stroke-width:3px;
+  classDef seam fill:#fdecea,stroke:#c0392b,stroke-width:2px,color:#641e16;
+  class ENV,SVC seam;
+</pre>
+<blockquote>The red link is the impedance: <code>framework.ttl</code> declares <code>borg:Environment owl:equivalentClass chorus:Service</code> (and <code>framework:Service</code>) — <b>one concept wearing three names across three namespaces.</b> That's what the composed core dissolves: one <code>chorus:Service</code>, products extend it, no <code>equivalentClass</code> stitching.</blockquote>
+
+<h2>Where the OWL class names drift from our domain names</h2>
+<table>
+<tr><th>our domain (tree.json)</th><th>OWL class(es)</th><th>ns</th><th>drift</th></tr>
+<tr><td><code>toolchain</code></td><td>Engine</td><td>borg:</td><td class="warn">name differs (toolchain ≠ Engine)</td></tr>
+<tr><td><code>infrastructure</code></td><td>Environment · Host · Surface</td><td>borg:</td><td class="warn">1 domain → 3 classes</td></tr>
+<tr><td><code>alerts-monitors</code></td><td>Monitor · AlertRule</td><td>borg:</td><td class="warn">hyphenated domain → 2 classes</td></tr>
+<tr><td><code>security-trust</code></td><td>ExposedSurface <i>(design)</i> / Surface <i>(borg.ttl)</i></td><td>borg:</td><td class="warn">design doc ≠ actual .ttl</td></tr>
+<tr><td><code>deploys</code></td><td>DeployTarget <i>(design only)</i></td><td>borg:</td><td class="warn">class not in borg.ttl</td></tr>
+<tr><td><code>builds</code></td><td>PipelineStage <i>(design only)</i></td><td>borg:</td><td class="warn">class not in borg.ttl</td></tr>
+<tr><td><code>logs</code></td><td>LogSource</td><td><b>chorus:</b></td><td class="warn">borg domain, class in chorus: ns</td></tr>
+<tr><td><code>properties · time · analytics · metrics · heralds</code></td><td>—</td><td>—</td><td class="warn">domains with no OWL class at all</td></tr>
+<tr><td><code>(no domain)</code></td><td>Resource · NetworkEndpoint</td><td>borg:</td><td class="warn">classes with no domain</td></tr>
+<tr><td><code>services</code> (athena)</td><td>Service ≡ Environment ≡ framework:Service</td><td>3 ns</td><td class="warn">same concept, three names</td></tr>
+<tr><td><code>domains</code> (athena)</td><td>Domain ≡ framework:Domain</td><td>chorus:/fw:</td><td>2 names, bridged</td></tr>
+</table>
+
+<h2>What it tells us</h2>
+<blockquote>Borg has <b>12 domains but ~8 classes</b>, they don't map 1:1, five domains have no class, three design-doc classes were never written into <code>borg.ttl</code>, and the core concept (Service/Environment) has three names bridged by <code>owl:equivalentClass</code>. This is exactly the impedance the composed <code>chorus-core.ttl</code> removes — and it's why "OWL defines the API" can't work until the names are one set: a generated API off this would emit three names for one thing.</blockquote>
+<p style="font-size:.86rem;color:#1f2328"><b>Baseline (Jeff, 2026-06-02): Athena v2 is canonical.</b> The <code>data/athena/tree.json</code> model — its 33 domain names + the four axes (<code>domain · ownedBy · atStep · shape</code>) — is the single source of truth. The OWL (chorus.ttl / borg.ttl / framework.ttl) reconciles <i>to</i> v2, never the reverse.</p>
+<p style="font-size:.82rem;color:#57606a"><b>So the fix is one-directional:</b> one composed OWL with <code>chorus:Service</code> as the single concept (retire the <code>borg:Environment ≡</code> equivalentClass bridge); borg's Engine/Environment/Resource/Monitor/AlertRule become <code>subClassOf chorus:Facet</code>/<code>Service</code> under the core; every class re-homed under a v2 domain name; the five class-less domains and three doc-only classes resolved against v2. Part of Silas's chorus.ttl→core refactor (#3185) + the self-model framework.</p>
+</body></html>
