@@ -140,6 +140,47 @@ fn e2e_deploy_both_slots_and_guards() {
     assert!(deploy(7002, "silas", "canonical", &home, &werk_base).is_err(), "branch mismatch => refuse");
 }
 
+/// #3167 — a TRUE terminal Err (empty build summary: werk-build produced no
+/// crate=cdhash pairs → "nothing to deploy") must witness `deploy.failed{reason}` to
+/// ops/logs/werk-deploy.jsonl — distinct from rolledback (caught+reverted) and refused
+/// (guard). RED before the died() instrumentation: this exit was silent, so a deploy
+/// that died before it could roll back vanished with only a dangling deploy.started.
+#[test]
+fn e2e_deploy_failed_witnessed_on_died_not_rolledback() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let bin = tmp("dfbin");
+    // werk-build exits 0 but emits NO crate=cdhash pairs → the empty-summary terminal Err.
+    write_exec(&bin.join("werk-build"), "#!/bin/sh\nexit 0\n");
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::remove_var("CHORUS_TRACE_ID");
+
+    let origin = tmp("dforigin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]); git(&origin, &["commit", "-q", "-m", "init"]);
+    let home = tmp("dfhome");
+    assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()]).status().unwrap().success());
+    let werk_base = tmp("dfwerk");
+    std::env::set_var("WERK_SILAS_BIN", tmp("dfwerkbin").to_str().unwrap());
+
+    let werk = werk_base.join("silas-7301");
+    git(&home, &["worktree", "add", "-q", "-b", "silas/7301", werk.to_str().unwrap(), "origin/main"]);
+
+    // target=werk (demo) skips the canonical stale-guard, so we reach the build step,
+    // which returns empty → the empty-summary terminal Err (a death, not a rollback).
+    let e = deploy(7301, "silas", "werk", &home, &werk_base).expect_err("empty summary must Err");
+    assert!(e.contains("no crate=cdhash") || e.contains("nothing to deploy"), "empty-summary err: {}", e);
+
+    let witness = read(&home.join("ops/logs/werk-deploy.jsonl"));
+    assert!(witness.contains("\"event\":\"deploy.failed\""),
+        "deploy.failed witnessed on a died deploy (was silent): {}", witness);
+    assert!(witness.contains("\"reason\":\"empty-summary\""),
+        "deploy.failed carries the reason: {}", witness);
+    assert!(witness.contains("\"card_id\":7301"), "deploy.failed is card-bound: {}", witness);
+    assert!(!witness.contains("deploy.rolledback"),
+        "empty-summary is a death, not a rollback: {}", witness);
+}
+
 /// #3126 — SHARED-LIBRARY deploy: cascade to graph-discovered consumers + the AC4
 /// anti-stale verify. Proves the silent-stale-prod gap #3092 left is closed:
 ///  - werk-build emits `chorus-sdk=<H>`; the lib dist installs to canonical and its

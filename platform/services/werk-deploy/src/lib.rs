@@ -370,6 +370,20 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
     }
 }
 
+/// #3167 — witness `deploy.failed{reason}` on a TRUE terminal Err: a deploy that DIED
+/// before it could roll back (werk-build subprocess fail, empty build summary, lock
+/// timeout). Distinct from `deploy.rolledback` (caught + reverted) and `deploy.refused`
+/// (guard-rejected) — both of which already emit. Same witness channel
+/// (ops/logs/werk-deploy.jsonl) + card_id/trace the other events use; the rollup counts
+/// `.failed`. Returns the message so call sites read `return Err(died(..))` /
+/// `.map_err(|e| died(.., e))?` with no behavior change beyond the added witness line.
+/// disposition=died distinguishes it from reverted at a glance.
+fn died(home: &Path, role: &str, card: u64, trace: &str, reason: &str, msg: String) -> String {
+    jsonl(home, role, card, trace, "deploy.failed",
+        &format!(",\"reason\":\"{}\",\"disposition\":\"died\"", reason));
+    msg
+}
+
 /// #3192 — resolve `chorus-bin-install` to an ABSOLUTE path; never rely on PATH.
 /// werk-deploy runs under the werk PATH (`~/.chorus/bin` + role bin-slots), which does
 /// NOT include `platform/scripts/`, so spawning the helper by bare name ENOENTs and
@@ -587,7 +601,8 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     }
 
     // serialize all system mutation under one lock.
-    let _lock = lock(&werk, Duration::from_secs(180))?;
+    let _lock = lock(&werk, Duration::from_secs(180))
+        .map_err(|e| died(home, role, card, &trace, "lock-timeout", e))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
     // AC2: GUARANTEE a rebuild — werk-build compiles+signs in the werk, emits fresh cdhash.
@@ -598,10 +613,12 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
         "werk-build",
         &[&card.to_string(), role],
     )
-    .map_err(|e| format!("rebuild failed (werk-build); nothing installed: {}", e))?;
+    .map_err(|e| died(home, role, card, &trace, "build-subprocess-fail",
+        format!("rebuild failed (werk-build); nothing installed: {}", e)))?;
     let built = parse_build_summary(&build_out);
     if built.is_empty() {
-        return Err("werk-build produced no crate=cdhash pairs — nothing to deploy".to_string());
+        return Err(died(home, role, card, &trace, "empty-summary",
+            "werk-build produced no crate=cdhash pairs — nothing to deploy".to_string()));
     }
     jsonl(home, role, card, &trace, "rebuilt", &format!(",\"built\":\"{}\"", summary(&built)));
 
@@ -990,7 +1007,8 @@ exec \"{bin_path}\" \"$@\"\n",
             bin_path = bin_path,
         );
         if let Err(e) = fs::write(&wrapper_path, &wrapper) {
-            return Err(format!("deploy_cli_verb: write wrapper {}: {}", wrapper_path, e));
+            return Err(died(home, role, card, trace, "wrapper-write",
+                format!("deploy_cli_verb: write wrapper {}: {}", wrapper_path, e)));
         }
         // chmod +x via std (Unix permissions; mode 0o755).
         let _ = run_env(None, &[], "chmod", &["+x", &wrapper_path]);
