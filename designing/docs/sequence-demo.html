@@ -18,6 +18,13 @@
 <h1>/demo — Proving Gate Sequence</h1>
 <p class="subtitle">DEC-048: No self-service Done. Builder shows, PM reviews, Jeff accepts.</p>
 
+<div style="background:#3a1d1d;border-left:4px solid #ff5555;padding:14px 18px;border-radius:6px;margin:0 0 24px;color:#ffd0d0;font-size:0.82rem;line-height:1.5;">
+  <strong style="color:#ff8888;">⚠ SUPERSEDED by #3116</strong> — the diagram below is the retired cascade (smoke → brief → signal → show → accept, on git-queue). The current model is the proving ceremony:
+  <strong style="color:#fff;">present → gate → feedback → prove → record.</strong>
+  The act (build/deploy/env-up) is the PRIOR verbs; gates run as subagents the demoer initiates and routes to the owning role for review; one <code>demo.verdict</code> (prover = Jeff <em>or</em> a machine test, never a peer) is what <code>werk-accept</code> gates on.
+  Design of record: <code>designing/docs/demo-service-design.html</code>. Full SVG regen is a follow-on.
+</div>
+
 <svg width="920" height="1100" viewBox="0 0 920 1100">
   <!-- Swimlane headers -->
   <rect x="30" y="10" width="140" height="36" rx="6" fill="#4a2d6b"/>
