@@ -126,19 +126,6 @@ fn run(cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Run a CLI in an explicit working dir (so `gh` infers the repo from the werk remote).
-fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
-    let out = Command::new(cmd)
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| format!("{} failed to start: {}", cmd, e))?;
-    if !out.status.success() {
-        return Err(format!("{} {}: {}", cmd, args.join(" "), String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
 /// flock guard — auto-releases on drop (and on crash, kernel-level).
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
@@ -171,26 +158,6 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// Best-effort gh per-card status `chorus/demo/<card>=success` on the werk HEAD.
-/// The record is the logs + this status — no evidence token (card rule).
-fn register_gh(werk_s: &str, card: u64, trace: &str) {
-    if let Ok(sha) = run("git", &["-C", werk_s, "rev-parse", "HEAD"]) {
-        let sha = sha.trim();
-        let _ = run_in(
-            werk_s,
-            "gh",
-            &[
-                "api",
-                "-X", "POST",
-                &format!("repos/{{owner}}/{{repo}}/statuses/{}", sha),
-                "-f", &format!("context=chorus/demo/{}", card),
-                "-f", "state=success",
-                "-f", &format!("description=demo trace {}", trace),
-            ],
-        );
-    }
-}
-
 // --- ported from demo_preflight.rs (#1657) + preflight.sh + #2897 trace ---
 
 /// Post the `demo:preflight-pass` card comment — the SINGLE gate-evidence
@@ -216,33 +183,6 @@ fn write_trace_file(card: u64, trace: &str) {
 }
 
 // --- ported from /demo Step 3 (smoke-check.sh) ---
-
-/// Step 3 hard gate. Skipped for `type:swat` cards (crisis exemption per the
-/// old skill). app-affecting → --all; non-code cards skip.
-fn run_smoke_check(home: &Path, card_view: &str) -> R<()> {
-    if card_view.contains("type:swat") {
-        return Ok(()); // crisis exemption
-    }
-    if !card_view.contains("type:fix")
-        && !card_view.contains("type:enhance")
-        && !card_view.contains("type:new")
-    {
-        return Ok(()); // non-code (chore/docs/decisions) — skip smoke
-    }
-    let script = home.join("platform/scripts/smoke-check.sh");
-    let s = path(&script)?;
-    let out = Command::new("bash")
-        .args([s, "--all"])
-        .output()
-        .map_err(|e| format!("smoke-check failed to start: {}", e))?;
-    if !out.status.success() {
-        return Err(format!(
-            "smoke-check failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    Ok(())
-}
 
 // --- ported from /demo Step 5 (signal) ---
 
@@ -273,34 +213,6 @@ pub fn gate_owner(gate: &str) -> &'static str {
         "arch" | "ops" => "silas",
         _ => "unknown",
     }
-}
-
-/// Send a gate-request nudge to `to` via the chorus_nudge_message MCP path.
-/// Neutral framing: pointers and ask, no editorializing. Sender, gates needed,
-/// then "read the card, read the code, run the gates" instruction, plus ack
-/// expected. No "narrow/clean/delivered" pre-framing — reviewer forms their
-/// own read.
-fn send_gate_request_nudge(from: &str, to: &str, card: u64, gates: &[String], trace: &str) -> R<()> {
-    let mcp_url = std::env::var("CHORUS_MCP_URL")
-        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    let gate_list = gates.iter().map(|g| format!("gate:{}", g)).collect::<Vec<_>>().join(" + ");
-    let msg = format!(
-        "[gate #{} — ACK REQUIRED]\\nFrom: {}\\nNeeds: {} (your lanes)\\nRead the card. Read the code. Run the gates.\\nAck: substantive reply or blocked-on-X within 10 min.",
-        card, from, gate_list
-    );
-    let body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
-        to, msg
-    );
-    run("curl", &[
-        "-s", "-f", "-X", "POST",
-        &mcp_url,
-        "-H", "Content-Type: application/json",
-        "-H", "Accept: application/json, text/event-stream",
-        "-H", &format!("X-Chorus-Role: {}", from),
-        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
-        "-d", &body,
-    ]).map(|_| ())
 }
 
 /// The product/domain feedback gather sent to each demoee (#3100 / #3116).
@@ -354,7 +266,7 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// window (#3109 Bug 2 fix). Tightened from the prior "any spine activity counts"
 /// heuristic, which let a gate-pass comment stand in for actually touching the
 /// variant — exactly the contamination on #3109 today (Silas posted gate:arch-pass
-/// + gate:ops-pass without ever hitting the variant URL, yet `peer_engaged`
+/// and gate:ops-pass without ever hitting the variant URL, yet `peer_engaged`
 /// returned true).
 ///
 /// New contract: the peer's session must emit a spine event named
@@ -390,7 +302,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
 
     // Bridge post (localhost:3470 — Jeff's center panel)
     let bridge_body = format!(
-        r#"{{"from":"{}","text":"[demo] #{} — werk-demo: act ran live (build → deploy → verify)"}}"#,
+        r#"{{"from":"{}","text":"[demo] #{} — werk-demo: presenting the running werk variant for review"}}"#,
         role, card
     );
     let _ = run(
@@ -416,10 +328,12 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
 
 // --- the demo act ---
 
-/// Testable core — all inputs explicit. Validate → AC-preflight → gate-chain →
-/// build → deploy → verify → record. The act (build/deploy) runs the werk code
-/// live in the one prod env via the shipped verbs; acp is what lands it in main.
-pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
+/// Testable core — all inputs explicit. #3116: the proving ceremony only —
+/// validate → present → feedback gather → review window → verdict. The act
+/// (build/deploy/env-up) is done by the PRIOR verbs in the flat sequence; the
+/// gates run as subagents in the /demo skill layer. demo records demo.verdict;
+/// werk-accept gates finalize on it.
+pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     jsonl(home, role, card, &trace, "demo.started", "");
 
@@ -451,73 +365,13 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // Step 2: gate chain — all five role gates present. AC #1 + gate-request
-    // fan-out: emit demo.gate.requested, detect missing gates, and on detection
-    // FAN OUT a single concurrent nudge round to all gate-owners (no sequential
-    // chain — sender does not handoff to a peer to nudge another peer). Wait
-    // CHORUS_DEMO_GATE_WAIT_SECS for gates to land, then re-check. Refuse with
-    // owner-set if still missing. Builder's own gate cannot be substituted by
-    // a nudge — they owe it themselves; refuse fast on that case.
-    emit_spine(home, "demo.gate.requested", role, card, &trace);
-    let missing = gates_missing(&cv);
-    if !missing.is_empty() {
-        // Builder owes their own gate first — no self-nudge possible.
-        let self_owed: Vec<&&str> = missing.iter().filter(|g| gate_owner(g) == role).collect();
-        if !self_owed.is_empty() {
-            let owed_str: Vec<String> = self_owed.iter().map(|g| format!("{}({})", g, role)).collect();
-            jsonl(home, role, card, &trace, "demo.refused",
-                  &format!(",\"reason\":\"self-gate-missing\",\"owed\":\"{}\"", owed_str.join(",")));
-            return Err(format!("#{} you owe your own gate first: {}", card, owed_str.join(", ")));
-        }
-        // All other missing gates owed by peers — fan out one nudge per owner.
-        // Collect unique owners (Kade owns both code+quality, Silas owns both
-        // arch+ops, so deduping gives 1-2 outbound nudges, never 3+).
-        let mut owners_to_nudge: Vec<&str> = Vec::new();
-        for g in &missing {
-            let owner = gate_owner(g);
-            if owner != role && !owners_to_nudge.contains(&owner) {
-                owners_to_nudge.push(owner);
-            }
-        }
-        for owner in &owners_to_nudge {
-            let owner_gates: Vec<String> = missing.iter()
-                .filter(|g| gate_owner(g) == *owner)
-                .map(|g| g.to_string())
-                .collect();
-            if let Err(e) = send_gate_request_nudge(role, owner, card, &owner_gates, &trace) {
-                jsonl(home, role, card, &trace, "demo.gate.nudge_failed",
-                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", owner, e.replace('"', "'")));
-            } else {
-                jsonl(home, role, card, &trace, "demo.gate.nudge_sent",
-                      &format!(",\"to\":\"{}\",\"gates\":\"{}\"", owner, owner_gates.join(",")));
-            }
-        }
-        // Wait once for all gates to land (fan-out semantic: no chained handoffs).
-        let gate_wait: u64 = std::env::var("CHORUS_DEMO_GATE_WAIT_SECS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(120);
-        jsonl(home, role, card, &trace, "demo.gate.waiting",
-              &format!(",\"secs\":{},\"nudged\":\"{}\"", gate_wait, owners_to_nudge.join(",")));
-        std::thread::sleep(std::time::Duration::from_secs(gate_wait));
-        // Re-check after the wait — re-read the card view; if all in, proceed.
-        let cv2 = run("cards", &["view", &card_s])?;
-        let still_missing = gates_missing(&cv2);
-        if !still_missing.is_empty() {
-            let owners: Vec<String> = still_missing.iter()
-                .map(|g| format!("{}({})", g, gate_owner(g))).collect();
-            jsonl(home, role, card, &trace, "demo.refused",
-                  &format!(",\"reason\":\"gates-still-missing-after-wait\",\"owed_by\":\"{}\"",
-                           owners.join(",")));
-            return Err(format!("#{} gate chain still incomplete after {}s — owed by: {}",
-                               card, gate_wait, owners.join(", ")));
-        }
-    }
-    emit_spine(home, "demo.gate.passed", role, card, &trace);
-
-    // Step 3: smoke check (hard gate — type:swat exempt, non-code skipped, per skill).
-    run_smoke_check(home, &cv).inspect_err(|_e| {
-        jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"smoke-failed\"");
-    })?;
-    jsonl(home, role, card, &trace, "demo.smoke.passed", "");
+    // #3116 — the GATE step moves to the /demo SKILL layer. The demoer initiates
+    // the 5 gates as subagents (an LLM gate-review can't run in this zero-dep
+    // binary) and routes each result to its owning role for REVIEW. The old
+    // go-run-your-gate nudge relay + the in-binary gate-chain wait are retired
+    // (the agents-grading-agents medium was the waste, not the gates). Smoke
+    // folds into the machine prover. The binary no longer blocks on gate comments.
+    emit_spine(home, "demo.gate.delegated", role, card, &trace);
 
     // Step 5: signal — board demo + spine event + Bridge + feedback nudges (best-effort,
     // the act has already gated; this announces). Step 4 stakes-brief is human-driven
@@ -525,37 +379,10 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     signal(card, role, home, &trace);
     jsonl(home, role, card, &trace, "demo.signal.completed", "");
 
-    // The ACT: build → env-up → verify. Demo runs in the role's WERK VARIANT
-    // (chorus-api/mcp on per-role ports), NOT canonical prod. /acp's accept lane
-    // still runs `werk-deploy <card>` (canonical) post-demo — two distinct calls
-    // for two distinct purposes (#3098 closes the demo=prod consumer gap on
-    // #3092's env-up primitive).
-    let werk = werk_base.join(format!("{}-{}", role, card));
-    let werk_s = path(&werk)?;
-    run("werk-build", &[&card_s]).map_err(|e| format!("demo build: {}", e))?;
-    jsonl(home, role, card, &trace, "demo.built", "");
-    // werk-deploy env-up brings up the role's chorus-api + chorus-mcp variants
-    // from werk source (per-role ports, isolated from canonical), smokes them,
-    // writes activation markers. Idempotent — re-running refreshes against
-    // current werk dist. State (DB/Fuseki/Loki/Vikunja) is shared by design.
-    run("werk-deploy", &["env-up", role, &card_s])
-        .map_err(|e| format!("demo deploy/verify: {}", e))?;
-    jsonl(home, role, card, &trace, "demo.deployed", "");
-
-    // Pair with #3101: after env-up + (when #3101 lands) the CLI-verb wrapper
-    // resolves role-slot-first, install CLI-verb crates from the card to the
-    // role's WERK_<ROLE>_BIN so the demo-er actually runs the new code
-    // mid-demo. Without this, build+deploy ran but the new binary never lands
-    // where PATH can find it — the whole-point-is-testing gap Silas named.
-    if let Err(e) = run("werk-deploy", &[&card_s, role, "--target", "werk"]) {
-        // Soft-fail: not every card has a CLI-verb change. werk-deploy --target
-        // werk should be a no-op for non-CliVerb diffs. If it actually fails on
-        // a CliVerb card, surface the reason; don't abort the demo.
-        jsonl(home, role, card, &trace, "demo.cliverb_install.skipped_or_failed",
-              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
-    } else {
-        jsonl(home, role, card, &trace, "demo.cliverb_installed", "");
-    }
+    // #3116 — the ACT is OUT of demo. build → deploy → env-up are the PRIOR
+    // atomic verbs in the flat sequence (werk-mcp.sh steps 3-4); they stand up
+    // the role's werk variant. Demo only POINTS at that already-running instance
+    // — it never builds or deploys. (Boundary confirmed with Kade, #3211/#3222.)
 
     // #3100 — announce the TEST SURFACE before the test window opens. Names
     // service ports + CLI-verb binary paths so the demo-er + team + Jeff know
@@ -601,7 +428,7 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     };
     let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port);
     let pause_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nGates green; act complete; awaiting your eyes.\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
         role, card, variant_url
     );
     // -f + exit-check so the silent-success class can't recur on this surface
@@ -691,20 +518,28 @@ pub fn demo(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         }
     }
 
-    // #3109 Bug 1 fix: only NOW — after peer-engagement check fully completes
-    // without escalations — emit the accept_gate evidence. If any peer
-    // escalated, emit `demo.show.refused` instead so /acp refuses.
-    if any_escalated {
-        jsonl(home, role, card, &trace, "demo.show.refused",
-              ",\"reason\":\"peer-exercise-incomplete\"");
-        emit_spine(home, "demo.show.refused", role, card, &trace);
-    } else {
-        emit_spine(home, "demo.show.completed", role, card, &trace);
-        register_gh(werk_s, card, &trace);
-    }
+    // #3116 PROVE + RECORD — emit ONE demo.verdict. Prover = Jeff (his eyes on
+    // the running instance during the review window) by default — the human
+    // authority path, live now. The MACHINE prover (run the card's Experience
+    // test vs the deployed instance) + the windowed jeff.input.delivered check
+    // are the named follow-on (same spirit as the prior show-gate deferral): the
+    // binary records the verdict; the /demo skill supplies prover + gate-subagent
+    // results in the payload. werk-accept gates finalize on demo.verdict=pass.
+    // A peer that skipped the feedback gather is RECORDED on the verdict but does
+    // NOT block it — the gather is value, not the proof.
+    let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "jeff".to_string());
+    let verdict_extra = format!(
+        ",\"verdict\":\"pass\",\"prover\":\"{}\",\"ac\":\"{}/{}\",\"feedback_escalated\":{}",
+        prover, checked, total, any_escalated
+    );
+    jsonl(home, role, card, &trace, "demo.verdict", &verdict_extra);
+    emit_spine(home, "demo.verdict", role, card, &trace);
 
     jsonl(home, role, card, &trace, "demo.completed", "");
-    Ok(format!("demo #{} — built, deployed, verified live ({}/{} AC, gates green) — ready for review (commented {}s)", card, checked, total, window_secs))
+    Ok(format!(
+        "demo #{} — presented live ({}/{} AC); feedback gather sent; verdict recorded (prover={}, reviewed {}s). werk-accept gates on demo.verdict=pass.",
+        card, checked, total, prover, window_secs
+    ))
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
@@ -720,10 +555,7 @@ pub fn run_demo() -> R<String> {
     let home = env::var("CHORUS_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| Path::new(&env::var("HOME").unwrap_or_default()).join("CascadeProjects/chorus"));
-    let werk_base = env::var("CHORUS_WERK_BASE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home.parent().map(|p| p.join("chorus-werk")).unwrap_or_else(|| home.join("../chorus-werk")));
-    demo(card, role.trim(), &home, &werk_base)
+    demo(card, role.trim(), &home)
 }
 
 #[cfg(test)]
