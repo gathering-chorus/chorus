@@ -149,12 +149,13 @@ ALERT_MARKER="/tmp/session-health-alerted-${ROLE}-${SESSION_ID}"
 
 if [ "$ALERT" = true ]; then
   echo "WARN: ${ALERTS}Context pressure rising."
-  # Suppress nudges during test runs or if already alerted this session
-  if [ -z "$TEST_MODE" ] && [ ! -f "$ALERT_MARKER" ]; then
-    # Route alert to own role only (#1786) — no Jeff, no other roles
-    "$OPS_NUDGE" "$ROLE" "session-health: ${ALERTS}Context pressure rising." system 2>/dev/null || true
-    touch "$ALERT_MARKER"
-  fi
+  # #3213 — session-health NO LONGER NUDGES the session with context-pressure alerts.
+  # Jeff asked for this gone twice (2026-05-21, 2026-06-04): the nudge interrupts the
+  # session and hands the agent a prompt to perform fatigue/degradation back at him, and
+  # every prior disable was a local toggle that chorus-werk-sync restored — because the
+  # nudge lived in this committed script. Removing the OPS_NUDGE delivery at the source so
+  # a sync can't bring it back. The WARN echo (above) + the chorus-log line (below) remain
+  # for any dashboard that wants the signal; they just don't push into the session.
   "$CHORUS_LOG" session.health.warning "$ROLE" prompts="$PROMPT_COUNT" age_hours="$AGE_HOURS" tools="$TOOL_COUNT" removes="$QUEUE_REMOVES" remove_rate="$REMOVE_RATE" 2>/dev/null || true
 else
   echo "OK: session healthy"
