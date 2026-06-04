@@ -158,17 +158,26 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
+/// #3116/#3183 — resolve a platform script ABSOLUTELY from home so spawns work
+/// under ANY PATH. werk-mcp.sh's step-4.5 demo invocation (and the chorus-mcp
+/// daemon) lack platform/scripts on PATH; bare `cards` died "No such file or
+/// directory" the first time demo ran in the real flow. This is the #3151 fix
+/// (ported to werk-accept by #3183) now applied to werk-demo's `cards` spawns.
+fn script_path(home: &Path, name: &str) -> String {
+    format!("{}/platform/scripts/{}", home.display(), name)
+}
+
 // --- ported from demo_preflight.rs (#1657) + preflight.sh + #2897 trace ---
 
 /// Post the `demo:preflight-pass` card comment — the SINGLE gate-evidence
 /// (#2910) that done-gate.sh / accept_gate look for at /acp time. Without
 /// this, /acp refuses with "no demo evidence". This IS demo's gate output.
-fn post_preflight_evidence(card: u64, role: &str, checked: usize, total: usize, trace: &str) -> R<()> {
+fn post_preflight_evidence(home: &Path, card: u64, role: &str, checked: usize, total: usize, trace: &str) -> R<()> {
     let comment = format!(
         "demo:preflight-pass ac={}/{} — {} (werk-demo, trace {})",
         checked, total, role, trace
     );
-    run("cards", &["comment", &card.to_string(), &comment])
+    run(&script_path(home, "cards"), &["comment", &card.to_string(), &comment])
         .map(|_| ())
         .map_err(|e| format!("post evidence: {}", e))
 }
@@ -297,7 +306,7 @@ fn peer_engaged(other: &str, card: u64) -> bool {
 fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     let card_s = card.to_string();
     // board demo signal
-    let _ = run("cards", &["demo", &card_s]);
+    let _ = run(&script_path(home, "cards"), &["demo", &card_s]);
     emit_spine(home, "card.demo.started", role, card, trace);
 
     // Bridge post (localhost:3470 — Jeff's center panel)
@@ -340,7 +349,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     let card_s = card.to_string();
 
     // Step 1: validate — exists + WIP/Now.
-    let cj = run("cards", &["view", &card_s, "--json"])
+    let cj = run(&script_path(home, "cards"), &["view", &card_s, "--json"])
         .map_err(|e| format!("validate: cannot read card #{}: {}", card, e))?;
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "WIP" && status != "Now" {
@@ -349,7 +358,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     }
 
     // Step 1.5: AC pre-flight — all AC checked (uses the human view for checkboxes).
-    let cv = run("cards", &["view", &card_s])?;
+    let cv = run(&script_path(home, "cards"), &["view", &card_s])?;
     let (checked, total) = ac_counts(&cv);
     if total == 0 {
         jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"no-ac\"");
@@ -361,7 +370,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     }
     // Post the SINGLE gate-evidence comment + trace file (#2910 / #2897). Without
     // these, /acp will refuse "no demo evidence" via done-gate.sh / accept_gate.
-    post_preflight_evidence(card, role, checked, total, &trace)?;
+    post_preflight_evidence(home, card, role, checked, total, &trace)?;
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 

@@ -36,39 +36,10 @@ fn e2e_demo_happy_path() {
     // checked + all five gate-pass comments + type:fix tag. comment/demo → exit 0
     // and append the comment text so we can assert evidence was posted.
     let cards_log = tmp("cardslog").join("calls");
-    write_exec(
-        &bin.join("cards"),
-        &format!(
-            r#"#!/bin/sh
-echo "$@" >> "{cards_log}"
-if [ "$1" = "view" ] && [ "$3" = "--json" ]; then
-  printf '{{ "status": "WIP" }}\n'
-  exit 0
-fi
-if [ "$1" = "view" ]; then
-  cat <<'EOF'
-#3046 demo-v2 test card
-  Status: WIP
-  Owner: wren
-  Desc:
-    ## Acceptance Criteria
-    - [x] one ported
-    - [x] two ported
-  Domains: domain:chorus, type:fix
-  Comments:
-    [jeff] gate:product-pass — Wren
-    [jeff] gate:code-pass — Kade
-    [jeff] gate:quality-pass — Kade
-    [jeff] gate:arch-pass — Silas
-    [jeff] gate:ops-pass — Silas
-EOF
-  exit 0
-fi
-exit 0
-"#,
-            cards_log = cards_log.display()
-        ),
-    );
+    // #3116/#3183: werk-demo resolves `cards` ABSOLUTELY at home/platform/scripts/cards
+    // (not bare on PATH) — so the cards shim is written THERE (below, once home exists),
+    // not on PATH. This is the bug the first live run caught: bare `cards` died under
+    // werk-mcp.sh's step-4.5 PATH.
     // #3116: werk-build / werk-deploy are shimmed to LOG if called — demo must
     // NEVER call them (the act is out). Assertions below require both logs empty.
     let build_log = tmp("buildlog").join("calls");
@@ -98,6 +69,34 @@ exit 0
     // --- $HOME-like layout: home/platform/scripts/{smoke-check.sh,chorus-log} ---
     let home = tmp("home");
     fs::create_dir_all(home.join("platform/scripts")).unwrap();
+    // cards shim at the ABSOLUTE path werk-demo resolves (home/platform/scripts/cards).
+    write_exec(
+        &home.join("platform/scripts/cards"),
+        &format!(
+            r#"#!/bin/sh
+echo "$@" >> "{cards_log}"
+if [ "$1" = "view" ] && [ "$3" = "--json" ]; then
+  printf '{{ "status": "WIP" }}\n'
+  exit 0
+fi
+if [ "$1" = "view" ]; then
+  cat <<'EOF'
+#3046 demo-v2 test card
+  Status: WIP
+  Owner: wren
+  Desc:
+    ## Acceptance Criteria
+    - [x] one ported
+    - [x] two ported
+  Domains: domain:chorus, type:fix
+EOF
+  exit 0
+fi
+exit 0
+"#,
+            cards_log = cards_log.display()
+        ),
+    );
     write_exec(
         &home.join("platform/scripts/smoke-check.sh"),
         "#!/bin/sh\nexit 0\n",
