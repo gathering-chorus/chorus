@@ -2,7 +2,7 @@
 //! gate (DEC-048: only Wren/Jeff finalize; a builder never self-accepts). That's a
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
-use werk_accept::{branch_name, can_accept, jsonl_line, script_path};
+use werk_accept::{branch_name, can_accept, demo_verdict_pass, jsonl_line, script_path};
 
 #[test]
 fn script_path_resolves_absolute_under_home_platform_scripts() {
@@ -49,6 +49,37 @@ fn non_authority_roles_cannot_accept() {
 #[test]
 fn branch_name_is_role_slash_card() {
     assert_eq!(branch_name("kade", 3057), "kade/3057");
+}
+
+#[test]
+fn demo_verdict_pass_reads_the_demo_witness() {
+    // #3116: accept gates on a demo.verdict=pass in the werk-demo witness.
+    use std::path::PathBuf;
+    let home: PathBuf = std::env::temp_dir().join(format!(
+        "wa-verdict-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    let logs = home.join("ops/logs");
+    std::fs::create_dir_all(&logs).unwrap();
+    let witness = logs.join("werk-demo.jsonl");
+
+    // no witness → no demo ran → false
+    assert!(!demo_verdict_pass(&home, 3116));
+
+    // a PASS for #31160 must NOT satisfy #3116 (comma-terminated key guards the prefix)
+    std::fs::write(&witness, "{\"event\":\"demo.verdict\",\"card_id\":31160,\"verdict\":\"pass\"}\n").unwrap();
+    assert!(!demo_verdict_pass(&home, 3116));
+
+    // a FAIL for #3116 → false
+    std::fs::write(&witness, "{\"event\":\"demo.verdict\",\"card_id\":3116,\"verdict\":\"fail\"}\n").unwrap();
+    assert!(!demo_verdict_pass(&home, 3116));
+
+    // a PASS for #3116 → true
+    std::fs::write(&witness, "{\"event\":\"demo.verdict\",\"card_id\":3116,\"verdict\":\"pass\",\"prover\":\"jeff\"}\n").unwrap();
+    assert!(demo_verdict_pass(&home, 3116));
+
+    let _ = std::fs::remove_dir_all(&home);
 }
 
 #[test]
