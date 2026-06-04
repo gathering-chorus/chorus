@@ -271,8 +271,20 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
     // before chorus-werk-remove deletes that tree. Best-effort + idempotent:
     // env-down is a no-op when no overlay is active, matching the existing
     // "let _ = run(...)" pattern for accept's finalize steps.
-    let _ = run(&bin_path("werk-deploy"), &["env-down", role]);
-    jsonl(home, role, card, &trace, "accept.env_down", "");
+    // #3215: pass the CARD so env-down's spine events (env.down.started/stopped/
+    // completed) thread the card's trace — Borg pairs them against the demo's
+    // env.up.smoked{card}. And make the witness HONEST: the old line jsonl'd
+    // `accept.env_down` UNCONDITIONALLY, claiming teardown even when it failed
+    // (the dark-lifecycle root — a teardown that lied while daemons stayed up).
+    // Emit the real outcome; a failed teardown is a leak to SEE, not a silent
+    // success. Still non-fatal — the card IS accepted; a leaked daemon is an
+    // ops gap to surface, not a reason to un-accept. Resolves with #3183:
+    // keep the absolute bin_path("werk-deploy") resolution (never bare PATH).
+    match run(&bin_path("werk-deploy"), &["env-down", role, &card.to_string()]) {
+        Ok(_) => jsonl(home, role, card, &trace, "accept.env_down", ",\"result\":\"ok\""),
+        Err(e) => jsonl(home, role, card, &trace, "accept.env_down.failed",
+            &format!(",\"result\":\"fail\",\"error\":\"{}\"", e.replace('"', "'"))),
+    }
 
     // close branch + werk (idempotent).
     let _ = run(&script_path(home, "chorus-werk"), &["remove", role, &card.to_string()]);

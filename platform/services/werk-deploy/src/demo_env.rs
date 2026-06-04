@@ -394,7 +394,8 @@ fn build_service_dist(svc: &EnvService, werk_root: &str) -> R<()> {
 /// "deploy a change to demo" path; no separate verb needed).
 ///
 /// Returns a summary like `env_up role=silas chorus-api=:3343 chorus-mcp=:3351`.
-pub fn env_up(role: &str, werk_root: &str, canonical_root: &str) -> R<String> {
+pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
+    let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
     for svc in env_services() {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
@@ -466,12 +467,21 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str) -> R<String> {
 
         // Phase 3: smoke. Both services advertise a known endpoint.
         let url = format!("http://localhost:{}{}", port, svc.smoke_path);
+        let port_s = port.to_string();
         if let Err(e) = wait_for_smoke(&url, &svc.smoke_kind, Duration::from_secs(30)) {
+            // #3215: a smoke fail is the per-service truth Borg needs — emit
+            // result=fail on the spine BEFORE the terminal Err so the trace
+            // shows which variant didn't come up, not a silent env.up.failed.
+            crate::emit_spine(home_p, "env.up.smoked", role, card, trace,
+                &[("svc", &svc.name), ("port", &port_s), ("result", "fail")]);
             return Err(format!(
                 "env_up: {} smoke failed at {} — {} (plist at {}, daemon log {})",
                 svc.name, url, e, plist_path, svc.daemon_log_path(canonical_root)
             ));
         }
+        // #3215: per-service smoke success on the spine — env.up.smoked{svc,port,result}.
+        crate::emit_spine(home_p, "env.up.smoked", role, card, trace,
+            &[("svc", &svc.name), ("port", &port_s), ("result", "ok")]);
 
         // Phase 4: markers — chorus-env-setup.sh reads .werk-<svc>/active to
         // route the session.
@@ -496,7 +506,8 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str) -> R<String> {
 ///
 /// Includes a post-bootout verify loop (lesson from the maiden voyage where
 /// bootout returned 0 but launchctl list briefly showed the unit lingering).
-pub fn env_down(role: &str, canonical_root: &str) -> R<String> {
+pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
+    let home_p = Path::new(canonical_root);
     let domain = format!("gui/{}", uid());
     let mut stopped = Vec::new();
     for svc in env_services() {
@@ -525,6 +536,11 @@ pub fn env_down(role: &str, canonical_root: &str) -> R<String> {
         let _ = fs::remove_file(format!("{}/active", marker_dir));
         let _ = fs::remove_file(format!("{}/port", marker_dir));
         let _ = fs::remove_file(format!("{}/label", marker_dir));
+        // #3215: per-variant teardown on the spine — env.down.stopped{svc}.
+        // Borg pairs this against env.up.smoked: an env.up.smoked with no
+        // matching env.down.stopped is a LEAK, visible as a gap not a silence.
+        crate::emit_spine(home_p, "env.down.stopped", role, card, trace,
+            &[("svc", &svc.name), ("label", &label)]);
         stopped.push(label);
     }
     Ok(format!("env_down role={} stopped={}", role, stopped.join(",")))
