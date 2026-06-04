@@ -103,4 +103,14 @@ expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up,werk-me
 grep -q "werk-accept" "$CALLS_LOG" && fail "werk-accept ran via the script — accept must be the human's hand (DEC-048, #3234)"
 grep -q 'target.*canonical' "$CALLS_LOG" || fail "step 6 canonical deploy did NOT run (#3222 should deploy from main)"
 
-echo "PASS: werk-mcp flow — demo real, merge (#3175), 5.5 canonical-sync (scripts live), step-6 deploy-from-main (#3222), accept is the human's hand (#3234)"
+# #3234 (Kade catch) — when 5.5 CAN'T ff (canonical DIVERGED), the "live" claim must
+# DOWNGRADE to "NOT yet live" — never claim live while scripts are stale (the merged≠live
+# lie in miniature). Diverge: origin/main AND canonical each get a different commit, so
+# ff-only genuinely fails (not just "already up to date").
+git -C "$ORIGIN" -c user.email=t -c user.name=t commit -q --allow-empty -m "origin advances"
+git -C "$CANON"  -c user.email=t -c user.name=t commit -q --allow-empty -m "local divergence"
+out2="$("$SCRIPT" kade 9999 jeff 2>&1)"
+grep -q "NOT yet live"     <<<"$out2" || fail "5.5 failure did not downgrade the claim to 'NOT yet live' (Kade #3234)"
+grep -q "deployed + LIVE"  <<<"$out2" && fail "claimed LIVE despite 5.5 failure — the merged≠live lie this card kills"
+
+echo "PASS: werk-mcp flow — demo real, merge (#3175), 5.5 canonical-sync (scripts live), step-6 deploy-from-main (#3222), accept is the human's hand + live-claim-conditional-on-5.5 (#3234)"

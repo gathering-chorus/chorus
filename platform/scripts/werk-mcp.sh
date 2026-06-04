@@ -124,8 +124,10 @@ if [ -n "${CHORUS_HOME:-}" ] \
    && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
    && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
   echo "   [ok] 5.5 canonical ff-synced to origin/main"
+  SYNC_OK=1
 else
   echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'; scripts stale until then" >&2
+  SYNC_OK=0
 fi
 
 # ═══ Step 6 — deploy to PROD from MAIN (#3222 unblocked the hard-stop) ═══
@@ -139,6 +141,13 @@ step "6 deploy-prod" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id"
 # human-accept gate can't be satisfied by an agent's script (house-always-wins). The work
 # is landed to prod (built-of-main + live); the ACCEPT is the accepter's deliberate act.
 echo
-echo "[landed] #$CARD built-of-main, deployed + live (steps 1-6 green). NOT yet accepted."
+# #3234 — the "live" claim is CONDITIONAL on 5.5 succeeding. If canonical couldn't ff,
+# a script-only change is merged-but-stale — claiming "live" would be the merged≠live lie
+# in miniature (the exact class this card kills). Tell the truth either way.
+if [ "${SYNC_OK:-0}" = "1" ]; then
+  echo "[landed] #$CARD built-of-main, deployed + LIVE (steps 1-6 green). NOT yet accepted."
+else
+  echo "[merged, NOT yet live] #$CARD merged + deployed, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'chorus-werk-sync recover' to make them live BEFORE accept." >&2
+fi
 echo "  Accept is yours (DEC-048) — judge the work, then run it yourself:"
 echo "    DEPLOY_ROLE=$ACCEPTER werk-accept $CARD $BUILDER"
