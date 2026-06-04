@@ -47,7 +47,8 @@
 
   <p>The /werk pipeline is <strong>three verbs</strong>, keyed by <code>card#</code>: <strong>pull</strong> (get the work), <strong>demo</strong> (prove it live), <strong>acp</strong> (make it permanent). <strong>GitHub wraps the environment, which wraps the DSL</strong> (the verbs); the DSL <strong>runs on <code>act</code></strong>, the local engine. There is exactly <strong>ONE environment, and it is production (live)</strong> — no preview, no staging. <code>gh</code> = source of truth (<code>main</code>) + per-card process holder; <code>card#</code> = the key. Full visual: <a href="http://localhost:3340/designing/docs/werk-pipeline-model.html">werk-pipeline-model.html</a>.</p>
 
-  <h3 style="margin-top:1.4em;">As-Is (today) — monolith MCP tools, on the chorus-api loop</h3>
+  <h3 style="margin-top:1.4em;">As-Is (2026-06-04) — atomic verbs shipped; run as a flat sequence</h3>
+  <p style="background:#fffbeb;border-left:4px solid #d97706;padding:8px 14px;"><strong>What's true now:</strong> the decomposed atomic verbs are <em>shipped and live</em> — <code>werk-pull/commit/push/merge/build/deploy/demo/accept</code> — and run as a <strong>flat fail-fast sequence</strong> (<code>werk-mcp.sh</code>), not a monolith and not orchestrated. Remaining gaps: (1) <code>werk-mcp.sh</code> hard-stops at the prod step (deploy-from-main not wired); (2) <code>werk-demo</code> builds+deploys but does <em>not</em> run the test suite against the deployed instance; (3) <code>act</code> is staged but unloaded (no auto-trigger on merge); (4) <code>werk-acp</code> still exists (to be retired). <em>The diagram below is the superseded v8-era &ldquo;monolith MCP tools&rdquo; view &mdash; pending regen.</em></p>
   <iframe srcdoc="&lt;!DOCTYPE html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
@@ -155,7 +156,20 @@
 " style="width:100%;height:760px;border:1px solid #fca5a5;border-radius:8px;background:#fff;" title="werk-pipeline as-is"></iframe>
   <p style="font-size:0.8em;color:#999;margin-top:2px;">↑ where the pipeline is <em>today</em>: pull / demo / acp as opaque MCP monoliths on the shared loop — state scattered across index/spine/cards, gh holds only commits. Embedded from <a href="http://localhost:3340/designing/docs/werk-pipeline-asis.html">werk-pipeline-asis.html</a> (single source).</p>
 
-  <h3 style="margin-top:1.4em;">To-Be (v8) — decomposed verbs on <code>act</code>, gh as source-of-truth + process-holder</h3>
+  <h3 style="margin-top:1.4em;">To-Be — the flat set of atomic verbs, run in order (no orchestrator)</h3>
+  <p style="background:#ecfdf5;border-left:4px solid #059669;padding:8px 14px;"><strong>The pipeline IS the verbs, run in sequence &mdash; nothing orchestrates.</strong> The encoding is <code>werk-mcp.sh</code> (a dumb fail-fast list); <code>act</code>, if used, only <em>triggers</em> it on merge. Each verb is atomic (own flock, typed refusals, inherited trace, spine emit) and the run stops on the first refusal. The flat sequence:</p>
+  <ol style="font-family:monospace;font-size:0.85em;line-height:1.7;">
+  <li><code>werk-pull</code> &mdash; worktree off origin/main + register {card, trace, branch}</li>
+  <li><code>werk-commit</code> &mdash; rebase onto origin/main, commit (gates run inside the verb)</li>
+  <li><code>werk-push</code> &mdash; push the branch (force-with-lease on re-run)</li>
+  <li><code>werk-build</code> &mdash; build the card's code for the demo</li>
+  <li><code>werk-deploy</code> &mdash; deploy to the role's slot + env-up (the live test surface)</li>
+  <li><code>werk-demo</code> &mdash; <strong>run the test suite against the deployed instance</strong>; emit <code>demo.test.passed</code>/<code>failed</code> (gates accept)</li>
+  <li><code>werk-merge</code> &mdash; resolve the open PR by HEAD oid, squash to main, content-verify</li>
+  <li><code>werk-build</code> + <code>werk-deploy</code> from main &mdash; the prod build+deploy</li>
+  <li><code>werk-accept</code> &mdash; finalize (cards-done, close branch+werk); atomic, no merge</li>
+  </ol>
+  <p><strong>No <code>werk-acp</code></strong> &mdash; the sequence simply ends with the atomic <code>werk-accept</code>. <em>The diagram below is the superseded v8 &ldquo;verbs on act (orchestrated)&rdquo; model &mdash; pending regen.</em></p>
   <iframe srcdoc="&lt;!DOCTYPE html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
@@ -552,7 +566,7 @@ flowchart TB
 </ul>
 
 <h3>v2 verb migration (in flight)</h3>
-<p>The pipeline is migrating from the monolith MCP tools (the As-Is diagram) to per-verb binaries on <code>act</code> (the To-Be), each built to the <strong>ADR-032</strong> verb contract. <strong>ADR-033</strong> is the model they compose into.</p>
+<p>The migration to per-verb binaries (ADR-032 verb contract) is <strong>done</strong> — pull/commit/push/merge/accept/build/deploy/demo are shipped. What remains is <em>not</em> "move to act": it is completing the <strong>flat sequence</strong> (wire deploy-from-main so <code>werk-mcp.sh</code> runs end-to-end; make <code>werk-demo</code> run tests; activate <code>act</code> as the merge trigger) and <strong>retiring <code>werk-acp</code></strong>. There is no orchestrator to build — the verbs are the pipeline.</p>
 <table>
 <tr><th>Verb</th><th>Card</th><th>Status</th><th>Owner</th></tr>
 <tr><td><code>pull</code></td><td>#3045 (<code>werk-pull</code>)</td><td>Shipped — zero-dep Rust, proven vs real git/gh/cards</td><td>Kade</td></tr>
