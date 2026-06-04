@@ -1,8 +1,8 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
     branch_name, chorus_bin_install_cmd, crate_binaries, crate_binary, extract_running_cdhash,
-    parse_build_summary, parse_target, resolve_trace, service_for_crate, target_class_in,
-    TargetClass,
+    parse_build_summary, parse_target, resolve_trace, service_for_crate, spine_args,
+    target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -287,4 +287,37 @@ fn chorus_bin_install_falls_back_to_bare_when_absent() {
     fs::create_dir_all(&werk).unwrap();
     let got = chorus_bin_install_cmd(&home, werk.to_str().unwrap());
     assert_eq!(got, "chorus-bin-install", "bare-name fallback preserves the test shim path");
+}
+
+// --- #3215: the demo-env lifecycle event contract -----------------------------
+// AC1 of #3215 wants env.up/env.down on the SPINE as STRUCTURED events carrying
+// the RIGHT ELEMENTS (role, card, trace + per-service svc/port/result). spine_args
+// is the pure shape under emit_spine, so it pins the structured-shape + right-
+// elements guarantees here; the "reliably written every transition" guarantee is
+// the live round-trip (AC5). This guards against silently dropping a field.
+
+#[test]
+fn spine_args_lifecycle_carries_role_card_trace_in_order() {
+    let a = spine_args("env.up.started", "silas", 3215, "tr-abc", &[]);
+    assert_eq!(a[0], "env.up.started", "event name first");
+    assert_eq!(a[1], "silas", "role second");
+    assert_eq!(a[2], "card=3215", "card= third");
+    assert_eq!(a[3], "trace=tr-abc", "trace= fourth");
+    assert_eq!(a.len(), 4, "no extras → exactly the four core elements");
+}
+
+#[test]
+fn spine_args_smoked_carries_svc_port_result_elements() {
+    // env.up.smoked is the per-service truth Borg pairs against env.down.stopped.
+    let a = spine_args(
+        "env.up.smoked", "silas", 3215, "tr-abc",
+        &[("svc", "chorus-api"), ("port", "3343"), ("result", "ok")],
+    );
+    assert_eq!(a[0], "env.up.smoked");
+    assert!(a.contains(&"svc=chorus-api".to_string()), "svc element present");
+    assert!(a.contains(&"port=3343".to_string()), "port element present");
+    assert!(a.contains(&"result=ok".to_string()), "smoke result present");
+    // a leak is a fail result, not an absent event — the element must survive.
+    let f = spine_args("env.up.smoked", "silas", 3215, "tr", &[("result", "fail")]);
+    assert!(f.contains(&"result=fail".to_string()), "fail result is emitted, not dropped");
 }

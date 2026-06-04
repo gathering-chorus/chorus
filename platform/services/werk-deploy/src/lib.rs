@@ -384,6 +384,46 @@ fn died(home: &Path, role: &str, card: u64, trace: &str, reason: &str, msg: Stri
     msg
 }
 
+/// #3215 — build the positional arg vector for a structured spine event.
+/// Pure (no IO) so the event shape is unit-testable. Mirrors the
+/// werk-push/werk-build/werk-pull `spine_args` convention (ADR-033: copy the
+/// common convention into each verb crate) — event, role, card=, trace=, then
+/// k=v extras. Shared across this crate (lib.rs handlers + demo_env per-service).
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
+/// #3215 — emit a STRUCTURED event onto the spine (chorus-log → spine event
+/// store), not just the jsonl witness. The demo-env lifecycle was dark to
+/// Borg's trace-reader because env.up/env.down were jsonl-witness-only (#3119)
+/// and never reached the spine — so a teardown that never fired was invisible.
+/// Best-effort: a missing/failing chorus-log never affects the deploy, same as
+/// the werk-push emit_spine. The jsonl witness stays (its own Loki consumer,
+/// job=werk-verbs); this adds the spine plane Borg reads.
+pub fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
+    let log = home.join("platform/scripts/chorus-log");
+    let log_s = match log.to_str() {
+        Some(s) => s,
+        None => return,
+    };
+    let args = spine_args(event, role, card, trace, extras);
+    let mut c = Command::new("bash");
+    c.arg(log_s);
+    for a in &args {
+        c.arg(a);
+    }
+    let _ = c.output(); // best-effort; a missing/failing chorus-log never affects the deploy
+}
+
 /// #3192 — resolve `chorus-bin-install` to an ABSOLUTE path; never rely on PATH.
 /// werk-deploy runs under the werk PATH (`~/.chorus/bin` + role bin-slots), which does
 /// NOT include `platform/scripts/`, so spawning the helper by bare name ENOENTs and
@@ -504,13 +544,23 @@ fn run_env_up(args: &[String]) -> R<String> {
     let trace = resolve_trace(card_n);
     let home_p = Path::new(&home);
     jsonl(home_p, &role, card_n, &trace, "env.up.started", "");
+    emit_spine(home_p, "env.up.started", &role, card_n, &trace, &[]);
     let result = crate::demo_env::werk_root_for(&role, card, &werk_base)
-        .and_then(|werk_root| crate::demo_env::env_up(&role, &werk_root, &home));
+        .and_then(|werk_root| crate::demo_env::env_up(&role, &werk_root, &home, card_n, &trace));
     match &result {
-        Ok(summary) => jsonl(home_p, &role, card_n, &trace, "env.up.completed",
-            &format!(",\"detail\":\"{}\"", summary.replace('\\', "/").replace('"', "'"))),
-        Err(e) => jsonl(home_p, &role, card_n, &trace, "env.up.failed",
-            &format!(",\"error\":\"{}\"", e.replace('\\', "/").replace('"', "'"))),
+        Ok(summary) => {
+            let detail = summary.replace('\\', "/").replace('"', "'");
+            jsonl(home_p, &role, card_n, &trace, "env.up.completed",
+                &format!(",\"detail\":\"{}\"", detail));
+            emit_spine(home_p, "env.up.completed", &role, card_n, &trace, &[("detail", &detail)]);
+        }
+        Err(e) => {
+            let err = e.replace('\\', "/").replace('"', "'");
+            jsonl(home_p, &role, card_n, &trace, "env.up.failed",
+                &format!(",\"error\":\"{}\"", err));
+            emit_spine(home_p, "env.up.failed", &role, card_n, &trace,
+                &[("reason", "env-up-fail"), ("disposition", "died"), ("error", &err)]);
+        }
     }
     result
 }
@@ -526,12 +576,22 @@ fn run_env_down(args: &[String]) -> R<String> {
     let trace = resolve_trace(card_n);
     let home_p = Path::new(&home);
     jsonl(home_p, &role, card_n, &trace, "env.down.started", "");
-    let result = crate::demo_env::env_down(&role, &home);
+    emit_spine(home_p, "env.down.started", &role, card_n, &trace, &[]);
+    let result = crate::demo_env::env_down(&role, &home, card_n, &trace);
     match &result {
-        Ok(summary) => jsonl(home_p, &role, card_n, &trace, "env.down.completed",
-            &format!(",\"detail\":\"{}\"", summary.replace('\\', "/").replace('"', "'"))),
-        Err(e) => jsonl(home_p, &role, card_n, &trace, "env.down.failed",
-            &format!(",\"error\":\"{}\"", e.replace('\\', "/").replace('"', "'"))),
+        Ok(summary) => {
+            let detail = summary.replace('\\', "/").replace('"', "'");
+            jsonl(home_p, &role, card_n, &trace, "env.down.completed",
+                &format!(",\"detail\":\"{}\"", detail));
+            emit_spine(home_p, "env.down.completed", &role, card_n, &trace, &[("detail", &detail)]);
+        }
+        Err(e) => {
+            let err = e.replace('\\', "/").replace('"', "'");
+            jsonl(home_p, &role, card_n, &trace, "env.down.failed",
+                &format!(",\"error\":\"{}\"", err));
+            emit_spine(home_p, "env.down.failed", &role, card_n, &trace,
+                &[("reason", "env-down-fail"), ("disposition", "died"), ("error", &err)]);
+        }
     }
     result
 }
@@ -788,7 +848,7 @@ fn deploy_ts_service(
         let _ = (dist_dir_rel, smoke_url, built_dist_sha); // owned by demo_env now
         let canonical_root = canonical_root_path(home);
         jsonl(home, role, card, trace, "deploy.ts.env-up", &format!(",\"name\":\"{}\"", svc_name));
-        let started = crate::demo_env::env_up(role, werk_s, &canonical_root)
+        let started = crate::demo_env::env_up(role, werk_s, &canonical_root, card, trace)
             .map_err(|e| format!("env_up for {} failed: {}", svc_name, e))?;
         jsonl(home, role, card, trace, "deploy.ts.env-up-done", &format!(",\"name\":\"{}\",\"detail\":\"{}\"", svc_name, started.replace('"', "'")));
         // env_up's smoke (per-service GET on the role port) IS the deploy
