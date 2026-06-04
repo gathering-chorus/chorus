@@ -105,6 +105,6 @@ describe('#2707 doneCard verify-after-move', () => {
     }
     expect(s.logs.some((l) => l.startsWith('Done: #2700'))).toBe(true);
     const viewCalls = (client as unknown as MockClient).calls.filter((c) => c.method === 'view').length;
-    expect(viewCalls).toBe(3); // initial title-read + demo-gate-check + 1 verify (no retry)
+    expect(viewCalls).toBe(2); // initial title-read + 1 verify (no retry). #3227 removed the demo-gate-check view.
   });
 });

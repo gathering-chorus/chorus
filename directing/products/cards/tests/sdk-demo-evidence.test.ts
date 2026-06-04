@@ -1,9 +1,14 @@
 /**
- * checkDemoEvidence coverage (#2241 wave 12).
+ * cards-done is a board primitive, not the accept authority. Card 3227.
  *
- * doneCard calls checkDemoEvidence internally. This test exercises three
- * paths — --proven bypass, missing evidence, and present brief file — to
- * cover the scan loop and exit branches.
+ * Before card 3227, doneCard re-gated on a demo:preflight-pass comment. But
+ * werk-accept already gates on the demo.verdict witness and then calls cards
+ * done to finalize, so the card gated twice and died at the second gate even
+ * after passing the first. That was the card 3222 gauntlet. Card 3227 makes one
+ * gate the rule: the demo gate lives in werk-accept's demo_verdict_pass, and
+ * cards done no longer blocks on demo evidence. Done is Jeff's call. These tests
+ * assert the primitive transitions with no demo gate; the gate itself is covered
+ * by werk-accept's own suite.
  */
 
 import * as fs from 'fs';
@@ -30,11 +35,9 @@ function silence() {
 class MockClient {
   boardName = 'gathering';
   calls: Array<{ method: string; args: unknown[] }> = [];
-  // #2707 — mock now models a working board: done() flips the status
-  // returned by subsequent view() calls. Before, view() always returned WIP,
-  // which masked the silent-done-failure bug doneCard now catches.
   doneCalled = new Set<number>();
   async done(index: number) { this.calls.push({ method: 'done', args: [index] }); this.doneCalled.add(index); }
+  async comment(index: number, text: string) { this.calls.push({ method: 'comment', args: [index, text] }); }
   async view(index: number): Promise<BoardTask> {
     this.calls.push({ method: 'view', args: [index] });
     const status = this.doneCalled.has(index) ? 'Done' : 'WIP';
@@ -53,7 +56,7 @@ class MockClient {
 
 function asBoardClient(m: MockClient): BoardClient { return m as unknown as BoardClient; }
 
-describe('doneCard demo-evidence scan', () => {
+describe('cards-done is a primitive with no demo gate', () => {
   let tmp: string;
 
   beforeEach(() => {
@@ -72,39 +75,45 @@ describe('doneCard demo-evidence scan', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('--proven override completes regardless of evidence', async () => {
+  it('completes when there is no demo evidence', async () => {
+    const mock = new MockClient();
+    const cap = silence();
+    let refused = false;
+    const spy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      refused = true;
+      throw new Error(`refused:${code}`);
+    }) as never);
+    try {
+      await doneCard(asBoardClient(mock), 99);
+    } finally {
+      cap.restore();
+      spy.mockRestore();
+    }
+    expect(refused).toBe(false);
+    expect(mock.calls.find((c) => c.method === 'done')?.args[0]).toBe(99);
+  });
+
+  it('proven path records provenance and completes', async () => {
     const mock = new MockClient();
     const cap = silence();
     try {
       await doneCard(asBoardClient(mock), 42, ['1815', '1898']);
     } finally { cap.restore(); }
     expect(mock.calls.find((c) => c.method === 'done')?.args[0]).toBe(42);
+    expect(mock.calls.some((c) => c.method === 'comment')).toBe(true);
   });
 
-  it('no demo:preflight-pass comment → process.exit(1) blocks done (#2910 canonical)', async () => {
+  it('never emits the demo gate refusal', async () => {
     const mock = new MockClient();
     const cap = silence();
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`exit:${code}`);
-    }) as never);
     try {
-      await expect(doneCard(asBoardClient(mock), 99)).rejects.toThrow('exit:1');
-    } finally {
-      cap.restore();
-      exitSpy.mockRestore();
-    }
-    expect(mock.calls.find((c) => c.method === 'done')).toBeUndefined();
-  });
-
-  it('finds demo:preflight-pass comment via client.comments() (#2910 canonical)', async () => {
-    const mock = new MockClient();
-    mock.commentsByIndex.set(42, [
-      { author: 'wren', text: 'demo:preflight-pass ac=3/3 — wren' },
-    ]);
-    const cap = silence();
-    try {
-      await doneCard(asBoardClient(mock), 42);
+      await doneCard(asBoardClient(mock), 7);
     } finally { cap.restore(); }
-    expect(mock.calls.find((c) => c.method === 'done')).toBeDefined();
+    const refusalLogged = cap.errs.some((e) => {
+      const lower = e.toLowerCase();
+      return lower.includes('demo gate') || lower.includes('no demo evidence');
+    });
+    expect(refusalLogged).toBe(false);
+    expect(mock.calls.find((c) => c.method === 'done')?.args[0]).toBe(7);
   });
 });
