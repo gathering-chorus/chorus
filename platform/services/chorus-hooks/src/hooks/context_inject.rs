@@ -20,6 +20,20 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tracing::info;
 
+/// #3202 — read the pulse snapshot body durable-first (~/.chorus, survives
+/// reboot), with the /tmp derived cache as fallback. The inject is the
+/// per-turn/boot reader; after a reboot wipes /tmp, the durable last-good still
+/// feeds context — no blind turn. Mirrors the producer's durable path (pulse.rs).
+fn pulse_body_durable() -> Option<String> {
+    let durable = std::env::var("CHORUS_PULSE_PATH").unwrap_or_else(|_| {
+        format!("{}/.chorus/pulse-latest.json", std::env::var("HOME").unwrap_or_default())
+    });
+    if let Ok(s) = std::fs::read_to_string(&durable) {
+        return Some(s);
+    }
+    std::fs::read_to_string("/tmp/pulse-latest.json").ok()
+}
+
 // #2231: per-turn cost tuning — caches for expensive context primitives.
 // Injection output stays byte-identical for same inputs within TTL.
 const PULSE_STALE_THRESHOLD: Duration = Duration::from_secs(30);
@@ -450,7 +464,7 @@ fn parse_loki_errors(body: &serde_json::Value) -> Vec<(String, String)> {
 /// Read the latest pulse snapshot and return a compact summary block.
 /// Returns None if the snapshot file is missing or unparseable.
 fn read_pulse_snapshot() -> Option<String> {
-    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let body = pulse_body_durable()?;
     let v: serde_json::Value = serde_json::from_str(&body).ok()?;
 
     let mut out = String::new();
@@ -505,7 +519,7 @@ fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
 /// Query Athena for the role's current domain context. Reads the role's WIP card
 /// domain label from /tmp/pulse-latest.json, then fetches the domain description.
 fn query_athena_domain(role: &str) -> Option<String> {
-    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let body = pulse_body_durable()?;
     let v: serde_json::Value = serde_json::from_str(&body).ok()?;
 
     // Find this role's WIP card, pull domain from its labels
@@ -728,7 +742,7 @@ fn parse_pulse_orientation(role: &str) -> (String, usize, usize, Option<String>)
 /// the optional card-as-tag filter on the per-prompt search. Returns None when
 /// the role has no WIP card — the common case — so the search runs prompt-only.
 fn role_wip_domain(role: &str) -> Option<String> {
-    let body = std::fs::read_to_string("/tmp/pulse-latest.json").ok()?;
+    let body = pulse_body_durable()?;
     let v: serde_json::Value = serde_json::from_str(&body).ok()?;
     let wip = v.pointer("/board/wip_cards")?.as_array()?;
     let card = wip.iter().find(|c| {

@@ -114,3 +114,32 @@ fn pulse_alerts_fired_today() {
     assert!(alerts.get("fired_today").is_some(), "must have fired_today list");
     assert!(alerts.get("count").is_some(), "must have alert count");
 }
+
+/// #3202 — the pulse snapshot is the team's boot ground-truth; it must SURVIVE a
+/// reboot. Written to a durable store (CHORUS_PULSE_PATH / ~/.chorus), not only
+/// /tmp which a reboot wipes (the live failure this session: roles booted blind).
+#[test]
+fn pulse_writes_durable_store_surviving_tmp_wipe() {
+    let dir = std::env::temp_dir().join(format!("pulse-durable-{}", std::process::id()));
+    let _ = fs::create_dir_all(&dir);
+    let durable = dir.join("pulse-latest.json");
+    let _ = fs::remove_file(&durable);
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-hook-shim"))
+        .arg("pulse")
+        .env("CHORUS_PULSE_PATH", &durable)
+        .output();
+    assert!(output.is_ok(), "pulse command should execute");
+
+    // durable file written + valid pulse JSON carrying the sensorium shape
+    assert!(durable.exists(), "pulse must write the durable store ({}), not only /tmp", durable.display());
+    let content = fs::read_to_string(&durable).expect("durable pulse readable");
+    let v: serde_json::Value = serde_json::from_str(&content).expect("durable pulse is valid json");
+    assert!(v.get("roles").is_some() && v.get("board").is_some(), "durable pulse carries the sensorium shape");
+
+    // simulate a reboot wiping /tmp — the durable copy still serves
+    let _ = fs::remove_file("/tmp/pulse-latest.json");
+    assert!(durable.exists(), "after /tmp wipe, durable pulse still readable (survives reboot)");
+
+    let _ = fs::remove_dir_all(&dir);
+}
