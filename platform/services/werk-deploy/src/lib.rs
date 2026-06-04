@@ -805,10 +805,10 @@ fn deploy_ts_service(
     let werk_dist = format!("{}/{}", werk_s, dist_dir_rel);
 
     if !Path::new(&werk_dist).is_dir() {
-        return Err(format!(
+        return Err(died(home, role, card, trace, "dist-not-found", format!(
             "TS service deploy: werk dist not found at {} (werk-build should have produced it)",
             werk_dist
-        ));
+        )));
     }
 
     // #3132 HASH-GATE: if the live canonical dist already hashes to the just-built
@@ -1151,7 +1151,8 @@ fn deploy_shared_lib(
     let canonical_root = canonical_root_path(home);
     let werk_lib_dist = format!("{}/{}", werk_s, lib_dist_rel);
     if !Path::new(&werk_lib_dist).is_dir() {
-        return Err(format!("shared-lib deploy: werk dist not found at {} (werk-build should have produced it)", werk_lib_dist));
+        return Err(died(home, role, card, trace, "dist-not-found",
+            format!("shared-lib deploy: werk dist not found at {} (werk-build should have produced it)", werk_lib_dist)));
     }
     let lib_dir_abs = fs::canonicalize(format!("{}/{}", werk_s, lib_dist_rel).trim_end_matches("/dist"))
         .map_err(|e| format!("cannot canonicalize werk lib dir: {}", e))?;
@@ -1330,7 +1331,8 @@ fn deploy_ts_package(
     let canonical_dist = format!("{}/{}", canonical_root, dist_dir_rel);
     let werk_dist = format!("{}/{}", werk_s, dist_dir_rel);
     if !Path::new(&werk_dist).is_dir() {
-        return Err(format!("TS package deploy: werk dist not found at {} (werk-build should have produced it)", werk_dist));
+        return Err(died(home, role, card, trace, "dist-not-found",
+            format!("TS package deploy: werk dist not found at {} (werk-build should have produced it)", werk_dist)));
     }
     // HASH-GATE: unchanged → skip the copy.
     if let Ok(live_sha) = dist_sha(&canonical_dist) {
