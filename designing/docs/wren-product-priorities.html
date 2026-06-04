@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wren — Product Priorities & the Hard-Ranked List</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 32px 48px; color: #1a1a1a; max-width: 1180px; line-height: 1.5; }
+  h1 { border-bottom: 2px solid #6366f1; padding-bottom: 8px; margin-bottom: 2px; }
+  h2 { margin-top: 32px; color: #3730a3; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { color: #1f2937; margin-top: 20px; }
+  .meta { color: #666; font-size: 0.85em; margin-bottom: 14px; }
+  .lede { font-size: 1.04em; color: #374151; margin: 14px 0 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.86em; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; }
+  code { background: #eef2ff; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+  .panel { border-left: 4px solid #6366f1; background: #eef2ff; padding: 11px 16px; border-radius: 4px; margin: 12px 0; }
+  .panel.warn { border-left-color: #f59e0b; background: #fef3c7; }
+  .line { border: 0; border-top: 3px dashed #dc2626; margin: 6px 0; }
+  .above { color: #166534; font-weight: 600; }
+  .below { color: #b45309; font-weight: 600; }
+  .h { font-weight: 600; }
+  ul.f li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>Wren — Product Priorities</h1>
+<div class="meta">2026-06-04 · Wren · four-hats / debit-first process (Kade's werk-priorities shape) on my domains: pulse · search/inject · cards · loom · athena/designing · demo</div>
+
+<p class="lede">
+Same process Kade ran on werk, pointed at my backlog. The board says <strong>115 open Wren cards</strong>. Pointed at the headings, the live set is far smaller — and the SAFe discipline Jeff named applies: <strong>one global hard-ranked list; resources by rank; a domain whose top item sits past ~30 gets help from no one.</strong> So this ranks the headings, maps connected cards, assesses health, and flags which sit <span class="above">above the resource line</span> (cross-role help available) vs <span class="below">below</span> (solo or wait) — plus whether my cross-role dependencies ride a heading high enough to actually get funded.
+</p>
+
+<div class="panel">
+<strong>SAFe discipline kept, SAFe bureaucracy dropped.</strong> Kept: the hard rank + the resource line ("too far down → no help"). Dropped: groomed epics, irreversible cuts, hand-maintained debt. Headings are cheap; debits are <em>derived</em> from the board, not authored. <strong>And below-the-line ≠ dead.</strong> Most of it is work we simply haven't had capacity for — parked, recoverable, resurfaced the moment it maps to a funded heading. Only a small stale set is Won't-Do.
+</div>
+
+<h2>The collapse — 115 open → what's actually live</h2>
+<table>
+<tr><th>Bucket</th><th>~Count</th><th>Disposition</th></tr>
+<tr><td>Serves a live heading</td><td>~40</td><td><span class="above">Funded</span> — ranked under a heading (below)</td></tr>
+<tr><td>Gathering cards (wrong backlog — not Chorus)</td><td>~7</td><td>Route → Gathering/Kade (#534, #684, #866, #928, #1194, #2013, #2854)</td></tr>
+<tr><td>Real work, no capacity yet</td><td>~60</td><td><span class="below">Deferred — parked, NOT dead.</span> Below the line this cycle; recoverable</td></tr>
+<tr><td>Stale / superseded</td><td>~8</td><td>Won't-Do candidates (next audit pass — the only true cut)</td></tr>
+</table>
+<p>The mirror Kade hit: "115 open" overstates the live debt ~3×. The bulk isn't a mess to delete — it's a capacity ledger. Most of it is good work we haven't reached.</p>
+
+<h2>The hard-ranked headings</h2>
+<table>
+<tr><th>#</th><th>Heading</th><th>Serves (open cards)</th><th>Health</th><th>Role-dep</th><th>Resource line</th></tr>
+<tr>
+  <td>1</td>
+  <td class="h">Pulse coherence<br><span style="font-weight:400;color:#666">Jeff-set (chorus+clearing+loom). Keystone.</span></td>
+  <td>#3208 (recast board.*→pulse.* — <strong>KEYSTONE, do first</strong>), #3202 (boot-state off /tmp), #3205 (pulse-gather), #3112 (nudge envelope), #2596, #3220 (retire /clearing skill); + clearing "rename pulse←bridge" & loom "gemba/pair on pulse.*" (no cards yet)</td>
+  <td><span class="below">Blocked-on-keystone</span> — #3208 unstarted; riders can't advance coherently until the namespace lands</td>
+  <td>Mostly Wren; light Kade (Clearing UI)</td>
+  <td class="above">Above — substrate everyone consumes</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td class="h">Search + inject stability<br><span style="font-weight:400;color:#666">Jeff-set. The continuity substrate.</span></td>
+  <td>#3083 (latency 5-7s), #1399 (rank recent), #1906 (search UI), #2992 (principles API 245 stale/24h), #3009, #3037, #3066</td>
+  <td><span class="above">Partly advancing</span> — #3157/#3217/#3214 shipped today; principles-reliability cluster is stalled debt</td>
+  <td>Silas (embed-host/reindex ops)</td>
+  <td class="above">Above — the thing Jeff just praised rides on it</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td class="h">Cards simplification<br><span style="font-weight:400;color:#666">Jeff-set (clearing).</span></td>
+  <td>#2159 (chorus-native board), #2544 (wrap Vikunja), #2676 (zod single-source), #2671 (fail-loud), #2672 (write-refusal), #2660, #3102, #2902/#2922/#2938 (bouncer), #2934</td>
+  <td><span class="below">Stalled</span> — coherent ~10-card sub-project, none started</td>
+  <td>Mostly Wren (cards = my lane)</td>
+  <td class="above">Above — Jeff set it; also the discriminator's own substrate</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td class="h">Demo / proving finish<br><span style="font-weight:400;color:#666">werk-stability adjacent.</span></td>
+  <td>#3116 (DONE, on main, awaiting accept), #3158 (error-paths), #2714 (demo-evidence retry)</td>
+  <td><span class="above">Advancing</span> — #3116 done today</td>
+  <td><strong>HARD</strong>: Silas #3222 (deploy-from-main) + Kade #3212 (real verdict)</td>
+  <td class="above">Above — rides Silas/Kade's werk-stability (their #1), so the help is already moving</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td class="h">Loom gate/skill coherence<br><span style="font-weight:400;color:#666">my biggest cluster (~35 cards).</span></td>
+  <td>gates #2567/#2569/#2570/#2044 · session-start #2183/#2990/#2732/#2642/#2315 · principles #2318/#2330/#2633 · skills #2037/#2038/#2084/#2947/#2638 · #2145 stop-line · #2867 the-kade · #2219 proving-pipeline design</td>
+  <td><span class="below">Sprawling, stalled</span> — overlapping + parked skill experiments; the audit-hardest zone (consolidate, don't delete)</td>
+  <td>Mostly Wren (solo)</td>
+  <td class="below">Below — domain-internal; few crack global top-30. Solo + slow, or deferred.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td class="h">Athena / Designing<br><span style="font-weight:400;color:#666">service designs + the OWL sprint.</span></td>
+  <td>OWL sprint (Silas's headwater) + #1373/#2653/#2654/#2253/#2721/#2842/#2954/#2961/#2968/#2873/#2503/#2673</td>
+  <td><span class="below">Stalled</span> — the OWL sprint will <em>subsume</em> several of the doc cards</td>
+  <td>Silas (OWL sprint co-owned)</td>
+  <td class="above">OWL sprint above (Jeff wants it); the individual doc cards below/subsumed</td>
+</tr>
+</table>
+<hr class="line">
+<p style="font-size:0.85em;color:#b45309;"><strong>↑ The resource line.</strong> Headings 1–4 (+ the OWL sprint) sit above it — cross-role help available. Heading 5 (loom-internal) and the long tail sit below — solo, slow, or parked for capacity. "Good luck getting help" for anything past it.</p>
+
+<h2>Role dependencies — funded or stranded?</h2>
+<p>A cross-role dependency is only serviced if it rides a heading high enough on the <em>global</em> list. Mine:</p>
+<ul class="f">
+<li><strong>Demo-finish → Silas #3222 + Kade #3212.</strong> Both are <em>their</em> werk-stability (their #1), so help is in motion (Silas building #3222 now). <span class="above">Funded — not stranded.</span></li>
+<li><strong>Search-stability → Silas (embed-host/reindex ops).</strong> Light, ops-lane; rides search-stability (above). <span class="above">Funded.</span></li>
+<li><strong>Pulse coherence → light Kade (Clearing UI).</strong> Small surface; above. <span class="above">Funded.</span></li>
+<li><strong>No badly-stranded deps.</strong> My cross-role needs all ride headings high for their owners too — the rare case where the global list and mine agree. The loom cluster (heading 5) needs <em>no one</em>, so its below-line position costs nothing cross-role.</li>
+</ul>
+
+<h2>Top heading through four hats — Pulse coherence</h2>
+<ul class="f">
+<li><strong>PM (value/sequence):</strong> #3208 first — the <code>board.*→pulse.*</code> recast is the namespace pulse-gather, the loom skill-rewrites, and the clearing rename all sit on. Recast → riders. Don't start riders before the keystone.</li>
+<li><strong>Domain-architect (structure):</strong> pulse is one object (the sensorium); pulse.* is its namespace; gathers (Contexts) ride pulse, they aren't pulse. One execution path — don't fork a second sensorium.</li>
+<li><strong>Eng-lead (execution/risk):</strong> the recast touches ~10 files + every <code>board.*</code> consumer. Risk: a missed consumer = a silent dark field. TDD: retirement gate asserting old names gone + new present.</li>
+<li><strong>Ops (run/health):</strong> pulse injects every turn — a broken recast degrades every session silently. Debit-first: pulse boot-state is still on <code>/tmp</code> (#3202), reboot-wiped. Fix durability before piling features on the namespace.</li>
+</ul>
+
+<h2>Below the line — deferred, not cut</h2>
+<ul class="f">
+<li><strong>Route (~7):</strong> Gathering cards (#534/#684/#866/#928/#1194/#2013/#2854) — wrong backlog, belong to Gathering/Kade.</li>
+<li><strong>Deferred — no capacity yet (~60):</strong> real work, parked this cycle. Recoverable; resurfaces when it maps to a funded heading. <em>Not a mess to delete — a capacity ledger.</em></li>
+<li><strong>Won't-Do candidates (~8):</strong> genuinely stale/superseded — the only true cut, flagged in the next audit pass, never deleted (resurfaces as an issue if hit).</li>
+</ul>
+
+<div class="panel warn">
+<strong>What this hands forward.</strong> Three Jeff-set headings sit above the line (pulse, search-stability, cards). <strong>#3208 is the single keystone</strong> — it gates the pulse cluster, so it's the first card to pull. The loom-internal sprawl (heading 5) is where the discriminator says <em>consolidate</em>, not build, and most of it is deferred-for-capacity, not dead. Honest debit: nothing here is started except what shipped today — these are directions, not progress.
+</div>
+
+</body>
+</html>
