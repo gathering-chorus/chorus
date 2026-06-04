@@ -191,7 +191,7 @@ pub fn run(args: &[String]) -> ExitCode {
     out.push_str(&format!(
         "Before your first response, reconstruct where you and Jeff actually left off — from primary source, the real messages, not a remembered narrative:\n\
          ```\n\
-         cat /tmp/pulse-latest.json\n\
+         cat ~/.chorus/pulse-latest.json   # durable: survives reboot (/tmp is only a derived cache, #3202)\n\
          curl -s \"http://localhost:3340/api/chorus/search?q=the&channel=session:{role}&order=recent&limit=30\"\n\
          ```\n\n\
          Read those ~30 messages in order — they are the ground truth of the open thread. Then open by rebuilding context, not performing insight:\n\n\
