@@ -1,4 +1,36 @@
-import { createEmbedDelta } from '../src/embed-delta';
+import { createEmbedDelta, singleFlight } from '../src/embed-delta';
+
+describe('singleFlight (#3214 — coalesce concurrent embedDelta runs)', () => {
+  it('coalesces concurrent calls into ONE in-flight run', async () => {
+    let resolve!: () => void;
+    const gate = new Promise<void>((r) => { resolve = r; });
+    let calls = 0;
+    const fn = jest.fn(async () => { calls += 1; await gate; return calls; });
+    const wrapped = singleFlight(fn);
+    const a = wrapped(); const b = wrapped(); const c = wrapped();
+    expect(fn).toHaveBeenCalledTimes(1); // 3 concurrent triggers -> 1 backfill loop
+    resolve();
+    const [ra, rb, rc] = await Promise.all([a, b, c]);
+    expect([ra, rb, rc]).toEqual([1, 1, 1]); // all share the one run's result
+  });
+
+  it('starts a fresh run after the previous settles', async () => {
+    let calls = 0;
+    const fn = jest.fn(async () => ++calls);
+    const wrapped = singleFlight(fn);
+    expect(await wrapped()).toBe(1);
+    expect(await wrapped()).toBe(2);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears in-flight on rejection so the next call retries (no stuck promise)', async () => {
+    let calls = 0;
+    const fn = jest.fn(async () => { calls += 1; if (calls === 1) throw new Error('boom'); return calls; });
+    const wrapped = singleFlight(fn);
+    await expect(wrapped()).rejects.toThrow('boom');
+    expect(await wrapped()).toBe(2);
+  });
+});
 
 // In-memory fake better-sqlite3 surface: exec/prepare(all|get|run)/transaction/close.
 function fakeDbFactory(initialMessages: any[]) {

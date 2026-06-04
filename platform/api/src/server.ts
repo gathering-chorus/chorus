@@ -339,8 +339,12 @@ const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the r
 
 // embedDelta extracted to src/embed-delta.ts (#2205 wave 16).
 // Lance init is still called here — the extracted delta takes the store as a dep.
-import { createEmbedDelta } from './embed-delta';
-const _embedDeltaInner = createEmbedDelta({
+import { createEmbedDelta, singleFlight } from './embed-delta';
+// #3214 — single-flight the backfill. 3 triggers (incl. POST /api/chorus/index,
+// hit by the reindex-worker) must not spawn CONCURRENT embed loops that storm the
+// shared Ollama connection pool and starve the search's query-embed (the live
+// 48s semantic timeout 2026-06-04). One in-flight run; overlapping calls coalesce.
+const _embedDeltaInner = singleFlight(createEmbedDelta({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
   getLanceStore: () => ({
@@ -351,7 +355,7 @@ const _embedDeltaInner = createEmbedDelta({
   embed: (t: string) => embedQuery(t),
   minLength: MIN_EMBED_LENGTH,
   pageSize: EMBED_PAGE_SIZE,
-});
+}));
 async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama_failures: number }> {
   if (!lanceDb) await initLance();
   const db = lanceDb as lancedb.Connection | null;
