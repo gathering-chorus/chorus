@@ -223,31 +223,10 @@ export function isCodeCard(text: string): boolean {
   return CODE_INDICATORS.test(text);
 }
 
-// ── Demo evidence check (#1834, canonicalized in #2910) ──
-
-/**
- * Check for demo evidence — CANONICAL FORM ONLY (#2910, Jeff direct 2026-05-12).
- *
- * The single gate-evidence is the demo:preflight-pass card comment that /demo
- * Step 1.5 writes for every demo. Prior versions checked brief files and a
- * card.demo.started spine event with a stale `card_id` field name; both forms
- * had drifted from done-gate.sh's checks and caused chorus_acp to refuse on
- * cards that the manual script accepted. Now: this function checks the same
- * single form done-gate.sh checks. One reader, one form, no drift.
- *
- * Brief files, spine events, and "Demo started" comments still get emitted by
- * /demo for observability, but they are no longer load-bearing as gate evidence.
- *
- * @returns true if the card has a `demo:preflight-pass` comment.
- */
-async function checkDemoEvidence(cardIndex: number, client: BoardClient): Promise<boolean> {
-  try {
-    const comments = await client.comments(cardIndex);
-    return comments.some(c => /demo:preflight-pass/i.test(c.text || ''));
-  } catch {
-    return false;
-  }
-}
+// #3227 — the cards-done demo gate (checkDemoEvidence, #1834/#2910) was REMOVED.
+// "Did this card pass demo?" has exactly one reader: werk-accept's
+// demo_verdict_pass over the demo.verdict witness (#3116). cards-done is a board
+// primitive and no longer re-gates — see the note in doneCard.
 
 // ── Quality gates ──
 
@@ -1270,20 +1249,15 @@ export async function doneCard(client: BoardClient, index: number, provenCards?:
       card_id: String(index), title, board: client.boardName,
       evidence: provenCards.join(','),
     });
-  } else {
-    // Demo gate (#1834) — require demo evidence before Done transition
-    // Exempt: type:chore and type:swat cards (same as existing skip logic)
-    const cardForGate = await client.view(index).catch(() => null);
-    const cardDomains = cardForGate?.domains || [];
-    const isExempt = cardDomains.some((d: string) => d === 'type:chore' || d === 'type:swat');
-    if (!isExempt) {
-      const hasDemoEvidence = await checkDemoEvidence(index, client);
-      if (!hasDemoEvidence) {
-        console.error(`Demo gate: #${index} has no demo evidence. Run /demo ${index} first.`);
-        process.exit(1);
-      }
-    }
   }
+  // #3227 — NO demo gate here. cards-done is a board PRIMITIVE, not the accept
+  // authority. The demo gate lives in werk-accept (demo_verdict_pass, the single
+  // reader of the demo.verdict witness, #3116) — which calls `cards done` to
+  // finalize. Gating here too produced a two-speed accept: a card cleared
+  // werk-accept's verdict gate then DIED at this TS comment-gate (the #3222
+  // gauntlet). One gate, one source of truth. A direct `cards done` is
+  // deliberately below the accept ceremony — "done is Jeff's call, not the
+  // harness's." (Supersedes #1834/#2910's premise that cards-done should gate.)
 
   await client.done(index);
   await verifyDoneApplied(client, index);
