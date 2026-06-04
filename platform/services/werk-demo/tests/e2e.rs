@@ -119,6 +119,21 @@ exit 0
     // #3100 gate-request fan-out: wait default 120s; force 0 in tests.
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
 
+    // #3237: the ceremony now refuses a verdict unless all 5 gates recorded a
+    // demo.gate.result in the witness. The /demo skill's gate subagents do this
+    // via `werk-demo gate <card> <g> <r>`; seed them so the happy path reflects
+    // gates-ran. (Without this seed, demo() returns Err "gates not run" — the
+    // enforcement; the gates_missing unit tests cover the refusal logic directly.)
+    fs::create_dir_all(home.join("ops/logs")).unwrap();
+    let mut gate_seed = String::new();
+    for g in ["product", "code", "quality", "arch", "ops"] {
+        gate_seed.push_str(&format!(
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\"}}\n",
+            g
+        ));
+    }
+    fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
+
     // --- run the proving ceremony ---
     let result = demo(3046, "wren", &home).expect("demo should succeed");
     assert!(result.contains("demo #3046"), "ok message: {}", result);

@@ -63,6 +63,32 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #3237 — the gates that must have run before a demo verdict can be recorded.
+/// Gates moved to the /demo SKILL layer (#3116) as LLM subagents; this is the
+/// enforcement contract that makes them non-optional — the binary refuses a
+/// verdict until each has left a demo.gate.result in the witness.
+pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "ops"];
+
+/// Given the werk-demo witness content + a card id, return the required gates
+/// with NO demo.gate.result recorded for the card. Empty = the full gate gather
+/// ran → a verdict may be recorded. card_id is matched comma-terminated so a
+/// gate for #31 can't satisfy #3 (the #3116/#31160 collision class).
+pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
+    let card_key = format!("\"card_id\":{},", card);
+    REQUIRED_GATES
+        .iter()
+        .copied()
+        .filter(|gate| {
+            let gate_key = format!("\"gate\":\"{}\"", gate);
+            !witness.lines().any(|l| {
+                l.contains("\"event\":\"demo.gate.result\"")
+                    && l.contains(&card_key)
+                    && l.contains(&gate_key)
+            })
+        })
+        .collect()
+}
+
 /// Whitespace-tolerant JSON string-field extractor (zero-dep). Mirrors werk-pull's
 /// json_str_field — never substring-match `"key":"val"` (breaks on pretty-print).
 fn json_str_field(json: &str, key: &str) -> Option<String> {
@@ -420,6 +446,24 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     // Peers reply async on their own time; the verdict never blocks on their ack
     // (the gather is value, not the proof).
 
+    // #3237 — GATE-EVIDENCE ENFORCEMENT. #3116 moved the 5 gates to the /demo
+    // skill (LLM subagents) but left the binary recording a verdict whether or
+    // not they ran — so werk-mcp.sh (which calls this binary directly) merged
+    // un-gated. Refuse the verdict unless every required gate left a
+    // demo.gate.result in the witness for this card. The gate subagents record
+    // theirs via `werk-demo gate <card> <gate> <result>`.
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let missing = gates_missing(&witness, card);
+    if !missing.is_empty() {
+        jsonl(home, role, card, &trace, "demo.refused",
+              &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", missing.join(",")));
+        return Err(format!(
+            "#{} demo refused — gates not run: {}. Run the /demo gate subagents \
+             (each records via `werk-demo gate {} <gate> pass|fail`) before a verdict.",
+            card, missing.join(", "), card
+        ));
+    }
+
     // #3116 PROVE + RECORD — emit ONE demo.verdict. Until #3212 wires a real prover
     // (run the Experience test vs the deployed instance, or a windowed jeff.input
     // read), this is a STUB pass — labeled prover=stub + auto=true so Borg and
@@ -441,12 +485,21 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     ))
 }
 
+/// #3237 — record one gate's result into the witness so the verdict step can
+/// verify the gate gather ran. Called by the /demo skill's gate subagents via
+/// `werk-demo gate <card> <gate> <result>`. The witness is the same
+/// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
+fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str) {
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    jsonl(home, role, card, &trace, "demo.gate.result",
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\"", gate, result));
+    emit_spine(home, "demo.gate.result", role, card, &trace);
+}
+
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
+/// Two forms: `werk-demo <card-id>` (the ceremony) and `werk-demo gate <card>
+/// <gate> <result>` (a gate subagent recording its result, #3237).
 pub fn run_demo() -> R<String> {
-    let card: u64 = env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .ok_or("usage: werk-demo <card-id>")?;
     let role = env::var("DEPLOY_ROLE").unwrap_or_default();
     if role.trim().is_empty() {
         return Err("DEPLOY_ROLE unset — cannot demo without a role".to_string());
@@ -454,6 +507,27 @@ pub fn run_demo() -> R<String> {
     let home = env::var("CHORUS_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| Path::new(&env::var("HOME").unwrap_or_default()).join("CascadeProjects/chorus"));
+
+    let mut args = env::args().skip(1);
+    let first = args
+        .next()
+        .ok_or("usage: werk-demo <card-id> | werk-demo gate <card> <gate> <result>")?;
+
+    if first == "gate" {
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo gate <card> <gate> <result>")?;
+        let gate = args.next().ok_or("usage: werk-demo gate <card> <gate> <result>")?;
+        if !REQUIRED_GATES.contains(&gate.as_str()) {
+            return Err(format!("unknown gate '{}' — one of {:?}", gate, REQUIRED_GATES));
+        }
+        let result = args.next().unwrap_or_else(|| "pass".to_string());
+        record_gate(&home, role.trim(), card, &gate, &result);
+        return Ok(format!("gate {} recorded for #{}: {}", gate, card, result));
+    }
+
+    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id>")?;
     demo(card, role.trim(), &home)
 }
 
@@ -489,5 +563,46 @@ mod tests {
         // product decision, not a refactor — this test is the guard that makes it so.
         let expected = "[feedback #3116 — ACK REQUIRED]\\nFrom: wren\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.";
         assert_eq!(feedback_message(3116, "wren"), expected);
+    }
+
+    // #3237 — gate-evidence enforcement. The demo verdict can't be recorded
+    // unless all 5 gates left a demo.gate.result in the witness for the card.
+    fn gate_line(card: u64, gate: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","result":"pass"}}"#,
+            card, gate
+        )
+    }
+
+    #[test]
+    fn gates_missing_empty_when_all_five_recorded() {
+        let w = REQUIRED_GATES
+            .iter()
+            .map(|g| gate_line(3237, g))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(gates_missing(&w, 3237).is_empty(), "all 5 gates present → none missing");
+    }
+
+    #[test]
+    fn gates_missing_lists_absent_gates() {
+        let w = format!("{}\n{}", gate_line(3237, "product"), gate_line(3237, "code"));
+        assert_eq!(gates_missing(&w, 3237), vec!["quality", "arch", "ops"]);
+    }
+
+    #[test]
+    fn gates_missing_all_when_witness_empty() {
+        assert_eq!(gates_missing("", 3237).len(), 5);
+    }
+
+    #[test]
+    fn gates_missing_ignores_other_cards_comma_terminated() {
+        // a full gate set for card 31 must NOT satisfy card 3 (anti #3/#31 collision).
+        let w = REQUIRED_GATES
+            .iter()
+            .map(|g| gate_line(31, g))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(gates_missing(&w, 3).len(), 5, "card 31's gates must not satisfy card 3");
     }
 }
