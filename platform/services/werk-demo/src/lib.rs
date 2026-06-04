@@ -303,6 +303,27 @@ fn send_gate_request_nudge(from: &str, to: &str, card: u64, gates: &[String], tr
     ]).map(|_| ())
 }
 
+/// The product/domain feedback gather sent to each demoee (#3100 / #3116).
+/// VERBATIM — pinned by `feedback_message_is_verbatim`. Neutral framing by
+/// design: pointers + ask, no editorializing that biases the reply; sender +
+/// ack-required up front; "read the card and the code" (recipient forms their
+/// own read). NO "before /acp" pressure, NO "narrow/clean/delivered" pre-frame —
+/// those inherit the builder's satisfaction to the reviewer. Q2 addresses the
+/// recipient AS the user ("you and your domain"); Q4 is the Loom-discriminator
+/// lens no peer can answer for. `\n` is escaped because the string is embedded
+/// into a JSON body downstream.
+///
+/// Prior (#3100): 3 questions, Q2 = "how does it impact your users?".
+/// Current (#3116): Q2 named to "you and your domain" (the demoee IS the user);
+/// +Q4 Loom lens (the discriminator no peer can answer for). Approach: extract
+/// to a pure fn so the wording is pinned by test and can't silently soften.
+pub fn feedback_message(card: u64, from: &str) -> String {
+    format!(
+        "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.",
+        card, from
+    )
+}
+
 /// Send a feedback nudge to `other` via the chorus_nudge_message MCP path.
 /// The team's canonical nudge surface — JSON-RPC tools/call POST'd to the
 /// MCP server's HTTP endpoint. Body shape matches the MCP tool's NudgeInput.
@@ -312,15 +333,7 @@ fn send_gate_request_nudge(from: &str, to: &str, card: u64, gates: &[String], tr
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    // Neutral framing — pointers + ask, no editorializing that biases the
-    // reply. Sender + ack-required up front; "read the card and the code"
-    // instruction (recipient forms their own read); the 3 skill questions
-    // as the actual ask. No "before /acp" pressure, no "narrow/clean/delivered"
-    // pre-framing — those just inherit my satisfaction to the reviewer.
-    let msg = format!(
-        "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does it impact your users?\\n(3) Am I over-building or under-planning?\\nAck: substantive reply or blocked-on-X within 10 min.",
-        card, from
-    );
+    let msg = feedback_message(card, from);
     let body = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
         other, msg
@@ -759,5 +772,14 @@ mod tests {
     fn json_str_field_tolerates_pretty_print() {
         assert_eq!(json_str_field("{ \"status\" : \"WIP\" }", "status"), Some("WIP".to_string()));
         assert_eq!(json_str_field("{\"status\":\"Done\"}", "status"), Some("Done".to_string()));
+    }
+
+    #[test]
+    fn feedback_message_is_verbatim() {
+        // Pinned byte-for-byte (#3116). Q2 = "you and your domain" (demoee is the
+        // user); Q4 = the Loom discriminator lens. Changing this is a deliberate
+        // product decision, not a refactor — this test is the guard that makes it so.
+        let expected = "[feedback #3116 — ACK REQUIRED]\\nFrom: wren\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.";
+        assert_eq!(feedback_message(3116, "wren"), expected);
     }
 }
