@@ -1,8 +1,9 @@
-//! End-to-end: PATH-shim every external CLI (cards / werk-build / werk-deploy /
-//! curl / smoke-check.sh / chorus-log / gh / git), prove the act-spine runs
-//! validate → AC-preflight (+evidence+trace) → gate-chain → smoke → signal →
-//! build → deploy → demo.show.completed, and assert the jsonl witness records
-//! the expected events. One env-mutating test fn (so PATH / env can't race).
+//! End-to-end (#3116): PATH-shim every external CLI (cards / werk-build /
+//! werk-deploy / curl / chorus-log / gh), prove the stripped proving ceremony
+//! runs validate → AC-preflight (+evidence+trace) → gate-delegated → feedback
+//! gather → review window → demo.verdict, assert the jsonl witness records the
+//! expected events, AND assert demo NEVER builds or deploys (the act is out).
+//! One env-mutating test fn (so PATH / env can't race).
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -35,41 +36,17 @@ fn e2e_demo_happy_path() {
     // checked + all five gate-pass comments + type:fix tag. comment/demo → exit 0
     // and append the comment text so we can assert evidence was posted.
     let cards_log = tmp("cardslog").join("calls");
+    // #3116/#3183: werk-demo resolves `cards` ABSOLUTELY at home/platform/scripts/cards
+    // (not bare on PATH) — so the cards shim is written THERE (below, once home exists),
+    // not on PATH. This is the bug the first live run caught: bare `cards` died under
+    // werk-mcp.sh's step-4.5 PATH.
+    // #3116: werk-build / werk-deploy are shimmed to LOG if called — demo must
+    // NEVER call them (the act is out). Assertions below require both logs empty.
+    let build_log = tmp("buildlog").join("calls");
     write_exec(
-        &bin.join("cards"),
-        &format!(
-            r#"#!/bin/sh
-echo "$@" >> "{cards_log}"
-if [ "$1" = "view" ] && [ "$3" = "--json" ]; then
-  printf '{{ "status": "WIP" }}\n'
-  exit 0
-fi
-if [ "$1" = "view" ]; then
-  cat <<'EOF'
-#3046 demo-v2 test card
-  Status: WIP
-  Owner: wren
-  Desc:
-    ## Acceptance Criteria
-    - [x] one ported
-    - [x] two ported
-  Domains: domain:chorus, type:fix
-  Comments:
-    [jeff] gate:product-pass — Wren
-    [jeff] gate:code-pass — Kade
-    [jeff] gate:quality-pass — Kade
-    [jeff] gate:arch-pass — Silas
-    [jeff] gate:ops-pass — Silas
-EOF
-  exit 0
-fi
-exit 0
-"#,
-            cards_log = cards_log.display()
-        ),
+        &bin.join("werk-build"),
+        &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\necho built\nexit 0\n", build_log.display()),
     );
-    write_exec(&bin.join("werk-build"), "#!/bin/sh\necho built\nexit 0\n");
-    // #3098: capture werk-deploy args so we can assert the env-up variant call
     let deploy_log = tmp("deploylog").join("calls");
     write_exec(
         &bin.join("werk-deploy"),
@@ -92,6 +69,34 @@ exit 0
     // --- $HOME-like layout: home/platform/scripts/{smoke-check.sh,chorus-log} ---
     let home = tmp("home");
     fs::create_dir_all(home.join("platform/scripts")).unwrap();
+    // cards shim at the ABSOLUTE path werk-demo resolves (home/platform/scripts/cards).
+    write_exec(
+        &home.join("platform/scripts/cards"),
+        &format!(
+            r#"#!/bin/sh
+echo "$@" >> "{cards_log}"
+if [ "$1" = "view" ] && [ "$3" = "--json" ]; then
+  printf '{{ "status": "WIP" }}\n'
+  exit 0
+fi
+if [ "$1" = "view" ]; then
+  cat <<'EOF'
+#3046 demo-v2 test card
+  Status: WIP
+  Owner: wren
+  Desc:
+    ## Acceptance Criteria
+    - [x] one ported
+    - [x] two ported
+  Domains: domain:chorus, type:fix
+EOF
+  exit 0
+fi
+exit 0
+"#,
+            cards_log = cards_log.display()
+        ),
+    );
     write_exec(
         &home.join("platform/scripts/smoke-check.sh"),
         "#!/bin/sh\nexit 0\n",
@@ -100,27 +105,6 @@ exit 0
         &home.join("platform/scripts/chorus-log"),
         "#!/bin/sh\nexit 0\n",
     );
-
-    // --- werk base + a real git repo at home/<role>/<card> for register_gh's git rev-parse ---
-    let werk_base = tmp("werkbase");
-    let werk_dir = werk_base.join("wren-3046");
-    fs::create_dir_all(&werk_dir).unwrap();
-    let st = std::process::Command::new("git")
-        .args(["init", "-q", "-b", "main", werk_dir.to_str().unwrap()])
-        .status()
-        .unwrap();
-    assert!(st.success(), "git init failed");
-    fs::write(werk_dir.join("README"), "x").unwrap();
-    let _ = std::process::Command::new("git")
-        .args(["-C", werk_dir.to_str().unwrap(), "add", "."])
-        .status();
-    let _ = std::process::Command::new("git")
-        .args([
-            "-C", werk_dir.to_str().unwrap(),
-            "-c", "user.name=t", "-c", "user.email=t@t",
-            "commit", "-q", "-m", "init",
-        ])
-        .status();
 
     // --- PATH: shims first ---
     std::env::set_var(
@@ -135,10 +119,11 @@ exit 0
     // #3100 gate-request fan-out: wait default 120s; force 0 in tests.
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
 
-    // --- run the act ---
-    let result = demo(3046, "wren", &home, &werk_base).expect("demo should succeed");
+    // --- run the proving ceremony ---
+    let result = demo(3046, "wren", &home).expect("demo should succeed");
     assert!(result.contains("demo #3046"), "ok message: {}", result);
     assert!(result.contains("2/2 AC"), "ac count in message: {}", result);
+    assert!(result.contains("verdict recorded"), "ok message names the verdict: {}", result);
 
     // --- assert side effects ---
 
@@ -162,10 +147,9 @@ exit 0
     for evt in [
         "demo.started",
         "demo.preflight.passed",
-        "demo.smoke.passed",
         "demo.signal.completed",
-        "demo.built",
-        "demo.deployed",
+        "demo.ready_for_review",
+        "demo.verdict",
         "demo.completed",
     ] {
         assert!(
@@ -176,18 +160,20 @@ exit 0
         );
     }
 
-    // (4) #3098: werk-deploy must be called as `env-up <role> <card>`, not bare `<card>`
-    //     — demo brings up the per-role variant from #3092, NOT the canonical deploy path.
+    // (4) #3116: the ACT is OUT of demo — werk-build and werk-deploy must NEVER
+    //     be invoked by the binary. Build/deploy/env-up are the PRIOR verbs in the
+    //     flat sequence; demo only points at the already-running instance.
     let deploy_calls = fs::read_to_string(&deploy_log).unwrap_or_default();
     assert!(
-        deploy_calls.contains("env-up wren 3046"),
-        "werk-deploy should be invoked as `env-up wren 3046` (per-role variant); got:\n{}",
+        deploy_calls.trim().is_empty(),
+        "demo must NOT invoke werk-deploy (act is out, #3116); got:\n{}",
         deploy_calls
     );
+    let build_calls = fs::read_to_string(&build_log).unwrap_or_default();
     assert!(
-        !deploy_calls.lines().any(|l| l.trim() == "3046"),
-        "werk-deploy must NOT be invoked with bare card-id (canonical deploy path); got:\n{}",
-        deploy_calls
+        build_calls.trim().is_empty(),
+        "demo must NOT invoke werk-build (act is out, #3116); got:\n{}",
+        build_calls
     );
 
     // (5a) #3100 AC1+AC2+AC4: feedback nudges go through MCP (chorus_nudge_message
@@ -242,18 +228,17 @@ exit 0
         witness
     );
 
-    // (6) #3100 AC#1 — gate interaction: demo.gate.requested + demo.gate.passed
-    //     bracket the gate-chain check. When all 5 gates posted, both events
-    //     fire; the refusal path (not exercised here) would surface owning roles.
+    // (6) #3116 — the gate chain is DELEGATED to the /demo skill layer; the binary
+    //     no longer blocks on gate comments. demo must not refuse on the happy path.
     let card_story = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    // The shim card view has all five gate-pass lines, so the chain clears
-    // and both events fire. Sentinel: presence of demo.gate.passed proves the
-    // refusal path was skipped AND the new bracketing event fired.
-    // (demo.gate.requested goes to chorus-log subprocess + spine; jsonl is the
-    // local witness — assert the event was reached via demo.gate.passed.)
     assert!(
         !card_story.contains("\"event\":\"demo.refused\""),
-        "with all 5 gates posted, demo must not refuse; got:\n{}", card_story
+        "demo must not refuse on the happy path; got:\n{}", card_story
+    );
+    // demo.verdict carries the prover (Jeff by default) — the record werk-accept reads.
+    assert!(
+        card_story.contains("\"event\":\"demo.verdict\"") && card_story.contains("\"prover\":\"jeff\""),
+        "demo must record demo.verdict with prover=jeff; got:\n{}", card_story
     );
 
     // (7) #3100 AC#5: comment window opens + closes (with secs=0 force, both

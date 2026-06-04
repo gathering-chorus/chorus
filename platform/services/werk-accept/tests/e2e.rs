@@ -87,6 +87,17 @@ fn accept_authority_gate_and_happy_path() {
     // #3108 AC#8: env-down sits post-merge; a refused accept must not reach it.
     assert!(!after_refuse.contains("werk-deploy env-down"), "refused accept must NOT tear down variants");
 
+    // (2a) #3116 verdict gate: jeff accepting WITHOUT a demo.verdict=pass on record => Err.
+    assert!(accept(9001, "kade", "jeff", &home, &werk_base).is_err(),
+        "accept must refuse with no demo.verdict=pass on record (#3116)");
+    assert!(!fs::read_to_string(&log).unwrap_or_default().contains("cards done 9001"),
+        "verdict-gate refusal must NOT finalize");
+    // record the passing verdict the demo binary would have written (proving ran).
+    let demo_witness = home.join("ops/logs/werk-demo.jsonl");
+    fs::create_dir_all(demo_witness.parent().unwrap()).unwrap();
+    fs::write(&demo_witness,
+        "{\"ts\":1,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"verdict\":\"pass\",\"prover\":\"jeff\"}\n").unwrap();
+
     // (2) happy path: DEPLOY_ROLE=jeff accepting kade's card => Ok, FINALIZE only.
     accept(9001, "kade", "jeff", &home, &werk_base).expect("jeff finalizes");
     let after_ok = fs::read_to_string(&log).unwrap_or_default();

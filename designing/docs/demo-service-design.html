@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Demo Service Design — unskippable hooks, structural enforcement</title>
+<title>Demo Service Design — the proving ceremony (present · gate · feedback · prove · record)</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 32px 48px; color: #1a1a1a; max-width: 1200px; line-height: 1.55; }
   h1 { border-bottom: 2px solid #6366f1; padding-bottom: 8px; margin-bottom: 4px; }
@@ -20,175 +20,178 @@
   .panel { border-left: 4px solid #6366f1; background: #eef2ff; padding: 12px 18px; border-radius: 4px; margin: 12px 0; }
   .panel.warn { border-left-color: #f59e0b; background: #fef3c7; }
   .panel.danger { border-left-color: #dc2626; background: #fef2f2; }
+  .panel.good { border-left-color: #16a34a; background: #f0fdf4; }
   ul.findings li { margin: 6px 0; }
+  .flow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+  .flow .step { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 8px 12px; font-size: 0.85em; font-weight: 600; color: #3730a3; }
+  .flow .arrow { color: #9ca3af; font-weight: 700; }
+  .flow .pre { background: #f3f4f6; border-color: #e5e7eb; color: #6b7280; font-weight: 500; }
+  del { color: #b91c1c; }
 </style>
 </head>
 <body>
 
-<h1>Demo Service Design — unskippable hooks</h1>
-<div class="meta">2026-05-09 · Wren · #2864 · status: draft (post-reconciliation; SKILL.md + sequence-demo.html align; skill-lifecycle.html is stale)</div>
+<h1>Demo Service Design — the proving ceremony</h1>
+<div class="meta">2026-06-04 · Wren · #3116 · <strong>SUPERSEDES the #2864 cascade design</strong> (the 7-step / 5-hook orchestration this doc previously held). Aligns with Kade's #3211 flat-verb pipeline.</div>
 
 <p class="lede">
-The /demo skill is a 7-step proving gate (DEC-048). Today the skill is honored aspirationally — agents skip steps, post <code>demo:preflight-pass</code> comments without showing Jeff, and the comment-trail substitutes for the actual moment of shared attention. This design names each step as a structural hook (Rust in chorus-hooks or settings.json) that fires unskippably — including in auto-mode. If a hook should fire and didn't, the next transition refuses with a typed reason. Self-attestation in card comments is not a substitute path.
+Demo is the proving ceremony, and nothing else. The artifact is already built and running in the role's werk slot (the prior verbs did that). Demo <strong>presents</strong> it, <strong>initiates the gates</strong> as subagents and routes each result to its owning role for review, fires the <strong>product/domain feedback gather</strong> verbatim, invokes <strong>one prover</strong> for the verdict — Jeff's eyes <em>or</em> a machine test — and <strong>records</strong> a single <code>demo.verdict</code>. It builds nothing, deploys nothing, and never asks a peer to bless the work by running its gate for it.
 </p>
 
-<div class="panel">
-<strong>Design principle.</strong> The MCP / skill / hooks form a triangle. The MCP is the typed-refusal contract. The skill is the orchestrator the human invokes. The hooks are the structural enforcement that fires regardless of which surface the agent reaches for. <strong>Demo correctness lives in the hooks</strong>, not in the skill body or the MCP refusal taxonomy alone.
+<div class="panel danger">
+<strong>What demo does today (the hole).</strong> In <code>werk-mcp.sh</code> the "werk-demo boundary" is just steps 3–4: <code>chorus_build → chorus_deploy target=werk → chorus_env_up</code>. It stands up a running instance in the slot and <em>stops</em> — "waits-for-humans-to-browse." Nobody proves anything. The gate chain runs by manual cross-role <em>go-run-your-gate</em> nudges (the coordination tax). The verdict is hollow; accept rubber-stamps. This design makes demo finally do its one job.
 </div>
-
-<h2>Reconciled source of truth</h2>
-
-<p>Three drifted sources today: <code>SKILL.md</code> (the executable), <code>sequence-demo.html</code> (the diagram), <code>skill-lifecycle.html</code> (the index). Reconciliation choice: <strong>SKILL.md is the truth</strong> (Jeff: "sequence-demo.html is pretty close to actual" — sequence-demo agrees on shape, skill-lifecycle drifted with its 6-step renaming). All three docs update to match the 7-step shape below; this doc is the canonical reference.</p>
-
-<table>
-<tr><th>#</th><th>Step</th><th>Hard gate?</th><th>Owner</th><th>Trigger</th></tr>
-<tr><td>1</td><td>Validate</td><td>YES</td><td>caller role</td><td>/demo invoked</td></tr>
-<tr><td>1.5</td><td>AC Pre-flight</td><td>YES</td><td>caller role</td><td>after Step 1 pass</td></tr>
-<tr><td>2</td><td>Gate chain (5 gates)</td><td>YES</td><td>5 roles</td><td>after Step 1.5 pass</td></tr>
-<tr><td>3</td><td>Smoke check</td><td>YES</td><td>caller role</td><td>after Step 2 pass</td></tr>
-<tr><td>4</td><td>Stakes brief</td><td>YES</td><td>caller role</td><td>after Step 3 pass</td></tr>
-<tr><td>5</td><td>Signal</td><td>YES</td><td>caller role</td><td>after Step 4 pass</td></tr>
-<tr><td>6</td><td>Show, don't tell — then wait</td><td>YES</td><td>caller role + Jeff</td><td>after Step 5 pass</td></tr>
-<tr><td>7</td><td>Accept or reject</td><td>—</td><td>Wren or Jeff</td><td>after Step 6, on Jeff's signal</td></tr>
-</table>
-
-<h2>Hook decomposition</h2>
-
-<p>Five hooks, not one-per-step. The pattern in chorus-hooks today is "one hook per logical gate, multi-step preconditions bundled in the gate script." Smoke check, stakes brief, and signal are orchestration details — they're proof-of-side-effects, not gates with independent preconditions. They fold into <code>demo_show</code>'s precondition set rather than firing as separate hooks. This collapses 8 → 5 with no loss of safety and a tighter cognitive surface (one fewer thing to hold in your head when something refuses).</p>
-
-<p>Hooks fire as PreToolUse on the transition that depends on them — the validator <em>blocks the next move</em>, not the current one. Refusal taxonomy is shared across hook + MCP + skill so the failure surface is consistent.</p>
-
-<table>
-<tr><th>Hook</th><th>What it gates</th><th>Reads</th><th>Refusal reasons</th><th>Spine event on pass</th></tr>
-<tr>
-  <td><code>demo_validate</code></td>
-  <td>blocks Step 1.5 entry</td>
-  <td>card status, AC presence in card desc</td>
-  <td>card-not-found, wrong-status, ac-missing</td>
-  <td><code>demo.validate.completed</code></td>
-</tr>
-<tr>
-  <td><code>demo_preflight</code> (exists; refactor)</td>
-  <td>blocks Step 2 entry</td>
-  <td>AC items checked count, demo evidence comment posted</td>
-  <td>ac-incomplete, evidence-missing</td>
-  <td><code>demo.preflight.completed</code></td>
-</tr>
-<tr>
-  <td><code>demo_gates</code></td>
-  <td>blocks Step 3 entry</td>
-  <td>5 gate-pass comments on card (product/code/quality/arch/ops)</td>
-  <td>gate-product-missing, gate-code-missing, gate-quality-missing, gate-arch-missing, gate-ops-missing, gate-failed</td>
-  <td><code>demo.gates.completed</code></td>
-</tr>
-<tr>
-  <td><code>demo_show</code> (load-bearing — today's biggest skip)</td>
-  <td>blocks Step 7 (acceptance)</td>
-  <td>(a) smoke-check.sh exit 0 since last commit; (b) stakes brief lead-with-stakes regex (anti-pattern check); (c) board demo logged + card.demo.started spine event + observer/feedback nudges fired; (d) <code>demo.show.opened</code> event (URL hit / endpoint called / cmd run during demo); (e) <strong>Jeff-attention-signal</strong> — see "demo_show signal" section below</td>
-  <td>smoke-fail, smoke-stale, stakes-missing, mechanics-led, board-not-logged, spine-not-emitted, observer-nudge-missing, feedback-nudge-missing, show-not-fired, jeff-not-watching, jeff-stale-input</td>
-  <td><code>demo.show.completed</code></td>
-</tr>
-<tr>
-  <td><code>demo_accept</code> (exists as <code>accept_gate.rs</code>; extend)</td>
-  <td>blocks <code>cards done</code> / <code>chorus_acp</code> on cards without the demo.{validate,preflight,gates,show}.completed chain</td>
-  <td>spine: 4 demo.*.completed events for this card_id</td>
-  <td>demo-incomplete (lists which step is missing)</td>
-  <td><code>card.accepted</code> (existing)</td>
-</tr>
-</table>
-
-<h3>demo_show signal — the load-bearing detail</h3>
-
-<p>What evidence proves Jeff actually watched? Three options surveyed:</p>
-
-<table>
-<tr><th>Option</th><th>Instrumentable today?</th><th>Source</th></tr>
-<tr><td>(a) peer role's gemba tail event during demo window</td><td>No — gemba is human-initiated, doesn't emit spine events; would require new <code>observation.gemba.tail</code> event</td><td>—</td></tr>
-<tr><td>(b) Bridge-side <code>jeff.input.delivered</code> spine event during demo window</td><td>Yes — fires today from Clearing/server.ts on every Jeff message</td><td><code>jeff.input.delivered</code></td></tr>
-<tr><td>(c) Explicit accept keystroke</td><td>No — no infrastructure captures keystrokes/focus/session input</td><td>—</td></tr>
-</table>
-
-<p><strong>Recommendation:</strong> use (b) as primary signal. Pass condition: <code>jeff.input.delivered</code> with timestamp within a window of <code>card.demo.started</code> (e.g. 30s–10min). Reject (a) — passive observability is the trap that produced today's hollow shape.</p>
-
-<p><strong>Concrete failure mode:</strong> Jeff starts a demo, role emits <code>card.demo.started</code>, Jeff steps away. Stale <code>jeff.input.delivered</code> events from earlier in the Clearing buffer get matched, demo_show passes, Jeff never watched. <strong>Mitigation:</strong> require timestamp within a tight window AFTER <code>card.demo.started</code> (not before), AND require at least one input matching the card_id or demo brief content. If even tighter trust is needed, fall back to (c) as a P2 add — capture explicit "accept" keystroke once Bridge supports it.</p>
-
-<h2>Auto-mode behavior</h2>
 
 <div class="panel danger">
-<strong>Hooks fire and enforce identically in auto-mode.</strong> Auto-mode is the default substrate today and amplifies the skip-rate because velocity is the default. The hooks must not branch on auto-mode — they fire, they refuse, they log spine events the same way regardless of harness mode. Refusal output is the same shape; the only difference is whether the agent has a chance to course-correct mid-loop or fails the transition outright. Both produce identical spine evidence for downstream readers.
+<strong>What the prior #2864 design did (the over-correction).</strong> It encoded demo <em>as an orchestrator</em>: a 7-step chain (validate → AC-preflight → 5-role gate-chain → smoke → signal → show → accept-enforcement) enforced by 5 cascading hooks, with accept gated on a 4-event <code>demo.*.completed</code> chain. The 5-role gate-chain-by-comment <em>is</em> the agents-grading-agents stamp-mill. That model is retired here; the gate <em>checks</em> survive, relocated.
 </div>
 
-<p>Concretely:</p>
-<ul class="findings">
-<li>No <code>if (auto_mode) { skip }</code> branches anywhere in the hook code.</li>
-<li>Refusal in auto-mode = transition aborted + typed-refusal logged + agent receives the refusal string (per existing hook contract).</li>
-<li>Refusal in interactive mode = same.</li>
-<li>The spine record of the refusal is identical in both modes; observers can't distinguish.</li>
-</ul>
+<h2>The flow</h2>
 
-<h2>Bypass-path coverage</h2>
+<div class="flow">
+  <span class="step pre">commit</span><span class="arrow">→</span>
+  <span class="step pre">push</span><span class="arrow">→</span>
+  <span class="step pre">build</span><span class="arrow">→</span>
+  <span class="step pre">deploy → werk</span><span class="arrow">→</span>
+  <span class="step pre">env-up</span>
+  <span class="arrow">‖</span>
+  <span class="step">PRESENT</span><span class="arrow">→</span>
+  <span class="step">GATE</span><span class="arrow">→</span>
+  <span class="step">FEEDBACK</span><span class="arrow">→</span>
+  <span class="step">PROVE</span><span class="arrow">→</span>
+  <span class="step">RECORD</span>
+  <span class="arrow">‖</span>
+  <span class="step pre">merge</span><span class="arrow">→</span>
+  <span class="step pre">accept</span>
+</div>
+<p style="font-size:0.85em;color:#6b7280;margin-top:-4px;">Grey = other atomic verbs (not demo). The <code>‖</code> marks the demo boundary: it touches only the running werk instance, never <code>main</code>.</p>
 
-<p>Hooks gate the <em>transition</em>, not just the <code>/demo</code> skill body. Multiple surfaces can move a card to "demo'd" or "accepted" today; each needs hook coverage:</p>
-
-<p>Audited surfaces — 8 total, 5 unblocked today:</p>
+<h3>Precondition (NOT demo — prior verbs, unchanged)</h3>
+<p><code>werk-commit → werk-push → chorus_build → chorus_deploy target=werk → chorus_env_up</code> — the change is built and <strong>running as an instance in the role's werk slot</strong>. "Prove in the slot, never touches main." Demo does none of this; it assumes a live instance to point at.</p>
 
 <table>
-<tr><th>Surface</th><th>Status today</th><th>Hook attaches to</th></tr>
-<tr><td><code>/demo</code> skill (PreToolUse on Skill matcher)</td><td>partial — only <code>demo_preflight.rs</code> + <code>demo_gate.rs</code> attached</td><td>demo_validate + demo_preflight + demo_gates + demo_show (cascading)</td></tr>
-<tr><td><code>chorus_acp</code> MCP (PreToolUse on Tool matcher)</td><td>partial — <code>accept_gate.rs</code> reads <code>demo:preflight-pass</code> comment only, not spine events</td><td>demo_accept (full-chain check on spine)</td></tr>
-<tr><td><code>cards done</code> CLI (bare invocation, PreToolUse on Bash matching the verb)</td><td><strong>UNBLOCKED</strong> — no hook; sdk.ts:980 emits <code>card.accepted</code> unconditionally</td><td>demo_accept</td></tr>
-<tr><td><code>cards move &lt;id&gt; Done</code> CLI</td><td><strong>UNBLOCKED</strong> — same path as <code>cards done</code></td><td>demo_accept (gate any transition to status=Done)</td></tr>
-<tr><td><code>POST /api/cards/done</code> HTTP</td><td><strong>UNBLOCKED</strong> — server.ts:1011 spawns <code>cards done</code> subprocess, no hook</td><td>demo_accept on HTTP-matched context (or rely on the bash-matcher hook for the spawned subprocess)</td></tr>
-<tr><td><code>POST /api/cards/move</code> HTTP (status=Done)</td><td><strong>UNBLOCKED</strong> — same shape</td><td>demo_accept</td></tr>
-<tr><td>Vikunja API direct (browser / curl, no chorus path)</td><td><strong>INVISIBLE</strong> — no spine event, no hook on path</td><td>post-hoc reconciler: spine subscriber reads Vikunja Done bucket periodically; emits <code>demo.bypass.detected</code> for any card.id without preceding <code>card.accepted</code></td></tr>
-<tr><td>Future: Vikunja webhook receiver</td><td>does not exist; no chorus listener catches Vikunja task.done</td><td>add receiver if Vikunja supports webhooks; gate at receive time</td></tr>
+<tr><th>Step</th><th>What demo does</th><th>Output</th></tr>
+<tr>
+  <td><strong>1. PRESENT</strong></td>
+  <td>Point the prover at the running werk instance — the announced URL / endpoint / command. The artifact is already up; demo surfaces it.</td>
+  <td><code>card.demo.started</code> + the variant address</td>
+</tr>
+<tr>
+  <td><strong>2. GATE</strong></td>
+  <td>The demoer <strong>initiates</strong> each of the 5 gates (product / code / quality / arch / ops) as an <strong>in-process subagent</strong>. The demoer runs the gate; the <strong>result is routed to the owning role for review</strong>. The role <em>reviews the produced result</em> (applies domain judgment) — it does not run the gate. No <em>go-run-your-gate</em> nudge anywhere.</td>
+  <td>per-gate <code>{gate, result, reviewer}</code></td>
+</tr>
+<tr>
+  <td><strong>3. FEEDBACK GATHER</strong></td>
+  <td>Fire the product/domain feedback nudge to peers — <strong>verbatim</strong> (see below). Initial round + re-nudge unacked peers within the 10-min ACK window (#3100 AC#2). This is the <em>value</em> gather (the PM-lens questions), distinct from the gate review.</td>
+  <td>peer acks</td>
+</tr>
+<tr>
+  <td><strong>4. PROVE</strong></td>
+  <td>Exactly <strong>one</strong> prover, never a peer. <strong>Machine:</strong> run the card's Experience test (DEC-1674) against the deployed werk instance → pass/fail. <strong>Jeff:</strong> Jeff watches/uses the running instance; his input in the demo window <em>is</em> the verdict. Selection: machine-checkable assertion → machine; visual/UX/judgment → Jeff's eyes.</td>
+  <td>pass / fail + prover</td>
+</tr>
+<tr>
+  <td><strong>5. RECORD</strong></td>
+  <td>Emit one verdict event. That is demo's entire output — it does not call accept.</td>
+  <td><code>demo.verdict</code></td>
+</tr>
 </table>
 
-<p><strong>Net:</strong> 5 of 8 surfaces are unblocked today. The bare CLI / HTTP paths are the largest leak — agents can flip a card to Done without invoking <code>/demo</code> or <code>chorus_acp</code> at all, which means the hooks attached to those two surfaces don't fire.</p>
+<pre><code>demo.verdict {
+  card,
+  pass | fail,
+  prover: "machine" | "jeff",
+  gates:    [ { gate, result, reviewer } ],
+  feedback: [ { role, acked } ]
+}</code></pre>
 
-<h2>Comment-shape decommission</h2>
+<div class="panel good">
+<strong>Three separate concerns, never collapsed.</strong> <strong>Gates</strong> review <em>quality</em>. <strong>Feedback gather</strong> collects <em>value</em> judgment. The <strong>verdict</strong> proves <em>it works</em> — and is Jeff-or-machine, <em>never</em> peer-blessing. A green gate is not a verdict; a peer ack is not a verdict.
+</div>
 
-<p>Today <code>demo:preflight-pass ac=N/N</code> comments are the de-facto evidence anyone reads. Tomorrow they keep being written (Step 1.5 still posts one) but they are <strong>no longer trust-relevant</strong>:</p>
+<h2>The three nudge classes</h2>
+<p>The kill is narrow. Only one nudge class dies.</p>
+<table>
+<tr><th>Nudge</th><th>Fate</th><th>Why</th></tr>
+<tr><td><strong>Gate initiation</strong> — "go run your gate"</td><td><del>DEAD</del></td><td>The orchestration <em>medium</em> was the waste — it cost Jeff's coordination budget and was the agents-grading-agents relay. The demoer runs the gate as a subagent instead.</td></tr>
+<tr><td><strong>Gate result → owning role</strong></td><td>KEPT</td><td>The <em>good</em> nudge: it carries a finished result to <em>review</em>, not work to do. Async, non-blocking.</td></tr>
+<tr><td><strong>Product/domain feedback gather</strong></td><td>KEPT — <strong>verbatim</strong></td><td>The value gather. Load-bearing PM artifact; exact framing matters (below).</td></tr>
+</table>
 
+<h2>The product/domain feedback gather — KEPT VERBATIM</h2>
+<p>Source today: <code>platform/services/werk-demo/src/lib.rs</code> → <code>send_mcp_nudge()</code> / <code>signal()</code>. <strong>Do not reword.</strong> The message to each peer is exactly:</p>
+<pre><code>[feedback #&lt;card&gt; — ACK REQUIRED]
+From: &lt;from&gt;
+Read the card. Read the code. Then reply.
+(1) How does this impact your products?
+(2) How does this impact you and your domain?
+(3) Am I over-building or under-planning?
+(4) Does this strengthen Loom, or just please the room?
+Ack: substantive reply or blocked-on-X within 10 min.</code></pre>
+<div class="panel warn">
+<strong>Framing rationale (preserve — do not "improve").</strong> Neutral: pointers + ask, no editorializing that biases the reply. Sender + ack-required up front; "read the card and the code" (the recipient forms their own read); the three questions as the actual ask. <strong>No "before /acp" pressure, no "narrow / clean / delivered" pre-framing</strong> — those just inherit the builder's satisfaction to the reviewer. A test pins this wording byte-for-byte so a refactor can't quietly soften it.
+</div>
+<div class="panel">
+<strong>Who the users are (#3116) — contingent on demoer/demoee.</strong> The feedback nudge already fires to the peer roles; those recipients <em>are</em> the users. So Q2 addresses each recipient directly — "you and your domain" — and the contingent set (jeff / wren / silas / kade, minus the demoer) answers "who" automatically. Vague "your users" let a role answer without saying anything true. <strong>Loom — the discriminator — can't reply to a nudge and no peer can speak for it, so it gets its OWN question (Q4):</strong> does this strengthen the discriminator, or just please the room? That line is the direct counter to indiscriminate, locally-rational suboptimization — a change that pleases the room but does not feed Loom is a local win mistaken for progress.
+</div>
+
+<h2>The key transfer (load-bearing)</h2>
+<p>Demo proves the <strong>werk</strong> instance <strong>pre-merge</strong>. <code>werk-merge</code> then content-verifies <code>werk ≡ main</code> (squash). That content identity is what lets a pre-merge proof authorize the post-merge / prod accept <strong>without re-proving against main</strong>. Proving the slot — not main — is the whole point of the boundary: it's why demo "never touches main," and it sidesteps the merged≠live cost class.</p>
+
+<h2>Accept contract</h2>
+<p><code>werk-accept</code> (atomic, finalize-only, #3175) gates finalize on <strong>one</strong> thing: <code>demo.verdict = pass</code> for the card_id. This <strong>replaces</strong> the prior 4-event <code>demo.*.completed</code> chain and the <code>demo:preflight-pass</code> evidence comment. DEC-048 (builder cannot self-accept a code card; Jeff exempt as human authority) stays enforced at <code>werk-accept</code>, unchanged.</p>
+
+<h2>Deleted / Kept / Out of scope</h2>
+<h4>Deleted / moved out</h4>
 <ul class="findings">
-<li><code>accept_gate.rs</code> stops reading <code>demo:preflight-pass</code> comments as evidence; reads <code>demo.*.completed</code> spine events for the card_id.</li>
-<li><code>quality-health</code> fitness function (#2862) updates its 28.7% gate-skip metric to read spine events instead of comment grep — the metric becomes structural, the number gets honest.</li>
-<li>The card comment continues to post for human-readable card history. It documents what happened; it doesn't authorize transitions.</li>
+<li><strong>Gate-NUDGE relay</strong> (nudge each role to <em>run</em> its gate) — deleted.</li>
+<li><strong>build / deploy / env-up inside demo</strong> — they are their own verbs, run before demo. Demo never builds or deploys. (Today's <code>werk-demo</code> binary calls <code>werk-build</code> + <code>werk-deploy</code> internally — that "act" step comes out.)</li>
+<li><strong>#2864 cascade</strong> — validate → preflight → gate-chain → smoke → show → accept-enforcement as 5 cascading hooks. Retired as the model.</li>
+<li><strong>accept-chain enforcement</strong> (<code>accept_gate</code> reading 4 <code>demo.*.completed</code> events) — replaced by the single <code>demo.verdict=pass</code> read.</li>
+<li><strong>smoke / stakes-brief / signal-mechanics</strong> — smoke <em>is</em> the machine prover now; the rest was ceremony theater. <em>(The product/domain feedback nudge is NOT in this list — it is kept verbatim.)</em></li>
+</ul>
+<h4>Kept (do not delete)</h4>
+<ul class="findings">
+<li>The 5 gate <strong>checks</strong> — relocated as demoer-initiated subagents; results routed to the owning role for review.</li>
+<li>The product/domain feedback gather — verbatim.</li>
+<li>The owning role's participation — as <em>reviewer</em> of a produced result, not as runner.</li>
+<li>DEC-048 at <code>werk-accept</code>.</li>
+</ul>
+<h4>Out of scope (don't conflate)</h4>
+<ul class="findings">
+<li>The <strong>deploy-from-main / prod-deploy gap</strong> (<code>werk-mcp.sh</code> steps 6–7 hard-stop) — separate blocked work, not demo's concern. Demo proves the werk instance; prod deploy is downstream.</li>
+<li>Kade's #3211 flat-verb frame (no orchestrator, <code>act</code>=trigger-only, <code>werk-acp</code> retired) is correct and stays. This card only trims <code>werk-demo</code> from "build+deploy+gate-chain+wait" to "present+gate+feedback+prove+record" and moves accept-gating to <code>werk-accept</code>.</li>
 </ul>
 
-<h2>Reconciliation tasks (precede implementation)</h2>
+<h2>Relationship to the other demo docs</h2>
+<table>
+<tr><th>Doc</th><th>State</th><th>Action</th></tr>
+<tr><td>this doc (was #2864 cascade)</td><td>rewritten here</td><td>canonical demo service design</td></tr>
+<tr><td><code>sequence-demo.html</code> (#1726)</td><td>stale — smoke→brief→signal→show→accept on git-queue; no gates-as-subagents, no machine prover</td><td>regenerate to present→gate→feedback→prove→record</td></tr>
+<tr><td><code>werk-pipeline-model.html</code> (v8)</td><td>stale framing — built on the retired <code>act</code>-orchestrator; its <code>chorus/verify</code> check maps to PROVE</td><td>note superseded by #3211 current model; "verify" = the verdict</td></tr>
+<tr><td><code>skills/demo/SKILL.md</code></td><td>thin wrapper; lists build/deploy + gate-chain-by-comment as binary logic</td><td>update "Rules still enforced" to the new five steps</td></tr>
+<tr><td><code>ci-pipeline-service-design.html</code> (Kade #3211)</td><td>current</td><td>trim its <code>werk-demo</code> line from "run-tests-AND-gate-accept" to "present+verdict"; accept-gating moves to <code>werk-accept</code></td></tr>
+</table>
 
-<p>Cannot ship hooks against drifted docs. Pre-implementation reconciliation:</p>
-
+<h2>Open design decisions (confirm before build)</h2>
 <ol>
-<li><strong>skill-lifecycle.html</strong> — update demo section from 6 steps to 7. Match the table above.</li>
-<li><strong>sequence-demo.html</strong> — already close per Jeff's read; verify Step 1.5 (AC pre-flight) is in the diagram or add it. Confirm step-numbering matches.</li>
-<li><strong>SKILL.md</strong> — already canonical for content; add cross-reference to this doc as the design source.</li>
-<li><strong>demo-protocol.mmd</strong> (orphaned) — link from this doc to make the human-cadence guidance discoverable.</li>
+<li><strong>Gate subagents</strong> — one per gate via the Agent tool inside the demo verb, run concurrently; demoer collects and routes each result to its role. <em>Lean: yes.</em></li>
+<li><strong>Gate-result → role mechanism</strong> — result-carrying review-nudge, async, non-blocking (carries a produced artifact, not a go-do ask) vs. the role's pulse/inbox for async pickup. <em>Lean: result-carrying review-nudge.</em></li>
+<li><strong>Machine test placement</strong> — inside the demo verb (one Experience check against the deployed instance), not a sibling verb. <em>Lean: inside</em> (one test invocation is the proving act; a sibling verb re-introduces sequencing).</li>
+<li><strong>Jeff-prover signal</strong> — <code>jeff.input.delivered</code> in a tight window after <code>card.demo.started</code>; explicit accept-keystroke as a P2 hardening. <em>Lean: windowed input now.</em></li>
 </ol>
 
 <h2>Implementation order</h2>
-
 <ol>
-<li>Reconcile docs (above 4 tasks).</li>
-<li>Refactor existing <code>demo_preflight.rs</code> to fire <code>demo.validate.completed</code> + <code>demo.preflight.completed</code> spine events with structured payloads (today's preflight emits, but not against the canonical event-name set).</li>
-<li>Add <code>demo_gates</code> hook. Reads 5 gate-pass comments, refuses on any missing.</li>
-<li>Add <code>demo_show</code> hook — the load-bearing one. Bundles smoke + stakes + signal as preconditions. Consumes <code>jeff.input.delivered</code> spine event with timestamp-after-<code>card.demo.started</code> window.</li>
-<li>Add bash-matcher hooks for <code>cards done</code> and <code>cards move &lt;id&gt; Done</code> bare invocations (today's bypass surfaces). Same demo_accept precondition.</li>
-<li>Extend <code>accept_gate.rs</code> to read demo.{validate,preflight,gates,show}.completed chain instead of demo:preflight-pass comment.</li>
-<li>Update quality-health (#2862) metric source from comment-grep to spine-event-read.</li>
-<li>Add post-hoc Vikunja-direct reconciler — emits <code>demo.bypass.detected</code> for any Done-bucket card without preceding <code>card.accepted</code> spine event.</li>
-<li>Decommission demo:preflight-pass-as-evidence in done-gate.sh.</li>
+<li>Strip <code>werk-demo</code>'s <code>werk-build</code> / <code>werk-deploy</code> "act" calls — demo assumes a live werk instance.</li>
+<li>Replace the gate-chain-by-comment check with in-process gate subagents; route each result to its owning role (review-nudge).</li>
+<li>Keep <code>signal()</code>'s feedback nudge verbatim; add a wording-pinning test.</li>
+<li>Add the prover step — machine test against the deployed instance, or windowed Jeff-input — emitting one <code>demo.verdict</code>.</li>
+<li>Point <code>werk-accept</code> at <code>demo.verdict=pass</code>; retire the 4-event chain + <code>demo:preflight-pass</code> as evidence (keep the comment as human-readable history only).</li>
+<li>Insert the explicit demo step in <code>werk-mcp.sh</code> after <code>env-up</code>, before <code>merge</code>; preserve the flat sequence.</li>
+<li>Regenerate <code>sequence-demo.html</code>; update <code>SKILL.md</code>; trim the <code>ci-pipeline</code> werk-demo line; add a retirement gate asserting no go-run-your-gate relay remains.</li>
 </ol>
-
-<h2>Open questions</h2>
-
-<ul class="findings">
-<li><strong>demo_show timestamp window</strong> — recommended 30s–10min after <code>card.demo.started</code>. Tight enough to prevent stale buffer matches, loose enough that Jeff has room to actually watch. Tune from observation once shipped.</li>
-<li><strong>demo_show input-match</strong> — should the <code>jeff.input.delivered</code> match contain the card_id or some content from the demo brief, to prevent unrelated buffered messages from passing? Recommend yes for v1; relax if too strict in practice.</li>
-<li><strong>Smoke staleness window</strong> — how long after smoke-check.sh runs is the "passed" state honored? Recommend until-next-commit so re-running for unchanged code doesn't double-tax.</li>
-<li><strong>Multi-card demos</strong> — SKILL.md handles them with consolidated brief. Each card needs its own demo.*.completed chain, OR the chain fires once with multiple card_ids. Recommend per-card chain so the spine binding is clean.</li>
-</ul>
 
 </body>
 </html>

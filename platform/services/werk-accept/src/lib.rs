@@ -83,6 +83,27 @@ pub fn json_str_field(json: &str, key: &str) -> Option<String> {
     Some(val[..q2].to_string())
 }
 
+/// #3116 — true iff the proving ceremony recorded a passing verdict for this
+/// card: a `demo.verdict` event with `"verdict":"pass"` in the werk-demo witness
+/// (ops/logs/werk-demo.jsonl, written by the demo binary). accept() gates on the
+/// demo's OWN record, replacing the demo:preflight-pass comment + the retired
+/// 4-event demo.*.completed chain. Missing witness = no demo ran = false. The
+/// card_id match is comma-terminated so #3116 can't collide with #31160.
+pub fn demo_verdict_pass(home: &Path, card: u64) -> bool {
+    let witness = home.join("ops/logs/werk-demo.jsonl");
+    match std::fs::read_to_string(&witness) {
+        Ok(text) => {
+            let card_key = format!("\"card_id\":{},", card);
+            text.lines().any(|l| {
+                l.contains("\"event\":\"demo.verdict\"")
+                    && l.contains(&card_key)
+                    && l.contains("\"verdict\":\"pass\"")
+            })
+        }
+        Err(_) => false,
+    }
+}
+
 // --- side-effecting helpers ---
 
 fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &str) {
@@ -243,6 +264,18 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
     if status != "WIP" {
         jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"not-wip\"");
         return Err(format!("#{} is '{}', not WIP — accept finalizes WIP cards only", card, status));
+    }
+
+    // #3116 DEMO VERDICT GATE — finalize ONLY a card the proving ceremony passed.
+    // Requires a demo.verdict=pass for this card in the werk-demo witness. Replaces
+    // the demo:preflight-pass comment + the retired 4-event demo.*.completed chain.
+    // Proving is required for everyone; when Jeff is the prover, demo records
+    // prover=jeff pass, so the gate holds without a human exception.
+    if !demo_verdict_pass(home, card) {
+        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"no-demo-verdict\"");
+        return Err(format!(
+            "#{}: no demo.verdict=pass on record — run /demo (the proving ceremony) before accept (#3116)", card
+        ));
     }
 
     // branch must already be on origin (push is the upstream verb).
