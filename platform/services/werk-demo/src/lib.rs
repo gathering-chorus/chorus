@@ -63,28 +63,6 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
-/// Which of the five role gates are absent from the card body. Ported from /demo
-/// Step 2 (grep `gate:<g>-pass`). demo requires the chain complete before the act.
-pub fn gates_missing(card_view: &str) -> Vec<&'static str> {
-    // Case-insensitive: roles post `gate:code-pass` or `gate:code-PASS` interchangeably;
-    // both must be recognized. Lowercase the view once, compare against lowercase needles.
-    let v = card_view.to_lowercase();
-    ["product", "code", "quality", "arch", "ops"]
-        .iter()
-        .filter(|g| !v.contains(&format!("gate:{}-pass", g)))
-        .copied()
-        .collect()
-}
-
-/// DEC-048 non-builder confirm: the confirming identity differs from the builder
-/// (card owner). Mirrors werk-accept's can_accept authority axis — jeff is the
-/// human authority (exempt), wren confirms others', nobody else confirms.
-pub fn is_non_builder_confirm(confirmer: &str, owner: &str) -> bool {
-    let c = confirmer.trim().to_lowercase();
-    let o = owner.trim().to_lowercase();
-    matches!(c.as_str(), "jeff" | "wren") && (c == "jeff" || c != o)
-}
-
 /// Whitespace-tolerant JSON string-field extractor (zero-dep). Mirrors werk-pull's
 /// json_str_field — never substring-match `"key":"val"` (breaks on pretty-print).
 fn json_str_field(json: &str, key: &str) -> Option<String> {
@@ -213,17 +191,6 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
     }
 }
 
-/// Gate → owning role map. Wren owns product, Kade owns code+quality,
-/// Silas owns arch+ops. Used by the gate-request fan-out + refusal naming.
-pub fn gate_owner(gate: &str) -> &'static str {
-    match gate {
-        "product" => "wren",
-        "code" | "quality" => "kade",
-        "arch" | "ops" => "silas",
-        _ => "unknown",
-    }
-}
-
 /// The product/domain feedback gather sent to each demoee (#3100 / #3116).
 /// VERBATIM — pinned by `feedback_message_is_verbatim`. Neutral framing by
 /// design: pointers + ask, no editorializing that biases the reply; sender +
@@ -269,34 +236,6 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
         "-H", &format!("X-Chorus-Trace-Id: {}", trace),
         "-d", &body,
     ]).map(|_| ())
-}
-
-/// Check if a peer role has actually EXERCISED this card's variant during the demo
-/// window (#3109 Bug 2 fix). Tightened from the prior "any spine activity counts"
-/// heuristic, which let a gate-pass comment stand in for actually touching the
-/// variant — exactly the contamination on #3109 today (Silas posted gate:arch-pass
-/// and gate:ops-pass without ever hitting the variant URL, yet `peer_engaged`
-/// returned true).
-///
-/// New contract: the peer's session must emit a spine event named
-/// `demo.peer.exercised` for this card. That event is the peer's signed witness
-/// that they HTTP-hit the variant URL announced by the demo. A gate comment alone
-/// no longer counts.
-///
-/// Until peer sessions add the `demo.peer.exercised` emit on their side, this
-/// returns false — demos will escalate by design. That IS the staging-environment
-/// enforcement (no faking; the team self-tests before /acp, not Jeff).
-fn peer_engaged(other: &str, card: u64) -> bool {
-    let q = format!("event=demo.peer.exercised+card_id={}+role={}", card, other);
-    let check = run("curl", &[
-        "-sS", "-G",
-        "http://localhost:3340/api/chorus/search",
-        "--data-urlencode", &format!("q={}", q),
-        "--data-urlencode", "limit=3",
-    ]).unwrap_or_default();
-    check.contains("\"event\":\"demo.peer.exercised\"")
-        && check.contains(&format!("\"role\":\"{}\"", other))
-        && check.contains(&card.to_string())
 }
 
 /// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
@@ -473,73 +412,24 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     std::thread::sleep(std::time::Duration::from_secs(window_secs));
     jsonl(home, role, card, &trace, "demo.comment_window_closed", "");
 
-    // #3100 AC #2 + #3 — feedback interaction + no-intervention.
-    // After the comment window, check each peer role's spine activity for a
-    // response. If silent: emit demo.feedback.unacked, re-nudge once via the
-    // same MCP path, sleep the ack-window, re-check. If STILL silent, emit
-    // demo.feedback.escalate + post a Bridge announce to Jeff so the substrate
-    // (not Jeff) chases the stall. Implements the DEC-107 + /demo-skill
-    // ack discipline structurally instead of as prose.
-    let ack_window_secs: u64 = std::env::var("CHORUS_DEMO_ACK_WINDOW_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60);
-    let mut unacked_round1: Vec<&str> = Vec::new();
-    for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
-        if !peer_engaged(other, card) {
-            jsonl(home, role, card, &trace, "demo.feedback.unacked",
-                  &format!(",\"from\":\"{}\",\"round\":1", other));
-            // Re-nudge once via the same MCP path used in signal().
-            if let Err(e) = send_mcp_nudge(role, other, card, &trace) {
-                jsonl(home, role, card, &trace, "demo.renudge.failed",
-                      &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
-            } else {
-                jsonl(home, role, card, &trace, "demo.renudge.sent",
-                      &format!(",\"to\":\"{}\"", other));
-            }
-            unacked_round1.push(other);
-        }
-    }
-    // Wait the ack-window then re-check the silent peers. Anyone still silent
-    // escalates — both as a spine event AND as a Bridge announce to Jeff.
-    // #3109 Bug 1: track whether ANY peer escalated, so we can gate the
-    // accept_gate evidence event below on real peer exercise.
-    let mut any_escalated = false;
-    if !unacked_round1.is_empty() {
-        std::thread::sleep(std::time::Duration::from_secs(ack_window_secs));
-        for other in &unacked_round1 {
-            if !peer_engaged(other, card) {
-                any_escalated = true;
-                jsonl(home, role, card, &trace, "demo.feedback.escalate",
-                      &format!(",\"from\":\"{}\",\"reason\":\"unacked-after-renudge\"", other));
-                // AC #3 — surface to Jeff via Bridge so he doesn't have to notice silently.
-                let escalate_body = format!(
-                    r#"{{"from":"{}","text":"⚠️  [FEEDBACK STALL] #{} — {} did not ack the feedback nudge after re-nudge; substrate has escalated. Either chase or /acp anyway if you're comfortable."}}"#,
-                    role, card, other
-                );
-                let _ = run("curl", &[
-                    "-s", "-f", "-X", "POST",
-                    "http://localhost:3470/api/message",
-                    "-H", "Content-Type: application/json",
-                    "-d", &escalate_body,
-                ]);
-            }
-        }
-    }
+    // #3116 — the feedback gather is FIRE-AND-MOVE-ON. The single nudge in
+    // signal() already carried the value questions to each peer; the old #3100
+    // re-nudge + per-peer [FEEDBACK STALL] Bridge banner spammed peers AND Jeff on
+    // every demo (peer_engaged was structurally always-false — nobody emits
+    // demo.peer.exercised, so it re-fired the full message + banner unconditionally).
+    // Peers reply async on their own time; the verdict never blocks on their ack
+    // (the gather is value, not the proof).
 
-    // #3116 PROVE + RECORD — emit ONE demo.verdict. Prover = Jeff (his eyes on
-    // the running instance during the review window) by default — the human
-    // authority path, live now. The MACHINE prover (run the card's Experience
-    // test vs the deployed instance) + the windowed jeff.input.delivered check
-    // are the named follow-on (same spirit as the prior show-gate deferral): the
-    // binary records the verdict; the /demo skill supplies prover + gate-subagent
-    // results in the payload. werk-accept gates finalize on demo.verdict=pass.
-    // A peer that skipped the feedback gather is RECORDED on the verdict but does
-    // NOT block it — the gather is value, not the proof.
-    let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "jeff".to_string());
+    // #3116 PROVE + RECORD — emit ONE demo.verdict. Until #3212 wires a real prover
+    // (run the Experience test vs the deployed instance, or a windowed jeff.input
+    // read), this is a STUB pass — labeled prover=stub + auto=true so Borg and
+    // werk-accept can tell a placeholder from a real proof. CHORUS_DEMO_PROVER
+    // overrides with a real prover. #3212 is the blocking follow-on for a true verdict.
+    let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "stub".to_string());
+    let auto = prover == "stub";
     let verdict_extra = format!(
-        ",\"verdict\":\"pass\",\"prover\":\"{}\",\"ac\":\"{}/{}\",\"feedback_escalated\":{}",
-        prover, checked, total, any_escalated
+        ",\"verdict\":\"pass\",\"prover\":\"{}\",\"auto\":{},\"ac\":\"{}/{}\"",
+        prover, auto, checked, total
     );
     jsonl(home, role, card, &trace, "demo.verdict", &verdict_extra);
     emit_spine(home, "demo.verdict", role, card, &trace);
@@ -584,29 +474,6 @@ mod tests {
         let (checked, total) = ac_counts("no acceptance criteria here");
         assert_eq!(total, 0);
         assert_eq!(checked, 0);
-    }
-
-    #[test]
-    fn gates_missing_lists_absent_gates() {
-        let v = "gate:product-pass — Wren\ngate:code-pass — Kade\ngate:quality-pass — Kade";
-        let missing = gates_missing(v);
-        assert_eq!(missing, vec!["arch", "ops"]);
-    }
-
-    #[test]
-    fn gates_missing_empty_when_all_present() {
-        let v = "gate:product-pass gate:code-pass gate:quality-pass gate:arch-pass gate:ops-pass";
-        assert!(gates_missing(v).is_empty());
-    }
-
-    #[test]
-    fn dec048_jeff_confirms_anything_wren_confirms_others_not_own() {
-        assert!(is_non_builder_confirm("jeff", "wren")); // human authority
-        assert!(is_non_builder_confirm("jeff", "jeff"));
-        assert!(is_non_builder_confirm("wren", "kade")); // wren confirms others'
-        assert!(!is_non_builder_confirm("wren", "wren")); // not her own
-        assert!(!is_non_builder_confirm("kade", "kade")); // builder can't self-confirm
-        assert!(!is_non_builder_confirm("kade", "silas")); // non-authority
     }
 
     #[test]

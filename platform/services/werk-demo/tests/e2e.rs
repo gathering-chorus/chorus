@@ -200,23 +200,19 @@ exit 0
         "curl must use -f so silent-success-on-error class can't recur; got:\n{}",
         curl_calls
     );
-    // Two non-builder roles (silas, kade) get nudged in the initial signal
-    // round (2), and again as re-nudges from the AC#2 loop because the shimmed
-    // chorus-api search returns empty → peer_engaged=false → re-nudge fires (2).
-    // Total: 4. Plus a demo.feedback.escalate per silent peer (still unacked
-    // after re-nudge) + a Bridge escalate POST per silent peer.
+    // #3116: the feedback gather is FIRE-AND-MOVE-ON — ONE nudge per non-builder
+    // peer (silas, kade), NO re-nudge, NO [FEEDBACK STALL] banner. The old #3100
+    // re-nudge+escalate spammed peers and Jeff on every demo; it's removed.
     let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
     assert_eq!(
-        mcp_post_count, 4,
-        "expected 4 MCP nudges (2 initial + 2 re-nudge per #3100 AC#2); got {} in:\n{}",
+        mcp_post_count, 2,
+        "expected exactly 2 MCP nudges (one gather per non-builder peer, no re-nudge); got {} in:\n{}",
         mcp_post_count, curl_calls
     );
-    // Escalate Bridge POSTs for silent peers (2 — silas + kade still silent after re-nudge)
-    let escalate_posts = curl_calls.lines().filter(|l| l.contains("FEEDBACK STALL")).count();
-    assert_eq!(
-        escalate_posts, 2,
-        "expected 2 Bridge escalate posts (silent peers after re-nudge); got {} in:\n{}",
-        escalate_posts, curl_calls
+    assert!(
+        !curl_calls.contains("FEEDBACK STALL"),
+        "the per-peer [FEEDBACK STALL] Jeff banner must be gone (#3116 anti-spam); got:\n{}",
+        curl_calls
     );
 
     // (5b) #3100 AC3: human-pause step — werk-demo announces "ready for review"
@@ -235,10 +231,13 @@ exit 0
         !card_story.contains("\"event\":\"demo.refused\""),
         "demo must not refuse on the happy path; got:\n{}", card_story
     );
-    // demo.verdict carries the prover (Jeff by default) — the record werk-accept reads.
+    // demo.verdict is recorded; until #3212 wires a real prover it's a labeled STUB
+    // (prover=stub, auto=true) so Borg/accept can tell a placeholder from a real proof.
     assert!(
-        card_story.contains("\"event\":\"demo.verdict\"") && card_story.contains("\"prover\":\"jeff\""),
-        "demo must record demo.verdict with prover=jeff; got:\n{}", card_story
+        card_story.contains("\"event\":\"demo.verdict\"")
+            && card_story.contains("\"prover\":\"stub\"")
+            && card_story.contains("\"auto\":true"),
+        "demo must record demo.verdict labeled prover=stub + auto=true (#3116); got:\n{}", card_story
     );
 
     // (7) #3100 AC#5: comment window opens + closes (with secs=0 force, both
@@ -254,20 +253,14 @@ exit 0
         witness
     );
 
-    // (8) #3100 AC#2: feedback unacked → re-nudge → escalate path fully wired.
-    //     Shimmed search returns empty so both peers stay silent through both rounds.
-    assert!(
-        witness.contains("\"event\":\"demo.feedback.unacked\""),
-        "demo must emit demo.feedback.unacked when peer is silent; got:\n{}", witness
-    );
-    assert!(
-        witness.contains("\"event\":\"demo.renudge.sent\""),
-        "demo must emit demo.renudge.sent when re-nudging an unacked peer; got:\n{}", witness
-    );
-    assert!(
-        witness.contains("\"event\":\"demo.feedback.escalate\""),
-        "demo must emit demo.feedback.escalate when peer is still silent after re-nudge; got:\n{}", witness
-    );
+    // (8) #3116: the re-nudge/escalate spam path is GONE (fire-and-move-on). None of
+    //     those events should appear — proving the anti-spam fix structurally.
+    for gone in ["demo.feedback.unacked", "demo.renudge.sent", "demo.feedback.escalate"] {
+        assert!(
+            !witness.contains(&format!("\"event\":\"{}\"", gone)),
+            "#3116 removed the re-nudge/escalate spam path — {} must not fire; got:\n{}", gone, witness
+        );
+    }
 
     // cleanup the trace file so re-runs are hermetic
     let _ = fs::remove_file(trace_path);
