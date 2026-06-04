@@ -179,5 +179,13 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
   unset __chorus_mcp_werk_port
 fi
 
+# --- Ollama embed hosts (#3217) ---------------------------------------------
+# Tracked source of truth so a plist regen can't silently revert them (the
+# 2026-06-04 outage: OLLAMA_URL lived only in the out-of-VC plist, pointed at a
+# dead Bedroom host, and search burned 48s/query). SEARCH query-embed = localhost
+# (latency-critical, same box). BULK embed-delta = Bedroom (M2-Pro/32GB GPU, DEC-054).
+export OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
+export OLLAMA_BULK_URL="${OLLAMA_BULK_URL:-http://192.168.86.242:11434}"
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root
