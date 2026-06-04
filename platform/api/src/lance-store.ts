@@ -63,6 +63,58 @@ export async function searchInTable(
   }));
 }
 
+/** Table surface needed for maintenance — lance's optimize + index ops. */
+export type MaintainableTable = {
+  optimize: (opts?: { cleanupOlderThan?: Date; deleteUnverified?: boolean }) => Promise<unknown>;
+  listIndices?: () => Promise<Array<{ columns?: string[]; name?: string }>>;
+  createIndex?: (column: string, opts?: { replace?: boolean }) => Promise<void>;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * #3157 — compact fragments + prune old versions via lance's own optimize().
+ *
+ * messages.lance grew to 31G — 24G of uncompacted version manifests (10.8K
+ * versions) + 31.9K fragment files — because nothing ever compacted it (every
+ * write appends a fragment + a version, nothing merges/expires). optimize()
+ * merges fragments AND, with `cleanupOlderThan`, prunes versions older than the
+ * retention window. This is lance's sanctioned, atomic maintenance — NOT a
+ * hand-rolled file delete (the index.db-cp-corruption class we must never repeat).
+ * The retention window keeps recent versions so in-flight readers stay safe.
+ *
+ * BUT compaction also INVALIDATES the vector index — proven live 2026-06-04:
+ * running optimize dropped it (listIndices()=[]) and semantic search began
+ * timing out (brute-force over 2M vectors). So after optimize we re-ensure the
+ * vector index exists, or scheduled compaction silently re-breaks semantic
+ * search every run. (The missing index was also the original "pegs a core".)
+ *
+ * Returns { optimize: <lance stats>, reindexed } so the caller logs the reclaim
+ * and whether the index had to be rebuilt.
+ */
+export async function maintainTable(
+  table: MaintainableTable,
+  opts: { retentionMs?: number; vectorColumn?: string; now?: () => number } = {},
+): Promise<{ optimize: unknown; reindexed: boolean }> {
+  if (typeof table?.optimize !== 'function') {
+    throw new Error('maintainTable: table has no optimize() — lance binding too old or wrong surface');
+  }
+  const { retentionMs = DAY_MS, vectorColumn = 'vector', now = Date.now } = opts;
+  const cleanupOlderThan = new Date(now() - retentionMs);
+  const optimizeStats = await table.optimize({ cleanupOlderThan });
+
+  let reindexed = false;
+  if (typeof table.listIndices === 'function' && typeof table.createIndex === 'function') {
+    const indices = (await table.listIndices()) ?? [];
+    const hasVectorIndex = indices.some((i) => (i.columns ?? []).includes(vectorColumn));
+    if (!hasVectorIndex) {
+      await table.createIndex(vectorColumn, { replace: true });
+      reindexed = true;
+    }
+  }
+  return { optimize: optimizeStats, reindexed };
+}
+
 /** Minimal LanceDB connection surface used here. */
 export interface LanceDbConnection {
   openTable: (name: string) => Promise<VectorTable>;

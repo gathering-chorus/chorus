@@ -1,4 +1,4 @@
-import { searchInTable, createLanceInit } from '../src/lance-store';
+import { searchInTable, createLanceInit, maintainTable } from '../src/lance-store';
 
 function fakeTable(rows: any[]) {
   return {
@@ -76,6 +76,51 @@ describe('searchInTable', () => {
     expect(out[0]).toEqual({
       msg_id: 42, source: '', channel: '', role: '', content: '', timestamp: '', score: 1 / 1.5,
     });
+  });
+});
+
+describe('maintainTable (#3157 — compaction + version prune + re-index)', () => {
+  const idxStub = (have: any[]) => ({
+    listIndices: jest.fn(async () => have),
+    createIndex: jest.fn(async () => {}),
+  });
+
+  it('optimizes with a cleanupOlderThan retention window', async () => {
+    const optimize = jest.fn(async () => ({ compaction: { fragmentsRemoved: 31900 } }));
+    const s = idxStub([{ columns: ['vector'], name: 'vector_idx' }]);
+    const now = () => 1_000_000_000_000;
+    const retentionMs = 24 * 60 * 60 * 1000;
+    const r: any = await maintainTable({ optimize, ...s } as any, { retentionMs, now });
+    const arg = (optimize.mock.calls[0] as any[])[0];
+    expect(arg.cleanupOlderThan instanceof Date).toBe(true);
+    expect(arg.cleanupOlderThan.getTime()).toBe(now() - retentionMs);
+    expect(r.optimize).toEqual(expect.objectContaining({ compaction: expect.anything() }));
+  });
+
+  it('REBUILDS the vector index when compaction dropped it (listIndices empty)', async () => {
+    const s = idxStub([]); // the live 2026-06-04 bug: compaction left no index
+    const r: any = await maintainTable({ optimize: jest.fn(async () => ({})), ...s } as any, {});
+    expect(s.createIndex).toHaveBeenCalledWith('vector', { replace: true });
+    expect(r.reindexed).toBe(true);
+  });
+
+  it('skips re-index when the vector index already exists', async () => {
+    const s = idxStub([{ columns: ['vector'], name: 'vector_idx' }]);
+    const r: any = await maintainTable({ optimize: jest.fn(async () => ({})), ...s } as any, {});
+    expect(s.createIndex).not.toHaveBeenCalled();
+    expect(r.reindexed).toBe(false);
+  });
+
+  it('defaults to a 24h retention window when none given', async () => {
+    const optimize = jest.fn(async () => ({}));
+    const now = () => 2_000_000_000_000;
+    await maintainTable({ optimize, ...idxStub([{ columns: ['vector'] }]) } as any, { now });
+    const arg = (optimize.mock.calls[0] as any[])[0];
+    expect(arg.cleanupOlderThan.getTime()).toBe(now() - 24 * 60 * 60 * 1000);
+  });
+
+  it('throws a clear error when the table has no optimize (old/wrong binding)', async () => {
+    await expect(maintainTable({} as any)).rejects.toThrow(/optimize/i);
   });
 });
 
