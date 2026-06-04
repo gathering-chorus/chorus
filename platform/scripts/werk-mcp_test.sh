@@ -20,7 +20,8 @@ case "$payload" in
   *notifications/initialized*) : ;;
   *tools/call*)
      tool=$(printf '%s' "$payload" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')
-     echo "tools/call $tool" >> "$CALLS_LOG"
+     tgt=$(printf '%s' "$payload" | sed -n 's/.*"target":"\([^"]*\)".*/\1/p')
+     echo "tools/call $tool${tgt:+ target=$tgt}" >> "$CALLS_LOG"
      printf 'data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}]}}\n' ;;
 esac
 exit 0
@@ -49,6 +50,16 @@ export PATH="$TMP:$PATH"
 export CHORUS_WERK_BASE="$TMP/werk-base"
 mkdir -p "$TMP/werk-base/kade-9999"   # fake werk dir for step-5 gh cd
 
+# #3234 — CHORUS_HOME = a temp git repo 1 commit BEHIND its origin/main, so step 5.5's
+# ff-sync (scripts-land-live) runs hermetically and we can assert it advanced canonical.
+ORIGIN="$TMP/origin"; CANON="$TMP/canon"
+git init -q -b main "$ORIGIN"
+git -C "$ORIGIN" -c user.email=t -c user.name=t commit -q --allow-empty -m c1
+git -C "$ORIGIN" -c user.email=t -c user.name=t commit -q --allow-empty -m c2
+git clone -q "$ORIGIN" "$CANON" 2>/dev/null
+git -C "$CANON" reset -q --hard HEAD~1   # canonical now 1 behind origin/main
+export CHORUS_HOME="$CANON"
+
 out="$("$SCRIPT" kade 9999 jeff 2>&1)"; rc=$?
 fail() { echo "FAIL: $1"; echo "--- output ---"; echo "$out"; echo "--- calls ---"; cat "$CALLS_LOG"; exit 1; }
 
@@ -67,19 +78,29 @@ grep -q "5 merge"       <<<"$out" || fail "step 5 werk-merge missing"
 # #3175: step 5 is the real werk-merge MCP verb now — NOT the interim gh path.
 grep -q "interim"       <<<"$out" && fail "step 5 still labeled interim — werk-merge (#3175) should have retired it"
 
-# AC#5 — hard-stop at the deploy-from-main gap; prod steps + accept do NOT run.
-grep -q "\[BLOCKED\] deploy-from-main" <<<"$out" || fail "step 6 hard-stop (BLOCKED deploy-from-main) missing"
-grep -q "\[done\]" <<<"$out" && fail "reached [done] — prod steps ran; must hard-stop"
-[ "$rc" -eq 3 ] || fail "expected hard-stop exit 3, got $rc"
+# #3222 retired the BLOCKED hard-stop; #3234: prod deploy runs, accept does NOT (human's hand).
+grep -q "\[BLOCKED\] deploy-from-main" <<<"$out" && fail "stale BLOCKED hard-stop still present — #3222 retired it"
 
-# The demo-half MCP call sequence, in order, by tool name.
+# #3234 AC2 — step 5.5 ff-syncs canonical so SCRIPT changes land live, and it actually advanced.
+grep -q "5.5 sync-canonical" <<<"$out" || fail "step 5.5 sync-canonical missing"
+[ "$(git -C "$CANON" rev-parse HEAD)" = "$(git -C "$ORIGIN" rev-parse main)" ] \
+  || fail "5.5 did NOT ff canonical to origin/main (scripts would stay stale)"
+
+# #3222 — step 6 deploy-prod runs (canonical deploy from main is no longer blocked).
+grep -q "6 deploy-prod" <<<"$out" || fail "step 6 deploy-prod missing"
+
+# #3234 AC1 — ACCEPT IS THE HUMAN'S HAND: werk-mcp STOPS before accept, prints the
+# accept instruction, and does NOT auto-fire werk-accept.
+grep -q "NOT yet accepted"      <<<"$out" || fail "missing 'NOT yet accepted' — must stop before accept"
+grep -q "werk-accept 9999" <<<"$out" || fail "missing the 'run werk-accept yourself' instruction for the human"
+grep -q "7 accept" <<<"$out" && fail "step 7 accept still present — accept must be the human's separate act (#3234)"
+[ "$rc" -eq 0 ] || fail "expected clean exit 0 (no hard-stop), got $rc"
+
+# MCP call sequence: demo half + step-5 merge + step-6 canonical deploy. NO werk-accept.
 seq="$(grep '^tools/call' "$CALLS_LOG" | awk '{print $2}' | paste -sd, -)"
-# #3175: step 5 merge is now a real MCP verb (werk-merge) in the sequence, not inline gh.
-expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up,werk-merge"
+expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up,werk-merge,chorus_deploy"
 [ "$seq" = "$expected" ] || fail "MCP call sequence: got [$seq] expected [$expected]"
+grep -q "werk-accept" "$CALLS_LOG" && fail "werk-accept ran via the script — accept must be the human's hand (DEC-048, #3234)"
+grep -q 'target.*canonical' "$CALLS_LOG" || fail "step 6 canonical deploy did NOT run (#3222 should deploy from main)"
 
-# AC#5/#6 — no canonical deploy and no accept ran (gated behind the blocked prod deploy).
-grep -q "werk-accept"      "$CALLS_LOG" && fail "werk-accept ran — accept must stay gated behind a real prod deploy"
-grep -q 'target.*canonical' "$CALLS_LOG" && fail "canonical deploy ran — must hard-stop before deploying werk-content to prod"
-
-echo "PASS: werk-mcp 8-step flow — demo real, merge via werk-merge verb (#3175), hard-stop at deploy-from-main, accept gated"
+echo "PASS: werk-mcp flow — demo real, merge (#3175), 5.5 canonical-sync (scripts live), step-6 deploy-from-main (#3222), accept is the human's hand (#3234)"

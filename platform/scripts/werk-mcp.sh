@@ -114,13 +114,31 @@ else echo "   [FAIL] 4.5 demo (werk-demo #$CARD) — chain stops here." >&2; exi
 # Wren + Kade 2026-06-03), squash-merges, and CONTENT-VERIFIES the merge landed.
 step "5 merge"       "$BUILDER"  werk-merge    "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"
 
-# ═══ Steps 6-7 — deploy to PROD from MAIN (#3222 unblocked the hard-stop) ═══
-# Step 7's chorus_deploy target=canonical now SELF-BUILDS from canonical@origin/main
-# (werk-deploy → werk-build --target canonical --only <card crates>, then chorus-deploy
-# --target canonical per crate). prod binaries are structurally a build of main, not the
-# werk — the merged≠live root is closed. A separate "build-prod" step is therefore
-# REDUNDANT (deploy-canonical owns the from-main build), so the old step 6 is folded into
-# step 7; the demo build already happened at step 3.
+# #3234 — after merge, ff-sync canonical to origin/main so SCRIPT-only changes go LIVE
+# with zero manual steps. Scripts are executables too: a script-only card (no service
+# crate) merges but stays stale in canonical until a manual sync (bit #3222 + #3232) —
+# the merged≠live lie for .sh as much as for binaries. deploy-prod (step 6) handles crate
+# binaries; this makes canonical match origin/main immediately so everything else is live.
+echo "-- 5.5 sync-canonical (scripts land live) --------------------------------"
+if [ -n "${CHORUS_HOME:-}" ] \
+   && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
+   && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
+  echo "   [ok] 5.5 canonical ff-synced to origin/main"
+else
+  echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'; scripts stale until then" >&2
+fi
+
+# ═══ Step 6 — deploy to PROD from MAIN (#3222 unblocked the hard-stop) ═══
+# chorus_deploy target=canonical SELF-BUILDS from canonical@origin/main (werk-deploy →
+# werk-build --target canonical --only <card crates>, then chorus-deploy per crate). prod
+# binaries are structurally a build of main, not the werk — the merged≠live root is closed.
 step "6 deploy-prod" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "$BUILDER" "$CARD")"  # builds + installs from MAIN
-step "7 accept"      "$ACCEPTER" werk-accept   "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"   # accepter via X-Chorus-Role, builder via role arg
-echo; echo "[done] all steps green — #$CARD landed to prod (build-of-main) via the live MCP flow."
+
+# #3234 — ACCEPT IS THE HUMAN'S HAND. werk-mcp STOPS here; it does NOT run werk-accept.
+# A builder running a script must not auto-fire accept AS the accepter — the DEC-048
+# human-accept gate can't be satisfied by an agent's script (house-always-wins). The work
+# is landed to prod (built-of-main + live); the ACCEPT is the accepter's deliberate act.
+echo
+echo "[landed] #$CARD built-of-main, deployed + live (steps 1-6 green). NOT yet accepted."
+echo "  Accept is yours (DEC-048) — judge the work, then run it yourself:"
+echo "    DEPLOY_ROLE=$ACCEPTER werk-accept $CARD $BUILDER"
