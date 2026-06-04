@@ -44,8 +44,17 @@ pub fn fetch_unread(role: &str, log_path: &Path, window_events: usize) -> Vec<Un
     for line in window {
         // Cheap filter before JSON parse — most lines are irrelevant.
         let is_emitted = line.contains(r#""event":"nudge.emitted""#);
+        // #3235: a surfaced event clears THIS role's unread when it was surfaced
+        // FOR this role. Two emitters, two shapes: the augment path (and the test
+        // fixtures) carry the recipient as the top-level "role"; the pulse
+        // delivery-worker (live osascript delivery) carries the recipient in a
+        // "to" field with role="pulse" (the service). Matching only "role" missed
+        // the live delivery → the nudge re-surfaced in the context block → it
+        // rendered twice. Match either, so a delivered nudge folds out.
         let is_surfaced_for_role = line.contains(r#""event":"nudge.surfaced""#)
-            && line.contains(&format!(r#""role":"{}""#, role));
+            && (line.contains(&format!(r#""role":"{}""#, role))
+                || line.contains(&format!(r#""to":"{}""#, role))
+                || line.contains(&format!("to={}", role)));
         if !is_emitted && !is_surfaced_for_role {
             continue;
         }
@@ -94,7 +103,13 @@ fn extract_field(line: &str, prefix: &str) -> Option<String> {
 /// Extract trace id. Handles both `trace=ntr-...,` (emitted payload) and
 /// `"trace":"ntr-...,` (surfaced event top-level field).
 fn extract_trace_id(line: &str) -> Option<String> {
-    extract_field(line, "trace=").or_else(|| extract_json_string_field(line, "trace"))
+    // `trace=` (emitted packed payload) · `"trace_id":"` (pulse delivery-worker
+    // JSON surfaced, #3235) · `"trace":"` (augment surfaced). Try trace_id before
+    // trace so the longer key wins on the pulse form ("trace" is not a substring
+    // of "trace_id" with the `":"` suffix, but order it explicitly to be safe).
+    extract_field(line, "trace=")
+        .or_else(|| extract_json_string_field(line, "trace_id"))
+        .or_else(|| extract_json_string_field(line, "trace"))
 }
 
 /// Extract a top-level JSON string field like `"role":"value"` — stops at
@@ -291,6 +306,27 @@ mod tests {
         ]);
         let unread = fetch_unread("silas", &log, 1000);
         assert_eq!(unread.len(), 1, "kade surfacing trace-030 must not clear silas's unread");
+    }
+
+    #[test]
+    fn live_delivery_surfaced_via_to_field_clears_unread() {
+        // #3235 double-render root cause: the pulse delivery-worker emits
+        // nudge.surfaced with role="pulse" (the service identity) + the recipient
+        // in a "to" JSON field + trace in "trace_id". The fold only matched
+        // surfaced by role==recipient and only read trace from trace=/"trace", so
+        // it was doubly blind to the live delivery → it re-surfaced the nudge in
+        // the context block → the nudge rendered twice. The fold must fold out a
+        // surfaced whose recipient (to) == role, regardless of the emitter role.
+        let log = fixture_path("pulse-delivered");
+        write_log(&log, &[
+            &emitted("silas", "kade", "019e-aaa", "please review"),
+            r#"{"timestamp":"2026-06-04T21:02:38.536Z","event":"nudge.surfaced","role":"pulse","trace_id":"019e-aaa","id":15760,"from":"silas","to":"kade","attempt":1}"#,
+        ]);
+        let unread = fetch_unread("kade", &log, 1000);
+        assert!(
+            unread.is_empty(),
+            "a live-delivered nudge (pulse surfaced, to=kade) must fold out — no double-render"
+        );
     }
 
     #[test]
