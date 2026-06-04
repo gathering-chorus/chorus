@@ -2,7 +2,18 @@
 //! gate (DEC-048: only Wren/Jeff finalize; a builder never self-accepts). That's a
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
-use werk_accept::{branch_name, can_accept, jsonl_line};
+use werk_accept::{branch_name, can_accept, jsonl_line, script_path};
+
+#[test]
+fn script_path_resolves_absolute_under_home_platform_scripts() {
+    // #3183: werk-accept is exec'd by the chorus-mcp daemon, whose PATH lacks
+    // platform/scripts — bare-name `cards` died "No such file or directory" (proven
+    // LIVE accepting #3211). Resolve absolutely from home, like werk-pull's #3151 fix.
+    use std::path::Path;
+    assert_eq!(script_path(Path::new("/repo"), "cards"), "/repo/platform/scripts/cards");
+    assert_eq!(script_path(Path::new("/x/y"), "chorus-werk"), "/x/y/platform/scripts/chorus-werk");
+    assert_eq!(script_path(Path::new("/x/y"), "chorus-log"), "/x/y/platform/scripts/chorus-log");
+}
 
 #[test]
 fn jeff_can_accept_any_card_including_jeff_owned() {

@@ -114,6 +114,24 @@ fn run(cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// #3183 — resolve a chorus script (cards, chorus-log, chorus-werk) to its ABSOLUTE
+/// path under $CHORUS_HOME/platform/scripts. werk-accept is exec'd by the chorus-mcp
+/// daemon, whose PATH does NOT include platform/scripts, so bare-name lookups ("cards")
+/// failed with "No such file or directory" — proven live accepting #3211, which is why
+/// accepts fell back to `cards done`. Mirrors werk-pull's #3151 fix. (git/gh stay bare
+/// — they're on the system PATH.)
+pub fn script_path(home: &Path, name: &str) -> String {
+    home.join("platform/scripts").join(name).to_string_lossy().into_owned()
+}
+
+/// #3183 — resolve a chorus-* BINARY (werk-deploy) to its absolute install path under
+/// $CHORUS_BIN (default ~/.chorus/bin), same PATH-independence as script_path.
+fn bin_path(name: &str) -> String {
+    let dir = env::var("CHORUS_BIN")
+        .unwrap_or_else(|_| format!("{}/.chorus/bin", env::var("HOME").unwrap_or_default()));
+    format!("{}/{}", dir, name)
+}
+
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
     fn drop(&mut self) {
@@ -195,7 +213,7 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
 
     // EXIT precondition (not entry re-gate): the card must be in WIP. Idempotent if
     // already Done (a prior accept finalized it) -> no-op success.
-    let cj = run("cards", &["view", &card.to_string(), "--json"])
+    let cj = run(&script_path(home, "cards"), &["view", &card.to_string(), "--json"])
         .map_err(|e| format!("card #{} not viewable: {}", card, e))?;
     let status = json_str_field(&cj, "status").unwrap_or_default();
 
@@ -241,9 +259,9 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
     // finalize (idempotent on re-run): board Done + spine + close + gh.
-    run("cards", &["done", &card.to_string()])
+    run(&script_path(home, "cards"), &["done", &card.to_string()])
         .map_err(|e| format!("cards-done failed (re-run accept to finish): {}", e))?;
-    let _ = run("chorus-log", &["card.accepted", role, &format!("card={}", card)]);
+    let _ = run(&script_path(home, "chorus-log"), &["card.accepted", role, &format!("card={}", card)]);
     jsonl(home, role, card, &trace, "card.done", "");
 
     // #3108 AC#8: tear down the per-card variant overlay BEFORE removing the
@@ -253,11 +271,11 @@ pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Pa
     // before chorus-werk-remove deletes that tree. Best-effort + idempotent:
     // env-down is a no-op when no overlay is active, matching the existing
     // "let _ = run(...)" pattern for accept's finalize steps.
-    let _ = run("werk-deploy", &["env-down", role]);
+    let _ = run(&bin_path("werk-deploy"), &["env-down", role]);
     jsonl(home, role, card, &trace, "accept.env_down", "");
 
     // close branch + werk (idempotent).
-    let _ = run("chorus-werk", &["remove", role, &card.to_string()]);
+    let _ = run(&script_path(home, "chorus-werk"), &["remove", role, &card.to_string()]);
 
     // gh chorus/accept status on the merged main HEAD.
     if let Ok(sha) = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).map(|s| s.trim().to_string()) {

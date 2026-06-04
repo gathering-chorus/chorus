@@ -32,21 +32,20 @@ fn write_exec(path: &Path, body: &str) {
 
 #[test]
 fn accept_authority_gate_and_happy_path() {
-    // shims: gh / cards / chorus-log / chorus-werk on PATH, each logging to a file.
+    // #3183: werk-accept now resolves cards/chorus-log/chorus-werk ABSOLUTELY under
+    // home/platform/scripts, and werk-deploy under $CHORUS_BIN — independent of PATH
+    // (it's exec'd by the chorus-mcp daemon whose PATH lacks platform/scripts; bare
+    // names died "No such file or directory" accepting #3211). So the chorus shims go
+    // at their ABSOLUTE locations (below, once home exists) and stay OFF PATH; only gh
+    // (a real system tool, called bare) sits on PATH. If accept used bare names it
+    // would fail to find `cards` here — passing proves the absolute resolution.
     let bin = tmp("bin");
     let log = tmp("log").join("calls");
     std::env::set_var("SHIM_LOG", log.to_str().unwrap());
-    // cards: view --json echoes a configurable status+owner; done logs.
-    write_exec(&bin.join("cards"),
-        "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-WIP}\\\", \\\"owner\\\": \\\"${CARDS_OWNER:-kade}\\\" }\" ;;\n done) echo \"cards done $2\" >> \"$SHIM_LOG\" ;;\nesac\n");
     write_exec(&bin.join("gh"), "#!/bin/sh\necho \"gh $@\" >> \"$SHIM_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
-    write_exec(&bin.join("chorus-log"), "#!/bin/sh\necho \"chorus-log $@\" >> \"$SHIM_LOG\"\n");
-    write_exec(&bin.join("chorus-werk"), "#!/bin/sh\necho \"chorus-werk $@\" >> \"$SHIM_LOG\"\n");
-    // #3108 AC#8: accept tears down the role's variant overlay before removing
-    // the werk. Shim werk-deploy so the test can prove (a) env-down is called
-    // on happy-path, and (b) it precedes chorus-werk remove in the log order.
-    write_exec(&bin.join("werk-deploy"), "#!/bin/sh\necho \"werk-deploy $@\" >> \"$SHIM_LOG\"\n");
     std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    let chorus_bin = tmp("chorus-bin");
+    std::env::set_var("CHORUS_BIN", chorus_bin.to_str().unwrap());
 
     // real git: origin + home clone + a card worktree with a PUSHED commit.
     let origin = tmp("origin");
@@ -65,6 +64,17 @@ fn accept_authority_gate_and_happy_path() {
     git(&werk, &["add", "."]);
     git(&werk, &["commit", "-q", "-m", "work"]);
     git(&werk, &["push", "-q", "origin", "kade/9001"]);
+
+    // #3183: place the chorus shims at the ABSOLUTE paths accept resolves — home/
+    // platform/scripts (cards/chorus-log/chorus-werk) + $CHORUS_BIN (werk-deploy) —
+    // and NOT on PATH. accept finds them by absolute resolution, not the daemon PATH.
+    let scripts = home.join("platform/scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    write_exec(&scripts.join("cards"),
+        "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-WIP}\\\", \\\"owner\\\": \\\"${CARDS_OWNER:-kade}\\\" }\" ;;\n done) echo \"cards done $2\" >> \"$SHIM_LOG\" ;;\nesac\n");
+    write_exec(&scripts.join("chorus-log"), "#!/bin/sh\necho \"chorus-log $@\" >> \"$SHIM_LOG\"\n");
+    write_exec(&scripts.join("chorus-werk"), "#!/bin/sh\necho \"chorus-werk $@\" >> \"$SHIM_LOG\"\n");
+    write_exec(&chorus_bin.join("werk-deploy"), "#!/bin/sh\necho \"werk-deploy $@\" >> \"$SHIM_LOG\"\n");
 
     std::env::set_var("CARDS_OWNER", "kade");
     std::env::set_var("CARDS_STATUS", "WIP");
