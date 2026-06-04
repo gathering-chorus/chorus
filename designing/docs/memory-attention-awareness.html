@@ -137,13 +137,13 @@ snapshot-diff layer wrapped around it is what goes stale.</p>
   That is the whole difference, and it's the load-bearing requirement, not a detail.
 </div>
 
-<h3>How board.* actually fixes gemba and pair (the concrete part)</h3>
+<h3>How pulse.* actually fixes gemba and pair (the concrete part)</h3>
 <p><span class="mono">gemba</span> and <span class="mono">pair</span> are the same primitive — read the team's
 turn-stream, narrate — differing only in fan-out. Concretely:</p>
 <ul>
   <li><strong>gemba</strong> (one watcher &rarr; one target) today runs on <span class="mono">gemba-start.sh</span> +
   cron-tick + a <span class="mono">/tmp</span> snapshot it diffs. The fix is to delete all of that and <em>read the
-  watched role's slice of <span class="mono">board.*</span></em> — its <code>state</code>, its WIP, and its
+  watched role's slice of <span class="mono">pulse.*</span></em> — its <code>state</code>, its WIP, and its
   <span class="mono">observations.jsonl</span> turn-stream — narrating the delta on each glance. The data is already
   live in the shared object; gemba is just "render that role's lane." (Proven tonight: the cron tick reported "no
   change" while the raw stream had the role's real last turn — the snapshot layer was staler than its own source.)</li>
@@ -153,17 +153,17 @@ turn-stream, narrate — differing only in fan-out. Concretely:</p>
   announce-then-stop becomes structurally impossible because the driver's next turn arrives in the navigator's context
   whether the navigator chooses to look or not.</li>
 </ul>
-<p>Both are the <em>same wire</em>: push the peer's turn-stream out of <span class="mono">board.*</span>/<span class="mono">observations.jsonl</span>
+<p>Both are the <em>same wire</em>: push the peer's turn-stream out of <span class="mono">pulse.*</span>/<span class="mono">observations.jsonl</span>
 into idle context. gemba and pair are two fan-outs of it; the relay failure dissolves because shared fate replaces
 Jeff-as-carrier.</p>
 
 <h2>3 · Awareness</h2>
 
-<p>Here's the word that was missing all along: <span class="mono">board.*</span> isn't <em>data</em>. It's a
+<p>Here's the word that was missing all along: <span class="mono">pulse.*</span> isn't <em>data</em>. It's a
 <strong>sensorium</strong>.</p>
 
 <table>
-  <tr><th>board.*</th><th>sense</th></tr>
+  <tr><th>pulse.*</th><th>sense</th></tr>
   <tr><td>messages / nudges</td><td>hearing — the voices in the next lane</td></tr>
   <tr><td>cards / WIP</td><td>the other cars — where the work-bodies are, and the load each carries</td></tr>
   <tr><td>streams (spine, observations)</td><td>motion / peripheral vision — who's moving, who slipped</td></tr>
@@ -171,12 +171,21 @@ Jeff-as-carrier.</p>
   <tr><td>roles[] state</td><td>proprioception of the team — where everyone is</td></tr>
 </table>
 
+<div class="callout">
+  <strong>#3208 — the sensorium is <span class="mono">pulse.*</span>, not <span class="mono">board.*</span>.</strong>
+  The whole object above (with ~10 siblings) is the <span class="mono">pulse</span>. <span class="mono">board</span>
+  is <em>one</em> of those siblings — the cards / WIP facet — not the name of the rope. Earlier drafts called the
+  sensorium "board.*", which named the cards-slice as if it were the whole. <span class="mono">pulse.*</span> is the
+  rope; <span class="mono">board</span> (e.g. <span class="mono">pulse.board.wip_cards</span>) is the cards child of it,
+  and stays that.
+</div>
+
 <p>It carries <em class="key">all three roles in one shared object — literally</em>. That's what makes it a rope and
 not three separate leashes: every role reads the <strong>same</strong> object and sees the other two inside it. "What
-I see and what you see must be exactly the same" — <span class="mono">board.*</span> is that sameness, concrete.</p>
+I see and what you see must be exactly the same" — <span class="mono">pulse.*</span> is that sameness, concrete.</p>
 
 <p>The senses are already there. The only thing ever missing is <strong>having them open</strong>. Right now
-<span class="mono">board.*</span> is something a role <em>chooses</em> to query — turn your whole head and look. A
+<span class="mono">pulse.*</span> is something a role <em>chooses</em> to query — turn your whole head and look. A
 sense isn't a choice; it's ambient, always in your field, perceived before you decide to. That is the entire gap
 between <em>querying</em> it and <em>sensing through</em> it. Driving works on a rough, continuous, peripheral read
 refreshed by regular glances — and that's what lets you go <em>fast</em> without hitting anyone. We've been driving
@@ -234,7 +243,7 @@ concrete wires it actually is:</p>
 <table>
   <tr><th>#</th><th>wire</th><th>owner</th></tr>
   <tr><td>a</td><td>The inject fires on <strong>peer tool-turn deltas</strong>, not on the role's own next prompt — the partner's motion reaches idle context (the <span class="mono">observations.jsonl</span> piece). This is what makes the rope taut.</td><td>Wren / Kade</td></tr>
-  <tr><td>b</td><td><strong>Retire the <span class="mono">/tmp</span>-snapshot + cron-tick scaffolding</strong> under gemba/pair; read the live <span class="mono">board.*</span> slice directly.</td><td>Wren (loom) — #3205</td></tr>
+  <tr><td>b</td><td><strong>Retire the <span class="mono">/tmp</span>-snapshot + cron-tick scaffolding</strong> under gemba/pair; read the live <span class="mono">pulse.*</span> slice directly.</td><td>Wren (loom) — #3205</td></tr>
   <tr><td>c</td><td><strong><code>inferred_stale</code> computes actually-behind</strong> (data delta vs. the live object), not last-fidget. Kills the months of false "idle."</td><td>Silas (index-freshness/observe) — carding it</td></tr>
 </table>
 
@@ -255,7 +264,7 @@ concrete wires it actually is:</p>
 
 <p>This is Wren's lane (memory, loom, the context/inject service) with Silas's attention model underneath it. It's
 filed as <strong>#3205</strong> — not as a build card, since the parts exist, but as the wiring: collapse
-<span class="mono">gemba</span> + <span class="mono">pair</span> + mutual awareness onto one poll-board.* loom verb,
+<span class="mono">gemba</span> + <span class="mono">pair</span> + mutual awareness onto one poll-pulse.* loom verb,
 retire the start/tick/cron/snapshot scaffolding.</p>
 
 <hr>
