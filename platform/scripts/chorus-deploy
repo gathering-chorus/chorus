@@ -155,6 +155,33 @@ wait_for_chorus_api_mcp_ready() {
   return 1
 }
 
+# #3232 — verify a kickstarted daemon is actually RUNNING (and, for chorus-hooks, that its
+# socket is live), polling with bounded retries. `launchctl kickstart` returns before the
+# daemon binds, so a crash-on-start otherwise ships green; this is the rust-daemon analogue
+# of chorus-api's self-smoke. Retries/delay are env-overridable for tests. Returns 0 once
+# up, 1 if it never comes up within the budget.
+verify_service_running() {  # $1 = launchd label
+  local label="$1"
+  local retries="${CHORUS_DEPLOY_VERIFY_RETRIES:-20}"
+  local delay="${CHORUS_DEPLOY_VERIFY_DELAY:-0.5}"
+  local i=0
+  while [ "$i" -lt "$retries" ]; do
+    if launchctl print "gui/$(id -u)/$label" 2>/dev/null | grep -q "state = running"; then
+      if [ "$label" = "com.chorus.hooks" ]; then
+        # the daemon is only truly up once its socket is bound (the liveness the
+        # 2026-06-04 outage lacked — launchctl said loaded, socket was gone).
+        local sock="${CHORUS_HOOKS_SOCK:-/tmp/chorus-hooks.sock}"
+        if [ -S "$sock" ] || [ -e "$sock" ]; then return 0; fi
+      else
+        return 0
+      fi
+    fi
+    i=$((i + 1))
+    sleep "$delay" 2>/dev/null || true
+  done
+  return 1
+}
+
 # #2995 — --target werk|canonical. canonical (default) preserves the existing
 # behavior: install to ~/.chorus/bin/ + kickstart the daemon. werk installs
 # to $WERK_<ROLE>_BIN (the role's per-werk slot) and skips kickstart — the
@@ -743,10 +770,20 @@ fi
 # pre-werk-build canonical binary, undisturbed. Kickstart fires at /acp's
 # promote step instead, when the werk slot is moved into canonical.
 if [ "$DEPLOY_TARGET" = "canonical" ] && [ -n "$KICKSTART_SERVICE" ]; then
-  if launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
-    echo "chorus-deploy: kickstarted $KICKSTART_SERVICE"
+  if ! launchctl kickstart -k "gui/$(id -u)/$KICKSTART_SERVICE" 2>/dev/null; then
+    echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE returned non-zero; verifying liveness anyway" >&2
+  fi
+  # #3232 — VERIFY the daemon actually came UP (launchctl running + socket live), retry,
+  # and FAIL LOUD if it never does. `launchctl kickstart` returns BEFORE the daemon binds
+  # its socket, so a crash-on-start (or a binary that loads but never serves) shipped green
+  # while the service was down — the 2026-06-04 chorus-hooks outage (all guards offline
+  # team-wide). chorus-api already self-smokes; this gives the rust daemon the same gate.
+  if verify_service_running "$KICKSTART_SERVICE"; then
+    echo "chorus-deploy: verified $KICKSTART_SERVICE running"
   else
-    echo "chorus-deploy: WARN — launchctl kickstart $KICKSTART_SERVICE failed (service may not be loaded)" >&2
+    echo "chorus-deploy: FATAL — $KICKSTART_SERVICE did not come up running after deploy (service not running / socket not live)" >&2
+    emit_deploy_failed "not-running"
+    exit 1
   fi
 elif [ "$DEPLOY_TARGET" = "werk" ]; then
   echo "chorus-deploy: target=werk — skipped kickstart of ${KICKSTART_SERVICE:-<none>}; role session PATH-prefix resolves the new binary"
