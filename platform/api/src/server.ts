@@ -852,12 +852,21 @@ app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
 // Returns most recent Pulse team state snapshot
 
 import { fetchChorusPulseLatest } from './handlers/chorus-pulse-latest';
+
+// #3202 — read the durable pulse snapshot (~/.chorus, survives reboot) FIRST;
+// fall back to the /tmp derived cache during transition. The durable file is the
+// single source of truth; /tmp is a cache the Rust producer mirrors. After a
+// reboot wipes /tmp, the durable last-good still serves — no blind boot.
+const readPulseSnapshot = (): string | null => {
+  const durable = process.env.CHORUS_PULSE_PATH
+    || `${process.env.HOME || ''}/.chorus/pulse-latest.json`;
+  if (durable && fs.existsSync(durable)) return fs.readFileSync(durable, 'utf-8');
+  if (fs.existsSync('/tmp/pulse-latest.json')) return fs.readFileSync('/tmp/pulse-latest.json', 'utf-8');
+  return null;
+};
+
 app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
-  const r = fetchChorusPulseLatest({
-    readPulse: () => fs.existsSync('/tmp/pulse-latest.json')
-      ? fs.readFileSync('/tmp/pulse-latest.json', 'utf-8')
-      : null,
-  });
+  const r = fetchChorusPulseLatest({ readPulse: () => readPulseSnapshot() });
   res.status(r.status).json(r.body);
 });
 
@@ -875,10 +884,7 @@ import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
 import { fetchContextHealth } from './handlers/context-health';
 
-const readPulseFile = (): string | null =>
-  fs.existsSync('/tmp/pulse-latest.json')
-    ? fs.readFileSync('/tmp/pulse-latest.json', 'utf-8')
-    : null;
+const readPulseFile = (): string | null => readPulseSnapshot();
 
 const readRoleStateFile = (role: string): { role: string; state: string; card?: number | null; gemba?: string | null; detail?: string | null } | null => {
   const p = `/tmp/claude-team-scan/${role}-declared.json`;

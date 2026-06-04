@@ -79,9 +79,39 @@ pub fn assemble() -> String {
 
     let json = serde_json::Value::Object(pulse);
     let out = serde_json::to_string_pretty(&json).unwrap_or_default();
-    let _ = fs::write("/tmp/pulse-latest.json", &out);
+    write_pulse(&out);
 
     serde_json::to_string(&json).unwrap_or_default()
+}
+
+/// #3202 — the durable pulse snapshot path. The pulse is the team's boot
+/// ground-truth; it MUST survive a reboot, so it lives in `~/.chorus/` (the
+/// persistent runtime home, where index.db lives) — never `/tmp`, which a
+/// reboot wipes (the live failure this session: roles booted blind/stale).
+/// Overridable via CHORUS_PULSE_PATH for tests (hermetic, no real ~/.chorus).
+pub fn durable_pulse_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("CHORUS_PULSE_PATH") {
+        return std::path::PathBuf::from(p);
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dir = std::path::Path::new(&home).join(".chorus");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("pulse-latest.json")
+}
+
+/// #3202 — write the pulse snapshot to the durable store as the SINGLE source of
+/// truth, atomically (temp + rename, so a concurrent reader never sees a
+/// half-written file). `/tmp/pulse-latest.json` is kept only as a derived cache
+/// for not-yet-migrated readers — never a second source of truth; it is retired
+/// as readers move to the durable path.
+fn write_pulse(out: &str) {
+    let path = durable_pulse_path();
+    let tmp = path.with_extension("json.tmp");
+    if fs::write(&tmp, out).is_ok() {
+        let _ = fs::rename(&tmp, &path);
+    }
+    // derived cache (back-compat); the durable file above is the source of truth.
+    let _ = fs::write("/tmp/pulse-latest.json", out);
 }
 
 /// Hook-invocation entry point. Writes pulse file and prints compact JSON
