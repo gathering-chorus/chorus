@@ -30,14 +30,57 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL="$SCRIPT_DIR/chorus-bin-install"
-CHORUS_LOG="$SCRIPT_DIR/chorus-log"
+# Test seam (ADR-032 §1 testability): override the installer/logger so the deploy
+# path is exercisable against stubs without touching ~/.chorus/bin or the live spine.
+INSTALL="${CHORUS_BIN_INSTALL:-$SCRIPT_DIR/chorus-bin-install}"
+CHORUS_LOG="${CHORUS_LOG_BIN:-$SCRIPT_DIR/chorus-log}"
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 # Extract card_id from commit message (pattern: "role: acp #NNNN"). First match; empty on hand-edited commits.
 # `|| true` is required (#2937 AC1): on commits without #NNNN, `grep -oE` exits non-zero, and
 # `set -o pipefail` propagates that as the script's exit code, killing the deploy silently.
 CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
+
+# #3222 (#3179 port) — enumerate EVERY binary a crate emits, STRUCTURALLY from its
+# Cargo.toml `[[bin]]` entries (falling back to the package `name` when none are
+# declared — exactly cargo's own default-binary rule). Replaces the hardcoded
+# per-crate BINARIES arrays, which drifted the moment a crate gained a binary nobody
+# updated by hand: the merged≠live class #3179 fixed in werk-deploy::crate_binaries.
+# Now both prod-deploy callers enumerate from the same structural source (the manifest),
+# not two parallel maps a human keeps in sync.
+crate_binaries() {  # $1 = crate dir → prints one binary name per line
+  local toml="$1/Cargo.toml"
+  if [ ! -f "$toml" ]; then
+    basename "$1"
+    return
+  fi
+  local bins
+  bins=$(awk '
+    /^[[:space:]]*\[\[bin\]\]/ { inbin=1; next }
+    /^[[:space:]]*\[/          { inbin=0 }
+    inbin && /^[[:space:]]*name[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print
+    }' "$toml")
+  if [ -n "$bins" ]; then
+    printf '%s\n' "$bins"
+  else
+    awk '
+      /^[[:space:]]*\[package\]/ { inpkg=1; next }
+      /^[[:space:]]*\[/          { inpkg=0 }
+      inpkg && /^[[:space:]]*name[[:space:]]*=/ {
+        sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; exit
+      }' "$toml"
+  fi
+}
+
+# Populate the global BINARIES array from a crate dir (bash-3.2 safe; no mapfile).
+set_binaries_from() {  # $1 = crate dir
+  BINARIES=()
+  local __b
+  while IFS= read -r __b; do
+    [ -n "$__b" ] && BINARIES+=("$__b")
+  done < <(crate_binaries "$1")
+}
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
@@ -524,12 +567,12 @@ fi
 case "$CRATE" in
   chorus-hooks)
     CRATE_DIR="$ROOT/platform/services/chorus-hooks"
-    BINARIES=("chorus-hook-shim" "chorus-hooks")
+    set_binaries_from "$CRATE_DIR"   # #3222: structural — daemon + shim, from Cargo.toml
     KICKSTART_SERVICE="com.chorus.hooks"
     ;;
   chorus-inject)
     CRATE_DIR="$ROOT/platform/services/chorus-inject"
-    BINARIES=("chorus-inject")
+    set_binaries_from "$CRATE_DIR"   # #3222: structural
     KICKSTART_SERVICE=""  # spawn-on-demand by pulse worker; no daemon
     ;;
   werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-accept|werk-demo)
@@ -539,7 +582,7 @@ case "$CRATE" in
     # service, no kickstart. The binary installs to ~/.chorus/bin/<verb>-bin
     # with a role-slot-routing wrapper at ~/.chorus/bin/<verb> (per #3101).
     CRATE_DIR="$ROOT/platform/services/$CRATE"
-    BINARIES=("$CRATE")
+    set_binaries_from "$CRATE_DIR"   # #3222: structural (single-bin verb crate)
     KICKSTART_SERVICE=""  # CLI verb, no daemon
     INSTALL_AS_WRAPPER=1   # post-install: write wrapper, install raw as -bin
     ;;
@@ -613,6 +656,21 @@ for bin in "${BINARIES[@]}"; do
     fi
     if [ -n "$__cdh_dir" ]; then
       INSTALLED_CDHASH=$(codesign -dvvv "$__cdh_dir/$install_name" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+      # #3222 (AC4 / #3132) — content gate: the INSTALLED binary's cdhash MUST equal
+      # the BUILT binary's cdhash. Never trust the deploy self-report; verify by
+      # content so a stale/corrupt install (rebuild didn't take, partial move) can't
+      # ship green. Canonical (prod) only — a werk-slot install is isolated, no live
+      # service to protect. Mirrors werk-deploy's canonical-only cdhash verify, so the
+      # converge-on-chorus-deploy path keeps the same guarantee.
+      if [ "$DEPLOY_TARGET" = "canonical" ]; then
+        __built_cdhash=$(codesign -dvvv "$src" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+        if [ -z "$INSTALLED_CDHASH" ] || [ "$__built_cdhash" != "$INSTALLED_CDHASH" ]; then
+          echo "chorus-deploy: VERIFY FAILED for $install_name — built=${__built_cdhash:-<none>} installed=${INSTALLED_CDHASH:-<none>} (stale/corrupt install; refusing)" >&2
+          emit_deploy_failed "cdhash-mismatch"
+          exit 1
+        fi
+        echo "chorus-deploy: verified $install_name (built==installed cdhash=$INSTALLED_CDHASH)"
+      fi
     fi
   fi
 done
