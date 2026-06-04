@@ -97,6 +97,16 @@ step "3 build-demo"  "$BUILDER"  chorus_build  "$(printf '{"role":"%s","card_id"
 step "4 deploy-demo" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "$BUILDER" "$CARD")"
 step "4 env-up"      "$BUILDER"  chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"
 
+# Step 4.5 — werk-demo (#3116): the PROVING CEREMONY against the instance env-up
+# just stood up. present → gate (delegated to the /demo skill's subagents) →
+# feedback gather → review window → demo.verdict. The ACT (build/deploy/env-up,
+# steps 3-4) is NOT here — demo only points at the running werk variant. Invoked
+# as the binary (the /demo skill's path); a chorus_demo MCP wrapper is the
+# consistency follow-on. Emits demo.verdict; werk-accept (step 8) gates on it.
+echo "-- 4.5 demo  (as $BUILDER -> werk-demo binary) --------------------------------"
+if DEPLOY_ROLE="$BUILDER" werk-demo "$CARD"; then echo "   [ok] 4.5 demo"
+else echo "   [FAIL] 4.5 demo (werk-demo #$CARD) — chain stops here." >&2; exit 1; fi
+
 # ═══ werk-acp boundary — land to prod; prod is a build of MAIN ═══
 # Step 5 — werk-merge (#3175): the atomic MERGE verb, through the same MCP path as
 # every other step. Resolves the OPEN PR for the current HEAD oid (NOT the branch

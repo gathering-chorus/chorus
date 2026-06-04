@@ -36,6 +36,15 @@ exit 0
 SHIM
 chmod +x "$TMP/gh"
 
+# werk-demo shim (#3116): demo is a binary step (4.5) in the flat sequence, not an
+# MCP tool — shim it to log + succeed so the hermetic flow reaches merge.
+cat > "$TMP/werk-demo" <<'SHIM'
+#!/usr/bin/env bash
+echo "werk-demo $*" >> "$CALLS_LOG"
+exit 0
+SHIM
+chmod +x "$TMP/werk-demo"
+
 export PATH="$TMP:$PATH"
 export CHORUS_WERK_BASE="$TMP/werk-base"
 mkdir -p "$TMP/werk-base/kade-9999"   # fake werk dir for step-5 gh cd
@@ -53,6 +62,7 @@ grep -q "2 push"        <<<"$out" || fail "step 2 push missing"
 grep -q "3 build-demo"  <<<"$out" || fail "step 3 build-demo missing"
 grep -q "4 deploy-demo" <<<"$out" || fail "step 4 deploy-demo missing"
 grep -q "4 env-up"      <<<"$out" || fail "step 4 env-up (running instance) missing"
+grep -q "4.5 demo"      <<<"$out" || fail "step 4.5 demo (werk-demo proving ceremony, #3116) missing"
 grep -q "5 merge"       <<<"$out" || fail "step 5 werk-merge missing"
 # #3175: step 5 is the real werk-merge MCP verb now — NOT the interim gh path.
 grep -q "interim"       <<<"$out" && fail "step 5 still labeled interim — werk-merge (#3175) should have retired it"
