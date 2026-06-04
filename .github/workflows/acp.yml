@@ -1,39 +1,36 @@
 name: acp
 
-# acp orchestrator — #3064. The DSL of /acp runs on `act` (ADR-032 §1, ADR-030).
-# act sequences the leaf verb-binaries by subprocess; act handles env propagation
-# and exit-code-stop-on-failure, and is the runner the /acp skill drives. This is
-# the replacement for the chorus_acp MCP monolith (retired by AC4 once proven).
+# acp orchestrator — the LAND half of the werk pipeline. #3236.
 #
-# Sequence (ADR-032 §3, #3064 AC1, accept LAST as exit-finalize):
-#   werk-commit → werk-push → werk-build → werk-deploy → werk-verify → werk-accept
+# ONE orchestrator (act), ONE toolchain (MCP). Decided 2026-06-04 (Jeff). This file
+# replaces BOTH the old direct-binary acp.yml AND the bash werk-mcp.sh acp steps —
+# collapsing the two-orchestrator drift where a fix in one path (e.g. #3234
+# stop-before-accept) silently left the other bugged. Every verb runs THROUGH MCP via
+# chorus-mcp-call.sh (the single toolchain); act only sequences + makes each step a
+# legible GitHub line.
 #
-# Shared trace (AC2 + team-finding from #3047 PoC): ONE CHORUS_TRACE_ID minted at
-# entry, propagated as job-level env so EVERY verb subprocess inherits it. Each verb
-# writes its OWN gh status (ADR-032 §3.3 — leaf-verb autonomy, no orchestrator
-# pre-seeding) but stamps the shared trace_id in the description so all the per-verb
-# chorus/*/<card> statuses correlate by trace — the pipeline-health composed view
-# (AC9) reads off that one key.
+# The PROVE half (commit→push→build→deploy-werk→env-up→demo) is demo.yml. acp.yml
+# assumes demo.yml has already committed + pushed the card's branch; it lands it:
+#   werk-merge → 5.5 canonical ff-sync → chorus_deploy target=canonical → STOP.
 #
-# Bootstrap (AC8): assumes the verb binaries are on PATH (~/.chorus/bin/). CI
-# build-on-merge or a workflow preface step keeps that true.
-#
-# CLI-verb deploy: depends on Silas's is_service_crate gate in werk-deploy (AC10);
-# until that lands, the deploy step skips kickstart for werk-* crates.
+# It STOPS before accept (#3234, DEC-048): a builder's workflow must not auto-fire
+# werk-accept — the human-accept gate cannot be satisfied by an agent's script
+# (house-always-wins). The work is landed + live; ACCEPT is the accepter's deliberate
+# act. The workflow prints the exact command.
 
 on:
   workflow_dispatch:
     inputs:
       card_id:
-        description: "Card # being accepted (e.g. 3047). The trace key end-to-end."
+        description: "Card # being landed (e.g. 3236). The trace key end-to-end."
         required: true
         type: string
       role:
-        description: "Builder role whose werk is being accepted (kade / silas / wren)."
+        description: "Builder role whose werk is being landed (kade / silas / wren)."
         required: true
         type: string
       accepter:
-        description: "Authorizing identity (jeff / wren). Passed as DEPLOY_ROLE for werk-accept's authority gate (DEC-048)."
+        description: "Authorizing identity (jeff / wren) for the PRINTED accept command (DEC-048). Not auto-run."
         required: true
         type: string
 
@@ -41,40 +38,22 @@ jobs:
   acp:
     runs-on: macos-latest
 
-    # Job-level env: the shared trace minted at the first step (below) is appended to
-    # $GITHUB_ENV so EVERY later step inherits CHORUS_TRACE_ID. That is the
-    # "carry-forward" (AC2), without orchestrator pre-stamping gh statuses (per
-    # ADR-032 §3.3 — leaf-verb autonomy).
-    # CHORUS_HOME and CHORUS_WERK_BASE are inherited from the parent shell
-    # (chorus-env-setup.sh provides them; tests override per-test). The workflow
-    # MUST NOT hardcode them — caught when the integration tests' temp werk-base
-    # collided with the hardcoded production path.
+    # CHORUS_HOME / CHORUS_WERK_BASE / PATH (incl. platform/scripts + ~/.chorus/bin)
+    # are inherited from the parent shell (chorus-env-setup.sh). The workflow MUST NOT
+    # hardcode them — tests override per-test, and a hardcoded prod path collided with
+    # the integration tests' temp werk-base once (caught, never again).
     env:
       CARD_ID: ${{ inputs.card_id }}
       ROLE: ${{ inputs.role }}
-      # DEPLOY_ROLE defaults to the BUILDER for commit/push/build/deploy: the pre-push
-      # branch-check (#2580/#2598) requires the pushed branch to match DEPLOY_ROLE's
-      # prefix, so commit/push/build/deploy of <role>/<card> must run with
-      # DEPLOY_ROLE=<builder>. Only the accept step needs DEPLOY_ROLE=accepter (for
-      # the can_accept authority gate, DEC-048) — overridden at the step env, below.
-      DEPLOY_ROLE: ${{ inputs.role }}
-      # ACCEPTER is the authorizing identity (jeff / wren); kept on the env so the
-      # accept step can rebind DEPLOY_ROLE to it without losing the value.
       ACCEPTER: ${{ inputs.accepter }}
 
     steps:
       - name: shared-trace
-        # Mint ONE trace + write /tmp/<card>-trace (the shared-trace contract, AC2 +
-        # #3063's env-precedence). $GITHUB_ENV makes CHORUS_TRACE_ID visible to every
-        # subsequent step (and thus every verb subprocess). Also seed the orchestrator
-        # jsonl witness — AC5 + the pipeline-health DATA leg of AC9: one line per
-        # orchestration step, best-effort append to $CHORUS_HOME/ops/logs/werk-acp.jsonl
-        # so the composed pipeline-health view sees the run from the orchestrator's
-        # perspective alongside the per-verb gh statuses + verb-side jsonl. Best-effort
-        # writes (|| true): a non-writable logs dir never affects the verb subprocesses.
+        # Mint ONE trace, propagate via $GITHUB_ENV so every later step (and every verb
+        # subprocess the MCP server spawns) inherits CHORUS_TRACE_ID. Seed the
+        # orchestrator witness (best-effort; a non-writable logs dir never breaks the run).
         run: |
           trace="$(date +%s%N)-$$"
-          echo "$trace" > "/tmp/${CARD_ID}-trace"
           echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
           echo "minted trace=$trace for card=#${CARD_ID} role=${ROLE} accepter=${ACCEPTER}"
           mkdir -p "${CHORUS_HOME}/ops/logs" 2>/dev/null || true
@@ -83,78 +62,58 @@ jobs:
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk-acp.jsonl" 2>/dev/null || true
 
-      - name: commit
-        # werk-commit (commit-only). Stages add-A in the card's ephemeral werk,
-        # commits with the sanctioned-committer sentinel. Local only — push is next.
-        # Block scalar so the `#` in the commit message doesn't trigger yaml/shell
-        # comment parsing (caught by the dry-run on first invocation).
+      - name: merge
+        # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid (NOT
+        # the branch name — retires the stale-PR false-green), squash-merges, and
+        # content-verifies the merge landed on origin/main. Assumes demo.yml pushed the
+        # branch; if nothing is pushed, this refuses (correct).
+        run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+
+      - name: sync-canonical
+        # 5.5 (#3234) — after merge, ff-sync canonical to origin/main so SCRIPT-only
+        # changes go LIVE with zero manual steps. Scripts are executables too: a
+        # script-only card (no service crate) merges but stays stale in canonical until a
+        # manual sync — the merged≠live lie for .sh as much as for binaries. deploy-prod
+        # (next) handles crate binaries; this makes canonical == origin/main immediately.
+        # SYNC_OK crosses to the landed step via $GITHUB_ENV to gate the "live" claim.
         run: |
-          werk-commit "${CARD_ID}" "${ROLE}" "acp #${CARD_ID}"
+          if [ -n "${CHORUS_HOME:-}" ] \
+             && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
+             && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
+            echo "   [ok] 5.5 canonical ff-synced to origin/main"
+            echo "SYNC_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'" >&2
+            echo "SYNC_OK=0" >> "$GITHUB_ENV"
+          fi
 
-      - name: rebase
-        # AC6 (Silas's resolution, 2026-05-26): rebase the werk onto current
-        # origin/main AFTER commit and BEFORE push/build. Per ADR-032 §3 — once
-        # werk == merged-main, pre-accept build+deploy is safe by construction
-        # (werk-tip equals what main would be post-accept, so binaries match).
-        # Conflict → refuse the chain, card stays WIP. (Originally placed before
-        # commit; Silas's gate-arch re-review 2026-05-26 caught that rebase-on-dirty
-        # tree refuses — swapped to post-commit.)
+      - name: deploy-prod
+        # chorus_deploy target=canonical, via MCP. SELF-BUILDS from canonical@origin/main
+        # (#3222: werk-deploy → werk-build --target canonical --only <card crates>, then
+        # chorus-deploy per crate). Prod binaries are structurally a build of MAIN, not
+        # the werk — the merged≠live root is closed for crates.
+        run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
+
+      - name: landed
+        # STOP-BEFORE-ACCEPT (#3234, DEC-048). Tell the truth: the "live" claim is
+        # CONDITIONAL on 5.5 (SYNC_OK). Then print the accept command for the human —
+        # the workflow does NOT run werk-accept. Accept is the accepter's deliberate act.
         run: |
-          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"
-          git -C "$WERK" fetch -q origin main
-          git -C "$WERK" rebase origin/main || { echo "rebase conflict — refuse, card stays WIP"; exit 1; }
+          if [ "${SYNC_OK:-0}" = "1" ]; then
+            echo "[landed] #${CARD_ID} built-of-main, deployed + LIVE (merge + deploy green). NOT yet accepted."
+          else
+            echo "[merged, NOT yet live] #${CARD_ID} merged + deployed, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'chorus-werk-sync recover' to make them live BEFORE accept." >&2
+          fi
+          echo "  Accept is yours (DEC-048) — judge the work, then run it yourself:"
+          echo "    DEPLOY_ROLE=${ACCEPTER} werk-accept ${CARD_ID} ${ROLE}"
 
-      - name: push
-        # werk-push (push-only). Pushes <role>/<card> to origin through the sanctioned
-        # pre-push path. Carries the gh chorus/push/<card> status on the pushed sha.
-        run: werk-push "${CARD_ID}" "${ROLE}"
-
-      - name: build
-        # werk-build (Silas). Fresh cdhash of the card's crate; build-invariance held,
-        # so the cdhash from THIS build is what gets deployed AND merged (ADR-032 §3
-        # — werk-branch rebased to origin/main BEFORE build, so accept's ff-merge
-        # yields the exact cdhash that was built/deployed/verified).
-        run: werk-build "${CARD_ID}" "${ROLE}"
-
-      - name: deploy
-        # werk-deploy (Silas). Installs to CHORUS_BIN (~/.chorus/bin/) — the canonical
-        # slot, since this is acp (post-demo, post-werk-slot already proven). Kickstart
-        # gated by is_service_crate (Silas's AC10 — CLI-verb crates install+verify, no
-        # kickstart; service crates install+kickstart+running==built).
-        run: werk-deploy "${CARD_ID}" "${ROLE}" --target canonical
-
-      - name: verify
-        # werk-verify: running==built check via codesign cdhash comparison. Distinguish
-        # failure (cdhash mismatch — work is wrong) from error (verify couldn't run —
-        # retry). ADR-032 §3.3. NOTE: werk-verify is not yet a separate binary on main
-        # — it's currently part of werk-deploy's post-install verify. Once carded and
-        # extracted, this step calls it independently. For now, this step is a no-op
-        # (deploy did the verify); refine when werk-verify ships as its own verb.
-        run: |
-          echo "verify: integrated into werk-deploy until werk-verify is its own verb (ADR-032 §1 — 6 leaf verbs incl. verify)"
-
-      - name: accept
-        # werk-accept (mine). EXIT-FINALIZE: merge <role>/<card> → main, WIP → Done
-        # emitting card.accepted, close branch+werk, gh chorus/accept/<card>. The
-        # AUTHORITY GATE (DEC-048 — jeff or wren!=owner) is enforced INSIDE the verb
-        # via DEPLOY_ROLE — REBOUND here to the ACCEPTER for this one step. A builder
-        # running this workflow with accepter=themselves is refused by the verb, not
-        # by the workflow. The workflow only sequences; authority lives in the verb.
-        env:
-          DEPLOY_ROLE: ${{ inputs.accepter }}
-        run: werk-accept "${CARD_ID}" "${ROLE}"
-
-      # --- orchestrator-side witness close (AC5 + pipeline-health DATA leg of AC9) ---
-      # Pair with the acp.started seed in the shared-trace step. One run = one trace =
-      # paired start/completed-or-failed in werk-acp.jsonl. The pipeline-health view
-      # joins these orchestrator lines with the per-verb gh statuses and per-verb jsonl
-      # by trace_id. Best-effort writes (|| true): never affects job semantics.
+      # --- orchestrator-side witness close (pairs with acp.started) ---
       - name: acp-completed
         if: success()
         run: |
           ts=$(date +%s%3N)
-          printf '{"ts":%s,"event":"acp.completed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
+          printf '{"ts":%s,"event":"acp.landed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
             >> "${CHORUS_HOME}/ops/logs/werk-acp.jsonl" 2>/dev/null || true
 
       - name: acp-failed
@@ -165,9 +124,7 @@ jobs:
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
             >> "${CHORUS_HOME}/ops/logs/werk-acp.jsonl" 2>/dev/null || true
 
-# Stop-on-failure semantics: GHA default — steps run in order, the job halts on the
-# first non-zero exit. So a commit failure prevents push/build/deploy/accept; a verify
-# failure (cdhash mismatch) prevents accept's merge → card stays WIP, no merge, no
-# Done. That matches ADR-032 §1 ("on any failure, rollback; no half state") at the
-# orchestrator level — each verb still runs its OWN all-or-nothing rollback internally;
-# the workflow just stops sequencing.
+# Stop-on-failure: GHA default — steps run in order, the job halts on first non-zero
+# exit. A merge failure prevents sync/deploy; nothing half-lands. Accept never runs here
+# at all (it's the human's, post-run). Each verb still runs its OWN all-or-nothing
+# rollback internally via MCP; the workflow just stops sequencing.
