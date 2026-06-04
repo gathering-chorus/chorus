@@ -284,6 +284,13 @@ const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
 const DB_PATH = path.join(os.homedir(), '.chorus', 'index.db');
 const LANCE_DIR = path.join(os.homedir(), '.chorus', 'lance');
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+// #3217 — split the embed host: SEARCH query-embed stays on OLLAMA_URL (localhost,
+// latency-critical, same box as chorus-api); BULK embed-delta uses OLLAMA_BULK_URL
+// (Bedroom GPU offload, DEC-054). One shared var routed search cross-machine and a
+// dead Bedroom host took search down for hours (2026-06-04). Defaults to OLLAMA_URL
+// when unset (no behavior change without the env). Both set in the TRACKED
+// chorus-env-setup.sh so a plist regen can't revert them.
+const OLLAMA_BULK_URL = process.env.OLLAMA_BULK_URL || OLLAMA_URL;
 const EMBED_MODEL = 'nomic-embed-text';
 // Prefer repo scripts (always present), fall back to ~/.chorus/scripts
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -352,7 +359,7 @@ const _embedDeltaInner = singleFlight(createEmbedDelta({
     table: lanceTable as unknown as { add: (rec: Record<string, unknown>[]) => Promise<void> } | null,
   }),
   setLanceTable: (t) => { lanceTable = t as lancedb.Table; },
-  embed: (t: string) => embedQuery(t),
+  embed: (t: string) => embedBulk(t), // #3217 — bulk → Bedroom, not the search host
   minLength: MIN_EMBED_LENGTH,
   pageSize: EMBED_PAGE_SIZE,
 }));
@@ -369,6 +376,9 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama
 import { createEmbedder } from './embed-query';
 
 const embedQuery = createEmbedder({ ollamaUrl: OLLAMA_URL, model: EMBED_MODEL });
+// #3217 — separate embedder for BULK embed-delta (Bedroom GPU); search never routes
+// cross-machine. Same model + retry/cache; only the host differs.
+const embedBulk = createEmbedder({ ollamaUrl: OLLAMA_BULK_URL, model: EMBED_MODEL });
 
 interface SemanticResult {
   msg_id: number;
