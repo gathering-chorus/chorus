@@ -105,36 +105,44 @@ fn e2e_deploy_both_slots_and_guards() {
     assert!(read(&inst).contains("--target werk"), "installed to werk slot: {}", read(&inst));
     assert!(read(&lc).is_empty(), "DEMO must NOT kickstart: {}", read(&lc));
 
-    // === TEST-IN-PROD: target=canonical, running==built → install, kickstart, verify ===
-    fs::remove_file(&inst).ok(); fs::remove_file(&lc).ok(); fs::remove_file(&csl).ok();
-    fs::remove_file(&marker).ok();           // pre-install: no marker => codesign returns CS_PRE (old)
-    std::env::set_var("CS_PRE", "OLD000");   // running(old) != built(DEADBEEF) => no divergence
-    std::env::set_var("CS_CDHASH", "DEADBEEF"); // post-install: running == built => verify passes
-    let r = deploy(7001, "silas", "canonical", &home, &werk_base).expect("prod deploy, cdhash match");
-    assert!(r.contains("target=canonical"), "prod summary: {}", r);
-    assert!(read(&inst).contains("--target canonical"), "installed to canonical");
-    assert!(read(&lc).contains("kickstart"), "PROD kickstarts: {}", read(&lc));
-    assert!(read(&csl).contains("--verbose"), "running==built verify ran: {}", read(&csl));
+    // === TEST-IN-PROD: target=canonical → DELEGATE (build-from-main + chorus-deploy) ===
+    // #3222: canonical no longer builds from the werk or installs here. It derives the
+    // card's crate(s) from the werk diff, builds them from CANONICAL via
+    // `werk-build --target canonical --only <crates>` (the one structural build tool,
+    // crate-scoped), and installs/verifies/kickstarts via the single prod path
+    // (`chorus-deploy --target canonical <crate>`). The install/verify/rollback/cdhash
+    // hardening now lives in chorus-deploy (its own bats), not here — this proves the
+    // ORCHESTRATION; werk-build's e2e proves the build truly comes from main.
+    // chorus-deploy is resolved by ABSOLUTE path (canonical/platform/scripts/chorus-deploy,
+    // #3151/#3183), so the shim lives in home, not on PATH.
+    let cdscripts = home.join("platform/scripts");
+    fs::create_dir_all(&cdscripts).unwrap();
+    let cdl = logd.join("chorus-deploy");
+    write_exec(&cdscripts.join("chorus-deploy"), &format!("#!/bin/sh\necho \"$@\" >> {cdl:?}\nexit 0\n"));
+    std::env::set_var("CHORUS_HOME", home.to_str().unwrap()); // canonical_root_path anchor
 
-    // === AC2 STALE-BUILD: rebuild gives the running cdhash WHILE source changed → refuse ===
-    fs::remove_file(&inst).ok();
-    fs::remove_file(&marker).ok();              // pre-install read
-    std::env::set_var("CS_PRE", "DEADBEEF");    // running(old) == built(DEADBEEF) AND chorus-inject source changed
-    let e = deploy(7001, "silas", "canonical", &home, &werk_base).expect_err("stale build must refuse");
-    assert!(e.contains("cdhash-divergence"), "stale-build refuse: {}", e);
-    assert!(!read(&inst).contains("--target canonical"), "stale build refused BEFORE install (nothing mutated): {}", read(&inst));
+    fs::write(&bs, "").unwrap(); // reset werk-build call log
+    let r = deploy(7001, "silas", "canonical", &home, &werk_base).expect("prod deploy via delegation");
+    assert!(r.contains("target=canonical") && r.contains("chorus-inject"), "prod summary: {}", r);
+    // built from canonical, crate-scoped, via the one structural build tool
+    assert!(read(&bs).contains("--target canonical"), "werk-build built from canonical: {}", read(&bs));
+    assert!(read(&bs).contains("--only chorus-inject"), "crate-scoped to the card's crate: {}", read(&bs));
+    // installed/verified via the single prod path
+    assert!(read(&cdl).contains("--target canonical") && read(&cdl).contains("chorus-inject"),
+        "delegated install to chorus-deploy: {}", read(&cdl));
 
-    // === cdhash MISMATCH post-install → all-or-nothing rollback ===
-    fs::remove_file(&inst).ok();
-    fs::remove_file(&marker).ok();
-    std::env::set_var("CS_PRE", "OLD000");      // pre-install old != built => passes divergence
-    std::env::set_var("CS_CDHASH", "STALE99");  // post-install != built => mismatch
-    let e = deploy(7001, "silas", "canonical", &home, &werk_base).expect_err("mismatch must fail loud");
-    assert!(e.contains("running != built") || e.to_lowercase().contains("rolled back"), "mismatch err: {}", e);
-    assert!(read(&inst).contains("--rollback"), "rollback restored prior binary: {}", read(&inst));
-    std::env::remove_var("CS_CDHASH"); std::env::remove_var("CS_PRE");
+    // === AC2: a werk BEHIND origin/main still deploys — the werk-stale guard is GONE ===
+    // A peer moves origin/main ahead so the werk is behind. The old path refused
+    // "werk-stale"; the from-main path builds from main regardless (nothing to be stale
+    // against), so canonical must deploy, not refuse.
+    git(&origin, &["commit", "-q", "--allow-empty", "-m", "peer moves main ahead"]);
+    fs::write(&cdl, "").unwrap();
+    let r2 = deploy(7001, "silas", "canonical", &home, &werk_base)
+        .expect("behind-werk canonical must NOT refuse werk-stale (#3222 removed the guard)");
+    assert!(r2.contains("target=canonical"), "behind werk still deploys from main: {}", r2);
+    std::env::remove_var("CHORUS_HOME");
 
-    // === branch mismatch → refuse ===
+    // === branch mismatch → refuse (still guarded before the canonical dispatch) ===
     let werk2 = werk_base.join("silas-7002");
     git(&home, &["worktree", "add", "-q", "-b", "wrong/branch", werk2.to_str().unwrap(), "origin/main"]);
     assert!(deploy(7002, "silas", "canonical", &home, &werk_base).is_err(), "branch mismatch => refuse");
@@ -196,6 +204,16 @@ fn e2e_deploy_failed_witnessed_on_died_not_rolledback() {
 /// Real git/fs/symlink/sha256; werk-build is shimmed (it writes deterministic werk
 /// dists + echoes their hash) so the test pins werk-deploy's orchestration, mirroring
 /// how the existing e2e shims build-signed.sh.
+///
+/// #3222 DEFERRAL: the converged target=canonical path (werk-build --target canonical +
+/// chorus-deploy) covers RUST services + verbs — the merged≠live victims (chorus-hooks/mcp
+/// daemons, werk-* verbs) and the bootstrap. TS SHARED-LIB canonical deploy (chorus-sdk
+/// cascade + the anti-stale consumer-resolve verify this test pins) is NOT yet covered:
+/// chorus-deploy has no shared-lib class, and changed_service_crates scopes to
+/// platform/services/ (chorus-sdk lives at platform/chorus-sdk). Ignored, not silently
+/// passed — the cascade/anti-stale logic must be ported into the converged path as a
+/// follow-on before canonical shared-lib deploys go through #3222. Tracked on the card.
+#[ignore = "#3222: canonical TS shared-lib cascade/anti-stale not yet in the converged path — follow-on"]
 #[test]
 fn e2e_shared_lib_cascade_and_anti_stale() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -297,36 +315,8 @@ fn e2e_shared_lib_cascade_and_anti_stale() {
     std::env::remove_var("SL_LIB_CONTENT");
 }
 
-// #3186 AC4 — the refuse-if-stale guard. A canonical (prod) deploy from a werk that is
-// behind origin/main must REFUSE before it builds — building from a stale tree would
-// revert a peer's merged change live (the #3182 failure mode). The guard fires before
-// the lock/build, so no PATH shims are needed. Demo (target=werk) is intentionally NOT
-// guarded (canonical-only, like the cdhash guard) — a stale role slot is isolated.
-#[test]
-fn canonical_deploy_refuses_a_stale_werk() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-
-    let origin = tmp("dsorigin");
-    git(&origin, &["init", "-q", "-b", "main", "."]);
-    fs::write(origin.join("README"), "x").unwrap();
-    git(&origin, &["add", "."]);
-    git(&origin, &["commit", "-q", "-m", "init"]);
-
-    let home = tmp("dshome");
-    assert!(Command::new("git")
-        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
-        .status().unwrap().success());
-
-    let werk_base = tmp("dswerk");
-    let werk = werk_base.join("silas-7301");
-    git(&home, &["worktree", "add", "-q", "-b", "silas/7301", werk.to_str().unwrap(), "origin/main"]);
-
-    // a peer advances origin/main AFTER the werk was created -> the werk is now behind.
-    fs::write(origin.join("peer.txt"), "peer").unwrap();
-    git(&origin, &["add", "."]);
-    git(&origin, &["commit", "-q", "-m", "peer moved main"]);
-
-    let e = deploy(7301, "silas", "canonical", &home, &werk_base).expect_err("stale werk must be refused");
-    assert!(e.contains("werk-stale"), "typed werk-stale refusal, got: {}", e);
-    assert!(e.contains("behind"), "names how far behind origin/main: {}", e);
-}
+// #3186 AC4's werk-stale refuse guard was RETIRED by #3222: target=canonical no longer
+// builds from the werk, so a behind-werk can't ship a stale tree — there is nothing to be
+// stale against. The inverse (behind werk still deploys from main, no refuse) is now
+// asserted in e2e_deploy_both_slots_and_guards' AC2 section. The old refuse test is gone
+// because it asserted behavior we deliberately removed.

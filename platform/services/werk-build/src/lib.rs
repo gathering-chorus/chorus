@@ -750,18 +750,69 @@ fn carry_forward(werk_s: &str, card: u64, sha: &str) {
     }
 }
 
-/// Entry: parse `werk-build <card> <role>` (role falls back to $DEPLOY_ROLE).
+/// Parse `--target werk|canonical` (default werk — the legacy demo build). canonical =
+/// build-from-main for prod, the converge target #3222 routes werk-deploy through.
+pub fn parse_target(args: &[String]) -> R<&'static str> {
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--target" {
+            return match args.get(i + 1).map(|s| s.as_str()) {
+                Some("werk") => Ok("werk"),
+                Some("canonical") => Ok("canonical"),
+                other => Err(format!("--target must be 'werk' or 'canonical' (got {:?})", other)),
+            };
+        }
+        i += 1;
+    }
+    Ok("werk")
+}
+
+/// Entry: `werk-build <card> <role> [--target werk|canonical]` (role falls back to
+/// $DEPLOY_ROLE). --target is positional-agnostic and stripped before reading card/role.
 pub fn run_build() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-build <card> <role>".to_string())?;
+    let argv: Vec<String> = env::args().skip(1).collect();
+    let target = parse_target(&argv)?;
+    let only = parse_only(&argv);
+    let mut positional: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < argv.len() {
+        if argv[i] == "--target" || argv[i] == "--only" {
+            i += 2; // skip flag + value
+            continue;
+        }
+        positional.push(argv[i].clone());
+        i += 1;
+    }
+    let card_arg = positional
+        .first()
+        .ok_or_else(|| "usage: werk-build <card> <role> [--target werk|canonical]".to_string())?;
     let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args()
-        .nth(2)
+    let role = positional
+        .get(1)
+        .cloned()
         .or_else(|| env::var("DEPLOY_ROLE").ok())
         .ok_or_else(|| "usage: werk-build <card> <role> (or set DEPLOY_ROLE)".to_string())?;
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    build(card, &role, &home, &werk_base)
+    build(card, &role, &home, &werk_base, target, &only)
+}
+
+/// Parse `--only a,b,c` → the crate-scope filter (comma-separated unit names). Absent or
+/// empty = build-all (the demo path). werk-deploy --target canonical passes the card's
+/// changed crate(s) so a prod build is scoped to them.
+pub fn parse_only(args: &[String]) -> Vec<String> {
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--only" {
+            return args
+                .get(i + 1)
+                .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                .unwrap_or_default();
+        }
+        i += 1;
+    }
+    Vec::new()
 }
 
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
@@ -829,33 +880,74 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> usize {
     linked
 }
 
-pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
+/// The unit's name (crate / TS-package / shared-lib name) — the filter key for `only`.
+fn unit_name(u: &BuildUnit) -> &str {
+    match u {
+        BuildUnit::SharedLib(n) | BuildUnit::RustCrate(n) | BuildUnit::TsService(n) => n.as_str(),
+    }
+}
+
+pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str, only: &[String]) -> R<String> {
     let trace = resolve_trace(card);
-    let branch = branch_name(role, card);
-    let werk = werk_base.join(format!("{}-{}", role, card));
-    let werk_s = path(&werk)?.to_string();
+    jsonl(home, role, card, &trace, "build.started", &format!(",\"target\":\"{}\"", target));
 
-    jsonl(home, role, card, &trace, "build.started", "");
+    // #3222 — ONE structural build tool, two roots (Jeff: "one head, not two"). The unit
+    // discovery + per-unit build below are root-agnostic; only the build ROOT and its
+    // preamble differ:
+    //   target=werk      → build the card's werk (test-in-demo, isolated slot).
+    //   target=canonical → build CANONICAL ff-synced to origin/main (test-in-prod) — the
+    //                      SAME build-source chorus-deploy installs from. This is what
+    //                      retires the werk-sourced canonical build (the merged≠live root):
+    //                      prod binaries are now structurally a build of main, not the werk.
+    let build_root: PathBuf = if target == "canonical" {
+        let home_s = path(home)?.to_string();
+        // ff-sync canonical to origin/main BEFORE building, or refuse if it can't ff
+        // cleanly (#3181, mirrored here so the build-source guarantee is structural — not
+        // dependent on a separate prior sync). Never build prod from a stale canonical.
+        let _ = run("git", &["-C", &home_s, "fetch", "-q", "origin", "main"]);
+        let behind = run("git", &["-C", &home_s, "rev-list", "--count", "HEAD..origin/main"])
+            .unwrap_or_default().trim().parse::<u64>().unwrap_or(0);
+        if behind > 0 {
+            let ahead = run("git", &["-C", &home_s, "rev-list", "--count", "origin/main..HEAD"])
+                .unwrap_or_default().trim().parse::<u64>().unwrap_or(0);
+            let dirty = !run("git", &["-C", &home_s, "status", "--porcelain"]).unwrap_or_default().trim().is_empty();
+            if ahead > 0 || dirty {
+                jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"canonical-unsyncable\"");
+                return Err(format!(
+                    "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}) — run chorus-werk-sync recover, then re-deploy",
+                    behind, ahead, dirty
+                ));
+            }
+            run("git", &["-C", &home_s, "merge", "--ff-only", "origin/main"]).map_err(|e| {
+                jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"canonical-ff-failed\"");
+                format!("canonical ff to origin/main failed: {}", e)
+            })?;
+        }
+        home.to_path_buf()
+    } else {
+        let branch = branch_name(role, card);
+        let werk = werk_base.join(format!("{}-{}", role, card));
+        let werk_s = path(&werk)?.to_string();
+        // no-werk-refuse guard (ADR-032 §4): the werk path never builds canonical.
+        if !werk.is_dir() {
+            jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-werk\"");
+            return Err(format!("no werk at {} — pull #{} first (build never touches canonical)", werk.display(), card));
+        }
+        let cur = run("git", &["-C", &werk_s, "rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
+        if cur.trim() != branch {
+            jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"branch-mismatch\"");
+            return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
+        }
+        // #3169 — node_modules ensure (werk only): symlink each werk package's node_modules
+        // to canonical's complete tree so in-werk tsc resolves @types. Canonical builds from
+        // its own real node_modules, so this is skipped for target=canonical.
+        let nm_linked = ensure_node_modules(&werk_s, home);
+        jsonl(home, role, card, &trace, "node-modules.ensured", &format!(",\"linked\":{}", nm_linked));
+        werk
+    };
+    let build_root_s = path(&build_root)?.to_string();
 
-    // no-werk-refuse guard (ADR-032 §4): never build canonical.
-    if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-werk\"");
-        return Err(format!("no werk at {} — pull #{} first (build never touches canonical)", werk.display(), card));
-    }
-    let cur = run("git", &["-C", &werk_s, "rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
-    if cur.trim() != branch {
-        jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"branch-mismatch\"");
-        return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
-    }
-
-    // #3169 — node_modules ensure (single owner): before building any unit, make every
-    // werk package's node_modules a symlink to canonical's complete tree, so in-werk tsc
-    // resolves @types. Replaces chorus-werk's skip-if-exists bootstrap, which never fixed
-    // a stale partial. Idempotent; runs every build.
-    let nm_linked = ensure_node_modules(&werk_s, home);
-    jsonl(home, role, card, &trace, "node-modules.ensured", &format!(",\"linked\":{}", nm_linked));
-
-    // #3132 — STRUCTURAL enumeration: build EVERY unit in the werk (Rust crate + TS
+    // #3132 — STRUCTURAL enumeration: build EVERY unit in the root (Rust crate + TS
     // package with a build script), NOT a diff-filtered subset. The diff-driven
     // `discover_build_units` was a second incrementality layer on top of the one
     // cargo/tsc already do natively — it saved ~nothing and was the source of
@@ -863,18 +955,29 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     // Building everything is cheap (toolchains no-op unchanged units) and can't miss a
     // unit; werk-deploy gates the actual copy+restart on hash-difference so nothing
     // unchanged is bounced. Build-all + restart-only-what-differs.
-    let units = discover_build_units_in_tree(&werk);
+    let mut units = discover_build_units_in_tree(&build_root);
+    // #3222 — optional crate-scope filter (`--only a,b`). Empty = build-all (the demo
+    // path: build the whole werk). Non-empty = build ONLY the named units — used by
+    // werk-deploy --target canonical so a prod deploy rebuilds just the CARD's crate(s)
+    // from canonical, NOT the whole tree (no full-repo tsc at every acp, no coupling the
+    // card's deploy to unrelated crates' health on main).
+    if !only.is_empty() {
+        units.retain(|u| only.iter().any(|n| n == unit_name(u)));
+    }
     if units.is_empty() {
-        // Degenerate werk with no buildable units at all (no crates, no build-script
-        // packages). Keep the clean no-op so the demo/acp chain proceeds (#3107).
-        jsonl(home, role, card, &trace, "build.skipped", ",\"reason\":\"no-build-units\"");
+        // No buildable units (degenerate root) OR none matched the filter (e.g. a
+        // docs/config-only card has no crate to build for prod). Clean no-op so the
+        // demo/acp chain proceeds (#3107); werk-deploy treats empty summary as "nothing
+        // to deploy to canonical".
+        let reason = if only.is_empty() { "no-build-units" } else { "no-filter-match" };
+        jsonl(home, role, card, &trace, "build.skipped", &format!(",\"reason\":\"{}\"", reason));
         jsonl(home, role, card, &trace, "build.completed", ",\"built\":\"\"");
         return Ok(String::new());
     }
 
     // one lock around all builds (cargo can't race the target dir; npm builds also
     // serialize naturally per-service, but the lock is the cross-unit guarantee).
-    let _lock = lock(&werk, Duration::from_secs(120))?;
+    let _lock = lock(&build_root, Duration::from_secs(120))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
     let mut summary: Vec<String> = Vec::new();
@@ -897,7 +1000,7 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         // per ADR-032 §1/§5 widened: "stable identity hash").
         // #3166: build_unit emits build.failed to the spine on compile/sign/tsc failure,
         // then propagates — so a failure is Loki-queryable, not just a stderr exit.
-        let identity = build_unit(home, role, card, &trace, &werk_s, unit)?;
+        let identity = build_unit(home, role, card, &trace, &build_root_s, unit)?;
         jsonl(
             home,
             role,
@@ -911,7 +1014,7 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         );
         // gh status per unit (last write wins for the chorus/build/<card> context;
         // the summary line carries every name=identity pair for werk-deploy).
-        register_gh(&werk_s, card, role, &trace, &identity);
+        register_gh(&build_root_s, card, role, &trace, &identity);
         summary.push(format!("{}={}", name, identity));
     }
 

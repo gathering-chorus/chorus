@@ -10,7 +10,7 @@
 #     card          card id
 #     accepter      jeff|wren  who finalizes (DEC-048); default jeff; must != builder
 #
-# THE 8-STEP FLOW (per /tmp/werk-value-stream-v2.svg, Jeff's spec 2026-06-03):
+# THE FLOW (per /tmp/werk-value-stream-v2.svg, Jeff's spec 2026-06-03):
 #   — werk-demo boundary: prove in the role's slot, never touches main —
 #   1 werk-commit   (rebase onto origin/main happens INSIDE commit, #3186)
 #   2 werk-push
@@ -18,15 +18,15 @@
 #   4 chorus_deploy target=werk + chorus_env_up (stand up the running test instance)
 #   — werk-acp boundary: land to prod; prod is a build of MAIN —
 #   5 werk-merge    (#3175) resolve OPEN pr by HEAD oid, squash, content-verify
-#   6 chorus_build  MUST build from MAIN
-#   7 chorus_deploy target=canonical, from MAIN
-#   8 werk-accept   X-Chorus-Role=accepter (jeff/wren); role-arg stays the builder
+#   6 chorus_deploy target=canonical — SELF-BUILDS from canonical@origin/main (#3222)
+#   7 werk-accept   X-Chorus-Role=accepter (jeff/wren); role-arg stays the builder
 #
-# Steps 1-5 run for real. Step 6 HARD-STOPS at the deploy-from-main gap: chorus_build/
-# chorus_deploy build from the WERK, and deploying werk-content to canonical IS the
-# merged≠live bug — so we REFUSE rather than fake it. Steps 6-8 are the intended flow,
-# gated behind the stop until deploy-from-main exists. demo-from-werk (3-4) is correct
-# (your slot); prod-from-werk (6-7) is not (it's not main) — that asymmetry is the gate.
+# #3222 closed the deploy-from-main gap: chorus_deploy target=canonical now builds the
+# card's crate(s) from canonical@origin/main (werk-deploy → werk-build --target canonical
+# --only, then chorus-deploy --target canonical per crate) — prod binaries are structurally
+# a build of MAIN, not the werk. The old build-prod step is folded into step 6 (deploy
+# owns the from-main build); the demo build at step 3 covers test-in-slot. All steps now
+# run for real. demo-from-werk (3-4) = your slot; prod (6) = a build of main.
 #
 # MCP: Streamable-HTTP. initialize (capture Mcp-Session-Id) -> notifications/initialized
 # -> tools/call. X-Chorus-Role is read per-request, so accept runs as a different role
@@ -114,20 +114,13 @@ else echo "   [FAIL] 4.5 demo (werk-demo #$CARD) — chain stops here." >&2; exi
 # Wren + Kade 2026-06-03), squash-merges, and CONTENT-VERIFIES the merge landed.
 step "5 merge"       "$BUILDER"  werk-merge    "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"
 
-# Step 6 — werk-build for PROD, from MAIN. HARD-STOP: deploy-from-main is not built.
-cat >&2 <<'BLOCKED'
--- 6 build-prod / 7 deploy-prod / 8 accept ------------------------------------
-   [BLOCKED] deploy-from-main not built — refusing to deploy werk-content to prod.
-   chorus_build/chorus_deploy build from the WERK, not MAIN; deploying that to
-   canonical is the merged≠live bug. The card is MERGED (step 5); the prod deploy
-   waits for deploy-from-main. Steps 6 (build-from-main), 7 (deploy-from-main),
-   and 8 (accept — gated behind a real prod deploy) do NOT run.
-BLOCKED
-exit 3
-
-# ── Steps 6-8 are the INTENDED flow, gated behind the hard-stop above. They run only
-# ── once deploy-from-main exists: delete the `exit 3` + this guard and uncomment.
-# step "6 build-prod"  "$BUILDER"  chorus_build  "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"   # MUST build from MAIN
-# step "7 deploy-prod" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "$BUILDER" "$CARD")"  # from MAIN
-# step "8 accept"      "$ACCEPTER" werk-accept   "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"   # accepter via X-Chorus-Role, builder via role arg
-# echo; echo "[done] all 8 steps green — #$CARD landed to prod via the live MCP flow."
+# ═══ Steps 6-7 — deploy to PROD from MAIN (#3222 unblocked the hard-stop) ═══
+# Step 7's chorus_deploy target=canonical now SELF-BUILDS from canonical@origin/main
+# (werk-deploy → werk-build --target canonical --only <card crates>, then chorus-deploy
+# --target canonical per crate). prod binaries are structurally a build of main, not the
+# werk — the merged≠live root is closed. A separate "build-prod" step is therefore
+# REDUNDANT (deploy-canonical owns the from-main build), so the old step 6 is folded into
+# step 7; the demo build already happened at step 3.
+step "6 deploy-prod" "$BUILDER"  chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "$BUILDER" "$CARD")"  # builds + installs from MAIN
+step "7 accept"      "$ACCEPTER" werk-accept   "$(printf '{"role":"%s","card_id":%s}' "$BUILDER" "$CARD")"   # accepter via X-Chorus-Role, builder via role arg
+echo; echo "[done] all steps green — #$CARD landed to prod (build-of-main) via the live MCP flow."

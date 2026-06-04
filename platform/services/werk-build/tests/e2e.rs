@@ -78,6 +78,25 @@ fn e2e_build_in_werk() {
     fs::write(origin.join("README"), "x").unwrap();
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-q", "-m", "init"]);
+    // build_crate resolves build-signed.sh by ABSOLUTE path inside the build root
+    // ({root}/platform/scripts/build-signed.sh, #3168 — the build env's PATH excludes
+    // platform/scripts), so the shim must live in the repo, not just on PATH. Commit it
+    // to origin/main → every worktree AND the canonical clone inherit it at that path.
+    write_exec(
+        &{ let p = origin.join("platform/scripts/build-signed.sh"); fs::create_dir_all(p.parent().unwrap()).unwrap(); p },
+        "#!/bin/sh\n\
+         echo \"$1\" >> \"$BS_LOG\"\n\
+         [ \"$BUILD_SKIP_INSTALL\" = \"1\" ] || { echo 'build-signed: NOT build-only!' >&2; exit 9; }\n\
+         echo \"build-signed: cargo build --release in $1\"\n\
+         echo \"build-signed: cdhash=${BS_CDHASH:-DEADBEEF}\"\n\
+         exit 0\n",
+    );
+    // Real canonical gitignores runtime dirs (ops/ witness jsonl, target/, node_modules);
+    // mirror that so the canonical ff-check's dirty guard doesn't trip on runtime output
+    // the way it never does in prod. (chorus-deploy #3181 counts untracked too.)
+    fs::write(origin.join(".gitignore"), "ops/\ntarget/\nnode_modules/\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "build-signed shim + gitignore"]);
     let home = tmp("home");
     assert!(Command::new("git")
         .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
@@ -87,7 +106,7 @@ fn e2e_build_in_werk() {
     let werk_base = tmp("werk");
 
     // --- no werk yet -> refuse (never builds canonical) ---
-    assert!(build(8001, "silas", &home, &werk_base).is_err(), "no werk => refuse");
+    assert!(build(8001, "silas", &home, &werk_base, "werk", &[]).is_err(), "no werk => refuse");
 
     // --- create the card's werk on silas/8001 with a changed Rust crate ---
     // #3132: a crate is structurally a platform/services/<name>/ dir WITH a Cargo.toml
@@ -100,7 +119,7 @@ fn e2e_build_in_werk() {
     commit_file(&werk, "platform/services/widget/src/lib.rs", "// widget\n");
 
     // --- happy path: builds the werk crate, emits cdhash ---
-    let summary = build(8001, "silas", &home, &werk_base).expect("happy build");
+    let summary = build(8001, "silas", &home, &werk_base, "werk", &[]).expect("happy build");
     assert_eq!(summary, "widget=DEADBEEF", "summary carries crate=cdhash");
     let bs_calls = fs::read_to_string(&bs_log).unwrap_or_default();
     assert!(
@@ -110,7 +129,7 @@ fn e2e_build_in_werk() {
     );
 
     // --- invariance: same source -> same cdhash twice ---
-    let again = build(8001, "silas", &home, &werk_base).expect("rebuild");
+    let again = build(8001, "silas", &home, &werk_base, "werk", &[]).expect("rebuild");
     assert_eq!(summary, again, "same source commit => same cdhash (invariance)");
 
     // --- #3107: no Rust crate / TS service changed -> no-op success, not refuse.
@@ -120,13 +139,55 @@ fn e2e_build_in_werk() {
     let werk2 = werk_base.join("silas-8002");
     git(&home, &["worktree", "add", "-q", "-b", "silas/8002", werk2.to_str().unwrap(), "origin/main"]);
     commit_file(&werk2, "roles/silas/notes.md", "just docs\n");
-    let no_cycle = build(8002, "silas", &home, &werk_base).expect("docs-only => no-op success");
+    let no_cycle = build(8002, "silas", &home, &werk_base, "werk", &[]).expect("docs-only => no-op success");
     assert_eq!(no_cycle, "", "no-build-cycle returns empty summary");
 
     // --- wrong branch -> refuse ---
     let werk3 = werk_base.join("silas-8003");
     git(&home, &["worktree", "add", "-q", "-b", "wrong/branch", werk3.to_str().unwrap(), "origin/main"]);
-    assert!(build(8003, "silas", &home, &werk_base).is_err(), "branch mismatch => refuse");
+    assert!(build(8003, "silas", &home, &werk_base, "werk", &[]).is_err(), "branch mismatch => refuse");
+
+    // --- #3222: target=canonical builds CANONICAL ff-synced to origin/main, NOT a werk ---
+    // Put a crate on origin/main only, so `home` (cloned earlier) is now BEHIND origin/main.
+    // A canonical build must ff home to origin/main FIRST, then build the crate that exists
+    // only on main — proving the build-source is canonical@origin/main (the merged≠live fix),
+    // never the werk. This is Jeff's "one head": the same werk-build, a different root.
+    fs::create_dir_all(origin.join("platform/services/prodgadget/src")).unwrap();
+    fs::write(origin.join("platform/services/prodgadget/Cargo.toml"), "[package]\nname=\"prodgadget\"\n").unwrap();
+    fs::write(origin.join("platform/services/prodgadget/src/lib.rs"), "// prod\n").unwrap();
+    // A SECOND crate on main the card did NOT touch — proves the crate-scope filter builds
+    // ONLY the card's crate, not the whole tree (no full-repo build / cross-crate coupling).
+    fs::create_dir_all(origin.join("platform/services/otherlib/src")).unwrap();
+    fs::write(origin.join("platform/services/otherlib/Cargo.toml"), "[package]\nname=\"otherlib\"\n").unwrap();
+    fs::write(origin.join("platform/services/otherlib/src/lib.rs"), "// other\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "prod crate on main"]);
+
+    fs::write(&bs_log, "").unwrap(); // reset the build-signed call log
+    // Crate-scoped: --only prodgadget → builds JUST that crate from canonical, not otherlib.
+    let canon_summary = build(8009, "silas", &home, &werk_base, "canonical", &["prodgadget".to_string()])
+        .expect("canonical build from main");
+    assert_eq!(canon_summary, "prodgadget=DEADBEEF", "canonical summary = ONLY the scoped crate");
+
+    // home was fast-forwarded to origin/main before building (never builds stale canonical).
+    let head_of = |dir: &Path, refspec: &str| -> String {
+        String::from_utf8(
+            Command::new("git").args(["-C", dir.to_str().unwrap(), "rev-parse", refspec])
+                .output().unwrap().stdout,
+        ).unwrap().trim().to_string()
+    };
+    assert_eq!(head_of(&home, "HEAD"), head_of(&origin, "main"),
+        "canonical build ff-synced home to origin/main");
+
+    // build-signed.sh got the CANONICAL crate dir (home/...), never a werk dir.
+    let canon_calls = fs::read_to_string(&bs_log).unwrap_or_default();
+    assert!(canon_calls.contains(home.join("platform/services/prodgadget").to_str().unwrap()),
+        "build-signed got the CANONICAL crate dir (not a werk): {}", canon_calls);
+    assert!(!canon_calls.contains(werk_base.to_str().unwrap()),
+        "canonical build must NOT touch any werk dir: {}", canon_calls);
+    // crate-scope: the unrelated otherlib crate was NOT built (no full-repo build at acp).
+    assert!(!canon_calls.contains("otherlib"),
+        "crate-scoped canonical build must NOT build unrelated crates: {}", canon_calls);
 }
 
 /// AC3 real cargo-level build-invariance — wraps test-build-invariance.sh

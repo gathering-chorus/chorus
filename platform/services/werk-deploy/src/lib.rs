@@ -636,28 +636,15 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
 
-    // #3186 — refuse-if-stale guard (defense-in-depth for the residual commit->deploy
-    // window). werk-commit (#3186) rebases the werk onto current origin/main, so a deploy
-    // normally sees a current werk BY CONSTRUCTION. But if a peer merged between commit and
-    // this deploy — or the commit-time fetch failed — the werk is behind origin/main and a
-    // build from it would ship a stale tree that REVERTS the peer's merged change (the #3182
-    // failure mode). Canonical (prod) ONLY: a stale werk in the role's own demo slot is
-    // isolated, not a live revert (mirrors the canonical-only cdhash guard below). Refuse —
-    // re-commit (werk-commit rebases onto current main) then re-demo before deploy.
+    // #3222 — target=canonical no longer builds from the werk. It builds the card's
+    // crate(s) from CANONICAL ff-synced to origin/main (werk-build --target canonical
+    // --only <crates>, the one structural build tool) and installs/verifies via the single
+    // prod path (chorus-deploy --target canonical). This RETIRES the werk-sourced canonical
+    // build (the merged≠live root) — and with it the #3186 werk-stale guard the from-werk
+    // path needed: a build of main can't ship a stale werk tree, so there is nothing to be
+    // stale against. The werk is still read here, but ONLY to derive which crates changed.
     if target == "canonical" {
-        let _ = run_env(Some(&werk_s), &[], "git", &["-C", &werk_s, "fetch", "-q", "origin", "main"]);
-        let behind = run_env(Some(&werk_s), &[], "git", &["-C", &werk_s, "rev-list", "--count", "HEAD..origin/main"])
-            .unwrap_or_default()
-            .trim()
-            .parse::<u64>()
-            .unwrap_or(0);
-        if behind > 0 {
-            jsonl(home, role, card, &trace, "deploy.refused", ",\"reason\":\"werk-stale\"");
-            return Err(format!(
-                "werk-stale: #{} werk is {} commit(s) behind origin/main — a build from it would revert merged peer work (the #3182 class). Re-commit (werk-commit rebases onto current main) then re-demo before deploy.",
-                card, behind
-            ));
-        }
+        return deploy_canonical(home, &werk_s, role, card, &trace);
     }
 
     // serialize all system mutation under one lock.
@@ -723,6 +710,87 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     let joined = summary(&built);
     jsonl(home, role, card, &trace, "deploy.completed", &format!(",\"target\":\"{}\",\"deployed\":\"{}\"", target, joined));
     Ok(format!("{} target={}", joined, target))
+}
+
+/// chorus-deploy (the single prod install/verify/kickstart path) resolved by absolute
+/// path under canonical — bare-name resolution fails under the daemon PATH (#3151/#3183).
+fn chorus_deploy_cmd(home: &Path) -> String {
+    canonical_root_path(home) + "/platform/scripts/chorus-deploy"
+}
+
+/// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
+/// de-duplicated, order-stable. These are the only units a prod deploy needs to (re)build
+/// from canonical + install — everything else on main is already built and deployed.
+fn changed_service_crates(diff: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in diff.lines() {
+        if let Some(rest) = line.trim().strip_prefix("platform/services/") {
+            if let Some(name) = rest.split('/').next() {
+                if !name.is_empty() && !out.iter().any(|c| c == name) {
+                    out.push(name.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// #3222 — target=canonical: build the card's crate(s) from CANONICAL ff-synced to
+/// origin/main (werk-build --target canonical --only), then install/verify/kickstart each
+/// via the single prod path (chorus-deploy --target canonical). The werk is read ONLY to
+/// derive which crates changed (merge-base diff — survives the squash-merge: the merge-base
+/// is the stable fork point even after origin/main moves ahead). NOTHING is built from the
+/// werk: prod binaries are structurally a build of main (the merged≠live fix).
+fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str) -> R<String> {
+    let _ = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "fetch", "-q", "origin", "main"]);
+    let base = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "merge-base", "origin/main", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let range = if base.is_empty() { "origin/main..HEAD".to_string() } else { format!("{}..HEAD", base) };
+    let diff = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "diff", "--name-only", &range])
+        .unwrap_or_default();
+    let crates = changed_service_crates(&diff);
+
+    if crates.is_empty() {
+        // Docs/config/graph-only card — no service crate to build for prod. Clean no-op so
+        // the acp chain proceeds (mirrors werk-build's no-build-units case).
+        jsonl(home, role, card, trace, "deploy.completed",
+            ",\"target\":\"canonical\",\"deployed\":\"\",\"reason\":\"no-service-crates\"");
+        return Ok("nothing to deploy (no service crates changed) target=canonical".to_string());
+    }
+
+    // Build the card's crate(s) from canonical@origin/main — the one structural build tool,
+    // crate-scoped so a prod deploy never rebuilds the whole tree (no full-repo tsc at acp,
+    // no coupling the card's deploy to unrelated crates' health on main).
+    let only = crates.join(",");
+    run_env(
+        Some(werk_s),
+        &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
+        "werk-build",
+        &[&card.to_string(), role, "--target", "canonical", "--only", &only],
+    )
+    .map_err(|e| died(home, role, card, trace, "canonical-build-fail",
+        format!("werk-build --target canonical failed; nothing installed: {}", e)))?;
+
+    // Install/verify/kickstart each crate via the single prod path. CHORUS_ROOT=canonical so
+    // chorus-deploy reads the freshly-built target/release from canonical (where werk-build
+    // just built), and its #3181 ff is a no-op (werk-build already ff-synced canonical).
+    let cdeploy = chorus_deploy_cmd(home);
+    let home_s = canonical_root_path(home);
+    for c in &crates {
+        run_env(
+            Some(&home_s),
+            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role), ("CHORUS_ROOT", &home_s)],
+            &cdeploy,
+            &["--target", "canonical", c],
+        )
+        .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
+            format!("chorus-deploy --target canonical {} failed: {}", c, e)))?;
+    }
+
+    jsonl(home, role, card, trace, "deploy.completed",
+        &format!(",\"target\":\"canonical\",\"deployed\":\"{}\"", only));
+    Ok(format!("{} target=canonical", only))
 }
 
 fn summary(built: &[(String, String)]) -> String {
