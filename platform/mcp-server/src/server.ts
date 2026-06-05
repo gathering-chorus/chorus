@@ -173,15 +173,6 @@ const CommitInput = z.object({
   summary: z.string().min(1).optional().describe('Optional short summary; werk-commit formats the message as "<role>: #<card> — <summary>".'),
 }).strict();
 
-// #3176 — chorus_acp input (thin skin over the rust werk-acp verb). `role` is the
-// BUILDER (werk location); the ACCEPTER is the calling identity (getCallerRole).
-// card_id is now REQUIRED — werk-acp takes it explicit; the v1 branch-derivation
-// (#2868) is retired with the shared-HEAD class it depended on.
-const AcpInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being accepted.'),
-  card_id: z.number().int().positive().describe('Card ID to accept end-to-end.'),
-}).strict();
-
 // #2751 — chorus_pull_card atomic transaction input. Role + explicit card_id;
 // the /pull skill is the caller, and Jeff or the role names which card.
 // No bypasses on the wire — werk-dirty / werk-wrong-branch are typed refusals,
@@ -895,29 +886,6 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
       },
     },
     required: ['filePath', 'href'],
-    additionalProperties: false,
-  },
-} as const;
-
-const ACP_TOOL_DEF = {
-  name: 'chorus_acp',
-  description:
-    'Accept a WIP card end-to-end. Thin skin over the rust werk-acp verb — MCP just execs it; the orchestration is NOT in this layer (#3176). werk-acp composes the atomic verbs as ONE all-or-nothing accept: werk-commit → werk-push → werk-deploy(target=canonical, build+deploy+VERIFY running==built) → werk-accept. The deploy-verify is GATING: if prod does not come up == built, acp FAILS there and the source never merges (the merged≠live fix). `role` is the BUILDER (werk location); the ACCEPTER is the calling identity — only jeff/wren may finalize (DEC-048, enforced by werk-accept). Returns the per-step summary. Do NOT use raw git, gh, or cards CLI — those bypass the typed refusals.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      role: {
-        type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Builder role — owns the werk <role>/<card> being accepted.',
-      },
-      card_id: {
-        type: 'integer',
-        minimum: 1,
-        description: 'Card ID to accept end-to-end.',
-      },
-    },
-    required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -1856,7 +1824,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-acp',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2312,8 +2280,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       WERK_MERGE_TOOL_DEF,
       WERK_ACCEPT_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
-      ACP_TOOL_DEF,
-      DESIGN_REFRESH_TOOL_DEF,
+          DESIGN_REFRESH_TOOL_DEF,
       DOC_CATALOG_ADD_TOOL_DEF,
       LOGS_QUERY_TOOL_DEF,
       LOGS_RECENT_ERRORS_TOOL_DEF,
@@ -2499,18 +2466,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const commitArgs = [String(parsed.data.card_id), parsed.data.role];
         if (parsed.data.summary) commitArgs.push(parsed.data.summary);
         return executeWerkVerb('werk-commit', commitArgs, parsed.data.role, parsed.data.card_id, {});
-      }
-      case 'chorus_acp': {
-        const parsed = AcpInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        // #3176 — thin skin → rust werk-acp. `role` is the BUILDER (werk location);
-        // the ACCEPTER is the calling identity (getCallerRole), which werk-accept's
-        // can_accept (DEC-048) gates on. werk-acp composes commit→push→deploy(canonical,
-        // GATING verify)→accept. The v1 executeAcp orchestration + its git-queue.sh
-        // calls are retired (#3182 unblock).
-        return executeWerkVerb('werk-acp', [String(parsed.data.card_id), parsed.data.role], getCallerRole(), parsed.data.card_id, {});
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
