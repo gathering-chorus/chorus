@@ -336,3 +336,25 @@ fn werk_root_for_uses_the_card_werk_and_refuses_without_a_card() {
         "no-card env-up must refuse naming card_id, got: {e}"
     );
 }
+
+// #3243 — deploy_canonical must also deploy the TS services (chorus-mcp at
+// platform/mcp-server, chorus-api at platform/api), which live OUTSIDE platform/services/
+// so changed_service_crates misses them (the merged≠live hole that bit #3239/#3241).
+#[test]
+fn changed_ts_services_detects_mcp_and_api_distinct_from_rust_crates() {
+    let diff = "platform/mcp-server/src/server.ts\n\
+                platform/api/src/server.ts\n\
+                platform/services/werk-deploy/src/lib.rs\n\
+                README.md\n";
+    let ts = werk_deploy::changed_ts_services(diff);
+    assert!(ts.contains(&"chorus-mcp".to_string()), "platform/mcp-server → chorus-mcp, got {ts:?}");
+    assert!(ts.contains(&"chorus-api".to_string()), "platform/api → chorus-api, got {ts:?}");
+    assert_eq!(ts.len(), 2, "only the two TS services, deduped: {ts:?}");
+    // the rust-crate detector is unchanged and disjoint — it sees only the platform/services/ crate
+    assert_eq!(werk_deploy::changed_service_crates(diff), vec!["werk-deploy".to_string()]);
+    // no false positive on a docs-only diff
+    assert!(werk_deploy::changed_ts_services("README.md\ndesigning/docs/x.html\n").is_empty());
+    // dedup: many touched files in one TS service collapse to one deploy target
+    let multi = "platform/mcp-server/src/a.ts\nplatform/mcp-server/src/b.ts\nplatform/mcp-server/package.json\n";
+    assert_eq!(werk_deploy::changed_ts_services(multi), vec!["chorus-mcp".to_string()]);
+}
