@@ -404,7 +404,10 @@ const DeployInput = z.object({
 });
 const EnvUpInput = z.object({
   role: RoleEnum,
-  card_id: z.number().int().min(1).optional().describe('Optional card context.'),
+  // #3239 — REQUIRED. env-up must target the card under test; it's forwarded into the
+  // werk-deploy argv (not just the spine field). Without it, werk-deploy used to stand up
+  // an arbitrary/stale werk (the first <role>-* dir). No card = refuse, don't guess.
+  card_id: z.number().int().min(1).describe('Card whose werk to bring the env up from (required).'),
 });
 
 const SERVICE_STATUS_TOOL_DEF = {
@@ -484,9 +487,9 @@ const CHORUS_ENV_UP_TOOL_DEF = {
     type: 'object',
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose variant to bring up.' },
-      card_id: { type: 'integer', minimum: 1, description: 'Optional card context for spine event card_id field.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card whose werk to bring the env up from. REQUIRED — forwarded into werk-deploy so the env stands up the card under test, not an arbitrary werk (#3239).' },
     },
-    required: ['role'],
+    required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -1895,8 +1898,10 @@ async function executeChorusDeploy(
 async function executeChorusEnvUp(
   args: z.infer<typeof EnvUpInput>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  // werk-deploy env-up <role>: brings the role's variant up on per-role ports.
-  return executeWerkVerb('werk-deploy', ['env-up', args.role], args.role, args.card_id, {});
+  // werk-deploy env-up <role> <card>: brings the role's variant up on per-role ports.
+  // #3239 — card_id is FORWARDED INTO THE ARGV (was omitted), so werk-deploy stands up the
+  // card under test's werk, not the first/stale <role>-* dir.
+  return executeWerkVerb('werk-deploy', ['env-up', args.role, String(args.card_id)], args.role, args.card_id, {});
 }
 
 async function executeNudge(
