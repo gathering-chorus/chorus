@@ -130,6 +130,23 @@ pub fn render_observation(o: &Observation) -> String {
     format!("{} {} — {}", clock, o.tool, o.digest)
 }
 
+/// Decide what gemba shows — pure, so the reboot-safety contract is unit-tested.
+/// A MISSING stream file is reboot-blindness, NOT quiet: say "rebuilding" so it can
+/// never read as the false "no activity" (Silas, #3205 review) — the same staleness
+/// lie this verb kills, one level down (the observer stream lives in reboot-volatile
+/// /tmp). A PRESENT stream with no turns newer than the cursor is genuine quiet →
+/// empty string (silent, like gemba-tick's null path).
+pub fn render_gather(target: &str, stream_exists: bool, fresh: &[Observation]) -> String {
+    if !stream_exists {
+        return format!("{}: observation stream unavailable — rebuilding (not idle)", target);
+    }
+    if fresh.is_empty() {
+        return String::new();
+    }
+    let body: Vec<String> = fresh.iter().map(render_observation).collect();
+    format!("{} ({} new):\n{}", target, fresh.len(), body.join("\n"))
+}
+
 /// The spine event contract (mirrors werk-pull's spine_args): args handed to
 /// `chorus-log` so a gather is queryable in Loki — event first, role second, then
 /// key=value extras.
@@ -182,7 +199,9 @@ pub fn run() -> R<String> {
         .unwrap_or_else(|_| "unknown".to_string());
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
 
-    let stream = fs::read_to_string(observations_path(&target)).unwrap_or_default();
+    let spath = observations_path(&target);
+    let stream_exists = spath.exists();
+    let stream = fs::read_to_string(&spath).unwrap_or_default();
     let cpath = cursor_path(&home, &role, &target);
     let cursor = fs::read_to_string(&cpath).unwrap_or_default().trim().to_string();
 
@@ -197,16 +216,13 @@ pub fn run() -> R<String> {
     }
 
     let count = result.fresh.len();
+    let status = if !stream_exists { "rebuilding" } else if count == 0 { "quiet" } else { "fresh" };
     emit_spine(
         &home,
         "pulse.gathered",
         &role,
-        &[("target", target.as_str()), ("count", &count.to_string())],
+        &[("target", target.as_str()), ("count", &count.to_string()), ("status", status)],
     );
 
-    if count == 0 {
-        return Ok(String::new()); // genuinely no change — silent, like gemba-tick's null path
-    }
-    let body: Vec<String> = result.fresh.iter().map(render_observation).collect();
-    Ok(format!("{} ({} new):\n{}", target, count, body.join("\n")))
+    Ok(render_gather(&target, stream_exists, &result.fresh))
 }

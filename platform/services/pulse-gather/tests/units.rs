@@ -7,8 +7,8 @@
 // observation strictly newer than a timestamp cursor, keyed on ts (not line index)
 // so it survives the observer's 200-line rotation.
 use pulse_gather::{
-    gather_since, parse_observation, render_observation, role_delta, role_view_from_pulse,
-    spine_args, Observation, RoleView,
+    gather_since, parse_observation, render_gather, render_observation, role_delta,
+    role_view_from_pulse, spine_args, Observation, RoleView,
 };
 
 // The observer writes ISO8601 with a fixed local offset, e.g. 2026-06-05T16:16:18-0400.
@@ -169,6 +169,40 @@ fn render_observation_is_terse_and_carries_signal() {
     let line = render_observation(&o);
     assert!(line.contains("Edit"), "tool is visible");
     assert!(line.contains("editing lib.rs"), "digest is visible");
+}
+
+// --- render_gather: reboot-safety contract (Silas #3205 review) ---
+// A missing stream is reboot-blindness, not idle. Saying "no activity" when /tmp was
+// wiped is the exact staleness lie this verb kills — so an absent stream says
+// "rebuilding", a present-but-quiet stream is genuinely silent.
+
+#[test]
+fn render_gather_says_rebuilding_when_stream_absent_not_idle() {
+    let out = render_gather("kade", false, &[]);
+    assert!(!out.is_empty(), "an absent stream must NOT be silent (that's the reboot lie)");
+    assert!(out.contains("rebuilding"), "absent stream is announced as rebuilding, not no-activity");
+}
+
+#[test]
+fn render_gather_silent_on_genuine_quiet() {
+    assert_eq!(
+        render_gather("kade", true, &[]),
+        "",
+        "present stream with no turns newer than the cursor is genuine quiet => silent"
+    );
+}
+
+#[test]
+fn render_gather_lists_fresh_turns() {
+    let o = Observation {
+        ts: "2026-06-05T16:00:00-0400".into(),
+        role: "kade".into(),
+        tool: "Edit".into(),
+        action: "Edit".into(),
+        digest: "x".into(),
+    };
+    let out = render_gather("kade", true, std::slice::from_ref(&o));
+    assert!(out.contains("(1 new)"), "fresh turns are counted and listed");
 }
 
 // --- spine_args: mirror the werk-verb spine contract (queryable in Loki) ---
