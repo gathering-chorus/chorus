@@ -84,17 +84,31 @@ jobs:
         # Runs in the card's werk so it proves THIS card's code. Failure stops the job →
         # nothing deploys, nothing lands.
         run: |
-          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"
+          set -o pipefail
+          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
+          # #3240 — test is an inline step (not a verb), so it posts its own chorus/test/<card>
+          # status to gh (the verbs do this via register_gh; test has no verb). pending→success/failure.
+          post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
+          post pending
           echo "-- test (hermetic gate) in $WERK --"
-          ( cd "$WERK" && cargo test --lib --bins --test 'hermetic_*' 2>&1 | tail -20 ) || { echo "[FAIL] cargo hermetic tests"; exit 1; }
-          ( cd "$WERK" && npx jest --forceExit --passWithNoTests --randomize 2>&1 | tail -20 ) || { echo "[FAIL] jest"; exit 1; }
+          rc=0
+          ( cd "$WERK" && cargo test --lib --bins --test 'hermetic_*' ) 2>&1 | tail -25 || rc=1
+          ( cd "$WERK" && npx jest --forceExit --passWithNoTests --randomize ) 2>&1 | tail -20 || rc=1
+          if [ "$rc" = 0 ]; then post success; else post failure; echo "[FAIL] tests"; exit 1; fi
 
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
         run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
-        run: chorus-mcp-call.sh "${ROLE}" chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        # #3240 — env-up posts chorus/env-up/<card> (the verb emits spine/jsonl but not a gh
+        # status today; step-level post here for the finish — Silas's verb-level emit supersedes
+        # this as the clean refactor follow-on). pending→success/failure.
+        run: |
+          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
+          post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
+          post pending
+          if chorus-mcp-call.sh "${ROLE}" chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
       - name: demo
         # werk-demo (#3116) — the proving ceremony against the env-up'd slot. The one
