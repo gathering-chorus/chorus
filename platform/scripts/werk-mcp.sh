@@ -10,8 +10,9 @@
 # makes all of our verbs atomic.")
 #
 # This is a fail-loud stub (the team's retirement pattern, cf. the retired bash `nudge`
-# stub). It does NOT re-exec act itself — a re-exec would have to choose canonical-vs-werk
-# werk.yml and would break self-modifying cards. Callers run the act pipeline directly.
+# stub). The pipeline trigger is now an MCP VERB — chorus_werk (#3241) — not a raw `act`
+# CLI. The verb encapsulates the act run (canonical werk.yml, host-native, PATH); callers
+# pass only {role, card_id, accepter}, like every other verb.
 #
 # Accept stays the human's hand (DEC-048): the pipeline stops before accept; the human
 # runs `werk-accept <card> <role>`.
@@ -22,14 +23,13 @@ CARD="${2:-<card>}"
 ACCEPTER="${3:-jeff}"
 
 cat >&2 <<EOF
-werk-mcp.sh is RETIRED (#3236) — the pipeline is now one act workflow: werk.yml.
+werk-mcp.sh is RETIRED — the pipeline is one act workflow (werk.yml, #3236), and the
+trigger is one MCP verb (chorus_werk, #3241). Don't run raw act.
 
-Run the pipeline directly:
-  act workflow_dispatch -W .github/workflows/werk.yml -P macos-latest=-self-hosted \\
-    --input card_id=${CARD} --input role=${ROLE} --input accepter=${ACCEPTER}
+Run the pipeline via MCP (the single toolchain):
+  chorus_werk { role: "${ROLE}", card_id: ${CARD}, accepter: "${ACCEPTER}" }
 
-(run from the card's werk so act uses that werk's werk.yml). The run stops before accept;
-then the human accepts:
+It runs the whole pipeline and STOPS before accept; then the human accepts:
   DEPLOY_ROLE=${ACCEPTER} werk-accept ${CARD} ${ROLE}
 EOF
 exit 1
