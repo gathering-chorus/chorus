@@ -721,7 +721,7 @@ fn chorus_deploy_cmd(home: &Path) -> String {
 /// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
 /// de-duplicated, order-stable. These are the only units a prod deploy needs to (re)build
 /// from canonical + install — everything else on main is already built and deployed.
-fn changed_service_crates(diff: &str) -> Vec<String> {
+pub fn changed_service_crates(diff: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in diff.lines() {
         if let Some(rest) = line.trim().strip_prefix("platform/services/") {
@@ -730,6 +730,30 @@ fn changed_service_crates(diff: &str) -> Vec<String> {
                     out.push(name.to_string());
                 }
             }
+        }
+    }
+    out
+}
+
+/// #3243 — the card's changed TS SERVICES: chorus-mcp (`platform/mcp-server`) and chorus-api
+/// (`platform/api`). These live OUTSIDE `platform/services/`, so `changed_service_crates`
+/// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (chorus_werk)
+/// merge to main but stay un-deployed until a manual `chorus-deploy`. They are built by
+/// `chorus-deploy` itself (npm → dist + kickstart), NOT by `werk-build` (target/release), so
+/// deploy_canonical routes them straight to `chorus-deploy` and skips the werk-build step.
+pub fn changed_ts_services(diff: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |name: &str| {
+        if !out.iter().any(|c| c == name) {
+            out.push(name.to_string());
+        }
+    };
+    for line in diff.lines() {
+        let l = line.trim();
+        if l.starts_with("platform/mcp-server/") {
+            add("chorus-mcp");
+        } else if l.starts_with("platform/api/") {
+            add("chorus-api");
         }
     }
     out
@@ -750,34 +774,43 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let diff = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "diff", "--name-only", &range])
         .unwrap_or_default();
     let crates = changed_service_crates(&diff);
+    // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
+    // OUTSIDE platform/services/, so changed_service_crates misses them. chorus-deploy builds
+    // them itself (npm → dist), so they deploy via chorus-deploy WITHOUT a werk-build step.
+    let ts = changed_ts_services(&diff);
 
-    if crates.is_empty() {
-        // Docs/config/graph-only card — no service crate to build for prod. Clean no-op so
+    if crates.is_empty() && ts.is_empty() {
+        // Docs/config/graph-only card — no service to build for prod. Clean no-op so
         // the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
             ",\"target\":\"canonical\",\"deployed\":\"\",\"reason\":\"no-service-crates\"");
         return Ok("nothing to deploy (no service crates changed) target=canonical".to_string());
     }
 
-    // Build the card's crate(s) from canonical@origin/main — the one structural build tool,
-    // crate-scoped so a prod deploy never rebuilds the whole tree (no full-repo tsc at acp,
-    // no coupling the card's deploy to unrelated crates' health on main).
-    let only = crates.join(",");
-    run_env(
-        Some(werk_s),
-        &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
-        "werk-build",
-        &[&card.to_string(), role, "--target", "canonical", "--only", &only],
-    )
-    .map_err(|e| died(home, role, card, trace, "canonical-build-fail",
-        format!("werk-build --target canonical failed; nothing installed: {}", e)))?;
+    // Build the card's RUST crate(s) from canonical@origin/main — the one structural build
+    // tool, crate-scoped so a prod deploy never rebuilds the whole tree (no full-repo tsc at
+    // acp, no coupling the card's deploy to unrelated crates' health on main). TS services are
+    // NOT built here — chorus-deploy npm-builds them from canonical in the deploy loop below.
+    if !crates.is_empty() {
+        let only = crates.join(",");
+        run_env(
+            Some(werk_s),
+            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
+            "werk-build",
+            &[&card.to_string(), role, "--target", "canonical", "--only", &only],
+        )
+        .map_err(|e| died(home, role, card, trace, "canonical-build-fail",
+            format!("werk-build --target canonical failed; nothing installed: {}", e)))?;
+    }
 
-    // Install/verify/kickstart each crate via the single prod path. CHORUS_ROOT=canonical so
-    // chorus-deploy reads the freshly-built target/release from canonical (where werk-build
-    // just built), and its #3181 ff is a no-op (werk-build already ff-synced canonical).
+    // Install/verify/kickstart each via the single prod path. CHORUS_ROOT=canonical so a Rust
+    // crate's chorus-deploy reads the freshly-built target/release (where werk-build just
+    // built), and a TS service's chorus-deploy npm-builds + kickstarts from canonical. #3181
+    // ff is a no-op (werk-build already ff-synced canonical; TS path ff-syncs too).
     let cdeploy = chorus_deploy_cmd(home);
     let home_s = canonical_root_path(home);
-    for c in &crates {
+    let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
+    for c in &deployed {
         run_env(
             Some(&home_s),
             &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role), ("CHORUS_ROOT", &home_s)],
@@ -788,6 +821,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             format!("chorus-deploy --target canonical {} failed: {}", c, e)))?;
     }
 
+    let only = deployed.join(",");
     jsonl(home, role, card, trace, "deploy.completed",
         &format!(",\"target\":\"canonical\",\"deployed\":\"{}\"", only));
     Ok(format!("{} target=canonical", only))
