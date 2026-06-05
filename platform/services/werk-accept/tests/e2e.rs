@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_accept::accept;
+use werk_accept::{do_more, finalize, signal};
 
 fn nanos() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() }
 fn tmp(tag: &str) -> PathBuf {
@@ -31,7 +31,7 @@ fn write_exec(path: &Path, body: &str) {
 }
 
 #[test]
-fn accept_authority_gate_and_happy_path() {
+fn signal_do_more_finalize_split() {
     // #3183: werk-accept now resolves cards/chorus-log/chorus-werk ABSOLUTELY under
     // home/platform/scripts, and werk-deploy under $CHORUS_BIN — independent of PATH
     // (it's exec'd by the chorus-mcp daemon whose PATH lacks platform/scripts; bare
@@ -79,47 +79,61 @@ fn accept_authority_gate_and_happy_path() {
     std::env::set_var("CARDS_OWNER", "kade");
     std::env::set_var("CARDS_STATUS", "WIP");
 
-    // (1) authority gate: a builder (kade) self-accepting => Err, NO finalize.
-    assert!(accept(9001, "kade", "kade", &home, &werk_base).is_err(), "builder self-accept refused");
-    let after_refuse = fs::read_to_string(&log).unwrap_or_default();
-    assert!(!after_refuse.contains("pr merge"), "refused accept must NOT merge");
-    assert!(!after_refuse.contains("cards done"), "refused accept must NOT mark done");
-    // #3108 AC#8: env-down sits post-merge; a refused accept must not reach it.
-    assert!(!after_refuse.contains("werk-deploy env-down"), "refused accept must NOT tear down variants");
+    // === #3237: accept() split into signal (go) / do_more (no-go|more) / finalize ===
+    let demo_witness = home.join("ops/logs/werk-demo.jsonl");
 
-    // (2a) #3116 verdict gate: jeff accepting WITHOUT a demo.verdict=pass on record => Err.
-    assert!(accept(9001, "kade", "jeff", &home, &werk_base).is_err(),
-        "accept must refuse with no demo.verdict=pass on record (#3116)");
+    // (1) signal AUTHORITY: a builder (kade) self-signaling => Err, and NO decision
+    //     written — the seam stays blocked; werk-demo never sees a go it shouldn't.
+    assert!(signal(9001, "kade", "kade", &home).is_err(), "builder self-accept refused on signal");
+    assert!(
+        !demo_witness.exists() || !fs::read_to_string(&demo_witness).unwrap().contains("demo.decision"),
+        "refused signal must write NO demo.decision"
+    );
+
+    // (2) signal GO: DEPLOY_ROLE=jeff signaling kade's WIP card => Ok, writes the
+    //     byte-exact demo.decision{go} (comma-terminated) and does NOT finalize.
+    signal(9001, "kade", "jeff", &home).expect("jeff signals go");
+    let w = fs::read_to_string(&demo_witness).unwrap_or_default();
+    assert!(
+        w.contains("\"event\":\"demo.decision\"") && w.contains("\"card_id\":9001,") && w.contains("\"decision\":\"go\""),
+        "signal writes byte-exact demo.decision go; got:\n{}", w
+    );
+    let after_signal = fs::read_to_string(&log).unwrap_or_default();
+    assert!(!after_signal.contains("cards done"), "signal must NOT finalize (no cards done)");
+    assert!(!after_signal.contains("werk-deploy env-down"), "signal must NOT tear down variants");
+    assert!(!after_signal.contains("pr merge"), "signal never merges");
+
+    // (3) do_more: same authority gate, writes demo.decision{more} → werk-demo exits 2.
+    do_more(9001, "kade", "jeff", &home, "more").expect("jeff signals more");
+    assert!(
+        fs::read_to_string(&demo_witness).unwrap().contains("\"decision\":\"more\""),
+        "do_more writes demo.decision more"
+    );
+
+    // (4) finalize VERDICT GATE: no demo.verdict=pass yet (the go wrote a decision, not a
+    //     verdict — werk-demo writes the verdict on go) => Err, NO finalize.
+    assert!(finalize(9001, "kade", &home).is_err(), "finalize refuses without demo.verdict=pass");
     assert!(!fs::read_to_string(&log).unwrap_or_default().contains("cards done 9001"),
         "verdict-gate refusal must NOT finalize");
-    // record the passing verdict the demo binary would have written (proving ran).
-    let demo_witness = home.join("ops/logs/werk-demo.jsonl");
-    fs::create_dir_all(demo_witness.parent().unwrap()).unwrap();
-    fs::write(&demo_witness,
-        "{\"ts\":1,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"verdict\":\"pass\",\"prover\":\"jeff\"}\n").unwrap();
+    // record the verdict werk-demo would have written on go.
+    fs::write(&demo_witness, format!(
+        "{}{{\"ts\":1,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        fs::read_to_string(&demo_witness).unwrap()
+    )).unwrap();
 
-    // (2) happy path: DEPLOY_ROLE=jeff accepting kade's card => Ok, FINALIZE only.
-    accept(9001, "kade", "jeff", &home, &werk_base).expect("jeff finalizes");
-    let after_ok = fs::read_to_string(&log).unwrap_or_default();
-    // #3175: accept is FINALIZE-ONLY — werk-merge owns the merge. accept must NOT merge.
-    assert!(!after_ok.contains("pr merge"), "accept no longer merges — werk-merge owns the merge (#3175)");
-    assert!(!after_ok.contains("pr create"), "accept no longer opens a PR — that's werk-merge's job");
-    assert!(after_ok.contains("cards done 9001"), "happy path marks the card Done");
-    assert!(after_ok.contains("chorus-log card.accepted"), "happy path emits card.accepted");
-    // #3108 AC#8: env-down called on happy path AND precedes chorus-werk remove
-    // (so variant services release file handles before the worktree is destroyed).
-    assert!(after_ok.contains("werk-deploy env-down kade"), "happy path tears down kade's variant");
-    let env_down_at = after_ok.find("werk-deploy env-down").expect("env-down logged");
-    let werk_remove_at = after_ok.find("chorus-werk remove kade 9001").expect("chorus-werk remove logged");
-    assert!(env_down_at < werk_remove_at, "env-down must precede chorus-werk remove (got env-down at {}, werk remove at {})", env_down_at, werk_remove_at);
+    // (5) finalize HAPPY: NO authority gate (act runs it post-deploy) — mechanical finalize.
+    finalize(9001, "kade", &home).expect("finalize runs post-deploy");
+    let after_fin = fs::read_to_string(&log).unwrap_or_default();
+    assert!(after_fin.contains("cards done 9001"), "finalize marks the card Done");
+    assert!(after_fin.contains("chorus-log card.accepted"), "finalize emits card.accepted");
+    assert!(after_fin.contains("werk-deploy env-down kade"), "finalize tears down kade's variant");
+    let env_down_at = after_fin.find("werk-deploy env-down").expect("env-down logged");
+    let werk_remove_at = after_fin.find("chorus-werk remove kade 9001").expect("chorus-werk remove logged");
+    assert!(env_down_at < werk_remove_at, "env-down precedes chorus-werk remove");
+    assert!(!after_fin.contains("pr merge"), "finalize never merges (werk-merge owns merge)");
 
-    // (3) the load-bearing nuance: wren accepting a WREN-owned card => Err (self-accept).
+    // (6) signal self-accept nuance: wren signaling a WREN-owned card => Err. signal
+    //     doesn't touch the werk, so no worktree setup is needed.
     std::env::set_var("CARDS_OWNER", "wren");
-    let werk2 = werk_base.join("wren-9002");
-    git(&home, &["worktree", "add", "-b", "wren/9002", werk2.to_str().unwrap(), "origin/main"]);
-    fs::write(werk2.join("w.txt"), "y").unwrap();
-    git(&werk2, &["add", "."]);
-    git(&werk2, &["commit", "-q", "-m", "w"]);
-    git(&werk2, &["push", "-q", "origin", "wren/9002"]);
-    assert!(accept(9002, "wren", "wren", &home, &werk_base).is_err(), "wren self-accept refused");
+    assert!(signal(9002, "wren", "wren", &home).is_err(), "wren self-accept refused on signal");
 }

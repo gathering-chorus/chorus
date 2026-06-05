@@ -70,6 +70,16 @@ pub fn jsonl_line(ts: u128, event: &str, role: &str, card: u64, trace: &str, ext
     )
 }
 
+/// #3237 — build the `demo.decision` line werk-demo's read_decision polls for in
+/// ops/logs/werk-demo.jsonl. Wraps jsonl_line so card_id stays comma-terminated
+/// (`"card_id":N,`) — the byte-exact match that blocks the #3/#31 collision. The
+/// role field carries the accepter (who rendered the decision); decision is
+/// go | no-go | more. The go-signal (werk-accept) and werk-do-more both emit through
+/// this one builder so the witnessed shape can't drift between the two verbs.
+pub fn demo_decision_line(ts: u128, card: u64, decision: &str, accepter: &str, trace: &str) -> String {
+    jsonl_line(ts, "demo.decision", accepter, card, trace, &format!(",\"decision\":\"{}\"", decision))
+}
+
 /// Minimal whitespace-tolerant JSON string-field extractor (zero-dep). Same as the
 /// pull blueprint — robust against `cards --json` pretty-printing.
 pub fn json_str_field(json: &str, key: &str) -> Option<String> {
@@ -180,158 +190,177 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// Entry: parse args (`werk-accept <card> <role>`; the ACCEPTER is read from
-/// $DEPLOY_ROLE — that is who is authorizing the finalize, distinct from the
-/// builder `role` whose card is being accepted) + env, then run the verb.
+/// Entry for werk-accept (#3237): the GO-SIGNAL. `werk-accept <card> <role>`; the
+/// ACCEPTER is $DEPLOY_ROLE (the authorizing identity, distinct from the builder
+/// `role`). Writes Jeff's go to the demo witness; does NOT merge or finalize.
 pub fn run_accept() -> R<String> {
     let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-accept <card> <role>".to_string())?;
     let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
     let role = env::args().nth(2).ok_or_else(|| "usage: werk-accept <card> <role>".to_string())?;
-    // the accepter is the authorizing identity, NOT the builder. Defaults to jeff
-    // only when DEPLOY_ROLE says so — there is no implicit self-accept.
     let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    let werk_base = PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
-    accept(card, &role, &accepter, &home, &werk_base)
+    signal(card, &role, &accepter, &home)
 }
 
-/// The whole verb, all inputs explicit so it is testable against a real temp repo
-/// (deps injected via PATH: real `git`, shimmed `gh`/`cards`/`chorus-log`/`chorus-werk`).
-pub fn accept(card: u64, role: &str, accepter: &str, home: &Path, werk_base: &Path) -> R<String> {
-    // normalize the accepter (trim + lowercase) so a mis-cased "Jeff" / " wren "
-    // hits its real authority row instead of silently dropping to fail-closed REFUSE.
-    let accepter = accepter.trim().to_lowercase();
-    let trace = trace_id();
-    let branch = branch_name(role, card);
-    let werk = werk_base.join(format!("{}-{}", role, card));
-    let werk_s = path(&werk)?.to_string();
+/// Entry for werk-do-more (#3237): the STOP verdicts. `werk-do-more <card> <role> <no-go|more>`.
+pub fn run_do_more() -> R<String> {
+    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
+    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
+    let role = env::args().nth(2).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
+    let decision = env::args().nth(3).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
+    let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
+    let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
+    do_more(card, &role, &accepter, &home, &decision)
+}
 
-    jsonl(home, role, card, &trace, "accept.started", &format!(",\"accepter\":\"{}\"", accepter));
+/// Entry for werk-finalize (#3237): the MECHANICAL post-deploy finalize. `werk-finalize
+/// <card> <role>`. NO authority — act runs it after merge+deploy-prod (the authority was
+/// the go).
+pub fn run_finalize() -> R<String> {
+    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-finalize <card> <role>".to_string())?;
+    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
+    let role = env::args().nth(2).ok_or_else(|| "usage: werk-finalize <card> <role>".to_string())?;
+    let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
+    finalize(card, &role, &home)
+}
 
-    // AUTHORITY GATE (DEC-048) stage 1: only jeff/wren are accept authorities —
-    // refuse kade/silas before touching anything. The self-accept nuance is stage 2,
-    // checked against the card's REAL owner after the board query (below) so it can't
-    // be dodged by passing a different `role` arg. Keyed on DEPLOY_ROLE (accepter),
-    // never the session role — distinguishes "Jeff accepting in Wren's session" from
-    // "Wren self-accepting" (Wren's #3086 live proof).
-    if !matches!(accepter.as_str(), "jeff" | "wren") {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"unauthorized\"");
-        return Err(format!(
-            "accepter '{}' may not finalize #{}: only jeff/wren accept (DEC-048)", accepter, card
-        ));
+/// Shared FRONT for the decision verbs (werk-accept go, werk-do-more no-go|more):
+/// DEC-048 authority (stage 1: only jeff/wren; stage 2: keyed on the card's REAL owner
+/// so a self-accept can't be dodged by a different `role` arg) + resolve status. No
+/// side effects beyond the refusal witness. Returns the card status on success so the
+/// caller applies Done→idempotent / not-WIP→refuse. Keyed on DEPLOY_ROLE (accepter),
+/// never the session role (#3086 live proof).
+fn gate_decision(card: u64, role: &str, accepter: &str, home: &Path, trace: &str) -> R<String> {
+    if !matches!(accepter, "jeff" | "wren") {
+        jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"unauthorized\"");
+        return Err(format!("accepter '{}' may not decide #{}: only jeff/wren (DEC-048)", accepter, card));
     }
-
-    // #3012/#3013 fix: deterministic werk, REFUSE if absent. No canonical fallback.
-    if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"no-werk\"");
-        return Err(format!("no werk for #{} at {} — nothing to accept", card, werk.display()));
-    }
-    let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
-    if cur != branch {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"wrong-branch\"");
-        return Err(format!("werk is on '{}', not '{}' — refusing to accept", cur, branch));
-    }
-
-    // EXIT precondition (not entry re-gate): the card must be in WIP. Idempotent if
-    // already Done (a prior accept finalized it) -> no-op success.
     let cj = run(&script_path(home, "cards"), &["view", &card.to_string(), "--json"])
         .map_err(|e| format!("card #{} not viewable: {}", card, e))?;
-    let status = json_str_field(&cj, "status").unwrap_or_default();
-
-    // AUTHORITY GATE stage 2: keyed on the card's REAL owner (normalized), not the
-    // role arg. Fail CLOSED — if the owner can't be resolved we cannot prove this
-    // isn't a self-accept, so refuse. This is where DEPLOY_ROLE=wren accepting her
-    // OWN card is blocked (#2979/DEC-048 — no exception for the accepter-in-chief).
     let owner = match json_str_field(&cj, "owner") {
         Some(o) => o.trim().to_lowercase(),
         None => {
-            jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"owner-unresolved\"");
-            return Err(format!("#{}: cannot resolve card owner — refusing (can't prove non-self-accept)", card));
+            jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"owner-unresolved\"");
+            return Err(format!("#{}: cannot resolve owner — refusing (can't prove non-self-accept)", card));
         }
     };
-    if !can_accept(&accepter, &owner) {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"self-accept\"");
+    if !can_accept(accepter, &owner) {
+        jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"self-accept\"");
         return Err(format!(
-            "accepter '{}' may not self-accept #{} (owner={}): no grading your own homework (DEC-048)",
+            "accepter '{}' may not self-decide #{} (owner={}): no grading your own homework (DEC-048)",
             accepter, card, owner
         ));
     }
+    Ok(json_str_field(&cj, "status").unwrap_or_default())
+}
 
+/// Append a demo.decision line to the witness werk-demo polls (ops/logs/werk-demo.jsonl).
+/// Byte-exact via demo_decision_line so the comma-terminated card_id can't drift.
+fn write_decision(home: &Path, card: u64, decision: &str, accepter: &str, trace: &str) {
+    let p = home.join("ops/logs/werk-demo.jsonl");
+    if let Some(d) = p.parent() { let _ = fs::create_dir_all(d); }
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&p) {
+        let _ = f.write_all(demo_decision_line(ts, card, decision, accepter, trace).as_bytes());
+    }
+}
+
+/// werk-accept (#3237) — Jeff's GO signal. Authority + WIP, then write demo.decision{go}
+/// to the witness werk-demo blocks on. "go" IS the DEC-048 accept; this verb does NOT
+/// merge and does NOT finalize (werk-merge / werk-finalize own those). Done → idempotent
+/// no-op (don't re-write the decision); not-WIP → refuse.
+pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
+    let accepter = accepter.trim().to_lowercase();
+    let trace = trace_id();
+    jsonl(home, role, card, &trace, "signal.started", &format!(",\"accepter\":\"{}\"", accepter));
+    let status = gate_decision(card, role, &accepter, home, &trace)?;
     if status == "Done" {
-        jsonl(home, role, card, &trace, "accept.idempotent", "");
-        return Ok(format!("#{} already accepted", card));
+        jsonl(home, role, card, &trace, "signal.idempotent", "");
+        return Ok(format!("#{} already finalized — no decision to render", card));
     }
     if status != "WIP" {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"not-wip\"");
-        return Err(format!("#{} is '{}', not WIP — accept finalizes WIP cards only", card, status));
+        jsonl(home, role, card, &trace, "signal.refused", &format!(",\"reason\":\"not-wip\",\"status\":\"{}\"", status));
+        return Err(format!("#{} is '{}', not WIP — a go applies to a WIP card", card, status));
     }
+    write_decision(home, card, "go", &accepter, &trace);
+    jsonl(home, role, card, &trace, "signal.go", &format!(",\"accepter\":\"{}\"", accepter));
+    Ok(format!("go signaled for #{} by {} — werk-demo unblocks, act continues to merge", card, accepter))
+}
 
-    // #3116 DEMO VERDICT GATE — finalize ONLY a card the proving ceremony passed.
-    // Requires a demo.verdict=pass for this card in the werk-demo witness. Replaces
-    // the demo:preflight-pass comment + the retired 4-event demo.*.completed chain.
-    // Proving is required for everyone; when Jeff is the prover, demo records
-    // prover=jeff pass, so the gate holds without a human exception.
+/// werk-do-more (#3237) — the STOP verdicts: no-go (reject) or more (iterate). Same
+/// authority + WIP gate as the go-signal, then write demo.decision{no-go|more} → werk-demo
+/// exits 2 → act stops, nothing merged. Done → idempotent no-op.
+pub fn do_more(card: u64, role: &str, accepter: &str, home: &Path, decision: &str) -> R<String> {
+    let decision = decision.trim().to_lowercase();
+    if !matches!(decision.as_str(), "no-go" | "more") {
+        return Err(format!("decision must be 'no-go' or 'more', got '{}'", decision));
+    }
+    let accepter = accepter.trim().to_lowercase();
+    let trace = trace_id();
+    jsonl(home, role, card, &trace, "do_more.started",
+          &format!(",\"accepter\":\"{}\",\"decision\":\"{}\"", accepter, decision));
+    let status = gate_decision(card, role, &accepter, home, &trace)?;
+    if status == "Done" {
+        jsonl(home, role, card, &trace, "do_more.idempotent", "");
+        return Ok(format!("#{} already finalized — nothing to iterate", card));
+    }
+    if status != "WIP" {
+        jsonl(home, role, card, &trace, "do_more.refused", &format!(",\"reason\":\"not-wip\",\"status\":\"{}\"", status));
+        return Err(format!("#{} is '{}', not WIP — a {} applies to a WIP card", card, status, decision));
+    }
+    write_decision(home, card, &decision, &accepter, &trace);
+    jsonl(home, role, card, &trace, "do_more.signaled", &format!(",\"decision\":\"{}\"", decision));
+    Ok(format!("{} signaled for #{} — werk-demo exits 2, act stops (nothing merged)", decision, card))
+}
+
+/// werk-finalize (#3237) — the MECHANICAL post-deploy finalize. NO authority gate (the
+/// authority was the go); act runs this after merge+deploy-prod succeed. Gated only on
+/// the demo recording verdict=pass (the go path). Idempotent: board Done, card.accepted,
+/// teardown (env-down then chorus-werk remove), and chorus/accept on origin/main HEAD.
+/// The HEAD sha is read from CANONICAL home (always present), NOT the werk, which this
+/// verb removes — so the gh status posts regardless of teardown order.
+pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
+    let trace = trace_id();
+    let home_s = path(home)?.to_string();
+    jsonl(home, role, card, &trace, "finalize.started", "");
+
     if !demo_verdict_pass(home, card) {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"no-demo-verdict\"");
+        jsonl(home, role, card, &trace, "finalize.refused", ",\"reason\":\"no-demo-verdict\"");
         return Err(format!(
-            "#{}: no demo.verdict=pass on record — run /demo (the proving ceremony) before accept (#3116)", card
+            "#{}: no demo.verdict=pass on record — werk-demo records it on go (#3116)", card
         ));
     }
 
-    // branch must already be on origin (push is the upstream verb).
-    if run_in(&werk_s, "git", &["ls-remote", "origin", &branch]).unwrap_or_default().trim().is_empty() {
-        jsonl(home, role, card, &trace, "accept.refused", ",\"reason\":\"not-pushed\"");
-        return Err(format!("#{}: branch {} not on origin — run push before accept", card, branch));
-    }
-
-    // --- finalize, serialized under one flock. NO git merge here (#3175): werk-merge
-    // is the ONE merge mechanism and runs earlier in the sequence (…→merge→accept).
-    // accept is FINALIZE-ONLY — board Done + spine + close. The lock serializes the
-    // board flip so concurrent finalizes can't race. ---
+    // serialize the board flip under one flock so concurrent finalizes can't race.
     let _lock = lock(home, Duration::from_secs(30))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
-    // finalize (idempotent on re-run): board Done + spine + close + gh.
     run(&script_path(home, "cards"), &["done", &card.to_string()])
-        .map_err(|e| format!("cards-done failed (re-run accept to finish): {}", e))?;
+        .map_err(|e| format!("cards-done failed (re-run finalize to finish): {}", e))?;
     let _ = run(&script_path(home, "chorus-log"), &["card.accepted", role, &format!("card={}", card)]);
     jsonl(home, role, card, &trace, "card.done", "");
 
-    // #3108 AC#8: tear down the per-card variant overlay BEFORE removing the
-    // werk. env-down boots out the LaunchAgents + removes plists + marker
-    // files for the role's variant services (per-role api/mcp ports). Doing
-    // this first lets the services release any handles into the werk tree
-    // before chorus-werk-remove deletes that tree. Best-effort + idempotent:
-    // env-down is a no-op when no overlay is active, matching the existing
-    // "let _ = run(...)" pattern for accept's finalize steps.
-    // #3215: pass the CARD so env-down's spine events (env.down.started/stopped/
-    // completed) thread the card's trace — Borg pairs them against the demo's
-    // env.up.smoked{card}. And make the witness HONEST: the old line jsonl'd
-    // `accept.env_down` UNCONDITIONALLY, claiming teardown even when it failed
-    // (the dark-lifecycle root — a teardown that lied while daemons stayed up).
-    // Emit the real outcome; a failed teardown is a leak to SEE, not a silent
-    // success. Still non-fatal — the card IS accepted; a leaked daemon is an
-    // ops gap to surface, not a reason to un-accept. Resolves with #3183:
-    // keep the absolute bin_path("werk-deploy") resolution (never bare PATH).
+    // env-down BEFORE chorus-werk remove so variant services release handles into the
+    // werk tree before it's deleted. Honest witness: emit the real teardown outcome.
     match run(&bin_path("werk-deploy"), &["env-down", role, &card.to_string()]) {
-        Ok(_) => jsonl(home, role, card, &trace, "accept.env_down", ",\"result\":\"ok\""),
-        Err(e) => jsonl(home, role, card, &trace, "accept.env_down.failed",
+        Ok(_) => jsonl(home, role, card, &trace, "finalize.env_down", ",\"result\":\"ok\""),
+        Err(e) => jsonl(home, role, card, &trace, "finalize.env_down.failed",
             &format!(",\"result\":\"fail\",\"error\":\"{}\"", e.replace('"', "'"))),
     }
 
-    // close branch + werk (idempotent).
     let _ = run(&script_path(home, "chorus-werk"), &["remove", role, &card.to_string()]);
 
-    // gh chorus/accept status on the merged main HEAD.
-    if let Ok(sha) = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).map(|s| s.trim().to_string()) {
-        let _ = run_in(&werk_s, "gh", &[
+    // gh chorus/accept on the merged main HEAD — sha from CANONICAL (the werk may be gone
+    // after remove; canonical always has origin/main). Kade's navigator call (#3).
+    if let Ok(sha) = run_in(&home_s, "git", &["rev-parse", "origin/main"]).map(|s| s.trim().to_string()) {
+        let _ = run_in(&home_s, "gh", &[
             "api", &format!("repos/{{owner}}/{{repo}}/statuses/{}", sha),
             "-f", "state=success",
             "-f", &format!("context=chorus/accept/{}", card),
-            "-f", &format!("description=accepter={} trace={} status=accepted", accepter, trace),
+            "-f", &format!("description=finalized trace={} status=accepted", trace),
         ]);
     }
 
-    jsonl(home, role, card, &trace, "accept.completed", "");
-    Ok(format!("#{} accepted by {}", card, accepter))
+    jsonl(home, role, card, &trace, "finalize.completed", "");
+    Ok(format!("#{} finalized (board Done + closed)", card))
 }

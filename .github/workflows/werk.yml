@@ -149,6 +149,12 @@ jobs:
         # (#3222) — prod binaries are structurally a build of MAIN, not the werk.
         run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
 
+      - name: finalize
+        # #3237 — MECHANICAL post-deploy finalize (board Done + card.accepted + teardown +
+        # chorus/accept). NO authority gate — the human go already happened at the blocking
+        # demo step. Runs only after deploy-prod, i.e. only after werk-demo exited 0 (go).
+        run: werk-finalize "${CARD_ID}" "${ROLE}"
+
       - name: landed
         # STOP-BEFORE-ACCEPT (#3234, DEC-048). Tell the truth: "live" is CONDITIONAL on
         # 5.5 (SYNC_OK). Print the accept command for the human — the workflow does NOT run

@@ -119,11 +119,31 @@ exit 0
     // #3100 gate-request fan-out: wait default 120s; force 0 in tests.
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
 
+    // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
+    // demo.gate.result, and (b) BLOCKS until Jeff records a demo.decision. Seed
+    // both — the 5 gates + a "go" — so the happy path reflects gates-ran +
+    // accepted. (gates_missing / read_decision unit tests cover the refusal and
+    // the no-go/more/timeout branches directly.)
+    fs::create_dir_all(home.join("ops/logs")).unwrap();
+    let mut gate_seed = String::new();
+    for g in ["product", "code", "quality", "arch", "ops"] {
+        gate_seed.push_str(&format!(
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\"}}\n",
+            g
+        ));
+    }
+    // Jeff's "go" = accept → demo returns exit 0 with a recorded demo.verdict.
+    // Without it the binary blocks until the max-block timeout (→ more).
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.decision\",\"role\":\"jeff\",\"card_id\":3046,\"trace_id\":\"seed\",\"decision\":\"go\",\"reason\":\"\"}\n");
+    fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
+
     // --- run the proving ceremony ---
     let result = demo(3046, "wren", &home).expect("demo should succeed");
-    assert!(result.contains("demo #3046"), "ok message: {}", result);
-    assert!(result.contains("2/2 AC"), "ac count in message: {}", result);
-    assert!(result.contains("verdict recorded"), "ok message names the verdict: {}", result);
+    assert_eq!(result.exit, 0, "go decision → exit 0 (act merges); got {}", result.exit);
+    assert!(result.message.contains("demo #3046"), "ok message: {}", result.message);
+    assert!(result.message.contains("2/2 AC"), "ac count in message: {}", result.message);
+    assert!(result.message.contains("GO"), "message names the go/accept decision: {}", result.message);
+    assert!(result.message.contains("verdict recorded"), "message names the verdict: {}", result.message);
 
     // --- assert side effects ---
 
@@ -240,16 +260,25 @@ exit 0
         "demo must record demo.verdict labeled prover=stub + auto=true (#3116); got:\n{}", card_story
     );
 
-    // (7) #3100 AC#5: comment window opens + closes (with secs=0 force, both
-    //     events fire near-instantly back-to-back).
+    // (7) #3237: the timed comment-window is REPLACED by the BLOCKING decision
+    //     step — werk-demo waits for Jeff's go/no-go/more then records the honored
+    //     decision. (A "go" is seeded, so it returns immediately.) The old timed
+    //     window events must be gone — structural proof of the replacement.
     assert!(
-        witness.contains("\"event\":\"demo.awaiting_comment\""),
-        "demo must emit demo.awaiting_comment to mark the engagement window; got:\n{}",
+        witness.contains("\"event\":\"demo.awaiting_decision\""),
+        "demo must emit demo.awaiting_decision to mark the blocking human step; got:\n{}",
         witness
     );
     assert!(
-        witness.contains("\"event\":\"demo.comment_window_closed\""),
-        "demo must emit demo.comment_window_closed at window end; got:\n{}",
+        witness.contains("\"event\":\"demo.decision.honored\"")
+            && witness.contains("\"decision\":\"go\""),
+        "demo must record the honored go decision; got:\n{}",
+        witness
+    );
+    assert!(
+        !witness.contains("\"event\":\"demo.awaiting_comment\""),
+        "#3237 replaced the timed comment-window with the blocking decision step — \
+         demo.awaiting_comment must be gone; got:\n{}",
         witness
     );
 
@@ -264,4 +293,52 @@ exit 0
 
     // cleanup the trace file so re-runs are hermetic
     let _ = fs::remove_file(trace_path);
+}
+
+// #3237 — go/no-go/more decision reader: the pure core of the blocking demo
+// step. Jeff's ONE input (go=accept / no-go=reject / more=iterate) is read from
+// the witness; act gates the merge on the exit code. Written failing-first; the
+// impl lives in lib.rs.
+fn decision_line(card: u64, decision: &str) -> String {
+    format!(
+        r#"{{"ts":1,"event":"demo.decision","role":"wren","card_id":{},"trace_id":"t","decision":"{}","reason":""}}"#,
+        card, decision
+    )
+}
+
+#[test]
+fn read_decision_none_when_no_decision_recorded() {
+    // No decision yet → None → the binary keeps blocking.
+    assert_eq!(werk_demo::read_decision("", 3237), None);
+}
+
+#[test]
+fn read_decision_parses_each_verdict() {
+    use werk_demo::Decision;
+    assert_eq!(werk_demo::read_decision(&decision_line(3237, "go"), 3237), Some(Decision::Go));
+    assert_eq!(werk_demo::read_decision(&decision_line(3237, "no-go"), 3237), Some(Decision::NoGo));
+    assert_eq!(werk_demo::read_decision(&decision_line(3237, "more"), 3237), Some(Decision::More));
+}
+
+#[test]
+fn read_decision_latest_wins() {
+    // Jeff said "more", then changed to "go" — the most recent decision stands.
+    use werk_demo::Decision;
+    let w = format!("{}\n{}", decision_line(3237, "more"), decision_line(3237, "go"));
+    assert_eq!(werk_demo::read_decision(&w, 3237), Some(Decision::Go));
+}
+
+#[test]
+fn read_decision_ignores_other_cards_comma_terminated() {
+    // a "go" for card 31 must NOT satisfy card 3 (anti #3/#31 collision).
+    assert_eq!(werk_demo::read_decision(&decision_line(31, "go"), 3), None);
+}
+
+#[test]
+fn decision_exit_codes_match_the_contract() {
+    // go → 0 (act merges); no-go | more → 2 (clean stop); never 1 (that's error).
+    use werk_demo::Decision;
+    assert_eq!(Decision::Go.exit_code(), 0);
+    assert_eq!(Decision::NoGo.exit_code(), 2);
+    assert_eq!(Decision::More.exit_code(), 2);
 }

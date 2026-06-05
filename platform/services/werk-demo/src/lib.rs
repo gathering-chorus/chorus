@@ -63,6 +63,93 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #3237 — the gates that must have run before a demo verdict can be recorded.
+/// Gates moved to the /demo SKILL layer (#3116) as LLM subagents; this is the
+/// enforcement contract that makes them non-optional — the binary refuses a
+/// verdict until each has left a demo.gate.result in the witness.
+pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "ops"];
+
+/// Given the werk-demo witness content + a card id, return the required gates
+/// with NO demo.gate.result recorded for the card. Empty = the full gate gather
+/// ran → a verdict may be recorded. card_id is matched comma-terminated so a
+/// gate for #31 can't satisfy #3 (the #3116/#31160 collision class).
+pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
+    let card_key = format!("\"card_id\":{},", card);
+    REQUIRED_GATES
+        .iter()
+        .copied()
+        .filter(|gate| {
+            let gate_key = format!("\"gate\":\"{}\"", gate);
+            !witness.lines().any(|l| {
+                l.contains("\"event\":\"demo.gate.result\"")
+                    && l.contains(&card_key)
+                    && l.contains(&gate_key)
+            })
+        })
+        .collect()
+}
+
+/// #3237 — Jeff's three-way demo decision: the ONLY human input to the blocking
+/// demo step. go = accept → merge; no-go = reject → unpull; more = iterate.
+/// "go" IS the DEC-048 accept — there is no separate werk-accept step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    Go,
+    NoGo,
+    More,
+}
+
+impl Decision {
+    /// The act ↔ werk-demo exit-code contract (locked with Kade): go → 0 (act
+    /// continues to merge); no-go | more → 2 (act stops, nothing merged) — a
+    /// CLEAN/intended stop, a distinct code from a real error (1) so the witness
+    /// never reads an intended stop as red (the werk.failed-reads-red trap).
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Decision::Go => 0,
+            Decision::NoGo | Decision::More => 2,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Decision::Go => "go",
+            Decision::NoGo => "no-go",
+            Decision::More => "more",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Decision> {
+        match s {
+            "go" => Some(Decision::Go),
+            "no-go" => Some(Decision::NoGo),
+            "more" => Some(Decision::More),
+            _ => None,
+        }
+    }
+}
+
+/// Scan the witness for the LATEST `demo.decision` recorded for this card and
+/// return Jeff's go/no-go/more. None = no decision yet → the binary keeps
+/// blocking. card is matched comma-terminated (`"card_id":N,`) so card 31's
+/// decision can't satisfy card 3 — same anti-collision rule as gates_missing.
+pub fn read_decision(witness: &str, card: u64) -> Option<Decision> {
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .filter(|l| l.contains("\"event\":\"demo.decision\"") && l.contains(&card_key))
+        .find_map(|l| json_str_field(l, "decision").and_then(|d| Decision::parse(&d)))
+}
+
+/// What the demo step returns to the act pipeline: a human-facing message + the
+/// process exit code act gates the merge on (Decision::exit_code, or a clean
+/// exit 2 for gates-missing). main() turns Err into exit 1 (real error).
+pub struct DemoOutcome {
+    pub message: String,
+    pub exit: i32,
+}
+
 /// Whitespace-tolerant JSON string-field extractor (zero-dep). Mirrors werk-pull's
 /// json_str_field — never substring-match `"key":"val"` (breaks on pretty-print).
 fn json_str_field(json: &str, key: &str) -> Option<String> {
@@ -281,7 +368,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
 /// (build/deploy/env-up) is done by the PRIOR verbs in the flat sequence; the
 /// gates run as subagents in the /demo skill layer. demo records demo.verdict;
 /// werk-accept gates finalize on it.
-pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
+pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     jsonl(home, role, card, &trace, "demo.started", "");
 
@@ -395,58 +482,103 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<String> {
     }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
-    // #3100 AC #5 — comment window. After the announce, Jeff gets a real
-    // pause to react/comment before the demo is "done." Binary sleeps for the
-    // configured window so the BUILDER AGENT does not jump into /acp solicitation
-    // prose. Default 60s; CHORUS_DEMO_COMMENT_WINDOW_SECS overrides for tests.
-    // demo.awaiting_comment fires at window start; demo.comment_window_closed
-    // at window end. AC #6 (no premature /acp begging) follows naturally —
-    // the binary doesn't return until the window closes, so the agent can't
-    // prose-prompt /acp before that.
-    let window_secs: u64 = std::env::var("CHORUS_DEMO_COMMENT_WINDOW_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60);
-    jsonl(home, role, card, &trace, "demo.awaiting_comment",
-          &format!(",\"window_secs\":{}", window_secs));
-    std::thread::sleep(std::time::Duration::from_secs(window_secs));
-    jsonl(home, role, card, &trace, "demo.comment_window_closed", "");
+    // #3237 — GATE-EVIDENCE ENFORCEMENT (fires before the human pause). #3116
+    // moved the 5 gates to the /demo skill (LLM subagents); the binary refuses to
+    // honor a decision unless every required gate left a demo.gate.result in the
+    // witness for this card — so neither the /demo skill nor the act path can
+    // merge un-gated. A clean, intended stop (exit 2: "go run the gates"), not error.
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let missing = gates_missing(&witness, card);
+    if !missing.is_empty() {
+        jsonl(home, role, card, &trace, "demo.refused",
+              &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", missing.join(",")));
+        return Ok(DemoOutcome {
+            message: format!(
+                "#{} demo refused — gates not run: {}. Run the /demo gate subagents \
+                 (each records via `werk-demo gate {} <gate> pass|fail`) before a decision.",
+                card, missing.join(", "), card
+            ),
+            exit: 2,
+        });
+    }
 
-    // #3116 — the feedback gather is FIRE-AND-MOVE-ON. The single nudge in
-    // signal() already carried the value questions to each peer; the old #3100
-    // re-nudge + per-peer [FEEDBACK STALL] Bridge banner spammed peers AND Jeff on
-    // every demo (peer_engaged was structurally always-false — nobody emits
-    // demo.peer.exercised, so it re-fired the full message + banner unconditionally).
-    // Peers reply async on their own time; the verdict never blocks on their ack
-    // (the gather is value, not the proof).
+    // #3237 — THE BLOCKING HUMAN STEP. act calls werk-demo synchronously and blocks
+    // on its exit code, so the entire human pause lives HERE — no approval gate, no
+    // pause/resume machinery. Gates have run; now block until Jeff records his ONE
+    // decision (go / no-go / more) in the witness. "go" IS the DEC-048 accept;
+    // there is NO separate werk-accept. Headless-safe: poll the witness file, no
+    // stdin/TTY (werk-demo runs in the act/daemon context). A max-block timeout
+    // fails SAFE to "more" (exit 2) — a timer never stands in for Jeff's hand.
+    let max_block_secs: u64 = std::env::var("CHORUS_DEMO_MAX_BLOCK_SECS")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(1800);
+    let poll_secs: u64 = std::env::var("CHORUS_DEMO_POLL_SECS")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+    jsonl(home, role, card, &trace, "demo.awaiting_decision",
+          &format!(",\"max_block_secs\":{}", max_block_secs));
 
-    // #3116 PROVE + RECORD — emit ONE demo.verdict. Until #3212 wires a real prover
-    // (run the Experience test vs the deployed instance, or a windowed jeff.input
-    // read), this is a STUB pass — labeled prover=stub + auto=true so Borg and
-    // werk-accept can tell a placeholder from a real proof. CHORUS_DEMO_PROVER
-    // overrides with a real prover. #3212 is the blocking follow-on for a true verdict.
-    let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "stub".to_string());
-    let auto = prover == "stub";
-    let verdict_extra = format!(
-        ",\"verdict\":\"pass\",\"prover\":\"{}\",\"auto\":{},\"ac\":\"{}/{}\"",
-        prover, auto, checked, total
-    );
-    jsonl(home, role, card, &trace, "demo.verdict", &verdict_extra);
-    emit_spine(home, "demo.verdict", role, card, &trace);
+    let started = std::time::Instant::now();
+    let decision = loop {
+        let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+        if let Some(d) = read_decision(&w, card) {
+            break d;
+        }
+        if started.elapsed().as_secs() >= max_block_secs {
+            jsonl(home, role, card, &trace, "demo.decision.timeout", ",\"fallback\":\"more\"");
+            break Decision::More;
+        }
+        sleep(std::time::Duration::from_secs(poll_secs.max(1)));
+    };
+    jsonl(home, role, card, &trace, "demo.decision.honored",
+          &format!(",\"decision\":\"{}\"", decision.label()));
 
-    jsonl(home, role, card, &trace, "demo.completed", "");
-    Ok(format!(
-        "demo #{} — presented live ({}/{} AC); feedback gather sent; verdict recorded (prover={}, reviewed {}s). werk-accept gates on demo.verdict=pass.",
-        card, checked, total, prover, window_secs
-    ))
+    // go = accept → record the demo.verdict pass (the merge-gating evidence).
+    // no-go / more record demo.stopped (no verdict = no merge). act reads ONLY the
+    // exit code: go→0 (continue to merge), no-go|more→2 (stop, nothing merged).
+    let message = match decision {
+        Decision::Go => {
+            let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "stub".to_string());
+            let auto = prover == "stub";
+            let verdict_extra = format!(
+                ",\"verdict\":\"pass\",\"prover\":\"{}\",\"auto\":{},\"ac\":\"{}/{}\",\"decision\":\"go\"",
+                prover, auto, checked, total
+            );
+            jsonl(home, role, card, &trace, "demo.verdict", &verdict_extra);
+            emit_spine(home, "demo.verdict", role, card, &trace);
+            format!(
+                "demo #{} — GO/accepted ({}/{} AC); verdict recorded (prover={}). act continues to merge.",
+                card, checked, total, prover
+            )
+        }
+        Decision::NoGo => {
+            jsonl(home, role, card, &trace, "demo.stopped", ",\"decision\":\"no-go\"");
+            format!("demo #{} — NO-GO (rejected). Nothing merged; card returns to Next.", card)
+        }
+        Decision::More => {
+            jsonl(home, role, card, &trace, "demo.stopped", ",\"decision\":\"more\"");
+            format!("demo #{} — MORE (iterate). Nothing merged; werk preserved.", card)
+        }
+    };
+
+    jsonl(home, role, card, &trace, "demo.completed",
+          &format!(",\"decision\":\"{}\"", decision.label()));
+    Ok(DemoOutcome { message, exit: decision.exit_code() })
+}
+
+/// #3237 — record one gate's result into the witness so the verdict step can
+/// verify the gate gather ran. Called by the /demo skill's gate subagents via
+/// `werk-demo gate <card> <gate> <result>`. The witness is the same
+/// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
+fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str) {
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    jsonl(home, role, card, &trace, "demo.gate.result",
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\"", gate, result));
+    emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
-pub fn run_demo() -> R<String> {
-    let card: u64 = env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .ok_or("usage: werk-demo <card-id>")?;
+/// Two forms: `werk-demo <card-id>` (the ceremony) and `werk-demo gate <card>
+/// <gate> <result>` (a gate subagent recording its result, #3237).
+pub fn run_demo() -> R<DemoOutcome> {
     let role = env::var("DEPLOY_ROLE").unwrap_or_default();
     if role.trim().is_empty() {
         return Err("DEPLOY_ROLE unset — cannot demo without a role".to_string());
@@ -454,6 +586,30 @@ pub fn run_demo() -> R<String> {
     let home = env::var("CHORUS_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| Path::new(&env::var("HOME").unwrap_or_default()).join("CascadeProjects/chorus"));
+
+    let mut args = env::args().skip(1);
+    let first = args
+        .next()
+        .ok_or("usage: werk-demo <card-id> | werk-demo gate <card> <gate> <result>")?;
+
+    if first == "gate" {
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo gate <card> <gate> <result>")?;
+        let gate = args.next().ok_or("usage: werk-demo gate <card> <gate> <result>")?;
+        if !REQUIRED_GATES.contains(&gate.as_str()) {
+            return Err(format!("unknown gate '{}' — one of {:?}", gate, REQUIRED_GATES));
+        }
+        let result = args.next().unwrap_or_else(|| "pass".to_string());
+        record_gate(&home, role.trim(), card, &gate, &result);
+        return Ok(DemoOutcome {
+            message: format!("gate {} recorded for #{}: {}", gate, card, result),
+            exit: 0,
+        });
+    }
+
+    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id>")?;
     demo(card, role.trim(), &home)
 }
 
@@ -489,5 +645,46 @@ mod tests {
         // product decision, not a refactor — this test is the guard that makes it so.
         let expected = "[feedback #3116 — ACK REQUIRED]\\nFrom: wren\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.";
         assert_eq!(feedback_message(3116, "wren"), expected);
+    }
+
+    // #3237 — gate-evidence enforcement. The demo verdict can't be recorded
+    // unless all 5 gates left a demo.gate.result in the witness for the card.
+    fn gate_line(card: u64, gate: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","result":"pass"}}"#,
+            card, gate
+        )
+    }
+
+    #[test]
+    fn gates_missing_empty_when_all_five_recorded() {
+        let w = REQUIRED_GATES
+            .iter()
+            .map(|g| gate_line(3237, g))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(gates_missing(&w, 3237).is_empty(), "all 5 gates present → none missing");
+    }
+
+    #[test]
+    fn gates_missing_lists_absent_gates() {
+        let w = format!("{}\n{}", gate_line(3237, "product"), gate_line(3237, "code"));
+        assert_eq!(gates_missing(&w, 3237), vec!["quality", "arch", "ops"]);
+    }
+
+    #[test]
+    fn gates_missing_all_when_witness_empty() {
+        assert_eq!(gates_missing("", 3237).len(), 5);
+    }
+
+    #[test]
+    fn gates_missing_ignores_other_cards_comma_terminated() {
+        // a full gate set for card 31 must NOT satisfy card 3 (anti #3/#31 collision).
+        let w = REQUIRED_GATES
+            .iter()
+            .map(|g| gate_line(31, g))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(gates_missing(&w, 3).len(), 5, "card 31's gates must not satisfy card 3");
     }
 }
