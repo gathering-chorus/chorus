@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Why &amp; How of Chorus — the living-system DNA</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --mut:#6b6b6b; --line:#e4e2dd; --bg:#fbfaf7; --paper:#fff;
+    --why:#2f7d4f;      /* living green — the worldview */
+    --why-bg:#eaf4ee;
+    --how:#1d4ed8;      /* craft blue */
+    --how-bg:#e8eefc;
+    --join:#b45309;     /* the corollary join */
+    --join-bg:#fdf2e3;
+    --soft:#f4f2ec; --code:#f3f1ea;
+  }
+  *{box-sizing:border-box}
+  body{font-family:Georgia,'Iowan Old Style',serif;color:var(--ink);background:var(--bg);
+       line-height:1.62;margin:0 auto;max-width:940px;padding:50px 26px 130px}
+  h1{font-size:2.1em;line-height:1.12;margin:0 0 6px;letter-spacing:-.01em}
+  .deck{font-size:1.12em;color:#333;margin:0 0 4px;font-style:italic}
+  .meta{color:var(--mut);font-size:.78em;font-family:-apple-system,system-ui,sans-serif;
+        margin:14px 0 36px;padding-bottom:18px;border-bottom:2px solid var(--ink)}
+  h2{font-size:1.45em;margin:52px 0 6px;letter-spacing:-.01em}
+  h2 .tag{font-family:-apple-system,system-ui,sans-serif;font-size:.5em;font-weight:700;
+          letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;padding:3px 9px;border-radius:11px;margin-left:10px}
+  .why h2 .tag,.tag.why{background:var(--why-bg);color:var(--why)}
+  .how h2 .tag,.tag.how{background:var(--how-bg);color:var(--how)}
+  .lede{font-size:1.05em;background:var(--soft);border-radius:8px;padding:16px 20px;margin:10px 0 8px}
+  p{margin:10px 0}
+  .one-move{font-size:1.25em;text-align:center;font-style:italic;color:var(--ink);
+            margin:20px auto;max-width:680px;line-height:1.4}
+  /* tier banner */
+  .tiers{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;margin:26px 0 6px;
+         font-family:-apple-system,system-ui,sans-serif}
+  .tierbox{border-radius:10px;padding:16px 18px}
+  .tierbox.why{background:var(--why-bg);border:1.5px solid var(--why)}
+  .tierbox.how{background:var(--how-bg);border:1.5px solid var(--how)}
+  .tierbox h3{margin:0 0 6px;font-size:1em}
+  .tierbox.why h3{color:var(--why)} .tierbox.how h3{color:var(--how)}
+  .tierbox ul{margin:6px 0 0;padding-left:18px;font-size:.86em;color:#333}
+  .arrow{font-size:1.6em;color:var(--join);font-weight:700}
+  /* influence card */
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;
+        padding:18px 22px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .why .card{border-left:4px solid var(--why)}
+  .how .card{border-left:4px solid var(--how)}
+  .card h3{margin:0 0 2px;font-size:1.18em}
+  .card .orig{font-family:-apple-system,system-ui,sans-serif;font-size:.78em;color:var(--mut);margin:0 0 10px}
+  .card .body{font-size:.96em}
+  .map{font-family:-apple-system,system-ui,sans-serif;font-size:.86em;background:var(--soft);
+       border-radius:6px;padding:9px 13px;margin:11px 0 6px}
+  .why .map{background:var(--why-bg)} .how .map{background:var(--how-bg)}
+  .map b{font-variant:small-caps;letter-spacing:.02em}
+  .src{font-family:-apple-system,system-ui,sans-serif;font-size:.74em;color:var(--mut);margin-top:6px}
+  .src a{color:var(--mut)}
+  code{font-family:'SF Mono',Menlo,monospace;font-size:.85em;background:var(--code);padding:1px 5px;border-radius:3px}
+  /* mapping table */
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:.86em;
+        font-family:-apple-system,system-ui,sans-serif}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:700}
+  td .w{color:var(--why);font-weight:600} td .h{color:var(--how);font-weight:600}
+  /* oppositions */
+  .opp{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;
+       font-family:-apple-system,system-ui,sans-serif;font-size:.9em;margin:8px 0}
+  .opp .dead{color:#a33;text-align:right} .opp .live{color:var(--why)} .opp .v{color:var(--mut);font-size:.8em}
+  /* corollary join */
+  .join-band{background:var(--join-bg);border:1.5px solid var(--join);border-radius:10px;padding:18px 22px;margin:16px 0}
+  .join-band h3{color:var(--join);margin-top:0}
+  .slot{background:var(--paper);border:1px dashed var(--join);border-radius:7px;padding:11px 15px;margin:9px 0;
+        font-family:-apple-system,system-ui,sans-serif;font-size:.88em}
+  .slot .p{font-weight:700;color:var(--why)} .slot .craft{color:var(--how)} .slot .blank{color:var(--join);font-style:italic}
+  .flowline{font-family:-apple-system,system-ui,sans-serif;text-align:center;font-size:1.0em;margin:14px 0;color:#333}
+  .flowline b.why{color:var(--why)} .flowline b.how{color:var(--how)} .flowline b.join{color:var(--join)}
+  .note{font-family:-apple-system,system-ui,sans-serif;font-size:.84em;color:var(--mut)}
+  blockquote{border-left:3px solid var(--line);margin:10px 0;padding:2px 0 2px 16px;color:#444;font-style:italic}
+  @media(max-width:680px){.tiers,.opp{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+
+<h1>The Why &amp; How of Chorus</h1>
+<p class="deck">A living system, not a machine to be operated.</p>
+<p class="meta">Silas · 2026-06-05 · #3247 · the Shaping-layer companion to the product designs · researched with web-grounded subagents, synthesized here</p>
+
+<p class="lede">Chorus has two layers of influence, and they are not a reading list — they are <b>worldview</b> and <b>craft</b>. Five biological / philosophical / spiritual sources say <b>why</b> it should be a living system; six technologist disciplines say <b>how</b> you actually build one. Every one of them rejects the same thing — the <em>mechanical, extractive, accumulative</em> — for the <em>living, relational, present, regenerative</em>.</p>
+
+<p class="one-move">The whole frame is one move:<br><strong>build a garden, not a plank road.</strong></p>
+
+<div class="tiers">
+  <div class="tierbox why">
+    <h3>WHY — the worldview</h3>
+    <ul>
+      <li>Permaculture — the regenerative ethic</li>
+      <li>Heidegger — the stance toward technology</li>
+      <li>Deleuze &amp; Guattari — the architecture</li>
+      <li>Zen — the practice</li>
+      <li>Homeostasis — the mechanism</li>
+    </ul>
+  </div>
+  <div class="arrow">→</div>
+  <div class="tierbox how">
+    <h3>HOW — the craft</h3>
+    <ul>
+      <li>Thinking in Systems (Meadows)</li>
+      <li>Lean (Toyota / Poppendieck)</li>
+      <li>Agile</li>
+      <li>XP (Beck)</li>
+      <li>Semantics (RDF/OWL, canonical model)</li>
+      <li>Automation</li>
+    </ul>
+  </div>
+</div>
+<p class="note" style="text-align:center">The craft <em>operationalizes</em> the worldview. Neither alone is enough: worldview without craft is a wish; craft without worldview is a plank road built efficiently.</p>
+
+<!-- ============ WHY ============ -->
+<section class="why">
+<h2>WHY — the worldview<span class="tag">5 sources · a living system</span></h2>
+
+<div class="card">
+  <h3>Permaculture — the regenerative ethic</h3>
+  <p class="orig">Bill Mollison &amp; David Holmgren (1970s–2002) · 3 ethics + 12 design principles · gateway: Toby Hemenway, <i>Gaia's Garden</i></p>
+  <div class="body">
+    <p><b>3 ethics:</b> earth care · people care · fair share (return of surplus). <b>12 principles</b> include: observe &amp; interact · catch &amp; store energy · obtain a yield · <b>apply self-regulation &amp; accept feedback</b> · use &amp; value renewable resources · <b>produce no waste</b> · design from patterns to details · <b>integrate rather than segregate</b> · <b>use small &amp; slow solutions</b> · use &amp; value diversity · use edges / value the marginal · creatively respond to change.</p>
+    <p>It is a design grammar for systems that sustain themselves on their own throughput — outputs re-enter as inputs, the whole is tended rather than operated. This is the literal top of the Chorus principle stack — and not as a metaphor: in the live principles graph, each of the ~32 Chorus-specific principles carries a <code>parents</code> edge up to one of Hemenway's permaculture principles (the ~14 roots marked <code>isPermacultureParent</code>). The parentage is modeled, queryable structure, not rhetoric — though the roots are Hemenway's principle set, a superset of Holmgren's twelve listed above.</p>
+  </div>
+  <div class="map"><b>maps to →</b> a codebase as a regenerative ecosystem: closed loops (no waste), incremental always-earning change (small &amp; slow / obtain a yield), composability (integrate not segregate), and closed control loops that correct without a human at the lever (self-regulation).</div>
+  <p class="src">permacultureprinciples.com · Holmgren, <i>Principles &amp; Pathways Beyond Sustainability</i> (2002) · open.oregonstate.education/permaculture</p>
+</div>
+
+<div class="card">
+  <h3>Heidegger — the stance toward technology</h3>
+  <p class="orig"><i>The Question Concerning Technology</i> (Die Frage nach der Technik, 1953/54), Lovitt trans.</p>
+  <div class="body">
+    <p>The danger is <b>Gestell</b> (en-framing): modern technology's mode of revealing that "challenges forth" nature and sets everything upon as <b>Bestand</b> (standing-reserve) — optimizable resource on call. The dammed Rhine becomes hydraulic pressure; "human resources" become Bestand too. The alternative is older: <b>technē as poiēsis</b> — a "bringing-forth," a <em>revealing</em> (<b>alētheia</b>), kin to art, that lets a thing be what it is.</p>
+    <blockquote>"But where danger is, grows the saving power also." (Hölderlin)</blockquote>
+    <p>His later counter-figure to Gestell is <b>Versammlung</b> — <em>gathering</em>. A genuine thing <em>gathers</em> a world around it (the fourfold) rather than flattening it into resource; <b>dwelling</b> is letting that be. <b>Gelassenheit</b> = releasement, the free relation to technology.</p>
+  </div>
+  <div class="map"><b>maps to →</b> build so a primitive <em>gathers</em> a meaningful locale (a card, a session, a role gathers its context and its people) instead of reducing everything to one more optimized metric. This is literally why the team chose <code>-gather</code> over <code>-inject</code>: "inject" is the Gestell push; "gather" is Versammlung. The word must match the frame because the frame <em>is</em> the essence.</div>
+  <p class="src">Lovitt trans. (UCI/Monoskop PDFs) · SEP: Martin Heidegger §5.2 · The New Atlantis, "Understanding Heidegger on Technology" · Wikipedia: Gestell</p>
+</div>
+
+<div class="card">
+  <h3>Deleuze &amp; Guattari — the architecture</h3>
+  <p class="orig"><i>Anti-Oedipus</i> (1972), <i>A Thousand Plateaus</i> (1980)</p>
+  <div class="body">
+    <p>A <b>machine</b> (machine désirante) is "a system of interruptions or breaks (<i>coupures</i>)" in a flow — it cuts an upstream flow and is itself a flow downstream, so "<b>every machine is a machine of a machine</b>." Desire is <em>production</em>, not lack. <b>Machinic ≠ mechanical</b>: a mechanism is closed with a fixed function; a machine is open, defined by its connections and flows, existing only in the act of connecting.</p>
+    <p>An <b>agencement</b> (lossily Englished as "assemblage" — better: <em>arrangement / fitting-together</em>) is a multiplicity of <em>heterogeneous</em> parts cohering by their relations, defined by what it <b>does</b>, not what its parts <em>are</em>. The <b>rhizome</b> (vs. the tree): any point connects to any other, acentered, running on "and… and… and…" Movements of <b>deterritorialization / reterritorialization</b> undo and re-fix codings (the wasp and the orchid).</p>
+  </div>
+  <div class="map"><b>maps to →</b> Chorus is an <em>agencement machinique</em>: roles + human + hooks + spine + git + MCP, cohering only through connection and flows — each a cut in a flow that is a flow for the next. Rhizomatic (any role connects to any other; self-heals along new lines), it runs on coupling, not a tree of authority. The nudge is a flow-coupling; a rename is a deterritorialization that must reterritorialize on one word, one path. Coherence comes from collapsing competing paths into one connective flow — not from adding hierarchy.</div>
+  <p class="src">SEP: Gilles Deleuze · Wikipedia: Rhizome / A Thousand Plateaus · Nail (2017) on agencement vs. assemblage · Anti-Oedipus pp.36–41</p>
+</div>
+
+<div class="card">
+  <h3>Zen — the practice</h3>
+  <p class="orig">Chan/Zen Buddhism · <span class="note">(wu-wei is Taoist, deliberately excluded)</span></p>
+  <div class="body">
+    <p><b>shoshin</b> (初心, beginner's mind, Suzuki): "in the beginner's mind there are many possibilities; in the expert's, few." <b>mu</b> (無, Jōshū's dog, Gateless Gate Case 1): not "no" but a one-word barrier that <em>refuses a wrongly-framed question</em>. <b>mujō</b> (無常, impermanence) + non-attachment: clinging is "self-binding without a rope" — gripping what has already changed. <b>Direct pointing</b> (直指人心): truth grasped by immediate experience, no abstraction between you and the thing. <b>Everyday mind</b> / "chop wood, carry water"; <b>kanso</b> (簡素, simplicity = strip clutter to reveal essence, max effect / min means).</p>
+  </div>
+  <div class="map"><b>maps to →</b> decide from what the system <em>is</em> now (live state, the running binary's real cdhash) — clinging to "it's deployed / it's green" is the <i>mujō</i> error, the state already moved. Non-attachment = let the dead thing go: prune code, deadhead stale cards, delete the workaround once the fix lands. Directness + kanso = one path, fewer layers, no padding, no ceremony. <i>mu</i> = refuse a wrongly-posed card rather than over-engineer an answer to it.</div>
+  <p class="src">SEP: Japanese Zen Buddhist Philosophy · Suzuki, <i>Zen Mind, Beginner's Mind</i> · Gateless Gate Case 1 · Layman Pang (chop wood/carry water)</p>
+</div>
+
+<div class="card">
+  <h3>Homeostasis — the mechanism</h3>
+  <p class="orig">Bernard (milieu intérieur, 1865) → Cannon (coined "homeostasis," 1926/1932) → cybernetics (Wiener 1948; Ashby's homeostat / ultrastability)</p>
+  <div class="body">
+    <p>A system holding internal variables near a <b>setpoint</b> despite perturbation, via <b>negative-feedback loops</b> (sense deviation → controller acts to counter it). "Homeo-" = <em>steady</em>, not static — a <em>regulated</em> equilibrium. Wiener generalized negative feedback as the common control principle "in the animal and the machine." Ashby's <b>ultrastability</b> is the higher tier: when essential variables leave their viable band, the system <em>reconfigures its own control parameters</em> until stability returns — adaptation without a pre-programmed solution.</p>
+  </div>
+  <div class="map"><b>maps to →</b> the precise model for "<b>no human is the thermostat</b>" — which is the <em>target</em>, not today's state: right now Jeff is still often the thermostat. What's real today is the low tier (self-healing restarts, kickstart-on-crash, scheduled idempotent fixes); ultrastability — the system re-deriving its own thresholds when a metric leaves its band — is where we're going, not what holds. The test is identical in biology and software: is equilibrium held by the loop itself, or by a person at the dial? Naming the gap honestly is how it closes.</div>
+  <p class="src">Billman, "Homeostasis…" (Front. Physiol. 2020) · Gross, "Bernard to Cannon" · Ashby, homeostat / ultrastability (Macy Conferences) · Wiener, <i>Cybernetics</i> (1948)</p>
+</div>
+</section>
+
+<!-- ============ HOW ============ -->
+<section class="how">
+<h2>HOW — the craft<span class="tag">6 disciplines · how you build one</span></h2>
+<p class="note">Each operationalizes a facet of the worldview — and several are not borrowed but <b>Jeff's own career</b> (semantics especially).</p>
+
+<div class="card">
+  <h3>Thinking in Systems — Donella Meadows</h3>
+  <div class="body"><p><b>Stocks, flows, feedback loops</b> (balancing = goal-seeking/stabilizing; reinforcing = self-amplifying); delays cause overshoot. Her <b>12 leverage points</b> run from weakest (12: constants/parameters) to strongest (1: transcend paradigms) — the counterintuitive thesis being that the obvious knobs are weakest, while <b>rules → goals → paradigm</b> are strongest.</p></div>
+  <div class="map"><b>operationalizes →</b> homeostasis &amp; D&amp;G: the practical theory of feedback. Patching parameters is the lowest leverage (locally-rational, globally-pessimizing — the suboptimization disease); intervene at rules/goals to regenerate the system's own self-correction.</div>
+  <p class="src">Meadows, "Leverage Points" (1997) · donellameadows.org · <i>Thinking in Systems</i> (2008)</p>
+</div>
+
+<div class="card">
+  <h3>Lean — Toyota Production System &amp; Lean Software (Poppendieck)</h3>
+  <div class="body"><p><b>Muda</b> (7 wastes) · <b>flow</b> · <b>pull</b> · <b>jidoka</b> (stop-the-line: halt the instant a defect appears, build quality in at the source) · <b>kaizen</b>. The Poppendiecks' 7 software principles: eliminate waste · amplify learning · decide late · deliver fast · empower the team · build integrity in · <b>see the whole</b> (optimize the whole, not the part). <span class="note">The "plank roads" story — cheap-to-lay, rot-fast infra as the metaphor for technical/infrastructure debt — is theirs.</span></p></div>
+  <div class="map"><b>operationalizes →</b> permaculture: produce-no-waste + self-regulation. jidoka <em>is</em> a homeostatic stop; pull prevents over-production; "see the whole" is the anti-suboptimization stance. Plank roads is permaculture's warning in engineering dress.</div>
+  <p class="src">Poppendieck, <i>Lean Software Development</i> (2003) · Wikipedia: Lean software development · leanessays.com</p>
+</div>
+
+<div class="card">
+  <h3>Agile — the Manifesto (2001)</h3>
+  <div class="body"><p>Four values (left over right): individuals &amp; interactions · working software · customer collaboration · <b>responding to change</b>. Twelve principles include early/continuous delivery, welcoming late change, frequent working software, sustainable pace, technical excellence, <b>"simplicity — the art of maximizing work not done"</b> (YAGNI), self-organizing teams, and the regular <b>retrospective</b>.</p></div>
+  <div class="map"><b>operationalizes →</b> Zen + small-and-slow: short cycles + retrospection form the balancing loop that keeps the team adapting; presence and the now over the grand plan.</div>
+  <p class="src">agilemanifesto.org · agilemanifesto.org/principles.html</p>
+</div>
+
+<div class="card">
+  <h3>XP — Extreme Programming (Kent Beck)</h3>
+  <div class="body"><p>Values: communication, simplicity, feedback, courage, respect. Practices: <b>TDD</b> (red-green-refactor) · <b>pair programming</b> · <b>continuous integration</b> · small frequent releases · <b>refactoring</b> · simple design / YAGNI · collective ownership.</p></div>
+  <div class="map"><b>operationalizes →</b> the practice/discipline. <b>Refactoring is pruning</b> — continuous removal of decay; TDD + CI are the tight feedback loop catching defects at the source (the same reflex as jidoka); pairing is literally how this team works; TDD is DEC-1674.</div>
+  <p class="src">Beck, <i>Extreme Programming Explained</i> (1999/2004) · Wikipedia: Kent Beck</p>
+</div>
+
+<div class="card">
+  <h3>Semantics — RDF/OWL, ontology, the canonical model</h3>
+  <p class="orig">Jeff's lineage: the Staples canonical-model discipline · Cambridge Semantics (Sean &amp; Simon Martin) · Athena</p>
+  <div class="body"><p><b>RDF</b> (subject-predicate-object triples) · <b>OWL</b> (classes, properties, constraints, inference) · <b>SPARQL</b> · the <b>knowledge graph</b>. "Meaning as structure": an ontology isn't documentation <em>about</em> the data — it <em>is</em> the data's definition, formally enough that a machine reasons over it. The <b>canonical data model</b> collapses integration from n² point-to-point mappings to 2n (each system maps once, in and out) — the model as the contract. Cambridge Semantics (Sean Martin, CTO; brother Simon, VP Eng; ex-IBM) built Anzo on exactly this; acquired by Altair 2024.</p></div>
+  <div class="map"><b>operationalizes →</b> Heidegger / "ontology is architecture": the model is the spec the system is <em>generated from</em>, code a projection of it — not the source of truth. (The OWL-is-the-spec slice, #3242.)</div>
+  <p class="src">W3C (RDF/OWL/SPARQL) · enterpriseintegrationpatterns.com: Canonical Data Model · Wikipedia: Cambridge Semantics</p>
+</div>
+
+<div class="card">
+  <h3>Automation — self-running systems</h3>
+  <div class="body"><p>Google SRE: <b>eliminate toil</b> (manual, repetitive, automatable work; the 50% rule). <b>Idempotency</b> is what makes continuous unattended drift-correction safe — "run the fix script every 15 minutes without fearing damage." The automation hierarchy tops out not at better automation but at <b>self-healing</b>: "systems that don't need any automation — the database notices problems and fails over without human intervention." Infrastructure-as-code = declarative desired-state.</p></div>
+  <div class="map"><b>operationalizes →</b> homeostasis: idempotent fixes on a schedule + declarative spec + self-healing as the design for a system that senses drift from its setpoint and corrects. The intended end state is "the human sets the setpoint; the system holds it." Partly real today (scheduled idempotent fixes, self-healing restarts), partly still aspirational (closed-loop drift-correction across the board) — stated as direction, not a current guarantee.</div>
+  <p class="src">Google SRE Book — Eliminating Toil / Automation at Google</p>
+</div>
+</section>
+
+<!-- ============ THE ONE OPPOSITION ============ -->
+<h2>One opposition, stated many ways</h2>
+<p class="note">Each card above already names its own craft→worldview link (the <em>operationalizes →</em> line). Rather than restate them in a table, here is the single axis they all share — every influence is one angle on the same move:</p>
+<div class="opp"><div class="dead">plank road</div><div class="v">vs</div><div class="live">garden</div></div>
+<div class="opp"><div class="dead">mechanism (closed)</div><div class="v">vs</div><div class="live">machine / assemblage (open)</div></div>
+<div class="opp"><div class="dead">Gestell — enframe / extract</div><div class="v">vs</div><div class="live">Versammlung — gather / reveal</div></div>
+<div class="opp"><div class="dead">human as thermostat</div><div class="v">vs</div><div class="live">system self-regulates</div></div>
+<div class="opp"><div class="dead">accumulate / cling</div><div class="v">vs</div><div class="live">prune / let go (non-attachment)</div></div>
+<p class="note">Every influence is a different angle on the right-hand column.</p>
+
+<!-- ============ HOW IT GROWS ============ -->
+<h2>How it grows — Gall's Law</h2>
+<blockquote>"A complex system that works is invariably found to have evolved from a simple system that worked. A complex system designed from scratch never works and cannot be patched up to make it work — you have to start over with a working simple system."<br><span class="note">— John Gall, <i>Systemantics</i> (1975)</span></blockquote>
+<p>Chorus doesn't get more complex by being architected bigger. It gets more complex the way a garden does — and that is the convergence point of half the influences above, all describing the same mechanism of how complexity arises:</p>
+<ul>
+  <li><b class="how">Systems thinking</b> (Gall / Meadows) — complex-from-simple-that-worked; never from-scratch.</li>
+  <li><b class="why">Permaculture</b> — "use small &amp; slow solutions; <em>grow by chunking</em> — build on your successes."</li>
+  <li><b class="why">Deleuze &amp; Guattari</b> — "every machine is a machine of a machine": assemblages compose upward from working couplings.</li>
+  <li><b>Evolution / biology</b> — complexity by recombination and <em>exaptation</em>: a part that worked for one thing (logs for debugging) repurposed into a higher function (events for observability). Nothing designed whole; everything elaborated from what survived.</li>
+</ul>
+<p>Which is why the right move keeps being <b>recognize and unify what already works</b>, not build new — that's not luck, it's the mechanism of systemic evolution. The event spine evolving out of the structured logs that already worked is Gall's Law, live.</p>
+
+<h3>The pair: chunk &amp; prune</h3>
+<p>Two forces, both required — variation and selection:</p>
+<div class="opp"><div class="dead" style="color:var(--why)">CHUNK (+)</div><div class="v">grow by adding small working systems</div><div class="live">PRUNE (−)<br><span style="font-weight:400">cut competing / overgrown growth</span></div></div>
+<p>Chunk without prune → <b>accretion</b> (the thicket: 750 literals, two pipelines fighting). Prune without chunk → stagnation. Together → complex <em>and</em> coherent. It's evolution's own shape: variation (chunk) + selection (prune).</p>
+
+<h3>Pruning is a growth act, not a loss</h3>
+<p>A gardener doesn't prune to shrink the plant — they prune to <b>redirect energy into the strong wood</b>, and it grows more, better-shaped, from a sound base. So <b>"coherence is one execution path" is really a pruning instruction</b>: cut the competing growth so complexity re-grows clean. A <code>/prune</code> verb — selection pressure applied on purpose, making Gall's Law a <em>daily act</em> instead of a crisis discovered when the thicket is already on fire — is the proposed move here (not yet a built skill; today pruning is manual: deadheading stale cards, deleting workarounds once the fix lands). (merged≠live was Gall's inverse: two complex systems, neither evolved from a working simple one, both fighting — the cure was never a grander design, it was pruning back to one path and letting it re-grow.)</p>
+
+<h2>Where the influences disagree — one real tension</h2>
+<p>A frame where every source nods along is a coherence engine flattering itself — post-hoc rationalization wearing eleven hats. So here is a place these influences genuinely <em>pull against each other</em>, not a place they agree:</p>
+<div class="opp"><div class="dead" style="color:var(--why)">D&amp;G — integrate, don't segregate<br><span style="font-weight:400;font-size:.85em">add connections; any node to any node; rhizome</span></div><div class="v">vs</div><div class="live">Zen/Lean — prune; one path<br><span style="font-weight:400;font-size:.85em">cut competing connections; collapse to one</span></div></div>
+<p>One influence says <em>add edges</em> (richer assemblage, more coupling, more diversity); the other says <em>cut edges</em> (kanso, no-competing-implementations, one execution path). Taken naively they contradict — maximize connection vs minimize it. A doc that listed both as "things Chorus believes" without noticing would be exactly the flattering mirror.</p>
+<p><b>How Chorus resolves it</b> — the two operate at <em>different layers</em>, and that's the actual design rule: <b>integrate at the model layer, prune at the execution layer.</b> The ontology is maximally connected (one canonical model, every concept relatable to every other — the rhizome, the n²→2n collapse <em>by</em> connecting through one shared model). The execution path is maximally pruned (one way to deploy, one way to nudge, no competing implementations). Rich semantics, lean execution. The tension is real; resolving it by layer is what keeps "integrate everything" from becoming spaghetti and "cut everything" from becoming disconnected silos. <span class="note">(This is the reader's takeaway-with-teeth: when you're tempted to add a second deploy path "to integrate," that's the model-layer instinct misapplied to the execution layer — wrong layer for connection. Prune there.)</span></p>
+
+<h2>The synthesis</h2>
+<p class="lede">Chorus is <b>a living system (the worldview) built with practitioner craft (the craft)</b> — and the craft is not citation, it is Jeff's own discipline (the canonical-model work from Staples, Cambridge Semantics, Athena), turned on the team itself. Rooted in a regenerative design philosophy at the principle level, the work — coherence, the model, de-bespoking — is not cleanup. It is permaculture practice: pull the rotted planks, lay no more, grow durable integrated infrastructure that sustains itself.</p>
+<p class="note">(The commercial framing — "the field is in a plank-road boom; Chorus is positioned to be the road when the planks rot" — is a real claim but a <em>different audience and a different argument</em>. It belongs in a positioning piece that earns it, not in this DNA doc. Pulled here on purpose.)</p>
+
+<p class="note" style="margin-top:30px">Sources are linked per card. Research grounded via six web subagents (2026-06-05); concepts verified against primary/encyclopedic sources (SEP, agilemanifesto.org, donellameadows.org, W3C, Lovitt translation, permacultureprinciples.com).</p>
+
+</body>
+</html>
