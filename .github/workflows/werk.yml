@@ -36,16 +36,30 @@ on:
 
 jobs:
   werk:
-    runs-on: macos-latest
+    # Self-hosted runner on Library (#3240) — target label `library`. The macOS-local
+    # work (codesign, deploy ~/.chorus/bin, chorus-api/MCP on localhost, env-up) runs
+    # here. NOT macos-latest cloud (can't do local work). NOT local act anymore.
+    runs-on: [self-hosted, library]
 
-    # CHORUS_HOME / CHORUS_WERK_BASE / PATH (platform/scripts + ~/.chorus/bin) inherited
-    # from the parent shell (chorus-env-setup.sh). The workflow MUST NOT hardcode them.
     env:
       CARD_ID: ${{ inputs.card_id }}
       ROLE: ${{ inputs.role }}
       ACCEPTER: ${{ inputs.accepter }}
 
     steps:
+      - name: env-setup
+        # The runner checks code into its own _work/ dir, which is NOT canonical. The verbs
+        # operate on canonical + the werk, so source chorus-env-setup.sh (resolvable via the
+        # runner's PATH — ~/.chorus/bin + platform/scripts) to get CHORUS_HOME/WERK_BASE/BIN,
+        # then propagate to $GITHUB_ENV so every later step + verb subprocess sees the real
+        # paths. PATH on the runner + env-setup in the job = both halves, one source (Silas, #3240).
+        run: |
+          source "$(command -v chorus-env-setup.sh)"
+          { echo "CHORUS_HOME=$CHORUS_HOME"
+            echo "CHORUS_WERK_BASE=$CHORUS_WERK_BASE"
+            echo "CHORUS_BIN=$CHORUS_BIN"; } >> "$GITHUB_ENV"
+          echo "env-setup: CHORUS_HOME=$CHORUS_HOME CHORUS_WERK_BASE=$CHORUS_WERK_BASE CHORUS_BIN=$CHORUS_BIN"
+
       - name: shared-trace
         # Mint ONE trace, propagate via $GITHUB_ENV so every later step (and every verb
         # subprocess the MCP server spawns) inherits CHORUS_TRACE_ID. Best-effort witness.
