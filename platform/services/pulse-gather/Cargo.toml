@@ -1,0 +1,14 @@
+[package]
+name = "pulse-gather"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only. Reads pulse.* (~/.chorus/pulse-latest.json)
+# + the role observation stream (/tmp/claude-team-scan/<role>-observations.jsonl) and the
+# `chorus-log` CLI as a subprocess. No dependency on any other chorus code.
+# Mirrors the werk-verb blueprint (werk-pull #3045, werk-merge #3175).
+[dependencies]
+
+[[bin]]
+name = "pulse-gather"
+path = "src/main.rs"

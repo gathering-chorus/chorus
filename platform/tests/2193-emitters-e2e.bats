@@ -62,9 +62,7 @@ CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
   grep -qE '"commit\.landed"' "$CHORUS_ROOT/designing/schemas/spine-events.json"
   grep -qE '"test\.delta"' "$CHORUS_ROOT/designing/schemas/spine-events.json"
 }
-
-@test "gemba-tick filters observer.digest noise as 'noise' category" {
-  grep -qE "observer\.digest.*noise" "$CHORUS_ROOT/platform/scripts/gemba-tick.sh"
-  # 'noise' is excluded from delta surface
-  grep -qE "cat.*in.*\('self',\s*'noise'\)" "$CHORUS_ROOT/platform/scripts/gemba-tick.sh"
-}
+# (#3205) The gemba-tick noise-filter test was retired with gemba-tick.sh. Noise
+# filtering now lives in the observer hook (observer.rs skips Read/Glob/Grep/etc.
+# before writing observations.jsonl), and gemba polls the pulse-gather verb — see
+# platform/services/pulse-gather/tests/units.rs for the delta-surface coverage.

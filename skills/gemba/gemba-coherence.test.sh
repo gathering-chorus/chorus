@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Test: gemba-start.sh and gemba-tick.sh show consistent data sources
-# Red until gemba-start.sh reads session JSONL like gemba-tick.sh does
+# Test: gemba is the pulse-gather poll, not the retired snapshot-diff scaffolding (#3205).
+# Red until /gemba points at the pulse-gather verb and the start/tick scripts are gone.
 
-SCRIPT_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
+# Resolve ROOT from this script's own location (skills/gemba/) so the test verifies
+# the tree it lives in — the werk pre-merge, canonical after — never a hardcoded path
+# that silently tests the wrong checkout (eliminate-runtime-dep, DEC).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PASS=0
 FAIL=0
 
@@ -18,27 +21,24 @@ assert() {
   fi
 }
 
-echo "## gemba coherence tests"
+echo "## gemba coherence tests (#3205 — one poll path)"
 
-# Scripts exist
-assert "gemba-start.sh exists" test -f "$SCRIPT_DIR/gemba-start.sh"
-assert "gemba-tick.sh exists" test -f "$SCRIPT_DIR/gemba-tick.sh"
+# The retired scaffolding is GONE (AC4: deleted, not dormant)
+assert "gemba-start.sh removed" test ! -f "$ROOT/platform/scripts/gemba-start.sh"
+assert "gemba-tick.sh removed" test ! -f "$ROOT/platform/scripts/gemba-tick.sh"
+assert "gemba-tick skill removed" test ! -f "$ROOT/skills/gemba-tick/SKILL.md"
 
-# Coherence: gemba-start uses same sources as gemba-tick
-assert "gemba-start.sh reads session JSONL" grep -q "SESSION_DIR" "$SCRIPT_DIR/gemba-start.sh"
-assert "gemba-start.sh has observer fallback" grep -q "claude-team-scan" "$SCRIPT_DIR/gemba-start.sh"
+# The new source of truth exists
+assert "pulse-gather crate exists" test -f "$ROOT/platform/services/pulse-gather/Cargo.toml"
+assert "pulse-gather has unit tests" test -f "$ROOT/platform/services/pulse-gather/tests/units.rs"
 
-# Namespace: wren path is current
-assert "gemba-start.sh wren path is current" grep -q "roles-wren\|roles/wren" "$SCRIPT_DIR/gemba-start.sh"
-assert "gemba-tick.sh wren path is current" grep -q "roles-wren\|roles/wren" "$SCRIPT_DIR/gemba-tick.sh"
+# /gemba polls the verb, not a snapshot script
+assert "gemba skill invokes pulse-gather" grep -q "pulse-gather" "$ROOT/skills/gemba/SKILL.md"
+assert "gemba skill no longer calls gemba-start" bash -c "! grep -q 'gemba-start' '$ROOT/skills/gemba/SKILL.md'"
+assert "gemba skill no longer calls gemba-tick.sh" bash -c "! grep -q 'gemba-tick.sh' '$ROOT/skills/gemba/SKILL.md'"
 
-# Skill files at new root location
-assert "skills/gemba/SKILL.md exists at root" test -f "/Users/jeffbridwell/CascadeProjects/chorus/skills/gemba/SKILL.md"
-assert "skills/gemba-tick/SKILL.md exists at root" test -f "/Users/jeffbridwell/CascadeProjects/chorus/skills/gemba-tick/SKILL.md"
-
-# Wren has real copies not symlinks
-assert "wren gemba skill is real file" test -f "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/.claude/skills/gemba/SKILL.md"
-assert "wren gemba-tick is not a symlink" test ! -L "/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/.claude/skills/gemba-tick"
+# Deploy path knows the verb (so it ships — merged≠live guard)
+assert "chorus-deploy registers pulse-gather" grep -q "pulse-gather" "$ROOT/platform/scripts/chorus-deploy"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
