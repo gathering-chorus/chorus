@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The OWL Spec Is the Source — One Model, Every Surface</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --mut:#666; --line:#e2e2e2; --bg:#fff;
+    --spec:#1d4ed8;    /* the one source */
+    --derive:#059669;  /* derived surfaces */
+    --axis:#b45309;    /* the 4 axes */
+    --warn:#b91c1c;
+    --soft:#f7f7f5; --code:#f4f4f1;
+  }
+  *{box-sizing:border-box}
+  body{font-family:Georgia,'Times New Roman',serif;color:var(--ink);background:var(--bg);
+       line-height:1.6;margin:0 auto;max-width:880px;padding:44px 28px 120px}
+  h1{font-size:1.9em;line-height:1.2;margin:0 0 6px;border-bottom:3px solid var(--ink);padding-bottom:14px}
+  .sub{color:var(--mut);font-size:.95em;margin:0 0 6px}
+  .meta{color:var(--mut);font-size:.8em;font-family:-apple-system,system-ui,sans-serif;margin-bottom:34px}
+  h2{font-size:1.32em;margin:46px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:1.05em;margin:26px 0 6px;font-family:-apple-system,system-ui,sans-serif}
+  p{margin:10px 0}
+  code{font-family:'SF Mono',Menlo,Consolas,monospace;font-size:.86em;background:var(--code);
+       padding:1px 5px;border-radius:3px}
+  pre{background:var(--code);border:1px solid var(--line);border-left:3px solid var(--spec);
+      border-radius:5px;padding:14px 16px;overflow-x:auto;font-size:.8em;line-height:1.5;margin:14px 0}
+  pre.derive{border-left-color:var(--derive)}
+  pre code{background:none;padding:0;font-size:1em}
+  .lead{font-size:1.08em;background:var(--soft);border-left:4px solid var(--spec);
+        padding:14px 18px;border-radius:0 6px 6px 0;margin:8px 0 4px}
+  .key{font-family:-apple-system,system-ui,sans-serif}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.86em;
+        font-family:-apple-system,system-ui,sans-serif}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600}
+  .tag{display:inline-block;font-family:-apple-system,system-ui,sans-serif;font-size:.72em;
+       font-weight:600;padding:1px 8px;border-radius:10px;vertical-align:middle}
+  .tag.spec{background:#dbeafe;color:var(--spec)}
+  .tag.derive{background:#d1fae5;color:var(--derive)}
+  .tag.axis{background:#fef3c7;color:var(--axis)}
+  .tag.real{background:#e5e7eb;color:#374151}
+  .tag.prop{background:#fae8ff;color:#86198f}
+  /* flow diagram */
+  .flow{font-family:-apple-system,system-ui,sans-serif;font-size:.82em;margin:18px 0;
+        border:1px solid var(--line);border-radius:8px;padding:20px;background:var(--soft)}
+  .src{display:block;max-width:330px;margin:0 auto 6px;background:#dbeafe;border:2px solid var(--spec);
+       color:var(--spec);font-weight:700;text-align:center;padding:10px;border-radius:6px}
+  .arrow{text-align:center;color:var(--mut);font-size:1.3em;margin:2px 0}
+  .gen{display:block;max-width:240px;margin:0 auto 6px;background:#fff;border:1.5px dashed var(--mut);
+       text-align:center;padding:7px;border-radius:6px;color:var(--ink);font-weight:600}
+  .surfaces{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:6px 0}
+  .surf{background:#d1fae5;border:1.5px solid var(--derive);color:#065f46;text-align:center;
+        padding:8px 6px;border-radius:6px;font-weight:600}
+  .cons{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:6px 0}
+  .con{background:#fff;border:1px solid var(--line);text-align:center;padding:7px 6px;border-radius:6px;color:var(--mut)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  .card{border:1px solid var(--line);border-radius:7px;padding:14px 16px}
+  .card.old{border-top:3px solid var(--warn)}
+  .card.new{border-top:3px solid var(--spec)}
+  .card h4{margin:0 0 8px;font-family:-apple-system,system-ui,sans-serif;font-size:.95em}
+  .note{font-family:-apple-system,system-ui,sans-serif;font-size:.84em;color:var(--mut)}
+  .derives-from{font-family:-apple-system,system-ui,sans-serif;font-size:.78em;color:var(--derive);
+       font-weight:600;margin:2px 0 8px}
+  @media(max-width:640px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>The OWL Spec Is the Source — One Model, Every Surface</h1>
+<p class="sub">First slice against the whole-model thesis, <strong>derived end-to-end on paper</strong> for one real facet: <code>alert</code>. The generator is the bet this slice frames — not yet built.</p>
+<p class="meta">Silas · 2026-06-05 · #3242 · grounded in <code>chorus-core.ttl</code> (Wren), <code>self-model-owl-framework.md</code>, <code>crawler-service-design.html</code>, and the live <code>alerts-monitors</code> domain · companion to the subproduct-design family (athena / loom / werk)</p>
+
+<div class="flow" style="background:#fff;border-left:4px solid var(--axis)">
+  <strong class="key">What's real today vs. what this slice proposes</strong>
+  <table style="margin-top:8px">
+    <tr><th>Real today</th><th>What this slice proposes (the bet)</th></tr>
+    <tr>
+      <td>alert artifacts (<code>proving/domains/alerts/*.yml</code>) · the <code>alerts-monitors</code> domain (owner silas, Proving, <em>operating</em>) · <code>chorus-core</code> spine (a sketch) · the crawler · the Athena page renderer — each surface authored <em>separately</em> today</td>
+      <td>the <code>AlertRule</code> OWL <strong>spec</strong> + a <strong>generator</strong> (<em>unbuilt</em>) that would emit the five surfaces from it — replacing the separately-authored, drift-prone surfaces with one derived source</td>
+    </tr>
+  </table>
+  <p class="note" style="margin:8px 0 0">Everything below in <span class="tag derive">GENERATED</span> green is the <em>proposed</em> derivation — a paper proof of what the generator would emit, not a running slice. The honest line: this is a <strong>derivation worked by hand to prove the shape</strong>; building the generator is the next card.</p>
+</div>
+
+<p class="lead">The domain OWL isn't a section <em>in</em> the spec. It <strong>is</strong> the spec — the one authoritative, machine-readable definition of what a domain is. The page, the API, the persistence schema, the crawler's tags, the MCP tools would all <strong>derive</strong> from it. Author the OWL once; everything else is generated from it — so it cannot drift. <em>That</em> is the bet this slice tests.</p>
+
+<p class="lead" style="border-left-color:var(--axis)"><strong>Not a return to RDF-as-runtime.</strong> Athena v2 deliberately left v1's Fuseki/RDF store for a JSON tree + SQLite — and v2 is <em>not</em> TTL (<code>chorus-core.ttl</code> itself says it is "not hand-authored… regenerated from v2"). OWL here is an <strong>authoring/spec format that compiles to</strong> that JSON/SQLite runtime — the model is written once in OWL, then <em>compiled down</em>; the system does not run on a triplestore. SQLite now; Fuseki/RDF stays the deferred, additive store, never the source.</p>
+
+<h2>1 · The inversion</h2>
+<p>Today an Athena domain page <em>is</em> the spec — it carries <strong>actor diagrams</strong> (who interacts) and <strong>BDD</strong> (how it behaves). Both describe the domain; neither <em>models</em> it. The two structural sections are conspicuously absent: the <strong>data model</strong> (what it <em>is</em>) and <strong>persistence</strong> (where its data lives). This slice flips the relationship.</p>
+
+<div class="two">
+  <div class="card old">
+    <h4>Today — page is the spec</h4>
+    <p class="note">Actors + BDD authored by hand. OWL absent, persistence absent. Each surface (page, API, store, crawler) authored separately → they drift. Behavior without structure.</p>
+  </div>
+  <div class="card new">
+    <h4>This slice — OWL is the spec</h4>
+    <p class="note">One OWL source. Page, API, persistence, crawler tags, MCP all <em>render/generate</em> from it. Actors + BDD <em>attach</em> as behavior on top of structure. Drift becomes structurally impossible — <em>once the generator exists and every surface derives from the one source</em> (the target state, not today).</p>
+  </div>
+</div>
+<p class="note">"Ontology is architecture," literally: the OWL is the contract the surfaces are generated from (<code>chorus-core.ttl</code>: <em>"The OWL is the contract the API is generated from."</em>).</p>
+
+<h2>2 · The one source — the <code>alert</code> spec <span class="tag spec">SPEC</span></h2>
+<p>The <code>borg</code> module imports the shared spine (<code>chorus-core</code>) and <strong>extends</strong> it — it never redefines the spine classes or the four axes. The whole spec for the facet is this:</p>
+
+<pre><code># borg module — imports the spine, extends it (never redefines)
+&lt;https://jeffbridwell.com/chorus/borg&gt; a owl:Ontology ;
+    owl:imports &lt;https://jeffbridwell.com/chorus/core&gt; .   # the 4 axes + spine classes
+
+chorus:Facet     a owl:Class ;
+    rdfs:comment "A harvested aspect of the system. The crawler tags artifacts into Facet subclasses." .
+chorus:AlertRule a owl:Class ; rdfs:subClassOf chorus:Facet ;
+    rdfs:label "Alert Rule" ;
+    rdfs:comment "A declarative alert: a scheduled check + an action when it fails." .
+
+# ── datatype properties (the fields — lifted from the real artifact) ──
+chorus:alertName    a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .
+chorus:description  a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .
+chorus:severity     a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .  # critical|warning|info
+chorus:schedule     a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .  # cron
+chorus:checkScript  a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .
+chorus:actionScript a owl:DatatypeProperty ; rdfs:domain chorus:AlertRule ; rdfs:range xsd:string .
+
+# ── three of the four chorus-core axes place this facet (shape is the 4th, below) ──
+chorus:inDomain a owl:ObjectProperty .   # → chorus:alerts-monitors
+chorus:ownedBy  a owl:ObjectProperty ; rdfs:range chorus:Role .  # → chorus:silas (an AgentRole ⊂ Role)
+chorus:atStep   a owl:ObjectProperty .   # → chorus:Proving (Phase)
+# shape = facet (the 4th axis) — carried by AlertRule ⊂ Facet, not re-declared here
+
+# ── a domain PROPERTY (not an axis) — the action's notify target ──
+chorus:notifies a owl:ObjectProperty ; rdfs:range chorus:Role .  # → chorus:silas (AgentRole ⊂ Role)
+</code></pre>
+
+<p>The four chorus-core axes are <code>inDomain · ownedBy · atStep · shape</code>. Three are declared above; <code>shape</code> is the 4th — it's <code>facet</code> here, carried by <code>AlertRule ⊂ Facet</code> rather than restated. <code>notifies</code> is <em>not</em> an axis — it's a domain property of <code>AlertRule</code>. Both <code>ownedBy</code> and <code>notifies</code> range over <code>chorus:Role</code>, and <code>silas</code> is an <code>AgentRole</code> (a subclass of <code>Role</code>) — consistent, not two vocabularies.</p>
+
+<p>No SHACL, no validation rules — per the model-first call, this is the <em>data model only</em>. Validation is a later, additive layer. "Validated" here means just: it parses, it imports the spine, the axes are present.</p>
+
+<h3>The real artifact it models</h3>
+<p>This is a live file — <code>proving/domains/alerts/chorus-mcp-down.yml</code> — the thing the crawler tags into an <code>AlertRule</code> instance:</p>
+<pre><code>name: chorus-mcp-down
+description: chorus-api /mcp endpoint not responding to MCP initialize handshake
+severity: critical
+schedule: "*/5 * * * *"
+check:  | curl -s ... POST http://localhost:3341/mcp ... → ok | exit 1
+action: | ops-nudge silas "chorus-mcp-down: /mcp not responding ..."</code></pre>
+<pre><code># → becomes one instance, every field tracing to a property above:
+chorus:alert-chorus-mcp-down a chorus:AlertRule ;
+    chorus:alertName "chorus-mcp-down" ;
+    chorus:severity  "critical" ;
+    chorus:schedule  "*/5 * * * *" ;
+    chorus:inDomain  chorus:alerts-monitors ;   # axis
+    chorus:ownedBy   chorus:silas ;             # axis
+    chorus:atStep    chorus:Proving ;           # axis
+    chorus:notifies  chorus:silas .</code></pre>
+
+<h2>3 · Everything derives <span class="tag derive">GENERATED (proposed)</span></h2>
+<p>From that one OWL, the generator <em>would</em> emit five surfaces. Each line below is hand-derived to show what it would emit — every line traces back to a declaration above. That's the point of the paper proof: in the generated design <strong>nothing would be hand-authored</strong> — the surfaces fall out of the spec. (The generator that does this is the unbuilt bet; what follows is the derivation, not generator output.)</p>
+
+<h3>① Persistence — SQLite schema</h3>
+<p class="derives-from">derives from: the datatype properties + the three axes</p>
+<pre class="derive"><code>CREATE TABLE alert_rule (
+  id          TEXT PRIMARY KEY,   -- IRI local name
+  name        TEXT NOT NULL,      -- chorus:alertName
+  description TEXT,               -- chorus:description
+  severity    TEXT,               -- chorus:severity
+  schedule    TEXT,               -- chorus:schedule
+  in_domain   TEXT,               -- chorus:inDomain   (axis, indexed)
+  owned_by    TEXT,               -- chorus:ownedBy    (axis, indexed)
+  at_step     TEXT                -- chorus:atStep     (axis, indexed)
+);  -- SQLite now; Fuseki/RDF is the deferred, additive store</code></pre>
+
+<h3>② Crawler self-tag rule — deterministic</h3>
+<p class="derives-from">derives from: the class + its domain placement (the herald IS the domain — no judgment)</p>
+<pre class="derive"><code>glob  proving/domains/alerts/*.yml   →   chorus:AlertRule
+  name      ← yaml.name           severity ← yaml.severity
+  schedule  ← yaml.schedule       description ← yaml.description
+  inDomain  ← chorus:alerts-monitors   (location decides — deterministic)
+  ownedBy   ← chorus:silas              (from the domain's ownedBy)
+  atStep    ← chorus:Proving</code></pre>
+<p class="note">This is the <em>deterministic</em> half of two-speed tagging: the artifact's location + shape decide the tag, mechanically. (The <em>semantic</em> half — capability domains where the domain isn't obvious — is the separate #3184 judgment, not needed here.)</p>
+
+<h3>③ Query API — generated REST</h3>
+<p class="derives-from">derives from: the class (the resource) + the indexed axes/properties (the filters)</p>
+<pre class="derive"><code>GET /api/chorus/alerts                                  → all AlertRule
+GET /api/chorus/alerts?domain=alerts-monitors&severity=critical
+GET /api/chorus/alerts?owner=silas
+GET /api/chorus/alerts/{id}                             → one AlertRule
+# OWL → OpenAPI + SQL-backed CRUD. Filters are exactly the indexed axes.</code></pre>
+
+<h3>④ MCP tools — generated thin-skin</h3>
+<p class="derives-from">derives from: the same class + filters, exposed for agents</p>
+<pre class="derive"><code>chorus_alerts_list(domain?, severity?, owner?)
+chorus_alerts_get(id)
+# would be auto-generated — removing the hand-written server.ts labor for this domain (once the generator exists)</code></pre>
+
+<h3>⑤ Page render — the Athena domain view</h3>
+<p class="derives-from">derives from: the API (above); actors + BDD attach as behavior</p>
+<p class="note">The <code>alerts-monitors</code> domain page queries <code>/api/chorus/alerts?domain=alerts-monitors</code> and renders its rules. The <strong>actor</strong> (who gets notified — <code>silas</code> via ops-nudge) and the <strong>BDD</strong> (<em>given</em> the check fails, <em>when</em> the schedule fires, <em>then</em> notify the owner) attach <em>on top of</em> the structural spec — behavior layered over structure, not instead of it.</p>
+
+<h2>4 · The composition — the four axes place it <span class="tag axis">AXES</span></h2>
+<p>The same four axes from <code>chorus-core</code> locate the facet in the whole model — no separate placement vocabulary:</p>
+<table>
+  <tr><th>Axis</th><th>Value</th><th>Means</th></tr>
+  <tr><td><code>inDomain</code></td><td>alerts-monitors</td><td>which domain it belongs to</td></tr>
+  <tr><td><code>ownedBy</code></td><td>silas <span class="tag real">AgentRole</span></td><td>who tends it</td></tr>
+  <tr><td><code>atStep</code></td><td>Proving <span class="tag real">Phase</span></td><td>which value-stream step</td></tr>
+  <tr><td><code>shape</code></td><td>facet</td><td>what kind of node</td></tr>
+</table>
+<p>And the recursion holds: the <strong>Proving</strong> Phase <code>hasValueStream</code> Borg's own stream (the self-model is fractal, per <code>chorus-core</code>); <code>AlertRule</code> is a facet harvested <em>within</em> that stream. <code>alerts-monitors</code> is a Domain under a Product that <code>realizesStep</code> Proving. One spine, all the way down.</p>
+
+<h2>5 · The flow, end to end</h2>
+<div class="flow">
+  <span class="src">alert OWL spec<br><span style="font-weight:400;font-size:.85em">(imports chorus-core spine)</span></span>
+  <div class="arrow">↓</div>
+  <span class="gen">generator</span>
+  <div class="arrow">↓</div>
+  <div class="surfaces">
+    <div class="surf">SQLite schema</div>
+    <div class="surf">crawler tag-rule</div>
+    <div class="surf">REST API</div>
+    <div class="surf">MCP tools</div>
+    <div class="surf">Athena page</div>
+  </div>
+  <div class="arrow">↓ &nbsp;consumed by&nbsp; ↓</div>
+  <div class="cons">
+    <div class="con">Athena page</div>
+    <div class="con">blast-radius</div>
+    <div class="con">werk-tests</div>
+    <div class="con">observability / context-inject</div>
+  </div>
+</div>
+<p class="note">One source, five generated surfaces, many consumers. The crawler harvests the real <code>*.yml</code> artifacts into the SQLite store shaped by the OWL; every consumer reads the same model.</p>
+
+<h2>6 · Why this is the right first slice</h2>
+<ul>
+  <li><strong>Deterministic tagging</strong> — an alert's domain is decided by its location (<code>proving/domains/alerts/</code>), no semantic judgment. Zero tagging risk.</li>
+  <li><strong>Greenfield + low blast</strong> — the crawler half is already being rebuilt; proving the generator here breaks nothing live.</li>
+  <li><strong>My lane, already real</strong> — <code>alerts-monitors</code> is owned by Silas, at Proving, status <em>operating</em>; the artifacts and the page already exist. We're modeling something true, not inventing.</li>
+  <li><strong>Exercises every surface</strong> — persistence, crawler, API, MCP, page — so a green slice here proves the whole pattern before it scales to the seven products.</li>
+</ul>
+
+<p class="lead" style="border-left-color:var(--derive);margin-top:30px">The bet in one line (the real-vs-proposed split is up top): <strong>write the <code>alert</code> OWL, build the generator, emit its five surfaces, harvest the real artifacts into them, and query the result.</strong> If that round-trips, the whole-model thesis holds — and we scale the same move across the seven products.</p>
+
+</body>
+</html>
