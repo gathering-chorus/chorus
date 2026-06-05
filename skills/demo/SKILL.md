@@ -6,7 +6,7 @@ user-invocable: true
 
 # /demo — the proving ceremony
 
-Since #3116, `/demo` is the **proving ceremony only**: present the already-running werk instance to a prover, gather quality + value feedback, record one verdict. It does **not** build or deploy — the act (build → deploy → env-up) is the prior verbs in the flat sequence (`werk-mcp.sh` steps 3–4). Demo points at what is already up.
+Since #3116, `/demo` is the **proving ceremony only**: present the already-running werk instance to a prover, gather quality + value feedback, record one verdict. It does **not** build or deploy — the act (build → deploy → env-up) is the prior steps in the one pipeline (`werk.yml`, run via act — #3236 retired `werk-mcp.sh` into it). Demo points at what is already up.
 
 Two layers split the work:
 - **The demoer (this agent)** initiates the 5 gates as **subagents** and routes each result to its owning role for review. An LLM gate-review can't run inside the zero-dep `werk-demo` binary, so it lives here.
