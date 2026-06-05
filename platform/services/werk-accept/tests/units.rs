@@ -2,7 +2,30 @@
 //! gate (DEC-048: only Wren/Jeff finalize; a builder never self-accepts). That's a
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
-use werk_accept::{branch_name, can_accept, demo_verdict_pass, jsonl_line, script_path};
+use werk_accept::{branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line, script_path};
+
+// #3237 — werk-accept's go-signal (and werk-do-more) write a demo.decision line
+// into ops/logs/werk-demo.jsonl that werk-demo's read_decision must match. The
+// match is byte-exact on a COMMA-TERMINATED card_id ("card_id":N,) — if that comma
+// drifts, werk-demo blocks forever and the seam silently breaks. Pin it here.
+#[test]
+fn demo_decision_line_is_byte_exact_for_read_decision() {
+    let line = demo_decision_line(1, 3237, "go", "jeff", "t");
+    // THE load-bearing assertion (navigator #1): card_id comma-terminated.
+    assert!(line.contains("\"card_id\":3237,"), "card_id must be comma-terminated: {}", line);
+    assert!(line.contains("\"event\":\"demo.decision\""), "event must be demo.decision: {}", line);
+    assert!(line.contains("\"decision\":\"go\""), "decision must be go: {}", line);
+}
+
+#[test]
+fn demo_decision_line_carries_more_and_no_go() {
+    let more = demo_decision_line(1, 42, "more", "wren", "t");
+    let nogo = demo_decision_line(1, 42, "no-go", "wren", "t");
+    assert!(more.contains("\"decision\":\"more\""), "more: {}", more);
+    assert!(nogo.contains("\"decision\":\"no-go\""), "no-go: {}", nogo);
+    // the comma guard holds for any card id.
+    assert!(more.contains("\"card_id\":42,") && nogo.contains("\"card_id\":42,"), "comma guard");
+}
 
 #[test]
 fn script_path_resolves_absolute_under_home_platform_scripts() {
