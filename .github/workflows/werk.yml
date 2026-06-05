@@ -101,9 +101,10 @@ jobs:
         run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
-        # #3240 — env-up posts chorus/env-up/<card> (the verb emits spine/jsonl but not a gh
-        # status today; step-level post here for the finish — Silas's verb-level emit supersedes
-        # this as the clean refactor follow-on). pending→success/failure.
+        # #3240 — env-up posts chorus/env-up/<card> via a step-level gh-status (the verb emits
+        # spine/jsonl but not a gh status today). Silas's #3244 follow-on moves this INTO the
+        # werk-deploy verb (self-reporting via shared emit_status) + carry-forward; until then
+        # this step-wrap stands (Silas confirmed, standing down tonight). pending→success/failure.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
