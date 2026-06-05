@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loom — Subproduct Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-pop { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-shell { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-extra { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Loom <span>— Subproduct Design</span></h1>
+<p class="date">Wren · 2026-05-14 · first subproduct-design doc — peer to the service-design docs, intended as the template the other five subproducts follow</p>
+
+<div class="frame">
+This is a <strong>coherence exercise</strong>: Loom modeled up and down (Chorus product → Loom → subdomains), with the OWL and SHACL state, and the incoherences the audit surfaced. It is <strong>AS-IS</strong> — not a remediation plan; the to-be is downstream v2 work. Source: a four-subagent audit — OWL (<code>chorus.ttl</code> + <code>framework.ttl</code>), SHACL (<code>shapes.ttl</code> + inline shapes), doc-catalog + RDF instance data, and the live Fuseki graph.
+</div>
+
+<h2>What Loom is</h2>
+<p>The operating-model / team-knowledge layer of Chorus — "the team's persistent product memory." A subproduct of the <strong>Chorus</strong> product, at the <strong>Shaping</strong> value-stream step, owned by <strong>Jeff</strong>. Its subdomains carry the normative substrate: principles, practices, policies, decisions, roles, skills, RCAs.</p>
+<p><code>designing/docs/chorus-reference-model.html</code> already defines Loom in these terms — it is the closest existing Loom design, and this doc builds on it.</p>
+
+<h2>Structure — up and down</h2>
+
+<p><strong>UP:</strong> a single inbound edge — <code>chorusProduct hasSubProduct loom</code>. That is the entire upward link. There is no reciprocal <code>loom partOf chorusProduct</code>; containment is one-directional.</p>
+
+<pre class="mermaid">
+flowchart TD
+  Chorus["Chorus — Product"] -->|hasSubProduct| Loom["Loom — SubProduct<br/>owned by Jeff · Shaping step"]
+  Loom --> P["loom-principles<br/>27 Principle"]
+  Loom --> Pr["loom-practices<br/>40 Practice"]
+  Loom --> Po["loom-policies<br/>0 — shell"]
+  Loom --> D["loom-decisions<br/>0 — shell · 948-line decisions.md ungraphed"]
+  Loom --> R["loom-rcas<br/>0 — shell · Silas · Proving · no RCA class"]
+  Loom --> M["loom-metrics<br/>0 — not in intent set"]
+  Loom --> A["loom-analytics<br/>0 — not in intent set"]
+  Loom --> Rd["roles-domain<br/>0 Role instances"]
+  Loom --> Cs["cards-service<br/>service node — not in intent set"]
+  Loom --> Ss["skills-service<br/>0 Skill — not in intent set"]
+  Loom --> Gs["gates-service<br/>service node — not in intent set"]
+  Loom --> Cd["chorus-domain<br/>52 Documents · Silas · mis-parented"]
+  classDef pop fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef shell fill:#fef9c3,stroke:#854d0e,color:#854d0e;
+  classDef extra fill:#fee2e2,stroke:#991b1b,color:#991b1b;
+  classDef anchor fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+  class Chorus,Loom anchor;
+  class P,Pr pop;
+  class Po,D,R,Rd shell;
+  class M,A,Cs,Ss,Gs,Cd extra;
+</pre>
+<p class="caption">All Loom→subdomain edges are <code>hasDomain</code>. Green = holds content instances · yellow = intent-aligned but empty shell · red = present in the graph but not in the intent set.</p>
+
+<p><strong>DOWN — intent-set (7, per Jeff's dictation):</strong> principles, practices, policies, decisions, roles, skills, rcas.</p>
+<p><strong>DOWN — what the graph actually has (12 <code>hasDomain</code> edges):</strong></p>
+
+<table>
+<tr><th>Subdomain</th><th>Owner</th><th>Step</th><th>Content instances</th><th>Status</th></tr>
+<tr><td><code>loom-principles</code></td><td>wren</td><td>Shaping</td><td>27 Principle</td><td><span class="t-pop">POPULATED</span></td></tr>
+<tr><td><code>loom-practices</code></td><td>wren</td><td>Shaping</td><td>40 Practice</td><td><span class="t-pop">POPULATED</span></td></tr>
+<tr><td><code>loom-policies</code></td><td>wren</td><td>Shaping</td><td>0</td><td><span class="t-shell">SHELL</span></td></tr>
+<tr><td><code>loom-decisions</code></td><td>wren</td><td>Shaping</td><td>0 — <code>roles/wren/decisions.md</code> (948 lines) is the de-facto store; ungraphed, blocked on #2152</td><td><span class="t-shell">SHELL</span></td></tr>
+<tr><td><code>loom-rcas</code></td><td><strong>silas</strong></td><td>Proving</td><td>0 — no <code>RCA</code> OWL class exists</td><td><span class="t-shell">SHELL</span></td></tr>
+<tr><td><code>loom-metrics</code></td><td>wren</td><td>Shaping</td><td>0</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+<tr><td><code>loom-analytics</code></td><td>wren</td><td>Shaping</td><td>0</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+<tr><td><code>roles-domain</code></td><td>wren</td><td>Shaping</td><td>0 Role instances (1 Document)</td><td><span class="t-shell">SHELL</span></td></tr>
+<tr><td><code>cards-service</code></td><td>wren</td><td>—</td><td>service node</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+<tr><td><code>skills-service</code></td><td>wren</td><td>—</td><td>0 Skill instances</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+<tr><td><code>gates-service</code></td><td>silas</td><td>—</td><td>service node</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+<tr><td><code>chorus-domain</code></td><td><strong>silas</strong></td><td>Proving</td><td>52 Documents — platform doc-dump catch-all, mis-parented under Loom</td><td><span class="t-extra">NOT IN INTENT</span></td></tr>
+</table>
+
+<p><strong>Divergences:</strong></p>
+<ul>
+  <li>Graph has <strong>12</strong>, intent-set is <strong>7</strong>. Six extras: metrics, analytics, cards-service, skills-service, gates-service, chorus-domain.</li>
+  <li><strong>"skills" is missing</strong> as a content domain — <code>skills-service</code> is a service node, not the skills content domain; there is no <code>loom-skills</code>.</li>
+  <li><strong>Hollow shells:</strong> only <strong>2 of 12</strong> subdomains hold content instances — <code>loom-principles</code> (27) and <code>loom-practices</code> (40). The rest are declared and connected but empty.</li>
+  <li><code>chorus-domain</code> (Silas-owned, 52 Documents, step Proving) is wired under Loom but is not a Loom content domain — it reads as a platform docs catch-all attached to the wrong parent.</li>
+  <li><code>loom-rcas</code> is the only Loom subdomain not owned by Wren (Silas) and the only one at Proving — worth resolving whether RCAs belong to Loom-as-Wren-product or are a shared/Silas surface.</li>
+</ul>
+
+<h2>The OWL</h2>
+<p><strong>Classes</strong> (<code>chorus.ttl</code> §2c, ~L222–243; <code>Product</code> at ~L697): <code>Product</code> is standalone. <code>Domain</code> is the parent of <code>SubProduct</code>, <code>SubDomain</code>, <code>CollectionDomain</code> as subclasses. <strong>Structural oddity:</strong> <code>SubProduct</code> is <code>rdfs:subClassOf Domain</code> yet is used as a product-level container above domains — the hierarchy says "a SubProduct is a kind of Domain," which collides with its actual role.</p>
+<p><strong>Loom's own OWL:</strong> an <em>instance</em> of <code>SubProduct</code> (~L743–749) — substantive: label, comment, <code>ownedBy jeff</code>, <code>hasDomain</code> ×12, <code>consumes</code> ×6.</p>
+<p><strong>Subdomain OWL:</strong> <code>roles-domain</code>, <code>loom-principles</code>, <code>loom-practices</code> are substantive (carry <code>contains</code> structure). <code>loom-policies</code>, <code>loom-decisions</code>, <code>loom-rcas</code>, <code>loom-metrics</code>, <code>loom-analytics</code> are thin — label + <code>ownedBy</code> + <code>primaryStep</code> only.</p>
+
+<h3>Predicate-layer incoherences — the core finding</h3>
+<p>These correct the going-in framing. The relationships <em>are</em> the model, and they are the least coherent layer.</p>
+<div class="gap"><strong>hasDomain is declared twice with conflicting signatures</strong> — <code>Document → SubDomain</code> (L554, a tagging predicate with a SHACL shape) and <code>Product → Domain</code> (L2207, true containment). One IRI, two incompatible semantics. <em>This is the real <code>hasDomain</code> defect — not the containment-vs-dependency overload we assumed going in.</em></div>
+<div class="gap"><strong>consumes is the genuinely overloaded predicate</strong> — declared <code>Product → Service</code> (L2230), used <code>SubDomain → SubDomain</code> throughout (<code>loom-* consumes security-domain</code> etc.). The ontology has <code>dependsOn</code> explicitly for this and it is ignored.</div>
+<div class="gap"><strong>belongsTo — used 30+ times, never defined.</strong> It carries the entire Borg containment tree on an undeclared predicate. The single biggest hole.</div>
+<ul>
+  <li><code>partOf</code> — neither declared nor used. Phantom concept.</li>
+  <li><code>dependsOn</code>, <code>expresses</code> — declared without <code>rdfs:domain</code>/<code>rdfs:range</code>.</li>
+  <li><strong><code>framework.ttl</code> runs a parallel vocabulary</strong> — <code>fw:Domain owl:equivalentClass chorus:Domain</code>, plus <code>fw:ownedBy</code> / <code>fw:dependsOn</code> with no <code>owl:equivalentProperty</code> bridge to the <code>chorus:</code> versions. The same real-world domains are modeled twice (<code>fw:photos</code> and <code>chorus:photos-domain</code>).</li>
+  <li><strong><code>SubDomain</code> is the spine of the instance graph</strong> — ~45 instances, the <code>rdfs:range</code> of <code>hasActor</code>/<code>hasScenario</code>/<code>hasContract</code>/<code>hasPage</code>/<code>hasPipeline</code>, and the target of the <code>DocumentShape</code> SHACL constraint. It is <em>not</em> vestigial — which is exactly why the as-is/to-be refactor to remove it is expensive.</li>
+  <li><code>Decision</code> and <code>RCA</code> are <strong>not OWL classes</strong> — <code>loom-decisions</code> and <code>loom-rcas</code> hold (or would hold) instances of undeclared types.</li>
+</ul>
+
+<h2>The SHACL</h2>
+<p>15 shapes across 4 files. Loom's <strong>skeleton is constrained</strong> — <code>ProductDomainShape</code>, <code>SubProductParentShape</code>, <code>SubProductDomainShape</code>, <code>SubDomainParentShape</code>, <code>SubDomainInstancesShape</code> enforce structural minimums (a SubProduct must have ≥1 parent and ≥1 domain; a SubDomain must have a parent).</p>
+<p>Loom's <strong>substance is not constrained:</strong></p>
+<ul>
+  <li><code>Domain</code> (the class) has no shape.</li>
+  <li><code>Principle</code>, <code>Policy</code>, <code>Practice</code>, <code>Skill</code> — Loom's actual content types — have <strong>zero shapes</strong>. Nothing validates what a principle or a policy must contain.</li>
+  <li><code>Decision</code>, <code>RCA</code> — no OWL class, so no shape is even possible.</li>
+  <li><code>CatalogDocShape</code> targets <code>chorus:CatalogDoc</code>, <strong>a class not declared in the OWL</strong> — a shape constraining a phantom.</li>
+</ul>
+
+<h2>Coherence findings — synthesis</h2>
+<div class="finding"><strong>1. The predicate layer is broken under the model.</strong> <code>hasDomain</code> double-declared with conflicting signatures; <code>belongsTo</code> load-bearing but undefined; <code>consumes</code> overloaded into dependency duty; <code>partOf</code> phantom. The relationships are the model — and they are the least coherent layer.</div>
+<div class="finding"><strong>2. Two vocabularies, no bridge.</strong> <code>chorus:</code> and <code>fw:</code> model the same domains, classes, and ownership twice with no equivalence axioms tying them.</div>
+<div class="finding"><strong>3. The graph diverges from intent.</strong> Loom's <code>hasDomain</code> is 12 where intent is 7 — six extras, "skills" missing, and <code>chorus-domain</code> is a Silas doc-dump mis-parented under Loom.</div>
+<div class="finding"><strong>4. Hollow shells.</strong> 5 of 7 intent subdomains carry zero content instances. Only principles (27) and practices (40) are populated. Decisions live as 948 lines of ungraphed markdown.</div>
+<div class="finding"><strong>5. Substance is unconstrained.</strong> SHACL guards Loom's hierarchy; nothing guards Loom's content. Two content types aren't even classes.</div>
+<div class="finding"><strong>6. Full duplication.</strong> Every triple is duplicated across <code>urn:chorus:ontology</code> and <code>urn:chorus:instances</code>.</div>
+
+<h2>OWL + SHACL Model — Loom <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
+<div class="frame">
+The coherent model the audit demands — the structural layer (Product / SubProduct / SubDomain) and the seven content domains, each with its OWL class and SHACL shape. <strong>Disciplined, not maximal:</strong> every class, property, and shape below resolves a specific finding from the audit above. Nothing is added that the coherence findings don't require.
+</div>
+
+<h3>Structural layer — the Athena product model</h3>
+<div class="frame">
+This layer is <strong>not Loom-specific</strong> — it <em>is</em> the Athena product model: <code>Product → { Domain, Service }</code>, where <strong><code>Product</code> and <code>Domain</code> are both recursive</strong>. Loom is the first subproduct modeled against it; the same structural classes hold every subproduct. (Jeff, 2026-05-14: "this is literally the Athena product model — products, subproducts, domains — services is missing.")
+</div>
+<p>Three structural classes, one clean predicate set. Resolves audit finding #1 (the broken predicate layer), the SubProduct structural oddity, and the missing Service layer:</p>
+<ul>
+  <li><strong><code>Product</code> is recursive — the <code>SubProduct</code> class is removed.</strong> A Product can contain Products via <code>hasChild</code>; a "subproduct" is just a Product that is the child of another Product. Same pattern as Domain — and it erases the SubProduct structural oddity (no separate class to be weirdly <code>subClassOf Domain</code>). The root Product (Chorus) is simply a Product with no parent; <code>atStep</code> is optional and applies to child Products placed in a value stream.</li>
+  <li><strong><code>Domain</code> is recursive — the <code>SubDomain</code> class is removed.</strong> A Domain can contain Domains via <code>hasChild</code>; a "subdomain" is just a Domain that is the child of another Domain. Depth becomes a <em>data</em> decision (add <code>hasChild</code> edges), not a <em>schema</em> decision (invent a deeper class) — extensible without reshaping the model. The discipline it needs: depth follows substance, or it nests empty — the hollow-shells finding, at every level.</li>
+  <li><strong><code>Service</code> is a first-class structural layer</strong> — it was missing from the first cut. The <code>Service</code> OWL class exists today but is barely instantiated, and the real service nodes (<code>cards-service</code>, <code>gates-service</code>, <code>spine-service</code>, <code>skills-service</code>) are <em>mis-typed as <code>SubDomain</code></em> despite the <code>-service</code> name. The model re-types them to <code>Service</code> — fixing both the mis-typing and the naming inconsistency the audit flagged.</li>
+  <li><code>hasChild</code> is the <strong>one recursive-containment predicate</strong>, used by both <code>Product → Product</code> and <code>Domain → Domain</code> — one IRI because it is one <em>meaning</em> (containment, full stop). It is validated <strong>per-source-shape</strong>, never by a global range: <code>ProductShape</code> constrains its <code>hasChild</code> to Product, <code>DomainShape</code> to Domain. <strong>Predicate identity is by meaning; predicate validation is by source shape</strong> — <code>rdfs:range</code> is never the validation surface for a multi-source predicate. (Test for a legitimate shared IRI: one <code>rdfs:comment</code> true for every use, no "or." <code>hasChild</code> passes; the old double-declared <code>hasDomain</code> — tag <em>or</em> contain — fails, which is why <code>taggedDomain</code> and <code>hasDomain</code> split. — Silas, 2026-05-14)</li>
+  <li><code>hasDomain</code> is <strong>single-declared</strong>: <code>Product → Domain</code>. The conflicting <code>Document → SubDomain</code> declaration becomes its own predicate (<code>taggedDomain</code>).</li>
+  <li><code>consumes</code> is <strong>single-meaning</strong>: <code>Product → Service</code>. The overloaded <code>Domain → Domain</code> dependency uses move to <code>dependsOn</code> (distinct from <code>hasChild</code> containment).</li>
+  <li><code>contains</code> is the one containment predicate for content, <code>Domain → content</code>. <code>belongsTo</code> (undefined) and <code>partOf</code> (phantom) are dropped — their real uses migrate to <code>hasChild</code> / <code>hasDomain</code> / <code>contains</code>.</li>
+  <li><code>atStep</code> : <code>Product → Vertebra</code> — one property for value-stream placement, replacing the declared-but-unused <code>hasValueStreamStep</code> and the instance-level <code>primaryStep</code> drift.</li>
+</ul>
+<pre class="mermaid">
+classDiagram
+  class Product {
+    &lt;&lt;ProductShape&gt;&gt;
+    label
+    comment
+    owner
+    vision
+    valueProposition
+    audience
+    roadmap
+    status
+    gaps
+    references
+  }
+  class Domain {
+    &lt;&lt;DomainShape&gt;&gt;
+    label
+    comment
+    owner
+    step
+    status
+    actors
+    scenarios
+    code
+    tests
+    endpoints
+    uiPages
+    pipeline
+    logs
+    alerts
+    decisions
+    priorArt
+    releases
+    gaps
+  }
+  class Service {
+    &lt;&lt;ServiceShape&gt;&gt;
+    overview
+    vocabulary
+    asIs
+    toBe
+    components
+    interactionModel
+    dependencies
+    consumers
+    surfaces
+    gaps
+    implementationPlan
+    notInScope
+    references
+  }
+  class Vertebra
+  class Role
+  Product "1" --> "*" Product : hasChild
+  Product "1" --> "*" Domain : hasDomain
+  Domain "1" --> "*" Domain : hasChild
+  Product --> Service : consumes
+  Product --> Vertebra : atStep
+  Product --> Role : ownedBy
+  Domain --> Role : ownedBy
+</pre>
+<p class="caption">The Athena product model — three structural classes, <code>Product</code> and <code>Domain</code> both recursive via <code>hasChild</code>. Boxes show class + SHACL shape stereotype; every property is an edge.</p>
+
+<h3>Content layer — the seven domains</h3>
+<p>Seven content classes, one per Loom domain. <code>Decision</code> and <code>RCA</code> are <strong>newly declared</strong> — the audit found they aren't OWL classes today. Naming is normalized to the <code>loom-*</code> form (resolving the audit's naming inconsistency): <code>roles-domain → loom-roles</code>, and <code>skills-service → loom-skills</code> as a real content domain rather than the mis-typed service node.</p>
+<pre class="mermaid">
+classDiagram
+  class Domain {
+    &lt;&lt;DomainShape&gt;&gt;
+  }
+  class Principle {
+    &lt;&lt;PrincipleShape&gt;&gt;
+  }
+  class Practice {
+    &lt;&lt;PracticeShape&gt;&gt;
+  }
+  class Policy {
+    &lt;&lt;PolicyShape&gt;&gt;
+  }
+  class Decision {
+    &lt;&lt;DecisionShape&gt;&gt;
+  }
+  class RCA {
+    &lt;&lt;RCAShape&gt;&gt;
+  }
+  class Role {
+    &lt;&lt;RoleShape&gt;&gt;
+  }
+  class Skill {
+    &lt;&lt;SkillShape&gt;&gt;
+  }
+  Domain --> Principle : contains
+  Domain --> Practice : contains
+  Domain --> Policy : contains
+  Domain --> Decision : contains
+  Domain --> RCA : contains
+  Domain --> Role : contains
+  Domain --> Skill : contains
+  Practice --> Principle : expresses
+</pre>
+<p class="caption">OWL structure only — <code>contains</code> wires SubDomain to its seven content classes, <code>expresses</code> wires Practice to Principle. <code>Decision</code> and <code>RCA</code> are newly-declared classes. Each box's stereotype names its SHACL shape; the shape contents are in the table below.</p>
+
+<h3>SHACL shapes — the substance constraints</h3>
+<p>One shape per content class — the constraints the audit found <em>absent</em> (finding #5: SHACL guards Loom's hierarchy, nothing guards its content). Minimal: each shape requires only what coherence demands.</p>
+<table>
+<tr><th>Domain (<code>loom-*</code>)</th><th>OWL class</th><th>SHACL shape — required properties</th></tr>
+<tr><td><code>loom-principles</code></td><td>Principle</td><td><code>label</code>, <code>comment</code> (the principle body), <code>ownedBy</code></td></tr>
+<tr><td><code>loom-practices</code></td><td>Practice</td><td><code>label</code>, <code>comment</code>, <code>ownedBy</code>, <code>expresses</code> ≥1 Principle</td></tr>
+<tr><td><code>loom-policies</code></td><td>Policy</td><td><code>label</code>, <code>comment</code>, <code>ownedBy</code>, <code>enforcedBy</code> ≥1 (gate/hook)</td></tr>
+<tr><td><code>loom-decisions</code></td><td>Decision <em>(new class)</em></td><td><code>label</code>, <code>comment</code>, <code>decisionType</code> ∈ {DEC, ADR}, <code>decidedOn</code> (date)</td></tr>
+<tr><td><code>loom-rcas</code></td><td>RCA <em>(new class)</em></td><td><code>label</code>, <code>incident</code> (ref), <code>rootCause</code>, <code>occurredOn</code> (date)</td></tr>
+<tr><td><code>loom-roles</code></td><td>Role</td><td><code>label</code>, <code>roleType</code> ∈ {Agent, Human}, <code>ownedBy</code></td></tr>
+<tr><td><code>loom-skills</code></td><td>Skill</td><td><code>label</code>, <code>comment</code>, <code>composedOf</code> ≥1 ∈ {claude-code, mcp, gate, hook}</td></tr>
+</table>
+<p>Universal constraint across all seven: every content instance must be the object of exactly one <code>contains</code> edge from a Domain (inverse-path) — no orphan principles, no orphan policies. <code>composedOf</code> on Skill captures "each skill is its own mix" — the model carries that, it isn't a fixed formula.</p>
+<p class="caption">What the model resolves: the broken predicate layer (#1) → one clean predicate set; missing classes (#5) → Decision and RCA declared; unconstrained substance (#5) → seven content shapes; naming inconsistency → normalized <code>loom-*</code>. It does not resolve the two-vocabularies problem (#2) or the full duplication (#6) — those are graph-wide, beyond the Loom slice, and named as out-of-scope here.</p>
+
+<h2>What this means — Loom as template</h2>
+<p>A coherent subproduct-design needs, minimally: a defined upward edge; one clean containment predicate (not a double-declared <code>hasDomain</code>); every subdomain either populated or explicitly marked <em>planned</em>; content types that are real OWL classes with SHACL shapes; one vocabulary, not two.</p>
+<p>Loom-as-template surfaces precisely the fixes v2 needs. This doc is AS-IS — the value of the coherence exercise is that the incoherences are now named with receipts. Resolution is the v2 work; replicating this audit shape across the other five subproducts is the path.</p>
+
+<p class="footer">Loom — Subproduct Design · Wren · 2026-05-14 · AS-IS coherence audit (four-subagent source) + TO-BE OWL/SHACL model · supersedes loom-subproduct-design.md</p>
+
+</body>
+</html>
