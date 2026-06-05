@@ -25,6 +25,7 @@ Two roles working one problem. The **navigator's scope loop** is the pair. When 
 ```
 
 **Rules of the loop:**
+- **Step 3 (MONITOR) is one poll of `pulse-gather <driver-role>` (#3205)** — the same verb gemba uses, no second awareness path. It emits the driver's fresh tool-turns since the last poll (keyed on timestamp, so nothing is missed between loop turns and nothing replays). Read its output to see what the driver actually did; never infer progress from silence.
 - The navigator holds the **card's AC**, not their own contribution. When the navigator finishes *their* work, they check the AC — not stop.
 - The navigator reports to the **driver**, not to Jeff. Jeff gets the gemba summary from the PM. Reporting to Jeff is leaving the pair to seek validation.
 - A blocking operation (long query, batch run) is the loop turning slowly, not the loop stopped. The navigator should check progress, not wait.

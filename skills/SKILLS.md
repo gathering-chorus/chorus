@@ -41,8 +41,7 @@ Ontology triples: `roles/silas/ontology/framework.ttl` (fw:Skill class, fw:owned
 | /gate-code | Code gate |
 | /gate-ops | Operations gate |
 | /gate-quality | Quality gate |
-| /gemba | Live observation |
-| /gemba-tick | Observation tick |
+| /gemba | Live observation (polls the pulse-gather verb) |
 
 ## Kade (presentation, screen interaction)
 
