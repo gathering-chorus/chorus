@@ -302,45 +302,33 @@ The driver sets up a cron tick at pair start that monitors for navigator silence
 
 **Setup (driver does this in Step 1):**
 ```bash
-# Record pair start + last navigator activity timestamp
-echo "$(date +%s)" > /tmp/pair-nav-last-activity-<card-id>
-
 # CronCreate: cron="*/1 * * * *", prompt="/pair-heartbeat-check <card-id> <navigator-role>"
 ```
 
-**On each tick, the driver checks:**
-```bash
-CARD_ID=<card-id>
-NAV_ROLE=<navigator-role>
-SCRATCH="/tmp/pair-${CARD_ID}.md"
-LAST_FILE="/tmp/pair-nav-last-activity-${CARD_ID}"
-NOW=$(date +%s)
-LAST=$(cat "$LAST_FILE" 2>/dev/null || echo "$NOW")
-ELAPSED=$(( NOW - LAST ))
+No activity-timestamp file to seed (#2317): the navigator's activity IS their tool-turn
+stream, read via `pulse-gather <navigator>` (#3205). The old `/tmp/pair-nav-last-activity`
++ scratch-mtime approach missed real work — a navigator actively editing files but not
+touching the scratch file was falsely flagged "silent." The stream doesn't miss it.
 
-# Check for navigator activity: nudges received, scratch file changes, chat messages
-SCRATCH_MOD=$(stat -f %m "$SCRATCH" 2>/dev/null || echo "0")
-if [ "$SCRATCH_MOD" -gt "$LAST" ]; then
-  echo "$SCRATCH_MOD" > "$LAST_FILE"
-  ELAPSED=0
-fi
-```
+**On each tick** the `/pair-heartbeat-check` skill runs `pulse-gather <navigator>`: a
+non-empty poll (fresh turns this minute) = active → reset; an empty poll = silent this
+minute → count consecutive silence. The cron fires every 60s, so the count IS the
+elapsed silence. See `skills/pair-heartbeat-check/SKILL.md` for the deterministic tick.
 
 **Stall signals (advisory, not blocking):**
-- **60s silence:** Print: `⚠ Navigator silent for 60s — pair may be stalling. Check: is ${NAV_ROLE} thinking, blocked, or disengaged?`
-- **120s silence:** Re-nudge navigator: `[pair] Navigator silent 2min on #${CARD_ID} — are you blocked or did you lose context?`
-- **180s silence:** Emit spine event + escalate: `pair.navigator.stall card=${CARD_ID} elapsed=180s`. Write to scratch `## Escalation`. Nudge Wren for gemba.
+- **~60s silence (1 tick):** Print: `⚠ Navigator ${NAV_ROLE} silent ~60s — thinking, blocked, or disengaged?`
+- **~120s silence (2 ticks):** Re-nudge navigator: `[pair] Navigator silent ~2min on #${CARD_ID} — are you blocked or did you lose context?`
+- **~180s silence (3 ticks):** Emit spine event + escalate: `pair.navigator.stall card=${CARD_ID} elapsed=180s`. Write to scratch `## Escalation`. Nudge Wren for gemba.
 
-**Reset triggers — any of these reset the 60s clock:**
-- Navigator nudge received
+**Reset triggers — any of these reset the silence clock:**
+- A fresh navigator tool turn (pulse-gather non-empty) — the primary signal
 - Scratch file modified (navigator wrote directions)
-- Chat message from navigator
-- Navigator's cron tick fires (proves navigator session is alive)
+- `pulse-gather` returns "rebuilding" (stream absent ≠ stall — never escalate on missing data)
 
 **Cleanup (driver does this at pair end):**
 ```bash
 # CronDelete the heartbeat check
-rm -f /tmp/pair-nav-last-activity-<card-id>
+rm -f /tmp/pair-heartbeat-<card-id>-silent /tmp/pair-heartbeat-<card-id>-scratch
 ```
 
 **Heartbeat escalation (driver completion):**
