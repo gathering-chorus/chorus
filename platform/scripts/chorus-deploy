@@ -41,36 +41,62 @@ ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 # `set -o pipefail` propagates that as the script's exit code, killing the deploy silently.
 CARD_ID=$(git -C "$ROOT" log -1 --pretty=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
 
-# #3222 (#3179 port) — enumerate EVERY binary a crate emits, STRUCTURALLY from its
-# Cargo.toml `[[bin]]` entries (falling back to the package `name` when none are
-# declared — exactly cargo's own default-binary rule). Replaces the hardcoded
-# per-crate BINARIES arrays, which drifted the moment a crate gained a binary nobody
-# updated by hand: the merged≠live class #3179 fixed in werk-deploy::crate_binaries.
-# Now both prod-deploy callers enumerate from the same structural source (the manifest),
-# not two parallel maps a human keeps in sync.
-crate_binaries() {  # $1 = crate dir → prints one binary name per line
-  local toml="$1/Cargo.toml"
+# #3222 (#3179 port) / #3250 — enumerate EVERY binary a crate emits, STRUCTURALLY, as
+# the UNION of cargo's two default-binary rules: (1) explicit `[[bin]]` entries, and
+# (2) `src/bin/*.rs` autobins. Falls back to the package `name` for the simple
+# single-binary crate. Replaces the hardcoded per-crate BINARIES arrays, which drifted
+# the moment a crate gained a binary nobody updated by hand (the merged≠live class #3179
+# fixed in werk-deploy::crate_binaries). #3250: reading ONLY [[bin]] was itself a drift —
+# the werk-accept crate declared one [[bin]] but carried werk-do-more.rs + werk-finalize.rs
+# in src/bin/; cargo built 3, deploy installed 1, the two verbs went absent from
+# ~/.chorus/bin and the next card's finalize step broke. Honor both rules or rule 2 drifts.
+crate_binaries() {  # $1 = crate dir → prints one binary name per line (dedup'd)
+  local dir="$1" toml="$1/Cargo.toml"
   if [ ! -f "$toml" ]; then
-    basename "$1"
+    basename "$dir"
     return
   fi
-  local bins
-  bins=$(awk '
+  # Rule 1: explicit [[bin]] name = ... entries.
+  local explicit autobins pkg out=""
+  explicit=$(awk '
     /^[[:space:]]*\[\[bin\]\]/ { inbin=1; next }
     /^[[:space:]]*\[/          { inbin=0 }
     inbin && /^[[:space:]]*name[[:space:]]*=/ {
       sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print
     }' "$toml")
-  if [ -n "$bins" ]; then
-    printf '%s\n' "$bins"
-  else
-    awk '
-      /^[[:space:]]*\[package\]/ { inpkg=1; next }
-      /^[[:space:]]*\[/          { inpkg=0 }
-      inpkg && /^[[:space:]]*name[[:space:]]*=/ {
-        sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; exit
-      }' "$toml"
+  # Rule 2: src/bin/*.rs autobins — each file is an auto-discovered binary.
+  autobins=""
+  if [ -d "$dir/src/bin" ]; then
+    local f
+    for f in "$dir/src/bin/"*.rs; do
+      [ -e "$f" ] || continue
+      autobins="${autobins}$(basename "$f" .rs)
+"
+    done
   fi
+  # The package default binary (src/main.rs). Cargo emits it when there are no explicit
+  # [[bin]] entries; with no [[bin]] AND no autobins we still fall back to the package
+  # name (the simple single-binary crate). When autobins exist, the package binary only
+  # ships if src/main.rs is actually present.
+  pkg=$(awk '
+    /^[[:space:]]*\[package\]/ { inpkg=1; next }
+    /^[[:space:]]*\[/          { inpkg=0 }
+    inpkg && /^[[:space:]]*name[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; exit
+    }' "$toml")
+  if [ -n "$explicit" ]; then
+    out="${explicit}
+"
+  elif [ -z "$autobins" ]; then
+    out="${pkg}
+"
+  elif [ -f "$dir/src/main.rs" ]; then
+    out="${pkg}
+"
+  fi
+  out="${out}${autobins}"
+  # dedup, drop blanks, preserve first-seen order.
+  printf '%s\n' "$out" | awk 'NF && !seen[$0]++'
 }
 
 # Populate the global BINARIES array from a crate dir (bash-3.2 safe; no mapfile).
