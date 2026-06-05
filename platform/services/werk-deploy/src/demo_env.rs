@@ -296,23 +296,18 @@ fn xml_escape(s: &str) -> String {
 /// at a stable location even without a specific card werk. For env_deploy
 /// with a card, the werk_root IS the card's werk.
 pub fn werk_root_for(role: &str, card: Option<u64>, werk_base: &str) -> R<String> {
-    if let Some(c) = card {
-        return Ok(format!("{}/{}-{}", werk_base, role, c));
+    // #3239 — env-up MUST target the card under test. A missing card used to fall back to
+    // the role's FIRST werk dir, so /demo silently stood up an ARBITRARY/stale werk (proven
+    // live: env-up for kade/3236 ran npm build in kade-3224, a Done card's stale werk; every
+    // env.up event logged card_id:0). REFUSE instead of guessing — the caller forwards the
+    // card_id; no card means a bug upstream, not a werk to pick.
+    match card {
+        Some(c) => Ok(format!("{}/{}-{}", werk_base, role, c)),
+        None => Err(format!(
+            "env-up requires a card_id — refusing to guess the werk for role '{}' (the first-werk fallback stood up arbitrary/stale werks; #3239). Pass card_id.",
+            role
+        )),
     }
-    // env_start without a card — try the role's first existing card werk.
-    let entries = fs::read_dir(werk_base).map_err(|e| format!("read {}: {}", werk_base, e))?;
-    let prefix = format!("{}-", role);
-    for entry in entries.flatten() {
-        if let Some(name) = entry.file_name().to_str() {
-            if name.starts_with(&prefix) && name != format!("{}-bin", role) {
-                return Ok(entry.path().to_string_lossy().to_string());
-            }
-        }
-    }
-    Err(format!(
-        "env: no card werk found for role '{}' under {} (pull a card first or pass card_id)",
-        role, werk_base
-    ))
 }
 
 /// Poll a service URL until it responds correctly for its smoke kind.

@@ -321,3 +321,18 @@ fn spine_args_smoked_carries_svc_port_result_elements() {
     let f = spine_args("env.up.smoked", "silas", 3215, "tr", &[("result", "fail")]);
     assert!(f.contains(&"result=fail".to_string()), "fail result is emitted, not dropped");
 }
+
+// #3239 — env-up must target the card under test, not the first/stale werk.
+#[test]
+fn werk_root_for_uses_the_card_werk_and_refuses_without_a_card() {
+    // With a card → that exact card's werk.
+    let r = werk_deploy::demo_env::werk_root_for("silas", Some(3239), "/tmp/wb").unwrap();
+    assert_eq!(r, "/tmp/wb/silas-3239");
+    // Without a card → REFUSE (the old code picked the first <role>-* dir, standing up an
+    // arbitrary/stale werk — proven live: kade/3236 env-up ran in kade-3224).
+    let e = werk_deploy::demo_env::werk_root_for("silas", None, "/tmp/wb").unwrap_err();
+    assert!(
+        e.contains("card_id") && e.to_lowercase().contains("refus"),
+        "no-card env-up must refuse naming card_id, got: {e}"
+    );
+}
