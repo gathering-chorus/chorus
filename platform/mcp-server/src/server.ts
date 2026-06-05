@@ -52,7 +52,7 @@ export type NudgeArgs = z.infer<typeof NudgeInput>;
 export type ExecFileAsync = (
   file: string,
   args: string[],
-  opts: { env?: NodeJS.ProcessEnv; timeout?: number; cwd?: string },
+  opts: { env?: NodeJS.ProcessEnv; timeout?: number; cwd?: string; maxBuffer?: number },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** #2474 — DI seam for tests: inject mock execFile / fixed shim path.
@@ -409,6 +409,14 @@ const EnvUpInput = z.object({
   // an arbitrary/stale werk (the first <role>-* dir). No card = refuse, don't guess.
   card_id: z.number().int().min(1).describe('Card whose werk to bring the env up from (required).'),
 });
+// #3241 — the whole werk pipeline as ONE MCP verb. Wraps the act run of werk.yml so the
+// pipeline trigger is MCP like every other verb (no raw `act` CLI surface). accepter is
+// for the PRINTED stop-before-accept command only — the verb never auto-accepts (DEC-048).
+const WerkRunInput = z.object({
+  role: RoleEnum,
+  card_id: z.number().int().min(1).describe('Card to run through the pipeline.'),
+  accepter: z.enum(['jeff', 'wren', 'kade', 'silas']).optional().describe('Authorizing identity for the printed werk-accept command (DEC-048). Default jeff. Not auto-run.'),
+});
 
 const SERVICE_STATUS_TOOL_DEF = {
   name: 'chorus_service_status',
@@ -488,6 +496,25 @@ const CHORUS_ENV_UP_TOOL_DEF = {
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose variant to bring up.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card whose werk to bring the env up from. REQUIRED — forwarded into werk-deploy so the env stands up the card under test, not an arbitrary werk (#3239).' },
+    },
+    required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #3241 — chorus_werk: the whole pipeline as one MCP verb. Encapsulates the act run
+// of werk.yml so callers never touch the raw `act` CLI (no -W/-P/--input, no PATH
+// wrangling). The single invocation surface for the pipeline trigger, conforming to
+// the MCP-verb contract — same way roles call werk-pull/werk-commit/chorus_build.
+const CHORUS_WERK_TOOL_DEF = {
+  name: 'chorus_werk',
+  description: 'Use this to run the WHOLE werk pipeline for a card — commit→push→build→test→deploy-werk→env-up→demo→merge→ff-sync→deploy-prod — then STOP before accept (DEC-048). Wraps the act run of .github/workflows/werk.yml (canonical, host-native); the caller passes only {role, card_id, accepter} and never touches the raw act CLI. Returns the run result + the `werk-accept` command for the human (the verb NEVER auto-accepts). This is the single pipeline-trigger surface — do NOT shell out to `act` directly. Refusal taxonomy: usage-error | pipeline-fail (a named step refused — the chain stops there, nothing downstream ran).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk runs.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card to run through the pipeline.' },
+      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity for the printed werk-accept command (DEC-048). Default jeff. Not auto-run.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -1904,6 +1931,85 @@ async function executeChorusEnvUp(
   return executeWerkVerb('werk-deploy', ['env-up', args.role, String(args.card_id)], args.role, args.card_id, {});
 }
 
+// #3241 — run the WHOLE pipeline via act, as one MCP verb. This is the encapsulation:
+// the caller passes {role, card_id, accepter}; everything the raw `act` CLI needed
+// (canonical werk.yml via -W, host-native runner via -P, --input wiring, and a PATH
+// that makes chorus-mcp-call.sh + the verb binaries resolvable) lives HERE, not in any
+// caller. The act run stops before accept (werk.yml's design); the verb never accepts.
+async function executeChorusWerk(
+  args: z.infer<typeof WerkRunInput>,
+  execFileAsync: ExecFileAsync,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
+  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const scriptsDir = pathMod.join(home, 'platform', 'scripts');
+  const accepter = args.accepter || 'jeff';
+  // canonical werk.yml — the pipeline config is infra, not card content; a card's own
+  // werk copy may not carry it (branched pre-merge). Self-modifying-pipeline cards are
+  // the one exception, handled out of band.
+  const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
+  const actBin = process.env.CHORUS_ACT_BIN || 'act';
+  const actArgs = [
+    'workflow_dispatch',
+    '-W', workflow,
+    '-P', 'macos-latest=-self-hosted',
+    '--input', `card_id=${args.card_id}`,
+    '--input', `role=${args.role}`,
+    '--input', `accepter=${accepter}`,
+  ];
+  // PATH encapsulates the runner's needs: ~/.chorus/bin (verbs) + canonical
+  // platform/scripts (chorus-mcp-call.sh, durably — no per-werk symlink) + homebrew (act).
+  const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
+  const acceptCmd = `DEPLOY_ROLE=${accepter} werk-accept ${args.card_id} ${args.role}`;
+  let stdout = '';
+  let stderr = '';
+  let exitCode = 0;
+  try {
+    const result = await execFileAsync(actBin, actArgs, {
+      env: {
+        ...process.env,
+        CHORUS_HOME: home,
+        CHORUS_WERK_BASE: werkBase,
+        DEPLOY_ROLE: args.role,
+        CHORUS_ROLE: args.role,
+        PATH: runnerPath,
+      },
+      timeout: 600000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || '';
+    stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+  }
+  if (exitCode !== 0) {
+    const combined = stderr + stdout;
+    const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
+    const step = stepMatch ? stepMatch[1] : 'unknown';
+    throw new Error(`pipeline-fail — reason=pipeline-fail step=${step} exit=${exitCode} — the chain stopped; nothing downstream ran. accept (when fixed): ${acceptCmd}`);
+  }
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        ok: true,
+        verb: 'chorus_werk',
+        role: args.role,
+        card_id: args.card_id,
+        accepter,
+        // stop-before-accept: the pipeline landed to prod + stopped; accept is the human's.
+        accept_command: acceptCmd,
+        stdout: stdout.trim().slice(-4000),
+      }),
+    }],
+  };
+}
+
 async function executeNudge(
   args: NudgeArgs,
   from: string,
@@ -2179,6 +2285,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CHORUS_BUILD_TOOL_DEF,
       CHORUS_DEPLOY_TOOL_DEF,
       CHORUS_ENV_UP_TOOL_DEF,
+      CHORUS_WERK_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -2263,6 +2370,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeChorusEnvUp(parsed.data);
+      }
+      case 'chorus_werk': {
+        const parsed = WerkRunInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeChorusWerk(parsed.data, execFileAsync);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':
