@@ -89,3 +89,53 @@ TOML
   run "$DEPLOY_SCRIPT" chorus-inject
   grep -qx "chorus-inject" "$INSTALL_LOG"
 }
+
+# #3250 — the LIVE BREAK: the werk-accept crate declares ONE [[bin]] (werk-accept) but
+# carries werk-do-more.rs + werk-finalize.rs in src/bin/. cargo builds all three (its
+# SECOND default-binary rule: src/bin/*.rs autobins); the old crate_binaries() read only
+# [[bin]] and installed one → the two verbs went absent from ~/.chorus/bin, breaking the
+# next card's finalize step. The enumeration must be the UNION of [[bin]] AND src/bin/*.rs.
+@test "structural: installs src/bin/*.rs autobins alongside the [[bin]] entry (the #3250 break)" {
+  local cd="$CANON/platform/services/chorus-inject"
+  cat > "$cd/Cargo.toml" <<'TOML'
+[package]
+name = "chorus-inject"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "chorus-inject"
+path = "src/main.rs"
+TOML
+  mkdir -p "$cd/src/bin"
+  printf 'fn main(){}' > "$cd/src/bin/chorus-inject-do-more.rs"
+  printf 'fn main(){}' > "$cd/src/bin/chorus-inject-finalize.rs"
+  printf 'm' > "$cd/target/release/chorus-inject-do-more"
+  printf 'f' > "$cd/target/release/chorus-inject-finalize"
+  : > "$INSTALL_LOG"
+  run "$DEPLOY_SCRIPT" chorus-inject
+  grep -qx "chorus-inject" "$INSTALL_LOG"
+  grep -qx "chorus-inject-do-more" "$INSTALL_LOG"
+  grep -qx "chorus-inject-finalize" "$INSTALL_LOG"
+}
+
+# A crate that ONLY uses src/bin/*.rs (no [[bin]], no src/main.rs default) — pure autobins.
+@test "structural: a crate with only src/bin/*.rs installs each autobin" {
+  local cd="$CANON/platform/services/chorus-inject"
+  cat > "$cd/Cargo.toml" <<'TOML'
+[package]
+name = "chorus-inject"
+version = "0.1.0"
+edition = "2021"
+TOML
+  rm -f "$cd/target/release/chorus-inject"
+  mkdir -p "$cd/src/bin"
+  printf 'fn main(){}' > "$cd/src/bin/alpha.rs"
+  printf 'fn main(){}' > "$cd/src/bin/beta.rs"
+  printf 'a' > "$cd/target/release/alpha"
+  printf 'b' > "$cd/target/release/beta"
+  : > "$INSTALL_LOG"
+  run "$DEPLOY_SCRIPT" chorus-inject
+  grep -qx "alpha" "$INSTALL_LOG"
+  grep -qx "beta" "$INSTALL_LOG"
+}
