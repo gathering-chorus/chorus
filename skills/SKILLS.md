@@ -25,6 +25,7 @@ Ontology triples: `roles/silas/ontology/framework.ttl` (fw:Skill class, fw:owned
 | /lw | Look at Wren's terminal |
 | /nudge | Send message to role |
 | /pair | Strong-style pairing |
+| /pair-heartbeat-check | Navigator attention monitor tick (internal, cron — polls pulse-gather) |
 | /pipeline | Multi-card pipeline |
 | /pull | Pull card to WIP |
 | /reboot | Save and exit cleanly |
