@@ -1944,7 +1944,12 @@ async function executeChorusWerk(
         CHORUS_ROLE: args.role,
         PATH: runnerPath,
       },
-      timeout: 600000,
+      // #3263 — NO timeout. The act run blocks at the demo step for Jeff's go,
+      // indefinitely (the gate can't skip him). A timer here would abort the call
+      // mid-decision and drop the run — the transport drop that hit chorus_werk
+      // twice on 2026-06-06. The demo waits for the human; the MCP call waits for
+      // the demo. Walk away 10 hours → it's still waiting, not failed.
+      timeout: 0,
       maxBuffer: 16 * 1024 * 1024,
     });
     stdout = result.stdout || '';
