@@ -100,13 +100,6 @@ jobs:
           ( cd "$WERK" && npx jest --forceExit --passWithNoTests --randomize ) 2>&1 | tail -20 || rc=1
           if [ "$rc" = 0 ]; then post success; else post failure; fi
           echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
-          # #3263 AC6 (informed go) — record the test OUTCOME into the demo witness so
-          # the demo step REQUIRES it before a go and Jeff SEES it in the decision. pass
-          # AND fail are recorded (a red test is visible, not hidden); blocking-on-red is
-          # #3190's promotion. Without this, the go is reachable with no test evidence —
-          # the "I can't show it works, approve anyway" trap.
-          res=pass; [ "$rc" = 0 ] || res=fail
-          DEPLOY_ROLE="${ROLE}" werk-demo test-result "${CARD_ID}" "$res" || true
 
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.

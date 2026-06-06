@@ -121,6 +121,9 @@ exit 0
     // #3263: the variant-reachability check curls a live variant port; no variant
     // is up in the test, so skip it here (the check is live in the real pipeline).
     std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
+    // #3263: the demo runs the card's tests in its werk; there's no real werk here,
+    // so skip the run (the fixture seeds demo.test_result directly).
+    std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
 
     // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
     // demo.gate.result, and (b) BLOCKS until Jeff records a demo.decision. Seed
