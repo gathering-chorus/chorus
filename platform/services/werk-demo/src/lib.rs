@@ -438,10 +438,13 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"no-ac\"");
         return Err(format!("#{} has no acceptance criteria", card));
     }
-    if checked < total {
-        jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"ac-incomplete\"");
-        return Err(format!("#{}: {}/{} AC checked — complete before demo", card, checked, total));
-    }
+    // #3263 — AC completeness is INFORMATIONAL, not a refuse. The demo DEMONSTRATES
+    // the AC and Jeff's go is the verification; pre-ticked boxes are not a precondition
+    // (that's the "self-attest then show" model this card replaces — you can't honestly
+    // tick a demonstrable AC before the demo that proves it). The count rides the
+    // decision surface so Jeff sees AC X/Y before deciding — informed, not gated.
+    jsonl(home, role, card, &trace, "demo.ac_status",
+          &format!(",\"checked\":{},\"total\":{}", checked, total));
     // Post the SINGLE gate-evidence comment + trace file (#2910 / #2897). Without
     // these, /acp will refuse "no demo evidence" via done-gate.sh / accept_gate.
     post_preflight_evidence(home, card, role, checked, total, &trace)?;
@@ -588,8 +591,8 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         format!("gates: {}", gates_run.join(", "))
     };
     let surface_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DECISION — card #{}]\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n1. running → {}\n2. {}\n3. {}\n4. your call → go / no-go / more"}}"#,
-        role, card, variant_url, test_summary, gate_summary
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DECISION — card #{}]  AC {}/{} (demonstrated below, not pre-required)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n1. running → {}\n2. {}\n3. {}\n4. your call → go / no-go / more"}}"#,
+        role, card, checked, total, variant_url, test_summary, gate_summary
     );
     let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
                           "-H", "Content-Type: application/json", "-d", &surface_body]);
