@@ -32,7 +32,10 @@ pub fn classify_decision(resp: &HookResponse) -> &'static str {
 
 /// The MUST-carry field set for a `hook.decision` event / hooks.log line.
 /// Centralized so the spine emit and the hooks.log line can't drift apart,
-/// and so a test can assert the contract in one place.
+/// and so a test can assert the contract in one place. Consumed by the
+/// contract test; `allow(dead_code)` because the non-test bin build doesn't
+/// reference the const directly (lib build allows dead_code crate-wide).
+#[allow(dead_code)]
 pub const HOOK_DECISION_FIELDS: &[&str] =
     &["timestamp", "hook", "tool", "role", "module", "decision", "trace", "latency_ms", "session_id"];
 
