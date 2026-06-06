@@ -833,9 +833,36 @@ else
   TARGET="$HOME/.chorus/bin/${BINARIES[0]}"
 fi
 
+# #3270 — state the merged≠live truth IN the event: is what's now live actually origin/main?
+# A werk-slot deploy is a session preview, not main → na. A canonical deploy compares the
+# deployed HEAD to origin/main: live_main=true only when HEAD == origin/main (not behind, not
+# ahead). This turns the silent false-green (a "completed" deploy that doesn't correspond to
+# main) into emitted ground truth #3269's flow-report can read directly instead of inferring.
+LIVE_MAIN="na"
+if [ "$DEPLOY_TARGET" = "canonical" ]; then
+  if git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    __lm_behind=$(git -C "$ROOT" rev-list --count HEAD..origin/main 2>/dev/null || echo 1)
+    __lm_ahead=$(git -C "$ROOT" rev-list --count origin/main..HEAD 2>/dev/null || echo 1)
+    if [ "$__lm_behind" = 0 ] && [ "$__lm_ahead" = 0 ]; then LIVE_MAIN="true"; else LIVE_MAIN="false"; fi
+  else
+    LIVE_MAIN="unknown"
+  fi
+fi
+
+# #3270 AC3 — artifact-class: a kickstarted crate is a daemon, otherwise a CLI verb. (TS
+# services emit their own deploy.completed on their paths above.)
+ARTIFACT_CLASS="rust-cli"
+[ -n "$KICKSTART_SERVICE" ] && ARTIFACT_CLASS="rust-daemon"
+
+# #3270 AC3 — every deploy.completed carries the ground-truth envelope: verb/step/outcome,
+# loaded cdhash (INSTALLED_CDHASH = post-install codesign of the file the daemon loads),
+# live_main, artifact_class. trace is auto-stamped by chorus-log from CHORUS_TRACE_ID
+# (#2897/#3252), so hooks AND verbs thread under one key. outcome=success because this
+# event only fires on the success path; the failure path emits deploy.failed{reason}.
 if [ -x "$CHORUS_LOG" ]; then
   "$CHORUS_LOG" deploy.completed "$ROLE" \
-    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "deploy_target=$DEPLOY_TARGET" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
+    "verb=deploy" "step=deploy" "outcome=success" "artifact_class=$ARTIFACT_CLASS" \
+    "commit=$COMMIT" "crate=$CRATE" "cdhash=$INSTALLED_CDHASH" "target=$TARGET" "deploy_target=$DEPLOY_TARGET" "live_main=$LIVE_MAIN" "duration_ms=$DURATION_MS" "card=$CARD_ID" \
     >/dev/null 2>&1 || echo "chorus-deploy: WARN — deploy.completed emit failed (non-fatal)" >&2
 fi
 
