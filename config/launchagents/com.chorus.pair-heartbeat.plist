@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.pair-heartbeat</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/pair-heartbeat</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/pair-heartbeat.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/pair-heartbeat.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

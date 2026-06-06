@@ -1,0 +1,15 @@
+[package]
+name = "pair-heartbeat"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies. std only. Reads the active-pair registry
+# (~/.chorus/active-pairs/<card>.json) + each navigator's observation stream
+# (/tmp/claude-team-scan/<role>-observations.jsonl), and shells `chorus-log` for the
+# spine. Runs on a launchd StartInterval (com.chorus.pair-heartbeat) — NOT an
+# agent-session cron, NOT a skill. Mirrors the werk-verb / pulse-gather blueprint.
+[dependencies]
+
+[[bin]]
+name = "pair-heartbeat"
+path = "src/main.rs"
