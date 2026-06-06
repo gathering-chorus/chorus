@@ -1,43 +1,45 @@
-# Daily Quality Review — 2026-06-01
+# Daily Quality Review — 2026-06-06
 
 > **Path note:** Spec paths `jeff-bridwell-personal-site/` and `messages/{board-client,slack-bridge}/` do not exist.
-> Mapped to: `directing/clearing` (app), `platform/{workflow-engine,chorus-sdk,pulse,mcp-server,api}`.
+> Mapped to: `directing/clearing` (app), `platform/{workflow-engine,chorus-sdk,pulse}` (message packages).
 
 ## App Tests (`directing/clearing`)
-**RED** — 0 run / 0 passed / 0 failed (suite blocked)
-- `ts-jest` preset not found: node_modules not installed in `directing/clearing`.
-- **Action:** Run `npm ci` in `directing/clearing` before test run. Was 53 fail / 309 pass last run.
+**YELLOW** — 309 pass / 53 fail / 362 total (1 suite blocked)
+- Blocked suite: `tests/clearing-ui.test.ts` — missing `dist/server.js` (build artifact not present in this env).
+- All other 12 suites pass. Fail count unchanged from 2026-06-01.
+- **Action:** Run `npm run build` in `directing/clearing` before test run to unblock UI suite.
 
-## Lint (`platform/` + `directing/`)
-**YELLOW** — Glob `platform/**/src/**/*.ts` matched 0 files from repo root.
-- Actual src dirs are nested deeper (`platform/services/*/src/`, `platform/mcp-server/src/`).
-- **Action:** Update lint script glob or run eslint per-package. Status unverifiable this run.
+## Lint (`directing/clearing`)
+**RED** — ESLint cannot run: root `eslint.config.js` requires `@eslint/js` but root `node_modules/` not installed.
+- **Action:** Run `npm ci` at repo root to restore root-level eslint deps.
 
 ## Build (`platform/api` TypeScript)
-**RED** — 419 errors (was 0 on 2026-05-29)
-- Root cause: `@types/node` missing — `process`, `path`, `fs`, `fetch`, `Buffer` all unresolved.
-- **Action:** Run `npm ci` in `platform/api`. Likely affects all platform packages.
+**GREEN** — 0 errors (`npx tsc --noEmit` clean after `npm ci` in `platform/api`). Recovered from 419 errors on 2026-06-01.
 
 ## Board-Client
-**N/A** — `messages/board-client` not in repo.
+**N/A** — `messages/board-client` not in repo. No substitute identified this cycle.
 
 ## Workflow-Engine (`platform/workflow-engine`)
-**RED** — 0 run (suite blocked) — `ts-jest` not found. Was 62/62 pass on 2026-05-29.
-- **Action:** `npm ci` in `platform/workflow-engine`.
+**GREEN** — 62/62 pass. Recovered from blocked (0 run) on 2026-06-01.
 
 ## Chorus-SDK (`platform/chorus-sdk`)
-**RED** — 0 run (suite blocked) — `ts-jest` not found. Was 51/51 pass on 2026-05-29.
-- **Action:** `npm ci` in `platform/chorus-sdk`.
+**YELLOW** — 52/52 pass. Coverage threshold breach: functions 62.06% vs 75% floor.
+- **Action:** Add function-level tests; threshold set in jest config. Was 51/51 on 2026-05-29.
 
-## Slack-Bridge
-**N/A** — `messages/slack-bridge` not in repo. (`platform/pulse` substituted: also blocked — ts-jest missing. Was 57/57 pass.)
+## Slack-Bridge → Pulse (`platform/pulse`)
+**GREEN** — 69/69 pass. Recovered from blocked on 2026-06-01.
 
 ## Coverage
-**UNAVAILABLE** — No tests could run; coverage not extractable this cycle.
+| Package          | Stmts  | Branch | Funcs  | Lines  | Status  |
+|------------------|--------|--------|--------|--------|----------|
+| clearing         | 86.32% | 77.65% | 88.47% | 88.41% | YELLOW (server.ts stmts 77.94% < 80%) |
+| workflow-engine  | 93.45% | 87.50% | 96.77% | 97.85% | GREEN   |
+| chorus-sdk       | 81.06% | 82.01% | 62.06% | 84.21% | RED (funcs 62.06% < 75%) |
+| pulse            | 90.27% | 81.25% | 84.21% | 92.27% | GREEN   |
 
-## Failure Delta (vs 2026-05-29)
-- **REGRESSION — all packages**: `ts-jest` missing across every TS package (fresh clone, deps not installed).
-- **Build**: 0 → 419 errors. `@types/node` not installed in `platform/api`.
-- **MCP-Server**: 51/51 pass → 13/13 suites fail (`SyntaxError: import outside module` — Jest config mismatch).
-- **Root cause**: `npm ci` not run post-clone. Workspace-level `npm ci` or per-package installs needed.
-- **Unblocked last run**: Lint (2688 errors) and 53 app-test failures remain unresolved but untestable this cycle.
+## Failure Delta (vs 2026-06-01)
+- **RECOVERED:** workflow-engine 0→62 pass, chorus-sdk 0→52 pass, pulse 0→69 pass (deps installed).
+- **RECOVERED:** platform/api build 419→0 errors.
+- **UNCHANGED:** clearing 53 failures (UI suite, missing build artifact) — same root as prior runs.
+- **NEW:** chorus-sdk functions coverage threshold breach (62.06% < 75%).
+- **PERSISTENT:** Lint blocked (root node_modules not installed); clearing server.ts stmts threshold miss.
