@@ -142,6 +142,21 @@ pub fn read_decision(witness: &str, card: u64) -> Option<Decision> {
         .find_map(|l| json_str_field(l, "decision").and_then(|d| Decision::parse(&d)))
 }
 
+/// #3263 — the latest `demo.test_result` recorded for this card, if any. The
+/// pipeline's test step records pass|fail to the witness so the informed-go
+/// check can require it (and Jeff sees it before deciding). None = tests were
+/// never run/recorded → "I can't show it works, approve anyway" is an
+/// UN-reachable state for the decision (the VP-demo trap). Comma-terminated
+/// card match, same anti-collision rule as gates_missing/read_decision.
+pub fn test_result_recorded(witness: &str, card: u64) -> Option<String> {
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .filter(|l| l.contains("\"event\":\"demo.test_result\"") && l.contains(&card_key))
+        .find_map(|l| json_str_field(l, "result"))
+}
+
 /// What the demo step returns to the act pipeline: a human-facing message + the
 /// process exit code act gates the merge on (Decision::exit_code, or a clean
 /// exit 2 for gates-missing). main() turns Err into exit 1 (real error).
@@ -390,15 +405,33 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"no-ac\"");
         return Err(format!("#{} has no acceptance criteria", card));
     }
-    if checked < total {
-        jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"ac-incomplete\"");
-        return Err(format!("#{}: {}/{} AC checked — complete before demo", card, checked, total));
-    }
+    // #3263 — AC completeness is INFORMATIONAL, not a refuse. The demo DEMONSTRATES
+    // the AC and Jeff's go is the verification; pre-ticked boxes are not a precondition
+    // (that's the "self-attest then show" model this card replaces — you can't honestly
+    // tick a demonstrable AC before the demo that proves it). The count rides the
+    // decision surface so Jeff sees AC X/Y before deciding — informed, not gated.
+    jsonl(home, role, card, &trace, "demo.ac_status",
+          &format!(",\"checked\":{},\"total\":{}", checked, total));
     // Post the SINGLE gate-evidence comment + trace file (#2910 / #2897). Without
     // these, /acp will refuse "no demo evidence" via done-gate.sh / accept_gate.
     post_preflight_evidence(home, card, role, checked, total, &trace)?;
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
+
+    // #3263 — THE DEMO RUNS THE TESTS ITSELF and records the result. This ends the
+    // "did the tests actually run?" argument: the evidence is the artifact (a recorded
+    // demo.test_result + spine event), not a human claim. It does NOT gate — a red or
+    // un-run result is SHOWN on the decision surface; Jeff's go stays sovereign.
+    // Skippable only in the unit/e2e suite (which seeds its own result, no real werk).
+    if !std::env::var("CHORUS_DEMO_SKIP_TEST_RUN").map(|v| v == "1").unwrap_or(false) {
+        let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+            format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+        });
+        let werk = format!("{}/{}-{}", werk_base, role, card);
+        let res = if run_card_tests(&werk) { "pass" } else { "fail" };
+        record_test_result(home, role, card, res);
+        jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
+    }
 
     // #3116 — the GATE step moves to the /demo SKILL layer. The demoer initiates
     // the 5 gates as subagents (an LLM gate-review can't run in this zero-dep
@@ -482,49 +515,75 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
-    // #3237 — GATE-EVIDENCE ENFORCEMENT (fires before the human pause). #3116
-    // moved the 5 gates to the /demo skill (LLM subagents); the binary refuses to
-    // honor a decision unless every required gate left a demo.gate.result in the
-    // witness for this card — so neither the /demo skill nor the act path can
-    // merge un-gated. A clean, intended stop (exit 2: "go run the gates"), not error.
+    // #3263 — THE MACHINE SHOWS, IT DOES NOT GATE. Jeff's go is sovereign (DEC-048):
+    // the demo presents the truth so the decision is never blind, but it NEVER refuses
+    // his go over test / variant / AC status — "if I say go it does not matter if tests
+    // ran." Below we only COMPUTE honest status for the decision surface; no refusals.
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let missing = gates_missing(&witness, card);
-    if !missing.is_empty() {
-        jsonl(home, role, card, &trace, "demo.refused",
-              &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", missing.join(",")));
-        return Ok(DemoOutcome {
-            message: format!(
-                "#{} demo refused — gates not run: {}. Run the /demo gate subagents \
-                 (each records via `werk-demo gate {} <gate> pass|fail`) before a decision.",
-                card, missing.join(", "), card
-            ),
-            exit: 2,
-        });
-    }
 
-    // #3237 — THE BLOCKING HUMAN STEP. act calls werk-demo synchronously and blocks
-    // on its exit code, so the entire human pause lives HERE — no approval gate, no
-    // pause/resume machinery. Gates have run; now block until Jeff records his ONE
-    // decision (go / no-go / more) in the witness. "go" IS the DEC-048 accept;
-    // there is NO separate werk-accept. Headless-safe: poll the witness file, no
-    // stdin/TTY (werk-demo runs in the act/daemon context). A max-block timeout
-    // fails SAFE to "more" (exit 2) — a timer never stands in for Jeff's hand.
-    let max_block_secs: u64 = std::env::var("CHORUS_DEMO_MAX_BLOCK_SECS")
-        .ok().and_then(|s| s.parse().ok()).unwrap_or(1800);
+    // running: is the variant actually reachable right now? Informational only.
+    let skip_variant_check =
+        std::env::var("CHORUS_DEMO_SKIP_VARIANT_CHECK").map(|v| v == "1").unwrap_or(false);
+    let variant_status = if skip_variant_check {
+        format!("running → {}", variant_url)
+    } else if run("curl", &["-s", "-f", "-o", "/dev/null", "--max-time", "5", &variant_url]).is_ok() {
+        format!("running → {} (reachable)", variant_url)
+    } else {
+        format!("running → {} (NOT reachable)", variant_url)
+    };
+
+    // tested: did the demo's test run record a result? Informational only.
+    let test_summary = match test_result_recorded(&witness, card) {
+        Some(r) => format!("tests: {}", r),
+        None => "tests: NOT run".to_string(),
+    };
+
+    // gates: optional quality input, shown if any ran. Informational only.
+    let gates_run: Vec<&str> = {
+        let absent = gates_missing(&witness, card);
+        REQUIRED_GATES.iter().copied().filter(|g| !absent.contains(g)).collect()
+    };
+    let gate_summary = if gates_run.is_empty() {
+        "gates: (none run — optional)".to_string()
+    } else {
+        format!("gates: {}", gates_run.join(", "))
+    };
+
+    // The decision surface — honest, in order — so the decision is never blind.
+    // Then YOUR call, and the go is FINAL: the machine shows, it never vetoes a go.
+    let surface_body = format!(
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DECISION — card #{}]  AC {}/{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n1. {}\n2. {}\n3. {}\n4. your call → go / no-go / more (your go is final)"}}"#,
+        role, card, checked, total, variant_status, test_summary, gate_summary
+    );
+    let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
+                          "-H", "Content-Type: application/json", "-d", &surface_body]);
+    jsonl(home, role, card, &trace, "demo.decision_surface",
+          &format!(",\"ac\":\"{}/{}\"", checked, total));
+
+    // #3263 — THE BLOCKING HUMAN STEP, and it CANNOT skip Jeff. act calls werk-demo
+    // synchronously; the human pause lives HERE. Block until Jeff records his ONE
+    // decision (go / no-go / more) in the witness — INDEFINITELY. There is NO
+    // timeout fail-safe: a timer must never stand in for his hand. (The old
+    // max-block → "more" auto-resolved the gate and skipped the human; removed.)
+    // If Jeff walks away for 10 hours the demo waits 10 hours — "stuck" awaiting
+    // him is correct: it's his gate, not a deadline. A ~60s heartbeat keeps the
+    // wait observable (never decides). Headless-safe: poll the witness file, no TTY.
     let poll_secs: u64 = std::env::var("CHORUS_DEMO_POLL_SECS")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
-    jsonl(home, role, card, &trace, "demo.awaiting_decision",
-          &format!(",\"max_block_secs\":{}", max_block_secs));
+    jsonl(home, role, card, &trace, "demo.awaiting_decision", "");
 
     let started = std::time::Instant::now();
+    let mut last_heartbeat: u64 = 0;
     let decision = loop {
         let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
         if let Some(d) = read_decision(&w, card) {
             break d;
         }
-        if started.elapsed().as_secs() >= max_block_secs {
-            jsonl(home, role, card, &trace, "demo.decision.timeout", ",\"fallback\":\"more\"");
-            break Decision::More;
+        let elapsed = started.elapsed().as_secs();
+        if elapsed - last_heartbeat >= 60 {
+            last_heartbeat = elapsed;
+            jsonl(home, role, card, &trace, "demo.awaiting_decision.heartbeat",
+                  &format!(",\"waited_secs\":{}", elapsed));
         }
         sleep(std::time::Duration::from_secs(poll_secs.max(1)));
     };
@@ -575,6 +634,29 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str) {
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
+/// #3263 — record the pipeline's test outcome into the witness so the informed-go
+/// check can require it (and Jeff sees it before the go). Called by werk.yml's test
+/// step via `werk-demo test-result <card> pass|fail`. pass AND fail are recorded —
+/// a red test is VISIBLE, not hidden; blocking-on-red is #3190's promotion, but the
+/// result existing at all is what makes "I didn't/can't test" unreachable for a go.
+fn record_test_result(home: &Path, role: &str, card: u64, result: &str) {
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    jsonl(home, role, card, &trace, "demo.test_result",
+          &format!(",\"result\":\"{}\"", result));
+    emit_spine(home, "demo.test_result", role, card, &trace);
+}
+
+/// #3263 — run the card's tests in its werk and return whether they passed. The
+/// DEMO runs them so "did the tests run?" is a recorded fact, not a claim to argue.
+/// Default mirrors the pipeline's hermetic gate (cargo lib+bins); overridable via
+/// CHORUS_DEMO_TEST_CMD. Any non-zero exit → fail (visible, never hidden).
+fn run_card_tests(werk: &str) -> bool {
+    let cmd = env::var("CHORUS_DEMO_TEST_CMD")
+        .unwrap_or_else(|_| "cargo test --lib --bins --quiet".to_string());
+    let script = format!("cd '{}' && {}", werk, cmd);
+    run("bash", &["-c", &script]).is_ok()
+}
+
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
 /// Two forms: `werk-demo <card-id>` (the ceremony) and `werk-demo gate <card>
 /// <gate> <result>` (a gate subagent recording its result, #3237).
@@ -605,6 +687,19 @@ pub fn run_demo() -> R<DemoOutcome> {
         record_gate(&home, role.trim(), card, &gate, &result);
         return Ok(DemoOutcome {
             message: format!("gate {} recorded for #{}: {}", gate, card, result),
+            exit: 0,
+        });
+    }
+
+    if first == "test-result" {
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo test-result <card> <pass|fail>")?;
+        let result = args.next().unwrap_or_else(|| "pass".to_string());
+        record_test_result(&home, role.trim(), card, &result);
+        return Ok(DemoOutcome {
+            message: format!("test result recorded for #{}: {}", card, result),
             exit: 0,
         });
     }
@@ -687,4 +782,28 @@ mod tests {
             .join("\n");
         assert_eq!(gates_missing(&w, 3).len(), 5, "card 31's gates must not satisfy card 3");
     }
+
+    // #3263 — informed-go contract.
+    fn test_result_line(card: u64, result: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.test_result","role":"wren","card_id":{},"trace_id":"t","result":"{}"}}"#,
+            card, result
+        )
+    }
+    #[test]
+    fn test_result_recorded_returns_latest() {
+        let w = format!("{}\n{}", test_result_line(3263, "fail"), test_result_line(3263, "pass"));
+        assert_eq!(test_result_recorded(&w, 3263), Some("pass".to_string()));
+    }
+
+    #[test]
+    fn test_result_recorded_none_when_absent() {
+        assert_eq!(test_result_recorded("", 3263), None);
+    }
+
+    #[test]
+    fn test_result_recorded_ignores_other_cards() {
+        assert_eq!(test_result_recorded(&test_result_line(31, "pass"), 3), None);
+    }
+
 }

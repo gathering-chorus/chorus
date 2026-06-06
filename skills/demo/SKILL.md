@@ -31,12 +31,12 @@ Spawn one subagent per gate. **Do not nudge a role to go run its gate** — you 
 | ops      | silas |
 
 For each gate: spawn a subagent that reads the card + the diff + the running variant and produces a `{gate, result: pass/fail, findings}` verdict. Then do **two** things with the result:
-1. **Record it** — run `werk-demo gate <card-id> <gate> <pass|fail>` (the gate witness, #3237). This is non-optional: `werk-demo` **refuses to record a verdict** in Step 2 unless all five gates have recorded a result for the card. The deterministic binary is the enforcement point, so neither this skill nor `werk-mcp.sh` can skip the gates and merge un-gated.
+1. **Record it** — run `werk-demo gate <card-id> <gate> <pass|fail>` (the gate witness). The recorded results surface on the decision surface so Jeff sees what was checked before he decides.
 2. **Route it for review** — a result-carrying review-nudge to the owning role (async, non-blocking): it carries a finished artifact to review, *not* work to do. The role reviews the output; it does not re-run the gate.
 
-The gate results are the quality gather. They are **not** the proving verdict — a green gate is not a verdict, and a peer's review is never the verdict (proving is Jeff or a machine, never peer-blessing). Recording a gate (`werk-demo gate …`) attests it RAN; the verdict is still the prover's.
+The gate results are the quality gather. They are **not** the proving verdict — a green gate is not a verdict, and a peer's review is never the verdict (proving is Jeff or a machine, never peer-blessing). Recording a gate attests it RAN; the verdict is still the prover's.
 
-**Step 1 is a prerequisite of Step 2.** When demo runs inside `werk-mcp.sh` (step 4.5 calls the binary directly), the gate subagents must have recorded their results first — otherwise the binary refuses and the pipeline stops at demo with "gates not run: [list]." Run the gates, then the ceremony.
+**Gates are NON-BLOCKING (#3263).** The `werk-demo` binary does **not** require gates to reach the decision — it requires the machine-checkable floor: the work was **tested** (`werk-demo test-result …`, recorded by the pipeline's test step) and **announced** with the variant **up and reachable**. Gates can't be a hard precondition because the zero-dep binary (and `act`) can't run LLM gate-reviews — making them required is exactly what stopped `chorus_werk` from self-completing the demo. So: run the gates when you can (they enrich the decision surface and route to peers), but their absence never blocks the pipeline. What blocks a go is an *uninformed* go — no test result, or a variant that isn't running.
 
 ## Step 2 — Invoke the binary (present → feedback → window → verdict)
 

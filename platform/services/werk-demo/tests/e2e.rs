@@ -118,6 +118,12 @@ exit 0
     std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
     // #3100 gate-request fan-out: wait default 120s; force 0 in tests.
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
+    // #3263: the variant-reachability check curls a live variant port; no variant
+    // is up in the test, so skip it here (the check is live in the real pipeline).
+    std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
+    // #3263: the demo runs the card's tests in its werk; there's no real werk here,
+    // so skip the run (the fixture seeds demo.test_result directly).
+    std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
 
     // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
     // demo.gate.result, and (b) BLOCKS until Jeff records a demo.decision. Seed
@@ -132,6 +138,13 @@ exit 0
             g
         ));
     }
+    // #3263 informed-go: the demo now ALSO requires a recorded demo.test_result
+    // before honoring a go (the pipeline's test step records it via
+    // `werk-demo test-result`; demo() here is called directly, so seed it). The
+    // announce (demo.ready_for_review) is emitted by demo() in-run, so it's present
+    // by the time the informed-go check reads the witness. informed_go_blockers
+    // unit tests cover the refusal branch (no test-result / no announce) directly.
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
     // Jeff's "go" = accept → demo returns exit 0 with a recorded demo.verdict.
     // Without it the binary blocks until the max-block timeout (→ more).
     gate_seed.push_str("{\"ts\":1,\"event\":\"demo.decision\",\"role\":\"jeff\",\"card_id\":3046,\"trace_id\":\"seed\",\"decision\":\"go\",\"reason\":\"\"}\n");
