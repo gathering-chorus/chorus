@@ -997,13 +997,24 @@
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on.",
+      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on. #3270 — carries the ground-truth envelope (verb/step/outcome/cdhash/live_main/artifact_class) sharing the `trace` join key so trace.html?trace=<id> renders this verb alongside hook.decision (#3252) and the other verbs as one flow.",
+      "keys": [
+        "trace"
+      ],
       "fields": {
+        "verb": "#3270 — emitting verb (deploy)",
+        "step": "#3270 — pipeline step name (deploy)",
+        "outcome": "#3270 — success (failure path emits deploy.failed{reason})",
+        "artifact_class": "#3270 — rust-daemon (kickstarted) | rust-cli (no daemon); TS services emit on their own paths",
+        "cdhash": "#3270 — loaded cdhash: post-install codesign of the installed file the daemon loads (== built, verified #3222)",
+        "live_main": "#3270 — is what's now live origin/main? true|false (canonical: HEAD==origin/main) | na (werk preview slot) | unknown (no origin/main ref). Kills the silent merged≠live false-green.",
         "commit": "Source commit SHA (short) at deploy time",
         "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
-        "cdhash": "Codesign cdhash of installed binary (last in crate's binary set)",
         "target": "Primary install path (~/.chorus/bin/<name>)",
-        "duration_ms": "End-to-end deploy slice duration in milliseconds"
+        "deploy_target": "canonical (production) | werk (session preview slot)",
+        "card": "Card id driving the deploy",
+        "duration_ms": "End-to-end deploy slice duration in milliseconds",
+        "trace": "Shared join key — CHORUS_TRACE_ID (|| session_id), auto-stamped by chorus-log (#2897/#3252). NEVER a per-call uuid."
       }
     },
     "deploy.failed": {
