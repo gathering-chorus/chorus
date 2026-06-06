@@ -24,6 +24,7 @@ fn run_scenario(label: &str, role: &str, file_path: &str) {
         hook_type: None,
         deploy_role: None,
         chorus_worktree_override: None,
+        trace_id: None,
     };
 
     let response = canonical_write_guard::check(&input);

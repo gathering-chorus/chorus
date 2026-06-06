@@ -1465,7 +1465,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("wren".into()),
-            chorus_worktree_override: None,
+            chorus_worktree_override: None, trace_id: None,
         };
         let resp = check(&input, &state).await;
         let out = resp.stderr.clone().unwrap_or_default();

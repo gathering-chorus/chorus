@@ -209,7 +209,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None,}
+            chorus_worktree_override: None, trace_id: None,}
     }
 
     /// Helper: make a Bash input with plain string response (some hooks send this way)
@@ -224,7 +224,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None,}
+            chorus_worktree_override: None, trace_id: None,}
     }
 
     #[tokio::test]
@@ -335,7 +335,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None,};
+            chorus_worktree_override: None, trace_id: None,};
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0, "only Bash triggers the gate");
     }

@@ -1,4 +1,5 @@
 mod hooks;
+mod hook_obs;
 mod session_cache;
 pub mod shared;
 mod state;
@@ -27,14 +28,17 @@ const PID_PATH: &str = "/tmp/chorus-hooks.pid";
 const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
 const HOOK_LOG_MAX: u64 = 10 * 1024 * 1024; // 10MB rotation
 
-/// Enriched pulse log — module, duration, full reason, session_id (#1859)
+/// Enriched pulse log — now emitted as JSON (#3252) so hooks.log is queryable
+/// alongside chorus.log. Carries the shared werk `trace` as the join key:
+/// `grep <trace_id>` over hooks.log + chorus.log reconstructs one cross-hook,
+/// cross-verb call flow. The pure line formatter lives in hook_obs so it's
+/// testable without IO; this fn owns rotation + the append.
 #[allow(clippy::too_many_arguments)]
-fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str, duration_ms: u64, session_id: &str, reason: &str) {
+fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str, duration_ms: u64, trace: &str, session_id: &str, reason: &str) {
     use std::io::Write;
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
     let sid = if session_id.len() > 8 { &session_id[..8] } else { session_id };
-    let line = format!("{} | {:15} | {:6} | {:5} | {:20} | {:5} | {:4}ms | {} | {}\n",
-        ts, hook, tool, role, module, decision, duration_ms, sid, reason);
+    let line = hook_obs::hook_log_json(&ts, hook, tool, role, module, decision, trace, duration_ms, sid, reason);
 
     // Rotate if over 10MB
     if let Ok(meta) = std::fs::metadata(HOOK_LOG) {
@@ -45,13 +49,52 @@ fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str
     }
 
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(HOOK_LOG) {
-        let _ = f.write_all(line.as_bytes());
+        let _ = writeln!(f, "{}", line);
     }
 }
 
-/// Backward-compat wrapper for simple entry logging
+/// Backward-compat wrapper for simple entry logging (no trace context).
 fn log_hook(hook: &str, tool: &str, role: &str, decision: &str, detail: &str) {
-    log_decision(hook, tool, role, "-", decision, 0, "-", detail);
+    log_decision(hook, tool, role, "-", decision, 0, "-", "-", detail);
+}
+
+/// #3252 — the single uniform emit at the IoC dispatch seam. Every hook
+/// wrapper (pre/post/prompt/stop) calls this once with its deciding module
+/// and final response: it classifies the decision, writes the JSON hooks.log
+/// line, AND emits a `hook.decision` spine event carrying the shared `trace`.
+/// Spine + hooks.log share the formatter's field set, so they can't drift.
+async fn emit_hook_decision(hook: &str, input: &HookInput, module: &str, resp: &HookResponse, start: std::time::Instant) {
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let tool = input.tool_name_str();
+    let role = input.role();
+    let trace = input.trace_id_or_mint();
+    let session_id = input.session_id.as_deref().unwrap_or("-");
+    let decision = hook_obs::classify_decision(resp);
+    let reason = if decision == "allow" {
+        tool.to_string()
+    } else {
+        resp.stderr.as_deref()
+            .or(resp.stdout.as_deref())
+            .unwrap_or("")
+            .lines().next().unwrap_or("")
+            .to_string()
+    };
+    log_decision(hook, tool, role.as_str(), module, decision, duration_ms, &trace, session_id, &reason);
+    let dur = duration_ms.to_string();
+    crate::state::chorus_log(
+        "hook.decision",
+        role.as_str(),
+        &[
+            ("hook", hook),
+            ("tool", tool),
+            ("module", module),
+            ("decision", decision),
+            ("trace", trace.as_str()),
+            ("latency_ms", dur.as_str()),
+            ("session_id", session_id),
+        ],
+    )
+    .await;
 }
 
 #[tokio::main]
@@ -164,25 +207,8 @@ async fn pre_tool_use(
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
     let (module, result) = pre_tool_use_inner(&state, &input).await;
-    let duration_ms = start.elapsed().as_millis() as u64;
-    let tool = input.tool_name_str();
-    let role = input.role();
-    let session_id = input.session_id.as_deref().unwrap_or("-");
-    let decision = if result.exit_code != 0 { "BLOCK" }
-        else if result.stdout.as_ref().map(|s| s.contains("deny")).unwrap_or(false) { "DENY" }
-        else if result.stderr.is_some() { "WARN" }
-        else { "allow" };
-    // Full reason for blocks, truncated for allows
-    let reason = if decision == "allow" {
-        tool.to_string()
-    } else {
-        result.stderr.as_deref()
-            .or(result.stdout.as_deref())
-            .unwrap_or("")
-            .lines().next().unwrap_or("")
-            .to_string()
-    };
-    log_decision("pre_tool_use", tool, role.as_str(), &module, decision, duration_ms, session_id, &reason);
+    // #3252 — uniform hook.decision emit (JSON hooks.log + spine, shared trace).
+    emit_hook_decision("pre_tool_use", &input, &module, &result, start).await;
     Json(result)
 }
 
@@ -432,6 +458,7 @@ async fn post_tool_use(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
+    let start = std::time::Instant::now();
     let tool = input.tool_name_str().to_string();
 
     // Clock sync on every tool call (#1849) — keeps /tmp/wall-clock.txt fresh
@@ -450,6 +477,7 @@ async fn post_tool_use(
     // Stop-on-error gate (#1841) — block next action when previous errored
     let r = hooks::stop_on_error::check(&input, &state).await;
     if r.exit_code != 0 {
+        emit_hook_decision("post_tool_use", &input, "stop_on_error", &r, start).await;
         return Json(r);
     }
 
@@ -616,13 +644,16 @@ async fn post_tool_use(
     // Ops awareness (#2003 AC3) — surface degraded system state
     let ops_result = hooks::ops_awareness::check(&input).await;
     if ops_result.stderr.is_some() {
+        emit_hook_decision("post_tool_use", &input, "ops_awareness", &ops_result, start).await;
         return Json(ops_result);
     }
 
     // L3: nudge drain happens on UserPromptSubmit (user_prompt_submit handler), not PostToolUse
     // PostToolUse stderr only surfaces on exit code 2, which signals error — wrong hook for drain
 
-    Json(HookResponse::allow())
+    let allow = HookResponse::allow();
+    emit_hook_decision("post_tool_use", &input, "none", &allow, start).await;
+    Json(allow)
 }
 
 
@@ -631,6 +662,7 @@ async fn user_prompt_submit(
     State(state): State<AppState>,
     Json(input): Json<HookInput>,
 ) -> Json<HookResponse> {
+    let start = std::time::Instant::now();
     // Generate prompt cycle ID (#2231) — correlates this prompt with all subsequent tool calls
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let cycle_id = format!("{}-{:x}", chrono::Utc::now().timestamp_millis(), std::process::id());
@@ -792,7 +824,7 @@ async fn user_prompt_submit(
     // #3191 — route the assembled context block to stdout (it INJECTS via
     // additionalContext), ephemeral warnings to stderr. Pure builder in context_inject,
     // unit-tested in tests/prompt_response_3191.rs.
-    Json(hooks::context_inject::build_user_prompt_response(
+    let response = hooks::context_inject::build_user_prompt_response(
         context_result.stderr.as_deref(),
         guard_result.stdout.as_deref(),
         guard_result.exit_code,
@@ -802,7 +834,10 @@ async fn user_prompt_submit(
             guard_result.stderr.as_deref(),
             pattern_signal.as_deref(),
         ],
-    ))
+    );
+    // #3252 — uniform hook.decision emit for the prompt pipeline.
+    emit_hook_decision("user_prompt_submit", &input, "prompt_pipeline", &response, start).await;
+    Json(response)
 }
 
 /// Stop hook — autonomy guard (permission-seeking scan) + #3203 inject-force OBSERVE.
@@ -812,6 +847,7 @@ async fn stop_hook(
     State(state): State<AppState>,
     Json(raw): Json<serde_json::Value>,
 ) -> Json<HookResponse> {
+    let start = std::time::Instant::now();
     let input: HookInput = serde_json::from_value(raw.clone()).unwrap_or_default();
     // #3203 — context-inject FORCE, observe-only phase. Did this turn's response
     // engage what the inject surfaced? Read the surfaced records + my last assistant
@@ -842,5 +878,8 @@ async fn stop_hook(
         }
     }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
-    Json(hooks::autonomy_guard::check(&input, &state).await)
+    let response = hooks::autonomy_guard::check(&input, &state).await;
+    // #3252 — uniform hook.decision emit for the stop hook.
+    emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
+    Json(response)
 }

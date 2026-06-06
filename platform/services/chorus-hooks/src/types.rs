@@ -53,6 +53,15 @@ pub struct HookInput {
     /// into the JSON for hooks to read.
     #[serde(default)]
     pub chorus_worktree_override: Option<bool>,
+    /// #3252: the SHARED werk trace_id. Shim injects this from CHORUS_TRACE_ID
+    /// (the demo/build/deploy lifecycle trace minted in #2897) — same socket-
+    /// crossing pattern as `deploy_role` / `chorus_worktree_override`, because
+    /// env vars don't reach the daemon. NOT a hook-only id: carrying the
+    /// existing werk trace means `grep <trace_id> chorus.log` returns the
+    /// demo/build/deploy verbs (#3023/#3270) AND every hook.decision as ONE
+    /// correlated flow. None on ad-hoc tool calls outside a werk run.
+    #[serde(default)]
+    pub trace_id: Option<String>,
 }
 
 impl HookInput {
@@ -80,6 +89,20 @@ impl HookInput {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string()
+    }
+
+    /// #3252: resolve the trace_id for this tool call. Returns the shim-
+    /// propagated shared werk trace when present (so hook.decision events join
+    /// the same flow as demo/build/deploy verbs), otherwise mints a fresh
+    /// time-ordered uuid v7 so the field is never empty. The minted fallback
+    /// is per-dispatch: a Pre and a Post for the SAME ad-hoc tool call get
+    /// different ids (Claude Code gives no per-call key), so cross-dispatch
+    /// correlation outside a werk run relies on session_id, not trace_id.
+    pub fn trace_id_or_mint(&self) -> String {
+        match self.trace_id.as_deref() {
+            Some(t) if !t.is_empty() => t.to_string(),
+            _ => uuid::Uuid::now_v7().to_string(),
+        }
     }
 
     /// Get tool_response as a string — handles both string and object values
@@ -299,4 +322,44 @@ pub fn is_fix_card() -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod trace_id_tests {
+    use super::*;
+
+    #[test]
+    fn propagated_shared_trace_is_returned_verbatim() {
+        // #3252: when the shim propagates CHORUS_TRACE_ID, the hook.decision
+        // event MUST carry that exact id so it joins the demo/build/deploy flow.
+        let input = HookInput {
+            trace_id: Some("demo-3252-abc123".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(input.trace_id_or_mint(), "demo-3252-abc123");
+    }
+
+    #[test]
+    fn absent_trace_mints_a_nonempty_id() {
+        // Ad-hoc tool call outside a werk run: field must never be empty.
+        let input = HookInput::default();
+        assert!(!input.trace_id_or_mint().is_empty());
+    }
+
+    #[test]
+    fn empty_trace_string_is_treated_as_absent_and_minted() {
+        // A propagated-but-empty CHORUS_TRACE_ID must not become an empty join key.
+        let input = HookInput {
+            trace_id: Some(String::new()),
+            ..Default::default()
+        };
+        assert!(!input.trace_id_or_mint().is_empty());
+    }
+
+    #[test]
+    fn minted_ids_are_unique_per_dispatch() {
+        let a = HookInput::default().trace_id_or_mint();
+        let b = HookInput::default().trace_id_or_mint();
+        assert_ne!(a, b, "minted fallback ids must be unique per dispatch");
+    }
 }
