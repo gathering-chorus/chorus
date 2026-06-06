@@ -1,41 +1,41 @@
-# Daily Ops Review — 2026-06-03
+# Daily Ops Review — 2026-06-06
 
 ## 1. Hooks Health
 **Status: YELLOW**
-`cargo check` passes (0 errors); 8 warnings unchanged from 2026-06-02. Dead-code: `load_role_sections` never called (`protocol_contract.rs:155`), `chorus_worktree_override` field never read (`types.rs:55`).
-**Action:** Dead-code cleanup card still open; file a follow-up if warnings don't drop in next 2 reviews.
+`cargo check` passes (0 errors, 8 warnings) at `platform/services/chorus-hooks`. Dead-code warnings unchanged from 2026-06-03: `load_role_sections` never called (`protocol_contract.rs:155`), `chorus_worktree_override` never read (`types.rs:55`).
+**Action:** Silas to resolve dead-code warnings or document why retained.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW**
-20+ `/tmp` refs across 8 plists (context-cache, metrics, harvest-exporter, clearing, ops, cruft-scan, alert-notifier, fuseki-*). All are `StandardOutPath`/`StandardErrorPath` log paths — not operational data. Logs lost on reboot.
-**Action:** Known gap — migrate to `~/Library/Logs/Chorus/`; unchanged since last review.
+20+ plists use `/tmp` for `StandardOutPath`/`StandardErrorPath` (hooks, context-cache, harvest-exporter, alert-notifier, etc.). Log data lost on reboot; no persistent log dir.
+**Action:** Evaluate migrating log paths to `~/Library/Logs/Chorus/` — already used by tmp-reaper. Low urgency but affects post-reboot diagnosis.
 
-## 3. CLAUDE.md Conflicts
+## 3. CLAUDE.md Fragments
 **Status: GREEN**
-`designing/claudemd/` present with `roles/`, `shared/`, `pipeline-runs/` subdirs + manifest. No diff conflicts detected. (Note: `messages/claudemd/` path from check spec does not exist — canonical location is `designing/claudemd/`.)
-**Action:** None; confirm spec path in next ops review cycle.
+`messages/claudemd/` directory does not exist; only one `CLAUDE.md` at repo root. No fragmentation to diff.
+**Action:** None.
 
-## 4. CSC Compliance (/tmp in scripts)
+## 4. CSC Compliance
 **Status: GREEN**
-No `/tmp/` references in `messages/scripts/` or `architect/scripts/` (neither directory present in this clone; check is N/A for this repo).
+No `/tmp/` references in `messages/scripts/` or `architect/scripts/` (directories absent from this repo — expected for separate-repo roles).
 **Action:** None.
 
 ## 5. Git Dirty State
-**Status: GREEN**
-`product-manager/` (only role dir in this repo): 0 uncommitted changes. Remaining 6 role dirs are in separate repos — not checkable from here.
-**Action:** Extend check scope to cover cross-repo dirty state via chorus-ops or CI.
+**Status: YELLOW**
+`product-manager/`: clean (0 dirty files). Remaining 6 role dirs (architect, engineer, messages, jeff-bridwell-personal-site, shared-observability, wordpress-blog) are not present in this worktree — live in separate repos or per-card worktrees.
+**Action:** Spot-check canonical worktrees on host if full dirty-state audit needed.
 
 ## 6. Stale WIP Cards
-**Status: RED**
-No board snapshot data accessible in this repo. Yesterday's brief noted snapshots 56 days old (last 2026-04-07). Issue unresolved.
-**Action:** Capture board snapshot now; wire daily refresh via LaunchAgent or chorus-ops.
+**Status: GREEN**
+No WIP-labeled open issues on GitHub. No open issues at all on gathering-team repo.
+**Action:** None.
 
 ## 7. Domain Context Freshness
 **Status: GREEN**
-All 5 domain-context files 4 days old (chorus, infrastructure, music, photos, seeds) — within 7-day threshold. Cards #3195/#3191/#3192/#3185/#3187 shipped in chorus/infrastructure domains; domain context not yet stale.
-**Action:** Recheck after 3 more days if no domain-context update committed.
+All 5 domain-context files (chorus, infrastructure, music, photos, seeds) updated within 1 day. No staleness.
+**Action:** None.
 
-## 8. Disk Delta / Perf Baseline
-**Status: GREY**
-`perf-baseline.sh` and `perf-baseline-chorus.sh` exist; no captured baseline output. Cannot compute delta.
-**Action:** Run `platform/scripts/perf-baseline.sh`, commit output to establish baseline (carried from 2026-06-02).
+## 8. Disk Delta
+**Status: YELLOW**
+Repo total: 343M. No prior perf-baseline snapshot available to diff; scripts (`perf-baseline.sh`, `perf-baseline-chorus.sh`) exist but no captured output on this host.
+**Action:** Run `perf-baseline.sh` to establish a baseline for future comparisons.
