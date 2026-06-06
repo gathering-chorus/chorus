@@ -207,6 +207,23 @@
     "operations": "Operating"
   },
   "events": {
+    "hook.decision": {
+      "vertebra": "proving",
+      "source": "chorus-hooks",
+      "description": "Uniform decision record emitted by the hook dispatch IoC seam (#3252) on every Pre/PostToolUse, UserPromptSubmit, and Stop dispatch. Carries the shared werk `trace` join key so `grep <trace_id>` over chorus.log + hooks.log threads hook decisions with demo/build/deploy verbs (#3023/#3270) into one call flow.",
+      "keys": [
+        "trace"
+      ],
+      "fields": {
+        "hook": "Dispatch point — pre_tool_use | post_tool_use | user_prompt_submit | stop_hook",
+        "tool": "Tool name under dispatch (Bash, Edit, Read, …); empty for prompt/stop",
+        "module": "Deciding hook module, or none / prompt_pipeline / autonomy_guard for aggregate paths",
+        "decision": "allow | WARN | DENY | BLOCK",
+        "trace": "Shared werk trace_id (CHORUS_TRACE_ID) when in a werk run, else a minted per-dispatch fallback",
+        "latency_ms": "Dispatch wall-clock in milliseconds",
+        "session_id": "Claude Code session id (8-char) — secondary join key for ad-hoc tool calls"
+      }
+    },
     "ac.ticked": {
       "vertebra": "directing",
       "source": "cards",

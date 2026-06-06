@@ -93,6 +93,54 @@ fn check_canonical_in_process(input_json: &str) -> Option<String> {
     response.stdout
 }
 
+/// #3252 — PURE: propagate the shared werk trace into the daemon payload.
+/// When `trace` is Some(non-empty), set `trace_id` on the JSON object so the
+/// daemon's hook.decision events join the demo/build/deploy flow under the same
+/// `trace` key. None / empty / unparseable input → returned unchanged (the
+/// daemon mints a per-dispatch fallback). Pure so the contract is testable
+/// without env or a socket.
+fn inject_trace_id(input: String, trace: Option<String>) -> String {
+    match trace {
+        Some(t) if !t.is_empty() => match serde_json::from_str::<serde_json::Value>(&input) {
+            Ok(mut json) if json.is_object() => {
+                json["trace_id"] = serde_json::Value::String(t);
+                json.to_string()
+            }
+            _ => input,
+        },
+        _ => input,
+    }
+}
+
+#[cfg(test)]
+mod inject_trace_id_tests {
+    use super::*;
+
+    #[test]
+    fn injects_shared_trace_when_present() {
+        let out = inject_trace_id(
+            r#"{"tool_name":"Bash"}"#.to_string(),
+            Some("demo-3252-xyz".to_string()),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["trace_id"], "demo-3252-xyz");
+        assert_eq!(v["tool_name"], "Bash"); // existing fields preserved
+    }
+
+    #[test]
+    fn no_trace_leaves_input_untouched() {
+        let input = r#"{"tool_name":"Edit"}"#.to_string();
+        assert_eq!(inject_trace_id(input.clone(), None), input);
+        assert_eq!(inject_trace_id(input.clone(), Some(String::new())), input);
+    }
+
+    #[test]
+    fn unparseable_input_is_passed_through() {
+        let bad = "not json".to_string();
+        assert_eq!(inject_trace_id(bad.clone(), Some("t".to_string())), bad);
+    }
+}
+
 #[cfg(test)]
 mod canonical_in_process_tests {
     use super::*;
@@ -355,6 +403,15 @@ fn main() -> ExitCode {
     } else {
         input
     };
+
+    // #3252: propagate CHORUS_TRACE_ID — the SHARED werk trace minted by the
+    // demo/build/deploy lifecycle (#2897) — into the JSON so the daemon's
+    // hook.decision events carry the same `trace` join key as those verbs.
+    // Same socket-crossing reason as DEPLOY_ROLE/CHORUS_WORKTREE_OVERRIDE: env
+    // vars don't reach the daemon. Absent outside a werk run; the daemon then
+    // mints a per-dispatch fallback so the field is never empty. Pure transform
+    // (inject_trace_id) so the propagation contract is unit-testable.
+    let input = inject_trace_id(input, std::env::var("CHORUS_TRACE_ID").ok());
 
     log_debug(&format!("stdin={}bytes", input.len()));
 

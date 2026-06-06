@@ -237,7 +237,7 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
         stop_hook_active: None,
         hook_type: None,
         deploy_role: Some(role.to_string()),
-        chorus_worktree_override: None,
+        chorus_worktree_override: None, trace_id: None,
     };
 
     let mut all_pass = true;
@@ -310,7 +310,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None,}
+            chorus_worktree_override: None, trace_id: None,}
     }
 
     #[tokio::test]
@@ -340,7 +340,7 @@ mod tests {
             cwd: Some("/Users/jeffbridwell/some/unknown/path".to_string()),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None,};
+            chorus_worktree_override: None, trace_id: None,};
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0);
     }
@@ -405,7 +405,7 @@ mod tests {
             cwd: Some(format!("{}/roles/wren", chorus_root())),
             prompt: None, stop_hook_active: None, hook_type: None,
             deploy_role: Some("wren".to_string()),
-            chorus_worktree_override: None,};
+            chorus_worktree_override: None, trace_id: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_some(), "Edit should be blocked when session init not complete");
 
