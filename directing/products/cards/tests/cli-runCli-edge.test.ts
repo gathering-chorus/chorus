@@ -170,19 +170,21 @@ describe('runCli — edges', () => {
     expect(joined).not.toMatch(/line3/);
   });
 
-  it('chunk <unknown> falls through to chunk-list view', async () => {
+  it('chunk <any-name> lists that chunk\'s cards — no VALID_CHUNKS gate (#3267)', async () => {
     const mock = new MockClient();
     mock.tasks = [
-      mkTask({ index: 1, status: 'Next', title: 'one', domains: ['chunk:ops'] }),
+      mkTask({ index: 1, status: 'Next', title: 'werk-card', domains: ['chunk:werk'] }),
+      mkTask({ index: 2, status: 'Next', title: 'ops-card', domains: ['chunk:ops'] }),
     ];
     const cap = silence();
     try {
-      // "weird-chunk" isn't in validChunks so we land on the list-view path.
-      await runCli(['node', 'cards', 'chunk', 'weird-chunk'], factory(mock));
+      // #3267: chunk is dynamic — `cards chunk werk` lists the werk-tagged cards
+      // directly, instead of falling through to the all-chunks summary.
+      await runCli(['node', 'cards', 'chunk', 'werk'], factory(mock));
     } finally { cap.restore(); }
     const joined = cap.logs.join('\n');
-    expect(joined).toMatch(/Chunks:/);
-    expect(joined).toMatch(/ops/);
+    expect(joined).toMatch(/werk/);          // routed to the werk chunk's view
+    expect(joined).not.toMatch(/Chunks:/);   // did NOT fall through to the all-chunks list
   });
 
   it('domain add <existing> is a no-op with "already exists" message', async () => {
