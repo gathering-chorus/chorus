@@ -58,6 +58,16 @@ run_test "infra-alert uses nudge for delivery" \
 run_test "infra-alert checks daily fire state" \
   bash -c 'grep -q "\.fired\|daily.*suppress\|already.*fired" "$0"' "$INFRA_ALERT"
 
+# --- #3254: reporter must resolve the cargo toolchain ---
+# daily-review-quality.sh RE-RUNS the cargo suites; if its launchagent PATH lacks
+# ~/.cargo/bin, `cargo` is not found (rc=127) and EVERY crate is misreported as
+# "1/1 failed" (compile/run failure) — a false nightly red. Guard the PATH so this
+# gap cannot silently recur. (The 03:00 nightly-suites.plist already includes it;
+# the reporter's plist must match.)
+QUALITY_PLIST="$CHORUS_ROOT/proving/config/launchagents/com.chorus.daily-review-quality.plist"
+run_test "daily-review-quality plist PATH includes ~/.cargo/bin (cargo resolvable)" \
+  bash -c 'grep -q "/.cargo/bin" "$0"' "$QUALITY_PLIST"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
