@@ -296,39 +296,38 @@ Every 60 seconds:
   4. Loop back to scope loop step 1 (CHECK AC)
 ```
 
-**Navigator attention monitor (driver-side, MANDATORY — #1897):**
+**Navigator attention monitor (daemon-side, MANDATORY — #1897, #3253):**
 
-The driver sets up a cron tick at pair start that monitors for navigator silence. This is the enforcement mechanism — the navigator's heartbeat is self-reported, this one is observed.
+Navigator silence is monitored by the **`com.chorus.pair-heartbeat` system daemon** on
+its own 60s timer — NOT an agent-session cron, NOT a skill. This removes the fragility
+class that #2317 only papered: there is no cron in the driver's session to die and no
+skill name to dangle ("unknown skill"). The driver's only job is to **register the pair**
+so the daemon knows to watch it.
 
 **Setup (driver does this in Step 1):**
 ```bash
-# CronCreate: cron="*/1 * * * *", prompt="/pair-heartbeat-check <card-id> <navigator-role>"
+# Register the active pair so the daemon watches the navigator's silence.
+mkdir -p "$CHORUS_HOME/ops/active-pairs"
+cat > "$CHORUS_HOME/ops/active-pairs/${CARD_ID}.json" <<JSON
+{"card":"${CARD_ID}","navigator":"${NAV_ROLE}","last_seen_iso":"","last_active_epoch":"$(date +%s)","last_level":"active"}
+JSON
 ```
 
-No activity-timestamp file to seed (#2317): the navigator's activity IS their tool-turn
-stream, read via `pulse-gather <navigator>` (#3205). The old `/tmp/pair-nav-last-activity`
-+ scratch-mtime approach missed real work — a navigator actively editing files but not
-touching the scratch file was falsely flagged "silent." The stream doesn't miss it.
+**How the daemon decides (you do nothing — it ticks on its own):** each 60s tick it reads
+the navigator's observation stream (the same tool-turn stream `pulse-gather`/gemba use),
+stamps its own clock when it sees a newer turn, and measures silence as elapsed-since-last
+activity. It fires each tier ONCE on increase, parity with the old skill:
+- **60s silence:** `pair.heartbeat.silence level=warn`
+- **120s silence:** `pair.heartbeat.silence level=renudge`
+- **180s silence:** `pair.navigator.stall` (the canonical escalation event)
 
-**On each tick** the `/pair-heartbeat-check` skill runs `pulse-gather <navigator>`: a
-non-empty poll (fresh turns this minute) = active → reset; an empty poll = silent this
-minute → count consecutive silence. The cron fires every 60s, so the count IS the
-elapsed silence. See `skills/pair-heartbeat-check/SKILL.md` for the deterministic tick.
-
-**Stall signals (advisory, not blocking):**
-- **~60s silence (1 tick):** Print: `⚠ Navigator ${NAV_ROLE} silent ~60s — thinking, blocked, or disengaged?`
-- **~120s silence (2 ticks):** Re-nudge navigator: `[pair] Navigator silent ~2min on #${CARD_ID} — are you blocked or did you lose context?`
-- **~180s silence (3 ticks):** Emit spine event + escalate: `pair.navigator.stall card=${CARD_ID} elapsed=180s`. Write to scratch `## Escalation`. Nudge Wren for gemba.
-
-**Reset triggers — any of these reset the silence clock:**
-- A fresh navigator tool turn (pulse-gather non-empty) — the primary signal
-- Scratch file modified (navigator wrote directions)
-- `pulse-gather` returns "rebuilding" (stream absent ≠ stall — never escalate on missing data)
+A stream that is absent ("rebuilding", e.g. post-reboot) is never treated as a stall —
+the daemon never escalates on missing data.
 
 **Cleanup (driver does this at pair end):**
 ```bash
-# CronDelete the heartbeat check
-rm -f /tmp/pair-heartbeat-<card-id>-silent /tmp/pair-heartbeat-<card-id>-scratch
+# Deregister — the daemon stops watching this pair.
+rm -f "$CHORUS_HOME/ops/active-pairs/${CARD_ID}.json"
 ```
 
 **Heartbeat escalation (driver completion):**
