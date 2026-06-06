@@ -12,7 +12,6 @@
     "test": "jest --forceExit"
   },
   "dependencies": {
-    "chorus-sdk": "file:../../../platform/chorus-sdk"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

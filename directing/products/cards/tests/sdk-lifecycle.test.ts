@@ -84,6 +84,12 @@ class MockClient {
     this.record('untag', [index, category, value]);
   }
 
+  // #3267: chunk (and subproduct/subdomain) route through this auto-create path.
+  async applyLabelByName(index: number, labelName: string): Promise<{ labelId: number; created: boolean }> {
+    this.record('applyLabelByName', [index, labelName]);
+    return { labelId: 999, created: true };
+  }
+
   async reassignOwner(index: number, role: string): Promise<{ oldOwner: string; newOwner: string }> {
     this.record('reassignOwner', [index, role]);
     const t = this.tasks.get(index);
@@ -435,6 +441,25 @@ describe('setCard', () => {
     }
     const hasTag = mock.calls.some((c) => c.method === 'tag');
     expect(hasTag).toBe(true);
+  });
+
+  // #3267: chunk is now a dynamic priority axis — it must route through
+  // applyLabelByName (auto-create the label by name), NOT the static-map tag
+  // path that rejects any chunk not pre-registered in config.ts.
+  it('routes chunk through applyLabelByName (auto-create), not the static-map tag', async () => {
+    const mock = new MockClient();
+    await mock.add('card', {});
+    const [index] = Array.from(mock.tasks.keys());
+    const cap = silenceConsole();
+    try {
+      await setCard(asBoardClient(mock), index, { chunk: 'werk' });
+    } finally {
+      cap.restore();
+    }
+    const viaApply = mock.calls.some((c) => c.method === 'applyLabelByName' && (c.args[1] as string) === 'chunk:werk');
+    const viaStaticTag = mock.calls.some((c) => c.method === 'tag' && (c.args[1] as string) === 'chunk');
+    expect(viaApply).toBe(true);      // chunk auto-creates its label by name
+    expect(viaStaticTag).toBe(false); // not the static-map path that rejects unknowns
   });
 });
 
