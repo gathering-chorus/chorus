@@ -422,8 +422,10 @@ async function listChunkCards(client: BoardClient, chunk: string): Promise<void>
 }
 
 async function cmdChunk(client: BoardClient, args: string[]) {
+  // #3267: chunk is a dynamic priority axis — `cards chunk <any>` lists that
+  // chunk's cards, no VALID_CHUNKS gate. Bare `cards chunk` lists all chunks.
   const chunk = args[0]?.toLowerCase();
-  if (!chunk || !VALID_CHUNKS.includes(chunk)) {
+  if (!chunk) {
     await listAllChunks(client);
     return;
   }
