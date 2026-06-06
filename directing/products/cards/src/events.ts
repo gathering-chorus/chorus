@@ -1,16 +1,27 @@
-// Re-export from chorus-sdk — cards is now a consumer, not the source
-import { emit, type SpineEvent } from 'chorus-sdk';
+// #3233/#3267: cards no longer depends on chorus-sdk. chorus-sdk's ONLY consumer
+// was this file (one emit call); decoupling removes the chorus-sdk-dist-stale
+// merged≠live source and collapses cards onto the ONE canonical spine emitter —
+// the `chorus-log` script that every werk-verb already shells. No competing emit path.
+import { execFile } from 'node:child_process';
+import * as path from 'node:path';
 
-export type { SpineEvent };
+// Local type (was re-exported from chorus-sdk; only consumed via index.ts re-export).
+export type SpineEvent = {
+  event: string;
+  role: string;
+  [key: string]: string | number;
+};
 
 /**
  * Suppress real spine-log writes when running under jest. Without this guard,
- * sdk-level tests that exercise addCard/moveCard/doneCard/demoCard leak
- * test-card events into platform/logs/chorus.log, which the Chorus index
- * then surfaces to Clearing as fake Accepted bubbles (#2241 wave 2 incident).
- * Jest sets NODE_ENV=test automatically; production never trips this guard.
+ * sdk-level tests that exercise addCard/moveCard/doneCard leak test-card events
+ * into the spine, which the Chorus index surfaces to Clearing as fake Accepted
+ * bubbles (#2241 wave 2 incident). Jest sets NODE_ENV=test automatically.
  */
 const IS_TEST_ENV = process.env.NODE_ENV === 'test';
+
+// Resolve chorus-log the same way cards resolves role-state (sdk.ts:19).
+const CHORUS_LOG = path.resolve(__dirname, '../../../../platform/scripts/chorus-log');
 
 export function emitSpineEvent(
   event: string,
@@ -20,7 +31,7 @@ export function emitSpineEvent(
   if (IS_TEST_ENV) return;
   // #2876: card_id canonical type is integer (matches MCP-emitted events).
   // Logs-query regex `"card_id":NNN\b` only matches unquoted integers, so a
-  // string-typed card_id here drops bash-CLI lifecycle events out of
+  // string-typed card_id drops bash-CLI lifecycle events out of
   // chorus_logs_for_card joins. Coerce here, not at every call site.
   const normalized: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(extra)) {
@@ -30,12 +41,15 @@ export function emitSpineEvent(
       normalized[k] = v;
     }
   }
-  emit(event, role, normalized, { appName: 'cards', component: 'cli' });
+  // Canonical spine emit: `bash chorus-log <event> <role> key=value...` — the same
+  // contract werk-verbs use. Best-effort + non-blocking: a spine-emit failure must
+  // never break a card op (mirrors werk-verb jsonl/spine discipline).
+  const kv = Object.entries(normalized).map(([k, v]) => `${k}=${v}`);
+  try {
+    execFile('bash', [CHORUS_LOG, event, role, ...kv, 'appName=cards', 'component=cli'], () => {
+      /* best-effort; ignore exit/stderr */
+    });
+  } catch {
+    /* never let spine emit break a card op */
+  }
 }
-
-// #2652 AC3 — emitChorusEvent retired 2026-05-02. Single emit function in
-// cards (emitSpineEvent above). The one prior call site
-// (deploy.verification.completed at sdk.ts:889) migrated to emitSpineEvent for
-// canonical-chain uniformity. If a downstream subscriber needs the old envelope
-// shape (appName='chorus-events' component='lifecycle'), surface here before
-// re-introducing.

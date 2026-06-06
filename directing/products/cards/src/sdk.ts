@@ -1517,7 +1517,10 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
 // product / subproduct / domain / subdomain — are settable on existing cards
 // per Jeff direction 2026-05-02 (board-wide attribute backfill).
 const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subdomain', 'subproduct', 'product']);
-const SET_CARD_TAG_CATEGORIES = ['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'product'];
+// #3267: chunk removed from the static-map tag loop — it now routes through
+// applyLabelByName (auto-create), same as subproduct/subdomain, so chunk is a
+// dynamic priority axis: a new priority is just a tag, no config.ts/enum edit.
+const SET_CARD_TAG_CATEGORIES = ['domain', 'sequence', 'stream', 'type', 'origin', 'product'];
 
 function validateSetKeys(pairs: Record<string, string>): void {
   for (const key of Object.keys(pairs)) {
@@ -1556,6 +1559,18 @@ async function applyTagChanges(client: BoardClient, index: number, pairs: Record
   if (pairs.subproduct) {
     await client.applyLabelByName(index, `subproduct:${pairs.subproduct.toLowerCase()}`);
     changes.push(`subproduct=${pairs.subproduct}`);
+  }
+  // #3267: chunk is the dynamic PRIORITY axis. Route through applyLabelByName so
+  // a new priority chunk (werk/model/loom/proving…) auto-creates its label —
+  // no VALID_CHUNKS enum, no config.ts label-id edit per priority. Normalize +
+  // warn on first use so a typo (werk vs work) is visible, not silently minted.
+  if (pairs.chunk) {
+    const value = pairs.chunk.toLowerCase().trim();
+    const { created } = await client.applyLabelByName(index, `chunk:${value}`);
+    if (created) {
+      console.warn(`⚠ new chunk "${value}" — first use, label created. (typo check: is this an existing chunk misspelled?)`);
+    }
+    changes.push(`chunk=${value}`);
   }
 }
 
