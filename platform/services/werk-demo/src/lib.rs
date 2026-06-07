@@ -560,67 +560,27 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     jsonl(home, role, card, &trace, "demo.decision_surface",
           &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // #3263 — THE BLOCKING HUMAN STEP, and it CANNOT skip Jeff. act calls werk-demo
-    // synchronously; the human pause lives HERE. Block until Jeff records his ONE
-    // decision (go / no-go / more) in the witness — INDEFINITELY. There is NO
-    // timeout fail-safe: a timer must never stand in for his hand. (The old
-    // max-block → "more" auto-resolved the gate and skipped the human; removed.)
-    // If Jeff walks away for 10 hours the demo waits 10 hours — "stuck" awaiting
-    // him is correct: it's his gate, not a deadline. A ~60s heartbeat keeps the
-    // wait observable (never decides). Headless-safe: poll the witness file, no TTY.
-    let poll_secs: u64 = std::env::var("CHORUS_DEMO_POLL_SECS")
-        .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
-    jsonl(home, role, card, &trace, "demo.awaiting_decision", "");
-
-    let started = std::time::Instant::now();
-    let mut last_heartbeat: u64 = 0;
-    let decision = loop {
-        let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        if let Some(d) = read_decision(&w, card) {
-            break d;
-        }
-        let elapsed = started.elapsed().as_secs();
-        if elapsed - last_heartbeat >= 60 {
-            last_heartbeat = elapsed;
-            jsonl(home, role, card, &trace, "demo.awaiting_decision.heartbeat",
-                  &format!(",\"waited_secs\":{}", elapsed));
-        }
-        sleep(std::time::Duration::from_secs(poll_secs.max(1)));
-    };
-    jsonl(home, role, card, &trace, "demo.decision.honored",
-          &format!(",\"decision\":\"{}\"", decision.label()));
-
-    // go = accept → record the demo.verdict pass (the merge-gating evidence).
-    // no-go / more record demo.stopped (no verdict = no merge). act reads ONLY the
-    // exit code: go→0 (continue to merge), no-go|more→2 (stop, nothing merged).
-    let message = match decision {
-        Decision::Go => {
-            let prover = std::env::var("CHORUS_DEMO_PROVER").unwrap_or_else(|_| "stub".to_string());
-            let auto = prover == "stub";
-            let verdict_extra = format!(
-                ",\"verdict\":\"pass\",\"prover\":\"{}\",\"auto\":{},\"ac\":\"{}/{}\",\"decision\":\"go\"",
-                prover, auto, checked, total
-            );
-            jsonl(home, role, card, &trace, "demo.verdict", &verdict_extra);
-            emit_spine(home, "demo.verdict", role, card, &trace);
-            format!(
-                "demo #{} — GO/accepted ({}/{} AC); verdict recorded (prover={}). act continues to merge.",
-                card, checked, total, prover
-            )
-        }
-        Decision::NoGo => {
-            jsonl(home, role, card, &trace, "demo.stopped", ",\"decision\":\"no-go\"");
-            format!("demo #{} — NO-GO (rejected). Nothing merged; card returns to Next.", card)
-        }
-        Decision::More => {
-            jsonl(home, role, card, &trace, "demo.stopped", ",\"decision\":\"more\"");
-            format!("demo #{} — MORE (iterate). Nothing merged; werk preserved.", card)
-        }
-    };
-
-    jsonl(home, role, card, &trace, "demo.completed",
-          &format!(",\"decision\":\"{}\"", decision.label()));
-    Ok(DemoOutcome { message, exit: decision.exit_code() })
+    // #3279 — PRESENT-AND-EXIT. The demo no longer BLOCKS for the decision. Blocking
+    // here held the synchronous MCP call open for the entire human wait, and a held
+    // call drops on long waits (the client↔chorus-mcp transport self-sever, #3277) —
+    // it could not survive a 10-12h walk-away. The earlier "fix" (detach the run)
+    // then lost Jeff's in-session visibility entirely (he saw nothing, was asked to
+    // approve blind). Both are wrong. So the demo PRESENTS (variant up + decision
+    // surface, posted above) and EXITS cleanly — Half A of the pipeline ends here.
+    // NOTHING is held: there is no wait to drop and no detached process to leak.
+    // Jeff decides whenever — minutes, or hours, or after a reboot — and his GO runs
+    // Half B (werk-land.yml: merge → ff-sync → deploy-prod → finalize). The "wait"
+    // costs nothing because it is a stopped pipeline, not a held connection.
+    jsonl(home, role, card, &trace, "demo.presented",
+          &format!(",\"ac\":\"{}/{}\",\"variant\":\"{}\"", checked, total, variant_url));
+    emit_spine(home, "demo.presented", role, card, &trace);
+    let message = format!(
+        "demo #{} PRESENTED ({}/{} AC) — variant up at {}. Half A done; nothing is held. \
+         Your GO lands it (Half B: merge → deploy-prod → finalize). no-go/more = iterate, nothing merged.",
+        card, checked, total, variant_url
+    );
+    jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"presented\"");
+    Ok(DemoOutcome { message, exit: 0 })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
