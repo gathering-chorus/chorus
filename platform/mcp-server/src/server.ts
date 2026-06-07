@@ -409,11 +409,6 @@ const WerkRunInput = z.object({
   accepter: z.enum(['jeff', 'wren', 'kade', 'silas']).optional().describe('Authorizing identity for the printed werk-accept command (DEC-048). Default jeff. Not auto-run.'),
 });
 
-// #3277 — poll a detached chorus_werk run by the run_id chorus_werk returned.
-const WerkStatusInput = z.object({
-  run_id: z.string().min(1).describe('The run_id returned by chorus_werk (e.g. 1780000000000-3277-silas).'),
-});
-
 const SERVICE_STATUS_TOOL_DEF = {
   name: 'chorus_service_status',
   description: 'Use this to read the current launchd state of a chorus service — PID, exit code, running cdhash. Wraps `agent-state.sh status <svc>`. Refusal taxonomy: service-not-found | label-resolve-fail. Read-only verb, open to any role. Do NOT use to mutate state (start/stop/restart/deploy/rollback are write verbs) or to query historical lifecycle events (chorus_logs_for_card is the trace surface).',
@@ -504,29 +499,31 @@ const CHORUS_ENV_UP_TOOL_DEF = {
 // the MCP-verb contract — same way roles call werk-pull/werk-commit/chorus_build.
 const CHORUS_WERK_TOOL_DEF = {
   name: 'chorus_werk',
-  description: 'Use this to run the WHOLE werk pipeline for a card — commit→push→build→test→deploy-werk→env-up→demo→merge→ff-sync→deploy-prod — then STOP before accept (DEC-048). Wraps the act run of .github/workflows/werk.yml (canonical, host-native); the caller passes only {role, card_id, accepter} and never touches the raw act CLI. #3277: the pipeline runs DETACHED — this call returns in seconds with {ok, run_id, status:"running"} and the run continues in the background, so the client↔chorus-mcp transport cannot drop a long human-blocking run. Poll chorus_werk_status with the run_id (or watch the spine) for the outcome; the verb NEVER auto-accepts. Do NOT shell out to `act` directly. Refusal taxonomy: usage-error.',
+  description: 'Use this to run HALF A of the werk pipeline for a card — commit→push→build→test→deploy-werk→env-up→demo, where demo PRESENTS the running variant and STOPS (#3279). Wraps the act run of .github/workflows/werk.yml (canonical, host-native); pass only {role, card_id, accepter}, never the raw act CLI. This call is SYNCHRONOUS and SHORT: the demo no longer blocks for the human go (that was what dropped the transport on long waits, #3277), so it returns in minutes with {ok, phase:"presented", land_command}. Jeff sees the presented variant in-session, then his GO runs HALF B via chorus_werk_land (merge→deploy-prod→finalize). NOTHING is held between the halves — the wait is a stopped pipeline, not a connection, so it survives a 12h walk-away. Do NOT shell out to `act` directly. Refusal taxonomy: usage-error | pipeline-fail.',
   inputSchema: {
     type: 'object',
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk runs.' },
-      card_id: { type: 'integer', minimum: 1, description: 'Card to run through the pipeline.' },
-      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity for the printed werk-accept command (DEC-048). Default jeff. Not auto-run.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card to run through Half A of the pipeline.' },
+      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity for the printed accept command (DEC-048). Default jeff. Not auto-run.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
 
-// #3277 — poll a detached chorus_werk run.
-const CHORUS_WERK_STATUS_TOOL_DEF = {
-  name: 'chorus_werk_status',
-  description: 'Use this to check the status of a detached chorus_werk run by the run_id chorus_werk returned. Reads ~/.chorus/werk-runs/<run_id>.json. Returns {status: running | passed | pipeline-fail, exit, step, accept_command}. Read-only; no transport risk. Refusal taxonomy: run-not-found.',
+// #3279 — Half B: the human GO, run after Jeff has seen the presented variant.
+const CHORUS_WERK_LAND_TOOL_DEF = {
+  name: 'chorus_werk_land',
+  description: 'Use this as the human GO after chorus_werk presented a card (#3279). Runs HALF B of the pipeline — merge→ff-sync→deploy-prod→finalize — via the act run of .github/workflows/werk-land.yml, then STOPS before accept (DEC-048, prints the accept command). Synchronous and SHORT (no human pause inside), so it returns in minutes and cannot drop. Only call this on Jeff/Wren\'s explicit go for a card that chorus_werk already PRESENTED; calling it lands the card to prod. Do NOT shell out to `act` directly. Refusal taxonomy: usage-error | land-fail.',
   inputSchema: {
     type: 'object',
     properties: {
-      run_id: { type: 'string', minLength: 1, description: 'The run_id chorus_werk returned (e.g. 1780000000000-3277-silas).' },
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose presented card is being landed.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card to land (the one chorus_werk presented).' },
+      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity whose GO this is (DEC-048). Default jeff.' },
     },
-    required: ['run_id'],
+    required: ['role', 'card_id'],
     additionalProperties: false,
   },
 } as const;
@@ -1923,8 +1920,28 @@ async function executeChorusEnvUp(
 // (canonical werk.yml via -W, host-native runner via -P, --input wiring, and a PATH
 // that makes chorus-mcp-call.sh + the verb binaries resolvable) lives HERE, not in any
 // caller. The act run stops before accept (werk.yml's design); the verb never accepts.
+// #3279 — runner env shared by both halves of the split pipeline.
+function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath: string) {
+  return {
+    ...process.env,
+    CHORUS_HOME: home,
+    CHORUS_WERK_BASE: werkBase,
+    DEPLOY_ROLE: role,
+    CHORUS_ROLE: role,
+    PATH: runnerPath,
+  };
+}
+
+// #3279 — Half A: SYNCHRONOUS again, and safe by construction. The demo now PRESENTS
+// the variant and EXITS (it no longer blocks for the human go), so this call runs only
+// the SHORT front half (commit → build → test → deploy-werk → env-up → demo PRESENT) and
+// returns in minutes. It never holds open across a human wait, so #3277's transport drop
+// cannot happen — we removed the long hold, we did not paper over it with a detach (which
+// cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
+// his GO runs Half B (chorus_werk_land). Stop-before-land.
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
+  execFileAsync: ExecFileAsync,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
@@ -1932,98 +1949,120 @@ async function executeChorusWerk(
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
   const accepter = args.accepter || 'jeff';
-  // canonical werk.yml — the pipeline config is infra, not card content; a card's own
-  // werk copy may not carry it (branched pre-merge). Self-modifying-pipeline cards are
-  // the one exception, handled out of band.
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
-  // PATH encapsulates the runner's needs: ~/.chorus/bin (verbs) + canonical
-  // platform/scripts (chorus-mcp-call.sh, durably — no per-werk symlink) + homebrew (act).
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
-  const acceptCmd = `DEPLOY_ROLE=${accepter} werk-accept ${args.card_id} ${args.role}`;
-
-  // #3277 — DETACH the pipeline from the MCP request. The pipeline blocks at the
-  // demo step for the human go (minutes → hours); #3263 set the server act-exec
-  // timeout to 0, but holding ONE MCP request open that long drops the
-  // client↔chorus-mcp transport — the run dies even though act would have
-  // finished. So spawn act in a detached, unref'd background process that writes
-  // its own start/final status to a run file, and return a run_id immediately.
-  // The pipeline now survives the MCP call closing AND a chorus-mcp restart.
-  // Poll with chorus_werk_status. Values pass via env (no shell-escaping of card/
-  // role/paths); act output → logFile, status JSON → runFile.
-  const cp = require('child_process') as typeof import('child_process');
-  const fs = require('fs') as typeof import('fs');
-  const runId = `${Date.now()}-${args.card_id}-${args.role}`;
-  const runDir = pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
-  fs.mkdirSync(runDir, { recursive: true });
-  const runFile = pathMod.join(runDir, `${runId}.json`);
-  const logFile = pathMod.join(runDir, `${runId}.log`);
-  const wrapper = [
-    'printf %s "{\\"run_id\\":\\"$RUN_ID\\",\\"card_id\\":$CARD,\\"role\\":\\"$ROLE\\",\\"status\\":\\"running\\",\\"started\\":\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\"}" > "$RUNFILE"',
-    '"$ACT_BIN" workflow_dispatch -W "$WORKFLOW" -P macos-latest=-self-hosted --input "card_id=$CARD" --input "role=$ROLE" --input "accepter=$ACCEPTER" > "$LOGFILE" 2>&1',
-    'EC=$?',
-    'if [ "$EC" -eq 0 ]; then ST=passed; else ST=pipeline-fail; fi',
-    'STEP=$(grep -oiE "Failure - Main [a-z0-9-]+" "$LOGFILE" | tail -1 | sed "s/.*Main //")',
-    'printf %s "{\\"run_id\\":\\"$RUN_ID\\",\\"card_id\\":$CARD,\\"role\\":\\"$ROLE\\",\\"status\\":\\"$ST\\",\\"exit\\":$EC,\\"step\\":\\"$STEP\\",\\"finished\\":\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\",\\"accept_command\\":\\"$ACCEPT_CMD\\"}" > "$RUNFILE"',
-  ].join('\n');
-  const child = cp.spawn('bash', ['-c', wrapper], {
-    detached: true,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      CHORUS_HOME: home,
-      CHORUS_WERK_BASE: werkBase,
-      DEPLOY_ROLE: args.role,
-      CHORUS_ROLE: args.role,
-      PATH: runnerPath,
-      ACT_BIN: actBin,
-      WORKFLOW: workflow,
-      CARD: String(args.card_id),
-      ROLE: args.role,
-      ACCEPTER: accepter,
-      RUN_ID: runId,
-      RUNFILE: runFile,
-      LOGFILE: logFile,
-      ACCEPT_CMD: acceptCmd,
-    },
-  });
-  child.unref();
+  const landCmd = `chorus_werk_land {role:"${args.role}", card_id:${args.card_id}, accepter:"${accepter}"}`;
+  const actArgs = [
+    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
+    '--input', `card_id=${args.card_id}`,
+    '--input', `role=${args.role}`,
+    '--input', `accepter=${accepter}`,
+  ];
+  let stdout = '';
+  let stderr = '';
+  let exitCode = 0;
+  try {
+    const result = await execFileAsync(actBin, actArgs, {
+      env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+      timeout: 0,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || '';
+    stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+  }
+  if (exitCode !== 0) {
+    const combined = stderr + stdout;
+    const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
+    const step = stepMatch ? stepMatch[1] : 'unknown';
+    throw new Error(`pipeline-fail — reason=pipeline-fail step=${step} exit=${exitCode} — Half A stopped; the variant was not presented. Nothing merged.`);
+  }
   return {
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
         ok: true,
         verb: 'chorus_werk',
-        run_id: runId,
-        status: 'running',
+        phase: 'presented',
         role: args.role,
         card_id: args.card_id,
         accepter,
-        poll: `chorus_werk_status with run_id=${runId}`,
-        accept_command: acceptCmd,
-        note: 'Pipeline runs detached — this call returned immediately so the transport cannot drop the run. Watch the spine or poll chorus_werk_status; accept is the human go after demo.',
+        land_command: landCmd,
+        note: 'Half A done — the variant is up and PRESENTED (see the demo decision surface). NOTHING is held: no connection to drop, no process to leak. Look at the variant, then your GO runs Half B (merge → ff-sync → deploy-prod → finalize) via chorus_werk_land. no-go/more = do nothing; the werk is preserved.',
+        stdout: stdout.trim().slice(-4000),
       }),
     }],
   };
 }
 
-// #3277 — read a detached chorus_werk run's status from its run file. Pairs with
-// executeChorusWerk: the detached wrapper writes running → final status to
-// ~/.chorus/werk-runs/<run_id>.json. Pure read; no spawn, no transport risk.
-async function executeChorusWerkStatus(
-  args: z.infer<typeof WerkStatusInput>,
+// #3279 — Half B: THE GO. Runs werk-land.yml synchronously (merge → ff-sync →
+// deploy-prod → finalize). Short — no human pause inside — so the call returns in
+// minutes and cannot drop. Invoked on Jeff's go after he has seen the presented variant.
+// Stop-before-accept (DEC-048): it lands to prod and prints the accept command.
+async function executeChorusWerkLand(
+  args: z.infer<typeof WerkRunInput>,
+  execFileAsync: ExecFileAsync,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
-  const fs = require('fs') as typeof import('fs');
-  const runDir = pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
-  const runFile = pathMod.join(runDir, `${args.run_id}.json`);
-  let text: string;
+  const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
+  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const scriptsDir = pathMod.join(home, 'platform', 'scripts');
+  const accepter = args.accepter || 'jeff';
+  const workflow = pathMod.join(home, '.github', 'workflows', 'werk-land.yml');
+  const actBin = process.env.CHORUS_ACT_BIN || 'act';
+  const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
+  const acceptCmd = `DEPLOY_ROLE=${accepter} werk-accept ${args.card_id} ${args.role}`;
+  const actArgs = [
+    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
+    '--input', `card_id=${args.card_id}`,
+    '--input', `role=${args.role}`,
+    '--input', `accepter=${accepter}`,
+  ];
+  let stdout = '';
+  let stderr = '';
+  let exitCode = 0;
   try {
-    text = fs.readFileSync(runFile, 'utf8').trim();
-  } catch {
-    throw new Error(`run-not-found — no run file for run_id=${args.run_id} (expected ${runFile}). The run may not have started, or run_id is wrong.`);
+    const result = await execFileAsync(actBin, actArgs, {
+      env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+      timeout: 0,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || '';
+    stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
   }
-  return { content: [{ type: 'text' as const, text }] };
+  if (exitCode !== 0) {
+    const combined = stderr + stdout;
+    const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
+    const step = stepMatch ? stepMatch[1] : 'unknown';
+    throw new Error(`land-fail — reason=land-fail step=${step} exit=${exitCode} — Half B stopped; check what landed before retrying.`);
+  }
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        ok: true,
+        verb: 'chorus_werk_land',
+        phase: 'landed',
+        role: args.role,
+        card_id: args.card_id,
+        accepter,
+        accept_command: acceptCmd,
+        note: 'Half B done — merged → ff-synced → deployed to prod → finalized. Accept is yours (DEC-048): judge the work, then run the accept command.',
+        stdout: stdout.trim().slice(-4000),
+      }),
+    }],
+  };
 }
 
 async function executeNudge(
@@ -2302,7 +2341,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CHORUS_DEPLOY_TOOL_DEF,
       CHORUS_ENV_UP_TOOL_DEF,
       CHORUS_WERK_TOOL_DEF,
-      CHORUS_WERK_STATUS_TOOL_DEF,
+      CHORUS_WERK_LAND_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -2392,14 +2431,14 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeChorusWerk(parsed.data);
+        return executeChorusWerk(parsed.data, execFileAsync);
       }
-      case 'chorus_werk_status': {
-        const parsed = WerkStatusInput.safeParse(req.params.arguments);
+      case 'chorus_werk_land': {
+        const parsed = WerkRunInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeChorusWerkStatus(parsed.data);
+        return executeChorusWerkLand(parsed.data, execFileAsync);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':

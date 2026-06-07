@@ -1,0 +1,124 @@
+name: werk-land
+
+# werk-land — Half B of the split pipeline (#3279). THE GO.
+#
+# The werk pipeline (werk.yml) was one long run that BLOCKED at the demo for the human
+# go — holding the synchronous MCP call open for the whole wait. A held call drops on
+# long waits (#3277), and could not survive a 12h walk-away; detaching the run (the
+# rushed #3277 fix) then lost Jeff's in-session visibility. #3279 splits at the human:
+#
+#   Half A (werk.yml):  commit → build → test → deploy-werk → env-up → demo PRESENT → STOP
+#   [ Jeff looks whenever — minutes, hours, after a reboot. NOTHING is held. ]
+#   Half B (this file): merge → ff-sync → deploy-prod → finalize → landed   ← THE GO
+#
+# The "wait" between the halves costs nothing — it's a stopped pipeline, not a held
+# connection. This run is SHORT (no human pause inside it), so the MCP call that triggers
+# it returns in minutes and cannot drop. Run via the chorus_werk_land MCP verb on Jeff's go.
+# STOPS before accept (#3234, DEC-048) — prints the accept command, never runs it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      card_id:
+        description: "Card # to land (the one Half A presented)."
+        required: true
+        type: string
+      role:
+        description: "Builder role whose werk is being landed (kade / silas / wren)."
+        required: true
+        type: string
+      accepter:
+        description: "Authorizing identity (jeff / wren) whose GO this is (DEC-048)."
+        required: true
+        type: string
+
+jobs:
+  werk-land:
+    runs-on: macos-latest
+    env:
+      CARD_ID: ${{ inputs.card_id }}
+      ROLE: ${{ inputs.role }}
+      ACCEPTER: ${{ inputs.accepter }}
+
+    steps:
+      - name: shared-trace
+        # Mint ONE trace for the land run; record the go as the proving verdict (the GO IS
+        # the verdict — Jeff's authority, DEC-048 — now that the demo presents-and-exits and
+        # no longer records demo.verdict itself). werk-finalize's existing gate reads this.
+        run: |
+          trace="$(date +%s%N)-$$"
+          echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
+          echo "minted trace=$trace for LAND of card=#${CARD_ID} role=${ROLE} go-by=${ACCEPTER}"
+          mkdir -p "${CHORUS_HOME}/ops/logs" 2>/dev/null || true
+          ts=$(date +%s%3N)
+          printf '{"ts":%s,"event":"werk.land.started","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
+            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
+          # The GO recorded as the demo verdict — the human decision IS the proof.
+          printf '{"ts":%s,"event":"demo.verdict","card_id":%s,"role":"%s","trace_id":"%s","verdict":"pass","prover":"%s","decision":"go"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "$trace" "${ACCEPTER}" \
+            >> "${CHORUS_HOME}/ops/logs/werk-demo.jsonl" 2>/dev/null || true
+
+      # ═══ land to prod — prod is a build of MAIN ═══
+      - name: merge
+        # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid (NOT
+        # branch name — retires the stale-PR false-green), squash-merges, content-verifies.
+        run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+
+      - name: sync-canonical
+        # 5.5 (#3234) — ff-sync canonical to origin/main so SCRIPT-only changes go LIVE with
+        # zero manual steps. deploy-prod handles crate binaries; this makes canonical ==
+        # origin/main immediately. SYNC_OK crosses to the landed step to gate the "live" claim.
+        run: |
+          if [ -n "${CHORUS_HOME:-}" ] \
+             && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
+             && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
+            echo "   [ok] 5.5 canonical ff-synced to origin/main"
+            echo "SYNC_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'" >&2
+            echo "SYNC_OK=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: deploy-prod
+        # chorus_deploy target=canonical, via MCP. SELF-BUILDS from canonical@origin/main
+        # (#3222) — prod binaries are structurally a build of MAIN, not the werk.
+        run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
+
+      - name: finalize
+        # #3237 — MECHANICAL post-deploy finalize (board Done + card.accepted + teardown +
+        # chorus/accept). NO authority gate — the human go IS this run (Half B). Runs only
+        # after deploy-prod succeeds.
+        run: werk-finalize "${CARD_ID}" "${ROLE}"
+
+      - name: landed
+        # STOP-BEFORE-ACCEPT (#3234, DEC-048). Tell the truth: "live" is CONDITIONAL on 5.5
+        # (SYNC_OK). Print the accept command for the human — the workflow does NOT run it.
+        run: |
+          if [ "${SYNC_OK:-0}" = "1" ]; then
+            echo "[landed] #${CARD_ID} built-of-main, deployed + LIVE. NOT yet accepted."
+          else
+            echo "[merged, NOT yet live] #${CARD_ID} merged + deployed, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'chorus-werk-sync recover' to make them live BEFORE accept." >&2
+          fi
+          echo "  Accept is yours (DEC-048) — judge the work, then run it yourself:"
+          echo "    DEPLOY_ROLE=${ACCEPTER} werk-accept ${CARD_ID} ${ROLE}"
+
+      # --- orchestrator witness close (pairs with werk.land.started) ---
+      - name: werk-landed
+        if: success()
+        run: |
+          ts=$(date +%s%3N)
+          printf '{"ts":%s,"event":"werk.landed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
+            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
+
+      - name: werk-land-failed
+        if: failure()
+        run: |
+          ts=$(date +%s%3N)
+          printf '{"ts":%s,"event":"werk.land.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
+            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
+
+# Stop-on-failure: GHA default. merge fails → nothing deploys. Each verb runs its OWN
+# all-or-nothing rollback via MCP; this workflow just sequences. Accept never runs here.

@@ -117,64 +117,36 @@ jobs:
           if chorus-mcp-call.sh "${ROLE}" chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
       - name: demo
-        # werk-demo (#3116) — the proving ceremony against the env-up'd slot. The one
-        # binary (the /demo skill's path; a chorus_demo MCP wrapper is the consistency
-        # follow-on). Emits demo.verdict. Failure stops the job → nothing lands.
+        # werk-demo (#3116; PRESENT-AND-EXIT since #3279). The proving ceremony against the
+        # env-up'd slot: it PRESENTS the running variant + decision surface and EXITS. It no
+        # longer BLOCKS for the go — blocking held the synchronous MCP call open for the whole
+        # human wait, which dropped on long waits (#3277) and could not survive a 12h walk-away.
+        # Half A of the pipeline ENDS here. Jeff's GO runs Half B (werk-land.yml). Failure
+        # (variant didn't come up) stops the job → nothing to land.
         run: DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}"
 
-      # ═══ land to prod — prod is a build of MAIN ═══
-      - name: merge
-        # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid (NOT
-        # branch name — retires the stale-PR false-green), squash-merges, content-verifies.
-        run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
-
-      - name: sync-canonical
-        # 5.5 (#3234) — ff-sync canonical to origin/main so SCRIPT-only changes go LIVE
-        # with zero manual steps (merged≠live for .sh as much as for binaries). deploy-prod
-        # handles crate binaries; this makes canonical == origin/main immediately. SYNC_OK
-        # crosses to the landed step via $GITHUB_ENV to gate the "live" claim.
+      - name: presented
+        # STOP-BEFORE-LAND (#3279, supersedes the stop-before-accept of the merged pipeline).
+        # Half A is done: the variant is up and presented; NOTHING is held — no connection to
+        # drop, no detached process to leak. Tell the human what to look at and how to land it.
+        # The GO is a SEPARATE short run (Half B = werk-land.yml: merge → ff-sync → deploy-prod
+        # → finalize), so the wait between holds nothing and survives a 12h walk-away or reboot.
+        # no-go/more = simply don't land; the werk is preserved for iteration.
         run: |
-          if [ -n "${CHORUS_HOME:-}" ] \
-             && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
-             && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
-            echo "   [ok] 5.5 canonical ff-synced to origin/main"
-            echo "SYNC_OK=1" >> "$GITHUB_ENV"
-          else
-            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'" >&2
-            echo "SYNC_OK=0" >> "$GITHUB_ENV"
-          fi
-
-      - name: deploy-prod
-        # chorus_deploy target=canonical, via MCP. SELF-BUILDS from canonical@origin/main
-        # (#3222) — prod binaries are structurally a build of MAIN, not the werk.
-        run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
-
-      - name: finalize
-        # #3237 — MECHANICAL post-deploy finalize (board Done + card.accepted + teardown +
-        # chorus/accept). NO authority gate — the human go already happened at the blocking
-        # demo step. Runs only after deploy-prod, i.e. only after werk-demo exited 0 (go).
-        run: werk-finalize "${CARD_ID}" "${ROLE}"
-
-      - name: landed
-        # STOP-BEFORE-ACCEPT (#3234, DEC-048). Tell the truth: "live" is CONDITIONAL on
-        # 5.5 (SYNC_OK). Print the accept command for the human — the workflow does NOT run
-        # werk-accept. Accept is the accepter's deliberate act.
-        run: |
-          if [ "${SYNC_OK:-0}" = "1" ]; then
-            echo "[landed] #${CARD_ID} built-of-main, deployed + LIVE (steps 1-6 green). NOT yet accepted."
-          else
-            echo "[merged, NOT yet live] #${CARD_ID} merged + deployed, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'chorus-werk-sync recover' to make them live BEFORE accept." >&2
-          fi
-          echo "  Accept is yours (DEC-048) — judge the work, then run it yourself:"
-          echo "    DEPLOY_ROLE=${ACCEPTER} werk-accept ${CARD_ID} ${ROLE}"
+          echo "[presented] #${CARD_ID} — variant up, demo presented. Half A done; NOTHING is held."
+          echo "  Look at the variant, then your call (Half B — a separate short run):"
+          echo "    GO         → chorus_werk_land {role:${ROLE}, card_id:${CARD_ID}}   (merge → ff-sync → deploy-prod → finalize)"
+          echo "    no-go/more → do nothing; the werk is preserved for iteration."
 
       # --- orchestrator witness close (pairs with werk.started) ---
-      - name: werk-landed
+      - name: werk-presented
+        # #3279 — Half A success = PRESENTED, not landed. The card is up for review; nothing
+        # has merged or deployed. werk.landed is emitted by Half B (werk-land.yml) on the go.
         if: success()
         run: |
           ts=$(date +%s%3N)
-          printf '{"ts":%s,"event":"werk.landed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
+          printf '{"ts":%s,"event":"werk.presented","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
       - name: werk-failed

@@ -138,25 +138,23 @@ exit 0
             g
         ));
     }
-    // #3263 informed-go: the demo now ALSO requires a recorded demo.test_result
-    // before honoring a go (the pipeline's test step records it via
-    // `werk-demo test-result`; demo() here is called directly, so seed it). The
-    // announce (demo.ready_for_review) is emitted by demo() in-run, so it's present
-    // by the time the informed-go check reads the witness. informed_go_blockers
-    // unit tests cover the refusal branch (no test-result / no announce) directly.
+    // #3263: a recorded demo.test_result feeds the decision surface ("tests: pass").
+    // The pipeline's test step records it via `werk-demo test-result`; demo() here is
+    // called directly, so seed it. (#3279: the demo PRESENTS this on the surface and
+    // EXITS — it no longer blocks for a demo.decision, so no "go" seed is needed; the
+    // go runs Half B / werk-land separately.)
     gate_seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
-    // Jeff's "go" = accept → demo returns exit 0 with a recorded demo.verdict.
-    // Without it the binary blocks until the max-block timeout (→ more).
-    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.decision\",\"role\":\"jeff\",\"card_id\":3046,\"trace_id\":\"seed\",\"decision\":\"go\",\"reason\":\"\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
 
     // --- run the proving ceremony ---
     let result = demo(3046, "wren", &home).expect("demo should succeed");
-    assert_eq!(result.exit, 0, "go decision → exit 0 (act merges); got {}", result.exit);
+    // #3279 — present-and-exit: the demo PRESENTS and returns exit 0 WITHOUT blocking
+    // for a decision. The go is no longer consumed here (it runs Half B / werk-land).
+    assert_eq!(result.exit, 0, "present-and-exit → exit 0 (Half A done); got {}", result.exit);
     assert!(result.message.contains("demo #3046"), "ok message: {}", result.message);
     assert!(result.message.contains("2/2 AC"), "ac count in message: {}", result.message);
-    assert!(result.message.contains("GO"), "message names the go/accept decision: {}", result.message);
-    assert!(result.message.contains("verdict recorded"), "message names the verdict: {}", result.message);
+    assert!(result.message.contains("PRESENTED"), "message names the present-and-exit: {}", result.message);
+    assert!(result.message.contains("Half A done"), "message names Half A complete: {}", result.message);
 
     // --- assert side effects ---
 
@@ -182,7 +180,7 @@ exit 0
         "demo.preflight.passed",
         "demo.signal.completed",
         "demo.ready_for_review",
-        "demo.verdict",
+        "demo.presented",
         "demo.completed",
     ] {
         assert!(
@@ -264,36 +262,34 @@ exit 0
         !card_story.contains("\"event\":\"demo.refused\""),
         "demo must not refuse on the happy path; got:\n{}", card_story
     );
-    // demo.verdict is recorded; until #3212 wires a real prover it's a labeled STUB
-    // (prover=stub, auto=true) so Borg/accept can tell a placeholder from a real proof.
+    // #3279 — present-and-exit: the demo records demo.presented (the variant is up,
+    // here's the decision surface) and EXITS. It does NOT record demo.verdict — the
+    // go is no longer made here; it's made in Half B (werk-land), which records the
+    // verdict. Borg/accept read the verdict from the land run, not the present run.
     assert!(
-        card_story.contains("\"event\":\"demo.verdict\"")
-            && card_story.contains("\"prover\":\"stub\"")
-            && card_story.contains("\"auto\":true"),
-        "demo must record demo.verdict labeled prover=stub + auto=true (#3116); got:\n{}", card_story
+        card_story.contains("\"event\":\"demo.presented\""),
+        "demo must record demo.presented (#3279 present-and-exit); got:\n{}", card_story
+    );
+    assert!(
+        !card_story.contains("\"event\":\"demo.verdict\""),
+        "#3279: the present run must NOT record a verdict — the go (Half B) does; got:\n{}", card_story
     );
 
-    // (7) #3237: the timed comment-window is REPLACED by the BLOCKING decision
-    //     step — werk-demo waits for Jeff's go/no-go/more then records the honored
-    //     decision. (A "go" is seeded, so it returns immediately.) The old timed
-    //     window events must be gone — structural proof of the replacement.
-    assert!(
-        witness.contains("\"event\":\"demo.awaiting_decision\""),
-        "demo must emit demo.awaiting_decision to mark the blocking human step; got:\n{}",
-        witness
-    );
-    assert!(
-        witness.contains("\"event\":\"demo.decision.honored\"")
-            && witness.contains("\"decision\":\"go\""),
-        "demo must record the honored go decision; got:\n{}",
-        witness
-    );
-    assert!(
-        !witness.contains("\"event\":\"demo.awaiting_comment\""),
-        "#3237 replaced the timed comment-window with the blocking decision step — \
-         demo.awaiting_comment must be gone; got:\n{}",
-        witness
-    );
+    // (7) #3279: the demo NO LONGER BLOCKS for a decision. The held block was what
+    //     dropped the synchronous MCP call on long waits (#3277). Structural proof of
+    //     present-and-exit: none of the blocking-decision events fire.
+    for gone in [
+        "demo.awaiting_decision",
+        "demo.awaiting_decision.heartbeat",
+        "demo.decision.honored",
+        "demo.awaiting_comment",
+    ] {
+        assert!(
+            !witness.contains(&format!("\"event\":\"{}\"", gone)),
+            "#3279 present-and-exit removed the blocking decision step — {} must not fire; got:\n{}",
+            gone, witness
+        );
+    }
 
     // (8) #3116: the re-nudge/escalate spam path is GONE (fire-and-move-on). None of
     //     those events should appear — proving the anti-spam fix structurally.
