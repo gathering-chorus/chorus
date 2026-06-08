@@ -46,6 +46,8 @@ pub use hooks::inject_force::{
     EngagementVerdict,
 };
 pub use state::AppState;
+// #3278 — expose append_log for the concurrent-append atomicity test.
+pub use state::append_log;
 pub use types::HookInput;
 // #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every
 // Edit/Write/MultiEdit BEFORE forwarding to daemon. HookResponse is the return

@@ -135,6 +135,15 @@ fn has_test_file_edit(input: &HookInput, state: &AppState) -> bool {
         None => return true,
     };
 
+    // #3278 — live daemon state first. The daemon records every test-file Edit/Write
+    // the instant it sees it (PreToolUse), so a write-test-then-write-code TDD flow is
+    // recognized immediately — no dependency on the transcript JSONL, which flushes ~a
+    // turn late and falsely blocked werk edits for every role. The transcript scan
+    // below remains the fallback (e.g. test edits from before a daemon restart).
+    if state.has_test_edit(&session_id) {
+        return true;
+    }
+
     let cwd = input.cwd.as_deref().unwrap_or("");
     let lines = state.session_cache.get_tail(&session_id, cwd, 500);
     if lines.is_empty() {
