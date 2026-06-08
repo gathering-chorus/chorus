@@ -1,47 +1,24 @@
 {
   "version": 1,
-  "description": "Cross-language parity vectors for #2311 protocol contract hash. Python (claudemd-gen.py:_hash_fragment_set) and Rust (chorus-hooks protocol_contract) MUST produce identical digests on all fixtures. Any canonicalization change = regenerate from Python, update Rust, both sides must re-agree.",
+  "description": "Cross-language parity vectors for #2311 protocol contract hash. Python (claudemd-gen) and Rust (chorus-hooks protocol_contract) MUST produce identical digests on FIXED synthetic inputs — that proves the canonicalization ALGORITHM matches across languages. #3254: the old `live_core` fixture (which pinned the hash of the 13 live protocol-core fragments) was REMOVED — it was a content snapshot that went stale on every CLAUDE.md regen (e23de77→c6958c6e in one day) and cried wolf in the nightly. Whether the live doc matches its fragments is the RUNTIME guard's job (protocol_contract::check — self-relative: stamp vs freshly-computed fragment hash), not this unit test's. Add only fixed-byte fixtures here; never pin a live-content hash.",
   "algorithm": "sha256 over sorted entries; per entry: utf8(rel_path) || 0x00 || ascii(sha256_hex(content_bytes)) || 0x00",
-  "core_paths": [
-    "shared/chorus-prompt.md",
-    "shared/cross-machine-operations-core.md",
-    "shared/domain-endpoints.md",
-    "shared/error-handling-discipline.md",
-    "shared/execution-modes.md",
-    "shared/icd-gate.md",
-    "shared/idle-awareness.md",
-    "shared/intellectual-honesty.md",
-    "shared/search-hierarchy.md",
-    "shared/session-close-out-core.md",
-    "shared/tdd-discipline.md",
-    "shared/team-kanban-board-core.md",
-    "shared/team-operating-model.md"
-  ],
   "fixtures": [
     {
       "name": "empty",
-      "description": "Empty fragment set \u2014 canonical 'hash of nothing fed with the algorithm'. Both sides must agree that sha256() over no input yields the same digest.",
+      "description": "Empty fragment set — canonical 'hash of nothing fed with the algorithm'. Both sides must agree that sha256() over no input yields the same digest.",
       "files": {},
       "expected_core_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "expected_fragments_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "name": "known_content",
-      "description": "Two synthetic fragments with fixed bytes. If canonicalization drifts (encoding, separator, sort order) this hash changes and both Python and Rust fail loud.",
+      "description": "Two synthetic fragments with fixed bytes. If canonicalization drifts (encoding, separator, sort order) this hash changes and both Python and Rust fail loud. Fixed input → fixed expected hash; never goes stale.",
       "files": {
         "shared/chorus-prompt.md": "# Chorus Prompt\nhello world\n",
         "shared/idle-awareness.md": "## Idle\nbe idle\n"
       },
       "expected_core_hash": "76ae3e786c980e469c64646fb66288c5773cf3fc9610a50caccfd7a374ad4b8a",
       "expected_fragments_hash": "76ae3e786c980e469c64646fb66288c5773cf3fc9610a50caccfd7a374ad4b8a"
-    },
-    {
-      "name": "live_core",
-      "description": "Current 13-fragment protocol core from the live repo. References paths \u2014 both Python gen and Rust hook read the real files. When any core fragment changes, this hash changes; vector must be regenerated and both sides update together.",
-      "files": null,
-      "core_paths_from_manifest": true,
-      "expected_core_hash": "e23de77f6cc237b02c28f4045ca891a23f27bf4e04a4432702d0cde9776a5d9f",
-      "expected_fragments_hash": "9fbe2240de79a03e9facea01ca61522e255e651888e9a29749e543797bef18a2"
     }
   ]
 }

@@ -174,6 +174,22 @@ pub fn read_protocol_version() -> std::io::Result<String> {
     Ok(fs::read_to_string(p)?.trim().to_string())
 }
 
+/// #3254 — the pure pass/fail decision, split out of `check()` so the contract LOGIC is
+/// hermetically testable without reading live role files. Given a role's parsed stamps and
+/// the freshly-computed live version + core hash, decide. No IO, no live-doc coupling — so a
+/// unit test of this never goes stale on a CLAUDE.md regen.
+pub(crate) fn evaluate_stamps(stamps: &Stamps, live_version: &str, live_core: &str) -> Result<(), Violation> {
+    if stamps.chorus_prompt != live_version || stamps.protocol_core_sha != live_core {
+        return Err(Violation::VersionMismatch {
+            stamp_version: stamps.chorus_prompt.clone(),
+            live_version: live_version.to_string(),
+            stamp_core: stamps.protocol_core_sha.clone(),
+            live_core: live_core.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// The full contract check for a role. Ok(()) = pass; Err(Violation) = fail.
 pub fn check(role: &str) -> Result<(), Violation> {
     let claudemd = match fs::read_to_string(role_claudemd_path(role)) {
@@ -189,23 +205,12 @@ pub fn check(role: &str) -> Result<(), Violation> {
     let core_paths = load_core_paths().unwrap_or_default();
     let live_core = hash_fragment_set(&core_paths).unwrap_or_default();
 
-    if stamps.chorus_prompt != live_version || stamps.protocol_core_sha != live_core {
-        return Err(Violation::VersionMismatch {
-            stamp_version: stamps.chorus_prompt,
-            live_version,
-            stamp_core: stamps.protocol_core_sha,
-            live_core,
-        });
-    }
-
-    // #2731: role-fragments staleness check retired. SessionStart's
-    // defensive regen (commands/session.rs AC4) guarantees the file the
-    // protocol check reads was just rewritten from the live fragment set,
-    // so a stamp-vs-live mismatch at this point would be a claudemd-gen
-    // output bug, not drift. Cross-language hash agreement is pinned by
+    // #2731: role-fragments staleness check retired. SessionStart's defensive regen
+    // (commands/session.rs AC4) guarantees the file the protocol check reads was just
+    // rewritten from the live fragment set, so a stamp-vs-live mismatch here would be a
+    // claudemd-gen output bug, not drift. Cross-language hash agreement is pinned by
     // designing/claudemd/.protocol_test_vectors.json and verified in CI.
-
-    Ok(())
+    evaluate_stamps(&stamps, &live_version, &live_core)
 }
 
 /// Format a PROTOCOL VIOLATION / STALE banner suitable for prepending to
@@ -317,54 +322,57 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(v["version"].as_i64(), Some(1), "vector schema version drifted");
         let fixtures = v["fixtures"].as_array().unwrap();
+        // #3254: SYNTHETIC fixed-byte fixtures only. The old `live_core` fixture pinned the
+        // hash of the 13 LIVE protocol-core fragments — a content snapshot that went stale on
+        // every CLAUDE.md regen (e23de77→c6958c6e in one day), crying wolf in the nightly. The
+        // invariant worth testing is "Rust canonicalization == the Python generator's" — proven
+        // by FIXED inputs that never change. Whether the live doc matches its fragments is the
+        // runtime guard's job (`check()`, self-relative stamp-vs-fresh-hash), not this unit test.
         for fix in fixtures {
             let name = fix["name"].as_str().unwrap();
             let expected = fix["expected_core_hash"].as_str().unwrap();
-            let actual = if fix.get("core_paths_from_manifest").and_then(|x| x.as_bool()).unwrap_or(false) {
-                // live_core fixture — read the 13 real paths
-                let paths: Vec<String> = v["core_paths"].as_array().unwrap().iter()
-                    .map(|s| s.as_str().unwrap().to_string()).collect();
-                hash_fragment_set(&paths).unwrap()
-            } else {
-                // in-memory fixture
-                let files = fix["files"].as_object().unwrap();
-                let entries: Vec<(String, Vec<u8>)> = files.iter()
-                    .map(|(k, v)| (k.clone(), v.as_str().unwrap().as_bytes().to_vec()))
-                    .collect();
-                let borrows: Vec<(&str, &[u8])> = entries.iter()
-                    .map(|(r, c)| (r.as_str(), c.as_slice())).collect();
-                hash_entries(&borrows)
-            };
+            let files = fix["files"].as_object().unwrap_or_else(|| panic!(
+                "fixture '{}' has no synthetic 'files' — live-content fixtures were removed (#3254); \
+                 add fixed bytes, never pin live-fragment hashes", name));
+            let entries: Vec<(String, Vec<u8>)> = files.iter()
+                .map(|(k, val)| (k.clone(), val.as_str().unwrap().as_bytes().to_vec()))
+                .collect();
+            let borrows: Vec<(&str, &[u8])> = entries.iter()
+                .map(|(r, c)| (r.as_str(), c.as_slice())).collect();
+            let actual = hash_entries(&borrows);
             assert_eq!(actual, expected,
                 "fixture '{}' hash mismatch — Rust/Python canonicalization drift", name);
         }
     }
 
+    // #3254 — these replace `live_roles_pass_contract` + `all_three_roles_share_protocol_core`,
+    // which READ the live role CLAUDE.md files and went red whenever the tree was mid-drift
+    // (e.g. a role stamped a different protocol version) — a unit test coupled to live doc
+    // content, the exact cry-wolf smell. The CONTRACT LOGIC is what a unit test should cover;
+    // whether the deployed docs are fresh/consistent is the runtime guard's job at session
+    // start (#2731 defensive regen), not a unit assertion.
     #[test]
-    fn live_roles_pass_contract() {
-        // All three real role files should currently pass the contract —
-        // they were just regenerated with the new stamps.
-        for role in &["silas", "wren", "kade"] {
-            match check(role) {
-                Ok(()) => {}
-                Err(v) => panic!("live role {} failed: {:?}", role, v),
-            }
-        }
+    fn contract_logic_passes_when_stamps_match_live() {
+        let s = Stamps { chorus_prompt: "1.4".into(), protocol_core_sha: "abc123".into(), role_fragments_sha: "def456".into() };
+        assert!(evaluate_stamps(&s, "1.4", "abc123").is_ok());
     }
 
     #[test]
-    fn all_three_roles_share_protocol_core() {
-        // The key invariant Jeff asked for: three roles on the same protocol.
-        // protocol-core hash MUST be identical across all three.
-        let silas = fs::read_to_string(role_claudemd_path("silas")).unwrap();
-        let wren = fs::read_to_string(role_claudemd_path("wren")).unwrap();
-        let kade = fs::read_to_string(role_claudemd_path("kade")).unwrap();
-        let s = parse_stamps(&silas).unwrap();
-        let w = parse_stamps(&wren).unwrap();
-        let k = parse_stamps(&kade).unwrap();
-        assert_eq!(s.chorus_prompt, w.chorus_prompt);
-        assert_eq!(w.chorus_prompt, k.chorus_prompt);
-        assert_eq!(s.protocol_core_sha, w.protocol_core_sha);
-        assert_eq!(w.protocol_core_sha, k.protocol_core_sha);
+    fn contract_logic_fails_on_stale_version_or_core() {
+        let s = Stamps { chorus_prompt: "1.4".into(), protocol_core_sha: "abc123".into(), role_fragments_sha: "def456".into() };
+        assert!(evaluate_stamps(&s, "1.5", "abc123").is_err(), "stale version must fail");
+        assert!(evaluate_stamps(&s, "1.4", "deadbeef").is_err(), "stale core must fail");
+    }
+
+    #[test]
+    fn parse_stamps_extracts_version_and_core() {
+        // The "three roles share protocol-core" property reduces, for a unit test, to:
+        // parse_stamps reads the stamps correctly. Cross-role equality of the LIVE files is a
+        // runtime/integration invariant the guard enforces, not a unit concern.
+        let md = "<!-- chorus-prompt: 1.4 -->\n<!-- protocol-core: sha256=abc123 -->\n<!-- role-fragments: sha256=def456 -->\n# Role\n";
+        let s = parse_stamps(md).unwrap();
+        assert_eq!(s.chorus_prompt, "1.4");
+        assert_eq!(s.protocol_core_sha, "abc123");
+        assert_eq!(s.role_fragments_sha, "def456");
     }
 }
