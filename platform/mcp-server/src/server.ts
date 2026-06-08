@@ -723,6 +723,41 @@ export function groupPrioritiesReadout(rows: ReadoutRow[]) {
   };
 }
 
+/** #3268 — THE canonical readable render (pure, unit-tested). ONE fixed shape, in code,
+ *  so the format is never re-improvised per-role or per-call (Jeff, 2026-06-08: "i dont
+ *  want to have to have a formatting discussion with each of u on this every time"):
+ *
+ *    N · ROLE
+ *      <chunk> (n)
+ *        - #id  title
+ *      untagged (n)
+ *    proving — cross-cut (n) / prune — Gathering (n)
+ *
+ *  This IS the tool's output for humans — not raw JSON, not a one-off swizzle. */
+export function renderPrioritiesReadout(r: ReturnType<typeof groupPrioritiesReadout>): string {
+  const card = (c: ReadoutCard) => `   - #${c.id} - ${c.title}`;
+  const lines: string[] = [];
+  for (const role of r.roles) {
+    lines.push('');
+    lines.push(`${role.rank} ${role.role.toUpperCase()}`);
+    for (const ch of role.chunks) {
+      lines.push(ch.chunk);
+      for (const c of ch.cards) lines.push(card(c));
+    }
+    // #3268 — untagged cards are NOT shown (Jeff, 2026-06-08: "i dont want to see
+    // things that are not tagged"). A priorities report shows tagged priorities only.
+  }
+  if (r.proving.length > 0) {
+    lines.push('');
+    lines.push('proving');
+    for (const c of r.proving) lines.push(card(c));
+  }
+  // #3268 — no untagged, no prune. A priorities report shows ONLY chunked cards
+  // (Jeff, 2026-06-08: "its clearly not a priority if it has no chunk"). proving is
+  // included because chunk:proving IS a chunk (a cross-cut priority).
+  return lines.join('\n').trimStart();
+}
+
 // #3268 — handler: read the board's chunk data straight from Vikunja (sqlite,
 // what the cards CLI does internally) — NOT the search index — and hand the rows
 // to the pure grouper. Active cards only (board view 8, excluding Done/Won't Do).
@@ -747,10 +782,12 @@ async function executePrioritiesReadout(
     throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`);
   }
   const readout = groupPrioritiesReadout(rows);
+  // #3268 — return THE canonical readable render (the fixed bulleted shape), not raw
+  // JSON. One format, in the tool, identical for every role and every call.
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ ok: true, verb: 'chorus_priorities_readout', ...readout }, null, 2),
+      text: renderPrioritiesReadout(readout),
     }],
   };
 }

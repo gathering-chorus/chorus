@@ -3,7 +3,7 @@
 // Gathering, and HONEST untagged (AC4: never fabricate placement).
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { groupPrioritiesReadout } from '../src/server';
+import { groupPrioritiesReadout, renderPrioritiesReadout } from '../src/server';
 
 test('groups by role hard-rank → chunk → cards', () => {
   const rows = [
@@ -54,6 +54,40 @@ test('a card with two chunks appears under each', () => {
   ]);
   const wren = r.roles.find((x) => x.role === 'wren')!;
   assert.deepEqual(wren.chunks.map((c) => c.chunk).sort(), ['loom-authoring', 'memory']);
+});
+
+test('renderPrioritiesReadout: chunked-only report (chunk → - #id - title); no untagged, no prune', () => {
+  const r = groupPrioritiesReadout([
+    { idx: 100, title: 'werk demo fix', bucket: 'WIP', labels: 'owner:kade,chunk:werk-demo' },
+    { idx: 101, title: 'model adr', bucket: 'Next', labels: 'owner:silas,chunk:model' },
+    { idx: 102, title: 'loose wren card', bucket: 'Later', labels: 'owner:wren' },          // untagged
+    { idx: 103, title: 'gathering photo', bucket: 'Later', labels: 'owner:kade,sequence:gathering' }, // prune
+    { idx: 104, title: 'proving loop', bucket: 'Later', labels: 'owner:silas,chunk:proving' },
+  ]);
+  const out = renderPrioritiesReadout(r);
+  // role headings in hard rank order
+  assert.match(out, /1 KADE/);
+  assert.match(out, /2 SILAS/);
+  assert.match(out, /3 WREN/);
+  assert.ok(out.indexOf('1 KADE') < out.indexOf('2 SILAS'));
+  assert.ok(out.indexOf('2 SILAS') < out.indexOf('3 WREN'));
+  // chunk heading + fixed card line: "   - #id - title"
+  assert.match(out, /werk-demo\n   - #100 - werk demo fix/);
+  assert.match(out, /model\n   - #101 - model adr/);
+  // proving (chunk:proving) is included — it's a real chunk
+  assert.match(out, /proving\n   - #104 - proving loop/);
+  // NO untagged: the unchunked card #102 and the word "untagged" never appear
+  assert.ok(!out.includes('#102'), 'untagged card must not appear');
+  assert.ok(!out.includes('untagged'), 'no untagged section');
+  // NO prune: the gathering card #103 and the word "prune" never appear
+  assert.ok(!out.includes('#103'), 'prune/gathering card must not appear');
+  assert.ok(!out.includes('prune'), 'no prune section');
+  // determinism: same input → identical output
+  assert.equal(renderPrioritiesReadout(groupPrioritiesReadout([
+    { idx: 100, title: 'werk demo fix', bucket: 'WIP', labels: 'owner:kade,chunk:werk-demo' },
+  ])), renderPrioritiesReadout(groupPrioritiesReadout([
+    { idx: 100, title: 'werk demo fix', bucket: 'WIP', labels: 'owner:kade,chunk:werk-demo' },
+  ])));
 });
 
 test('unassigned / jeff cards are not forced into the hard rank', () => {
