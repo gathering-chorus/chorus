@@ -114,8 +114,9 @@ const CardsAddInput = z.object({
   subdomain: z.string().optional().describe('Subdomain — Athena subdomain id, refused-at-source against live /api/athena/subdomains (#2652 AC1)'),
 });
 
-// #2996 — Jeff-attributed card add. Same fields as CardsAddInput but desc is
-// optional (Jeff-initiated cards skip the six-section bouncer gate via --quick).
+// #2996 — Jeff-attributed card add. Same fields as CardsAddInput. #3293: the CLI
+// now enforces the Experience+AC floor on every card (no --quick); Jeff cards skip
+// only the agent six-section gate (via attribution), so desc is effectively required.
 const CardAddJeffInput = z.object({
   title: z.string().min(1).describe('Short imperative card title'),
   owner: z.enum(['wren', 'silas', 'kade', 'jeff']).describe('Owner role'),
@@ -558,7 +559,7 @@ const CARDS_ADD_TOOL_DEF = {
 const CARD_ADD_JEFF_TOOL_DEF = {
   name: 'chorus_card_add_jeff',
   description:
-    'Use this ONLY when invoked by the `/card` skill on Jeff\'s direct request. Files a Jeff-attributed card by spawning `cards add --quick` with DEPLOY_ROLE=jeff hardcoded — bouncer\'s isAgent check returns false, card lands directly with no approval-ask payload. The /card skill invocation IS the authorization. Do NOT use for agent-initiated cards (own observation, peer follow-on, demo seed) — use chorus_cards_add instead so the bouncer\'s six-section gate fires and Jeff sees the proposal. Do NOT call this to bypass a bouncer refusal on your own work; the bouncer is intentional. (#2996 retires the old natural-language detector + freshness-marker path in favor of this single typed tool.)',
+    'Use this ONLY when invoked by the `/card` skill on Jeff\'s direct request. Files a Jeff-attributed card by spawning `cards add` with DEPLOY_ROLE=jeff hardcoded — bouncer\'s isAgent check returns false, card lands directly with no approval-ask payload (it still needs the Experience+AC floor; #3293 removed --quick). The /card skill invocation IS the authorization. Do NOT use for agent-initiated cards (own observation, peer follow-on, demo seed) — use chorus_cards_add instead so the bouncer\'s six-section gate fires and Jeff sees the proposal. Do NOT call this to bypass a bouncer refusal on your own work; the bouncer is intentional. (#2996 retires the old natural-language detector + freshness-marker path in favor of this single typed tool.)',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2293,6 +2294,17 @@ async function execCardsCli(
     logEvent('info', `mcp.cards.${verb}.delivered`, { from, stdout: stdout.slice(0, 200) });
     return stdout || stderr || `(no output from ${toolName})`;
   } catch (err) {
+    // #3293 (bug 1): the agent-card bouncer refusal is an INTENDED outcome, not a
+    // crash. The CLI exits non-zero with the [card-approval] ask in its output.
+    // Surface it as typed CONTENT (info-logged, not error) so it reaches the filing
+    // model — which surfaces it to Jeff (Silas's #3: signal survives) — and stays
+    // OFF the mcp.tool.error channel / pain board (the #3278 refusal-dressed-as-crash).
+    const e = err as { message?: string; stdout?: string; stderr?: string };
+    const out = `${e.stdout || ''}${e.stderr || ''}`;
+    if (/REFUSED: agent cards add requires Jeff approval|\[card-approval\]/.test(out)) {
+      logEvent('info', `mcp.cards.${verb}.refused`, { from, reason: 'needs-approval' });
+      return out || '(card-approval refusal — the structured ask is in the pickup file)';
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg });
     throw new Error(`${toolName} failed: ${errMsg}`);
@@ -2322,10 +2334,11 @@ async function executeCardsAdd(
   return { content: [{ type: 'text', text: out }] };
 }
 
-// #2996 — Jeff-attributed add. Ignores the calling role for attribution and
-// hardcodes DEPLOY_ROLE=jeff (the `from` argument passed to execCardsCli), plus
-// --quick to skip the six-section bouncer gate. This is what makes the bouncer's
-// isAgent check return false so the card lands without an approval-ask payload.
+// #2996 — Jeff-attributed add. Hardcodes DEPLOY_ROLE=jeff (the `from` argument
+// passed to execCardsCli) so the bouncer's isAgent check returns false and the
+// card lands without an approval-ask payload. #3293 removed --quick: Jeff-initiated
+// cards now carry the Experience+AC floor too — they skip only the agent
+// six-section gate (via attribution), not the substance floor.
 async function executeCardAddJeff(
   args: z.infer<typeof CardAddJeffInput>,
   execFileAsync: ExecFileAsync,
@@ -2338,7 +2351,6 @@ async function executeCardAddJeff(
     '--domain', args.domain,
     '--type', args.type,
     '--origin', args.origin,
-    '--quick',
   ];
   if (args.desc) argv.push('--desc', args.desc);
   if (args.sequence) argv.push('--sequence', args.sequence);

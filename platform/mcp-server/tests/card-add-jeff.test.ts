@@ -55,10 +55,18 @@ test('chorus_card_add_jeff is in the agent MCP tool registry (#2996)', async () 
   });
 });
 
-test('chorus_card_add_jeff spawns cards with DEPLOY_ROLE=jeff + --quick (#2996)', async () => {
+test('chorus_card_add_jeff spawns cards with DEPLOY_ROLE=jeff and NO --quick (#2996, #3293)', async () => {
   const sink: Captured[] = [];
+  // DEC-1674: exercise real behavior — invoke the production buildMcpServer directly.
   // Invoke as wren — attribution must still be jeff, not the caller.
-  await withServer('wren', sink, async (client) => {
+  const server = buildMcpServer(() => 'wren', {
+    execFileAsync: captureExec(sink),
+    cardsPath: '/fake/cards',
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'card-add-jeff-test', version: '1.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
     await client.callTool({
       name: 'chorus_card_add_jeff',
       arguments: {
@@ -70,7 +78,9 @@ test('chorus_card_add_jeff spawns cards with DEPLOY_ROLE=jeff + --quick (#2996)'
         origin: 'reactive',
       },
     });
-  });
+  } finally {
+    await client.close();
+  }
 
   assert.equal(sink.length, 1, 'expected exactly one cards CLI spawn');
   const call = sink[0];
@@ -79,7 +89,8 @@ test('chorus_card_add_jeff spawns cards with DEPLOY_ROLE=jeff + --quick (#2996)'
     'jeff',
     `DEPLOY_ROLE must be hardcoded jeff (got '${call.env.DEPLOY_ROLE}') — this is what makes the bouncer skip`,
   );
-  assert.ok(call.args.includes('--quick'), 'must pass --quick to skip the six-section gate');
+  // #3293: --quick is gone — every card (incl Jeff-initiated) carries the Experience+AC floor.
+  assert.ok(!call.args.includes('--quick'), 'must NOT pass --quick (#3293 removed it; floor is universal)');
   assert.ok(call.args.includes('add'), 'must invoke the cards add verb');
   // The card owner is still honored as a field, distinct from attribution.
   const ownerIdx = call.args.indexOf('--owner');

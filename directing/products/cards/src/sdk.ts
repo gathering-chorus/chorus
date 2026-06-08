@@ -542,7 +542,7 @@ const TYPE_TO_ORIGIN: Record<string, string> = {
 type AddOpts = {
   status?: string; owner?: string; priority?: string; domain?: string;
   description?: string; product?: string; chunk?: string; sequence?: string;
-  type?: string; origin?: string; quick?: boolean;
+  type?: string; origin?: string;
   // #2652 AC1+AC2 — new tag axes
   subdomain?: string; subproduct?: string;
 };
@@ -609,8 +609,8 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   if (!opts.priority) errors.push('Missing --priority P1|P2|P3');
   if (!opts.origin) errors.push('Missing origin. Is this reactive (responding to breakage) or reflective (chosen work)? Use --origin reflective|reactive');
   else if (!['reflective', 'reactive'].includes(opts.origin.toLowerCase())) errors.push(`Unknown origin "${opts.origin}". Valid: reflective, reactive`);
-  // #2895: promote sequence WARN → ERROR. --quick bypasses (housekeeping cards may legitimately have no sequence).
-  if (!opts.quick && !opts.sequence) errors.push('Missing --sequence <name> (the product/area this card belongs to). Use --quick/-q for housekeeping cards.');
+  // #2895: sequence WARN → ERROR. #3293 removed --quick, so this is universal (every card names its product/area).
+  if (!opts.sequence) errors.push('Missing --sequence <name> (the product/area this card belongs to).');
   // #2652 AC2 — subproduct refuse-at-source (closed list)
   if (opts.subproduct) {
     const sp = opts.subproduct.toLowerCase();
@@ -633,30 +633,35 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   return errors;
 }
 
-// Validates description has AC and Experience when not in --quick mode.
+// Validates description: the Experience + AC floor (universal) + the six
+// articulated sections (agent-only, the bouncer's substance gate). #3293.
 // #2895: Experience promoted from WARN to ERROR — caller no longer needs title/board for the warn-event emit.
 function validateDescription(
   opts: AddOpts, _title: string, _boardName: string, errors: string[],
 ): void {
-  if (opts.quick) return;
+  // #3293: --quick removed. The Experience + AC floor is UNIVERSAL — every card,
+  // including Jeff-initiated, carries its substance. There is no escape hatch.
   const desc = (opts.description || '').trim();
   if (!desc) {
-    errors.push('Missing --desc with acceptance criteria (use --quick/-q to skip, or --desc-file <path>, or --desc - for stdin)');
+    errors.push('Missing --desc (every card needs a description with ## Experience + AC). Use --desc-file <path> or --desc - for stdin.');
   } else {
     const hasAC =
       /acceptance\s*criteria/i.test(desc) ||
       /##\s*(ac|criteria|what|acceptance)/i.test(desc) ||
       /- \[[ x]\]/i.test(desc) ||
       /\d+\.\s+\S/m.test(desc);
-    if (!hasAC) errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items). Use --quick/-q to skip');
+    if (!hasAC) errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items).');
   }
-  // #2895: promote Experience WARN → ERROR. Required for non-quick cards —
-  // the user-impact framing is the difference between "what to build" and
-  // "what changes for the user when it lands."
   const hasExperience = /##\s*experience/i.test(opts.description || '');
   if (!hasExperience) {
-    errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands). Use --quick/-q to skip on housekeeping cards.');
+    errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands).');
   }
+  // #3293: the six articulated sections below are the AGENT bouncer's substance
+  // gate — required ONLY for agent-initiated cards. Jeff-initiated cards
+  // (DEPLOY_ROLE=jeff or unset) file at the Experience + AC floor above.
+  const deployRole = (process.env.DEPLOY_ROLE || '').toLowerCase();
+  const isAgentInitiated = deployRole === 'wren' || deployRole === 'silas' || deployRole === 'kade';
+  if (!isAgentInitiated) return;
   // #2905 (Jeff direct 2026-05-11): require all four articulated sections
   // plus dependency-count and scope-of-impact. The structured composition is
   // the forcing function — agents have to literally write each before they
@@ -1004,21 +1009,12 @@ APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards 
     console.error(`WARN: failed to write pickup artifacts under ${pendingDir} — ${err instanceof Error ? err.message : err}. Composed ask still in stdout above; agent must surface it manually.`);
   }
 
-  // #2924 AC1: deliver the [card-approval] block into the requesting agent's
-  // session via the pulse messaging API. Best-effort — pickup file remains as
-  // fallback if pulse is unreachable. Nudge is addressed to the requesting role
-  // (the agent's own session) because Jeff is interacting with that terminal;
-  // his `approve`/`deny` reply is detected by the AC3 UserPromptSubmit hook.
-  try {
-    const delivery = await sendCardApprovalNudge({ from: role, to: role, message: nudge });
-    if (delivery.delivered) {
-      console.log(`[card-approval nudge delivered to ${role}'s session via pulse, trace=${delivery.traceId}]`);
-    } else {
-      console.error(`WARN: card-approval nudge delivery failed (${delivery.error || 'status=' + delivery.status}); pickup-file fallback remains active. trace=${delivery.traceId}`);
-    }
-  } catch (err) {
-    console.error(`WARN: card-approval nudge dispatch threw: ${err instanceof Error ? err.message : err}; pickup-file fallback remains active.`);
-  }
+  // #3293: the #2924 pulse-nudge delivery was REMOVED. It was a third delivery
+  // path (alongside the pickup file + stdout) and it mis-routed — addressed
+  // to:role but landing in silas's session, and it dressed an intended refusal
+  // as traffic. The canonical channel is the pickup file + stdout + the AC3
+  // "approve" responder; the filing model surfaces the ask verbatim to Jeff in
+  // its next reply (Jeff is in the filing terminal). One path, no mis-route.
 
   console.log('---');
   console.log('Agent card creation is refused. The structured ask was written to the pickup file above AND printed below.');
@@ -1035,8 +1031,7 @@ export async function addCard(
 ): Promise<BoardTask> {
   warnShortTitle(title, client.boardName);
 
-  // Classification gates: ALWAYS enforced, even with --quick (#1966)
-  // --quick only exempts description/AC requirement.
+  // Classification gates: ALWAYS enforced (#1966).
   inferCardDefaults(title, opts);
 
   const errors = await collectRequiredFieldErrors(opts);
@@ -1047,9 +1042,6 @@ export async function addCard(
   // Jeff-self (DEPLOY_ROLE=jeff or unset) bypasses the gate — files immediately.
   await requireJeffApprovalIfAgent(title, opts);
 
-  if (opts.quick) {
-    emitSpineEvent('card.quick.created', detectRole(), { title, board: client.boardName });
-  }
   const task = await client.add(title, opts);
   const productTag = opts.product ? ` [product:${opts.product}]` : '';
   console.log(`Added #${task.index}: ${title} [${task.status}]${productTag}`);

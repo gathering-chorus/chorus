@@ -789,7 +789,7 @@ pub(crate) fn execute_card_action<C: CommandRunner>(
     };
 
     let desc = format!(
-        "Auto-detected by chorus-ops (errors).\n\nPattern: {}\nSample: {}\nFirst seen: {}\nCount: {}\nHash: {}",
+        "## Experience\nThe recurring error stops appearing in the logs — diagnosed and fixed, so it no longer adds noise or masks real failures.\n\n## AC\n- [ ] root cause identified\n- [ ] fix deployed\n- [ ] error no longer appears in logs\n\n## Detail\nAuto-detected by chorus-ops (errors).\nPattern: {}\nSample: {}\nFirst seen: {}\nCount: {}\nHash: {}",
         &d.pattern[..d.pattern.len().min(200)],
         &d.sample[..d.sample.len().min(300)],
         d.first_seen,
@@ -810,7 +810,6 @@ pub(crate) fn execute_card_action<C: CommandRunner>(
         "infrastructure",
         "--type",
         "fix",
-        "--quick",
         "--description",
         &desc,
     ];
@@ -1066,7 +1065,7 @@ pub(crate) fn process_health_findings<C: CommandRunner>(
         {
             let priority = if f.severity == "critical" { "P1" } else { "P2" };
             let card_desc = format!(
-                "Auto-detected by chorus-ops (health).\n\n{}\n\nFinding ID: {}\nSeverity: {}\nCategory: {}",
+                "## Experience\nThe detected health issue is resolved — the system returns to a healthy state and the finding clears.\n\n## AC\n- [ ] finding root-caused\n- [ ] fix applied\n- [ ] finding no longer detected\n\n## Detail\nAuto-detected by chorus-ops (health).\n{}\n\nFinding ID: {}\nSeverity: {}\nCategory: {}",
                 f.description, f.id, f.severity, f.category
             );
             let title = format!("[ops-health] {}", f.title);
@@ -1083,7 +1082,6 @@ pub(crate) fn process_health_findings<C: CommandRunner>(
                 "infrastructure",
                 "--type",
                 "fix",
-                "--quick",
                 "--description",
                 &card_desc,
             ];

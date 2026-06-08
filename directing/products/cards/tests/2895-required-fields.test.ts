@@ -43,10 +43,18 @@ const goodScope = '## Scope of impact\nEvery observer.error emit and every choru
 const goodDesc = `## Experience\nuser sees X after this lands.\n${goodWhy}\n${goodHelpsChorus}\n${goodNotGoldPlating}\n${goodDeps}\n${goodScope}\n## AC\n- [ ] thing`;
 const fullOpts = {
   owner: 'wren', priority: 'P2', domain: 'chorus', type: 'fix',
-  origin: 'reactive', sequence: 'chorus', description: goodDesc, quick: false,
+  origin: 'reactive', sequence: 'chorus', description: goodDesc,
 };
 
 describe('#2895 promotes WARN to ERROR for sequence and Experience', () => {
+  // #3293: the six articulated sections are AGENT-only. Run these as an agent so
+  // the section gate fires; the floor (Experience+AC+sequence) is universal.
+  const priorRole = process.env.DEPLOY_ROLE;
+  beforeEach(() => { process.env.DEPLOY_ROLE = 'wren'; });
+  afterEach(() => {
+    if (priorRole === undefined) delete process.env.DEPLOY_ROLE;
+    else process.env.DEPLOY_ROLE = priorRole;
+  });
   test('missing --sequence now fails with a sequence error', async () => {
     const s = spies();
     const opts = { ...fullOpts, sequence: '' };
@@ -56,12 +64,15 @@ describe('#2895 promotes WARN to ERROR for sequence and Experience', () => {
     s.restore();
   });
 
-  test('--quick still bypasses the sequence requirement', async () => {
+  test('#3293: Jeff-initiated cards skip the six articulated sections (floor only)', async () => {
     const s = spies();
-    const opts = { ...fullOpts, sequence: '', quick: true, description: '' };
-    try { await addCard(mockClient(), 'test title', opts); } catch { /* may or may not exit */ }
+    process.env.DEPLOY_ROLE = 'jeff';
+    // Floor present (Experience + AC), none of the six sections — must NOT be refused on sections.
+    const floorOnly = '## Experience\nuser sees X after this lands.\n## AC\n- [ ] thing';
+    const opts = { ...fullOpts, description: floorOnly };
+    try { await addCard(mockClient(), 'test title', opts); } catch { /* shouldn't exit on section checks */ }
     const out = s.output();
-    expect(out).not.toMatch(/missing.*sequence/i);
+    expect(out).not.toMatch(/why\s+this\s+matters/i);
     s.restore();
   });
 
@@ -75,12 +86,13 @@ describe('#2895 promotes WARN to ERROR for sequence and Experience', () => {
     s.restore();
   });
 
-  test('--quick still bypasses the Experience requirement', async () => {
+  test('#3293: Jeff-initiated cards STILL require the Experience+AC floor (no --quick escape)', async () => {
     const s = spies();
-    const opts = { ...fullOpts, description: '', quick: true };
-    try { await addCard(mockClient(), 'test title', opts); } catch { /* may exit on other errors */ }
+    process.env.DEPLOY_ROLE = 'jeff';
+    const opts = { ...fullOpts, description: '' };
+    try { await addCard(mockClient(), 'test title', opts); } catch { /* expected exit on floor */ }
     const out = s.output();
-    expect(out).not.toMatch(/missing.*experience/i);
+    expect(out).toMatch(/description missing.*experience|missing\s+--desc/i);
     s.restore();
   });
 
@@ -132,7 +144,7 @@ describe('#2895 promotes WARN to ERROR for sequence and Experience', () => {
 
   test('all required fields in one refusal — multi-missing prints all errors together', async () => {
     const s = spies();
-    const opts = { owner: '', priority: '', domain: '', type: '', origin: '', sequence: '', description: '', quick: false };
+    const opts = { owner: '', priority: '', domain: '', type: '', origin: '', sequence: '', description: '' };
     try { await addCard(mockClient(), 'test title', opts); } catch { /* expected exit */ }
     const out = s.output();
     expect(out).toMatch(/domain/i);

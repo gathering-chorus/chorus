@@ -123,7 +123,8 @@ describe('runCli — extended dispatch', () => {
     try {
       // "fix ..." triggers TITLE_TO_TYPE auto-tag so --type can be omitted.
       await runCli(
-        ['node', 'cards', 'create', 'fix the flaky bit', '--domain', 'chorus', '--priority', 'P2', '--quick'],
+        ['node', 'cards', 'create', 'fix the flaky bit', '--domain', 'chorus', '--priority', 'P2', '--sequence', 'chorus', '--desc',
+          "## Experience\nuser sees the flaky bit fixed.\n## Why this matters\nThe create alias must route to the add path with full validation; if it silently diverged, cards filed via create would skip the gates every other path enforces, which is the regression this asserts against today.\n## Why it helps Chorus\nEvery role can reach card creation through the create alias; keeping it on the one validated add path protects the whole team's board hygiene, not just one role's workflow, from drift.\n## Why it's not gold plating or a nit\nThis is load-bearing routing coverage, not cosmetic; a broken alias would create unvalidated cards and is exactly the class of silent divergence the suite exists to catch early, before any malformed card ever reaches the production board where it would cost real cleanup later.\n## Dependencies\nNone beyond the in-process runCli and a mock board client; no external services or other surfaces are involved when this runs.\n## Scope of impact\nTouches only the in-process create->add routing exercised here; no real board mutation and no other command paths are affected, and nothing persists once the test completes in isolation.\n## AC\n- [ ] create routes to the add path"],
         factory(mock),
       );
     } finally { cap.restore(); }
