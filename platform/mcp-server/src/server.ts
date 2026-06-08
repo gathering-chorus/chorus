@@ -658,8 +658,13 @@ const CARDS_VIEW_TOOL_DEF = {
 const PRIORITIES_READOUT_TOOL_DEF = {
   name: 'chorus_priorities_readout',
   description:
-    'Get the live priorities operating-layer readout: roles in hard rank (kade=werk, silas=model, wren=loom+memory) → each role\'s chunks (priorities) → the cards mapped under each via the `chunk` attribute, plus the cross-cut `proving` chunk, the off-priority `prune` pile (Gathering), and an honest per-role `untagged` list. Reads the board (Vikunja) chunk data directly — NOT the search index (which truncates + lags ~30min, #3259). This is the read-side of the chunk-tagging; if chunks are unset it says so rather than fabricating placement. Use to answer "what are the priorities and what cards sit under each, by role" in one call instead of reconstructing it by hand.',
-  inputSchema: { type: 'object', properties: {} },
+    'Get the live priorities report: each role\'s chunks (priorities) → the cards under each (chunk → "- #id - title"), plus the cross-cut `proving` chunk. TAGGED-ONLY — a card with no chunk is not a priority and is not shown (no untagged, no prune). Reads the board (Vikunja) chunk data directly (not the search index), and renders ONE fixed deterministic format so the output is identical for every role and every call — it is a REPORT, not a recap. PRIMARY USE: pass `role` to get just that role\'s priorities (the usual "what are your priorities" answer). Omit `role` for the whole-team view (all three in hard rank). Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Return ONLY this role\'s priorities (the usual mode). Omit for the whole-team report.' },
+    },
+  },
 } as const;
 
 /** #3268 — a row as read from the board: card display-index, title, bucket, and
@@ -763,6 +768,7 @@ export function renderPrioritiesReadout(r: ReturnType<typeof groupPrioritiesRead
 // to the pure grouper. Active cards only (board view 8, excluding Done/Won't Do).
 async function executePrioritiesReadout(
   execFileAsync: ExecFileAsync,
+  roleFilter?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const home = process.env.HOME || '';
   const db = process.env.VIKUNJA_DB || `${home}/.chorus/vikunja/db/vikunja.db`;
@@ -782,12 +788,20 @@ async function executePrioritiesReadout(
     throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`);
   }
   const readout = groupPrioritiesReadout(rows);
-  // #3268 — return THE canonical readable render (the fixed bulleted shape), not raw
-  // JSON. One format, in the tool, identical for every role and every call.
+  // #3268 — role filter (PRIMARY mode): just that role's chunks + its own proving
+  // cards. Omit role → whole-team report. Then render the ONE canonical format.
+  const view = roleFilter
+    ? {
+        roles: readout.roles.filter((r) => r.role === roleFilter),
+        proving: readout.proving.filter((c) => c.owner === roleFilter),
+        prune: [] as ReadoutCard[],
+        totals: readout.totals,
+      }
+    : readout;
   return {
     content: [{
       type: 'text' as const,
-      text: renderPrioritiesReadout(readout),
+      text: renderPrioritiesReadout(view),
     }],
   };
 }
@@ -2687,7 +2701,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         return executeCardsView(parsed.data, from, execFileAsync, cardsPath);
       }
       case 'chorus_priorities_readout': {
-        return executePrioritiesReadout(execFileAsync);
+        const a = (req.params.arguments ?? {}) as { role?: string };
+        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : undefined;
+        return executePrioritiesReadout(execFileAsync, role);
       }
       case 'chorus_commit_status': {
         const parsed = CommitStatusInput.safeParse(req.params.arguments);

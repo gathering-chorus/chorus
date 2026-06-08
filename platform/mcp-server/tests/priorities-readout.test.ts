@@ -90,6 +90,29 @@ test('renderPrioritiesReadout: chunked-only report (chunk → - #id - title); no
   ])));
 });
 
+test('role filter (primary mode): only that role + its own proving cards render', () => {
+  const r = groupPrioritiesReadout([
+    { idx: 10, title: 'wren loom', bucket: 'Later', labels: 'owner:wren,chunk:loom-authoring' },
+    { idx: 11, title: 'kade werk', bucket: 'Later', labels: 'owner:kade,chunk:coverage-gaps' },
+    { idx: 12, title: 'wren proving', bucket: 'Later', labels: 'owner:wren,chunk:proving' },
+    { idx: 13, title: 'kade proving', bucket: 'Later', labels: 'owner:kade,chunk:proving' },
+  ]);
+  // same filter the handler applies for role=wren
+  const view = {
+    roles: r.roles.filter((x) => x.role === 'wren'),
+    proving: r.proving.filter((c) => c.owner === 'wren'),
+    prune: [],
+    totals: r.totals,
+  };
+  const out = renderPrioritiesReadout(view);
+  assert.match(out, /3 WREN/);
+  assert.ok(!out.includes('KADE'), 'other roles not shown');
+  assert.ok(out.includes('#10'), "wren's chunk card shown");
+  assert.ok(!out.includes('#11'), "kade's card not shown");
+  assert.ok(out.includes('#12'), "wren's proving card shown");
+  assert.ok(!out.includes('#13'), "kade's proving card not shown");
+});
+
 test('unassigned / jeff cards are not forced into the hard rank', () => {
   const r = groupPrioritiesReadout([
     { idx: 5, title: 'jeff card', bucket: 'Later', labels: 'owner:jeff' },
