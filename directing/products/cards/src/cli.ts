@@ -83,7 +83,7 @@ function parseGlobalFlags(args: string[]): {
 function parseAddArgs(args: string[]): {
   title: string; status: string; owner: string; priority: string;
   domain: string; description: string; product: string; chunk: string; sequence: string;
-  type: string; origin: string; quick: boolean;
+  type: string; origin: string;
 } {
   try {
     return parseAddArgsShared(args);
@@ -636,10 +636,7 @@ Options:
   --desc D                       Description text (required — must include AC)
   --desc-file PATH               Read description from a file (avoids HEREDOC escaping)
   --desc -                       Read description from stdin
-  --quick, -q                    Skip description/AC requirement (type/domain/priority/origin still required)
-                                 Use for quick-capture cards where AC comes later.
-                                 Example: cards add "Retire X" --owner wren --priority P2 --domain chorus \\
-                                          --type chore --origin reflective --quick
+                                 (#3293: --quick removed — every card carries ## Experience + AC)
 
 Examples:
   cards add "Fix thing" --owner wren --priority P1 --domain chorus --type fix --origin reactive \\

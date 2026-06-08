@@ -42,7 +42,7 @@ If args are ambiguous, surface the inferred values to Jeff in a one-line preview
 
 ## Step 1: File the card
 
-Invoke the dedicated MCP tool `chorus_card_add_jeff`. The tool spawns `cards add --quick` with `DEPLOY_ROLE=jeff` hardcoded in env — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector.
+Invoke the dedicated MCP tool `chorus_card_add_jeff`. The tool spawns `cards add` with `DEPLOY_ROLE=jeff` hardcoded in env — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector. (#3293 removed `--quick`: even a Jeff card must carry the Experience+AC floor — supply a `desc` with a `## Experience` line and an AC checklist, one line each for housekeeping cards. The six articulated sections remain agent-only.)
 
 ```
 mcp__chorus-api__chorus_card_add_jeff({

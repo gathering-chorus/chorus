@@ -14,6 +14,18 @@ import {
   reassignCard, setCard, tagCard, untagCard,
 } from '../src/sdk';
 
+// #3293: --quick removed. These add/tag tests now supply a complete, valid desc
+// so they pass regardless of DEPLOY_ROLE (agent six-section gate or Jeff floor).
+const floorDesc = [
+  '## Experience\nThe user sees the card created with its fields after this lands.',
+  '## Why this matters\nThis exercises the real add path including validation and tagging; without a faithful fixture the lifecycle tests would not catch a regression in how a card is created, which is the behavior every role relies on daily.',
+  '## Why it helps Chorus\nThe cards add path is the entry point every role uses to put work on the board; keeping its behavior covered protects the whole team coordination loop, not just one role, from silent breakage over time.',
+  "## Why it's not gold plating or a nit\nThis is load-bearing coverage of the creation path, not cosmetic; a break here would let malformed cards onto the board, which is exactly the regression class this suite exists to catch early.",
+  '## Dependencies\nNone beyond the cards sdk under test; the test runs in-process against a mock board client, with no external coordination or other surfaces required.',
+  '## Scope of impact\nTouches only the in-process addCard path exercised here; no real board mutation and no other surfaces are affected when this test runs.',
+  '## AC\n- [ ] card created with the given fields',
+].join('\n');
+
 class MockClient {
   boardName = 'gathering';
   calls: Array<{ method: string; args: unknown[] }> = [];
@@ -151,12 +163,12 @@ describe('addCard — validation', () => {
     expect(errBlob).toMatch(/--priority/);
   });
 
-  it('quick mode exempts description requirement', async () => {
+  it('#3293: add succeeds with the Experience+AC floor (no --quick)', async () => {
     const mock = new MockClient();
     const cap = silenceConsole();
     try {
       const t = await addCard(asBoardClient(mock), 'fix the thing', {
-        domain: 'chorus', priority: 'P2', quick: true,
+        domain: 'chorus', priority: 'P2', description: floorDesc, sequence: 'chorus',
       });
       expect(t.title).toBe('fix the thing');
     } finally {
@@ -171,7 +183,7 @@ describe('addCard — validation', () => {
     const cap = silenceConsole();
     try {
       await addCard(asBoardClient(mock), 'fix stale timestamps', {
-        domain: 'chorus', priority: 'P1', quick: true,
+        domain: 'chorus', priority: 'P1', description: floorDesc, sequence: 'chorus',
       });
     } finally {
       cap.restore();
@@ -184,7 +196,7 @@ describe('addCard — validation', () => {
     const cap = silenceConsole();
     try {
       await addCard(asBoardClient(mock), 'fix stale timestamps', {
-        domain: 'chorus', priority: 'P1', quick: true,
+        domain: 'chorus', priority: 'P1', description: floorDesc, sequence: 'chorus',
       });
     } finally {
       cap.restore();
@@ -197,7 +209,7 @@ describe('addCard — validation', () => {
     const cap = silenceConsole();
     try {
       await addCard(asBoardClient(mock), 'fix flaky tests', {
-        domain: 'chorus', priority: 'P1', quick: true, sequence: 'quality',
+        domain: 'chorus', priority: 'P1', description: floorDesc, sequence: 'quality',
       });
     } finally {
       cap.restore();
@@ -213,7 +225,7 @@ describe('addCard — validation', () => {
     const exit = interceptExit();
     try {
       await addCard(asBoardClient(mock), 'photograph something', {
-        domain: 'chorus', priority: 'P1', type: 'new', origin: 'whimsical', quick: true,
+        domain: 'chorus', priority: 'P1', type: 'new', origin: 'whimsical', description: floorDesc,
       }).catch(() => {});
     } finally {
       exit.restore();
