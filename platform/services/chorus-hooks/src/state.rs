@@ -15,6 +15,12 @@ pub struct AppState {
     /// Session JSONL cache — shared across all hooks (#1861)
     /// Uses std::sync::Mutex internally so sync hooks can access it
     pub session_cache: SessionCache,
+    /// #3278 — sessions that have edited a test file THIS run, recorded live the
+    /// instant the daemon sees the Edit/Write (PreToolUse). The sync tdd_gate reads
+    /// this instead of the transcript JSONL, which flushes ~a turn late and blinded
+    /// the gate to write-test-then-write-code TDD in a werk. std::sync::Mutex so the
+    /// sync gate can read it without an async context.
+    test_edits: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 /// Chorus search results cached from context_inject (#2225)
@@ -71,6 +77,7 @@ impl AppState {
                 cycle_id: HashMap::new(),
             })),
             session_cache: SessionCache::new(),
+            test_edits: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
             config: Arc::new(Config {
                 log_dir: repo_root.join("platform/logs"),
                 prefs_file: repo_root.join("jeff-preferences.json"),
@@ -79,6 +86,23 @@ impl AppState {
                 home_dir: PathBuf::from(home),
             }),
         }
+    }
+
+    /// #3278 — record that this session has edited a test file (called live from
+    /// PreToolUse the instant the daemon sees an Edit/Write to a test path). Sync.
+    pub fn mark_test_edit(&self, session_id: &str) {
+        if let Ok(mut set) = self.test_edits.lock() {
+            set.insert(session_id.to_string());
+        }
+    }
+
+    /// #3278 — has this session edited a test file this run? Sync, transcript-free —
+    /// the tdd_gate reads this so a same-turn test edit is visible immediately.
+    pub fn has_test_edit(&self, session_id: &str) -> bool {
+        self.test_edits
+            .lock()
+            .map(|set| set.contains(session_id))
+            .unwrap_or(false)
     }
 
     pub async fn set_last_human_msg(&self, session_id: &str, msg: String) {
@@ -249,8 +273,15 @@ pub async fn append_log(path: &std::path::Path, line: &str) {
         .open(path)
         .await
     {
-        let _ = f.write_all(line.as_bytes()).await;
-        let _ = f.write_all(b"\n").await;
+        // #3278 — ONE write of line+newline. Writing the line and the '\n' as two
+        // separate write_all calls let another process's append land between them,
+        // fusing two JSON events onto one corrupt line (~6% of chorus.log, measured
+        // 2026-06-07; the test reproduced 25/63 corrupt under load). O_APPEND makes a
+        // single write() atomic at EOF, so one buffer is one uninterruptible append.
+        let mut buf = Vec::with_capacity(line.len() + 1);
+        buf.extend_from_slice(line.as_bytes());
+        buf.push(b'\n');
+        let _ = f.write_all(&buf).await;
     }
 }
 

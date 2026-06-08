@@ -229,6 +229,19 @@ async fn pre_tool_use_inner(
     log_hook("pre_tool_use", &tool, role.as_str(), "enter", &detail_str);
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
+    // #3278 — record test-file edits live, the instant the daemon sees them, so the
+    // tdd_gate recognizes a write-test-then-write-code TDD flow immediately instead of
+    // waiting on the transcript JSONL (which flushes ~a turn late and false-blocked
+    // every werk edit). The daemon is the source of truth for what this session did.
+    if matches!(tool.as_str(), "Write" | "Edit" | "MultiEdit") {
+        let fp = input.get_tool_input_str("file_path");
+        if crate::shared::file_classification::is_test_file(&fp) {
+            if let Some(sid) = input.session_id.as_deref() {
+                state.mark_test_edit(sid);
+            }
+        }
+    }
+
     // Session init gate (all tools for Write/Edit/Bash/Read)
     let gate_result = hooks::session_init_gate::check(input, state).await;
     if let Some(ref stdout) = gate_result.stdout {

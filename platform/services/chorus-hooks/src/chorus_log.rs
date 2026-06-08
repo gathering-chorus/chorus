@@ -230,7 +230,13 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     let path = PathBuf::from(&log_file());
     match fs::OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut f) => {
-            let _ = writeln!(f, "{}", line);
+            // #3278 — ONE atomic O_APPEND write (line+newline in a single buffer).
+            // writeln! can issue the formatted text and the '\n' as separate writes,
+            // letting another process's append interleave and fuse two events onto one
+            // corrupt line. A single write_all of line+"\n" is one uninterruptible append.
+            let mut buf = line.clone().into_bytes();
+            buf.push(b'\n');
+            let _ = f.write_all(&buf);
             if !silent {
                 println!("{} | {}{}", event, role, display);
             }
