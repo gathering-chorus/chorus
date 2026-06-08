@@ -312,6 +312,33 @@ run_all() {
   done < <(list_cucumber)
 }
 
+# #3254 — close the loop: the instant the nightly finishes, ALERT each owning role of THEIR
+# red suites via ops-nudge (the call-to-action; the role then acts per the attention contract,
+# no Jeff in the middle). One grouped nudge per owner, not one per suite. All-green → a single
+# confirmation to the nightly owner so "green" is also a signal. ops-nudge is the same primitive
+# deep-health/alert-runner use (#2804); its path is env-overridable so unit tests stub it.
+notify_results() {
+  local results="$1"
+  local ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
+  [ -x "$ops_nudge" ] || { echo "notify_results: ops-nudge not executable at $ops_nudge — skipping alert" >&2; return 0; }
+
+  local owners
+  owners=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="fail" {print $4}' | sort -u)
+
+  if [ -z "$owners" ]; then
+    "$ops_nudge" kade "nightly: all suites green ✅" system >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  local owner reds n
+  while IFS= read -r owner; do
+    [ -z "$owner" ] && continue
+    reds=$(printf '%s\n' "$results" | awk -F'|' -v o="$owner" '$1=="SUITE" && $5=="fail" && $4==o {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
+    n=$(printf '%s\n' "$results" | awk -F'|' -v o="$owner" '$1=="SUITE" && $5=="fail" && $4==o' | grep -c .)
+    "$ops_nudge" "$owner" "nightly: $n suite(s) red — $reds" system >/dev/null 2>&1 || true
+  done <<< "$owners"
+}
+
 # --- Dispatch ---
 # Below = dispatch-only (CLI entry, exits on unknown arg).
 # Above = sourceable (function definitions safe for unit tests to import).
@@ -334,7 +361,7 @@ case "${1:-}" in
     echo "# bats";      list_bats
     echo "# cucumber";  list_cucumber
     ;;
-  --run-all)    run_all ;;
+  --run-all)    out=$(run_all); printf '%s\n' "$out"; notify_results "$out" ;;
   *)
     echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all}" >&2
     exit 2
