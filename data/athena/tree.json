@@ -48,6 +48,23 @@
   ],
   "products": [
     {
+      "iri": "chorus:chorus",
+      "label": "Chorus",
+      "comment": "The whole system — parent product. Contains the sub-products (Loom, Athena, Convergence, Chorus Service, The Clearing, Werk, Borg) via hasChild. Added #3275 to root the top-level model (product-recursion) and resolve the parent vs chorus-service name collision. Jeff heads the whole; ownedBy is the model steward (wren).",
+      "ownedBy": "chorus:role-wren",
+      "status": "operating",
+      "hasChild": [
+        "chorus:loom",
+        "chorus:athena",
+        "chorus:convergence",
+        "chorus:chorus-chorus",
+        "chorus:clearing",
+        "chorus:werk",
+        "chorus:borg"
+      ],
+      "hasDomain": []
+    },
+    {
       "iri": "chorus:loom",
       "label": "Loom",
       "comment": "Team knowledge layer — the values, roles, principles, policies, practices, and skills that define how the team operates.",
@@ -93,9 +110,9 @@
       ]
     },
     {
-      "iri": "chorus:chorus",
-      "label": "Chorus",
-      "comment": "Shared memory and knowledge for the team — indexed sessions, Slack history, and semantic search across all team artifacts.",
+      "iri": "chorus:chorus-chorus",
+      "label": "Chorus Service",
+      "comment": "The running chorus service (chorus-api / chorus-mcp) — shared memory and knowledge for the team: indexed sessions, Slack history, and semantic search across all team artifacts. Child product of the chorus parent; renamed from chorus:chorus to resolve the parent/sub-product name collision (#3275).",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
@@ -329,7 +346,19 @@
     {
       "iri": "chorus:pipelines",
       "label": "pipelines",
-      "comment": "CI/CD and build orchestration — how code moves from commit to production.",
+      "comment": "CI/CD and build orchestration — how code moves from commit to production. Parent of the cicd child domain (#3275).",
+      "ownedBy": "chorus:role-kade",
+      "atStep": "chorus:value-stream-step-building",
+      "status": "operating",
+      "gaps": [],
+      "hasChild": [
+        "chorus:cicd"
+      ]
+    },
+    {
+      "iri": "chorus:cicd",
+      "label": "cicd",
+      "comment": "The CI/CD orchestrator — the act + werk.yml pipeline (commit→build→deploy→test→rollback) that runs werk's Building value stream. Child domain of pipelines; service-warranting (a stateful orchestrator, not a leaf). Real/live status. #3275.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
@@ -505,6 +534,677 @@
         "circular: collectMentions reads messages_fts then writes back a crawler row, re-indexed, read again (#2323)",
         "monolith spans 4 owners — ownership violation pending decomposition #3069/ADR-033"
       ]
+    }
+  ],
+  "instances":   [
+    {
+      "iri": "chorus:skill-ab",
+      "label": "ab",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-board-sweep",
+      "label": "board-sweep",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-chat",
+      "label": "chat",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-chat-tick",
+      "label": "chat-tick",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-close",
+      "label": "close",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-cs",
+      "label": "cs",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-demo",
+      "label": "demo",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-flow",
+      "label": "flow",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-gate-product",
+      "label": "gate-product",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-golfball",
+      "label": "golfball",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-interrupt",
+      "label": "interrupt",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-jdi",
+      "label": "jdi",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-lk",
+      "label": "lk",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-ls",
+      "label": "ls",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-lw",
+      "label": "lw",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-nudge",
+      "label": "nudge",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-pair",
+      "label": "pair",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-pipeline",
+      "label": "pipeline",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-pull",
+      "label": "pull",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-reboot",
+      "label": "reboot",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-retro",
+      "label": "retro",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-sb",
+      "label": "sb",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-werk",
+      "label": "werk",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-wtf",
+      "label": "wtf",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:skill-chorus",
+      "label": "chorus",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-gate-arch",
+      "label": "gate-arch",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-gate-ops",
+      "label": "gate-ops",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-gemba",
+      "label": "gemba",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-gemba-tick",
+      "label": "gemba-tick",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-look",
+      "label": "look",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:skill-gate-code",
+      "label": "gate-code",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-gate-quality",
+      "label": "gate-quality",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-lc",
+      "label": "lc",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-listen",
+      "label": "listen",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-lm",
+      "label": "lm",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-ot",
+      "label": "ot",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-share",
+      "label": "share",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-simplify",
+      "label": "simplify",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:skill-acp",
+      "label": "acp",
+      "instanceType": "skill",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren",
+      "status": "retiring",
+      "deprecated": true,
+      "supersededBy": "chorus:verb-chorus-werk",
+      "comment": "Deprecated in favor of the chorus-werk pipeline (chorus_werk / chorus_werk_land). #3275."
+    },
+    {
+      "iri": "chorus:hook-accept-gate",
+      "label": "accept_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-autonomy-guard",
+      "label": "autonomy_guard",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-context-inject",
+      "label": "context_inject",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-csc-guard",
+      "label": "csc_guard",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-demo-gate",
+      "label": "demo_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-demo-preflight",
+      "label": "demo_preflight",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-demo-provenance",
+      "label": "demo_provenance",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-handoff-logger",
+      "label": "handoff_logger",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-input-classifier",
+      "label": "input_classifier",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-interaction-pattern",
+      "label": "interaction_pattern",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-jdi-detector",
+      "label": "jdi_detector",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-memory-first",
+      "label": "memory_first",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-memory-gate",
+      "label": "memory_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-nudge-blast-radius",
+      "label": "nudge_blast_radius",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-nudge-poll",
+      "label": "nudge_poll",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-pair-enforcement",
+      "label": "pair_enforcement",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-pair-gate",
+      "label": "pair_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-search-hierarchy",
+      "label": "search_hierarchy",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-session-init-gate",
+      "label": "session_init_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-stop-on-error",
+      "label": "stop_on_error",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-story-write-gate",
+      "label": "story_write_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:hook-batch-progress",
+      "label": "batch_progress",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-bedroom-nfs-guard",
+      "label": "bedroom_nfs_guard",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-chrome-tab-gate",
+      "label": "chrome_tab_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-clock-sync",
+      "label": "clock_sync",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-log-first-gate",
+      "label": "log_first_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-nifi-discipline",
+      "label": "nifi_discipline",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-observer",
+      "label": "observer",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-ops-awareness",
+      "label": "ops_awareness",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-sensitive-paths",
+      "label": "sensitive_paths",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-sparql-guard",
+      "label": "sparql_guard",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-tool-telemetry",
+      "label": "tool_telemetry",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-write-scrubber",
+      "label": "write_scrubber",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-silas"
+    },
+    {
+      "iri": "chorus:hook-e2e-responder",
+      "label": "e2e_responder",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-infra-guardrails",
+      "label": "infra_guardrails",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-quality-gate",
+      "label": "quality_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-tdd-gate",
+      "label": "tdd_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-test-quality-gate",
+      "label": "test_quality_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-icd-pre-read",
+      "label": "icd_pre_read",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:hook-icd-write-gate",
+      "label": "icd_write_gate",
+      "instanceType": "hook",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-commit",
+      "label": "werk-commit",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-push",
+      "label": "werk-push",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-build",
+      "label": "werk-build",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-test",
+      "label": "werk-test",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-deploy",
+      "label": "werk-deploy",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-env-up",
+      "label": "werk-env-up",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-merge",
+      "label": "werk-merge",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-sync",
+      "label": "werk-sync",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-deploy-prod",
+      "label": "werk-deploy-prod",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-finalize",
+      "label": "werk-finalize",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-do-more",
+      "label": "werk-do-more",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-chorus-werk",
+      "label": "chorus-werk",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-chorus-werk-land",
+      "label": "chorus-werk-land",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-kade"
+    },
+    {
+      "iri": "chorus:verb-werk-demo",
+      "label": "werk-demo",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:verb-werk-accept",
+      "label": "werk-accept",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
+    },
+    {
+      "iri": "chorus:verb-werk-pull",
+      "label": "werk-pull",
+      "instanceType": "verb",
+      "inDomain": "chorus:skills",
+      "ownedBy": "chorus:role-wren"
     }
   ]
 }

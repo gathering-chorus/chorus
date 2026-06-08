@@ -103,6 +103,22 @@ const ServiceSchema = z.object({
   hasDesignDoc: z.array(Iri).optional(),
 });
 
+// Instance = a leaf invokable unit under a domain (skill / hook / verb), each
+// with its own owner. ADR-025's instances layer, finally populated (#3275).
+// Jeff's definition: a "skill" is any named, owned, invokable unit — markdown
+// skill, hook, or werk verb — so all three shapes live here under chorus:skills.
+const InstanceSchema = z.object({
+  iri: Iri,
+  label: z.string().min(1),
+  instanceType: z.enum(['skill', 'hook', 'verb']),
+  inDomain: Iri,
+  ownedBy: Iri,
+  status: Status.optional(),
+  deprecated: z.boolean().optional(),
+  supersededBy: Iri.optional(),
+  comment: z.string().optional(),
+});
+
 export const TreeSchema = z.object({
   schemaVersion: z.string().min(1),
   namespace: z.string().url(),
@@ -112,21 +128,24 @@ export const TreeSchema = z.object({
   products: z.array(ProductSchema).min(1),
   domains: z.array(DomainSchema).min(1),
   services: z.array(ServiceSchema).default([]),
+  instances: z.array(InstanceSchema).default([]),
 });
 
 export type Tree = z.infer<typeof TreeSchema>;
 export type Product = z.infer<typeof ProductSchema>;
 export type Domain = z.infer<typeof DomainSchema>;
 export type Service = z.infer<typeof ServiceSchema>;
+export type Instance = z.infer<typeof InstanceSchema>;
 
 // Returned by chorus_ownership_lookup.
 export const OwnershipResultSchema = z.object({
   iri: Iri,
-  kind: z.enum(['product', 'domain', 'service']),
+  kind: z.enum(['product', 'domain', 'service', 'instance']),
   owner: Iri,
   product: Iri.optional(),
   domain: Iri.optional(),
   service: Iri.optional(),
+  instance: Iri.optional(),
 });
 export type OwnershipResult = z.infer<typeof OwnershipResultSchema>;
 

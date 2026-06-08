@@ -118,6 +118,20 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
       service: iri,
     };
   }
+  const instance = (tree.instances ?? []).find((i) => i.iri === iri);
+  if (instance) {
+    const owningProduct = tree.products.find((p) =>
+      p.hasDomain.includes(instance.inDomain),
+    );
+    return {
+      iri,
+      kind: 'instance',
+      owner: instance.ownedBy,
+      product: owningProduct?.iri,
+      domain: instance.inDomain,
+      instance: iri,
+    };
+  }
   return null;
 }
 
