@@ -222,3 +222,56 @@ fn commit_emits_failure_to_the_spine_with_the_inherited_trace() {
         "a commit.* lifecycle/failure event reached the spine: {:?}", emitted
     );
 }
+
+// #3295 — commit --atomic = commit-WITHOUT-rebase. The escape from the #3223
+// rebase-conflict deadlock: a werk that conflicts with current origin/main can
+// still COMMIT LOCALLY (no rebase), so work is never trapped behind the deadlock.
+// commit_atomic() is the pure-core entry; flow commit() = the same core + rebase
+// (ADR-037 D#5: one implementation, two entry points). This is the EXACT scenario
+// commit_refuses_on_rebase_conflict refuses — here --atomic must SUCCEED.
+#[test]
+fn commit_atomic_commits_without_rebase_through_a_conflict() {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("conflict.txt"), "base\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9201");
+    git(&home, &["worktree", "add", "-b", "kade/9201", werk.to_str().unwrap(), "origin/main"]);
+
+    // my work edits the line one way; the peer edits the SAME line on origin/main
+    // — the conflict the flow commit() refuses with rebase-conflict.
+    fs::write(werk.join("conflict.txt"), "kade-line\n").unwrap();
+    fs::write(origin.join("conflict.txt"), "peer-line\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer conflicting edit"]);
+
+    // --atomic: commit WITHOUT rebase. Must SUCCEED where flow commit() deadlocks.
+    let sha = werk_commit::commit_atomic(9201, "kade", "atomic escape", &home, &werk_base)
+        .expect("commit --atomic must succeed without rebasing");
+    assert!(sha.len() >= 7, "returns the commit sha");
+
+    // card work committed LOCALLY, verbatim — no rebase applied.
+    assert_eq!(fs::read_to_string(werk.join("conflict.txt")).unwrap(), "kade-line\n",
+        "card work committed verbatim, no rebase");
+    // deliberately did NOT pull the peer's change → still behind current main.
+    git(&werk, &["fetch", "-q", "origin", "main"]);
+    let behind = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-list", "--count", "HEAD..origin/main"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&behind.stdout).trim(), "1",
+        "--atomic deliberately did not rebase — still one behind current main");
+    // clean tree, on the card branch (no half-rebase, no deadlock).
+    let status = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "status", "--porcelain"])
+        .output().unwrap();
+    assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty(), "clean after the atomic commit");
+}
