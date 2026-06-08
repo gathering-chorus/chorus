@@ -1,45 +1,47 @@
-# Daily Quality Review — 2026-06-06
+# Daily Quality Review — 2026-06-08
 
-> **Path note:** Spec paths `jeff-bridwell-personal-site/` and `messages/{board-client,slack-bridge}/` do not exist.
-> Mapped to: `directing/clearing` (app), `platform/{workflow-engine,chorus-sdk,pulse}` (message packages).
+> **Path note:** Spec paths `jeff-bridwell-personal-site/` and `messages/{board-client,slack-bridge}/` mapped to
+> `directing/clearing` (app) and `platform/{workflow-engine,chorus-sdk,pulse}` respectively.
 
 ## App Tests (`directing/clearing`)
-**YELLOW** — 309 pass / 53 fail / 362 total (1 suite blocked)
-- Blocked suite: `tests/clearing-ui.test.ts` — missing `dist/server.js` (build artifact not present in this env).
-- All other 12 suites pass. Fail count unchanged from 2026-06-01.
-- **Action:** Run `npm run build` in `directing/clearing` before test run to unblock UI suite.
+**RED** — BLOCKED: `ts-jest` preset not found (node_modules installed but ts-jest missing).
+- Previous: 309 pass / 53 fail / 362 total (2026-06-06). Now: 0 run.
+- **Action:** `npm ci` in `directing/clearing` to restore ts-jest.
 
 ## Lint (`directing/clearing`)
-**RED** — ESLint cannot run: root `eslint.config.js` requires `@eslint/js` but root `node_modules/` not installed.
-- **Action:** Run `npm ci` at repo root to restore root-level eslint deps.
+**RED** — ESLint blocked: root `eslint.config.js` cannot resolve `@eslint/js` (root node_modules incomplete).
+- Persistent since 2026-06-06.
+- **Action:** `npm ci` at repo root.
 
-## Build (`platform/api` TypeScript)
-**GREEN** — 0 errors (`npx tsc --noEmit` clean after `npm ci` in `platform/api`). Recovered from 419 errors on 2026-06-01.
+## Build (`directing/clearing` TypeScript)
+**RED** — 140 type errors (`npx tsc --noEmit`).
+- Previous: 0 errors (2026-06-06). **New regression.**
+- **Action:** Investigate — likely related to node_modules state or a recent type-breaking change.
 
 ## Board-Client
-**N/A** — `messages/board-client` not in repo. No substitute identified this cycle.
+**N/A** — `messages/board-client` not in repo; no substitute this cycle.
 
 ## Workflow-Engine (`platform/workflow-engine`)
-**GREEN** — 62/62 pass. Recovered from blocked (0 run) on 2026-06-01.
+**RED** — BLOCKED: `ts-jest` preset not found.
+- Previous: 62/62 pass (2026-06-06). Now: 0 run.
+- **Action:** `npm ci` in `platform/workflow-engine`.
 
 ## Chorus-SDK (`platform/chorus-sdk`)
-**YELLOW** — 52/52 pass. Coverage threshold breach: functions 62.06% vs 75% floor.
-- **Action:** Add function-level tests; threshold set in jest config. Was 51/51 on 2026-05-29.
+**RED** — BLOCKED: `ts-jest` preset not found.
+- Previous: 52/52 pass, coverage threshold breach on funcs (2026-06-06). Now: 0 run.
+- **Action:** `npm ci` in `platform/chorus-sdk`.
 
 ## Slack-Bridge → Pulse (`platform/pulse`)
-**GREEN** — 69/69 pass. Recovered from blocked on 2026-06-01.
+**RED** — BLOCKED: `ts-jest` preset not found.
+- Previous: 69/69 pass (2026-06-06). Now: 0 run.
+- **Action:** `npm ci` in `platform/pulse`.
 
 ## Coverage
-| Package          | Stmts  | Branch | Funcs  | Lines  | Status  |
-|------------------|--------|--------|--------|--------|----------|
-| clearing         | 86.32% | 77.65% | 88.47% | 88.41% | YELLOW (server.ts stmts 77.94% < 80%) |
-| workflow-engine  | 93.45% | 87.50% | 96.77% | 97.85% | GREEN   |
-| chorus-sdk       | 81.06% | 82.01% | 62.06% | 84.21% | RED (funcs 62.06% < 75%) |
-| pulse            | 90.27% | 81.25% | 84.21% | 92.27% | GREEN   |
+**N/A** — All suites blocked; no coverage data collected this cycle.
+- Last known: clearing YELLOW, workflow-engine GREEN, chorus-sdk RED (funcs 62.06%), pulse GREEN.
 
-## Failure Delta (vs 2026-06-01)
-- **RECOVERED:** workflow-engine 0→62 pass, chorus-sdk 0→52 pass, pulse 0→69 pass (deps installed).
-- **RECOVERED:** platform/api build 419→0 errors.
-- **UNCHANGED:** clearing 53 failures (UI suite, missing build artifact) — same root as prior runs.
-- **NEW:** chorus-sdk functions coverage threshold breach (62.06% < 75%).
-- **PERSISTENT:** Lint blocked (root node_modules not installed); clearing server.ts stmts threshold miss.
+## Failure Delta (vs 2026-06-06)
+- **REGRESSION:** All 4 test suites dropped from passing to BLOCKED (ts-jest missing from node_modules).
+- **REGRESSION:** Build 0 → 140 TypeScript errors. Root cause unknown — requires investigation.
+- **PERSISTENT:** Lint RED (root @eslint/js missing) — unchanged.
+- **Root cause hypothesis:** `npm ci` was run somewhere stripping or failing to install devDependencies across packages.
