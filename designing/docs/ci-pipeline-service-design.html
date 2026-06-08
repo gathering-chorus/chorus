@@ -288,8 +288,8 @@ flowchart TB
 
 <h2 id="references" data-section="references">References</h2>
 <ul>
-  <li><strong>ADR-033 — werk pipeline model</strong> (<code>roles/silas/adr/ADR-033-werk-pipeline-model.md</code>): git ⊃ env ⊃ DSL on <code>act</code>; one env = production; gh = source-of-truth (<code>main</code>) + process-holder; one commit-status check per verb (<code>chorus/pull..accept</code>). The pipeline model the verbs build to; landing via Silas.</li>
-  <li><strong>ADR-032 — verb contract v1</strong> (<code>roles/silas/adr/ADR-032-verb-contract-v1.md</code>): how each werk verb is built — zero-dep Rust, env contract, shared trace, all-or-nothing rollback, gh-wiring. ADR-033 is the model; ADR-032 is the per-verb contract.</li>
+  <li><strong>Pipeline model</strong> — the verbs-in-sequence / no-orchestrator model is <strong>ADR-037</strong> (atomic verb execution); the one build/deploy path is <strong>ADR-036</strong>; the per-verb contract is <strong>ADR-032</strong>. <em>(The earlier ADR-033 draft was never landed and is superseded — its <code>act</code>-as-orchestrator framing is retired. The surviving model — one env = production; <code>gh</code> = source-of-truth + process-holder via one commit-status per verb — is described in this doc.)</em></li>
+  <li><strong>ADR-032 — verb contract v1</strong> (<code>roles/silas/adr/ADR-032-verb-contract-v1.md</code>): how each werk verb is built — zero-dep Rust, env contract, shared trace, all-or-nothing rollback, gh-wiring. ADR-037 (atomic verbs) is the model; ADR-032 is the per-verb contract.</li>
   <li>ADR-026 — CI architecture + lock-file policy (<code>roles/silas/adr/ADR-026-ci-architecture-and-lock-file-policy.md</code>), 2026-04-25 addendum (smoke-check stays out)</li>
   <li>DEC-2525 — required-checks governance, 2026-04-29 amendment (lockstep across branch-protection + Repository Rulesets)</li>
   <li><strong>Cards (Done):</strong> #2580 (Done), #2597 (Done), #2598 (Done), #2600 (Done), #2625 (Done), #2603 (Done), #2627 (Done), #2467 (Done), #2629 (Done), #2632 (Done), #2526 (Done), #2611 (Done)</li>
