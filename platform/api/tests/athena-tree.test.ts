@@ -38,6 +38,27 @@ describe('loadTree — fixture round-trip against TreeSchema (#2928 Silas gate:a
     expect(tree.services.length).toBeGreaterThanOrEqual(0); // canonical has no Service layer until Move 5
   });
 
+  test('#3275: skill/hook/verb instances loaded + ownership resolves to validated owners', () => {
+    process.env.CHORUS_ROOT = REPO_ROOT;
+    const tree = loadTree();
+    // C: the instance layer is populated (95 skills+hooks+verbs)
+    expect(tree.instances.length).toBeGreaterThanOrEqual(95);
+    // AC3: ownership_lookup answers at the leaf, with Jeff's validated owners
+    expect(lookupOwnership(tree, 'chorus:skill-demo')?.owner).toBe('chorus:role-wren');
+    expect(lookupOwnership(tree, 'chorus:verb-werk-commit')?.owner).toBe('chorus:role-kade');
+    expect(lookupOwnership(tree, 'chorus:verb-werk-demo')?.owner).toBe('chorus:role-wren'); // proving verb → wren
+    expect(lookupOwnership(tree, 'chorus:hook-icd-write-gate')?.owner).toBe('chorus:role-kade'); // convergence, not silas
+    expect(lookupOwnership(tree, 'chorus:hook-search-hierarchy')?.owner).toBe('chorus:role-wren');
+    // acp deprecated + supersededBy edge to chorus-werk
+    const acp = tree.instances.find((i) => i.iri === 'chorus:skill-acp');
+    expect(acp?.deprecated).toBe(true);
+    expect(acp?.supersededBy).toBe('chorus:verb-chorus-werk');
+    // AC1: top rooted — chorus parent has the children, no name collision
+    const root = tree.products.find((p) => p.iri === 'chorus:chorus');
+    expect(root?.hasChild).toContain('chorus:chorus-chorus');
+    expect(tree.products.filter((p) => p.iri === 'chorus:chorus').length).toBe(1);
+  });
+
   test('every Product is owned by a Role declared in tree.roles', () => {
     process.env.CHORUS_ROOT = REPO_ROOT;
     const tree = loadTree();
@@ -193,6 +214,15 @@ const TEST_TREE: Tree = TreeSchema.parse({
       hasDesignDoc: ['chorus:doc-s2'],
     },
   ],
+  instances: [
+    {
+      iri: 'chorus:skill-test-demo',
+      label: 'test-demo',
+      instanceType: 'skill',
+      inDomain: 'chorus:domain-d1',
+      ownedBy: 'chorus:role-alice',
+    },
+  ],
 });
 
 describe('lookupOwnership', () => {
@@ -226,6 +256,18 @@ describe('lookupOwnership', () => {
       product: 'chorus:product-a',
       domain: 'chorus:domain-d1',
       service: 'chorus:service-s1',
+    });
+  });
+
+  test('resolves Instance IRI to its owner + containing domain/product (#3275)', () => {
+    const r = lookupOwnership(TEST_TREE, 'chorus:skill-test-demo');
+    expect(r).toEqual({
+      iri: 'chorus:skill-test-demo',
+      kind: 'instance',
+      owner: 'chorus:role-alice',
+      product: 'chorus:product-a',
+      domain: 'chorus:domain-d1',
+      instance: 'chorus:skill-test-demo',
     });
   });
 
