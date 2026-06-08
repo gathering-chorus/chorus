@@ -652,6 +652,146 @@ const CARDS_VIEW_TOOL_DEF = {
   },
 } as const;
 
+// #3268 — the priorities operating-layer readout, productized. Returns role →
+// priority(chunk) → cards in hard-rank order, reading the board's CHUNK data
+// (not the laggy search index, #3259). Read-side companion to the chunk-tagging.
+const PRIORITIES_READOUT_TOOL_DEF = {
+  name: 'chorus_priorities_readout',
+  description:
+    'Get the live priorities operating-layer readout: roles in hard rank (kade=werk, silas=model, wren=loom+memory) → each role\'s chunks (priorities) → the cards mapped under each via the `chunk` attribute, plus the cross-cut `proving` chunk, the off-priority `prune` pile (Gathering), and an honest per-role `untagged` list. Reads the board (Vikunja) chunk data directly — NOT the search index (which truncates + lags ~30min, #3259). This is the read-side of the chunk-tagging; if chunks are unset it says so rather than fabricating placement. Use to answer "what are the priorities and what cards sit under each, by role" in one call instead of reconstructing it by hand.',
+  inputSchema: { type: 'object', properties: {} },
+} as const;
+
+/** #3268 — a row as read from the board: card display-index, title, bucket, and
+ *  its comma-joined label titles (owner:*, chunk:*, sequence:* …). */
+export interface ReadoutRow { idx: number; title: string; bucket: string; labels: string | null; }
+export interface ReadoutCard { id: number; title: string; bucket: string; owner: string; }
+
+/** Hard rank Jeff set 2026-06-06: Kade(werk) 1 · Silas(model) 2 · Wren(loom+memory) 3. */
+const READOUT_ROLE_RANK: Record<string, number> = { kade: 1, silas: 2, wren: 3 };
+
+/** #3268 — PURE grouping (unit-tested): board rows → role→chunk→cards readout.
+ *  - roles in hard-rank order; chunks = the funded priorities (from chunk:*).
+ *  - `proving` is surfaced cross-cut (it spans roles).
+ *  - `prune` = off-priority Gathering (sequence:gathering).
+ *  - per-role `untagged` = chorus cards with no chunk → honest, never fabricated (AC4).
+ *  No placement is invented: a card lands under a chunk ONLY if that chunk label is on it. */
+export function groupPrioritiesReadout(rows: ReadoutRow[]) {
+  const ROLES = ['kade', 'silas', 'wren'];
+  type P = { id: number; title: string; bucket: string; owner: string; chunks: string[]; gathering: boolean };
+  const parsed: P[] = rows.map((r) => {
+    const labels = (r.labels || '').split(',').map((s) => s.trim()).filter(Boolean);
+    let owner = 'unassigned';
+    const chunks: string[] = [];
+    let gathering = false;
+    for (const l of labels) {
+      if (l.startsWith('owner:')) owner = l.slice('owner:'.length);
+      else if (l.startsWith('chunk:')) chunks.push(l.slice('chunk:'.length));
+      else if (l === 'sequence:gathering') gathering = true;
+    }
+    return { id: r.idx, title: r.title, bucket: r.bucket, owner, chunks, gathering };
+  });
+  const toCard = (p: P): ReadoutCard => ({ id: p.id, title: p.title, bucket: p.bucket, owner: p.owner });
+  const proving: ReadoutCard[] = [];
+  const prune: ReadoutCard[] = [];
+  const roleMap: Record<string, { chunks: Record<string, ReadoutCard[]>; untagged: ReadoutCard[] }> = {};
+  for (const r of ROLES) roleMap[r] = { chunks: {}, untagged: [] };
+  let chunked = 0;
+  let untaggedN = 0;
+  for (const p of parsed) {
+    if (p.chunks.includes('proving')) proving.push(toCard(p));
+    if (p.gathering) { prune.push(toCard(p)); continue; }
+    if (!ROLES.includes(p.owner)) continue; // jeff/unassigned aren't in the hard rank
+    const own = p.chunks.filter((c) => c !== 'proving');
+    if (own.length === 0 && !p.chunks.includes('proving')) {
+      roleMap[p.owner].untagged.push(toCard(p)); untaggedN++;
+    } else {
+      for (const c of own) { (roleMap[p.owner].chunks[c] ||= []).push(toCard(p)); chunked++; }
+    }
+  }
+  const roles = ROLES.map((role) => ({
+    role,
+    rank: READOUT_ROLE_RANK[role],
+    chunks: Object.keys(roleMap[role].chunks).sort().map((chunk) => ({ chunk, cards: roleMap[role].chunks[chunk] })),
+    untagged: roleMap[role].untagged,
+  })).sort((a, b) => a.rank - b.rank);
+  return {
+    roles,
+    proving,
+    prune,
+    totals: { active: parsed.length, chunked, untagged: untaggedN, prune: prune.length },
+  };
+}
+
+/** #3268 — THE canonical readable render (pure, unit-tested). ONE fixed shape, in code,
+ *  so the format is never re-improvised per-role or per-call (Jeff, 2026-06-08: "i dont
+ *  want to have to have a formatting discussion with each of u on this every time"):
+ *
+ *    N · ROLE
+ *      <chunk> (n)
+ *        - #id  title
+ *      untagged (n)
+ *    proving — cross-cut (n) / prune — Gathering (n)
+ *
+ *  This IS the tool's output for humans — not raw JSON, not a one-off swizzle. */
+export function renderPrioritiesReadout(r: ReturnType<typeof groupPrioritiesReadout>): string {
+  const card = (c: ReadoutCard) => `   - #${c.id} - ${c.title}`;
+  const lines: string[] = [];
+  for (const role of r.roles) {
+    lines.push('');
+    lines.push(`${role.rank} ${role.role.toUpperCase()}`);
+    for (const ch of role.chunks) {
+      lines.push(ch.chunk);
+      for (const c of ch.cards) lines.push(card(c));
+    }
+    // #3268 — untagged cards are NOT shown (Jeff, 2026-06-08: "i dont want to see
+    // things that are not tagged"). A priorities report shows tagged priorities only.
+  }
+  if (r.proving.length > 0) {
+    lines.push('');
+    lines.push('proving');
+    for (const c of r.proving) lines.push(card(c));
+  }
+  // #3268 — no untagged, no prune. A priorities report shows ONLY chunked cards
+  // (Jeff, 2026-06-08: "its clearly not a priority if it has no chunk"). proving is
+  // included because chunk:proving IS a chunk (a cross-cut priority).
+  return lines.join('\n').trimStart();
+}
+
+// #3268 — handler: read the board's chunk data straight from Vikunja (sqlite,
+// what the cards CLI does internally) — NOT the search index — and hand the rows
+// to the pure grouper. Active cards only (board view 8, excluding Done/Won't Do).
+async function executePrioritiesReadout(
+  execFileAsync: ExecFileAsync,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const home = process.env.HOME || '';
+  const db = process.env.VIKUNJA_DB || `${home}/.chorus/vikunja/db/vikunja.db`;
+  const sql =
+    'SELECT t."index" AS idx, t.title AS title, b.title AS bucket, ' +
+    '(SELECT group_concat(l.title) FROM label_tasks lt JOIN labels l ON l.id = lt.label_id WHERE lt.task_id = t.id) AS labels ' +
+    'FROM tasks t ' +
+    'JOIN task_buckets tb ON tb.task_id = t.id ' +
+    "JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 " +
+    "WHERE b.title NOT IN ('Done', 'Won''t Do') " +
+    'ORDER BY t."index"';
+  let rows: ReadoutRow[] = [];
+  try {
+    const { stdout } = await execFileAsync('sqlite3', ['-json', db, sql], { timeout: 10_000 });
+    rows = stdout.trim() ? (JSON.parse(stdout) as ReadoutRow[]) : [];
+  } catch (err) {
+    throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`);
+  }
+  const readout = groupPrioritiesReadout(rows);
+  // #3268 — return THE canonical readable render (the fixed bulleted shape), not raw
+  // JSON. One format, in the tool, identical for every role and every call.
+  return {
+    content: [{
+      type: 'text' as const,
+      text: renderPrioritiesReadout(readout),
+    }],
+  };
+}
+
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify({ level, event, tool: 'chorus_nudge_message', ts: new Date().toISOString(), ...fields }) + '\n');
 }
@@ -2361,6 +2501,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_TAG_TOOL_DEF,
       CARDS_SET_TOOL_DEF,
       CARDS_VIEW_TOOL_DEF,
+      PRIORITIES_READOUT_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
@@ -2544,6 +2685,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         return executeCardsView(parsed.data, from, execFileAsync, cardsPath);
+      }
+      case 'chorus_priorities_readout': {
+        return executePrioritiesReadout(execFileAsync);
       }
       case 'chorus_commit_status': {
         const parsed = CommitStatusInput.safeParse(req.params.arguments);
