@@ -36,7 +36,16 @@ For each gate: spawn a subagent that reads the card + the diff + the running var
 
 The gate results are the quality gather. They are **not** the proving verdict — a green gate is not a verdict, and a peer's review is never the verdict (proving is Jeff or a machine, never peer-blessing). Recording a gate attests it RAN; the verdict is still the prover's.
 
-**Gates are NON-BLOCKING (#3263).** The `werk-demo` binary does **not** require gates to reach the decision — it requires the machine-checkable floor: the work was **tested** (`werk-demo test-result …`, recorded by the pipeline's test step) and **announced** with the variant **up and reachable**. Gates can't be a hard precondition because the zero-dep binary (and `act`) can't run LLM gate-reviews — making them required is exactly what stopped `chorus_werk` from self-completing the demo. So: run the gates when you can (they enrich the decision surface and route to peers), but their absence never blocks the pipeline. What blocks a go is an *uninformed* go — no test result, or a variant that isn't running.
+**Gates are REQUIRED to present (#3284 — invariant execution).** `werk-demo` REFUSES to present unless all 5 gates have recorded a `demo.gate.result` for the card (it emits `demo.refused reason=gates-missing` and exits non-zero). This is the forcing function that makes gate execution invariant: a demo that reaches present with no gates fails LOUD instead of silently showing "(none run)".
+
+This is NOT a contradiction of #3263 ("the machine shows, it never vetoes your go"). The refusal blocks *presenting un-gated*; it never blocks Jeff's GO — gates inform the decision, they don't decide it. Jeff's go stays sovereign.
+
+Because an LLM gate-review can't run in the zero-dep binary (or headless `act`), the gates are run by the **demoer (this agent, an LLM)** — and that's why the demo is demoer-driven, not pipeline-headless. The flow (#3284):
+- The pipeline (`chorus_werk`) builds → deploys → env-ups the variant. It does **not** run a headless demo (that would refuse — no LLM ran the gates).
+- The **demoer** then runs the 5 gate subagents *against the live variant* (it's up after env-up), records each via `werk-demo gate <card> <gate> pass|fail`, **then** invokes `werk-demo` to present.
+- `werk-demo` present shows the cockpit (verb checklist) + each gate's verdict. Jeff says **go** → it runs to completion (land). "Test in demo, accept in demo."
+
+Still true: the machine-checkable floor (work **tested** via `werk-demo test-result`, variant **up and reachable**) feeds the decision surface; an *uninformed* go is what the surface guards against.
 
 ## Step 2 — Invoke the binary (present → feedback → window → verdict)
 

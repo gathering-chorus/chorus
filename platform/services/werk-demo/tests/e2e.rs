@@ -148,12 +148,19 @@ exit 0
     // so skip the run (the fixture seeds demo.test_result directly).
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
 
+    // #3284 (AC6): with NO gates recorded, the demo REFUSES to present (invariant gate
+    // execution) — exit 1, typed gates-missing — BEFORE any announce. This is the
+    // loud-stop that replaces #3279's silent "(none run — optional)" present.
+    fs::create_dir_all(home.join("ops/logs")).unwrap();
+    let ungated = demo(3046, "wren", &home).expect("demo() returns Ok even when it refuses");
+    assert_eq!(ungated.exit, 1, "un-gated demo must REFUSE to present (AC6): {}", ungated.message);
+    assert!(ungated.message.contains("gates not run"), "typed gates-missing refusal: {}", ungated.message);
+
     // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
     // demo.gate.result, and (b) BLOCKS until Jeff records a demo.decision. Seed
     // both — the 5 gates + a "go" — so the happy path reflects gates-ran +
     // accepted. (gates_missing / read_decision unit tests cover the refusal and
     // the no-go/more/timeout branches directly.)
-    fs::create_dir_all(home.join("ops/logs")).unwrap();
     let mut gate_seed = String::new();
     for g in ["product", "code", "quality", "arch", "ops"] {
         gate_seed.push_str(&format!(
