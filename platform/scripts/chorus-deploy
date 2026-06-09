@@ -110,7 +110,7 @@ set_binaries_from() {  # $1 = crate dir
 
 # #2831 review (Kade): single constant for known crates so Usage line + case
 # default don't drift. Add new targets here once.
-KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp|werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-accept|werk-demo|pulse-gather|pair-heartbeat"
+KNOWN_CRATES="chorus-hooks|chorus-inject|chorus-api|chorus-mcp|werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-merge|werk-accept|werk-demo|pulse-gather|pair-heartbeat"
 
 # #2993: gate chorus-api deploy.completed on a real MCP-init smoke. Without
 # this gate, `launchctl kickstart -k` returns immediately and deploy.completed
@@ -284,7 +284,7 @@ fi
 # does not stop the others (collected and reported at end). Handled BEFORE the
 # MODE check below because MODE="werk" wouldn't match deploy/--rollback.
 if [ "$CRATE" = "--all" ] && [ "$MODE" = "werk" ]; then
-  WERK_VERBS=(werk-pull werk-commit werk-push werk-build werk-deploy werk-accept werk-demo pulse-gather pair-heartbeat)
+  WERK_VERBS=(werk-pull werk-commit werk-push werk-build werk-deploy werk-merge werk-accept werk-demo pulse-gather pair-heartbeat)
   failed=()
   for v in "${WERK_VERBS[@]}"; do
     crate_dir="$ROOT/platform/services/$v"
@@ -628,7 +628,7 @@ case "$CRATE" in
     set_binaries_from "$CRATE_DIR"   # #3222: structural
     KICKSTART_SERVICE=""  # spawn-on-demand by pulse worker; no daemon
     ;;
-  werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-accept|werk-demo|pulse-gather|pair-heartbeat)
+  werk-pull|werk-commit|werk-push|werk-build|werk-deploy|werk-merge|werk-accept|werk-demo|pulse-gather|pair-heartbeat)
     # #3110: chorus-deploy absorbs the werk-* verb-binary install path
     # (#3205: pulse-gather joins them — same single-bin verb-crate shape, installs
     # as a role-slot-routed CLI binary, no daemon. It is the loom-gather verb that
