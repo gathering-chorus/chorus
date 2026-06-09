@@ -191,12 +191,34 @@ fn path(p: &Path) -> R<&str> {
 }
 
 /// Entry for werk-accept (#3237): the GO-SIGNAL. `werk-accept <card> <role>`; the
+/// #3298 — parse accept args + recognize `--atomic` ANYWHERE (the standalone accept
+/// door; the #3296/#3297 seam pattern). accept is the human's DEC-048 go — gated by
+/// `can_accept` — so --atomic is the recognized standalone-invocation flag, not a
+/// behavioral fork (the authority gate still enforces jeff/wren). Pure + testable:
+/// run_accept feeds it env::args, so the CLI seam is covered, not just the lib fn.
+pub fn parse_accept_args(args: &[String]) -> R<(u64, String, bool)> {
+    let atomic = args.iter().any(|a| a == "--atomic");
+    let pos: Vec<&String> = args.iter().filter(|a| a.as_str() != "--atomic").collect();
+    let card_arg = pos
+        .first()
+        .ok_or_else(|| "usage: werk-accept <card> <role> [--atomic]".to_string())?;
+    let card: u64 = card_arg
+        .parse()
+        .map_err(|_| format!("card id is not a number: {}", card_arg))?;
+    let role = pos
+        .get(1)
+        .map(|s| s.to_string())
+        .ok_or_else(|| "usage: werk-accept <card> <role> [--atomic]".to_string())?;
+    Ok((card, role, atomic))
+}
+
 /// ACCEPTER is $DEPLOY_ROLE (the authorizing identity, distinct from the builder
-/// `role`). Writes Jeff's go to the demo witness; does NOT merge or finalize.
+/// `role`). Writes Jeff's go to the demo witness; does NOT merge or finalize. Conforms
+/// to ADR-032 (verb contract) + ADR-037 (--atomic): accept is the human's DEC-048 go,
+/// so --atomic is the standalone door — recognized, authority still enforced by can_accept.
 pub fn run_accept() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-accept <card> <role>".to_string())?;
-    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args().nth(2).ok_or_else(|| "usage: werk-accept <card> <role>".to_string())?;
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (card, role, _atomic) = parse_accept_args(&args)?;
     let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     signal(card, &role, &accepter, &home)
@@ -275,8 +297,17 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
     jsonl(home, role, card, &trace, "signal.started", &format!(",\"accepter\":\"{}\"", accepter));
     let status = gate_decision(card, role, &accepter, home, &trace)?;
     if status == "Done" {
-        jsonl(home, role, card, &trace, "signal.idempotent", "");
-        return Ok(format!("#{} already finalized — no decision to render", card));
+        // #3298 — the land already finalized on the GO, which IS the DEC-048 accept. A
+        // werk-accept AFTER that is NOT a no-op — it's the explicit post-finalize AUDIT:
+        // record {who, when} so the human's attestation lands on the card thread, distinct
+        // from the mechanical finalize. Resolves the land-vs-accept seam (the GO was the
+        // accept; this is the recorded sign-off, not a "no decision to render").
+        jsonl(home, role, card, &trace, "accept.audit",
+            &format!(",\"accepter\":\"{}\",\"note\":\"post-finalize-attestation\"", accepter));
+        return Ok(format!(
+            "#{} already finalized — recorded {}'s post-finalize accept (audit, DEC-048). The GO was the accept.",
+            card, accepter
+        ));
     }
     if status != "WIP" {
         jsonl(home, role, card, &trace, "signal.refused", &format!(",\"reason\":\"not-wip\",\"status\":\"{}\"", status));

@@ -2,7 +2,10 @@
 //! gate (DEC-048: only Wren/Jeff finalize; a builder never self-accepts). That's a
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
-use werk_accept::{branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line, script_path};
+use werk_accept::{
+    branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line, parse_accept_args,
+    script_path,
+};
 
 // #3237 — werk-accept's go-signal (and werk-do-more) write a demo.decision line
 // into ops/logs/werk-demo.jsonl that werk-demo's read_decision must match. The
@@ -15,6 +18,20 @@ fn demo_decision_line_is_byte_exact_for_read_decision() {
     assert!(line.contains("\"card_id\":3237,"), "card_id must be comma-terminated: {}", line);
     assert!(line.contains("\"event\":\"demo.decision\""), "event must be demo.decision: {}", line);
     assert!(line.contains("\"decision\":\"go\""), "decision must be go: {}", line);
+}
+
+// #3298 — accept --atomic parse (the standalone accept door; same CLI-seam discipline
+// as push #3296 / merge #3297): recognize --atomic anywhere, never mis-read as the role.
+#[test]
+fn parse_accept_args_recognizes_atomic_anywhere() {
+    let (c, r, a) = parse_accept_args(&["3298".into(), "kade".into(), "--atomic".into()]).unwrap();
+    assert_eq!((c, r.as_str(), a), (3298, "kade", true));
+    let (c, r, a) = parse_accept_args(&["3298".into(), "--atomic".into(), "kade".into()]).unwrap();
+    assert_eq!((c, r.as_str(), a), (3298, "kade", true), "--atomic not mistaken for role");
+    let (c, r, a) = parse_accept_args(&["3298".into(), "kade".into()]).unwrap();
+    assert_eq!((c, r.as_str(), a), (3298, "kade", false));
+    assert!(parse_accept_args(&["notanum".into(), "kade".into()]).is_err());
+    assert!(parse_accept_args(&["3298".into()]).is_err(), "role required");
 }
 
 #[test]
