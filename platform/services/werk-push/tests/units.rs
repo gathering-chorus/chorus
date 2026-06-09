@@ -2,7 +2,7 @@
 //! with the blueprint: branch/card handling + the jsonl witness line shape, plus the
 //! #3163 spine helpers (resolve_trace inheritance + the chorus-log args contract).
 
-use werk_push::{branch_name, jsonl_line, resolve_trace_in, spine_args};
+use werk_push::{branch_name, jsonl_line, parse_push_args, resolve_trace_in, spine_args};
 
 #[test]
 fn branch_name_is_role_slash_card() {
@@ -58,4 +58,29 @@ fn resolve_trace_mints_then_persists_so_one_trace_threads() {
     assert!(dir.join(format!("{}-trace", card)).exists(), "the mint persists the carrier file");
     // second resolve (no env) reads the SAME persisted trace → ONE trace threads through.
     assert_eq!(resolve_trace_in(card, None, &dir), minted);
+}
+
+// #3296 — `push --atomic`: the flag must be RECOGNIZED at the CLI seam, not silently
+// dropped (run_push ignored nth(3+)) or mis-parsed as the role (`werk-push 3296 --atomic`
+// read --atomic as role). push is in the ADR-037 --atomic-FREE group (reversible, no
+// approval), so --atomic does not change behavior — but it MUST parse cleanly: card +
+// role correct, atomic=true, regardless of flag position.
+#[test]
+fn parse_push_args_recognizes_atomic_anywhere() {
+    // flag trailing
+    let (card, role, atomic) =
+        parse_push_args(&["3296".into(), "kade".into(), "--atomic".into()], None).unwrap();
+    assert_eq!((card, role.as_str(), atomic), (3296, "kade", true));
+
+    // flag BETWEEN card and role — must NOT be mistaken for the role
+    let (card, role, atomic) =
+        parse_push_args(&["3296".into(), "--atomic".into(), "kade".into()], None).unwrap();
+    assert_eq!((card, role.as_str(), atomic), (3296, "kade", true), "--atomic not mistaken for role");
+
+    // no flag → atomic=false, role from the DEPLOY_ROLE fallback
+    let (card, role, atomic) = parse_push_args(&["3296".into()], Some("kade".into())).unwrap();
+    assert_eq!((card, role.as_str(), atomic), (3296, "kade", false));
+
+    // non-numeric card → Err (the contract guard)
+    assert!(parse_push_args(&["notanum".into(), "kade".into()], None).is_err());
 }
