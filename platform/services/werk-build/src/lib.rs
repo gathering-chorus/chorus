@@ -776,7 +776,7 @@ pub fn parse_atomic(args: &[String]) -> bool {
     args.iter().any(|a| a == "--atomic")
 }
 
-/// Entry: `werk-build <card> <role> [--target werk|canonical]` (role falls back to
+/// Entry: `werk-build <card> <role> [--target werk|canonical] [--atomic]` (role falls back to
 /// $DEPLOY_ROLE). --target is positional-agnostic and stripped before reading card/role.
 pub fn run_build() -> R<String> {
     let argv: Vec<String> = env::args().skip(1).collect();
@@ -801,7 +801,7 @@ pub fn run_build() -> R<String> {
     }
     let card_arg = positional
         .first()
-        .ok_or_else(|| "usage: werk-build <card> <role> [--target werk|canonical]".to_string())?;
+        .ok_or_else(|| "usage: werk-build <card> <role> [--target werk|canonical] [--atomic]".to_string())?;
     let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
     let role = positional
         .get(1)
