@@ -4,7 +4,7 @@
 # when all three sessions are running. Zombie Terminal windows crash
 # the osascript lookup and the whole check fails.
 
-HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge-health-check.sh"
+HEALTH_SCRIPT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/nudge-health-check.sh"
 
 # --- AC 1: Health check survives zombie windows ---
 
@@ -27,6 +27,24 @@ HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge
 }
 
 # --- AC 3: Still detects genuinely missing roles ---
+
+# --- #3284 AC8 / ADR-039: registry-aware, no false no-window for vscode ---
+
+@test "AC8: health check resolves through the registry before Terminal-probing" {
+  # The fix (ADR-039): resolve role→host via the session registry, branch on host.
+  grep -q "resolve_reg" "$HEALTH_SCRIPT"
+  grep -q 'host" = "vscode"' "$HEALTH_SCRIPT"
+  grep -q -- "--vscode reachable" "$HEALTH_SCRIPT"
+}
+
+@test "AC8: a vscode session is healthy via --vscode, never no-window (the 84x false alarm)" {
+  run bash "$HEALTH_SCRIPT"
+  echo "output: $output"
+  # Only meaningful when a role is actually a live vscode session in this env.
+  echo "$output" | grep -q "vscode session" || skip "no live vscode session registered in this env"
+  # No role line may pair a vscode session with a no-window/unreachable alarm.
+  ! ( echo "$output" | grep -i "vscode session" | grep -iq "no.*window" )
+}
 
 @test "health check detects missing role window" {
   # Use a role name that won't match any window
