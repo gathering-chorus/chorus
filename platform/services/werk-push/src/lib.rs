@@ -205,17 +205,35 @@ fn register_gh(werk_s: &str, card: u64, role: &str, trace: &str, branch: &str, s
     Ok(())
 }
 
-/// Entry: parse the contract args (`werk-push <card> <role>`, role falls back to
-/// $DEPLOY_ROLE) + env, then run the verb.
-pub fn run_push() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-push <card> <role>".to_string())?;
+/// #3296 — parse the contract args + recognize `--atomic` ANYWHERE. push is in the
+/// ADR-037 --atomic-FREE group (reversible, no approval), so the flag is accepted +
+/// reported but does NOT branch behavior — push() is the one path. Pure + testable:
+/// run_push feeds it env::args, so the CLI seam is covered, not just the lib fn (the
+/// #3306 lesson — an untested flag-parse is how a green binary dies in prod).
+pub fn parse_push_args(args: &[String], deploy_role: Option<String>) -> R<(u64, String, bool)> {
+    let atomic = args.iter().any(|a| a == "--atomic");
+    let pos: Vec<&String> = args.iter().filter(|a| a.as_str() != "--atomic").collect();
+    let card_arg = pos
+        .first()
+        .ok_or_else(|| "usage: werk-push <card> <role> [--atomic]".to_string())?;
     let card: u64 = card_arg
         .parse()
         .map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args()
-        .nth(2)
-        .or_else(|| env::var("DEPLOY_ROLE").ok())
-        .ok_or_else(|| "usage: werk-push <card> <role> (or set DEPLOY_ROLE)".to_string())?;
+    let role = pos
+        .get(1)
+        .map(|s| s.to_string())
+        .or(deploy_role)
+        .ok_or_else(|| "usage: werk-push <card> <role> [--atomic] (or set DEPLOY_ROLE)".to_string())?;
+    Ok((card, role, atomic))
+}
+
+/// Entry: parse the contract args (`werk-push <card> <role> [--atomic]`, role falls
+/// back to $DEPLOY_ROLE) + env, then run the verb. Conforms to ADR-032 (verb contract)
+/// + ADR-037 (--atomic): push is the reversible/free group, so --atomic is recognized
+/// but non-branching — push() is always the one path.
+pub fn run_push() -> R<String> {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (card, role, _atomic) = parse_push_args(&args, env::var("DEPLOY_ROLE").ok())?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
