@@ -226,25 +226,99 @@ fn merged_pr_for_sha(werk_s: &str, branch: &str, head_sha: &str) -> Option<u64> 
 // ─────────────────────────── the verb ───────────────────────────
 
 /// Entry: parse the contract args (`werk-merge <card> <role>`, role falls back to
-/// $DEPLOY_ROLE) + env, then run the verb.
+/// #3297 — parse contract args + recognize `--atomic` ANYWHERE (push-pattern seam;
+/// #3296/#3306 lesson: cover the CLI argv parse, not just the lib fn).
+pub fn parse_merge_args(args: &[String], deploy_role: Option<String>) -> R<(u64, String, bool)> {
+    let atomic = args.iter().any(|a| a == "--atomic");
+    let pos: Vec<&String> = args.iter().filter(|a| a.as_str() != "--atomic").collect();
+    let card_arg = pos
+        .first()
+        .ok_or_else(|| "usage: werk-merge <card> <role> [--atomic]".to_string())?;
+    let card: u64 = card_arg
+        .parse()
+        .map_err(|_| format!("card id is not a number: {}", card_arg))?;
+    let role = pos
+        .get(1)
+        .map(|s| s.to_string())
+        .or(deploy_role)
+        .ok_or_else(|| "usage: werk-merge <card> <role> [--atomic] (or set DEPLOY_ROLE)".to_string())?;
+    Ok((card, role, atomic))
+}
+
+/// #3297 — the ADR-037 approval gate (merge mutates main; one gate, two doors). FLOW:
+/// the demo→GO is the approval (the land supplies the accepter via $ACCEPTER) — record,
+/// don't gate. `--atomic` (standalone, no land-GO): the verb DEMANDS an accepter or
+/// refuses — the door `--atomic` must never become a quiet unauthorized ship. Returns
+/// who authorized (for the {who, what, when} spine event).
+pub fn require_approval(atomic: bool, accepter: Option<String>) -> R<String> {
+    match accepter {
+        Some(a) if !a.trim().is_empty() => Ok(a),
+        _ if atomic => Err(
+            "no-approval: merge --atomic mutates main — set ACCEPTER=<who> to authorize this standalone merge"
+                .to_string(),
+        ),
+        _ => Ok("flow".to_string()), // flow: the demo→GO was the approval, recorded at the land
+    }
+}
+
+/// chorus-log args contract (mirrors werk-commit): `event role card=N trace=T k=v...`.
+pub fn spine_args(event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
+/// Best-effort spine emit (#3297 — the approval event must reach the ONE spine, not just
+/// the jsonl witness, so {who, what, when} is queryable; ADR-037 "kills invisible").
+fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extras: &[(&str, &str)]) {
+    let log = home.join("platform/scripts/chorus-log");
+    let _ = Command::new(&log)
+        .args(spine_args(event, role, card, trace, extras))
+        .output();
+}
+
+/// Entry: parse the contract args (`werk-merge <card> <role> [--atomic]`, role falls
+/// back to $DEPLOY_ROLE) + env, then run the verb. The accepter (who authorized) comes
+/// from $ACCEPTER — the land sets it; `--atomic` operators set it explicitly.
 pub fn run_merge() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-merge <card> <role>".to_string())?;
-    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args()
-        .nth(2)
-        .or_else(|| env::var("DEPLOY_ROLE").ok())
-        .ok_or_else(|| "usage: werk-merge <card> <role> (or set DEPLOY_ROLE)".to_string())?;
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (card, role, atomic) = parse_merge_args(&args, env::var("DEPLOY_ROLE").ok())?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
-    merge(card, &role, &home, &werk_base)
+    let accepter = env::var("ACCEPTER").ok().filter(|s| !s.trim().is_empty());
+    merge_inner(card, &role, &home, &werk_base, atomic, accepter)
 }
 
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
 /// (deps injected via PATH: real `git`, stateful shimmed `gh`). Returns the merged
 /// origin/main sha.
+/// Flow entry (atomic=false): the land's demo→GO is the approval; accepter from $ACCEPTER.
 pub fn merge(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
+    let accepter = env::var("ACCEPTER").ok().filter(|s| !s.trim().is_empty());
+    merge_inner(card, role, home, werk_base, false, accepter)
+}
+
+/// #3297 — `merge --atomic`: standalone PR squash-merge (the deadlock hand-recovery).
+/// Requires an explicit accepter (ADR-037 approval gate — merge mutates main).
+pub fn merge_atomic(card: u64, role: &str, home: &Path, werk_base: &Path, accepter: Option<String>) -> R<String> {
+    merge_inner(card, role, home, werk_base, true, accepter)
+}
+
+/// The whole verb, all inputs explicit so it is testable against a real temp repo.
+/// `atomic` selects the standalone door; `accepter` is who authorized (ADR-037).
+fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: bool, accepter: Option<String>) -> R<String> {
     let trace = trace_id();
+    // #3297 — approval gate up front (ADR-037): --atomic demands an accepter or refuses;
+    // in the flow the demo→GO already authorized, so this returns "flow".
+    let approver = require_approval(atomic, accepter)?;
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     let werk_s = path(&werk)?.to_string();
@@ -301,6 +375,13 @@ pub fn merge(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
             })?
         }
     };
+
+    // #3297 — record the approval on the spine BEFORE the irreversible merge (ADR-037
+    // {who, what, when} — kills "invisible"). Flow approvals carry accepter="flow".
+    jsonl(home, role, card, &trace, "merge.approved",
+        &format!(",\"accepter\":\"{}\",\"pr\":{},\"atomic\":{}", approver, pr, atomic));
+    emit_spine(home, "merge.approved", role, card, &trace,
+        &[("accepter", &approver), ("pr", &pr.to_string()), ("atomic", &atomic.to_string())]);
 
     // ── merge, serialized under one flock. ONE mechanism: squash. ──
     {
