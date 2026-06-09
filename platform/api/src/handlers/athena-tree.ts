@@ -25,6 +25,8 @@ import {
   type Service,
   type OwnershipResult,
   type BlastRadiusResult,
+  type FileAttribution,
+  type DomainEdge,
 } from './athena-tree-schemas';
 
 interface CacheEntry {
@@ -133,6 +135,70 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
     };
   }
   return null;
+}
+
+/**
+ * #3291: attribute a file path to its place in the model.
+ *  - file→INSTANCE = 1 (longest-prefix-wins on Instance.mapsTo) — the ADR-038
+ *    substrate seam: a changed impl file → its instance → owner + kind.
+ *  - file→DOMAIN = 1:N (Domain.hasMapsTo prefixes) — the crawler's coupling
+ *    signal. PHASE 1 emits prefix-source edges only (longest = primary); phase 2
+ *    adds source='import' cross-cutting edges, phase 3 source='annotation'.
+ * A file with no match yields empty edges (the honest "needs mapsTo" signal —
+ * never silently attributed). The result shape is 1:N + source from day one so
+ * phase 2 drops in with no migration (the forward-compat lock).
+ */
+export function attributeFile(tree: Tree, filePath: string): FileAttribution {
+  const norm = filePath.replace(/^\.?\//, '');
+  const underPrefix = (p: string): boolean => {
+    const pp = p.replace(/^\.?\//, '');
+    return norm === pp || norm.startsWith(pp.endsWith('/') ? pp : pp + '/');
+  };
+
+  // file→instance: longest mapsTo prefix wins (exactly one answer).
+  let bestInst: { iri: string; len: number } | null = null;
+  for (const i of tree.instances ?? []) {
+    if (!i.mapsTo || !underPrefix(i.mapsTo)) continue;
+    const len = i.mapsTo.replace(/^\.?\//, '').length;
+    if (!bestInst || len > bestInst.len) bestInst = { iri: i.iri, len };
+  }
+  const inst = bestInst ? (tree.instances ?? []).find((i) => i.iri === bestInst!.iri) : undefined;
+
+  // file→domain: prefix-source edges (phase 1). Longest matching prefix = primary;
+  // additional matches stay as (non-primary) edges — 1:N, never collapsed to 1:1.
+  const matches: Array<{ domain: string; len: number }> = [];
+  for (const d of tree.domains) {
+    for (const pre of d.hasMapsTo ?? []) {
+      if (underPrefix(pre)) matches.push({ domain: d.iri, len: pre.replace(/^\.?\//, '').length });
+    }
+  }
+  // AT-MOST-ONE-PRIMARY (Silas's invariant): exactly one prefix edge is primary —
+  // the longest match, ties broken by domain iri for determinism. So "which domain
+  // owns this file" is never ambiguous (0 primaries if no match, else exactly 1).
+  // PHASE-2 CONTRACT: import-source edges are NEVER primary — the primary is always
+  // the prefix home. Only prefix matches are considered here, so a future import
+  // edge structurally cannot steal primary.
+  let primaryDomain = '';
+  let primaryLen = -1;
+  for (const m of matches) {
+    if (m.len > primaryLen || (m.len === primaryLen && m.domain < primaryDomain)) {
+      primaryLen = m.len;
+      primaryDomain = m.domain;
+    }
+  }
+  const domains: DomainEdge[] = matches.map((m) => ({
+    domain: m.domain,
+    source: 'prefix' as const,
+    primary: m.domain === primaryDomain,
+  }));
+
+  return {
+    path: filePath,
+    instance: inst?.iri,
+    instanceOwner: inst?.ownedBy,
+    instanceKind: inst?.instanceType,
+    domains,
+  };
 }
 
 /**
