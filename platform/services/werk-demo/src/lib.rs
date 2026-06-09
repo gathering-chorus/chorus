@@ -578,7 +578,16 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // can't spawn an LLM gate); the binary's job is to ENFORCE. Refusing here, before
     // any announce, is what makes a gate-less pipeline demo fail LOUD instead of
     // silently presenting "(none run)". Skippable only in the unit/e2e suite.
-    if !std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false) {
+    //
+    // #3318 — but ONLY on the DEMOER-driven (interactive) present. The headless act/CI
+    // job has no agent to run gates, so enforcing there refuses EVERY Half A demo team-
+    // wide (the #3284 pipeline break). Under act/CI we SKIP enforcement — the pipeline
+    // presents the variant; the demoer then runs gates + the real gated present.
+    // Detected via the act runner's own env (ACT / GITHUB_ACTIONS).
+    let in_act = std::env::var("ACT").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+    let skip_gate_check =
+        std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false);
+    if !skip_gate_check && !in_act {
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
         let absent = gates_missing(&witness, card);
         if !absent.is_empty() {
