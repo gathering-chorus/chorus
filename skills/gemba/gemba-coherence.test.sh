@@ -37,6 +37,10 @@ assert "gemba skill invokes pulse-gather" grep -q "pulse-gather" "$ROOT/skills/g
 assert "gemba skill no longer calls gemba-start" bash -c "! grep -q 'gemba-start' '$ROOT/skills/gemba/SKILL.md'"
 assert "gemba skill no longer calls gemba-tick.sh" bash -c "! grep -q 'gemba-tick.sh' '$ROOT/skills/gemba/SKILL.md'"
 
+# #3274: the skill no longer claims a continuous loop it doesn't maintain
+assert "gemba skill no longer claims a CronCreate loop (#3274)" bash -c "! grep -q 'CronCreate' '$ROOT/skills/gemba/SKILL.md'"
+assert "gemba skill no longer CronDeletes a loop (#3274)" bash -c "! grep -q 'CronDelete' '$ROOT/skills/gemba/SKILL.md'"
+
 # Deploy path knows the verb (so it ships — merged≠live guard)
 assert "chorus-deploy registers pulse-gather" grep -q "pulse-gather" "$ROOT/platform/scripts/chorus-deploy"
 

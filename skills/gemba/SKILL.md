@@ -14,13 +14,22 @@ Watch a role work in real time. Sports commentary, not status reports.
 /gemba <role> [card-id]
 ```
 
-## How it works (#3205)
+## How it works (#3205, #3274)
 
 Gemba is one poll of the `pulse-gather` verb. There is no start script, no tick
 script, no snapshot-diff layer — those caused the staleness Jeff complained about
 ("no change since 16:56" while the role's real last turn was newer). `pulse-gather`
 reads the role's live observation stream and emits every turn newer than its cursor,
 keyed on timestamp, so a turn between polls is never lost and never replayed.
+
+**Cold start is windowed (#3274):** a /gemba with no prior cursor shows the role's
+last ~10 turns (current activity), NOT the whole backlog dumped back to yesterday.
+Re-polls stay exact (every turn since your last poll).
+
+**This is a poll you RE-RUN, not a maintained loop (#3274).** /gemba does not create a
+cron or a background watcher — there is no continuous observer running on your behalf.
+To keep watching, you re-invoke the poll. The skill claims only what it does: a
+windowed poll, on demand.
 
 **Keep: the poll + narrate.** That's the whole skill.
 
@@ -40,15 +49,20 @@ nothing — that silence is real (cursor is at the newest turn), not stale.
 Read the output. Print your read — 2-3 sentences: what the role is doing, how it's
 going. That's it.
 
-### Step 2: Loop the poll
+### Step 2: Re-poll to keep watching (no cron — #3274)
+
+To follow the role, RE-RUN the poll yourself — there is no maintained loop:
 
 ```bash
-# CronCreate: cron="*/1 * * * *", prompt="/gemba ${ROLE}", recurring=true
+pulse-gather ${ROLE}
 ```
 
-Each firing re-runs `pulse-gather ${ROLE}` and commentates the deltas. Because the
-cursor is durable (off /tmp, survives reboot), the loop never re-narrates a turn it
-already showed.
+Each re-run commentates only the deltas since your last poll (the cursor is durable —
+off /tmp, survives reboot — so a turn is never re-narrated or lost). #3274 retired the
+`*/1` cron loop this step used to document: nothing created or maintained it, so
+it was a false claim of continuous observation (the same cron-fires-skill pattern
+#3253 retired). If you stop re-polling, you've stopped observing — set your role-state
+to match (Exit), never leave a stale `observing`.
 
 ### Step 3: Commentary format
 
@@ -71,6 +85,5 @@ Triggers: Jeff says stop, card accepted/rejected, or Jeff moves to other work. I
 /pair sessions, gemba is scope-boxed to the pair duration.
 
 Exit sequence:
-1. CronDelete the loop
-2. Debrief: one paragraph — what the role accomplished across the session
-3. `role-state <your-role> waiting`
+1. Debrief: one paragraph — what the role accomplished across the session
+2. `role-state <your-role> waiting` — you've stopped observing, so the state reflects reality (never leave a stale `observing`; role-state is a live marker, not activity truth — #3274)

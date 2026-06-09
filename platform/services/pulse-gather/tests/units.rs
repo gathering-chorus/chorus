@@ -7,8 +7,8 @@
 // observation strictly newer than a timestamp cursor, keyed on ts (not line index)
 // so it survives the observer's 200-line rotation.
 use pulse_gather::{
-    gather_since, parse_observation, render_gather, render_observation, role_delta,
-    role_view_from_pulse, spine_args, Observation, RoleView,
+    effective_cursor, gather_since, parse_observation, render_gather, render_observation,
+    role_delta, role_view_from_pulse, spine_args, Observation, RoleView,
 };
 
 // The observer writes ISO8601 with a fixed local offset, e.g. 2026-06-05T16:16:18-0400.
@@ -74,6 +74,43 @@ fn gather_since_empty_cursor_emits_all() {
     let r = gather_since(&stream, "");
     assert_eq!(r.fresh.len(), 2, "no cursor => the whole stream is fresh");
     assert_eq!(r.cursor, "2026-06-05T16:05:00-0400");
+}
+
+// --- effective_cursor: #3274 cold-start windowing (no backlog dump) ---
+
+#[test]
+fn effective_cursor_cold_start_windows_to_last_n() {
+    // 15 turns, EMPTY cursor (cold /gemba), window 10 → show the last 10, not all 15.
+    let lines: Vec<String> = (0..15)
+        .map(|i| obs_line(&format!("2026-06-05T16:{:02}:00-0400", i), "Edit", &format!("turn{}", i)))
+        .collect();
+    let stream = lines.join("\n");
+    let eff = effective_cursor(&stream, "", 10);
+    let r = gather_since(&stream, &eff);
+    assert_eq!(r.fresh.len(), 10, "cold start shows the last 10, not the full 15 backlog");
+    assert_eq!(r.fresh[0].digest, "turn5", "window starts after the 5th-oldest (last 10)");
+    assert_eq!(r.fresh[9].digest, "turn14", "...through the newest");
+}
+
+#[test]
+fn effective_cursor_nonempty_is_unchanged_repolls_stay_exact() {
+    // A real re-poll (non-empty cursor) is NEVER windowed — exact since last poll.
+    let stream = obs_line("2026-06-05T16:00:00-0400", "Edit", "a");
+    assert_eq!(
+        effective_cursor(&stream, "2026-06-05T15:00:00-0400", 10),
+        "2026-06-05T15:00:00-0400"
+    );
+}
+
+#[test]
+fn effective_cursor_short_stream_shows_all() {
+    // <= window turns: nothing to bury, no windowing (returns "" => gather emits all).
+    let stream = [
+        obs_line("2026-06-05T16:00:00-0400", "Edit", "a"),
+        obs_line("2026-06-05T16:01:00-0400", "Bash", "b"),
+    ]
+    .join("\n");
+    assert_eq!(effective_cursor(&stream, "", 10), "");
 }
 
 #[test]
