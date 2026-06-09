@@ -495,7 +495,28 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// Entry: `werk-deploy <card> <role> [--target werk|canonical]`.
+/// #3315 — ADR-037 approval gate for deploy (the OTHER irreversible verb; mirrors
+/// werk-merge's #3297 require_approval). ONE gate, two doors — adapted for deploy's
+/// --target axis:
+///   • in-flow (no --atomic): the chorus_werk_land GO already authorized; the land sets
+///     $ACCEPTER → record, don't gate. Returns the accepter, or "flow". NEVER blocks —
+///     this is the load-bearing safety (no double-gate deadlock of the pipeline).
+///   • standalone `--atomic --target canonical` (mutates PROD): DEMANDS an accepter or
+///     refuses — the standalone door must never be a quiet unauthorized prod ship.
+///   • `--atomic --target werk` (the local demo slot, reversible): no gate.
+/// Returns who authorized (for the {who, what, when} deploy.approved spine event).
+pub fn require_approval(atomic: bool, target: &str, accepter: Option<String>) -> R<String> {
+    match accepter {
+        Some(a) if !a.trim().is_empty() => Ok(a),
+        _ if atomic && target == "canonical" => Err(
+            "no-approval: deploy --atomic --target canonical mutates prod — set ACCEPTER=<who> to authorize this standalone prod deploy"
+                .to_string(),
+        ),
+        _ => Ok("flow".to_string()),
+    }
+}
+
+/// Entry: `werk-deploy <card> <role> [--target werk|canonical] [--atomic]`.
 pub fn run_deploy() -> R<String> {
     let argv: Vec<String> = env::args().skip(1).collect();
 
@@ -523,6 +544,23 @@ pub fn run_deploy() -> R<String> {
     let target = parse_target(&argv)?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base = PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
+    // #3315 — ADR-037 approval gate up front. --atomic standalone → canonical DEMANDS
+    // $ACCEPTER or refuses; in-flow (no --atomic) records the land's GO as "flow" and
+    // never blocks. Record {who, what, when} on prod (canonical) deploys.
+    let atomic = argv.iter().any(|a| a == "--atomic");
+    let accepter = env::var("ACCEPTER").ok().filter(|s| !s.trim().is_empty());
+    let approver = require_approval(atomic, target, accepter)?;
+    if target == "canonical" {
+        let trace = resolve_trace(card);
+        emit_spine(
+            &home,
+            "deploy.approved",
+            &role,
+            card,
+            &trace,
+            &[("approver", approver.as_str()), ("atomic", if atomic { "true" } else { "false" })],
+        );
+    }
     deploy(card, &role, target, &home, &werk_base)
 }
 
