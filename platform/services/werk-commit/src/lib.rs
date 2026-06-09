@@ -213,9 +213,10 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
             jsonl(home, role, card, trace, "rebase.refused", ",\"reason\":\"rebase-conflict\"");
             emit_spine(home, "commit.failed", role, card, trace, &[("disposition", "refuse"), ("reason", "rebase-conflict")]);
             Err(format!(
-                "rebase-conflict: #{} conflicts with current origin/main — resolve and re-run \
-                 (werk restored, commit preserved): {}",
-                card, e
+                "rebase-conflict: #{} conflicts with current origin/main (werk restored, commit \
+                 preserved). Escape the deadlock: `werk-commit {} {} --atomic` commits WITHOUT the \
+                 rebase (saves your work), then resolve the rebase separately — don't hand-plumb. cause: {}",
+                card, card, role, e
             ))
         }
     }
@@ -256,24 +257,50 @@ fn path(p: &Path) -> R<&str> {
 /// Entry: parse the contract args (`werk-commit <card> <role> [summary...]`, role
 /// falls back to $DEPLOY_ROLE) + env, then run the verb.
 pub fn run_commit() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-commit <card> <role> [summary]".to_string())?;
+    // #3295 — `--atomic` (anywhere in the args) selects commit-without-rebase.
+    let raw: Vec<String> = env::args().skip(1).collect();
+    let atomic = raw.iter().any(|a| a == "--atomic");
+    let pos: Vec<String> = raw.into_iter().filter(|a| a != "--atomic").collect();
+    let card_arg = pos
+        .first()
+        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] [--atomic]".to_string())?;
     let card: u64 = card_arg
         .parse()
         .map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args()
-        .nth(2)
+    let role = pos
+        .get(1)
+        .cloned()
         .or_else(|| env::var("DEPLOY_ROLE").ok())
-        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] (or set DEPLOY_ROLE)".to_string())?;
-    let summary = env::args().skip(3).collect::<Vec<_>>().join(" ");
+        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] [--atomic] (or set DEPLOY_ROLE)".to_string())?;
+    let summary = pos.get(2..).map(|s| s.join(" ")).unwrap_or_default();
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
-    commit(card, &role, &summary, &home, &werk_base)
+    if atomic {
+        commit_atomic(card, &role, &summary, &home, &werk_base)
+    } else {
+        commit(card, &role, &summary, &home, &werk_base)
+    }
+}
+
+/// Flow entry: commit the werk AND rebase it onto current origin/main (#3186).
+pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path) -> R<String> {
+    commit_inner(card, role, summary, home, werk_base, true)
+}
+
+/// #3295 — `commit --atomic`: commit the werk WITHOUT the rebase-onto-main step —
+/// the escape from the #3223 rebase-conflict deadlock (work is never trapped behind
+/// a conflict; resolve the rebase separately). Same pure core as `commit()`, minus
+/// the rebase (ADR-037 D#5: one implementation, two entry points).
+pub fn commit_atomic(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path) -> R<String> {
+    commit_inner(card, role, summary, home, werk_base, false)
 }
 
 /// The whole verb, all inputs explicit so it is testable against a real temp repo
 /// (deps injected via PATH: real `git`, shimmed `cards`/`gh`). Returns the commit sha.
-pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path) -> R<String> {
+/// `rebase` gates the #3186 rebase-onto-current-main step: true = flow (`commit`),
+/// false = `--atomic` (`commit_atomic`, commit-without-rebase).
+fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path, rebase: bool) -> R<String> {
     let trace = resolve_trace(card); // #3162 — inherit the shared trace, not fresh-mint
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
@@ -300,7 +327,8 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
     // stale pull-time ref. Best-effort — a LOCAL commit should not hard-require the
     // network; if fetch fails we rebase onto the freshest known main and the
     // downstream refuse-if-stale guard (werk-deploy / werk-merge) is the backstop.
-    if run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]).is_err() {
+    // --atomic skips the fetch+rebase entirely (commit-without-rebase).
+    if rebase && run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]).is_err() {
         jsonl(home, role, card, &trace, "fetch.warn", ",\"reason\":\"fetch-failed\"");
     }
 
@@ -360,7 +388,10 @@ pub fn commit(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Pat
         // #3186 — close the pull->commit staleness window: rebase the card's commit(s)
         // onto current origin/main. all-or-nothing — conflict aborts cleanly and refuses
         // (werk preserved). This makes everything downstream current by construction.
-        rebase_onto_origin_main(&werk_s, home, role, card, &trace)?;
+        // --atomic (#3295) skips this: commit-without-rebase, the #3223 deadlock escape.
+        if rebase {
+            rebase_onto_origin_main(&werk_s, home, role, card, &trace)?;
+        }
     } // flock released
 
     // Commit only — the atomic verb stops here. The commit is LOCAL: not pushed,
