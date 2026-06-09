@@ -767,17 +767,33 @@ pub fn parse_target(args: &[String]) -> R<&'static str> {
     Ok("werk")
 }
 
+/// #3308 — `--atomic`: the seven-verb free-group contract flag (mirrors werk-commit's).
+/// werk-build is ALREADY standalone-explicit (card/role/--target/--only), so --atomic is
+/// the uniform "standalone build" marker, NOT a new path — and it's free (build is local +
+/// reversible; no approval gate, per ADR-037). Detected anywhere in argv; must be parsed so
+/// it can't fall through to positional and break the card-id parse.
+pub fn parse_atomic(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--atomic")
+}
+
 /// Entry: `werk-build <card> <role> [--target werk|canonical]` (role falls back to
 /// $DEPLOY_ROLE). --target is positional-agnostic and stripped before reading card/role.
 pub fn run_build() -> R<String> {
     let argv: Vec<String> = env::args().skip(1).collect();
     let target = parse_target(&argv)?;
     let only = parse_only(&argv);
+    // #3308 — recognize --atomic (free; no behavior delta, build is unconditionally
+    // local/reversible per ADR-037). Bound so the flag is an accepted contract marker.
+    let _atomic = parse_atomic(&argv);
     let mut positional: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
         if argv[i] == "--target" || argv[i] == "--only" {
             i += 2; // skip flag + value
+            continue;
+        }
+        if argv[i] == "--atomic" {
+            i += 1; // #3308 — valueless flag; skip so it can't pollute positionals
             continue;
         }
         positional.push(argv[i].clone());
