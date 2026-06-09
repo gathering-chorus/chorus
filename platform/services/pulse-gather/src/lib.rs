@@ -39,6 +39,10 @@ pub struct GatherResult {
     pub cursor: String,
 }
 
+/// #3274: cold-start window — a /gemba poll with no prior cursor shows the last N
+/// turns (current activity), not the entire backlog dumped back to yesterday.
+const COLD_START_WINDOW: usize = 10;
+
 // --- pure core (unit-tested) ---
 
 /// Minimal whitespace-tolerant extractor for a JSON string field: finds `"key"`,
@@ -93,6 +97,28 @@ pub fn gather_since(observations_text: &str, cursor: &str) -> GatherResult {
         }
     }
     GatherResult { fresh, cursor: max_ts }
+}
+
+/// #3274: cold-start windowing. On an EMPTY cursor (first poll, or a wiped cursor),
+/// don't replay the whole backlog — seed the effective cursor to just before the last
+/// `window` observations, so a cold /gemba shows NOW (recent turns), not multi-hour
+/// history that buries current activity at the tail. A NON-EMPTY cursor is returned
+/// unchanged: a normal re-poll stays exact (every turn since last poll, never windowed,
+/// never lost). A stream of `window` or fewer turns returns "" (show all — nothing to bury).
+pub fn effective_cursor(observations_text: &str, stored: &str, window: usize) -> String {
+    if !stored.is_empty() || window == 0 {
+        return stored.to_string();
+    }
+    let times: Vec<String> = observations_text
+        .lines()
+        .filter_map(parse_observation)
+        .map(|o| o.ts)
+        .collect();
+    if times.len() <= window {
+        return String::new();
+    }
+    // cursor = ts just before the last `window` → gather_since(> this) yields the last `window`.
+    times[times.len() - window - 1].clone()
 }
 
 /// Extract a role's view (state + card) from the pulse object's `roles.<role>` slice.
@@ -205,7 +231,11 @@ pub fn run() -> R<String> {
     let cpath = cursor_path(&home, &role, &target);
     let cursor = fs::read_to_string(&cpath).unwrap_or_default().trim().to_string();
 
-    let result = gather_since(&stream, &cursor);
+    // #3274: cold start (empty cursor) windows to the last COLD_START_WINDOW turns so a
+    // fresh /gemba shows current activity, not a multi-hour backlog dump. Re-polls keep
+    // their exact cursor.
+    let effective = effective_cursor(&stream, &cursor, COLD_START_WINDOW);
+    let result = gather_since(&stream, &effective);
 
     // advance the cursor (best-effort; durable so re-polls don't replay across a /tmp wipe)
     if result.cursor != cursor {
