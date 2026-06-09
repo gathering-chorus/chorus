@@ -42,11 +42,19 @@ describe('lineMatchesPainFilter — line-anchored, excludes the false-positives'
     expect(lineMatchesPainFilter('{"event":"system.heartbeat"}')).toBe(false);
     expect(lineMatchesPainFilter('{"event":"clearing.probe.passed"}')).toBe(false);
   });
-  it('every PAIN_EVENT_SUFFIXES suffix actually matches via the filter (#3165 adds .rolledback)', () => {
+  it('every PAIN_EVENT_SUFFIXES suffix actually matches via the filter (#3165 adds .rolledback, #3281 adds .blocked)', () => {
     for (const sfx of PAIN_EVENT_SUFFIXES) {
       expect(lineMatchesPainFilter(`{"event":"some.op${sfx}"}`)).toBe(true);
     }
-    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error', '.rolledback']);
+    expect([...PAIN_EVENT_SUFFIXES]).toEqual(['.failed', '.refused', '.error', '.rolledback', '.blocked']);
+  });
+  // #3281 — agent-side blocks become countable. card.quality.blocked (AC/quality
+  // gate denials on card add — the "AC-checkbox block" from the card Experience)
+  // is the only .blocked event today (85 in a recent log window), carries role +
+  // gate=<reason>, but was invisible to the pain board. Now counted via .blocked.
+  it('counts card.quality.blocked — the AC-format / quality denial (#3281)', () => {
+    expect(lineMatchesPainFilter('{"event":"card.quality.blocked","role":"silas","gate":"experience_missing"}')).toBe(true);
+    expect(lineMatchesPainFilter('{"event":"card.quality.blocked","role":"wren","gate":"now_description_incomplete"}')).toBe(true);
   });
 });
 

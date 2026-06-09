@@ -63,6 +63,23 @@ pub fn ac_counts(card_view: &str) -> (usize, usize) {
     (checked, total)
 }
 
+/// #3281 — build the chorus-log argv for a REFUSAL spine emit (pure, testable).
+/// Agent-side blocks (a demo refusing on wrong-status / no-ac) must become
+/// countable: the event is named with the `.refused` suffix the pain board
+/// counts (logs-query PAIN_EVENT_SUFFIXES), and carries role + a `reason=` field
+/// so the rollup groups by role·event·reason. Mirrors the jsonl witness reason
+/// already written at the refusal points, but onto the SPINE so the pain board —
+/// which reads chorus.log, not werk-demo.jsonl — can see it.
+pub fn refuse_spine_args(event: &str, role: &str, card: u64, trace: &str, reason: &str) -> Vec<String> {
+    vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+        format!("reason={}", reason),
+    ]
+}
+
 /// #3237 — the gates that must have run before a demo verdict can be recorded.
 /// Gates moved to the /demo SKILL layer (#3116) as LLM subagents; this is the
 /// enforcement contract that makes them non-optional — the binary refuses a
@@ -293,6 +310,20 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str) {
     }
 }
 
+/// #3281 — emit a refusal to the spine WITH a `reason=` field, so an agent-side
+/// block becomes countable on the pain board. Best-effort, like emit_spine (a
+/// spine-emit failure never blocks the act). Separate from emit_spine so its 6
+/// existing callers are untouched; args built by the pure `refuse_spine_args`.
+fn emit_spine_reason(home: &Path, event: &str, role: &str, card: u64, trace: &str, reason: &str) {
+    if let Ok(p) = path(&home.join("platform/scripts/chorus-log")) {
+        let owned = refuse_spine_args(event, role, card, trace, reason);
+        let mut argv: Vec<&str> = Vec::with_capacity(owned.len() + 1);
+        argv.push(p);
+        argv.extend(owned.iter().map(|s| s.as_str()));
+        let _ = run("bash", &argv);
+    }
+}
+
 /// The product/domain feedback gather sent to each demoee (#3100 / #3116).
 /// VERBATIM — pinned by `feedback_message_is_verbatim`. Neutral framing by
 /// design: pointers + ask, no editorializing that biases the reply; sender +
@@ -395,6 +426,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "WIP" && status != "Now" {
         jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"wrong-status\"");
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "wrong-status");
         return Err(format!("#{} is {} — must be WIP/Now to demo", card, status));
     }
 
@@ -403,6 +435,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let (checked, total) = ac_counts(&cv);
     if total == 0 {
         jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"no-ac\"");
+        emit_spine_reason(home, "demo.refused", role, card, &trace, "no-ac");
         return Err(format!("#{} has no acceptance criteria", card));
     }
     // #3263 — AC completeness is INFORMATIONAL, not a refuse. The demo DEMONSTRATES

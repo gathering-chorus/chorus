@@ -242,7 +242,11 @@ export type PainRollupResult =
 // `event` value ends in one of these. Excludes the high-volume non-failures the
 // original substring filter false-counted (heartbeat.probe ~484/day,
 // system.heartbeat, clearing.probe.passed, Grafana self-logs).
-export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error', '.rolledback'] as const;
+// #3281 — `.blocked` added so agent-side denials become countable. Today the only
+// `.blocked` event is `card.quality.blocked` (AC/quality gate denials on card add —
+// the "AC-checkbox block"), which carries role + gate=<reason> and was invisible to
+// the pain board. Verified no high-volume `.blocked` event exists to false-count.
+export const PAIN_EVENT_SUFFIXES = ['.failed', '.refused', '.error', '.rolledback', '.blocked'] as const;
 // #3165 — failure DISPOSITIONS counted regardless of event-name suffix. The emit
 // slice (werk-pull/commit/push refusals, gate denies, deploy rollbacks) tags the
 // disposition without always naming the event `*.refused`; a suffix-only filter
