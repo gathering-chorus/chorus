@@ -301,6 +301,18 @@ pub fn commit_atomic(card: u64, role: &str, summary: &str, home: &Path, werk_bas
 /// `rebase` gates the #3186 rebase-onto-current-main step: true = flow (`commit`),
 /// false = `--atomic` (`commit_atomic`, commit-without-rebase).
 fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &Path, rebase: bool) -> R<String> {
+    // #3306 — fail LOUD up front: CHORUS_HOME must be a git repo. Otherwise lock()
+    // later dies with a cryptic `os error 2` (and the pre-#3306 binary silently exited
+    // 0 + emitted nothing — self-masking, the reason #3295 looked broken but wasn't).
+    // Verbs already check CHORUS_HOME is SET; this adds the is-a-git-repo check. The
+    // spine lives under home, so when home itself is bad the loud Err + non-zero exit
+    // IS the signal (we cannot log to a home that has no spine).
+    if !home.join(".git").exists() {
+        return Err(format!(
+            "CHORUS_HOME is not a git repo: {} has no .git — point CHORUS_HOME at the chorus repo root",
+            home.display()
+        ));
+    }
     let trace = resolve_trace(card); // #3162 — inherit the shared trace, not fresh-mint
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
