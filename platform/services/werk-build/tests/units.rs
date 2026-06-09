@@ -1,7 +1,7 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
     branch_name, discover_build_units_in_tree, ensure_node_modules, extract_cdhash, extract_file_deps,
-    has_build_script, jsonl_line, lib_source_changed, parse_atomic, pkg_name, resolve_trace, spine_args, BuildUnit,
+    has_build_script, jsonl_line, lib_source_changed, parse_atomic, parse_target, pkg_name, resolve_trace, spine_args, BuildUnit,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,6 +31,17 @@ fn branch_name_is_role_slash_card() {
 // already standalone-explicit (card/role/--target/--only), so --atomic is the uniform
 // contract marker, not a new build path — but it MUST be parsed so it doesn't fall
 // through to positional and break the card-id parse.
+// #3309 — harden the --target seam (shipped untested, the #3306 lesson): werk vs
+// canonical, default werk, bad value refused, position-agnostic.
+#[test]
+fn parse_target_selects_werk_or_canonical_defaults_werk() {
+    assert_eq!(parse_target(&[]).unwrap(), "werk");
+    assert_eq!(parse_target(&["3309".to_string(), "silas".to_string()]).unwrap(), "werk");
+    assert_eq!(parse_target(&["--target".to_string(), "canonical".to_string()]).unwrap(), "canonical");
+    assert_eq!(parse_target(&["3309".to_string(), "silas".to_string(), "--target".to_string(), "werk".to_string()]).unwrap(), "werk");
+    assert!(parse_target(&["--target".to_string(), "bogus".to_string()]).is_err());
+}
+
 #[test]
 fn parse_atomic_detects_flag_anywhere_in_argv() {
     assert!(parse_atomic(&["3308".to_string(), "silas".to_string(), "--atomic".to_string()]));
