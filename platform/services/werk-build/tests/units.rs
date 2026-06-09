@@ -1,7 +1,7 @@
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
     branch_name, discover_build_units_in_tree, ensure_node_modules, extract_cdhash, extract_file_deps,
-    has_build_script, jsonl_line, lib_source_changed, pkg_name, resolve_trace, spine_args, BuildUnit,
+    has_build_script, jsonl_line, lib_source_changed, parse_atomic, pkg_name, resolve_trace, spine_args, BuildUnit,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +24,19 @@ fn write(root: &Path, rel: &str, body: &str) {
 #[test]
 fn branch_name_is_role_slash_card() {
     assert_eq!(branch_name("silas", 3061), "silas/3061");
+}
+
+// #3308 — werk-build --atomic: the seven-verb free-group contract flag. Detected
+// anywhere in argv (mirrors werk-commit's `--atomic`); absence = false. The verb is
+// already standalone-explicit (card/role/--target/--only), so --atomic is the uniform
+// contract marker, not a new build path — but it MUST be parsed so it doesn't fall
+// through to positional and break the card-id parse.
+#[test]
+fn parse_atomic_detects_flag_anywhere_in_argv() {
+    assert!(parse_atomic(&["3308".to_string(), "silas".to_string(), "--atomic".to_string()]));
+    assert!(parse_atomic(&["--atomic".to_string(), "3308".to_string()]));
+    assert!(!parse_atomic(&["3308".to_string(), "silas".to_string()]));
+    assert!(!parse_atomic(&["3308".to_string(), "silas".to_string(), "--target".to_string(), "werk".to_string()]));
 }
 
 #[test]
