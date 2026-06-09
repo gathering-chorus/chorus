@@ -18,6 +18,7 @@ import {
   computeBlastRadius,
   ownershipMap,
   ownedUnits,
+  attributeFile,
 } from '../src/handlers/athena-tree';
 import { TreeSchema, type Tree } from '../src/handlers/athena-tree-schemas';
 import fs from 'node:fs';
@@ -167,6 +168,7 @@ const TEST_TREE: Tree = TreeSchema.parse({
       hosts: ['chorus:service-s1'],
       contains: [],
       hasChild: [],
+      hasMapsTo: ['platform/d1/'],
     },
     {
       iri: 'chorus:domain-d2',
@@ -180,6 +182,7 @@ const TEST_TREE: Tree = TreeSchema.parse({
       hosts: ['chorus:service-s2'],
       contains: [],
       hasChild: [],
+      hasMapsTo: ['platform/'],
     },
   ],
   services: [
@@ -221,6 +224,7 @@ const TEST_TREE: Tree = TreeSchema.parse({
       instanceType: 'skill',
       inDomain: 'chorus:domain-d1',
       ownedBy: 'chorus:role-alice',
+      mapsTo: 'platform/d1/demo/',
     },
   ],
 });
@@ -273,6 +277,48 @@ describe('lookupOwnership', () => {
 
   test('returns null for unknown IRI', () => {
     expect(lookupOwnership(TEST_TREE, 'chorus:nope')).toBeNull();
+  });
+});
+
+describe('attributeFile (#3291)', () => {
+  test('file→instance resolves to owner + kind (1, longest-prefix-wins)', () => {
+    const a = attributeFile(TEST_TREE, 'platform/d1/demo/main.ts');
+    expect(a.instance).toBe('chorus:skill-test-demo');
+    expect(a.instanceOwner).toBe('chorus:role-alice');
+    expect(a.instanceKind).toBe('skill');
+  });
+
+  test('file→domain is 1:N (source=prefix), longest match is primary — not collapsed', () => {
+    // platform/d1/demo/main.ts is under d1 (platform/d1/) AND d2 (platform/).
+    const a = attributeFile(TEST_TREE, 'platform/d1/demo/main.ts');
+    const byDomain = Object.fromEntries(a.domains.map((e) => [e.domain, e]));
+    expect(byDomain['chorus:domain-d1']).toMatchObject({ source: 'prefix', primary: true });
+    expect(byDomain['chorus:domain-d2']).toMatchObject({ source: 'prefix', primary: false });
+    expect(a.domains.length).toBe(2); // 1:N preserved (the forward-compat lock)
+    expect(a.domains.every((e) => e.source === 'prefix')).toBe(true); // phase 1 = prefix only
+    // AT-MOST-ONE-PRIMARY (Silas's invariant): never 2 primaries → ownership unambiguous.
+    expect(a.domains.filter((e) => e.primary).length).toBeLessThanOrEqual(1);
+  });
+
+  test('at-most-one-primary holds even on equal-length prefix matches (#3291 invariant)', () => {
+    // Two domains with SAME-length prefixes both matching the file — only one is primary.
+    const tied: Tree = {
+      ...TEST_TREE,
+      domains: [
+        { iri: 'chorus:domain-d1', label: 'd1', ownedBy: 'chorus:role-alice', hasMapsTo: ['lib/x/'] },
+        { iri: 'chorus:domain-d2', label: 'd2', ownedBy: 'chorus:role-bob', hasMapsTo: ['lib/x/'] },
+      ],
+      instances: [],
+    };
+    const a = attributeFile(tied, 'lib/x/thing.ts');
+    expect(a.domains.length).toBe(2);
+    expect(a.domains.filter((e) => e.primary).length).toBe(1); // exactly one, deterministic
+  });
+
+  test('unmatched file → no instance, empty domains (honest "needs mapsTo")', () => {
+    const a = attributeFile(TEST_TREE, 'some/unmapped/file.ts');
+    expect(a.instance).toBeUndefined();
+    expect(a.domains).toEqual([]);
   });
 });
 

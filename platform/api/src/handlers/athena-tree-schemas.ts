@@ -85,6 +85,10 @@ const DomainSchema = z.object({
   hosts: z.array(Iri).optional(),
   contains: z.array(Iri).optional(),
   hasChild: z.array(Iri).optional(),
+  // #3291: declarative path-prefix rules — which path subtrees this domain owns.
+  // Read by the crawler (file→domain attribution) AND CI (ADR-038), never hardcoded
+  // (no parallel store; OWL-as-source). Longest-prefix-wins picks the primary edge.
+  hasMapsTo: z.array(z.string()).optional(),
 });
 
 const ServiceSchema = z.object({
@@ -117,6 +121,9 @@ const InstanceSchema = z.object({
   deprecated: z.boolean().optional(),
   supersededBy: Iri.optional(),
   comment: z.string().optional(),
+  // #3291: the source artifact this invokable unit maps to (verb→crate dir,
+  // hook→rust module, skill→skill dir). The file↔instance join ADR-038 reads.
+  mapsTo: z.string().optional(),
 });
 
 export const TreeSchema = z.object({
@@ -136,6 +143,30 @@ export type Product = z.infer<typeof ProductSchema>;
 export type Domain = z.infer<typeof DomainSchema>;
 export type Service = z.infer<typeof ServiceSchema>;
 export type Instance = z.infer<typeof InstanceSchema>;
+
+// #3291: file attribution result. A crawled/changed file resolves to AT MOST one
+// instance (file→instance = 1, longest-prefix-wins — the ADR-038 substrate seam)
+// and to 1..N domain edges (file→domain = 1:N — the crawler's coupling signal).
+// Each domain edge carries its SOURCE so phase-2 import-derived edges drop in with
+// NO migration (Silas's forward-compat lock). Phase 1 populates source='prefix' only.
+export const AttributionSource = z.enum(['prefix', 'import', 'annotation']);
+export type AttributionSourceT = z.infer<typeof AttributionSource>;
+
+export const DomainEdgeSchema = z.object({
+  domain: Iri,
+  source: AttributionSource,
+  primary: z.boolean().optional(), // the longest-prefix-wins primary (prefix source)
+});
+export type DomainEdge = z.infer<typeof DomainEdgeSchema>;
+
+export const FileAttributionSchema = z.object({
+  path: z.string(),
+  instance: Iri.optional(),                                 // file→instance = 1 (ADR-038 substrate)
+  instanceOwner: Iri.optional(),
+  instanceKind: z.enum(['skill', 'hook', 'verb']).optional(),
+  domains: z.array(DomainEdgeSchema),                       // file→domain = 1:N (crawler coupling)
+});
+export type FileAttribution = z.infer<typeof FileAttributionSchema>;
 
 // Returned by chorus_ownership_lookup.
 export const OwnershipResultSchema = z.object({
