@@ -275,3 +275,43 @@ fn commit_atomic_commits_without_rebase_through_a_conflict() {
         .output().unwrap();
     assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty(), "clean after the atomic commit");
 }
+
+// #3306 — fail LOUD when CHORUS_HOME isn't a git repo. Root-caused by Wren witnessing
+// #3295: a bad CHORUS_HOME makes the verb die in lock() with a cryptic `os error 2`
+// (the deployed binary was seen to exit 0 + emit nothing — self-masking). It must
+// return a CLEAR, actionable Err BEFORE doing work, so the failure is visible — the
+// reason "#3295 looked broken but wasn't". Verbs today only check CHORUS_HOME is SET,
+// never that it's a git repo; this extends that guard.
+#[test]
+fn commit_fails_loud_when_home_is_not_a_git_repo() {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9401");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/9401", werk.to_str().unwrap(), "origin/main"]);
+    fs::write(werk.join("work.txt"), "card work").unwrap(); // dirty → it will try to commit
+
+    // CHORUS_HOME pointed at a dir that is NOT a git repo (no .git) — Wren's ~/.chorus case.
+    let bad_home = tmp("not-a-repo");
+
+    let res = commit(9401, "kade", "msg", &bad_home, &werk_base);
+
+    // MUST fail loud: a non-zero exit (Err), never a silent Ok/exit-0.
+    let err = res.expect_err("must Err when CHORUS_HOME is not a git repo (never silently succeed)");
+    // clear + actionable: names the CHORUS_HOME / not-a-git-repo problem, not just `os error 2`.
+    let lc = err.to_lowercase();
+    assert!(
+        lc.contains("chorus_home") || lc.contains("not a git repo") || lc.contains("git repo"),
+        "message must clearly name the CHORUS_HOME/git-repo problem, got: {}", err
+    );
+}
