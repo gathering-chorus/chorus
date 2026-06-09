@@ -9,7 +9,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_demo::demo;
+use werk_demo::{demo, refuse_spine_args};
 
 fn nanos() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
@@ -26,6 +26,29 @@ fn write_exec(path: &Path, body: &str) {
     let mut perm = fs::metadata(path).unwrap().permissions();
     perm.set_mode(0o755);
     fs::set_permissions(path, perm).unwrap();
+}
+
+// #3281 — agent-side blocks become COUNTABLE spine events. A demo refusal must
+// emit a `.refused` event (the suffix the pain board's PAIN_EVENT_SUFFIXES reads)
+// carrying role + a reason= field, so the rollup groups by role·event·reason.
+// This pins the wire shape of the refusal emit (the pure arg-builder behind
+// emit_spine_reason); the live emit + pain-board count is the AC3 proof.
+#[test]
+fn refuse_spine_args_names_event_role_and_reason() {
+    let a = refuse_spine_args("demo.refused", "silas", 3281, "tr-abc", "wrong-status");
+    assert_eq!(a[0], "demo.refused", "event must be the .refused name the pain board reads");
+    assert!(a[0].ends_with(".refused"), "must carry a PAIN_EVENT_SUFFIXES suffix so the rollup counts it");
+    assert_eq!(a[1], "silas", "role present (AC1: role + reason)");
+    assert!(a.contains(&"card=3281".to_string()), "card id present");
+    assert!(a.contains(&"trace=tr-abc".to_string()), "trace propagated");
+    assert!(a.contains(&"reason=wrong-status".to_string()), "reason present so rollup groups by reason");
+}
+
+#[test]
+fn refuse_spine_args_distinguishes_reasons() {
+    let no_ac = refuse_spine_args("demo.refused", "kade", 42, "t", "no-ac");
+    assert!(no_ac.contains(&"reason=no-ac".to_string()));
+    assert!(!no_ac.contains(&"reason=wrong-status".to_string()), "the two refusal reasons must be distinguishable in the data");
 }
 
 #[test]
