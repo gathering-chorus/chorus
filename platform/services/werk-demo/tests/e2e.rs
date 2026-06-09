@@ -155,6 +155,9 @@ exit 0
     let ungated = demo(3046, "wren", &home).expect("demo() returns Ok even when it refuses");
     assert_eq!(ungated.exit, 1, "un-gated demo must REFUSE to present (AC6): {}", ungated.message);
     assert!(ungated.message.contains("gates not run"), "typed gates-missing refusal: {}", ungated.message);
+    // #3318: under act/CI (ACT set) the same un-gated demo SKIPS enforcement and presents
+    // — the pipeline-unbreak. Verified live (a chorus_werk Half A reaches present), not
+    // here, because demo() fires the feedback gather and would pollute the nudge count.
 
     // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
     // demo.gate.result, and (b) BLOCKS until Jeff records a demo.decision. Seed
