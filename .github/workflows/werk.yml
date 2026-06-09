@@ -74,7 +74,7 @@ jobs:
         run: chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: build-demo
-        run: chorus-mcp-call.sh "${ROLE}" chorus_build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
         # Your model (Jeff, 2026-06-04): "once pull happens it's your questions/observations,

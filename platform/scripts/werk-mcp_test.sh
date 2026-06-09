@@ -98,7 +98,7 @@ grep -q "7 accept" <<<"$out" && fail "step 7 accept still present — accept mus
 
 # MCP call sequence: demo half + step-5 merge + step-6 canonical deploy. NO werk-accept.
 seq="$(grep '^tools/call' "$CALLS_LOG" | awk '{print $2}' | paste -sd, -)"
-expected="werk-commit,werk-push,chorus_build,chorus_deploy,chorus_env_up,werk-merge,chorus_deploy"
+expected="werk-commit,werk-push,werk-build,chorus_deploy,chorus_env_up,werk-merge,chorus_deploy"
 [ "$seq" = "$expected" ] || fail "MCP call sequence: got [$seq] expected [$expected]"
 grep -q "werk-accept" "$CALLS_LOG" && fail "werk-accept ran via the script — accept must be the human's hand (DEC-048, #3234)"
 grep -q 'target.*canonical' "$CALLS_LOG" || fail "step 6 canonical deploy did NOT run (#3222 should deploy from main)"

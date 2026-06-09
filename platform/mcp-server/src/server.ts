@@ -452,7 +452,9 @@ const SERVICE_ROLLBACK_TOOL_DEF = {
 // directly. Jeff: "no CLI shell-outs from werk-demo." Each wraps the
 // corresponding verb binary in ~/.chorus/bin/ with role + card env wiring.
 const CHORUS_BUILD_TOOL_DEF = {
-  name: 'chorus_build',
+  // #3310 — renamed chorus_build → werk-build (ADR-031/032: the verb family is werk-<verb>;
+  // no chorus_-prefixed pseudo-verb). chorus_build removed, not aliased.
+  name: 'werk-build',
   description: 'Use this to run werk-build for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-build with role + card env, returning structured exit + stdout + stderr. Wraps the verb binary; per #3107 the build returns Ok-empty on no-build-cycle (docs/config/graph-only cards) rather than refusing. Use from werk-demo or any orchestrator that needs to drive a card\'s build without subprocess-shelling. Refusal taxonomy: usage-error | no-werk | branch-mismatch | build-fail. Do NOT use to deploy (chorus_deploy) or to rebuild verbs system-wide (chorus-deploy --all werk via building-pipeline.yml).',
   inputSchema: {
     type: 'object',
@@ -2572,7 +2574,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
         return executeNudge(parsed.data, from, fetchImpl, pulseUrl);
       }
-      case 'chorus_build': {
+      case 'werk-build': { // #3310 — renamed from chorus_build (ADR-031/032)
         const parsed = BuildInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
