@@ -5,7 +5,10 @@
 //! a STALE already-merged PR (false-green, zero new commits) — or, with no PR, failed
 //! loud. Resolving by the current HEAD oid is what makes the merge land the real work.
 
-use werk_merge::{branch_name, classify_merge_error, jsonl_line, pr_number_for_sha};
+use werk_merge::{
+    branch_name, classify_merge_error, jsonl_line, parse_merge_args, pr_number_for_sha,
+    require_approval,
+};
 
 #[test]
 fn branch_name_is_role_slash_card() {
@@ -79,4 +82,36 @@ fn classify_merge_error_detects_not_mergeable() {
 #[test]
 fn classify_merge_error_falls_back_to_merge_fail() {
     assert_eq!(classify_merge_error("some unexpected gh error"), "merge-fail");
+}
+
+// ── #3297 — merge --atomic parse (same CLI-seam discipline as push #3296): recognize
+// --atomic anywhere, never mis-read as the role. ──
+#[test]
+fn parse_merge_args_recognizes_atomic_anywhere() {
+    let (c, r, a) = parse_merge_args(&["3297".into(), "kade".into(), "--atomic".into()], None).unwrap();
+    assert_eq!((c, r.as_str(), a), (3297, "kade", true));
+    let (c, r, a) = parse_merge_args(&["3297".into(), "--atomic".into(), "kade".into()], None).unwrap();
+    assert_eq!((c, r.as_str(), a), (3297, "kade", true), "--atomic not mistaken for role");
+    let (c, r, a) = parse_merge_args(&["3297".into()], Some("kade".into())).unwrap();
+    assert_eq!((c, r.as_str(), a), (3297, "kade", false));
+    assert!(parse_merge_args(&["nope".into(), "kade".into()], None).is_err());
+}
+
+// ── #3297 — the APPROVAL GATE (ADR-037 §22/§24: merge mutates main; one gate, two
+// doors). In the FLOW the demo→GO is the approval (the land supplies the accepter), so
+// the verb records, not gates. For merge --atomic (standalone, no land-GO) the verb
+// itself DEMANDS authorization — refuse no-approval unless an accepter is supplied. That
+// is the door --atomic must never become a quiet unauthorized ship through. ──
+#[test]
+fn require_approval_gates_atomic_without_an_accepter() {
+    // --atomic, no accepter → REFUSE (the standalone door needs explicit authorization)
+    let err = require_approval(true, None).expect_err("merge --atomic without accepter must refuse");
+    let lc = err.to_lowercase();
+    assert!(lc.contains("no-approval") || lc.contains("accepter"), "typed no-approval refusal, got: {}", err);
+    // --atomic WITH an accepter → ok, returns who authorized (for the {who,what,when} event)
+    assert_eq!(require_approval(true, Some("jeff".into())).unwrap(), "jeff");
+    // FLOW (not atomic) WITH the land's accepter → ok, records who
+    assert_eq!(require_approval(false, Some("jeff".into())).unwrap(), "jeff");
+    // FLOW with no explicit accepter → ok (the demo→GO was the approval, not the verb's gate)
+    assert!(require_approval(false, None).is_ok());
 }
