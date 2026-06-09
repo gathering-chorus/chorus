@@ -164,8 +164,8 @@ exit 0
     let mut gate_seed = String::new();
     for g in ["product", "code", "quality", "arch", "ops"] {
         gate_seed.push_str(&format!(
-            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\"}}\n",
-            g
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\",\"findings\":\"{} reviewed, no concerns\"}}\n",
+            g, g
         ));
     }
     // #3263: a recorded demo.test_result feeds the decision surface ("tests: pass").
@@ -181,10 +181,23 @@ exit 0
     // #3279 — present-and-exit: the demo PRESENTS and returns exit 0 WITHOUT blocking
     // for a decision. The go is no longer consumed here (it runs Half B / werk-land).
     assert_eq!(result.exit, 0, "present-and-exit → exit 0 (Half A done); got {}", result.exit);
-    assert!(result.message.contains("demo #3046"), "ok message: {}", result.message);
-    assert!(result.message.contains("2/2 AC"), "ac count in message: {}", result.message);
-    assert!(result.message.contains("PRESENTED"), "message names the present-and-exit: {}", result.message);
-    assert!(result.message.contains("Half A done"), "message names Half A complete: {}", result.message);
+    // #3284 — the announce IS Jeff's 5-step demo contract, RETURNED as the message so
+    // the agent pastes it into its end-of-turn reply (auto/focus mode: Jeff never sees
+    // a Bridge post). Assert all five steps are present in what Jeff will read:
+    assert!(result.message.contains("#3046"), "announce names the card: {}", result.message);
+    assert!(result.message.contains("AC 2/2"), "ac count in the announce: {}", result.message);
+    assert!(result.message.contains("gates:"), "(1) gates required + shown: {}", result.message);
+    assert!(
+        result.message.contains("feedback:") && result.message.contains("reviewed, no concerns"),
+        "(2) feedback required — each gate's findings shown: {}",
+        result.message
+    );
+    assert!(
+        result.message.contains("Ask me anything") && result.message.contains("TEST"),
+        "(4) announce invites your questions + a test: {}",
+        result.message
+    );
+    assert!(result.message.contains("go / no"), "(5) ends in the go/no decision: {}", result.message);
 
     // --- assert side effects ---
 

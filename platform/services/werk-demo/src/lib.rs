@@ -199,6 +199,32 @@ pub fn render_gate_summary(witness: &str, card: u64) -> String {
     format!("gates: {}", parts.join("  "))
 }
 
+/// #3284 — the REQUIRED feedback: WHAT each gate found (its findings), so the
+/// announce carries real review, not just pass/fail. One line per gate that left
+/// findings; "" when none did (the demo still required all 5 to RUN, via AC6).
+pub fn render_gate_feedback(witness: &str, card: u64) -> String {
+    let card_key = format!("\"card_id\":{},", card);
+    let mut lines = Vec::new();
+    for gate in REQUIRED_GATES {
+        let gate_key = format!("\"gate\":\"{}\"", gate);
+        if let Some(l) = witness.lines().rev().find(|l| {
+            l.contains("\"event\":\"demo.gate.result\"")
+                && l.contains(&card_key)
+                && l.contains(&gate_key)
+        }) {
+            let f = json_str_after(l, "findings").unwrap_or_default();
+            if !f.is_empty() && f != "-" {
+                lines.push(format!("  {}: {}", gate, f));
+            }
+        }
+    }
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("feedback:\n{}", lines.join("\n"))
+    }
+}
+
 /// #3237 — Jeff's three-way demo decision: the ONLY human input to the blocking
 /// demo step. go = accept → merge; no-go = reject → unpull; more = iterate.
 /// "go" IS the DEC-048 accept — there is no separate werk-accept step.
@@ -698,21 +724,35 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // decision surface carries the feedback (the #3251 residual).
     let gate_summary = render_gate_summary(&witness, card);
 
-    // #3284 (AC1-4) — the execution-state cockpit: which verbs ran, where it parked,
-    // what GO triggers. Read from the card's real event history (honest-degrade to
-    // all `-` if the API is unreachable). The newline is escaped for valid JSON.
+    // #3284 (AC1-4) — the execution-state cockpit, from the card's real events.
     let events = fetch_card_events(card);
     let cockpit = render_execution_state(&events, test_res.as_deref());
+    let gate_feedback = render_gate_feedback(&witness, card);
 
-    // The decision surface — honest, in order — so the decision is never blind.
-    // Then YOUR call, and the go is FINAL: the machine shows, it never vetoes a go.
-    let surface_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 #{} — DEMO · parked, awaiting your go   AC {}/{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{}\n{}\nvariant: {}\n{}\nyour call → go / no-go / more (your go is final)"}}"#,
-        role, card, checked, total,
-        cockpit.replace('\n', "\\n"),
+    // #3284 — THE ANNOUNCE, in Jeff's 5-step order: gates required (gate_summary) ·
+    // feedback required (gate_feedback) · announced here · then he asks questions /
+    // asks to test · then go / no. Built ONCE as plain text and RETURNED as this
+    // verb's message — because in auto/focus mode Jeff sees only the agent's
+    // end-of-turn reply, never a Bridge post; the agent pastes this verbatim.
+    let feedback_block = if gate_feedback.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", gate_feedback)
+    };
+    let announce = format!(
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 #{} — DEMO · ready for your review   AC {}/{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{}\n{}{}\nvariant: {}\n{}\n──────────────────────────────────\nAsk me anything about this, or tell me to TEST the change against the variant.\nThen your call → go / no / more.",
+        card, checked, total,
+        cockpit,
         gate_summary,
+        feedback_block,
         variant_status,
         test_summary,
+    );
+    // Also POST to Bridge (history + any non-focus surface). Escaped for one-line JSON.
+    let surface_body = format!(
+        r#"{{"from":"{}","text":"{}"}}"#,
+        role,
+        announce.replace('\\', " ").replace('"', "'").replace('\n', "\\n")
     );
     let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
                           "-H", "Content-Type: application/json", "-d", &surface_body]);
@@ -733,23 +773,24 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     jsonl(home, role, card, &trace, "demo.presented",
           &format!(",\"ac\":\"{}/{}\",\"variant\":\"{}\"", checked, total, variant_url));
     emit_spine(home, "demo.presented", role, card, &trace);
-    let message = format!(
-        "demo #{} PRESENTED ({}/{} AC) — variant up at {}. Half A done; nothing is held. \
-         Your GO lands it (Half B: merge → deploy-prod → finalize). no-go/more = iterate, nothing merged.",
-        card, checked, total, variant_url
-    );
+    // #3284 — RETURN the announce as the verb's message. In auto/focus mode the agent
+    // pastes this verbatim into its end-of-turn reply — the ONLY surface Jeff sees.
+    // The Bridge post above is the non-focus mirror. (Your GO runs Half B / werk-land.)
     jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"presented\"");
-    Ok(DemoOutcome { message, exit: 0 })
+    Ok(DemoOutcome { message: announce, exit: 0 })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
 /// verify the gate gather ran. Called by the /demo skill's gate subagents via
 /// `werk-demo gate <card> <gate> <result>`. The witness is the same
 /// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
-fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str) {
+fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str) {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
+    // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
+    let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
     jsonl(home, role, card, &trace, "demo.gate.result",
-          &format!(",\"gate\":\"{}\",\"result\":\"{}\"", gate, result));
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"findings\":\"{}\"", gate, result, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
@@ -803,9 +844,14 @@ pub fn run_demo() -> R<DemoOutcome> {
             return Err(format!("unknown gate '{}' — one of {:?}", gate, REQUIRED_GATES));
         }
         let result = args.next().unwrap_or_else(|| "pass".to_string());
-        record_gate(&home, role.trim(), card, &gate, &result);
+        let findings = args.collect::<Vec<_>>().join(" ");
+        record_gate(&home, role.trim(), card, &gate, &result, &findings);
         return Ok(DemoOutcome {
-            message: format!("gate {} recorded for #{}: {}", gate, card, result),
+            message: format!(
+                "gate {} recorded for #{}: {} — {}",
+                gate, card, result,
+                if findings.is_empty() { "(no findings)" } else { findings.as_str() }
+            ),
             exit: 0,
         });
     }
