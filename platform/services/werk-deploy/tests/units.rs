@@ -1,12 +1,40 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
-    branch_name, chorus_bin_install_cmd, crate_binaries, crate_binary, extract_running_cdhash,
-    parse_build_summary, parse_target, require_approval, resolve_trace, service_for_crate, spine_args,
-    target_class_in, TargetClass,
+    branch_name, cdhash_divergences, chorus_bin_install_cmd, crate_binaries, crate_binary, demo_cdhashes,
+    extract_running_cdhash, parse_build_summary, parse_target, require_approval, resolve_trace,
+    service_for_crate, spine_args, target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// #3316 — "what you demo is what ships", PROVEN not assumed. Prod builds from merged main
+// (no copy); because build is a pure function of source, the prod cdhash must equal the
+// demo'd cdhash. A divergence = source moved between demo and land (the integration trap).
+#[test]
+fn cdhash_divergences_flags_only_changed_crates_with_a_demo_baseline() {
+    let demo = vec![("werk-deploy".to_string(), "aaa".to_string()), ("chorus-mcp".to_string(), "bbb".to_string())];
+    // prod: matches werk-deploy, DIFFERS on chorus-mcp, and adds a crate with no demo baseline
+    let prod = vec![
+        ("werk-deploy".to_string(), "aaa".to_string()),
+        ("chorus-mcp".to_string(), "XXX".to_string()),
+        ("new-crate".to_string(), "ccc".to_string()),
+    ];
+    let d = cdhash_divergences(&demo, &prod);
+    assert_eq!(d.len(), 1, "only chorus-mcp diverged; new-crate has no demo baseline to compare");
+    assert_eq!(d[0], ("chorus-mcp".to_string(), "bbb".to_string(), "XXX".to_string())); // (crate, demo, prod)
+    assert!(cdhash_divergences(&demo, &demo).is_empty(), "identical sets → no divergence");
+}
+
+#[test]
+fn demo_cdhashes_reads_the_last_rebuilt_event_for_the_card() {
+    let jsonl = "{\"event\":\"deploy.started\",\"card_id\":3316}\n\
+                 {\"event\":\"rebuilt\",\"card_id\":3316,\"built\":\"werk-deploy=aaa,chorus-mcp=bbb\"}\n\
+                 {\"event\":\"rebuilt\",\"card_id\":9999,\"built\":\"other=zzz\"}\n\
+                 {\"event\":\"rebuilt\",\"card_id\":3316,\"built\":\"werk-deploy=ccc\"}";
+    assert_eq!(demo_cdhashes(jsonl, 3316), vec![("werk-deploy".to_string(), "ccc".to_string())]); // last 3316
+    assert!(demo_cdhashes(jsonl, 1234).is_empty(), "no demo for card → empty → never a false divergence");
+}
 
 // #3315 — ADR-037 deploy approval gate (mirrors werk-merge #3297 require_approval),
 // adapted for deploy's --target axis: the gate fires ONLY on standalone --atomic to PROD
