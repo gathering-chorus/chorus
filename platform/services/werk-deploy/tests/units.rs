@@ -1,12 +1,31 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
     branch_name, chorus_bin_install_cmd, crate_binaries, crate_binary, extract_running_cdhash,
-    parse_build_summary, parse_target, resolve_trace, service_for_crate, spine_args,
+    parse_build_summary, parse_target, require_approval, resolve_trace, service_for_crate, spine_args,
     target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// #3315 — ADR-037 deploy approval gate (mirrors werk-merge #3297 require_approval),
+// adapted for deploy's --target axis: the gate fires ONLY on standalone --atomic to PROD
+// (canonical). In-flow (no --atomic) NEVER blocks — the chorus_werk_land GO already
+// authorized — which is the load-bearing safety: no double-gate deadlock of the pipeline.
+#[test]
+fn require_approval_gates_standalone_prod_only() {
+    // explicit accepter authorizes either door (records who)
+    assert_eq!(require_approval(true, "canonical", Some("jeff".to_string())).unwrap(), "jeff");
+    assert_eq!(require_approval(false, "canonical", Some("jeff".to_string())).unwrap(), "jeff");
+    // standalone --atomic to canonical (prod), no accepter → REFUSE (the gate)
+    assert!(require_approval(true, "canonical", None).is_err());
+    assert!(require_approval(true, "canonical", Some("  ".to_string())).is_err()); // empty == none
+    // --atomic to the werk slot (local, reversible) → no gate
+    assert_eq!(require_approval(true, "werk", None).unwrap(), "flow");
+    // in-flow (no --atomic) → flow; never blocks, with or without ACCEPTER
+    assert_eq!(require_approval(false, "canonical", None).unwrap(), "flow");
+    assert_eq!(require_approval(false, "werk", None).unwrap(), "flow");
+}
 
 /// #3132 — a self-contained werk fixture mirroring the real repo layout, so
 /// `target_class_in` can be exercised structurally (no env, no real repo).
