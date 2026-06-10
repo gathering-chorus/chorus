@@ -61,15 +61,18 @@ optionally don't record "fail" when `<werk>/Cargo.toml` is absent (can't-run ≠
    (team-wide pipeline-break class, no regression guard; the happy-path e2e is env-fragile —
    fails if run under ACT env).
 
-**P2-shaped (refusal-taxonomy holes):**
-4. werk-pull: card-not-found / wrong-status / werk-on-wrong-branch refusals; gh-register-fail
-   restore_status rollback assertion; spine capture in pull e2e.
-5. werk-push: wrong-branch refusal (#2580 cross-role guard — its ONLY uncovered taxonomy entry);
-   gh-register-fail rollback (remote ref deleted); `_GIT_QUEUE_PUSH` sentinel reach.
-6. werk-merge: --atomic e2e (require_approval refusal ordering before side effects);
-   pr-create-fail + no-open-pr refusals; merge.approved spine emit.
-7. werk-commit: continue-re-conflict during multi-commit replay; no-werk/wrong-branch refusals;
-   success-path spine emit.
+**P2-shaped (refusal-taxonomy holes): CLOSED by #3330 (2026-06-10)**
+4. ~~werk-pull~~ — card-not-found / wrong-status / wrong-branch-werk driven + spine'd;
+   gh-register-fail rollback asserts the board-status RESTORE (e2e `refusals_are_typed_spined_…`).
+5. ~~werk-push~~ — wrong-branch driven + spine'd; gh-register-fail rollback asserts the remote
+   ref is deleted (no orphan); `_GIT_QUEUE_PUSH` sentinel proven via a rejecting pre-push hook
+   (e2e `wrong_branch_refuses_sentinel_…`).
+6. ~~werk-merge~~ — --atomic gate proven to refuse BEFORE side effects (zero gh calls, zero
+   witness); merge.approved spine emit captured with {accepter,pr,atomic}; pr-create-fail +
+   no-open-pr driven (e2e `atomic_gate_orders_…`).
+7. ~~werk-commit~~ — no-werk/wrong-branch driven; commit.completed spine captured with sha;
+   continue-RE-conflict (multi-commit replay holds again) proven
+   (e2e `refusals_success_spine_and_continue_reconflict`).
 8. werk-demo: wrong-status/no-ac refusals driven end-to-end; #3319 prework-standby branch.
 
 **Dead-code removals (need blast-radius, #3148):** werk-demo `read_decision`/`Decision`;
