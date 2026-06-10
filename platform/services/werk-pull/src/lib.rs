@@ -274,15 +274,34 @@ fn rollback(
 
 /// Entry: parse the contract args (`werk-pull <card> <role>`, role falls back to
 /// $DEPLOY_ROLE for substrate callers) + env, then run the verb.
-pub fn run_pull() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-pull <card> <role>".to_string())?;
+///
+/// #3294 — `parse_pull_args` recognizes `--atomic` ANYWHERE (the standalone-worktree
+/// door; the push/merge/accept seam pattern). pull is the ADR-037 --atomic-FREE group
+/// (local/reversible worktree creation, no approval), so --atomic is recognized but
+/// non-branching. Pure + testable: run_pull feeds it env::args, so the CLI seam is
+/// covered, not just the lib fn.
+pub fn parse_pull_args(args: &[String], deploy_role: Option<String>) -> R<(u64, String, bool)> {
+    let atomic = args.iter().any(|a| a == "--atomic");
+    let pos: Vec<&String> = args.iter().filter(|a| a.as_str() != "--atomic").collect();
+    let card_arg = pos
+        .first()
+        .ok_or_else(|| "usage: werk-pull <card> <role> [--atomic]".to_string())?;
     let card: u64 = card_arg
         .parse()
         .map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args()
-        .nth(2)
-        .or_else(|| env::var("DEPLOY_ROLE").ok())
-        .ok_or_else(|| "usage: werk-pull <card> <role> (or set DEPLOY_ROLE)".to_string())?;
+    let role = pos
+        .get(1)
+        .map(|s| s.to_string())
+        .or(deploy_role)
+        .ok_or_else(|| "usage: werk-pull <card> <role> [--atomic] (or set DEPLOY_ROLE)".to_string())?;
+    Ok((card, role, atomic))
+}
+
+/// Conforms to ADR-032 (zero-dep Rust, flock, spine emit, all-or-nothing rollback) +
+/// ADR-037 (--atomic; pull = free group, local/reversible worktree creation, no approval).
+pub fn run_pull() -> R<String> {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let (card, role, _atomic) = parse_pull_args(&args, env::var("DEPLOY_ROLE").ok())?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);

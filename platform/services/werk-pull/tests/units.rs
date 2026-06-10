@@ -1,6 +1,6 @@
 // Test-first (DEC-1674): these reference werk_pull lib functions that don't exist
 // yet — RED until src/lib.rs is written.
-use werk_pull::{branch_name, jsonl_line, trace_id, resolve_trace_in, spine_args};
+use werk_pull::{branch_name, jsonl_line, parse_pull_args, trace_id, resolve_trace_in, spine_args};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,4 +102,18 @@ fn spine_args_carry_disposition_and_reason_extras() {
     assert!(a.contains(&"trace=abc-1".to_string()), "trace still stamped");
     assert!(a.contains(&"disposition=refuse".to_string()), "rollup keys on disposition (#3165)");
     assert!(a.contains(&"reason=wrong-status".to_string()), "reason explains the refusal");
+}
+
+// #3294 — pull --atomic parse (the standalone-worktree door; same CLI-seam discipline
+// as push #3296 / merge #3297 / accept #3298): recognize --atomic anywhere, never
+// mis-read as the role.
+#[test]
+fn parse_pull_args_recognizes_atomic_anywhere() {
+    let (c, r, a) = parse_pull_args(&["3294".into(), "kade".into(), "--atomic".into()], None).unwrap();
+    assert_eq!((c, r.as_str(), a), (3294, "kade", true));
+    let (c, r, a) = parse_pull_args(&["3294".into(), "--atomic".into(), "kade".into()], None).unwrap();
+    assert_eq!((c, r.as_str(), a), (3294, "kade", true), "--atomic not mistaken for role");
+    let (c, r, a) = parse_pull_args(&["3294".into()], Some("kade".into())).unwrap();
+    assert_eq!((c, r.as_str(), a), (3294, "kade", false));
+    assert!(parse_pull_args(&["notanum".into(), "kade".into()], None).is_err());
 }
