@@ -393,13 +393,9 @@ const DeployInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card id whose werk holds the build artifacts.'),
   target: z.enum(['canonical', 'werk']).optional().describe('Install target. Default: canonical.'),
-});
-const EnvUpInput = z.object({
-  role: RoleEnum,
-  // #3239 — REQUIRED. env-up must target the card under test; it's forwarded into the
-  // werk-deploy argv (not just the spine field). Without it, werk-deploy used to stand up
-  // an arbitrary/stale werk (the first <role>-* dir). No card = refuse, don't guess.
-  card_id: z.number().int().min(1).describe('Card whose werk to bring the env up from (required).'),
+  // #3311 — env-up folded in (chorus_env_up tool deleted): werk-deploy env-up is a
+  // subcommand of the same binary; one MCP name per binary. #3239 card_id forwarding kept.
+  env_up: z.boolean().optional().describe('Bring up the role variant (werk-deploy env-up) instead of installing.'),
 });
 // #3241 — the whole werk pipeline as ONE MCP verb. Wraps the act run of werk.yml so the
 // pipeline trigger is MCP like every other verb (no raw `act` CLI surface). accepter is
@@ -407,7 +403,10 @@ const EnvUpInput = z.object({
 const WerkRunInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card to run through the pipeline.'),
-  accepter: z.enum(['jeff', 'wren', 'kade', 'silas']).optional().describe('Authorizing identity for the printed werk-accept command (DEC-048). Default jeff. Not auto-run.'),
+  accepter: z.enum(['jeff', 'wren', 'kade', 'silas']).optional().describe('Authorizing identity (DEC-048). Default jeff. With go:true, who the accept runs under.'),
+  // #3311 — ONE trigger: go=false/absent runs to the demo stop (werk.yml); go=true
+  // resumes past it (werk-land.yml: merge → deploy-prod → accept). GO = accept.
+  go: z.boolean().optional().describe('The human GO — resume past the demo stop.'),
 });
 
 const SERVICE_STATUS_TOOL_DEF = {
@@ -446,7 +445,7 @@ const SERVICE_ROLLBACK_TOOL_DEF = {
   inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name to roll back' } }, required: ['service'] },
 } as const;
 
-// #3110: werk-binary MCP wrappers — werk-build / werk-deploy / chorus_env_up (#3310/#3311 renames)
+// #3110: werk-binary MCP wrappers — werk-build / werk-deploy (#3310/#3311 renames; env-up is werk-deploy {env_up:true})
 // expose werk-build, werk-deploy, and werk-deploy env-up as MCP tools so
 // werk-demo (Wren's binary) consumes them via MCP instead of shelling out
 // directly. Jeff: "no CLI shell-outs from werk-demo." Each wraps the
@@ -470,7 +469,7 @@ const CHORUS_BUILD_TOOL_DEF = {
 const CHORUS_DEPLOY_TOOL_DEF = {
   // #3311 — renamed chorus_deploy → werk-deploy (same ADR-031/032 family cleanup).
   name: 'werk-deploy',
-  description: 'Use this to run werk-deploy for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-deploy with role + card env. Target defaults to canonical; pass target=werk to install to the per-card werk\'s target/release/ (variant deploy for staging). Wraps the verb binary. Refusal taxonomy: usage-error | no-werk | branch-mismatch | no-deploy-target (class 5, still open as of 2026-05-28) | install-fail | cdhash-divergence | verify-timeout. Use from werk-demo. Do NOT use to deploy services system-wide (chorus_service_deploy) or to bring up env variants (chorus_env_up).',
+  description: 'Use this to run werk-deploy for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-deploy with role + card env. Target defaults to canonical; pass target=werk to install to the per-card werk\'s target/release/ (variant deploy for staging). Wraps the verb binary. Refusal taxonomy: usage-error | no-werk | branch-mismatch | no-deploy-target (class 5, still open as of 2026-05-28) | install-fail | cdhash-divergence | verify-timeout. Use from werk-demo. Do NOT use to deploy services system-wide (chorus_service_deploy). Variant env-up: pass {env_up:true}.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -483,53 +482,27 @@ const CHORUS_DEPLOY_TOOL_DEF = {
   },
 } as const;
 
-const CHORUS_ENV_UP_TOOL_DEF = {
-  name: 'chorus_env_up',
-  description: 'Use this to bring up the role\'s werk-variant of chorus-api + chorus-mcp on per-role ports (silas 3343/3351, kade 3344/3352, wren 3345/3353). Invokes ~/.chorus/bin/werk-deploy env-up <role>. The variant is the STAGING surface the team exercises during /demo before promoting to canonical. Companion: chorus_env_down to tear it back down. Refusal taxonomy: bootstrap-fail | port-conflict | smoke-timeout. Use from werk-demo before announcing the demo URL.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose variant to bring up.' },
-      card_id: { type: 'integer', minimum: 1, description: 'Card whose werk to bring the env up from. REQUIRED — forwarded into werk-deploy so the env stands up the card under test, not an arbitrary werk (#3239).' },
-    },
-    required: ['role', 'card_id'],
-    additionalProperties: false,
-  },
-} as const;
+// #3311 — chorus_env_up DELETED: env-up is a werk-deploy subcommand; call the
+// werk-deploy tool with {env_up:true}. One name per binary.
 
-// #3241 — werk-present: the whole pipeline as one MCP verb. Encapsulates the act run
+// #3241/#3311 — chorus_werk: the ONE pipeline trigger. Encapsulates the act run
 // of werk.yml so callers never touch the raw `act` CLI (no -W/-P/--input, no PATH
 // wrangling). The single invocation surface for the pipeline trigger, conforming to
 // the MCP-verb contract — same way roles call werk-pull/werk-commit/chorus_build.
 const CHORUS_WERK_TOOL_DEF = {
-  // #3311 — renamed werk-present → werk-present (ADR-031/032: no chorus_-prefixed
-  // composite; Half A presents, Half B lands — werk-present / werk-land are the pair).
-  name: 'werk-present',
-  description: 'Use this to run HALF A of the werk pipeline for a card — commit→push→build→test→deploy-werk→env-up→demo, where demo PRESENTS the running variant and STOPS (#3279). Wraps the act run of .github/workflows/werk.yml (canonical, host-native); pass only {role, card_id, accepter}, never the raw act CLI. This call is SYNCHRONOUS and SHORT: the demo no longer blocks for the human go (that was what dropped the transport on long waits, #3277), so it returns in minutes with {ok, phase:"presented", land_command}. Jeff sees the presented variant in-session, then his GO runs HALF B via werk-land (merge→deploy-prod→finalize). NOTHING is held between the halves — the wait is a stopped pipeline, not a connection, so it survives a 12h walk-away. Do NOT shell out to `act` directly. Refusal taxonomy: usage-error | pipeline-fail.',
+  // #3311 — ONE trigger, not two. chorus_werk runs the verb sequence to the demo
+  // stop-point; chorus_werk {go:true} resumes past it on the human GO. The composite
+  // pseudo-verbs (chorus_werk_land, and briefly werk-present/werk-land) are DELETED —
+  // the werk- namespace is the seven verbs only.
+  name: 'chorus_werk',
+  description: 'THE pipeline trigger — the verb sequence with a stop at the demo. Default (no go): runs commit→push→build→test→deploy-werk→env-up→demo via act (werk.yml), PRESENTS the running variant, and STOPS (#3279) — returns in minutes with {ok, phase:"presented"}; nothing is held across the human wait. With go:true (ONLY on Jeff/Wren\'s explicit GO for a presented card): resumes past the stop via act (werk-land.yml) — werk-merge → werk-deploy --target canonical → werk-accept. GO = accept (DEC-048): the accepter named here is the authority werk-accept runs under. Do NOT shell out to `act` directly, and never pass go:true without the human\'s explicit go.',
   inputSchema: {
     type: 'object',
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk runs.' },
-      card_id: { type: 'integer', minimum: 1, description: 'Card to run through Half A of the pipeline.' },
-      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity for the printed accept command (DEC-048). Default jeff. Not auto-run.' },
-    },
-    required: ['role', 'card_id'],
-    additionalProperties: false,
-  },
-} as const;
-
-// #3279 — Half B: the human GO, run after Jeff has seen the presented variant.
-const CHORUS_WERK_LAND_TOOL_DEF = {
-  // #3311 — renamed werk-land → werk-land (ADR-031/032: no chorus_-prefixed
-  // composite; the land trigger joins the werk- family). werk-land removed, not aliased.
-  name: 'werk-land',
-  description: 'Use this as the human GO after werk-present presented a card (#3279). Runs HALF B of the pipeline — merge→ff-sync→deploy-prod→finalize — via the act run of .github/workflows/werk-land.yml, then STOPS before accept (DEC-048, prints the accept command). Synchronous and SHORT (no human pause inside), so it returns in minutes and cannot drop. Only call this on Jeff/Wren\'s explicit go for a card that werk-present already PRESENTED; calling it lands the card to prod. Do NOT shell out to `act` directly. Refusal taxonomy: usage-error | land-fail.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose presented card is being landed.' },
-      card_id: { type: 'integer', minimum: 1, description: 'Card to land (the one werk-present presented).' },
-      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity whose GO this is (DEC-048). Default jeff.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card to run.' },
+      accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity (DEC-048). Default jeff. With go:true this is who the accept runs under.' },
+      go: { type: 'boolean', description: 'The human GO. false/absent = run to the demo stop and present. true = resume past the stop: merge → deploy-prod → accept.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -2073,7 +2046,7 @@ async function executeChorusDeploy(
 }
 
 async function executeChorusEnvUp(
-  args: z.infer<typeof EnvUpInput>,
+  args: z.infer<typeof DeployInput>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   // werk-deploy env-up <role> <card>: brings the role's variant up on per-role ports.
   // #3239 — card_id is FORWARDED INTO THE ARGV (was omitted), so werk-deploy stands up the
@@ -2104,7 +2077,7 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // returns in minutes. It never holds open across a human wait, so #3277's transport drop
 // cannot happen — we removed the long hold, we did not paper over it with a detach (which
 // cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
-// his GO runs Half B (werk-land). Stop-before-land.
+// his GO re-invokes chorus_werk with go:true, resuming past the demo stop (#3311).
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   execFileAsync: ExecFileAsync,
@@ -2118,7 +2091,7 @@ async function executeChorusWerk(
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
-  const landCmd = `werk-land {role:"${args.role}", card_id:${args.card_id}, accepter:"${accepter}"}`;
+  const landCmd = `chorus_werk {role:"${args.role}", card_id:${args.card_id}, accepter:"${accepter}", go:true}`;
   const actArgs = [
     'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
     '--input', `card_id=${args.card_id}`,
@@ -2153,13 +2126,13 @@ async function executeChorusWerk(
       type: 'text' as const,
       text: JSON.stringify({
         ok: true,
-        verb: 'werk-present',
+        verb: 'chorus_werk',
         phase: 'presented',
         role: args.role,
         card_id: args.card_id,
         accepter,
-        land_command: landCmd,
-        note: 'Half A done — the variant is up and PRESENTED (see the demo decision surface). NOTHING is held: no connection to drop, no process to leak. Look at the variant, then your GO runs Half B (merge → ff-sync → deploy-prod → finalize) via werk-land. no-go/more = do nothing; the werk is preserved.',
+        go_command: landCmd,
+        note: 'Presented and stopped. Nothing is held. On the human GO, re-invoke chorus_werk with go:true — it resumes past the stop (merge → ff-sync → deploy-prod → accept). no-go/more = do nothing; the werk is preserved.',
         stdout: stdout.trim().slice(-4000),
       }),
     }],
@@ -2183,7 +2156,6 @@ async function executeChorusWerkLand(
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk-land.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
-  const acceptCmd = `DEPLOY_ROLE=${accepter} werk-accept ${args.card_id} ${args.role}`;
   const actArgs = [
     'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
     '--input', `card_id=${args.card_id}`,
@@ -2218,13 +2190,12 @@ async function executeChorusWerkLand(
       type: 'text' as const,
       text: JSON.stringify({
         ok: true,
-        verb: 'werk-land',
+        verb: 'chorus_werk',
         phase: 'landed',
         role: args.role,
         card_id: args.card_id,
         accepter,
-        accept_command: acceptCmd,
-        note: 'Half B done — merged → ff-synced → deployed to prod → finalized. Accept is yours (DEC-048): judge the work, then run the accept command.',
+        note: 'Landed — merged → ff-synced → deployed to prod → accepted. The GO was the accept (DEC-048): werk-accept ran under the accepter named on this call.',
         stdout: stdout.trim().slice(-4000),
       }),
     }],
@@ -2516,9 +2487,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       SERVICE_ROLLBACK_TOOL_DEF,
       CHORUS_BUILD_TOOL_DEF,
       CHORUS_DEPLOY_TOOL_DEF,
-      CHORUS_ENV_UP_TOOL_DEF,
       CHORUS_WERK_TOOL_DEF,
-      CHORUS_WERK_LAND_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -2595,28 +2564,22 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
+        // #3311 — env-up folded in: one MCP name per binary, subcommand via flag.
+        if (parsed.data.env_up) {
+          return executeChorusEnvUp(parsed.data);
+        }
         return executeChorusDeploy(parsed.data);
       }
-      case 'chorus_env_up': {
-        const parsed = EnvUpInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        return executeChorusEnvUp(parsed.data);
-      }
-      case 'werk-present': {
+      case 'chorus_werk': {
         const parsed = WerkRunInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #3311 — ONE trigger: go resumes past the demo stop (Half B), else present (Half A).
+        if (parsed.data.go) {
+          return executeChorusWerkLand(parsed.data, execFileAsync);
         }
         return executeChorusWerk(parsed.data, execFileAsync);
-      }
-      case 'werk-land': {
-        const parsed = WerkRunInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        return executeChorusWerkLand(parsed.data, execFileAsync);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':

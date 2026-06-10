@@ -13,7 +13,7 @@ name: werk-land
 #
 # The "wait" between the halves costs nothing — it's a stopped pipeline, not a held
 # connection. This run is SHORT (no human pause inside it), so the MCP call that triggers
-# it returns in minutes and cannot drop. Run via the werk-land MCP verb on Jeff's go (#3311).
+# it returns in minutes and cannot drop. Run via chorus_werk {go:true} on Jeff's go (#3311).
 # GO = ACCEPT (Jeff's ruling, supersedes #3234 stop-before-accept): the GO that fires this
 # run IS the acceptance — Half B ends in werk-accept with ACCEPTER as the authority.
 
