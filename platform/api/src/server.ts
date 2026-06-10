@@ -1653,9 +1653,12 @@ app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
 import { fetchHookFriction } from './handlers/hook-friction';
 app.get('/api/chorus/hooks/friction', (req: Request, res: Response) => {
   const HOOKS_LOG = path.join(os.homedir(), 'Library/Logs/Gathering/hooks.log');
+  // #3282 — judgment-as-code: committed classification rules, joined at read.
+  const CLASSES = path.join(CHORUS_ROOT, 'config/hook-friction-classes.json');
   const hours = Number(req.query.hours);
   const r = fetchHookFriction({
     readLog: () => safeReadFile(HOOKS_LOG),
+    readClasses: () => safeReadFile(CLASSES),
     windowHours: Number.isFinite(hours) && hours > 0 && hours <= 24 * 14 ? hours : undefined,
   });
   res.status(r.status).json(r.body);

@@ -2,7 +2,7 @@
 <!-- #3280 — Hook friction board. Served by chorus-api on :3340 (/borg/hook-friction.html).
      Consumes /api/chorus/hooks/friction?hours=N — the ranked DENY/BLOCK/WARN view over
      hooks.log (#3252 JSON format). Sibling of pain.html: pain ranks what's breaking;
-     this ranks what's blocking. -->
+     this ranks what's blocking — and since #3282, whether each block earned its keep. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -20,6 +20,9 @@
   th { color: #fff; background: #222; font-size: 11px; text-transform: uppercase; position: sticky; top: 0; }
   td.n { text-align: right; font-weight: 700; white-space: nowrap; }
   td.deny { color: #b00; } td.warn { color: #b60; }
+  .cls { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; margin-right: 4px; }
+  .cls.catch { background: #e6f6ee; color: #0a7; } .cls.waste { background: #fdeaea; color: #b00; }
+  .cls.unjudged { background: #f0f0f0; color: #777; }
   td.roles span { display: inline-block; margin-right: 8px; }
   tr.zebra { background: #fbf9f4; }
   .err { color: #a33; }
@@ -53,22 +56,34 @@ async function load() {
 }
 
 function render(d) {
-  $('status').textContent =
-    `${d.totalFriction} friction events in last ${d.windowHours}h · generated ${d.generatedAt}`;
+  const t = d.totals || {};
+  $('status').innerHTML =
+    `${d.totalFriction} friction events in last ${d.windowHours}h · ` +
+    `<span class="cls catch">real-catch ${t['real-catch'] || 0}</span>` +
+    `<span class="cls waste">pure-friction ${t['pure-friction'] || 0}</span>` +
+    `<span class="cls unjudged">unjudged ${t['unjudged'] || 0}</span>` +
+    ` · triage the red, keep the green · generated ${d.generatedAt}`;
   if (!d.hooks.length) { $('out').innerHTML = '<p>No friction in window. Quiet hands.</p>'; return; }
   const rows = d.hooks.map((h, i) => {
     const roles = Object.entries(h.byRole).sort((a, b) => b[1] - a[1])
       .map(([role, n]) => `<span><b>${role}</b> ${n}</span>`).join('');
+    const c = h.classes || {};
+    const cls = [
+      c['real-catch'] ? `<span class="cls catch">catch ${c['real-catch']}</span>` : '',
+      c['pure-friction'] ? `<span class="cls waste">waste ${c['pure-friction']}</span>` : '',
+      c['unjudged'] ? `<span class="cls unjudged">? ${c['unjudged']}</span>` : '',
+    ].join('');
     return `<tr class="${i % 2 ? 'zebra' : ''}">
       <td>${h.module}</td>
       <td class="n">${h.total}</td>
       <td class="n deny">${h.deny}</td>
       <td class="n warn">${h.warn}</td>
+      <td>${cls}</td>
       <td class="roles">${roles}</td>
     </tr>`;
   }).join('');
   $('out').innerHTML = `<table>
-    <thead><tr><th>hook</th><th>total</th><th>deny</th><th>warn</th><th>by role</th></tr></thead>
+    <thead><tr><th>hook</th><th>total</th><th>deny</th><th>warn</th><th>class (#3282)</th><th>by role</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 

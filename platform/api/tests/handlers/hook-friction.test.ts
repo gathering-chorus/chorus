@@ -22,7 +22,8 @@ function jline(hoursAgo: number, module: string, role: string, decision: string,
 type FrictionBody = {
   windowHours: number;
   totalFriction: number;
-  hooks: Array<{ module: string; total: number; deny: number; warn: number; byRole: Record<string, number> }>;
+  totals?: Record<string, number>;
+  hooks: Array<{ module: string; total: number; deny: number; warn: number; byRole: Record<string, number>; classes?: Record<string, number> }>;
   generatedAt: string;
 };
 
@@ -124,5 +125,64 @@ describe('fetchHookFriction (#3280)', () => {
     const r = fetchHookFriction({ readLog: () => log, now: nowFn });
     const body = r.body as FrictionBody;
     expect(body.hooks[0].byRole).toEqual({ unknown: 1 });
+  });
+});
+
+// --- #3282: real-catch vs pure-friction classification, joined at read ---
+
+const CLASSES = JSON.stringify({
+  rules: [
+    { module: 'accept_gate', tool: 'Skill', class: 'pure-friction', why: 'AC-checkbox / evidence-chain format class' },
+    { module: 'accept_gate', class: 'real-catch', why: 'DEC-048 authority gate' },
+    { module: 'ops_awareness', class: 'pure-friction', why: 'ambient fire-and-allow warns' },
+  ],
+});
+
+describe('fetchHookFriction classification (#3282)', () => {
+  test('AC1: events classify by rules; tool-specific rule beats module default', () => {
+    const log = [
+      jline(1, 'accept_gate', 'kade', 'deny', { tool: 'Skill' }),   // pure-friction (AC-checkbox class)
+      jline(1, 'accept_gate', 'kade', 'deny', { tool: 'Bash' }),    // real-catch (DEC-048 default)
+      jline(1, 'accept_gate', 'wren', 'deny', { tool: 'Bash' }),    // real-catch
+    ].join('\n');
+    const r = fetchHookFriction({ readLog: () => log, readClasses: () => CLASSES, now: nowFn });
+    const body = r.body as FrictionBody;
+    const gate = body.hooks.find((h) => h.module === 'accept_gate');
+    expect(gate?.classes).toEqual({ 'real-catch': 2, 'pure-friction': 1 });
+  });
+
+  test('AC2: the AC-checkbox/format class is identifiable as pure friction', () => {
+    const log = jline(1, 'accept_gate', 'kade', 'deny', { tool: 'Skill' });
+    const r = fetchHookFriction({ readLog: () => log, readClasses: () => CLASSES, now: nowFn });
+    const body = r.body as FrictionBody;
+    expect(body.totals?.['pure-friction']).toBe(1);
+    expect(body.totals?.['real-catch'] ?? 0).toBe(0);
+  });
+
+  test('AC3: totals split real-catch / pure-friction / unjudged for triage', () => {
+    const log = [
+      jline(1, 'accept_gate', 'kade', 'deny', { tool: 'Bash' }),  // real-catch
+      jline(1, 'ops_awareness', 'silas', 'warn'),                 // pure-friction
+      jline(1, 'mystery_hook', 'wren', 'deny'),                   // unjudged (no rule)
+    ].join('\n');
+    const r = fetchHookFriction({ readLog: () => log, readClasses: () => CLASSES, now: nowFn });
+    const body = r.body as FrictionBody;
+    expect(body.totals).toEqual({ 'real-catch': 1, 'pure-friction': 1, unjudged: 1 });
+  });
+
+  test('missing/garbage classes file → everything unjudged, never a throw', () => {
+    const log = jline(1, 'accept_gate', 'kade', 'deny', { tool: 'Bash' });
+    for (const readClasses of [() => null, () => 'not json', () => '{}']) {
+      const r = fetchHookFriction({ readLog: () => log, readClasses, now: nowFn });
+      expect(r.status).toBe(200);
+      expect((r.body as FrictionBody).totals).toEqual({ unjudged: 1 });
+    }
+  });
+
+  test('no readClasses dep at all → backward compatible, all unjudged', () => {
+    const log = jline(1, 'accept_gate', 'kade', 'deny');
+    const r = fetchHookFriction({ readLog: () => log, now: nowFn });
+    expect(r.status).toBe(200);
+    expect((r.body as FrictionBody).totals).toEqual({ unjudged: 1 });
   });
 });
