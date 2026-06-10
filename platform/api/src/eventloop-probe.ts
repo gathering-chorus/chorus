@@ -126,8 +126,12 @@ if (require.main === module) {
   void runEventloopProbe({
     probe,
     emit: (a) =>
+      // #3082 (Silas review): detector=probe distinguishes this off-loop alert from the
+      // in-process one during the activate-before-retire overlap — so double-alerts are
+      // DIAGNOSABLE and the retire-verification is provable from the data (you SEE the
+      // probe catching blocks), not inferred from the in-process detector's absence.
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas', 'domain=chorus',
-        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=probe'], () => {}),
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
     threshold: 3000,
   });
