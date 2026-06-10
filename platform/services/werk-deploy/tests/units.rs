@@ -73,7 +73,7 @@ fn demo_cdhashes_reads_the_last_rebuilt_event_for_the_card() {
 
 // #3315 — ADR-037 deploy approval gate (mirrors werk-merge #3297 require_approval),
 // adapted for deploy's --target axis: the gate fires ONLY on standalone --atomic to PROD
-// (canonical). In-flow (no --atomic) NEVER blocks — the chorus_werk_land GO already
+// (canonical). In-flow (no --atomic) NEVER blocks — the werk-land GO already
 // authorized — which is the load-bearing safety: no double-gate deadlock of the pipeline.
 #[test]
 fn require_approval_gates_standalone_prod_only() {

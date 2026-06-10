@@ -1,4 +1,4 @@
-// #3241 — the werk pipeline as ONE MCP verb (chorus_werk). It wraps the act run of
+// #3241 — the werk pipeline as ONE MCP verb (werk-present). It wraps the act run of
 // werk.yml so a role triggers the whole pipeline via MCP like every other verb — no
 // raw `act` CLI surface, no PATH/-P/-W wrangling leaked to the caller. The verb
 // encapsulates: canonical werk.yml (-W), host-native runner (-P …=-self-hosted),
@@ -6,7 +6,7 @@
 //
 // These tests build the real production server with an injected execFileAsync that
 // captures the act invocation, and assert the surface + the encapsulated argv. RED
-// until chorus_werk is registered + wired.
+// until werk-present is registered + wired.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -32,26 +32,26 @@ async function withServer(fn: (client: Client) => Promise<void>, sink: Call[]) {
   try { await fn(client); } finally { await client.close(); await server.close(); }
 }
 
-test('chorus_werk is exposed at the MCP surface (pipeline trigger is a verb, not raw act)', async () => {
+test('werk-present is exposed at the MCP surface (pipeline trigger is a verb, not raw act)', async () => {
   await withServer(async (client) => {
     const names = (await client.listTools()).tools.map((t) => t.name);
-    assert.ok(names.includes('chorus_werk'), 'chorus_werk must be an MCP tool — #3241');
+    assert.ok(names.includes('werk-present'), 'werk-present must be an MCP tool — #3241');
   }, []);
 });
 
-test('chorus_werk requires role + card_id', async () => {
+test('werk-present requires role + card_id', async () => {
   await withServer(async (client) => {
-    const tool = (await client.listTools()).tools.find((t) => t.name === 'chorus_werk');
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'werk-present');
     const required = (tool?.inputSchema?.required ?? []) as string[];
     assert.ok(required.includes('role'), 'role required');
     assert.ok(required.includes('card_id'), 'card_id required');
   }, []);
 });
 
-test('chorus_werk runs act on CANONICAL werk.yml, host-native, with card inputs (encapsulated)', async () => {
+test('werk-present runs act on CANONICAL werk.yml, host-native, with card inputs (encapsulated)', async () => {
   const sink: Call[] = [];
   await withServer(async (client) => {
-    await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
+    await client.callTool({ name: 'werk-present', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
   }, sink);
 
   assert.equal(sink.length, 1, 'exactly one subprocess — the act run');
@@ -70,14 +70,14 @@ test('chorus_werk runs act on CANONICAL werk.yml, host-native, with card inputs 
   assert.match(call.opts.env?.PATH ?? '', /platform\/scripts/, 'PATH includes canonical platform/scripts (chorus-mcp-call.sh resolvable)');
 });
 
-test('chorus_werk returns the stop-before-accept command, never auto-accepts (DEC-048)', async () => {
+test('werk-present returns the stop-before-accept command, never auto-accepts (DEC-048)', async () => {
   const sink: Call[] = [];
   await withServer(async (client) => {
-    const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
+    const res = await client.callTool({ name: 'werk-present', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
     const text = (res.content as Array<{ type: string; text: string }>).map((c) => c.text).join('\n');
     assert.match(text, /werk-accept 3241 kade/, 'surfaces the accept command for the human');
   }, sink);
   // the verb itself must never invoke werk-accept
   const a = sink.map((c) => c.args.join(' ')).join(' | ');
-  assert.ok(!/werk-accept/.test(sink.map((c) => c.file).join(' ')), 'chorus_werk must not exec werk-accept');
+  assert.ok(!/werk-accept/.test(sink.map((c) => c.file).join(' ')), 'werk-present must not exec werk-accept');
 });

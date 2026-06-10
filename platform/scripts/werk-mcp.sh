@@ -10,7 +10,7 @@
 # makes all of our verbs atomic.")
 #
 # This is a fail-loud stub (the team's retirement pattern, cf. the retired bash `nudge`
-# stub). The pipeline trigger is now an MCP VERB — chorus_werk (#3241) — not a raw `act`
+# stub). The pipeline trigger is now an MCP VERB — werk-present (#3241) — not a raw `act`
 # CLI. The verb encapsulates the act run (canonical werk.yml, host-native, PATH); callers
 # pass only {role, card_id, accepter}, like every other verb.
 #
@@ -24,12 +24,13 @@ ACCEPTER="${3:-jeff}"
 
 cat >&2 <<EOF
 werk-mcp.sh is RETIRED — the pipeline is one act workflow (werk.yml, #3236), and the
-trigger is one MCP verb (chorus_werk, #3241). Don't run raw act.
+trigger is one MCP verb (werk-present, #3241). Don't run raw act.
 
 Run the pipeline via MCP (the single toolchain):
-  chorus_werk { role: "${ROLE}", card_id: ${CARD}, accepter: "${ACCEPTER}" }
+  werk-present { role: "${ROLE}", card_id: ${CARD}, accepter: "${ACCEPTER}" }
 
-It runs the whole pipeline and STOPS before accept; then the human accepts:
-  DEPLOY_ROLE=${ACCEPTER} werk-accept ${CARD} ${ROLE}
+It runs Half A and PRESENTS the variant; the human GO then runs werk-land
+(merge -> deploy-prod -> accept; GO = accept, #3311):
+  werk-land { role: "${ROLE}", card_id: ${CARD}, accepter: "${ACCEPTER}" }
 EOF
 exit 1

@@ -103,7 +103,7 @@ jobs:
 
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
-        run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
+        run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
         # #3240 — env-up posts chorus/env-up/<card> via a step-level gh-status (the verb emits
@@ -135,7 +135,7 @@ jobs:
         run: |
           echo "[presented] #${CARD_ID} — variant up, demo presented. Half A done; NOTHING is held."
           echo "  Look at the variant, then your call (Half B — a separate short run):"
-          echo "    GO         → chorus_werk_land {role:${ROLE}, card_id:${CARD_ID}}   (merge → ff-sync → deploy-prod → finalize)"
+          echo "    GO         → werk-land {role:${ROLE}, card_id:${CARD_ID}}   (merge → ff-sync → deploy-prod → finalize)"
           echo "    no-go/more → do nothing; the werk is preserved for iteration."
 
       # --- orchestrator witness close (pairs with werk.started) ---
