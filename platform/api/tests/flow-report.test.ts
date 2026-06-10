@@ -173,20 +173,23 @@ describe('normalizeLine (#3269) — both Loki source shapes', () => {
   });
 });
 
-describe('buildHtml escaping (#3269 gate-quality catch)', () => {
-  test('log-sourced detail/event cannot inject markup', () => {
+describe('buildHtml escaping (#3269 gate-quality catch, held through the interactive rewrite)', () => {
+  test('log-sourced detail/event cannot inject markup or break out of the embedded JSON', () => {
     expect(esc('<img src=x onerror=alert(1)>')).toBe('&lt;img src=x onerror=alert(1)&gt;');
     const report = {
       generatedAt: 'now', windowHours: 1, truncated: false,
-      cards: [{ card: 1, role: 'silas', landed: false, cycleS: 1,
+      cards: [{ card: 1, role: 'silas', landed: false, lastEventTs: 0, cycleS: 1,
         steps: { workS: null, pushS: null, buildS: null, deployS: null, demoS: null, mergeS: null, finalS: null },
-        errors: [{ ts: 0, event: 'x.failed', detail: '<script>alert(1)</script>' }] }],
+        errors: [{ ts: 0, event: 'x.failed', detail: '</script><script>alert(1)</script>' }] }],
       errorClasses: [{ event: '<b>evil</b>.failed', count: 1 }],
       totals: { cards: 1, landed: 0, withErrors: 1, errorEvents: 1 },
+      cycleStats: { landedCards: 0, medianS: null, avgS: null, p90S: null },
     };
     const html = buildHtml(report);
-    expect(html).not.toContain('<script>alert');
+    // the embedded JSON must escape every `<` so </script> breakout is impossible,
+    // and the page renders via DOM textContent so the strings stay inert.
+    expect(html).not.toContain('</script><script>alert');
     expect(html).not.toContain('<b>evil</b>');
-    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('\\u003c/script>'); // the payload, defanged in the embed (< escaped = no tag can form)
   });
 });

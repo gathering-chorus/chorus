@@ -21,6 +21,8 @@ export interface CardFlow {
   card: number;
   role: string;
   landed: boolean;
+  /** epoch ms of the card's most recent event — drives the page's time filter. */
+  lastEventTs: number;
   cycleS: number;
   steps: {
     workS: number | null;
@@ -135,6 +137,7 @@ export function aggregateFlow(events: FlowEvent[]): FlowReport {
       card,
       role: list.find((e) => e.role)?.role ?? 'unknown',
       landed,
+      lastEventTs: last,
       cycleS: Math.round((last - first) / 1000),
       steps,
       errors,
