@@ -18,7 +18,9 @@ assert "pair-heartbeat crate exists" test -f "$ROOT/platform/services/pair-heart
 assert "pair-heartbeat has unit tests" test -f "$ROOT/platform/services/pair-heartbeat/tests/units.rs"
 assert "com.chorus.pair-heartbeat plist exists" test -f "$ROOT/config/launchagents/com.chorus.pair-heartbeat.plist"
 assert "plist runs on a StartInterval timer" grep -q "StartInterval" "$ROOT/config/launchagents/com.chorus.pair-heartbeat.plist"
-assert "chorus-deploy ships pair-heartbeat" grep -q "pair-heartbeat" "$ROOT/platform/scripts/chorus-deploy"
+# #3317: deploy discovery is STRUCTURAL (werk-deploy reads the crate's own Cargo.toml) —
+# no registration list to assert against; the Cargo.toml check above IS the ships-condition.
+assert "bash chorus-deploy is retired (#3317)" bash -c "test ! -f '$ROOT/platform/scripts/chorus-deploy'"
 
 # The fragility class is GONE: no agent-cron, no skill-name (the #2317 bug shapes)
 assert "the /pair-heartbeat-check skill is retired" bash -c "test ! -f '$ROOT/skills/pair-heartbeat-check/SKILL.md'"

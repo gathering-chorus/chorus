@@ -70,7 +70,7 @@ usage() {
   echo "  start    <name>  — Start/restart a LaunchAgent"
   echo "  stop     <name>  — Stop a LaunchAgent"
   echo "  restart  <name>  — Stop then start, verify running cdhash matches installed"
-  echo "  deploy   <crate> — chorus-deploy <crate> + kickstart + cdhash verify (#2605)"
+  echo "  deploy   <crate> — werk-deploy crate <crate> + kickstart + cdhash verify (#2605/#3317)"
   echo "  rollback <crate> — Reinstall prior cdhash from manifest, kickstart, verify (#2605)"
   echo "  orphans          — Find and kill orphan processes (ppid=1) on known ports"
   echo "  health           — Summary: running, crashed, dead, duplicates"
@@ -256,7 +256,8 @@ cmd_restart() {
   spine_emit service.restart.completed "service=$label" "pre_pid=$pre_pid" "post_pid=$post_pid" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
 }
 
-# cmd_deploy <crate> — chorus-deploy <crate> + kickstart + cdhash verify.
+# cmd_deploy <crate> — werk-deploy crate <crate> + kickstart + cdhash verify.
+# #3317: the deploy engine is the Rust verb (absorbed bash chorus-deploy).
 # Production code path for #2605 AC3.
 cmd_deploy() {
   local crate="$1"
@@ -272,15 +273,15 @@ cmd_deploy() {
   pre_cdhash=$(running_cdhash "$label")
   spine_emit service.deploy.started "service=$label" "crate=$crate" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   echo "Deploying $crate ($label)..."
-  local chorus_deploy="${SCRIPT_DIR_ASTATE}/chorus-deploy"
-  if [[ ! -x "$chorus_deploy" ]]; then
-    echo "ERROR: chorus-deploy not executable at $chorus_deploy"
-    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=resolve" "reason=chorus-deploy-missing" "exit_code=1"
+  local werk_deploy="${CHORUS_WERK_DEPLOY_BIN:-$(command -v werk-deploy || echo "$HOME/.chorus/bin/werk-deploy")}"
+  if [[ ! -x "$werk_deploy" ]]; then
+    echo "ERROR: werk-deploy not executable at $werk_deploy"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=resolve" "reason=werk-deploy-missing" "exit_code=1"
     return 1
   fi
-  if ! "$chorus_deploy" "$crate"; then
-    echo -e "${RED}chorus-deploy failed${NC}"
-    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=chorus-deploy" "reason=build-fail" "exit_code=1"
+  if ! CHORUS_HOME="${CHORUS_HOME:-$SCRIPT_DIR_ASTATE/../..}" "$werk_deploy" crate "$crate"; then
+    echo -e "${RED}werk-deploy failed${NC}"
+    spine_emit service.deploy.failed "service=$label" "crate=$crate" "step=werk-deploy" "reason=build-fail" "exit_code=1"
     return 1
   fi
   if ! launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1; then
@@ -301,7 +302,7 @@ cmd_deploy() {
   spine_emit service.deploy.completed "service=$label" "crate=$crate" "pre_pid=$pre_pid" "post_pid=$post_pid" "pre_cdhash=$pre_cdhash" "post_cdhash=$post_cdhash"
 }
 
-# cmd_rollback <crate> — invoke chorus-deploy <crate> --rollback + kickstart + verify.
+# cmd_rollback <crate> — invoke werk-deploy crate <crate> --rollback + kickstart + verify.
 cmd_rollback() {
   local crate="$1"
   local label
@@ -316,8 +317,8 @@ cmd_rollback() {
   pre_cdhash=$(running_cdhash "$label")
   spine_emit service.rollback.started "service=$label" "crate=$crate" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash" "target_cdhash=prior"
   echo "Rolling back $crate ($label)..."
-  local chorus_deploy="${SCRIPT_DIR_ASTATE}/chorus-deploy"
-  if ! "$chorus_deploy" "$crate" --rollback; then
+  local werk_deploy="${CHORUS_WERK_DEPLOY_BIN:-$(command -v werk-deploy || echo "$HOME/.chorus/bin/werk-deploy")}"
+  if ! CHORUS_HOME="${CHORUS_HOME:-$SCRIPT_DIR_ASTATE/../..}" "$werk_deploy" crate "$crate" --rollback; then
     echo -e "${RED}rollback failed${NC}"
     spine_emit service.rollback.failed "service=$label" "crate=$crate" "step=restore" "reason=no-prior-cdhash" "exit_code=1"
     return 1

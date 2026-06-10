@@ -211,7 +211,7 @@ fi
 # traceable to a commit via the binary.deployed spine event.
 #
 # #2774: BUILD_SKIP_INSTALL=1 splits build from deploy in the building-pipeline.
-# chorus-build (build-only) sets this; chorus-deploy invokes chorus-bin-install
+# chorus-build (build-only) sets this; werk-deploy invokes chorus-bin-install
 # separately. Default unset → install runs (preserves existing call sites).
 if [ -n "${BUILD_SKIP_INSTALL:-}" ]; then
   echo "build-signed: BUILD_SKIP_INSTALL set — skipping install to ~/.chorus/bin/"

@@ -436,13 +436,13 @@ const SERVICE_RESTART_TOOL_DEF = {
 
 const SERVICE_DEPLOY_TOOL_DEF = {
   name: 'chorus_service_deploy',
-  description: 'Use this to deploy a chorus crate end-to-end: chorus-deploy (build + install) + launchctl kickstart + cdhash verify in one atomic flow. Emits paired service.deploy.{started,completed,failed}. Wraps `agent-state.sh deploy <crate>`. Refusal taxonomy: service-not-found | build-fail | kickstart-fail | cdhash-divergence | verify-timeout. Write verb with per-unit authority per #2927 (chorus-api → kade, chorus-hooks → silas, cards-sdk → wren). Do NOT use as part of /acp flow (chorus_acp triggers building-pipeline which deploys via launchd) or to install without rebuilding (no such variant exists — every deploy rebuilds from current werk state).',
+  description: 'Use this to deploy a chorus crate end-to-end: `werk-deploy crate <name>` (the native engine, #3317) + launchctl kickstart + cdhash verify in one atomic flow. Emits paired service.deploy.{started,completed,failed}. Wraps `agent-state.sh deploy <crate>`. Refusal taxonomy: service-not-found | build-fail | kickstart-fail | cdhash-divergence | verify-timeout. Write verb with per-unit authority per #2927 (chorus-api → kade, chorus-hooks → silas, cards-sdk → wren). Do NOT use as part of the land flow (the verb pipeline deploys canonical in-flow) or to install without rebuilding (no such variant exists — every deploy rebuilds from current werk state).',
   inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name (chorus-api, chorus-hooks, chorus-inject)' } }, required: ['service'] },
 } as const;
 
 const SERVICE_ROLLBACK_TOOL_DEF = {
   name: 'chorus_service_rollback',
-  description: 'Use this to roll back a chorus crate to the prior cdhash from manifest — restore the previous binary, kickstart, verify. Emits paired service.rollback.{started,completed,failed}. Wraps `agent-state.sh rollback <crate>` which invokes `chorus-deploy <crate> --rollback`. Refusal taxonomy: service-not-found | no-prior-cdhash | restore-fail | kickstart-fail | verify-fail. Write verb with per-unit authority per #2927. Do NOT use as a substitute for `git revert` (rollback only restores binary; source state stays at HEAD) or to roll back further than one step (manifest holds only the immediately-prior cdhash today).',
+  description: 'Use this to roll back a chorus crate to the prior cdhash from manifest — restore the previous binary, kickstart, verify. Emits paired service.rollback.{started,completed,failed}. Wraps `agent-state.sh rollback <crate>` which invokes `werk-deploy crate <crate> --rollback` (#3317). Refusal taxonomy: service-not-found | no-prior-cdhash | restore-fail | kickstart-fail | verify-fail. Write verb with per-unit authority per #2927. Do NOT use as a substitute for `git revert` (rollback only restores binary; source state stays at HEAD) or to roll back further than one step (manifest holds only the immediately-prior cdhash today).',
   inputSchema: { type: 'object', properties: { service: { type: 'string', minLength: 1, description: 'Crate name to roll back' } }, required: ['service'] },
 } as const;
 
@@ -455,7 +455,7 @@ const CHORUS_BUILD_TOOL_DEF = {
   // #3310 — renamed chorus_build → werk-build (ADR-031/032: the verb family is werk-<verb>;
   // no chorus_-prefixed pseudo-verb). chorus_build removed, not aliased.
   name: 'werk-build',
-  description: 'Use this to run werk-build for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-build with role + card env, returning structured exit + stdout + stderr. Wraps the verb binary; per #3107 the build returns Ok-empty on no-build-cycle (docs/config/graph-only cards) rather than refusing. Use from werk-demo or any orchestrator that needs to drive a card\'s build without subprocess-shelling. Refusal taxonomy: usage-error | no-werk | branch-mismatch | build-fail. Do NOT use to deploy (chorus_deploy) or to rebuild verbs system-wide (chorus-deploy --all werk via building-pipeline.yml).',
+  description: 'Use this to run werk-build for a card from the role\'s werk. Invokes ~/.chorus/bin/werk-build with role + card env, returning structured exit + stdout + stderr. Wraps the verb binary; per #3107 the build returns Ok-empty on no-build-cycle (docs/config/graph-only cards) rather than refusing. Use from werk-demo or any orchestrator that needs to drive a card\'s build without subprocess-shelling. Refusal taxonomy: usage-error | no-werk | branch-mismatch | build-fail. Do NOT use to deploy (chorus_deploy).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1362,7 +1362,7 @@ function extractStderr(err: unknown): string {
 // as cards are pulled and acp'd. readdir is microseconds; this is per-MCP-
 // request. Correctness over a cache that silently goes stale.
 // #3173 — resolve acp's promote SOURCE to the ONE live deploy slot:
-// $WERK_<ROLE>_BIN (chorus-werk/<role>-bin/), exactly where chorus-deploy /
+// $WERK_<ROLE>_BIN (chorus-werk/<role>-bin/), exactly where werk-deploy /
 // werk-deploy --target werk installs and the verb wrapper reads. Prefers the
 // explicit env var (the same one deploy + wrapper use — one convention); derives
 // chorus-werk/<role>-bin only as a fallback. The retired `repoRoot/.werk-bin`

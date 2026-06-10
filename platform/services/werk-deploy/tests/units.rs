@@ -1,12 +1,47 @@
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
-    branch_name, cdhash_divergences, chorus_bin_install_cmd, crate_binaries, crate_binary, demo_cdhashes,
-    extract_running_cdhash, parse_build_summary, parse_target, require_approval, resolve_trace,
-    service_for_crate, spine_args, target_class_in, TargetClass,
+    branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,
+    crate_binaries_in, crate_binaries_with_service_in, demo_cdhashes, extract_running_cdhash,
+    live_main_flag, mcp_init_ready, parse_build_summary, parse_target, require_approval,
+    resolve_trace, service_for_crate, spine_args, target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// #3317 — structural binary discovery (port of bash chorus-deploy's crate_binaries, the
+// #3179/#3250 union rule): enumerate EVERY binary a crate emits = explicit [[bin]] names ∪
+// src/bin/*.rs autobins, with the package name as the single-binary fallback. Kills the
+// allowlist class — a crate that gains a binary nobody hand-listed shipped stale before.
+#[test]
+fn crate_binaries_in_unions_explicit_bins_and_src_bin_autobins() {
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    // the #3250 drift: declares one [[bin]] but carries extra src/bin/*.rs — must return ALL 3
+    let dir = std::env::temp_dir().join(format!("wd-cb-{}", n));
+    fs::create_dir_all(dir.join("src/bin")).unwrap();
+    fs::write(dir.join("Cargo.toml"),
+        "[package]\nname = \"werk-accept\"\n\n[[bin]]\nname = \"werk-accept\"\npath = \"src/main.rs\"\n").unwrap();
+    fs::write(dir.join("src/main.rs"), "fn main(){}").unwrap();
+    fs::write(dir.join("src/bin/werk-do-more.rs"), "fn main(){}").unwrap();
+    fs::write(dir.join("src/bin/werk-finalize.rs"), "fn main(){}").unwrap();
+    let mut got = crate_binaries_in(&dir);
+    got.sort();
+    assert_eq!(got, vec!["werk-accept".to_string(), "werk-do-more".to_string(), "werk-finalize".to_string()]);
+    fs::remove_dir_all(&dir).ok();
+
+    // simple single-binary crate (no [[bin]], no src/bin) → falls back to package name
+    let d2 = std::env::temp_dir().join(format!("wd-cb2-{}", n));
+    fs::create_dir_all(&d2).unwrap();
+    fs::write(d2.join("Cargo.toml"), "[package]\nname = \"werk-merge\"\nversion = \"0.1.0\"\n").unwrap();
+    assert_eq!(crate_binaries_in(&d2), vec!["werk-merge".to_string()]);
+    fs::remove_dir_all(&d2).ok();
+
+    // no Cargo.toml → basename fallback
+    let d3 = std::env::temp_dir().join(format!("wd-cb3-{}", n));
+    fs::create_dir_all(&d3).unwrap();
+    assert_eq!(crate_binaries_in(&d3), vec![format!("wd-cb3-{}", n)]);
+    fs::remove_dir_all(&d3).ok();
+}
 
 // #3316 — "what you demo is what ships", PROVEN not assumed. Prod builds from merged main
 // (no copy); because build is a pure function of source, the prod cdhash must equal the
@@ -66,7 +101,10 @@ fn werk_fixture(tag: &str) -> PathBuf {
         fs::write(&p, body).unwrap();
     };
     // Rust crates: one with a committed plist (service), werk-* are CLI verbs.
-    w("platform/services/chorus-hooks/Cargo.toml", "[package]\nname=\"chorus-hooks\"\n");
+    // chorus-hooks mirrors the real crate: TWO [[bin]] entries (daemon + shim) so the
+    // structural service-binary selection (#3317) is exercised, not just the fallback.
+    w("platform/services/chorus-hooks/Cargo.toml",
+        "[package]\nname=\"chorus-hooks\"\n\n[[bin]]\nname = \"chorus-hooks\"\npath = \"src/main.rs\"\n\n[[bin]]\nname = \"chorus-hook-shim\"\npath = \"src/shim.rs\"\n");
     w("platform/services/chorus-inject/Cargo.toml", "[package]\nname=\"chorus-inject\"\n");
     w("platform/services/werk-deploy/Cargo.toml", "[package]\nname=\"werk-deploy\"\n");
     // committed launchd plists (the structural "is it a service?" signal).
@@ -92,40 +130,41 @@ fn werk_fixture(tag: &str) -> PathBuf {
     root
 }
 
-// --- #3179: a crate can emit MORE THAN ONE binary; werk-deploy must deploy them all
-// and verify the DAEMON binary, not whichever one crate_binary happened to name. ---
+// --- #3179/#3317: a crate can emit MORE THAN ONE binary; werk-deploy must deploy them
+// all and verify the DAEMON binary — now discovered STRUCTURALLY, no hardcoded map. ---
 
 #[test]
-fn crate_binaries_lists_all_binaries_with_the_daemon_flagged() {
+fn crate_binaries_with_service_flags_the_daemon_structurally() {
     // chorus-hooks emits TWO: the daemon (chorus-hooks/main.rs → com.chorus.hooks) and
     // the PreToolUse shim (chorus-hook-shim). Installing only one left the daemon on
     // stale code behind a green deploy (#3179 false-green). is_service=true marks the
-    // binary the launchd service runs — that's the one whose cdhash gates the deploy.
+    // binary the launchd service runs — the one named like the crate (cargo's package
+    // binary), read from the crate's OWN Cargo.toml, not a crate→bin map.
+    let root = werk_fixture("cbsvc");
     assert_eq!(
-        crate_binaries("chorus-hooks"),
+        crate_binaries_with_service_in(&root.join("platform/services/chorus-hooks"), "chorus-hooks"),
         vec![
             ("chorus-hooks".to_string(), true),
             ("chorus-hook-shim".to_string(), false),
         ]
     );
-    // exactly one service binary, and it's the daemon (not the shim)
-    assert_eq!(
-        crate_binaries("chorus-hooks").into_iter().filter(|(_, s)| *s).map(|(b, _)| b).collect::<Vec<_>>(),
-        vec!["chorus-hooks".to_string()]
-    );
-
     // single-binary crates unchanged: just themselves, as the service binary (AC5 no-regression)
-    assert_eq!(crate_binaries("chorus-inject"), vec![("chorus-inject".to_string(), true)]);
-    assert_eq!(crate_binaries("chorus-mcp"), vec![("chorus-mcp".to_string(), true)]);
-}
-
-#[test]
-fn crate_binary_returns_the_service_daemon_binary() {
-    // #3179 — crate_binary feeds RustService.bin (the kickstart-verify target). For
-    // chorus-hooks it must be the DAEMON, not the shim. Single-binary crates: themselves.
-    assert_eq!(crate_binary("chorus-hooks"), "chorus-hooks");
-    assert_eq!(crate_binary("chorus-inject"), "chorus-inject");
-    assert_eq!(crate_binary("chorus-mcp"), "chorus-mcp");
+    assert_eq!(
+        crate_binaries_with_service_in(&root.join("platform/services/chorus-inject"), "chorus-inject"),
+        vec![("chorus-inject".to_string(), true)]
+    );
+    // no binary named like the crate → the FIRST discovered binary is the service
+    // (a crate whose only binaries are renamed [[bin]] entries still gets a verify target).
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let d = std::env::temp_dir().join(format!("wd-cbs-{}", n));
+    fs::create_dir_all(&d).unwrap();
+    fs::write(d.join("Cargo.toml"),
+        "[package]\nname = \"renamed\"\n\n[[bin]]\nname = \"other-bin\"\npath = \"src/main.rs\"\n").unwrap();
+    assert_eq!(
+        crate_binaries_with_service_in(&d, "renamed"),
+        vec![("other-bin".to_string(), true)]
+    );
+    fs::remove_dir_all(&d).ok();
 }
 
 #[test]
@@ -266,14 +305,37 @@ fn extract_running_cdhash_parses_codesign() {
     assert_eq!(extract_running_cdhash("no cdhash"), None);
 }
 
+// #3317 — pure halves of the native canonical engine (bash chorus-deploy absorbed).
+
 #[test]
-fn crate_binary_maps_hooks_to_daemon_else_identity() {
-    // #3179 — was "chorus-hook-shim" (the bug): the service binary must be the DAEMON
-    // (chorus-hooks/main.rs, the binary com.chorus.hooks runs), so the deploy verifies
-    // the right thing. Everything else is identity.
-    assert_eq!(crate_binary("chorus-hooks"), "chorus-hooks");
-    assert_eq!(crate_binary("chorus-inject"), "chorus-inject");
-    assert_eq!(crate_binary("werk-build"), "werk-build");
+fn card_from_subject_takes_the_first_card_number() {
+    // bash parity: `git log -1 --pretty=%s | grep -oE '#[0-9]+' | head -1`
+    assert_eq!(card_from_subject("silas: #3317 (#534)"), 3317);
+    assert_eq!(card_from_subject("kade: acp #3294"), 3294);
+    assert_eq!(card_from_subject("hand-edited commit, no card"), 0);
+    assert_eq!(card_from_subject("trailing hash # then #42"), 42);
+}
+
+#[test]
+fn live_main_flag_true_only_when_neither_behind_nor_ahead() {
+    // #3270 — deploy.completed states the merged≠live truth: live_main=true only when
+    // the deployed HEAD IS origin/main.
+    assert_eq!(live_main_flag(0, 0), "true");
+    assert_eq!(live_main_flag(1, 0), "false");
+    assert_eq!(live_main_flag(0, 1), "false");
+}
+
+#[test]
+fn mcp_init_ready_requires_protocol_version_inside_a_result() {
+    // #2997 port — success = the SSE body carries protocolVersion in a result field:
+    // the unambiguous signal the MCP middleware answered as a valid server.
+    assert!(mcp_init_ready("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\"}}\n"));
+    // an error wrapper is NOT ready
+    assert!(!mcp_init_ready("data: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000}}\n"));
+    // a generic 200 from the wrong handler is NOT ready
+    assert!(!mcp_init_ready("<html>ok</html>"));
+    // protocolVersion outside a data: line is NOT ready (not an SSE answer)
+    assert!(!mcp_init_ready("{\"result\":{\"protocolVersion\":\"x\"}}"));
 }
 
 #[test]
