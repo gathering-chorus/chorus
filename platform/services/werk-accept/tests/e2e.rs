@@ -185,4 +185,36 @@ fn signal_then_finalize_one_exit_verb() {
     let not_wip = signal(9004, "kade", "jeff", &home);
     assert!(not_wip.is_err(), "go on a non-WIP card refuses");
     assert!(format!("{:?}", not_wip).contains("WIP"), "refusal names the WIP requirement; got: {:?}", not_wip);
+
+    // (9) gate_decision OWNER-UNRESOLVED: if `cards view` returns no owner field, accept
+    //     cannot prove non-self-accept, so it must REFUSE (never admit). Re-point the
+    //     cards shim to omit owner when CARDS_OWNER=__none__.
+    write_exec(&scripts.join("cards"),
+        "#!/bin/sh\ncase \"$1\" in\n view) if [ \"$CARDS_OWNER\" = \"__none__\" ]; then echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-WIP}\\\" }\"; else echo \"{ \\\"status\\\": \\\"${CARDS_STATUS:-WIP}\\\", \\\"owner\\\": \\\"${CARDS_OWNER:-kade}\\\" }\"; fi ;;\n done) echo \"cards done $2\" >> \"$SHIM_LOG\" ;;\nesac\n");
+    std::env::set_var("CARDS_STATUS", "WIP");
+    std::env::set_var("CARDS_OWNER", "__none__");
+    let unresolved = signal(9005, "kade", "jeff", &home);
+    assert!(unresolved.is_err(), "owner-unresolved must refuse (can't prove non-self-accept)");
+    assert!(format!("{:?}", unresolved).to_lowercase().contains("owner"),
+        "refusal names the unresolved owner; got: {:?}", unresolved);
+
+    // (10) finalize ENV-DOWN-FAILURE honest witness: a failing env-down must be WITNESSED
+    //      (finalize.env_down.failed), NOT swallowed, and finalize must still COMPLETE
+    //      (teardown failure ≠ accept failure). Re-point werk-deploy to fail on env-down.
+    write_exec(&chorus_bin.join("werk-deploy"),
+        "#!/bin/sh\nif [ \"$1\" = \"env-down\" ] && [ \"$WERKDEPLOY_ENVDOWN_FAIL\" = \"1\" ]; then echo \"werk-deploy $@ FAIL\" >> \"$SHIM_LOG\"; exit 1; fi\necho \"werk-deploy $@\" >> \"$SHIM_LOG\"\n");
+    std::env::set_var("CARDS_OWNER", "kade");
+    fs::write(&demo_witness, format!(
+        "{}{{\"ts\":3,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9006,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        fs::read_to_string(&demo_witness).unwrap_or_default()
+    )).unwrap();
+    std::env::set_var("WERKDEPLOY_ENVDOWN_FAIL", "1");
+    let fin_witness = home.join("ops/logs/werk-accept.jsonl");
+    let fin = finalize(9006, "kade", &home).expect("finalize COMPLETES despite env-down failure");
+    assert!(fin.contains("finalized"), "finalize still reports done; got: {}", fin);
+    let wlog = fs::read_to_string(&fin_witness).unwrap_or_default();
+    assert!(wlog.contains("finalize.env_down.failed") && wlog.contains("\"result\":\"fail\""),
+        "env-down failure is witnessed honestly, not swallowed; got:\n{}", wlog);
+    assert!(wlog.contains("finalize.completed"), "finalize completes past the teardown failure");
+    std::env::set_var("WERKDEPLOY_ENVDOWN_FAIL", "0");
 }

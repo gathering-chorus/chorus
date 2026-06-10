@@ -54,6 +54,22 @@ fn parse_accept_args_recognizes_atomic_anywhere() {
     assert!(parse_accept_args(&["3298".into()]).is_err(), "role required");
 }
 
+// #3332 — `--atomic` BEHAVIORAL PIN: the parser recognizes it (above), but accept has
+// NO atomic-specific behavior — run_accept_in(card, role, accepter, home) takes no
+// atomic flag, so it is structurally impossible for the parsed value to change the
+// accept path. run_accept binds it as `_atomic` (unused). This pins it as parsed-but-
+// no-op (vs commit/push/merge where --atomic means commit-without-rebase): a future
+// edit that tries to branch accept on --atomic would have no parameter to branch on.
+#[test]
+fn atomic_is_parsed_but_a_noop_for_accept() {
+    let (c1, r1, a1) = parse_accept_args(&["3332".into(), "wren".into(), "--atomic".into()]).unwrap();
+    let (c2, r2, a2) = parse_accept_args(&["3332".into(), "wren".into()]).unwrap();
+    // the flag is parsed (recognized) but the (card, role) accept drives on are identical
+    // with or without it — the only difference is the flag the verb then ignores.
+    assert_eq!((c1, r1.as_str()), (c2, r2.as_str()), "--atomic must not alter the accept target");
+    assert!(a1 && !a2, "flag parsed true/false, but run_accept_in takes no atomic param → no-op");
+}
+
 // #3324 AUDIT — demo_decision_line_carries_more_and_no_go deleted: no-go/more
 // emission belonged to werk-do-more, removed by #3311; nothing writes those
 // values (write_decision is only ever called with "go").
