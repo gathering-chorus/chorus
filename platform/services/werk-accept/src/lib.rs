@@ -39,9 +39,10 @@ pub type R<T> = Result<T, String>;
 
 // --- pure helpers (unit-tested) ---
 
-pub fn branch_name(role: &str, card: u64) -> String {
-    format!("{}/{}", role, card)
-}
+// #3331 — branch_name REMOVED: zero callers since #3175 made accept finalize-only
+// (branch close is chorus-werk remove's). Confirmed semantically: ast-grep found no
+// `branch_name(...)` call anywhere in the crate; the only other mention was the
+// units.rs import (cleaned with it).
 
 /// AUTHORITY GATE (DEC-048). Only Wren/Jeff may finalize a card. Pure so the rule
 /// is exhaustively testable and lives in exactly one place. Wren's spec, exact:

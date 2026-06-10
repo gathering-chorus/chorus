@@ -3,7 +3,7 @@
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
 use werk_accept::{
-    accept_output, branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line,
+    accept_output, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line,
     parse_accept_args, script_path,
 };
 

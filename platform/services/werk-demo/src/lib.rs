@@ -234,58 +234,12 @@ pub fn render_gate_feedback(witness: &str, card: u64) -> String {
     }
 }
 
-/// #3237 — Jeff's three-way demo decision: the ONLY human input to the blocking
-/// demo step. go = accept → merge; no-go = reject → unpull; more = iterate.
-/// "go" IS the DEC-048 accept — there is no separate werk-accept step.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
-    Go,
-    NoGo,
-    More,
-}
-
-impl Decision {
-    /// The act ↔ werk-demo exit-code contract (locked with Kade): go → 0 (act
-    /// continues to merge); no-go | more → 2 (act stops, nothing merged) — a
-    /// CLEAN/intended stop, a distinct code from a real error (1) so the witness
-    /// never reads an intended stop as red (the werk.failed-reads-red trap).
-    pub fn exit_code(&self) -> i32 {
-        match self {
-            Decision::Go => 0,
-            Decision::NoGo | Decision::More => 2,
-        }
-    }
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Decision::Go => "go",
-            Decision::NoGo => "no-go",
-            Decision::More => "more",
-        }
-    }
-
-    fn parse(s: &str) -> Option<Decision> {
-        match s {
-            "go" => Some(Decision::Go),
-            "no-go" => Some(Decision::NoGo),
-            "more" => Some(Decision::More),
-            _ => None,
-        }
-    }
-}
-
-/// Scan the witness for the LATEST `demo.decision` recorded for this card and
-/// return Jeff's go/no-go/more. None = no decision yet → the binary keeps
-/// blocking. card is matched comma-terminated (`"card_id":N,`) so card 31's
-/// decision can't satisfy card 3 — same anti-collision rule as gates_missing.
-pub fn read_decision(witness: &str, card: u64) -> Option<Decision> {
-    let card_key = format!("\"card_id\":{},", card);
-    witness
-        .lines()
-        .rev()
-        .filter(|l| l.contains("\"event\":\"demo.decision\"") && l.contains(&card_key))
-        .find_map(|l| json_str_field(l, "decision").and_then(|d| Decision::parse(&d)))
-}
+// #3331 — the #3237 Decision enum + read_decision were REMOVED here: #3279 retired
+// the blocking-decision step (demo presents-and-exits; werk-land's shared-trace
+// records the verdict, werk-accept byte-matches the demo.decision line format
+// independently). Zero call sites confirmed semantically (ast-grep: no
+// `read_decision(...)` anywhere; every `Decision::` reference was inside this
+// block itself; chorus-hooks' `Decision` in types.rs is an unrelated type).
 
 /// #3263 — the latest `demo.test_result` recorded for this card, if any. The
 /// pipeline's test step records pass|fail to the witness so the informed-go
