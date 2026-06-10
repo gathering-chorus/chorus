@@ -154,25 +154,21 @@ fn commit_refuses_on_rebase_conflict_and_preserves_the_werk() {
 
     let res = commit(9102, "kade", "conflict test", &home, &werk_base);
 
-    // refused with the typed reason — never a swallowed half-merge.
-    let err = res.expect_err("must refuse on rebase conflict");
+    // #3304 — the conflict HOLDS (replaces #3186's abort-and-refuse): typed message
+    // naming the in-verb follow-ups, markers left in the werk, rebase in progress.
+    let err = res.expect_err("must hold on rebase conflict");
     assert!(err.contains("rebase-conflict"), "typed rebase-conflict reason, got: {}", err);
+    assert!(err.contains("--continue") && err.contains("--abort"),
+        "held message names both verb follow-ups, got: {}", err);
 
-    // werk PRESERVED: clean tree (no half-applied rebase), still on the card branch,
-    // and the card's work survives as a local commit.
-    let status = Command::new("git")
-        .args(["-C", werk.to_str().unwrap(), "status", "--porcelain"])
-        .output().unwrap();
-    assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty(), "werk tree clean after abort (all-or-nothing)");
-    let br = Command::new("git")
-        .args(["-C", werk.to_str().unwrap(), "rev-parse", "--abbrev-ref", "HEAD"])
-        .output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&br.stdout).trim(), "kade/9102", "still on the card branch");
-    assert_eq!(fs::read_to_string(werk.join("conflict.txt")).unwrap(), "kade-line\n", "card work preserved verbatim");
+    let f = fs::read_to_string(werk.join("conflict.txt")).unwrap();
+    assert!(f.contains("<<<<<<<") && f.contains(">>>>>>>"),
+        "conflict markers left in the werk for the human: {f}");
+    // the card's commit is preserved on the branch ref while the rebase is held.
     let log = Command::new("git")
-        .args(["-C", werk.to_str().unwrap(), "log", "--oneline", "-1"])
+        .args(["-C", werk.to_str().unwrap(), "log", "--oneline", "-1", "kade/9102"])
         .output().unwrap();
-    assert!(String::from_utf8_lossy(&log.stdout).contains("#9102"), "card commit preserved");
+    assert!(String::from_utf8_lossy(&log.stdout).contains("#9102"), "card commit preserved on the branch ref");
 }
 
 // #3162 — werk-commit must surface its failures on the ONE spine, carrying the
@@ -314,4 +310,129 @@ fn commit_fails_loud_when_home_is_not_a_git_repo() {
         lc.contains("chorus_home") || lc.contains("not a git repo") || lc.contains("git repo"),
         "message must clearly name the CHORUS_HOME/git-repo problem, got: {}", err
     );
+}
+
+// ═══ #3304 — interactive in-verb conflict resolution ═══
+// Shared scaffold: origin with file F, home clone, card werk that edits F, then a
+// peer edits the SAME lines of F on origin/main → the rebase MUST conflict.
+fn conflict_repo(card: u64) -> (PathBuf, PathBuf, PathBuf) {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("f.txt"), "base\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk");
+    let werk = werk_base.join(format!("kade-{}", card));
+    git(&home, &["worktree", "add", "-q", "-b", &format!("kade/{}", card), werk.to_str().unwrap(), "origin/main"]);
+    fs::write(werk.join("f.txt"), "card-version\n").unwrap();
+
+    // peer rewrites the same line on origin/main AFTER the werk forked.
+    fs::write(origin.join("f.txt"), "peer-version\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer moved main"]);
+    (home, werk_base, werk)
+}
+
+fn rebase_in_progress(werk: &Path) -> bool {
+    let out = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-parse", "--git-path", "rebase-merge"])
+        .output().unwrap();
+    Path::new(String::from_utf8_lossy(&out.stdout).trim()).exists() || {
+        let out = Command::new("git")
+            .args(["-C", werk.to_str().unwrap(), "rev-parse", "--git-path", "rebase-apply"])
+            .output().unwrap();
+        Path::new(String::from_utf8_lossy(&out.stdout).trim()).exists()
+    }
+}
+
+// AC1: a rebase conflict HOLDS — markers left in the werk for the human, no
+// abort-and-refuse. The Err names the in-verb follow-ups, never raw git.
+// AC2 + AC5: the human edits f.txt, then `--continue` finishes the rebase
+// INTERNALLY (sentinel set) and the commit lands on current main — end to end
+// through the verb.
+#[test]
+fn conflict_holds_markers_then_continue_lands_through_the_verb() {
+    let (home, werk_base, werk) = conflict_repo(9501);
+
+    let err = commit(9501, "kade", "conflict test", &home, &werk_base)
+        .expect_err("conflicting rebase must hold, not succeed");
+    assert!(err.contains("--continue") && err.contains("--abort"),
+        "held message names both verb follow-ups: {err}");
+    assert!(!err.to_lowercase().contains("git rebase"), "never instructs raw git: {err}");
+
+    // the werk HOLDS the conflict: markers present, rebase in progress.
+    let f = fs::read_to_string(werk.join("f.txt")).unwrap();
+    assert!(f.contains("<<<<<<<") && f.contains(">>>>>>>"), "conflict markers left for the human: {f}");
+    assert!(rebase_in_progress(&werk), "rebase held in progress, not aborted");
+
+    // the human resolves by EDITING THE FILE (no git commands).
+    fs::write(werk.join("f.txt"), "resolved-version\n").unwrap();
+
+    let sha = werk_commit::commit_continue(9501, "kade", &home, &werk_base)
+        .expect("--continue finishes the rebase through the verb");
+    assert!(sha.len() >= 7);
+    assert!(!rebase_in_progress(&werk), "rebase finished");
+    let f = fs::read_to_string(werk.join("f.txt")).unwrap();
+    assert_eq!(f, "resolved-version\n", "resolution content landed");
+    // landed ON current main: exactly one card commit ahead, zero behind.
+    git(&werk, &["fetch", "-q", "origin", "main"]);
+    let ahead = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-list", "--count", "origin/main..HEAD"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&ahead.stdout).trim(), "1");
+    let behind = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-list", "--count", "HEAD..origin/main"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&behind.stdout).trim(), "0");
+}
+
+// AC3: `--abort` restores the pre-rebase state through the verb — card commit
+// preserved, markers gone, no rebase in progress.
+#[test]
+fn abort_restores_pre_rebase_state_through_the_verb() {
+    let (home, werk_base, werk) = conflict_repo(9502);
+
+    let _ = commit(9502, "kade", "conflict test", &home, &werk_base)
+        .expect_err("conflicting rebase must hold");
+    assert!(rebase_in_progress(&werk));
+    let pre = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-parse", "kade/9502"])
+        .output().unwrap();
+    let pre_sha = String::from_utf8_lossy(&pre.stdout).trim().to_string();
+
+    let msg = werk_commit::commit_abort(9502, "kade", &home, &werk_base)
+        .expect("--abort restores through the verb");
+    assert!(!msg.is_empty());
+    assert!(!rebase_in_progress(&werk), "rebase gone after abort");
+    let now = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-parse", "HEAD"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&now.stdout).trim(), pre_sha,
+        "HEAD restored to the pre-rebase card commit");
+    let f = fs::read_to_string(werk.join("f.txt")).unwrap();
+    assert_eq!(f, "card-version\n", "card content restored, markers gone");
+    let status = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "status", "--porcelain"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&status.stdout).trim(), "", "werk clean after abort");
+}
+
+// #3304 — continue/abort without a held rebase is a typed refusal, not a crash.
+#[test]
+fn continue_and_abort_refuse_when_no_rebase_is_in_progress() {
+    let (home, werk_base, _werk) = conflict_repo(9503);
+    // no commit() ran — no rebase in progress.
+    let e = werk_commit::commit_continue(9503, "kade", &home, &werk_base)
+        .expect_err("--continue without a held rebase must refuse");
+    assert!(e.contains("no rebase"), "typed no-rebase refusal: {e}");
+    let e = werk_commit::commit_abort(9503, "kade", &home, &werk_base)
+        .expect_err("--abort without a held rebase must refuse");
+    assert!(e.contains("no rebase"), "typed no-rebase refusal: {e}");
 }
