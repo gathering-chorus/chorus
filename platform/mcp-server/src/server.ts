@@ -2429,11 +2429,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const hours = Number((req.params.arguments as { hours?: number } | undefined)?.hours);
         const h = Number.isFinite(hours) && hours > 0 && hours <= 720 ? String(hours) : '120';
         const pathMod = require('path') as typeof import('path');
-        const cli = pathMod.join(process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus', 'platform/api/dist/flow-report-cli.js');
+        // CHORUS_ROOT first: the variant daemon's plist points it at the card's werk, so a
+        // demo-test exercises the WERK's dist (Wren's #3331 seam); canonical daemon's
+        // CHORUS_ROOT is canonical. CHORUS_HOME fallback for older contexts.
+        const cli = pathMod.join(process.env.CHORUS_ROOT || process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus', 'platform/api/dist/flow-report-cli.js');
         const htmlOut = pathMod.join(process.env.HOME || '', '.chorus/reports/card-cycle-report.html');
         const execFileP = promisify(execFile);
         try {
-          const { stdout } = await execFileP('node', [cli, '--hours', h, '--html', htmlOut], {
+          // process.execPath = the node running THIS daemon — bare 'node' ENOENTs under launchd PATH
+          const { stdout } = await execFileP(process.execPath, [cli, '--hours', h, '--html', htmlOut], {
             timeout: 120000, maxBuffer: 16 * 1024 * 1024,
           });
           return { content: [{ type: 'text' as const, text: stdout }] };
