@@ -90,13 +90,24 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
 }
 
 // Entry: wire real deps. The probe is an HTTP GET to chorus-api's own health route
-// with a timeout; emit appends a spine record; nudge posts to the messaging API.
-// Launched by chorus-eventloop-probe-worker.sh on a LaunchAgent cadence (registration
-// routes through Silas, per the card + ADR-012). Retiring the in-process detector in
-// server.ts is the cutover step that follows this worker landing.
+// with a timeout; emit + nudge are IDENTICAL to the in-process detector's wiring
+// (server.ts ~3346) — same chorus-log `eventloop.blocked silas domain=chorus ...`
+// spine event, same ops-nudge to silas, same 3000ms threshold — so retiring the
+// in-process detector is a transparent cutover (same alert, only the vantage moves
+// off the blocked loop). Launched by chorus-eventloop-probe-worker.sh as a persistent
+// KeepAlive process (LaunchAgent registration routes through Silas, ADR-012).
 if (require.main === module) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { execFile } = require('node:child_process') as typeof import('node:child_process');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require('node:path') as typeof import('node:path');
+  const os = require('node:os') as typeof import('node:os');
+
   const apiBase = process.env.CHORUS_API_BASE || 'http://localhost:3340';
   const timeoutMs = Number(process.env.CHORUS_PROBE_TIMEOUT_MS || 8000);
+  const root = process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects', 'chorus');
+  const CHORUS_LOG = path.join(root, 'platform/scripts/chorus-log');
+  const OPS_NUDGE = path.join(root, 'platform/scripts/ops-nudge');
 
   const probe = async (): Promise<ProbeResult> => {
     const start = Date.now();
@@ -114,7 +125,10 @@ if (require.main === module) {
 
   void runEventloopProbe({
     probe,
-    emit: (a) => console.log(JSON.stringify({ ...a, source: 'eventloop-probe' })),
-    nudge: (a) => console.error(`[eventloop-probe] ${a.message}`),
+    emit: (a) =>
+      execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas', 'domain=chorus',
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
+    nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+    threshold: 3000,
   });
 }
