@@ -152,7 +152,7 @@ if [ "$ALERT" = true ]; then
   # #3213 — session-health NO LONGER NUDGES the session with context-pressure alerts.
   # Jeff asked for this gone twice (2026-05-21, 2026-06-04): the nudge interrupts the
   # session and hands the agent a prompt to perform fatigue/degradation back at him, and
-  # every prior disable was a local toggle that chorus-werk-sync restored — because the
+  # every prior disable was a local toggle that the canonical sync (now werk-sync, #3300) restored — because the
   # nudge lived in this committed script. Removing the OPS_NUDGE delivery at the source so
   # a sync can't bring it back. The WARN echo (above) + the chorus-log line (below) remain
   # for any dashboard that wants the signal; they just don't push into the session.
