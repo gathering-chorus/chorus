@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_accept::{finalize, signal};
+use werk_accept::{finalize, run_accept_in, signal};
 
 fn nanos() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() }
 fn tmp(tag: &str) -> PathBuf {
@@ -133,4 +133,56 @@ fn signal_then_finalize_one_exit_verb() {
     //     doesn't touch the werk, so no worktree setup is needed.
     std::env::set_var("CARDS_OWNER", "wren");
     assert!(signal(9002, "wren", "wren", &home).is_err(), "wren self-accept refused on signal");
+
+    // === #3332: the #3311 FOLD — run_accept_in is signal+finalize in ONE call. The
+    // gap Kade's matrix named: signal()/finalize() were tested SEPARATELY above, the
+    // one-shot fold + idempotent re-run had ZERO coverage — the exact WIP-limbo path
+    // that bit #3319's land and the path #3327's silent-finalize touches. Pin it.
+    let werk2 = werk_base.join("kade-9003");
+    git(&home, &["worktree", "add", "-b", "kade/9003", werk2.to_str().unwrap(), "origin/main"]);
+    fs::write(werk2.join("w.txt"), "x").unwrap();
+    git(&werk2, &["add", "."]);
+    git(&werk2, &["commit", "-q", "-m", "work2"]);
+    git(&werk2, &["push", "-q", "origin", "kade/9003"]);
+    std::env::set_var("CARDS_OWNER", "kade");
+    std::env::set_var("CARDS_STATUS", "WIP");
+    // werk-demo writes the verdict on go; the pipeline's shared-trace records it before
+    // the accept step. Pre-seed it so finalize's verdict-gate is satisfied (as in step 3).
+    fs::write(&demo_witness, format!(
+        "{}{{\"ts\":2,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9003,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        fs::read_to_string(&demo_witness).unwrap_or_default()
+    )).unwrap();
+
+    // (6) ONE-SHOT FOLD (#3327 silent output): jeff accepts kade's WIP card in one call.
+    //     signal records the go silently, finalize closes — accept_output shows ONLY the
+    //     finalize line, never "go signaled… act continues to merge".
+    let out = run_accept_in(9003, "kade", "jeff", &home).expect("one-shot accept of a WIP card");
+    assert!(out.contains("finalized"), "fold output reports finalize; got: {}", out);
+    assert!(!out.contains("go signaled"), "clean fold output must NOT re-announce a go; got: {}", out);
+    assert!(!out.contains("continues to merge"), "no future-tense merge language; got: {}", out);
+    let after_fold = fs::read_to_string(&log).unwrap_or_default();
+    assert!(after_fold.contains("cards done 9003"), "fold finalizes the card");
+    let w9003 = fs::read_to_string(&demo_witness).unwrap_or_default();
+    assert!(w9003.contains("\"card_id\":9003,") && w9003.contains("\"decision\":\"go\""),
+        "fold still RECORDS the go to the witness (not lost); got:\n{}", w9003);
+
+    // (7) IDEMPOTENT partial-finalize re-run: the card is now Done. A re-run (the
+    //     transport-drop / WIP-limbo recovery that un-orphaned today's lands) must
+    //     COMPLETE cleanly — Ok, not Err — via signal's already-Done audit path; and it
+    //     must never re-merge (finalize never merges).
+    std::env::set_var("CARDS_STATUS", "Done");
+    let rerun = run_accept_in(9003, "kade", "jeff", &home)
+        .expect("idempotent re-run of an already-Done card completes, never errors");
+    assert!(rerun.contains("already finalized") || rerun.contains("audit"),
+        "re-run takes the already-Done audit path (#3298); got: {}", rerun);
+    assert!(!fs::read_to_string(&log).unwrap_or_default().contains("pr merge"),
+        "idempotent re-run never merges");
+
+    // (8) signal NOT-WIP refusal: a go applies to a WIP card. A card in any other
+    //     status (e.g. Next) refuses with the typed reason and writes no decision.
+    std::env::set_var("CARDS_OWNER", "kade");
+    std::env::set_var("CARDS_STATUS", "Next");
+    let not_wip = signal(9004, "kade", "jeff", &home);
+    assert!(not_wip.is_err(), "go on a non-WIP card refuses");
+    assert!(format!("{:?}", not_wip).contains("WIP"), "refusal names the WIP requirement; got: {:?}", not_wip);
 }

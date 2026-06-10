@@ -221,13 +221,23 @@ pub fn run_accept() -> R<String> {
     let (card, role, _atomic) = parse_accept_args(&args)?;
     let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
+    run_accept_in(card, &role, &accepter, &home)
+}
+
+/// #3332 — the testable core of the #3311 fold: signal (authority-gated, records the
+/// go) THEN finalize (mechanical close), in ONE call, joined by accept_output (silent
+/// on the clean path, #3327). run_accept() is the thin env/arg wrapper; tests drive
+/// run_accept_in directly against a fixture home (env::args() can't be set in-process).
+/// Idempotent: a re-run after a partial completion (transport-drop / WIP-limbo) re-enters
+/// here — signal hits the already-Done audit path, finalize is idempotent (cards-done on
+/// a Done card no-ops), so the card converges to Done with no double-merge (finalize
+/// never merges; werk-merge owns that, upstream in the pipeline).
+pub fn run_accept_in(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
     // #3311 — GO = ACCEPT: one exit verb. The authority-gated signal records who
-    // accepted, then the mechanical close runs in the same invocation (idempotent —
-    // a re-run completes a partial finalize). werk-finalize (the #3237 twin that held
-    // the close while accept held only the signal) is DELETED; this verb now does
-    // what its own header always claimed: flip Done, close branch + werk, stamp.
-    let sig = signal(card, &role, &accepter, &home)?;
-    let fin = finalize(card, &role, &home)?;
+    // accepted, then the mechanical close runs in the same invocation. werk-finalize
+    // (the #3237 twin) is DELETED; this verb flips Done, closes branch + werk, stamps.
+    let sig = signal(card, role, accepter, home)?;
+    let fin = finalize(card, role, home)?;
     Ok(accept_output(&sig, &fin))
 }
 
