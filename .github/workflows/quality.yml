@@ -327,6 +327,7 @@ jobs:
           - platform/services/werk-demo
           - platform/services/werk-build
           - platform/services/werk-deploy
+          - platform/services/werk-sync
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
