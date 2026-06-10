@@ -73,6 +73,12 @@ async function fetchJob(query: string, startNs: string, endNs: string): Promise<
   return { lines, truncated: true }; // hit the page cap — older events in window missing
 }
 
+/** Escape log-sourced text for HTML interpolation — detail/event come from
+ *  arbitrary log JSON (gate-quality catch: never trust log content in markup). */
+export function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 /** Minimal HTML rendering — same columns as the 06-06 report it replaces. */
 export function buildHtml(report: FlowReport & { generatedAt: string; windowHours: number; truncated: boolean }): string {
   const fmt = (s: number | null) =>
@@ -80,14 +86,14 @@ export function buildHtml(report: FlowReport & { generatedAt: string; windowHour
   const rows = report.cards
     .map((c) => {
       const errs = c.errors
-        .map((e) => `<div class="err">${new Date(e.ts).toLocaleString('en-US', { timeZone: 'America/New_York' })} · ${e.event} · ${e.detail}</div>`)
+        .map((e) => `<div class="err">${new Date(e.ts).toLocaleString('en-US', { timeZone: 'America/New_York' })} · ${esc(e.event)} · ${esc(e.detail)}</div>`)
         .join('');
       return `<tr><td>#${c.card}</td><td>${c.landed ? '✓' : '✗'}</td><td><b>${fmt(c.cycleS)}</b></td>
 <td>${fmt(c.steps.workS)}</td><td>${fmt(c.steps.pushS)}</td><td>${fmt(c.steps.buildS)}</td><td>${fmt(c.steps.deployS)}</td><td>${fmt(c.steps.demoS)}</td><td>${fmt(c.steps.mergeS)}</td><td>${fmt(c.steps.finalS)}</td>
 <td>${c.errors.length ? `<details><summary>${c.errors.length} ▸</summary>${errs}</details>` : '0'}</td></tr>`;
     })
     .join('\n');
-  const classes = report.errorClasses.map((e) => `<li><b>${e.event}</b> × ${e.count}</li>`).join('');
+  const classes = report.errorClasses.map((e) => `<li><b>${esc(e.event)}</b> × ${e.count}</li>`).join('');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Card Cycle Report</title>
 <style>body{font:13px/1.45 ui-monospace,Menlo,monospace;margin:1.5rem;background:#f7f4ee}table{border-collapse:collapse;width:100%;background:#fff}
 th,td{text-align:left;padding:4px 8px;border-bottom:1px solid #eee}th{background:#222;color:#fff;font-size:11px;text-transform:uppercase}
