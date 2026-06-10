@@ -39,7 +39,16 @@ impl Role {
 pub struct HookInput {
     pub tool_name: Option<String>,
     pub tool_input: Option<serde_json::Value>,
+    /// #3334 — Claude Code sends this field as `tool_output` on failure events
+    /// (PostToolUseFailure) and historically as `tool_response`. One field, both
+    /// names, so a failure payload deserializes identically.
+    #[serde(alias = "tool_output")]
     pub tool_response: Option<serde_json::Value>,
+    /// #3334 — top-level failure flag on PostToolUseFailure payloads. The most
+    /// reliable error signal: present even when no numeric exit code exists
+    /// (e.g. killed by signal).
+    #[serde(default)]
+    pub tool_output_is_error: Option<bool>,
     pub session_id: Option<String>,
     pub cwd: Option<String>,
     pub prompt: Option<String>,

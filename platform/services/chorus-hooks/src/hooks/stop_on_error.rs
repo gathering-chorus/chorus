@@ -100,14 +100,25 @@ fn extract_error_text(input: &HookInput) -> String {
     }
 }
 
+/// #3334 — the error signal from the REAL payload shape: numeric `exit_code` in the
+/// tool_response/tool_output object, or the top-level `tool_output_is_error` flag.
+/// Returns Some(code) when the call errored (code 1 stands in when only the flag is
+/// present), None when there is no numeric/flag evidence (text fallback handles legacy).
+fn numeric_error_signal(input: &HookInput) -> Option<i32> {
+    if let Some(serde_json::Value::Object(obj)) = &input.tool_response {
+        if let Some(code) = obj.get("exit_code").and_then(|v| v.as_i64()) {
+            return if code != 0 { Some(code as i32) } else { None };
+        }
+    }
+    if input.tool_output_is_error == Some(true) {
+        return Some(1); // errored without a numeric code (signal kill etc.)
+    }
+    None
+}
+
 /// Check if a Bash tool call resulted in an error that should stop the role
 pub async fn check(input: &HookInput, _state: &AppState) -> HookResponse {
     if input.tool_name_str() != "Bash" {
-        return HookResponse::allow();
-    }
-
-    let response = extract_error_text(input);
-    if response.is_empty() {
         return HookResponse::allow();
     }
 
@@ -121,10 +132,22 @@ pub async fn check(input: &HookInput, _state: &AppState) -> HookResponse {
         }
     }
 
-    // Look for non-zero exit code in the response
-    let exit_code = match EXIT_CODE_RE.captures(&response) {
-        Some(caps) => caps.get(1).and_then(|m| m.as_str().parse::<i32>().ok()).unwrap_or(0),
-        None => return HookResponse::allow(),
+    // #3334 — numeric signal FIRST (the shape Claude Code actually sends: exit_code
+    // number + tool_output_is_error flag). The "Exit code N" TEXT regex below is the
+    // legacy fallback — it alone produced ZERO fires ever, because failures stopped
+    // carrying that text in the fields this hook reads.
+    let exit_code = match numeric_error_signal(input) {
+        Some(code) => code,
+        None => {
+            let response = extract_error_text(input);
+            if response.is_empty() {
+                return HookResponse::allow();
+            }
+            match EXIT_CODE_RE.captures(&response) {
+                Some(caps) => caps.get(1).and_then(|m| m.as_str().parse::<i32>().ok()).unwrap_or(0),
+                None => return HookResponse::allow(),
+            }
+        }
     };
 
     if exit_code == 0 {
@@ -209,7 +232,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     /// Helper: make a Bash input with plain string response (some hooks send this way)
@@ -224,7 +247,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     #[tokio::test]
@@ -335,7 +358,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".to_string()),
-            chorus_worktree_override: None, trace_id: None,};
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,};
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0, "only Bash triggers the gate");
     }
@@ -443,5 +466,102 @@ mod tests {
         let input = make_bash_input("git diff HEAD", "Exit code 1\ndifferences found", "");
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 0, "git diff is benign");
+    }
+
+    // --- #3334: the REAL payload shape — numeric exit_code, tool_output field name,
+    // tool_output_is_error. stop_on_error had ZERO fires ever because it only matched
+    // "Exit code N" TEXT in a field Claude Code stopped sending failures through.
+
+    fn make_input_numeric(command: &str, exit_code: i64) -> HookInput {
+        let mut i = make_bash_input(command, "", "");
+        i.tool_response = Some(json!({"stdout": "", "stderr": "boom", "exit_code": exit_code}));
+        i
+    }
+
+    #[tokio::test]
+    async fn numeric_exit_code_blocks_non_benign() {
+        let state = AppState::new();
+        let input = make_input_numeric("./deploy-thing.sh", 127);
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "numeric exit_code in tool_response must block");
+    }
+
+    #[tokio::test]
+    async fn numeric_exit_zero_allows() {
+        let state = AppState::new();
+        let input = make_input_numeric("./deploy-thing.sh", 0);
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn numeric_exit_benign_grep_allows() {
+        let state = AppState::new();
+        let input = make_input_numeric("grep needle haystack.txt", 1);
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 0, "grep exit 1 = no match, benign");
+    }
+
+    #[tokio::test]
+    async fn tool_output_field_name_deserializes_and_blocks() {
+        // Claude Code sends the field as tool_output on failure events — the serde
+        // alias must accept it identically to tool_response.
+        let raw = json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "./broken.sh"},
+            "tool_output": {"stdout": "", "stderr": "died", "exit_code": 1},
+            "tool_output_is_error": true
+        });
+        let input: HookInput = serde_json::from_value(raw).expect("deserializes");
+        let state = AppState::new();
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "tool_output-named payload must block");
+    }
+
+    #[tokio::test]
+    async fn is_error_flag_blocks_even_without_exit_code() {
+        let raw = json!({
+            "tool_name": "Bash",
+            "tool_input": {"command": "./broken.sh"},
+            "tool_output": {"stdout": "", "stderr": "killed by signal"},
+            "tool_output_is_error": true
+        });
+        let input: HookInput = serde_json::from_value(raw).expect("deserializes");
+        let state = AppState::new();
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "tool_output_is_error alone must block");
+    }
+
+    #[tokio::test]
+    async fn contract_full_documented_failure_payload() {
+        // #3334 CONTRACT TEST (Kade's review ask): the FULL documented PostToolUseFailure
+        // payload, verbatim from the Claude Code hooks docs (code.claude.com/docs/hooks),
+        // deserializes and blocks. If Claude Code drifts this shape again, THIS goes red
+        // instead of the hook silently going zero-fires for another year.
+        let raw = json!({
+            "session_id": "abc123",
+            "transcript_path": "/Users/dev/.claude/projects/x/transcript.jsonl",
+            "cwd": "/project",
+            "permission_mode": "default",
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm install --frozen-lockfile"},
+            "tool_output": {"stdout": "", "stderr": "npm ERR! code ENOENT", "exit_code": 127},
+            "tool_output_is_error": true
+        });
+        let input: HookInput = serde_json::from_value(raw).expect("documented payload deserializes");
+        let state = AppState::new();
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "documented failure payload must block");
+    }
+
+    #[tokio::test]
+    async fn werk_verb_typed_refusals_are_not_benign() {
+        // Kade's hold: werk-* exit 1/2 are TYPED refusals — a refused werk-commit must
+        // block the next call (that's the desired enforcement), unlike grep-no-match.
+        let state = AppState::new();
+        let input = make_input_numeric("werk-commit 9999 kade", 1);
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "a refused werk verb is a real stop, not benign");
     }
 }

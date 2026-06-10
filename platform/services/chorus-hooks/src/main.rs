@@ -654,12 +654,10 @@ async fn post_tool_use(
         let _ = crate::commands::pulse::run(&[]);
     });
 
-    // Ops awareness (#2003 AC3) — surface degraded system state
-    let ops_result = hooks::ops_awareness::check(&input).await;
-    if ops_result.stderr.is_some() {
-        emit_hook_decision("post_tool_use", &input, "ops_awareness", &ops_result, start).await;
-        return Json(ops_result);
-    }
+    // #3334 — ops_awareness RETIRED (deleted, not stubbed). Its stderr whisper fired
+    // 259x/day with zero behavior change (the no-receptor class); system-health
+    // surfacing lives on the alert-runner -> nudge channel, which is the one that
+    // actually reached a human during the 2026-06-10 incidents.
 
     // L3: nudge drain happens on UserPromptSubmit (user_prompt_submit handler), not PostToolUse
     // PostToolUse stderr only surfaces on exit code 2, which signals error — wrong hook for drain
