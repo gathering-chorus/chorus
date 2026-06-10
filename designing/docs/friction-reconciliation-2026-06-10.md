@@ -14,13 +14,13 @@
 | Shell-invoked CLI refusals (cards add flag-refusals ×4, agent-state exit 7) | ~5 | **0** ✗ | nowhere |
 | Transport drops (response lost, server-side success) | 3 | 0 — honest | n/a (server truly succeeded) |
 
-**Capture rate of felt friction: ~12 of 27 ≈ 44%.** The undercount thesis (#3278) is confirmed, with the gaps named:
+**Capture rate of felt friction: ~12 of 27 ≈ 44%.** (Corroborated by a second session the same day: Kade hand-counts ~15 shell refusals + 3 classifier denials, all equally uncaptured.) The undercount thesis (#3278) is confirmed, with the gaps named:
 
 ## Residual undercount, by cause
 
 1. **Classifier denials are structurally invisible** — they happen inside the Claude Code harness before any tool runs; no chorus process ever sees them. Today they were the *highest-impact* blocks of the session (the pkill denial during the load-100 outage cost minutes of downtime). #3281 captured werk-demo refusals, not this class. Closing it needs a harness-side hook (PostToolUse/denial hook emitting to spine) — fill-card material.
 2. **Harness refusals (file-not-read, schema errors)** — same class, same invisibility, lower impact.
-3. **Shell-invoked CLI refusals** — `cards` flag-refusals and verb refusals exit 1 to the session but emit nothing. The MCP path captures; the direct-shell path doesn't. (One-path argument: drive everything through MCP, or give CLIs a refusal-emit.)
+3. **Shell-invoked CLI refusals** — narrower than first written (Kade's review, corroborated by his ~15 invisible shell refusals the same day): the werk-verb *binaries* already jsonl/spine on refuse regardless of invocation path; the gap is exactly the **cards CLI + bash scripts**, which exit 1 and emit nothing. Fix is a refusal-emit in those two surfaces — NOT "force everything through MCP," which today's daemon outage disproved as the robust half of that fork (the shell path was the working fallback all afternoon).
 4. **Transport drops are honestly absent** — the server succeeded; the loss is client-side. Absence here is correct, but it means "Jeff saw a failure, data shows none" is *expected* for this class. Kade's #3320/#3323 shrank the class.
 
 ## The inverse finding: counted-but-not-felt
