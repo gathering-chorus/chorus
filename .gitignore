@@ -143,3 +143,6 @@ roles/*/CLAUDE.md
 .werk-mcp/
 # per-werk API runtime markers — never tracked (#3092; same shape as .werk-mcp)
 .werk-api/
+
+# runtime cursors (pulse-gather/loom-gemba) — state, not source (#3319)
+ops/

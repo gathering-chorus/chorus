@@ -24,6 +24,19 @@ const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "idle"];
 const ROLES: &[&str] = &["wren", "silas", "kade"];
 
+/// #3319 AC4: `observing` decays. Observation is only real while the watcher
+/// keeps polling (loom-gemba re-declares on every poll, refreshing ts). A
+/// watcher that stopped polling for this long isn't observing — the state
+/// computes back on the next sweep (every write + cleanup), no daemon.
+const OBSERVING_TTL_SECS: u64 = 600;
+
+/// Pure decay decision: only `observing` decays, and only past the TTL.
+/// Other states have their own truth signals (pid for liveness; building is
+/// board-backed) — TTL-demoting them would punish legitimately quiet work.
+fn observing_decayed(state: &str, ts: u64, now: u64, ttl_secs: u64) -> bool {
+    state == "observing" && now.saturating_sub(ts) > ttl_secs
+}
+
 fn chorus_log_path() -> String {
     crate::shared::state_paths::chorus_log_file()
 }
@@ -251,25 +264,38 @@ fn sweep_and_demote(verbose: bool) -> usize {
         if !active_states.contains(&state) {
             continue;
         }
-        // Only demote if session is genuinely dead. Don't touch state on slow
-        // tick — pid-alive is the only unambiguous "session is over" signal.
-        if process::find_role_pid(role).is_some() {
+        // Two demotion rules:
+        //   1. Session dead (pid gone) → idle. Pid-alive is the unambiguous
+        //      "session is over" signal; don't touch live states on slow tick.
+        //   2. #3319 AC4: `observing` past TTL → waiting, even with a live
+        //      pid. Observation is only real while the watcher keeps polling
+        //      (loom-gemba re-declares per poll); a stale `observing` is the
+        //      exact lie this state was caught telling on 2026-06-10.
+        let pid_alive = process::find_role_pid(role).is_some();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let declared_ts = parsed["ts"].as_u64().unwrap_or(0);
+        let decayed = observing_decayed(state, declared_ts, now, OBSERVING_TTL_SECS);
+        if pid_alive && !decayed {
             continue;
         }
+        let (new_state, reason) = if !pid_alive {
+            ("idle", "session-dead")
+        } else {
+            ("waiting", "observing-ttl")
+        };
 
-        // Demote to idle. Stamp source="cleanup" so debugging is possible —
+        // Demote. Stamp source="cleanup" so debugging is possible —
         // the next person can see this entry was auto-fixed by sweep, not
         // declared by a writer. No card field — cards belong to the board,
         // not role-state (Jeff's directive 2026-04-30).
         let prev_state = state.to_string();
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         let wall = process::wall_clock();
         let json = format!(
-            r#"{{"role":"{}","state":"idle","ts":{},"last_emit":"{}","session_alive":false,"wall_clock":"{}","source":"cleanup","prev_state":"{}"}}"#,
-            role, ts, wall, wall, prev_state
+            r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}","source":"cleanup","prev_state":"{}"}}"#,
+            role, new_state, now, wall, pid_alive, wall, prev_state
         );
         let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
         if fs::File::create(&tmp).and_then(|mut f| writeln!(f, "{}", json)).is_ok()
@@ -283,12 +309,12 @@ fn sweep_and_demote(verbose: bool) -> usize {
             {
                 let _ = writeln!(
                     log_file,
-                    "role.state.cleanup | role={} prev_state={} reason=session-dead",
-                    role, prev_state
+                    "role.state.cleanup | role={} prev_state={} reason={}",
+                    role, prev_state, reason
                 );
             }
             if verbose {
-                eprintln!("  {} demoted: {} -> idle (session dead)", role, prev_state);
+                eprintln!("  {} demoted: {} -> {} ({})", role, prev_state, new_state, reason);
             }
         }
     }
@@ -328,6 +354,34 @@ fn humanize_duration(secs: u64) -> String {
 mod tests {
     use super::*;
     use std::fs;
+
+    // --- #3319 AC4: observing decays past TTL (pure decision) ---
+
+    #[test]
+    fn observing_past_ttl_decays() {
+        assert!(observing_decayed("observing", 1000, 1000 + OBSERVING_TTL_SECS + 1, OBSERVING_TTL_SECS));
+    }
+
+    #[test]
+    fn observing_within_ttl_holds() {
+        // A re-poll refreshes ts, so an active watcher never crosses the TTL.
+        assert!(!observing_decayed("observing", 1000, 1000 + OBSERVING_TTL_SECS, OBSERVING_TTL_SECS));
+    }
+
+    #[test]
+    fn only_observing_decays_other_states_never_ttl_demoted() {
+        // building/blocked/waiting have their own truth signals — quiet work
+        // is legitimate there. TTL applies to attention claims only.
+        for s in ["building", "blocked", "waiting", "idle"] {
+            assert!(!observing_decayed(s, 0, u64::MAX, OBSERVING_TTL_SECS), "{} must not TTL-decay", s);
+        }
+    }
+
+    #[test]
+    fn observing_clock_skew_is_safe() {
+        // ts in the future (clock skew) must not underflow or decay.
+        assert!(!observing_decayed("observing", 5000, 1000, OBSERVING_TTL_SECS));
+    }
 
     // --- AC2: declare/query round-trip ---
 

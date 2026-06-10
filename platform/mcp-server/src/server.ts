@@ -189,6 +189,12 @@ const WerkPushInput = z.object({
   card_id: z.number().int().positive().describe('Card ID whose werk branch to push.'),
 }).strict();
 
+// #3319 — loom-gemba input. Observation is watcher→target, not card-scoped.
+const LoomGembaInput = z.object({
+  role: z.enum(['kade', 'wren', 'silas']).describe('Observer role — who is watching. DEPLOY_ROLE attribution + the observing state declared.'),
+  target: z.enum(['kade', 'wren', 'silas']).describe('Target role being observed.'),
+}).strict();
+
 // #3175 — werk-merge input. Thin skin over the rust werk-merge verb.
 const WerkMergeInput = z.object({
   role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk branch <role>/<card> being merged to main.'),
@@ -942,6 +948,29 @@ const PULL_CARD_TOOL_DEF = {
       },
     },
     required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+const LOOM_GEMBA_TOOL_DEF = {
+  name: 'loom-gemba',
+  description:
+    'Observe a role working — one poll of the loom-gemba observation verb (#3319). Invoking it IS the declaration: the verb sets role-state `observing gemba=<target>`, gathers the target\'s fresh turns via the pulse-gather core (own durable cursor — exact, no replay, no loss), emits a gemba.observed spine event, and returns banner + turns. The FIRST stdout line is always the visibility banner `[gemba] <watcher>→<target> | since <cursor> | <n> new turns` — including empty polls (quiet) and missing-stream (rebuilding, never false-idle). In focus mode the caller MUST paste the returned text into its reply — that text is the only thing Jeff sees. Re-invoke to keep watching; there is no background loop. The /gemba skill calls this and nothing else.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Observer role — who is watching.',
+      },
+      target: {
+        type: 'string',
+        enum: ['kade', 'wren', 'silas'],
+        description: 'Target role being observed.',
+      },
+    },
+    required: ['role', 'target'],
     additionalProperties: false,
   },
 } as const;
@@ -1975,7 +2004,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'loom-gemba',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2511,6 +2540,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
+      LOOM_GEMBA_TOOL_DEF,
       WERK_PUSH_TOOL_DEF,
       WERK_MERGE_TOOL_DEF,
       WERK_ACCEPT_TOOL_DEF,
@@ -2715,6 +2745,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         // #3135: pull logic lives in the rust `werk-pull` core; the skin just execs it.
         return executeWerkVerb('werk-pull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+      }
+      case 'loom-gemba': {
+        const parsed = LoomGembaInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #3319: thin skin → rust loom-gemba. Observer role rides DEPLOY_ROLE/
+        // CHORUS_ROLE env (executeWerkVerb wiring); target is the only argv.
+        return executeWerkVerb('loom-gemba', [parsed.data.target], parsed.data.role, undefined, {});
       }
       case 'werk-push': {
         const parsed = WerkPushInput.safeParse(req.params.arguments);

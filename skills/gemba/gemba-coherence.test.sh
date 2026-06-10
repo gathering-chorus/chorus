@@ -46,6 +46,14 @@ assert "gemba skill no longer CronDeletes a loop (#3274)" bash -c "! grep -q 'Cr
 # ships-condition is the crate existing where discovery looks.
 assert "pulse-gather is structurally deployable (crate exists)" test -f "$ROOT/platform/services/pulse-gather/Cargo.toml"
 
+# #3319: gemba is the loom-gemba verb (observation semantics) ON the pulse-gather core
+assert "loom-gemba crate exists" test -f "$ROOT/platform/services/loom-gemba/Cargo.toml"
+assert "loom-gemba has unit tests" test -f "$ROOT/platform/services/loom-gemba/tests/units.rs"
+assert "loom-gemba links pulse-gather (no second implementation)" grep -q 'path = "../pulse-gather"' "$ROOT/platform/services/loom-gemba/Cargo.toml"
+assert "gemba skill invokes the loom-gemba MCP tool" grep -q "loom-gemba" "$ROOT/skills/gemba/SKILL.md"
+assert "loom-gemba is structurally deployable (#3317: discovery, no registration list)" test -f "$ROOT/platform/services/loom-gemba/Cargo.toml"
+assert "MCP server exposes loom-gemba" grep -q "LOOM_GEMBA_TOOL_DEF" "$ROOT/platform/mcp-server/src/server.ts"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

@@ -18,9 +18,31 @@ Two layers split the work:
 /demo <card-id>
 ```
 
-## Step 1 — Run the gates as subagents (demoer-initiated)
+## The JX (Jeff, 2026-06-10): prework is sealed BEFORE the conversation
 
-Spawn one subagent per gate. **Do not nudge a role to go run its gate** — you run it; the role *reviews the result*. Map gate → owning role:
+A demo is a **conversation that opens only when everything is already done.** Jeff is
+never dragged into a demo that isn't ready to run. Two phases, never interleaved:
+
+1. **Prework — silent, no Jeff, runs to completion:** gates + (the prior verbs already
+   did build → test → deploy → env-up). Gates run HERE, before any announce.
+2. **The announce IS the ready-gate.** It fires *only* when every gate is recorded AND
+   the variant is up. Its existence is the guarantee that walking in won't waste Jeff's
+   attention. If prework fails, there is **no announce** — Jeff sees `NOT READY: <what
+   failed>`, never a demo invitation.
+3. **The conversation — Jeff + demoer:** present the finished state, walk it, go/no.
+   **Nothing computes during the conversation** — that's why it can never hang or lock
+   Jeff out; all the slow work already happened in prework, before he was pulled in.
+
+The old bug (what this replaces): gates ran *in the conversation turn* — 5 subagents
+dripped serially for minutes while Jeff watched a spinner, and the pipeline announced
+"presented" before gates had run at all. Gates are prework now. The announce comes last.
+
+## Step 1 — PREWORK: run the gates (silent, before any announce)
+
+Run all 5 gates as **one parallel batch — never serial, never one-at-a-time.** Spawn
+them in a SINGLE message (all five Agent calls together) so they run concurrently
+(~45s), not the 6-minute serial drip. **Do not nudge a role to go run its gate** — you
+run it; the role *reviews the result* after.
 
 | Gate | Owning role (reviewer) |
 |---|---|
@@ -30,9 +52,24 @@ Spawn one subagent per gate. **Do not nudge a role to go run its gate** — you 
 | arch     | silas |
 | ops      | silas |
 
-For each gate: spawn a subagent that reads the card + the diff + the running variant and produces a `{gate, result: pass/fail, findings}` verdict. Then do **two** things with the result:
-1. **Record it** — run `werk-demo gate <card-id> <gate> <pass|fail>` (the gate witness). The recorded results surface on the decision surface so Jeff sees what was checked before he decides.
-2. **Route it for review** — a result-carrying review-nudge to the owning role (async, non-blocking): it carries a finished artifact to review, *not* work to do. The role reviews the output; it does not re-run the gate.
+Execution rules that keep prework fast and non-blocking:
+- **`subagent_type: Explore` (read-only).** Gate agents inspect the card + diff + variant
+  and judge — they never mutate. Read-only means **zero permission prompts**, so prework
+  never stalls waiting on Jeff's approve (the dead-spinner failure, 2026-06-10).
+- **Scope the diff INTO the prompt.** Hand each agent the card AC + the branch diff range
+  so it judges the delta instead of cold-starting a fresh codebase sweep.
+- Each returns `{gate, result: pass/fail, findings}`.
+
+Then for each result:
+1. **Record it** — `werk-demo gate <card-id> <gate> <pass|fail>` (the gate witness). The
+   recorded results populate the cockpit Jeff sees the moment the announce fires.
+2. **Route it for review** — a result-carrying review-nudge to the owning role (async,
+   non-blocking): a finished artifact to review, *not* work to do.
+
+**Ready-gate (the announce contract):** only after all 5 gates are recorded AND the
+variant is reachable do you proceed to Step 2 (present → announce). If any gate FAILS or
+the variant is down, **STOP — do not present, do not announce.** Report `NOT READY: <gate
+or variant that failed>` to Jeff. He is never invited into a demo that can't run.
 
 The gate results are the quality gather. They are **not** the proving verdict — a green gate is not a verdict, and a peer's review is never the verdict (proving is Jeff or a machine, never peer-blessing). Recording a gate attests it RAN; the verdict is still the prover's.
 
