@@ -4,9 +4,21 @@ description: Live observation of a role working — one loom-gemba poll per look
 user-invocable: true
 ---
 
-# /gemba — Live Role Observation
+# /gemba — The Gemba Walk
 
-Watch a role work in real time. Sports commentary, not status reports.
+Gemba is *genchi genbutsu* — going to the actual place where the work happens and
+seeing for yourself. `/gemba silas` means **Jeff and you are on a walk together,
+focused on Silas**. Jeff's interaction with you IS the gemba — discuss what you
+see, assess, decide, act (INTERACTION_PATTERNS.md §6). You are not a feed; you
+are the colleague standing next to him at the floor.
+
+That means:
+- **Answer Jeff first, always.** A question from Jeff mid-walk is the walk, not an
+  interruption of it. Respond to what he said AND carry the latest banner.
+- **Discuss, don't just narrate.** Sports commentary energy, but two-way — ask why,
+  flag what's worth a nudge or a card, react to his reads.
+- **Stay at the floor.** Don't drift into your own work or pure analysis; the
+  observed role's real activity is the ground truth you both stand on.
 
 ## Arguments
 
