@@ -20,6 +20,21 @@ silently dropped. Severity/disposition are recommendations for Jeff to steer.
 | 10 | content double-encode | — | service.ts:105-114 | — | **FALSE ALARM** (marked once, by design) |
 | 11 | timestamp vs ts field | — | service.ts:220-228 | — | **FALSE ALARM** (intentional render/storage split, #2764) |
 
+## VERIFIED dispositions (after reading each root, 2026-06-10)
+The explore enumerated confidently; reading the actual code corrected several. Honest outcome:
+- **#1 synthetic guard — REAL, FIXED + tested** (shouldNotifyOps; mcp-server 5 tests).
+- **#9 over-suppression regex — REAL, FIXED + tested** (the `expected one of`/`refused:` branches were genuinely unanchored).
+- **#7 dedup — REAL, FIXED + tested** (no dedup existed; pulse 4 tests, 10s window).
+- **#2 sender echo-back — NOT A DELIVERY BUG (verified).** nudge_poll.rs:72-73 already does `if to != role { continue }` — the unread drain excludes the sender. The "echo" was the per-prompt context-SEARCH injection surfacing the sender's own recent message (by design, not a nudge bug). The explore mis-rooted it at tailer.ts (which filters to jeff-only anyway).
+- **#12 PULSE_URL fallback — NOT A BUG (verified).** The localhost:3475 default is the correct, intentional target; only an explicitly-empty env (a non-case) would surprise. No fix.
+- **#3 ack-loop — REAL but it's DEAD CODE + a convention, not a delivery bug.** The `acknowledged` column is vestigial; there is no system ACK loop — "ACK REQUIRED" is a role-to-role *convention*, so the "re-nudge" is the sender re-sending by hand. Disposition: remove the vestigial column + document the convention (cleanup card, not a delivery fix).
+- **#4 double-emit — REAL, cleanup.** Needs a reader audit (tailer/observer/Loki) before retiring nudge.emitted. Card.
+- **#5 ops-alert-lost-on-POST-fail — REAL but low.** The spine event is the durable record; only the transient nudge is lost on a pulse-down. Retry is optional polish. Card or accept.
+- **#6 correlation-id on legacy rows — minor.** Card.
+- **#8 session-registry pid-reuse — real edge, low probability.** Card.
+
+**Net: of 9 "patterns," 3 were real bugs (fixed + tested), 2 dissolved on inspection, 4 are minor cleanup/edge.** The anti-one-patch value held in BOTH directions — it surfaced the real ones AND stopped me fixing non-bugs. Still missing and worth its own card: a GATING delivery integration test (none has ever existed).
+
 ## The through-line
 DEC-107 ("persist AND deliver") is sound but the *surfacing, ack-close, dedup, and
 test-isolation* layers grew around it uncontrolled — that's why nudges keep biting in
