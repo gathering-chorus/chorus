@@ -340,8 +340,15 @@ fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
     let stub_log = home.join("stub.log");
     let stub = home.join("stub.sh");
     write_exec(&stub, &format!(
-        "#!/bin/sh\necho \"argv=$* detached=$CHORUS_DETACHED trace=$CHORUS_TRACE_ID\" >> {:?}\n", stub_log
+        "#!/bin/sh\necho \"argv=$* detached=$CHORUS_DETACHED trace=$CHORUS_TRACE_ID ghtok=$GH_TOKEN\" >> {:?}\n", stub_log
     ));
+    // #3323 — gh shim: the PARENT (which still has keychain) captures `gh auth token`
+    // and injects GH_TOKEN into the detached child's env, so the child's gh calls
+    // survive the lost user security session (the post-#3320 401 class).
+    let shim_bin = tmp("ghshim");
+    write_exec(&shim_bin.join("gh"),
+        "#!/bin/sh\nif [ \"$1 $2\" = \"auth token\" ]; then echo FAKE-TOKEN-3323; exit 0; fi\nexit 0\n");
+    let shim_path = format!("{}:{}", shim_bin.display(), std::env::var("PATH").unwrap_or_default());
 
     // (1) self-deploy: invoker chorus-mcp → detach ack, exit 0, child = crate-mode redeploy.
     let out = Command::new(bin)
@@ -350,7 +357,9 @@ fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
         .env("CHORUS_INVOKER", "chorus-mcp")
         .env("WERK_DEPLOY_SELF_BIN", &stub)
         .env("CHORUS_TRACE_ID", "tr-3320")
+        .env("PATH", &shim_path)
         .env_remove("CHORUS_DETACHED")
+        .env_remove("GH_TOKEN")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -367,6 +376,9 @@ fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
     assert!(child.contains("argv=crate chorus-mcp"), "continuation is a crate-mode redeploy: {child}");
     assert!(child.contains("detached=1"), "continuation carries CHORUS_DETACHED=1: {child}");
     assert!(child.contains("trace=tr-3320"), "continuation reuses the SAME trace: {child}");
+    // #3323 — the parent captured the token and injected it into the child's env.
+    assert!(child.contains("ghtok=FAKE-TOKEN-3323"),
+        "detached child carries GH_TOKEN from the parent's keychain capture: {child}");
     // the parent did NOT emit deploy.completed — that's the child's to write (no false-green).
     let jsonl = read(&home.join("ops/logs/werk-deploy.jsonl"));
     assert!(!jsonl.contains("deploy.completed"), "ack must not false-emit deploy.completed: {jsonl}");
@@ -398,4 +410,34 @@ fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
     assert!(!out3.status.success() && combined3.contains("dir not found"),
         "no invoker → inline path, never detached: {combined3}");
     assert!(!combined3.contains("deploy detached"), "no detach ack without the invoker: {combined3}");
+
+    // (4) #3323 — token-capture failure is NON-FATAL but witnessed: with no working gh
+    // on PATH the detach still proceeds (gh-less child better than no deploy), the ack
+    // still returns exit 0, and the jsonl witnesses the missing token.
+    let stub_log2 = home.join("stub2.log");
+    let stub2 = home.join("stub2.sh");
+    write_exec(&stub2, &format!(
+        "#!/bin/sh\necho \"ghtok=${{GH_TOKEN:-ABSENT}}\" >> {:?}\n", stub_log2
+    ));
+    let no_gh = tmp("noghbin"); // empty dir — PATH has no gh at all
+    let out4 = Command::new(bin)
+        .args(["crate", "chorus-mcp"])
+        .env("CHORUS_HOME", &home)
+        .env("CHORUS_INVOKER", "chorus-mcp")
+        .env("WERK_DEPLOY_SELF_BIN", &stub2)
+        .env("CHORUS_TRACE_ID", "tr-3323-nogh")
+        .env("PATH", no_gh.to_str().unwrap())
+        .env_remove("CHORUS_DETACHED")
+        .env_remove("GH_TOKEN")
+        .output()
+        .unwrap();
+    assert!(out4.status.success(), "capture failure must not block the detach: {}",
+        String::from_utf8_lossy(&out4.stderr));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while read(&stub_log2).is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(read(&stub_log2).contains("ghtok=ABSENT"), "no fake/empty token injected on capture failure");
+    let jsonl = read(&home.join("ops/logs/werk-deploy.jsonl"));
+    assert!(jsonl.contains("gh-token-capture"), "capture failure witnessed in the jsonl: {jsonl}");
 }
