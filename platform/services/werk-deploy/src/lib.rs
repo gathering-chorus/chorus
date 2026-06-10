@@ -1064,6 +1064,76 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
     }
 }
 
+/// #3320 — the self-deploy case: deploying chorus-mcp FROM chorus-mcp. The inline
+/// kickstart would kill the invoking daemon mid-call — the deploy completes but the
+/// caller's MCP response drops (the transport-drop class). Fires ONLY for that exact
+/// pair, and never for the detached continuation itself (no respawn loop). Pure half.
+pub fn self_deploy_detach_needed(unit: &str, invoker: Option<&str>, already_detached: bool) -> bool {
+    unit == "chorus-mcp" && invoker == Some("chorus-mcp") && !already_detached
+}
+
+/// #3320 — argv for the detached continuation: a crate-mode redeploy of the ONE unit
+/// (the same standalone surface operators use), rollback flag preserved. Pure half.
+pub fn detach_argv(unit: &str, rollback: bool) -> Vec<String> {
+    let mut v = vec!["crate".to_string(), unit.to_string()];
+    if rollback {
+        v.push("--rollback".to_string());
+    }
+    v
+}
+
+/// #3320 — is this result the detach ack (not a completed deploy)? Callers must NOT
+/// emit deploy.completed for an ack — the detached child emits the real one when it
+/// finishes. House style: stringly result, marker-checked (like reason= refusals).
+pub fn is_detached_ack(s: &str) -> bool {
+    s.contains("deploy detached pid=")
+}
+
+/// #3320 — spawn the detached continuation and ack immediately. The child is its own
+/// process group (survives the parent chorus-mcp's kickstart), runs the normal
+/// crate-mode path with CHORUS_DETACHED=1 (so detection won't re-fire) and the SAME
+/// trace id, and emits the usual deploy.completed — that spine event is the caller's
+/// poll handle. Output goes to <home>/ops/logs/werk-deploy-detached.log. The npm build
+/// in the child (seconds) is the grace window that lets this ack reach the caller
+/// before the kickstart lands.
+fn detach_self_deploy(
+    home: &Path, role: &str, card: u64, trace: &str, name: &str, rollback: bool,
+) -> R<String> {
+    use std::os::unix::process::CommandExt;
+    let exe = match env::var("WERK_DEPLOY_SELF_BIN") {
+        Ok(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => env::current_exe().map_err(|e| format!("current_exe for detach failed: {}", e))?,
+    };
+    let log_dir = home.join("ops/logs");
+    let _ = fs::create_dir_all(&log_dir);
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("werk-deploy-detached.log"))
+        .map_err(|e| format!("detached log open failed: {}", e))?;
+    let err_log = log.try_clone().map_err(|e| format!("detached log clone failed: {}", e))?;
+    let child = Command::new(&exe)
+        .args(detach_argv(name, rollback))
+        .env("CHORUS_DETACHED", "1")
+        .env("CHORUS_TRACE_ID", trace)
+        .env("DEPLOY_ROLE", role)
+        .env("CHORUS_ROLE", role)
+        .stdin(std::process::Stdio::null())
+        .stdout(log)
+        .stderr(err_log)
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("detached self-deploy spawn failed: {}", e))?;
+    let pid = child.id().to_string();
+    emit_spine(home, "deploy.detached", role, card, trace, &[("crate", name), ("pid", &pid)]);
+    jsonl(home, role, card, trace, "deploy.detached",
+        &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"pid\":{},\"rollback\":{}", name, pid, rollback));
+    Ok(format!(
+        "{} deploy detached pid={} — survives its own kickstart; poll spine deploy.completed trace={}",
+        name, pid, trace
+    ))
+}
+
 /// #3317 — native canonical deploy of a TS daemon (chorus-api / chorus-mcp), the
 /// bash branches ported: preserve dist→dist.prev, npm-build IN canonical, kickstart
 /// (warn-only, like bash), smoke-gate deploy.completed, restore dist.prev on build
@@ -1071,6 +1141,15 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
 fn deploy_ts_daemon_canonical(
     home: &Path, role: &str, card: u64, trace: &str, name: &str, rollback_mode: bool,
 ) -> R<String> {
+    // #3320 — mcp-from-mcp would kill its own caller at kickstart; hand off to the
+    // detached continuation and ack now, while the transport is still alive.
+    if self_deploy_detach_needed(
+        name,
+        env::var("CHORUS_INVOKER").ok().as_deref(),
+        env::var("CHORUS_DETACHED").is_ok(),
+    ) {
+        return detach_self_deploy(home, role, card, trace, name, rollback_mode);
+    }
     let (dir_rel, svc, smoke_url, is_mcp) =
         ts_daemon(name).ok_or_else(|| format!("{} is not a TS daemon", name))?;
     let root = canonical_root_path(home);
@@ -1129,7 +1208,12 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
     let root = canonical_root_path(home);
     let artifact_class;
     if ts_daemon(name).is_some() {
-        deploy_ts_daemon_canonical(home, role, card, trace, name, false)?;
+        let out = deploy_ts_daemon_canonical(home, role, card, trace, name, false)?;
+        // #3320 — a detach ack is NOT a completed deploy: the detached child emits
+        // the real deploy.completed when it finishes. Return the ack as-is.
+        if is_detached_ack(&out) {
+            return Ok(out);
+        }
         artifact_class = "ts-daemon";
     } else {
         let class = target_class_in(name, Path::new(&root))?;
@@ -1217,7 +1301,11 @@ fn run_crate_mode(args: &[String]) -> R<String> {
         return Ok(format!("{} rolled back target=canonical", name));
     }
     jsonl(&home, &role, card, &trace, "deploy.started", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"crate\":\"{}\"", name));
-    deploy_crate_canonical(&home, &role, card, &trace, &name)?;
+    let out = deploy_crate_canonical(&home, &role, card, &trace, &name)?;
+    // #3320 — detach ack: the detached child writes the real deploy.completed.
+    if is_detached_ack(&out) {
+        return Ok(out);
+    }
     // Witness the standalone crate deploy in the jsonl (the in-flow path writes its own
     // whole-deploy deploy.completed in deploy_canonical; this is the crate-mode analogue).
     jsonl(&home, &role, card, &trace, "deploy.completed", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"deployed\":\"{}\"", name));
@@ -1354,13 +1442,17 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             .map_err(|e| died(home, role, card, trace, "canonical-ff-fail", e))?;
     }
     let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
+    let mut labels: Vec<String> = Vec::new();
     for c in &deployed {
-        deploy_crate_canonical(home, role, card, trace, c)
+        let out = deploy_crate_canonical(home, role, card, trace, c)
             .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
                 format!("canonical deploy of {} failed: {}", c, e)))?;
+        // #3320 — a detached unit is in flight, not deployed; label it honestly in the
+        // whole-deploy envelope (its own deploy.completed comes from the child).
+        labels.push(if is_detached_ack(&out) { format!("{}(detached)", c) } else { c.clone() });
     }
 
-    let only = deployed.join(",");
+    let only = labels.join(",");
     jsonl(home, role, card, trace, "deploy.completed",
         &format!(",\"target\":\"canonical\",\"deployed\":\"{}\"", only));
     Ok(format!("{} target=canonical", only))

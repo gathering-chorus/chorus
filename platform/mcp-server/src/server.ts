@@ -2018,6 +2018,10 @@ async function executeWerkVerb(
         CHORUS_ROLE: role,
         CHORUS_HOME: process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus',
         CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
+        // #3320 — name the invoker so werk-deploy can detect the self-deploy case
+        // (deploying chorus-mcp FROM chorus-mcp) and detach instead of killing this
+        // daemon mid-call, which dropped the caller's response (transport-drop class).
+        CHORUS_INVOKER: 'chorus-mcp',
         ...extraEnv,
       },
       timeout: 600000,

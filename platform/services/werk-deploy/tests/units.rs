@@ -467,3 +467,43 @@ fn changed_ts_services_detects_mcp_and_api_distinct_from_rust_crates() {
     let multi = "platform/mcp-server/src/a.ts\nplatform/mcp-server/src/b.ts\nplatform/mcp-server/package.json\n";
     assert_eq!(werk_deploy::changed_ts_services(multi), vec!["chorus-mcp".to_string()]);
 }
+
+// #3320 — deploying chorus-mcp FROM chorus-mcp must detach: the inline kickstart
+// kills the invoking daemon, so the caller's MCP response drops (the transport-drop
+// class — bit chorus_werk_land live 2026-06-10). Detection is a pure half.
+#[test]
+fn self_deploy_detach_fires_only_for_mcp_invoked_by_mcp() {
+    use werk_deploy::self_deploy_detach_needed as need;
+    assert!(need("chorus-mcp", Some("chorus-mcp"), false), "mcp-from-mcp detaches");
+    assert!(!need("chorus-api", Some("chorus-mcp"), false), "non-self unit deploys inline");
+    assert!(!need("chorus-mcp", None, false), "CLI / agent-state invoker deploys inline");
+    assert!(!need("chorus-mcp", Some("chorus-api"), false), "other invokers deploy inline");
+    assert!(!need("werk-deploy", Some("chorus-mcp"), false), "rust crates never detach");
+    assert!(
+        !need("chorus-mcp", Some("chorus-mcp"), true),
+        "the detached continuation must NOT re-detach (no respawn loop)"
+    );
+}
+
+// #3320 — the detached continuation is a crate-mode redeploy of the ONE unit,
+// rollback flag preserved. Same surface as `werk-deploy crate <name> [--rollback]`.
+#[test]
+fn detach_argv_is_a_crate_mode_redeploy_of_the_one_unit() {
+    assert_eq!(werk_deploy::detach_argv("chorus-mcp", false), vec!["crate", "chorus-mcp"]);
+    assert_eq!(
+        werk_deploy::detach_argv("chorus-mcp", true),
+        vec!["crate", "chorus-mcp", "--rollback"]
+    );
+}
+
+// #3320 — a detach ack must never be mistaken for a completed deploy: callers skip
+// their deploy.completed emission for an ack (the child emits the real one).
+#[test]
+fn detached_ack_is_distinguishable_from_completed_deploys() {
+    assert!(werk_deploy::is_detached_ack(
+        "chorus-mcp deploy detached pid=123 — survives its own kickstart; poll spine deploy.completed trace=t"
+    ));
+    assert!(!werk_deploy::is_detached_ack("chorus-mcp deployed"));
+    assert!(!werk_deploy::is_detached_ack("chorus-mcp deployed target=canonical"));
+    assert!(!werk_deploy::is_detached_ack("chorus-mcp rolled back"));
+}
