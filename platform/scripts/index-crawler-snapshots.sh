@@ -17,15 +17,13 @@ STATUS_FILE="${CRAWLER_STATUS_FILE:-/tmp/crawler-domain-status.json}"
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 
-# #2817 — trigger detection. The plist has both WatchPaths (file events)
-# and StartInterval=60 (polling fallback); both invocation paths run this
-# script identically. Distinguish them via filesystem heuristic so spine
-# events carry trigger=file-watch | polling for downstream consumers
-# (hydration-divergence alert, gate:quality dispatch, freshness diagnostics).
-#
-# Heuristic: if any file under the watched dirs is newer than the last-run
-# timestamp file, this invocation was file-event-driven; otherwise it's
-# the 60s polling tick. Written once per run; read at start of next run.
+# #2817 — trigger detection. #3322 NOTE: the plist now has ONLY StartInterval=1800
+# (Jeff removed WatchPaths 2026-05-24 — "every 30 min is good enough"; the interval
+# is the sole trigger BY DESIGN). The heuristic below is kept for the spine field's
+# continuity: trigger=file-watch now just means "files changed since last run",
+# trigger=polling means a quiet tick. Downstream consumers (hydration-divergence
+# alert, gate:quality dispatch, freshness diagnostics) read it as activity signal,
+# not as evidence of a WatchPaths event.
 LAST_RUN_FILE="/tmp/crawler-last-run-ts"
 TRIGGER="polling"
 if [ -f "$LAST_RUN_FILE" ]; then

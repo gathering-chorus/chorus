@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""hydration-divergence-check.py — count crawler.domain.indexed events in last 3 min.
+"""hydration-divergence-check.py — count crawler.domain.indexed events in the last cycle window.
 
-Reads JSONL on stdin (chorus.log lines filtered to crawler.domain.indexed),
-counts those whose timestamp >= now - 3min. Prints the count.
+Reads JSONL on stdin (chorus.log lines filtered to crawler.domain.indexed), counts those
+whose timestamp >= now - 40min (#3322: one full StartInterval=1800 cycle + grace; was 3min
+under the retired pre-#3068 WatchPaths premise). Prints the count.
 
 Sibling-script pattern (#2861).
 """
@@ -18,7 +19,7 @@ def normalize_iso(ts: str) -> str:
 
 
 def main() -> int:
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=3)
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=40)
     hits = 0
     for line in sys.stdin:
         try:
