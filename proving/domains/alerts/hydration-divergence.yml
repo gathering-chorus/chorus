@@ -24,7 +24,11 @@ check: |
     echo "ok"
     exit 0
   fi
-  LAST_CYCLE=$(tail -4000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.indexed" | python3 "$SIBLING" 2>/dev/null || echo 0)
+  # tail cap must cover 40 min on a BUSY spine (Kade #3322 review: a low cap truncates,
+  # undercounts indexed events, and false-fires under exactly the load that makes the
+  # window busy). 20000 lines ≈ several hours at peak rates; the sibling's timestamp
+  # floor does the precise 40-min cut.
+  LAST_CYCLE=$(tail -20000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.indexed" | python3 "$SIBLING" 2>/dev/null || echo 0)
   if [ "$LAST_CYCLE" -eq 0 ] 2>/dev/null; then
     echo "divergent:high-activity=${CHANGES}-no-indexing-in-40min"
     exit 1
