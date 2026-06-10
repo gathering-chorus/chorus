@@ -207,19 +207,109 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
             jsonl(home, role, card, trace, "rebase.done", &format!(",\"onto\":\"origin/main\",\"behind\":{}", behind));
             Ok(())
         }
-        Err(e) => {
-            // restore the branch to its pre-rebase state — werk untouched, work kept.
-            let _ = run_in(werk_s, "git", &["rebase", "--abort"]);
-            jsonl(home, role, card, trace, "rebase.refused", ",\"reason\":\"rebase-conflict\"");
-            emit_spine(home, "commit.failed", role, card, trace, &[("disposition", "refuse"), ("reason", "rebase-conflict")]);
-            Err(format!(
-                "rebase-conflict: #{} conflicts with current origin/main (werk restored, commit \
-                 preserved). Escape the deadlock: `werk-commit {} {} --atomic` commits WITHOUT the \
-                 rebase (saves your work), then resolve the rebase separately — don't hand-plumb. cause: {}",
-                card, card, role, e
-            ))
+        Err(_) => {
+            // #3304 — HOLD, don't abort: leave the conflict markers in the werk for the
+            // human to edit. The resolution is reachable only through the verb
+            // (--continue / --abort); the guard stays whole — no raw git instructed.
+            let files: Vec<String> = run_in(werk_s, "git", &["diff", "--name-only", "--diff-filter=U"])
+                .unwrap_or_default()
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            jsonl(home, role, card, trace, "rebase.conflict.held",
+                &format!(",\"files\":\"{}\"", files.join(",")));
+            emit_spine(home, "commit.conflict", role, card, trace,
+                &[("disposition", "held"), ("reason", "rebase-conflict"), ("files", &files.join(","))]);
+            Err(conflict_hold_message(card, role, &files))
         }
     }
+}
+
+/// #3304 — is a rebase currently held in this werk? (worktree-aware: `--git-path`
+/// resolves rebase state under .git/worktrees/<name>/.)
+fn rebase_in_progress(werk_s: &str) -> bool {
+    for state in ["rebase-merge", "rebase-apply"] {
+        if let Ok(p) = run_in(werk_s, "git", &["rev-parse", "--git-path", state]) {
+            if Path::new(p.trim()).exists() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// #3304 — `werk-commit <card> <role> --continue`: finish a HELD rebase through the
+/// verb. Stages the human's resolution (editing files is the only thing they did),
+/// then runs `git rebase --continue` INTERNALLY with the sanctioned sentinel — the
+/// guard is never unblocked, no raw git crosses the human's hands. If a later
+/// commit in the replay conflicts again, the werk holds again (same instruction).
+pub fn commit_continue(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
+    let trace = resolve_trace(card);
+    let werk = werk_base.join(format!("{}-{}", role, card));
+    let werk_s = path(&werk)?.to_string();
+    if !werk.is_dir() {
+        return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
+    }
+    if !rebase_in_progress(&werk_s) {
+        jsonl(home, role, card, &trace, "continue.refused", ",\"reason\":\"no-rebase\"");
+        return Err(format!("#{}: no rebase in progress — nothing to --continue", card));
+    }
+    let _lock = lock(home, Duration::from_secs(30))?;
+    // stage the human's resolution; rebase --continue requires resolved paths staged.
+    run_in(&werk_s, "git", &["add", "-A"])?;
+    // GIT_EDITOR=true: keep the replayed commit's original message non-interactively.
+    match run_in_env(&werk_s, "git", &["rebase", "--continue"],
+        &[("_GIT_QUEUE_INTERNAL", "1"), ("GIT_EDITOR", "true")]) {
+        Ok(_) => {
+            let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
+            jsonl(home, role, card, &trace, "rebase.resolved", &format!(",\"sha\":\"{}\"", sha));
+            emit_spine(home, "commit.completed", role, card, &trace,
+                &[("sha", &sha), ("via", "continue")]);
+            Ok(sha)
+        }
+        Err(_) if rebase_in_progress(&werk_s) => {
+            // a later commit in the replay conflicted — hold again, same contract.
+            let files: Vec<String> = run_in(&werk_s, "git", &["diff", "--name-only", "--diff-filter=U"])
+                .unwrap_or_default()
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            jsonl(home, role, card, &trace, "rebase.conflict.held",
+                &format!(",\"files\":\"{}\"", files.join(",")));
+            Err(conflict_hold_message(card, role, &files))
+        }
+        Err(e) => {
+            jsonl(home, role, card, &trace, "continue.failed", "");
+            emit_spine(home, "commit.failed", role, card, &trace,
+                &[("disposition", "fail"), ("reason", "continue-fail")]);
+            Err(format!("--continue failed: {}", e))
+        }
+    }
+}
+
+/// #3304 — `werk-commit <card> <role> --abort`: restore the pre-rebase state through
+/// the verb. The card commit is preserved exactly as it was before the rebase began.
+pub fn commit_abort(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
+    let trace = resolve_trace(card);
+    let werk = werk_base.join(format!("{}-{}", role, card));
+    let werk_s = path(&werk)?.to_string();
+    if !werk.is_dir() {
+        return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
+    }
+    if !rebase_in_progress(&werk_s) {
+        jsonl(home, role, card, &trace, "abort.refused", ",\"reason\":\"no-rebase\"");
+        return Err(format!("#{}: no rebase in progress — nothing to --abort", card));
+    }
+    let _lock = lock(home, Duration::from_secs(30))?;
+    run_in_env(&werk_s, "git", &["rebase", "--abort"], &[("_GIT_QUEUE_INTERNAL", "1")])
+        .map_err(|e| format!("--abort failed: {}", e))?;
+    let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
+    jsonl(home, role, card, &trace, "rebase.aborted", &format!(",\"sha\":\"{}\"", sha));
+    emit_spine(home, "commit.completed", role, card, &trace,
+        &[("sha", &sha), ("via", "abort"), ("disposition", "restored")]);
+    Ok(format!("rebase aborted — werk restored to pre-rebase state at {}", sha))
 }
 
 /// flock guard — auto-releases on drop (and on process exit/crash, kernel-level).
@@ -254,32 +344,88 @@ fn path(p: &Path) -> R<&str> {
     p.to_str().ok_or_else(|| format!("non-utf8 path: {}", p.display()))
 }
 
-/// Entry: parse the contract args (`werk-commit <card> <role> [summary...]`, role
-/// falls back to $DEPLOY_ROLE) + env, then run the verb.
-pub fn run_commit() -> R<String> {
-    // #3295 — `--atomic` (anywhere in the args) selects commit-without-rebase.
-    let raw: Vec<String> = env::args().skip(1).collect();
+/// #3304 — the four verb modes. Flow = commit + rebase (#3186); Atomic = commit
+/// without rebase (#3295 escape valve); Continue / Abort = in-verb resolution of a
+/// HELD rebase conflict (the guard stays whole — the human never runs raw git).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Flow,
+    Atomic,
+    Continue,
+    Abort,
+}
+
+#[derive(Debug)]
+pub struct ParsedCommit {
+    pub card: u64,
+    pub role: Option<String>,
+    pub summary: String,
+    pub mode: Mode,
+}
+
+/// #3304 — the CLI seam (the #3294 pattern: flags recognized anywhere, parsing
+/// unit-tested where the contract lives). Modes are mutually exclusive.
+pub fn parse_commit_args(raw: &[String]) -> R<ParsedCommit> {
+    let usage = "usage: werk-commit <card> <role> [summary] [--atomic | --continue | --abort]";
     let atomic = raw.iter().any(|a| a == "--atomic");
-    let pos: Vec<String> = raw.into_iter().filter(|a| a != "--atomic").collect();
-    let card_arg = pos
-        .first()
-        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] [--atomic]".to_string())?;
+    let cont = raw.iter().any(|a| a == "--continue");
+    let abort = raw.iter().any(|a| a == "--abort");
+    if [atomic, cont, abort].iter().filter(|b| **b).count() > 1 {
+        return Err(format!("--atomic / --continue / --abort are mutually exclusive. {}", usage));
+    }
+    let mode = if atomic {
+        Mode::Atomic
+    } else if cont {
+        Mode::Continue
+    } else if abort {
+        Mode::Abort
+    } else {
+        Mode::Flow
+    };
+    let pos: Vec<&String> = raw.iter().filter(|a| !a.starts_with("--")).collect();
+    let card_arg = pos.first().ok_or_else(|| usage.to_string())?;
     let card: u64 = card_arg
         .parse()
         .map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = pos
-        .get(1)
-        .cloned()
+    let role = pos.get(1).map(|s| s.to_string());
+    let summary = if pos.len() > 2 {
+        pos[2..].iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
+    } else {
+        String::new()
+    };
+    Ok(ParsedCommit { card, role, summary, mode })
+}
+
+/// #3304 — the held-conflict instruction. Names the conflicted files and BOTH
+/// in-verb follow-ups; never instructs raw git (the resolution is reachable only
+/// through the verb — Silas's load-bearing constraint).
+pub fn conflict_hold_message(card: u64, role: &str, files: &[String]) -> String {
+    format!(
+        "rebase-conflict HELD for #{}: conflict markers are in your werk — edit the file(s) to \
+         resolve, then `werk-commit {} {} --continue` to finish (or `werk-commit {} {} --abort` \
+         to restore the pre-rebase state). Conflicted: {}",
+        card, card, role, card, role,
+        if files.is_empty() { "(unknown)".to_string() } else { files.join(", ") }
+    )
+}
+
+/// Entry: parse the contract args (`werk-commit <card> <role> [summary...]`, role
+/// falls back to $DEPLOY_ROLE) + env, then run the verb in the parsed mode.
+pub fn run_commit() -> R<String> {
+    let raw: Vec<String> = env::args().skip(1).collect();
+    let p = parse_commit_args(&raw)?;
+    let role = p
+        .role
         .or_else(|| env::var("DEPLOY_ROLE").ok())
-        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] [--atomic] (or set DEPLOY_ROLE)".to_string())?;
-    let summary = pos.get(2..).map(|s| s.join(" ")).unwrap_or_default();
+        .ok_or_else(|| "usage: werk-commit <card> <role> [summary] [--atomic | --continue | --abort] (or set DEPLOY_ROLE)".to_string())?;
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     let werk_base =
         PathBuf::from(env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE not set".to_string())?);
-    if atomic {
-        commit_atomic(card, &role, &summary, &home, &werk_base)
-    } else {
-        commit(card, &role, &summary, &home, &werk_base)
+    match p.mode {
+        Mode::Flow => commit(p.card, &role, &p.summary, &home, &werk_base),
+        Mode::Atomic => commit_atomic(p.card, &role, &p.summary, &home, &werk_base),
+        Mode::Continue => commit_continue(p.card, &role, &home, &werk_base),
+        Mode::Abort => commit_abort(p.card, &role, &home, &werk_base),
     }
 }
 
