@@ -909,7 +909,7 @@ const COMMIT_TOOL_DEF = {
 const UNPULL_CARD_TOOL_DEF = {
   name: 'chorus_unpull_card',
   description:
-    'Use this to reverse a pull and tear down the role\'s WIP card cleanly. Service runs validate (must be WIP + owned by role) + werk pre-flight (refuses werk-dirty) + cards move <id> Next + chorus-werk remove (removes the card\'s ephemeral worktree, deletes the branch, prunes stale admin entries, emits card.branch.closed) + role-state idle + card.unpulled spine event in one atomic transaction. Returns { role, card_id, prior_branch, branch_closed }. Refusal taxonomy: card-not-found | wrong-status | wrong-owner | werk-not-initialized | werk-dirty | move-fail | branch-close-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy and leave stale branches. The /unpull skill calls this and nothing else.',
+    'DEPRECATED ALIAS (#3299, ADR-031): use werk-unpull — same contract, rust verb. Service runs validate (must be WIP + owned by role) + werk pre-flight (refuses werk-dirty) + cards move <id> Next + chorus-werk remove (removes the card\'s ephemeral worktree, deletes the branch, prunes stale admin entries, emits card.branch.closed) + role-state idle + card.unpulled spine event in one atomic transaction. Returns { role, card_id, prior_branch, branch_closed }. Refusal taxonomy: card-not-found | wrong-status | wrong-owner | werk-not-initialized | werk-dirty | move-fail | branch-close-fail. Do NOT use raw cards/git/role-state — those bypass the typed refusal taxonomy and leave stale branches. The /unpull skill calls this and nothing else.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -927,6 +927,16 @@ const UNPULL_CARD_TOOL_DEF = {
     required: ['role', 'card_id'],
     additionalProperties: false,
   },
+} as const;
+
+// #3299 — werk-unpull verb tool def: the rust port of chorus_unpull_card (the
+// /pull inverse on the ADR-032 blueprint). chorus_unpull_card stays registered as
+// a DEPRECATION ALIAS (ADR-031 rollout) delegating to the same verb binary.
+const WERK_UNPULL_TOOL_DEF = {
+  name: 'werk-unpull',
+  description:
+    'Use this to reverse a pull and tear down the role\'s WIP card cleanly. Thin skin over the rust werk-unpull verb — MCP just execs it. Runs validate (WIP + owned by role) + werk pre-flight (refuses werk-dirty so uncommitted work is never dropped) + cards move Next + chorus-werk remove + role-state idle + card.unpulled spine event; the two mutate steps are idempotent so a partial unpull re-runs to done. Returns the prior branch. Refusal taxonomy: card-not-found | wrong-status | wrong-owner | werk-not-initialized | werk-corrupt | werk-dirty | move-fail | branch-close-fail. The /unpull skill calls this and nothing else (chorus_unpull_card is the deprecated alias).',
+  inputSchema: UNPULL_CARD_TOOL_DEF.inputSchema,
 } as const;
 
 const PULL_CARD_TOOL_DEF = {
@@ -1364,153 +1374,10 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
 // (the rust verb). The git-queue.sh commit/push it wrapped is now werk-commit/werk-push.
 
 
-// #2759 — chorus_unpull_card atomic teardown. /pull's natural inverse.
-// Role + card_id; refuses if card isn't WIP-owned-by-role or werk has
-// uncommitted work. Uses chorus-werk remove to tear down the card's
-// ephemeral worktree + branch + emit card.branch.closed (#2913).
-// cog-override: unpull teardown handles multiple failure modes across werk + board + branch — structurally complex
-async function executeUnpullCard(
-  args: { role: 'kade' | 'wren' | 'silas'; card_id: number },
-  emit: SpineEmitter,
-  execFileAsync: ExecFileAsync,
-  cardsPath: string,
-  resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string,
-  fsExists: (p: string) => boolean,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { role, card_id: cardId } = args;
-  const repoRoot = resolveWorkingTree(role);
-  const branch = `${role}/${cardId}`;
-
-  // #2857 — flow trace. card_id is known at entry (from args), so wrap once.
-  const baseEmit = emit;
-  const trace_id = mintTraceIdV7();
-  emit = createSpineEmitter(trace_id, baseEmit, cardId);
-
-  const stepEmit = (step: string, status: 'started' | 'completed', detail?: Record<string, unknown>) =>
-    emit(`chorus_unpull_card.${step}.${status}`, { role, card_id: cardId, ...(detail ?? {}) });
-
-  emit('chorus_unpull_card.invoked', { role, card_id: cardId, repo_root: repoRoot });
-
-  const path = require('path') as typeof import('path');
-  const parentNodeBinDir = path.dirname(process.execPath);
-  const cargoBinDir = `${process.env.HOME ?? ''}/.cargo/bin`;
-  const env = {
-    ...process.env,
-    DEPLOY_ROLE: role,
-    CHORUS_TRACE_ID: trace_id,
-    CHORUS_CARD_ID: String(cardId),
-    PATH: `${parentNodeBinDir}:${cargoBinDir}:${process.env.PATH ?? ''}`,
-  } as NodeJS.ProcessEnv;
-
-  const refuse = (step: string, reason: string, detail: string): never => {
-    emit(CHORUS_UNPULL_CARD_REFUSED, { role, card_id: cardId, step, reason, detail: detail.slice(0, 500) });
-    throw new Error(`chorus_unpull_card refused: ${reason} — ${detail.split('\n')[0]}`);
-  };
-
-  // Step 1 — validate: card exists, is WIP, owned by role.
-  stepEmit('validate', 'started');
-  let cardJson: { status?: string; owner?: string } = {};
-  try {
-    const { stdout } = await execFileAsync(cardsPath, ['view', String(cardId), '--json'], { env, timeout: 10_000 });
-    cardJson = JSON.parse(stdout) as typeof cardJson;
-  } catch (err) {
-    refuse('validate', 'card-not-found', extractStderr(err) || `card ${cardId} not viewable`);
-  }
-  const status = cardJson.status ?? '';
-  if (status !== 'WIP') {
-    refuse('validate', 'wrong-status', `card #${cardId} is in '${status}' — must be WIP`);
-  }
-  // Owner field is title-cased ('Kade'); compare case-insensitively.
-  const owner = (cardJson.owner ?? '').toLowerCase();
-  if (owner !== role) {
-    refuse('validate', 'wrong-owner', `card #${cardId} is owned by '${cardJson.owner}' — must be ${role}`);
-  }
-  stepEmit('validate', 'completed', { status, owner });
-
-  // Step 2 — werk pre-flight. Unlike pull, the card's ephemeral werk DOES
-  // exist at unpull time (it was created when the card was pulled), so
-  // pre-flighting it is checking the right thing. Refuse on a missing werk
-  // path, exec failures (werk-corrupt), or uncommitted changes (don't lose
-  // work — `chorus-werk remove` also refuses dirty, this surfaces it earlier
-  // with a typed reason). #2913: resolveWorkingTree returns the single
-  // chorus-werk/<role>-<card>/ match when the role has one card in flight.
-  stepEmit(STEP_WERK_PREFLIGHT, 'started');
-  if (!fsExists(repoRoot)) {
-    refuse(STEP_WERK_PREFLIGHT, 'werk-not-initialized', `werk path does not exist: ${repoRoot} — the card's werk may already be removed`);
-  }
-  if (!fsExists(path.join(repoRoot, '.git'))) {
-    refuse(STEP_WERK_PREFLIGHT, 'werk-not-initialized', `werk path exists but is not a git worktree: ${repoRoot}`);
-  }
-  let dirty = '';
-  try {
-    const r = await execFileAsync('git', ['status', '--porcelain'], { env, cwd: repoRoot, timeout: 5_000 });
-    dirty = r.stdout;
-  } catch (err) {
-    refuse(STEP_WERK_PREFLIGHT, 'werk-corrupt', `git status failed at ${repoRoot}: ${extractStderr(err)}`);
-  }
-  if (dirty.trim().length > 0) {
-    refuse(STEP_WERK_PREFLIGHT, 'werk-dirty', `werk has uncommitted changes:\n${dirty.trim()}`);
-  }
-  stepEmit(STEP_WERK_PREFLIGHT, 'completed');
-
-  // Step 3 — cards move <id> Next.
-  stepEmit(STEP_CARDS_MOVE, 'started');
-  try {
-    await execFileAsync(cardsPath, ['move', String(cardId), 'Next'], { env, timeout: 15_000 });
-    stepEmit(STEP_CARDS_MOVE, 'completed');
-  } catch (err) {
-    const stderr = extractStderr(err);
-    if (!/already.*Next|already in Next/i.test(stderr)) {
-      refuse(STEP_CARDS_MOVE, 'move-fail', stderr);
-    }
-    stepEmit(STEP_CARDS_MOVE, 'completed', { idempotent: true });
-  }
-
-  // Step 4 — chorus-werk remove <role> <card_id>. #2913 ephemeral model:
-  // remove the card's worktree, delete the local branch, best-effort delete
-  // the remote, prune stale admin entries, emit card.branch.closed. `remove`
-  // refuses on a dirty werk — the Step 2 pre-flight already caught that, this
-  // is belt-and-suspenders. There is no done-state check on `remove` (the
-  // old `close --no-done-check` flag is gone): remove is not gated on card
-  // status, it just refuses to drop uncommitted work.
-  stepEmit(STEP_WERK_CLOSE, 'started');
-  let branchClosed = false;
-  try {
-    const chorusWerkPath = path.join(repoRoot, 'platform', 'scripts', CHORUS_WERK);
-    await execFileAsync(chorusWerkPath, ['remove', role, String(cardId)], { env, timeout: 30_000 });
-    branchClosed = true;
-    stepEmit(STEP_WERK_CLOSE, 'completed', { branch_closed: true });
-  } catch (err) {
-    const stderr = extractStderr(err);
-    if (/already removed/i.test(stderr)) {
-      // Idempotent: worktree + branch were already torn down.
-      branchClosed = true;
-      stepEmit(STEP_WERK_CLOSE, 'completed', { idempotent: true });
-    } else {
-      refuse(STEP_WERK_CLOSE, 'branch-close-fail', stderr);
-    }
-  }
-
-  // Step 5 — role-state idle (best-effort; non-fatal).
-  stepEmit(STEP_ROLE_STATE, 'started');
-  try {
-    const roleStatePath = path.join(repoRoot, 'platform', 'scripts', STEP_ROLE_STATE);
-    await execFileAsync(roleStatePath, [role, 'idle'], { env, timeout: 10_000 });
-    stepEmit(STEP_ROLE_STATE, 'completed');
-  } catch {
-    stepEmit(STEP_ROLE_STATE, 'completed', { warning: 'role-state idle failed (non-fatal)' });
-  }
-
-  // Step 6 — spine event card.unpulled.
-  emit(CARD_UNPULLED, { role, card_id: cardId, prior_branch: branch });
-  emit('chorus_unpull_card.completed', { role, card_id: cardId, prior_branch: branch, branch_closed: branchClosed });
-
-  return {
-    content: [
-      { type: 'text', text: JSON.stringify({ role, card_id: cardId, prior_branch: branch, branch_closed: branchClosed }, null, 2) },
-    ],
-  };
-}
+// #3299 — executeUnpullCard (the #2759 TS implementation) REMOVED: the logic now
+// lives in the rust werk-unpull verb (ADR-032 blueprint); both the werk-unpull
+// tool and the chorus_unpull_card deprecation alias exec the binary via
+// executeWerkVerb. Zero call sites confirmed (ast-grep) after the dispatch swap.
 
 async function executeCommitStatus(
   args: { role: 'kade' | 'wren' | 'silas' },
@@ -1947,7 +1814,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'loom-gemba',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-unpull' | 'loom-gemba',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2488,6 +2355,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       WERK_MERGE_TOOL_DEF,
       WERK_ACCEPT_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
+      WERK_UNPULL_TOOL_DEF,
           DESIGN_REFRESH_TOOL_DEF,
       DOC_CATALOG_ADD_TOOL_DEF,
       LOGS_QUERY_TOOL_DEF,
@@ -2722,12 +2590,15 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // #3178: role = builder (werk location); accepter = caller identity via DEPLOY_ROLE (DEC-048).
         return executeWerkVerb('werk-accept', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, { DEPLOY_ROLE: getCallerRole() });
       }
+      case 'werk-unpull':
       case 'chorus_unpull_card': {
+        // #3299 — thin skin → rust werk-unpull. chorus_unpull_card is the ADR-031
+        // deprecation alias: same executor, same contract; drop after callers migrate.
         const parsed = UnpullCardInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        return executeUnpullCard(parsed.data, emitSpineEvent, execFileAsync, cardsPath, resolveWorkingTree, fsExists);
+        return executeWerkVerb('werk-unpull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
       }
       case 'chorus_design_refresh': {
         const parsed = DesignRefreshInput.safeParse(req.params.arguments);
