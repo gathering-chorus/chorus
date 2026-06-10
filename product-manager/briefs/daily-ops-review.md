@@ -1,41 +1,41 @@
-# Daily Ops Review — 2026-06-08
+# Daily Ops Review — 2026-06-10
 
 ## 1. Hooks Health
 **Status: YELLOW**
-`cargo check` passes (0 errors, 8 warnings) at `platform/services/chorus-hooks`. Dead-code warnings persist unchanged: `load_role_sections` never called (`protocol_contract.rs:155`), `chorus_worktree_override` never read (`types.rs:55`).
-**Action:** Silas to resolve dead-code warnings or add `#[allow(dead_code)]` with comment if intentionally retained.
+`cargo check` passes (0 errors, 8 warnings) at `platform/services/chorus-hooks`. Same 8 dead-code warnings as Jun 8 — no regression, no improvement. `chorus_worktree_override` (`types.rs:55`) and `load_role_sections` (`protocol_contract.rs:155`) still flagged.
+**Action:** Silas — resolve or annotate with `#[allow(dead_code)]`; 2-day carry.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW**
-18 plists in `proving/config/launchagents/` and `platform/services/chorus-hooks/` use `/tmp` for `StandardOutPath`/`StandardErrorPath`. Log data lost on reboot.
-**Action:** Low urgency; migrate log paths to `~/Library/Logs/Chorus/` for post-reboot diagnosis. `com.chorus.tmp-reaper.plist` already uses the right pattern.
+17 plists in `proving/config/launchagents/` use `/tmp` for `StandardOutPath`/`StandardErrorPath`. Log data lost on reboot. Count unchanged from Jun 8.
+**Action:** Low urgency; migrate to `~/Library/Logs/Chorus/`. No change since last review.
 
 ## 3. CLAUDE.md Fragments
 **Status: GREEN**
-`messages/claudemd/` directory absent; single `CLAUDE.md` at repo root only. No fragmentation to diff.
+`messages/claudemd/` absent. Fragments live at `designing/claudemd/shared/` (20 files). No divergence detectable from this worktree.
 **Action:** None.
 
 ## 4. CSC Compliance
 **Status: GREEN**
-No `/tmp/` references in `messages/scripts/` or `architect/scripts/` (those dirs live in separate repos as expected).
+No `/tmp/` refs in `messages/scripts/` or `architect/scripts/` (dirs absent from this repo as expected).
 **Action:** None.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo clean — no uncommitted changes. Last 3 commits are today/yesterday wren briefs and daily reviews.
+All 7 role dirs clean (product-manager, architect, engineer, messages, jeff-bridwell-personal-site, shared-observability, wordpress-blog). No uncommitted changes.
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: YELLOW**
-Board lives in Vikunja (not queryable from this worktree). Latest commit activity shows no role work since Jun 6; most recent card merges were #3279 (wren), #3277 (silas), #3270 (kade) all merged within the past 48h.
-**Action:** Wren to verify Vikunja board directly for any WIP cards open >48h at session start.
+**Status: GREEN**
+Active shipping June 9 across all three roles: wren (#3318, #3284), silas (#3315, #3310, #3313, #3309, #3308), kade (#3297, #3296, #3306). No gap >48h visible in commit log.
+**Action:** Verify Vikunja board directly for any open WIP not yet committed.
 
 ## 7. Domain Context Freshness
-**Status: GREEN**
-All 5 domain-context files (chorus, infrastructure, music, photos, seeds) last updated Jun 5 — 3 days ago, within the 7-day threshold. 55 commits landed in the past 7 days; only one domain-context update, but age is still within policy.
-**Action:** Watch — chorus and photos domains most active; next update due by Jun 12.
+**Status: RED**
+Git commit date Jun 5 is within threshold, but **content** `Last updated` headers are March–April 2026 (77 days for infrastructure, 76 for music/photos, 70 for seeds, 52 for chorus). Cards shipped Jun 9 in all domains; context is effectively stale.
+**Action:** Each role — audit and refresh domain-context file for owned domain before next card. Chorus domain highest priority (most active).
 
 ## 8. Disk Delta
 **Status: YELLOW**
-No perf-baseline snapshot on this host; `perf-baseline.sh` and `perf-baseline-chorus.sh` scripts exist but no captured output to diff.
-**Action:** Run `perf-baseline.sh` on host to establish baseline; schedule daily capture via `com.chorus.perf-baseline.plist`.
+`perf-baseline.sh` and `perf-baseline-chorus.sh` exist but no captured snapshot to diff.
+**Action:** Run `perf-baseline.sh` on host to establish baseline; wire `com.chorus.perf-baseline-nightly.plist` if not already running.
