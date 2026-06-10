@@ -28,7 +28,7 @@ fn make_input(tool: &str, input_json: serde_json::Value) -> HookInput {
         stop_hook_active: None,
         hook_type: None,
         deploy_role: None,
-        chorus_worktree_override: None, trace_id: None,
+        chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,
     }
 }
 

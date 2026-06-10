@@ -1359,7 +1359,7 @@ mod tests {
             })),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
     fn tq_write(file: &str, content: &str) -> HookInput {
         HookInput {
@@ -1367,7 +1367,7 @@ mod tests {
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     #[test]

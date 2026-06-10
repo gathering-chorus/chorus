@@ -1,5 +1,5 @@
 {
-  "_doc": "#3282 — judgment-as-code: classify hook decisions real-catch vs pure-friction. Joined at read by the friction view (hook-friction.ts); suppressing NOTHING — every event still counts, this only labels. Rules match (module + optional tool); tool-specific rules outrank module defaults; first match wins; no match = unjudged. Grow this by evidence, never by vibes: each rule cites why. Corpus skew caveat: per the 2026-06-10 reconciliation (designing/docs/friction-reconciliation-2026-06-10.md), captured data underrepresents hard agent-side denials — judge what is captured, remember what is not.",
+  "_doc": "#3282 — judgment-as-code: classify hook decisions real-catch vs pure-friction. Joined at read by the friction view (hook-friction.ts); suppressing NOTHING — every event still counts, this only labels. Rules match (module + optional tool); tool-specific rules outrank module defaults; first match wins; no match = unjudged. Grow this by evidence, never by vibes: each rule cites why. Corpus skew caveat: per the 2026-06-10 reconciliation (designing/docs/friction-reconciliation-2026-06-10.md), captured data underrepresents hard agent-side denials — judge what is captured, remember what is not. #3334: ops_awareness rule removed (module deleted, not stubbed — rows disappear forward); stop_on_error added as real-catch.",
   "rules": [
     {
       "module": "accept_gate",
@@ -11,11 +11,6 @@
       "module": "accept_gate",
       "class": "real-catch",
       "why": "DEC-048 authority gate. Proven 2026-06-10 twice: refused kade self-accepting #3320 and wren self-deciding #3319 — both correct, both load-bearing."
-    },
-    {
-      "module": "ops_awareness",
-      "class": "pure-friction",
-      "why": "Ambient fire-and-allow warns (171/12h on 2026-06-10) that no role ever sees — non-blocking by construction, so they can catch nothing. Volume noise in the friction ranking."
     },
     {
       "module": "prompt_pipeline",
@@ -52,6 +47,11 @@
       "module": "tdd_gate",
       "class": "real-catch",
       "why": "Blocks code writes without failing tests first (DEC-1674). The class it guards (#1665: 5+ fix cycles with Jeff as live tester) is the costliest known failure mode; a fire is cheap relative to one recurrence."
+    },
+    {
+      "module": "stop_on_error",
+      "class": "real-catch",
+      "why": "#3334 revived: blocks the next call after a real tool error (numeric exit_code / tool_output_is_error — the shape Claude Code actually sends; the old text regex had ZERO fires ever). A fire = an error that could no longer pass silently. Benign exits (grep no-match etc.) exempted in-module."
     }
   ]
 }

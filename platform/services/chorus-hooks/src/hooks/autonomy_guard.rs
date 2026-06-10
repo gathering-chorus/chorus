@@ -480,7 +480,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     fn user_prompt(text: &str) -> HookInput {
@@ -494,7 +494,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     // === Trigger detection ===
@@ -523,7 +523,7 @@ mod tests {
             stop_hook_active: Some(true),
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,};
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,};
         assert!(matches!(detect_trigger(&input), Trigger::Stop));
     }
 
@@ -647,7 +647,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,};
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,};
         let r = check(&input, &state).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);

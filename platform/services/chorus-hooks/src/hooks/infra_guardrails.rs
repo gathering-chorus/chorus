@@ -293,7 +293,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     fn silas_bash(cmd: &str) -> HookInput {
@@ -307,7 +307,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,}
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
     }
 
     // === heredoc/echo skip (absorbed from app_state_guard #1862) ===
@@ -449,7 +449,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None,};
+            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);
