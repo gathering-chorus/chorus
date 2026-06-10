@@ -957,13 +957,13 @@ pub fn canonical_ff_sync(root: &str) -> R<()> {
         .map(|s| !s.trim().is_empty()).unwrap_or(false);
     if ahead > 0 || dirty {
         return Err(format!(
-            "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}). Run 'chorus-werk-sync recover', then re-deploy.",
+            "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}). Run 'werk-sync recover', then re-deploy.",
             behind, ahead, dirty
         ));
     }
     run_env(Some(root), &[], "git", &["-C", root, "merge", "--ff-only", "origin/main"])
         .map(|_| ())
-        .map_err(|e| format!("ff to origin/main failed; run 'chorus-werk-sync recover': {}", e))
+        .map_err(|e| format!("ff to origin/main failed; run 'werk-sync recover': {}", e))
 }
 
 /// #2997 port — did the MCP daemon answer a real JSON-RPC initialize as a valid

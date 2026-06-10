@@ -930,7 +930,7 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
             if ahead > 0 || dirty {
                 jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"canonical-unsyncable\"");
                 return Err(format!(
-                    "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}) — run chorus-werk-sync recover, then re-deploy",
+                    "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}) — run werk-sync recover, then re-deploy",
                     behind, ahead, dirty
                 ));
             }

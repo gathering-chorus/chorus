@@ -1,0 +1,16 @@
+[package]
+name = "werk-sync"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies (ADR-032 §1 blueprint). std only + a direct
+# libc `flock` extern, and `git`/`shasum`/`chorus-log` as subprocesses.
+[dependencies]
+
+[[bin]]
+name = "werk-sync"
+path = "src/main.rs"
+
+[lib]
+name = "werk_sync"
+path = "src/lib.rs"
