@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_accept::{do_more, finalize, signal};
+use werk_accept::{finalize, signal};
 
 fn nanos() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() }
 fn tmp(tag: &str) -> PathBuf {
@@ -31,7 +31,7 @@ fn write_exec(path: &Path, body: &str) {
 }
 
 #[test]
-fn signal_do_more_finalize_split() {
+fn signal_then_finalize_one_exit_verb() {
     // #3183: werk-accept now resolves cards/chorus-log/chorus-werk ABSOLUTELY under
     // home/platform/scripts, and werk-deploy under $CHORUS_BIN — independent of PATH
     // (it's exec'd by the chorus-mcp daemon whose PATH lacks platform/scripts; bare
@@ -79,7 +79,11 @@ fn signal_do_more_finalize_split() {
     std::env::set_var("CARDS_OWNER", "kade");
     std::env::set_var("CARDS_STATUS", "WIP");
 
-    // === #3237: accept() split into signal (go) / do_more (no-go|more) / finalize ===
+    // === #3237 split → #3311 consolidation: ONE exit verb. signal (authority-gated,
+    // writes the decision) and finalize (mechanical close) are the two halves the
+    // werk-accept BINARY now runs in sequence (GO = accept). werk-do-more and the
+    // werk-finalize binary are DELETED — no-go/more = do nothing (#3279), and the
+    // close has no standalone door. These tests pin each half's contract.
     let demo_witness = home.join("ops/logs/werk-demo.jsonl");
 
     // (1) signal AUTHORITY: a builder (kade) self-signaling => Err, and NO decision
@@ -103,14 +107,7 @@ fn signal_do_more_finalize_split() {
     assert!(!after_signal.contains("werk-deploy env-down"), "signal must NOT tear down variants");
     assert!(!after_signal.contains("pr merge"), "signal never merges");
 
-    // (3) do_more: same authority gate, writes demo.decision{more} → werk-demo exits 2.
-    do_more(9001, "kade", "jeff", &home, "more").expect("jeff signals more");
-    assert!(
-        fs::read_to_string(&demo_witness).unwrap().contains("\"decision\":\"more\""),
-        "do_more writes demo.decision more"
-    );
-
-    // (4) finalize VERDICT GATE: no demo.verdict=pass yet (the go wrote a decision, not a
+    // (3) finalize VERDICT GATE: no demo.verdict=pass yet (the go wrote a decision, not a
     //     verdict — werk-demo writes the verdict on go) => Err, NO finalize.
     assert!(finalize(9001, "kade", &home).is_err(), "finalize refuses without demo.verdict=pass");
     assert!(!fs::read_to_string(&log).unwrap_or_default().contains("cards done 9001"),
@@ -121,7 +118,7 @@ fn signal_do_more_finalize_split() {
         fs::read_to_string(&demo_witness).unwrap()
     )).unwrap();
 
-    // (5) finalize HAPPY: NO authority gate (act runs it post-deploy) — mechanical finalize.
+    // (4) finalize HAPPY: mechanical close — runs inside accept after the gated signal.
     finalize(9001, "kade", &home).expect("finalize runs post-deploy");
     let after_fin = fs::read_to_string(&log).unwrap_or_default();
     assert!(after_fin.contains("cards done 9001"), "finalize marks the card Done");
@@ -132,7 +129,7 @@ fn signal_do_more_finalize_split() {
     assert!(env_down_at < werk_remove_at, "env-down precedes chorus-werk remove");
     assert!(!after_fin.contains("pr merge"), "finalize never merges (werk-merge owns merge)");
 
-    // (6) signal self-accept nuance: wren signaling a WREN-owned card => Err. signal
+    // (5) signal self-accept nuance: wren signaling a WREN-owned card => Err. signal
     //     doesn't touch the werk, so no worktree setup is needed.
     std::env::set_var("CARDS_OWNER", "wren");
     assert!(signal(9002, "wren", "wren", &home).is_err(), "wren self-accept refused on signal");

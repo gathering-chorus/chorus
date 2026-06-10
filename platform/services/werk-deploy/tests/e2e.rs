@@ -323,3 +323,121 @@ fn e2e_shared_lib_cascade_and_anti_stale() {
 // stale against. The inverse (behind werk still deploys from main, no refuse) is now
 // asserted in e2e_deploy_both_slots_and_guards' AC2 section. The old refuse test is gone
 // because it asserted behavior we deliberately removed.
+
+// #3320 — the self-deploy detach, end-to-end against the REAL binary. A chorus-mcp
+// crate-mode deploy invoked with CHORUS_INVOKER=chorus-mcp must NOT run inline (the
+// kickstart would kill the invoking daemon and drop the caller's response): it acks
+// immediately (exit 0, transport survives) and hands off to a detached continuation
+// carrying CHORUS_DETACHED=1 + the same trace. The continuation itself must run the
+// NORMAL inline path (no respawn loop). Non-self deploys are unchanged.
+#[test]
+fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let bin = env!("CARGO_BIN_EXE_werk-deploy");
+    let home = tmp("selfdep");
+    // stub continuation: logs argv + the detach-relevant env, so we can assert the
+    // child got the crate-mode redeploy with CHORUS_DETACHED=1 and the same trace.
+    let stub_log = home.join("stub.log");
+    let stub = home.join("stub.sh");
+    write_exec(&stub, &format!(
+        "#!/bin/sh\necho \"argv=$* detached=$CHORUS_DETACHED trace=$CHORUS_TRACE_ID ghtok=$GH_TOKEN\" >> {:?}\n", stub_log
+    ));
+    // #3323 — gh shim: the PARENT (which still has keychain) captures `gh auth token`
+    // and injects GH_TOKEN into the detached child's env, so the child's gh calls
+    // survive the lost user security session (the post-#3320 401 class).
+    let shim_bin = tmp("ghshim");
+    write_exec(&shim_bin.join("gh"),
+        "#!/bin/sh\nif [ \"$1 $2\" = \"auth token\" ]; then echo FAKE-TOKEN-3323; exit 0; fi\nexit 0\n");
+    let shim_path = format!("{}:{}", shim_bin.display(), std::env::var("PATH").unwrap_or_default());
+
+    // (1) self-deploy: invoker chorus-mcp → detach ack, exit 0, child = crate-mode redeploy.
+    let out = Command::new(bin)
+        .args(["crate", "chorus-mcp"])
+        .env("CHORUS_HOME", &home)
+        .env("CHORUS_INVOKER", "chorus-mcp")
+        .env("WERK_DEPLOY_SELF_BIN", &stub)
+        .env("CHORUS_TRACE_ID", "tr-3320")
+        .env("PATH", &shim_path)
+        .env_remove("CHORUS_DETACHED")
+        .env_remove("GH_TOKEN")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "self-deploy must ack with exit 0 (transport survives): {}",
+        String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("deploy detached pid="), "ack names the detach: {stdout}");
+    assert!(stdout.contains("trace=tr-3320"), "ack carries the poll trace: {stdout}");
+    // the detached child got the crate-mode redeploy, marked detached, same trace.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while read(&stub_log).is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let child = read(&stub_log);
+    assert!(child.contains("argv=crate chorus-mcp"), "continuation is a crate-mode redeploy: {child}");
+    assert!(child.contains("detached=1"), "continuation carries CHORUS_DETACHED=1: {child}");
+    assert!(child.contains("trace=tr-3320"), "continuation reuses the SAME trace: {child}");
+    // #3323 — the parent captured the token and injected it into the child's env.
+    assert!(child.contains("ghtok=FAKE-TOKEN-3323"),
+        "detached child carries GH_TOKEN from the parent's keychain capture: {child}");
+    // the parent did NOT emit deploy.completed — that's the child's to write (no false-green).
+    let jsonl = read(&home.join("ops/logs/werk-deploy.jsonl"));
+    assert!(!jsonl.contains("deploy.completed"), "ack must not false-emit deploy.completed: {jsonl}");
+    assert!(jsonl.contains("deploy.detached"), "the detach itself is witnessed: {jsonl}");
+
+    // (2) the continuation does NOT re-detach: with CHORUS_DETACHED=1 it runs the normal
+    // inline path — in this bare home that's the dir-not-found refusal, NOT another spawn.
+    let out2 = Command::new(bin)
+        .args(["crate", "chorus-mcp"])
+        .env("CHORUS_HOME", &home)
+        .env("CHORUS_INVOKER", "chorus-mcp")
+        .env("CHORUS_DETACHED", "1")
+        .env("WERK_DEPLOY_SELF_BIN", &stub)
+        .output()
+        .unwrap();
+    assert!(!out2.status.success(), "continuation runs inline (here: dir-not-found refusal)");
+    let combined2 = format!("{}{}", String::from_utf8_lossy(&out2.stdout), String::from_utf8_lossy(&out2.stderr));
+    assert!(combined2.contains("dir not found"), "inline path reached, no respawn: {combined2}");
+
+    // (3) non-self deploy unchanged: no invoker env → inline path (same refusal), no detach ack.
+    let out3 = Command::new(bin)
+        .args(["crate", "chorus-mcp"])
+        .env("CHORUS_HOME", &home)
+        .env_remove("CHORUS_INVOKER")
+        .env_remove("CHORUS_DETACHED")
+        .output()
+        .unwrap();
+    let combined3 = format!("{}{}", String::from_utf8_lossy(&out3.stdout), String::from_utf8_lossy(&out3.stderr));
+    assert!(!out3.status.success() && combined3.contains("dir not found"),
+        "no invoker → inline path, never detached: {combined3}");
+    assert!(!combined3.contains("deploy detached"), "no detach ack without the invoker: {combined3}");
+
+    // (4) #3323 — token-capture failure is NON-FATAL but witnessed: with no working gh
+    // on PATH the detach still proceeds (gh-less child better than no deploy), the ack
+    // still returns exit 0, and the jsonl witnesses the missing token.
+    let stub_log2 = home.join("stub2.log");
+    let stub2 = home.join("stub2.sh");
+    write_exec(&stub2, &format!(
+        "#!/bin/sh\necho \"ghtok=${{GH_TOKEN:-ABSENT}}\" >> {:?}\n", stub_log2
+    ));
+    let no_gh = tmp("noghbin"); // empty dir — PATH has no gh at all
+    let out4 = Command::new(bin)
+        .args(["crate", "chorus-mcp"])
+        .env("CHORUS_HOME", &home)
+        .env("CHORUS_INVOKER", "chorus-mcp")
+        .env("WERK_DEPLOY_SELF_BIN", &stub2)
+        .env("CHORUS_TRACE_ID", "tr-3323-nogh")
+        .env("PATH", no_gh.to_str().unwrap())
+        .env_remove("CHORUS_DETACHED")
+        .env_remove("GH_TOKEN")
+        .output()
+        .unwrap();
+    assert!(out4.status.success(), "capture failure must not block the detach: {}",
+        String::from_utf8_lossy(&out4.stderr));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while read(&stub_log2).is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(read(&stub_log2).contains("ghtok=ABSENT"), "no fake/empty token injected on capture failure");
+    let jsonl = read(&home.join("ops/logs/werk-deploy.jsonl"));
+    assert!(jsonl.contains("gh-token-capture"), "capture failure witnessed in the jsonl: {jsonl}");
+}

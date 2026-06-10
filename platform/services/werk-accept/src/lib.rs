@@ -221,30 +221,16 @@ pub fn run_accept() -> R<String> {
     let (card, role, _atomic) = parse_accept_args(&args)?;
     let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    signal(card, &role, &accepter, &home)
+    // #3311 — GO = ACCEPT: one exit verb. The authority-gated signal records who
+    // accepted, then the mechanical close runs in the same invocation (idempotent —
+    // a re-run completes a partial finalize). werk-finalize (the #3237 twin that held
+    // the close while accept held only the signal) is DELETED; this verb now does
+    // what its own header always claimed: flip Done, close branch + werk, stamp.
+    let sig = signal(card, &role, &accepter, &home)?;
+    let fin = finalize(card, &role, &home)?;
+    Ok(format!("{} | {}", sig, fin))
 }
 
-/// Entry for werk-do-more (#3237): the STOP verdicts. `werk-do-more <card> <role> <no-go|more>`.
-pub fn run_do_more() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
-    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args().nth(2).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
-    let decision = env::args().nth(3).ok_or_else(|| "usage: werk-do-more <card> <role> <no-go|more>".to_string())?;
-    let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
-    let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    do_more(card, &role, &accepter, &home, &decision)
-}
-
-/// Entry for werk-finalize (#3237): the MECHANICAL post-deploy finalize. `werk-finalize
-/// <card> <role>`. NO authority — act runs it after merge+deploy-prod (the authority was
-/// the go).
-pub fn run_finalize() -> R<String> {
-    let card_arg = env::args().nth(1).ok_or_else(|| "usage: werk-finalize <card> <role>".to_string())?;
-    let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
-    let role = env::args().nth(2).ok_or_else(|| "usage: werk-finalize <card> <role>".to_string())?;
-    let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
-    finalize(card, &role, &home)
-}
 
 /// Shared FRONT for the decision verbs (werk-accept go, werk-do-more no-go|more):
 /// DEC-048 authority (stage 1: only jeff/wren; stage 2: keyed on the card's REAL owner
@@ -318,31 +304,6 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
     Ok(format!("go signaled for #{} by {} — werk-demo unblocks, act continues to merge", card, accepter))
 }
 
-/// werk-do-more (#3237) — the STOP verdicts: no-go (reject) or more (iterate). Same
-/// authority + WIP gate as the go-signal, then write demo.decision{no-go|more} → werk-demo
-/// exits 2 → act stops, nothing merged. Done → idempotent no-op.
-pub fn do_more(card: u64, role: &str, accepter: &str, home: &Path, decision: &str) -> R<String> {
-    let decision = decision.trim().to_lowercase();
-    if !matches!(decision.as_str(), "no-go" | "more") {
-        return Err(format!("decision must be 'no-go' or 'more', got '{}'", decision));
-    }
-    let accepter = accepter.trim().to_lowercase();
-    let trace = trace_id();
-    jsonl(home, role, card, &trace, "do_more.started",
-          &format!(",\"accepter\":\"{}\",\"decision\":\"{}\"", accepter, decision));
-    let status = gate_decision(card, role, &accepter, home, &trace)?;
-    if status == "Done" {
-        jsonl(home, role, card, &trace, "do_more.idempotent", "");
-        return Ok(format!("#{} already finalized — nothing to iterate", card));
-    }
-    if status != "WIP" {
-        jsonl(home, role, card, &trace, "do_more.refused", &format!(",\"reason\":\"not-wip\",\"status\":\"{}\"", status));
-        return Err(format!("#{} is '{}', not WIP — a {} applies to a WIP card", card, status, decision));
-    }
-    write_decision(home, card, &decision, &accepter, &trace);
-    jsonl(home, role, card, &trace, "do_more.signaled", &format!(",\"decision\":\"{}\"", decision));
-    Ok(format!("{} signaled for #{} — werk-demo exits 2, act stops (nothing merged)", decision, card))
-}
 
 /// werk-finalize (#3237) — the MECHANICAL post-deploy finalize. NO authority gate (the
 /// authority was the go); act runs this after merge+deploy-prod succeed. Gated only on
