@@ -53,8 +53,13 @@ replayed, silence is true). Invoking it:
    your typed message; the banner is his visibility into the watch.
 3. Narrate: 2-3 sentences on what the role is doing and how it's going. Only what
    the output shows — never improvise activity. Quiet poll = say it's quiet.
-4. To keep watching, re-invoke. **This is a poll you RE-RUN, not a maintained
-   loop** — no cron, no background watcher. If you stop re-polling, you've
+4. **END YOUR TURN.** One poll per turn — poll, narrate, stop. Never hold the turn
+   open polling or "processing": while you process, Jeff's keyboard is locked and
+   he has to Esc to talk to you, which breaks the walk (Jeff, live, 2026-06-10).
+   Turn-end is what hands Jeff the floor; his next message is the loop's next beat.
+5. To keep watching, re-invoke on your NEXT turn (his reply, his question, his
+   silence broken). **This is a poll you RE-RUN, not a maintained loop** — no cron,
+   no background watcher, no foreground wait. If you stop re-polling, you've
    stopped observing (the TTL will tell the truth for you).
 
 ## Commentary format

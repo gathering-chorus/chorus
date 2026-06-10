@@ -90,6 +90,15 @@ pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "op
 /// with NO demo.gate.result recorded for the card. Empty = the full gate gather
 /// ran → a verdict may be recorded. card_id is matched comma-terminated so a
 /// gate for #31 can't satisfy #3 (the #3116/#31160 collision class).
+/// #3319 (Jeff's JX) — the announce is the ready-gate. The announce-bearing tail of
+/// demo() (signal → test-surface → DEMO READY → peer feedback) may fire ONLY when this
+/// returns true: every required gate is recorded for the card, OR the test suite is
+/// driving the tail directly (skip_gate_check). False ⇒ stand by silently, no announce —
+/// Jeff is never pulled into a demo before its gates exist.
+pub fn announce_ready(witness: &str, card: u64, skip_gate_check: bool) -> bool {
+    skip_gate_check || gates_missing(witness, card).is_empty()
+}
+
 pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     REQUIRED_GATES
@@ -631,6 +640,36 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // folds into the machine prover. The binary no longer blocks on gate comments.
     emit_spine(home, "demo.gate.delegated", role, card, &trace);
 
+    // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
+    // announce-bearing tail below (signal → test-surface → DEMO READY → peer
+    // feedback) fires ONLY when prework is sealed — every required gate recorded.
+    // The interactive demoer already REFUSED above (~line 590) if gates are
+    // missing; the only way to reach here un-gated is the headless act prework
+    // path, which skips that refusal because it has no LLM to run gates. In that
+    // path we STAND BY: the variant is up, gates are pending the interactive
+    // demoer, and we emit NO announce — no Bridge post, no peer nudges, no
+    // "DEMO READY". Jeff is never dragged into a demo before it can run. The
+    // demoer runs the 5 gates as prework (/demo Step 1), then re-invokes; on that
+    // pass gates are present and the announce fires for real.
+    // (skip_gate_check = the unit/e2e suite, which drives the full tail directly.)
+    {
+        let witness_pre = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+        if !announce_ready(&witness_pre, card, skip_gate_check) {
+            emit_spine(home, "demo.prework.standby", role, card, &trace);
+            jsonl(home, role, card, &trace, "demo.prework.standby", ",\"reason\":\"gates-pending\"");
+            return Ok(DemoOutcome {
+                message: format!(
+                    "demo #{} — prework standby. Variant is up; gates not yet recorded, so \
+                     NO announce fired (the announce is the ready-gate, #3319). The demoer runs \
+                     the 5 gates as prework, then re-invokes — the announce fires only once every \
+                     gate is recorded. Jeff is not pulled into a demo that can't run yet.",
+                    card
+                ),
+                exit: 0,
+            });
+        }
+    }
+
     // Step 5: signal — board demo + spine event + Bridge + feedback nudges (best-effort,
     // the act has already gated; this announces). Step 4 stakes-brief is human-driven
     // content; demo-v2 records it in spine events, not as a separate gate.
@@ -944,6 +983,30 @@ mod tests {
     #[test]
     fn gates_missing_all_when_witness_empty() {
         assert_eq!(gates_missing("", 3237).len(), 5);
+    }
+
+    // #3319 — the announce is the ready-gate: no announce fires until gates are recorded.
+    #[test]
+    fn announce_blocked_when_any_gate_missing() {
+        let w = format!("{}\n{}", gate_line(3319, "product"), gate_line(3319, "code"));
+        assert!(!announce_ready(&w, 3319, false), "missing gates ⇒ stand by, no announce");
+    }
+
+    #[test]
+    fn announce_allowed_when_all_five_recorded() {
+        let w = REQUIRED_GATES.iter().map(|g| gate_line(3319, g)).collect::<Vec<_>>().join("\n");
+        assert!(announce_ready(&w, 3319, false), "all 5 gates ⇒ announce may fire");
+    }
+
+    #[test]
+    fn announce_blocked_when_witness_empty() {
+        assert!(!announce_ready("", 3319, false), "no gates at all ⇒ never announce");
+    }
+
+    #[test]
+    fn announce_skip_drives_tail_for_test_suite() {
+        // skip_gate_check (unit/e2e) drives the full tail directly regardless of witness.
+        assert!(announce_ready("", 3319, true), "skip_gate_check ⇒ suite drives the tail");
     }
 
     #[test]
