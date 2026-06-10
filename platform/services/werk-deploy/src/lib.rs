@@ -97,6 +97,45 @@ pub fn parse_build_summary(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// #3316 — the demo-phase cdhashes for a card, read from the werk-deploy jsonl witness.
+/// The demo (target=werk) writes a `"rebuilt"` event with `"built":"crate=cdhash,..."`.
+/// We take the LAST such event for the card (most recent demo build). Best-effort:
+/// no demo recorded → empty → no comparison, never a false divergence.
+pub fn demo_cdhashes(jsonl_content: &str, card: u64) -> Vec<(String, String)> {
+    let key = format!("\"card_id\":{}", card);
+    jsonl_content
+        .lines()
+        .filter(|l| l.contains(&key) && l.contains("\"event\":\"rebuilt\"") && l.contains("\"built\":\""))
+        .next_back()
+        .and_then(|l| {
+            let start = l.find("\"built\":\"")? + "\"built\":\"".len();
+            let rest = &l[start..];
+            let end = rest.find('"')?;
+            Some(parse_build_summary(&rest[..end]))
+        })
+        .unwrap_or_default()
+}
+
+/// #3316 — compare demo'd cdhashes against prod-built cdhashes. A divergence is a crate the
+/// demo recorded whose prod-built hash differs — "what you demo'd is NOT what shipped" (the
+/// integration trap: source moved between demo and land). Because build is a pure function of
+/// source, an identical-source rebuild MUST match; divergence means the source changed.
+/// Crates with no demo baseline are skipped (nothing to compare → no false divergence).
+/// Returns (crate, demo_hash, prod_hash) per divergence.
+pub fn cdhash_divergences(
+    demo: &[(String, String)],
+    prod: &[(String, String)],
+) -> Vec<(String, String, String)> {
+    prod.iter()
+        .filter_map(|(c, ph)| {
+            demo.iter()
+                .find(|(dc, _)| dc == c)
+                .filter(|(_, dh)| dh != ph)
+                .map(|(_, dh)| (c.clone(), dh.clone(), ph.clone()))
+        })
+        .collect()
+}
+
 /// Extract a cdhash from `codesign -d --verbose=4` output (`CDHash=<hash>`).
 pub fn extract_running_cdhash(codesign_out: &str) -> Option<String> {
     for line in codesign_out.lines() {
@@ -829,9 +868,10 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // tool, crate-scoped so a prod deploy never rebuilds the whole tree (no full-repo tsc at
     // acp, no coupling the card's deploy to unrelated crates' health on main). TS services are
     // NOT built here — chorus-deploy npm-builds them from canonical in the deploy loop below.
+    let mut prod_hashes: Vec<(String, String)> = Vec::new();
     if !crates.is_empty() {
         let only = crates.join(",");
-        run_env(
+        let build_out = run_env(
             Some(werk_s),
             &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
             "werk-build",
@@ -839,6 +879,39 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         )
         .map_err(|e| died(home, role, card, trace, "canonical-build-fail",
             format!("werk-build --target canonical failed; nothing installed: {}", e)))?;
+        prod_hashes = parse_build_summary(&build_out);
+    }
+
+    // #3316 — prove "what you demo is what ships". Prod builds from merged main (NOT a copy
+    // of the demo binary); because build is a pure function of source, the prod cdhash MUST
+    // equal the demo'd one. A divergence = source moved between demo and land (the integration
+    // trap). Emitted, NOT yet a hard gate: a divergence is WARNED (deploy.cdhash.diverged) so
+    // the live land path is never false-blocked while equality is confirmed across unit types
+    // (follow-on: flip to refuse once proven). Rust crates only — TS dist-SHA determinism is
+    // unproven, so TS is left for the follow-on rather than risk false-refusing TS lands.
+    if !prod_hashes.is_empty() {
+        let demo = fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl"))
+            .map(|c| demo_cdhashes(&c, card))
+            .unwrap_or_default();
+        if demo.is_empty() {
+            jsonl(home, role, card, trace, "deploy.cdhash.unverified",
+                ",\"reason\":\"no-demo-baseline\"");
+        } else {
+            let div = cdhash_divergences(&demo, &prod_hashes);
+            if div.is_empty() {
+                jsonl(home, role, card, trace, "deploy.cdhash.matched",
+                    &format!(",\"crates\":\"{}\"", summary(&prod_hashes)));
+                emit_spine(home, "deploy.cdhash.matched", role, card, trace,
+                    &[("crates", &summary(&prod_hashes))]);
+            } else {
+                for (c, dh, ph) in &div {
+                    jsonl(home, role, card, trace, "deploy.cdhash.diverged",
+                        &format!(",\"crate\":\"{}\",\"demo\":\"{}\",\"prod\":\"{}\"", c, dh, ph));
+                    emit_spine(home, "deploy.cdhash.diverged", role, card, trace,
+                        &[("crate", c), ("demo", dh), ("prod", ph)]);
+                }
+            }
+        }
     }
 
     // Install/verify/kickstart each via the single prod path. CHORUS_ROOT=canonical so a Rust
