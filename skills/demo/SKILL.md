@@ -100,6 +100,8 @@ The harness invokes it with `DEPLOY_ROLE`, `CHORUS_HOME`, `CHORUS_WERK_BASE`, `C
 
 `werk-accept` (step 8 of the flat sequence) finalizes a card **only** if a `demo.verdict=pass` exists for it on record. There is no `demo:preflight-pass` comment chain anymore and no 4-event `demo.*.completed` chain — one verdict, read from the werk-demo witness. DEC-048 (a builder can't self-accept a code card; Jeff is the human authority) stays enforced in `werk-accept`.
 
+**GO is one silent ceremony (#3327).** Jeff's GO at the demo IS the accept (GO=accept, #3311) — it's recorded once, at the demo. `werk-accept` then runs *inside* the same `go:true` pipeline (merge → deploy-prod → finalize); it records the go internally and finalizes **silently**. There is no second go to give and no copy-paste step — the only human-facing output is `#N finalized`. If you ever see `werk-accept` re-announce "go signaled… act continues to merge," that's the WIP-limbo recovery path (a transport drop left the card un-finalized), not the normal flow.
+
 ## What this replaces (#3116)
 
 - The in-binary **gate-chain + go-run-your-gate nudge relay** → gates are now subagents the demoer initiates; results route to roles for review.

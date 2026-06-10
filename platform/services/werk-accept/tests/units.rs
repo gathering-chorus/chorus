@@ -3,9 +3,29 @@
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
 use werk_accept::{
-    branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line, parse_accept_args,
-    script_path,
+    accept_output, branch_name, can_accept, demo_decision_line, demo_verdict_pass, jsonl_line,
+    parse_accept_args, script_path,
 };
+
+// #3327 — GO is one silent ceremony. signal() records the go internally (witness +
+// signal.go event) but returns NO human-facing announce on the clean WIP path; the
+// only output a clean go:true run shows is finalize's "#N finalized". accept_output
+// is the pure join: empty signal message ⇒ finalize alone (no "go signaled… act
+// continues to merge" double-go), non-empty signal (the already-Done audit) ⇒ both.
+#[test]
+fn accept_output_clean_go_is_finalize_only_no_double_go() {
+    let out = accept_output("", "#3327 finalized (board Done + closed)");
+    assert_eq!(out, "#3327 finalized (board Done + closed)");
+    assert!(!out.contains("go signaled"), "clean go must not re-announce a go");
+    assert!(!out.contains("continues to merge"), "no future-tense merge language post-finalize");
+}
+
+#[test]
+fn accept_output_audit_path_keeps_both_messages() {
+    // already-Done recovery (#3298 audit): signal returns the audit note → show both.
+    let out = accept_output("#3327 already finalized — recorded jeff's accept (audit)", "noop");
+    assert_eq!(out, "#3327 already finalized — recorded jeff's accept (audit) | noop");
+}
 
 // #3237 — werk-accept's go-signal (and werk-do-more) write a demo.decision line
 // into ops/logs/werk-demo.jsonl that werk-demo's read_decision must match. The

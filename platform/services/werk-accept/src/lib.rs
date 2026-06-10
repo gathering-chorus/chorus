@@ -228,7 +228,19 @@ pub fn run_accept() -> R<String> {
     // what its own header always claimed: flip Done, close branch + werk, stamp.
     let sig = signal(card, &role, &accepter, &home)?;
     let fin = finalize(card, &role, &home)?;
-    Ok(format!("{} | {}", sig, fin))
+    Ok(accept_output(&sig, &fin))
+}
+
+/// #3327 — GO is one silent ceremony. Join the signal + finalize messages for the
+/// human: a CLEAN go (signal returns "" — recorded the go internally, no announce)
+/// shows ONLY the finalize line, so the output never reads like a second go. The
+/// already-Done audit path (signal returns a note) shows both. Pure → unit-tested.
+pub fn accept_output(signal_msg: &str, finalize_msg: &str) -> String {
+    if signal_msg.is_empty() {
+        finalize_msg.to_string()
+    } else {
+        format!("{} | {}", signal_msg, finalize_msg)
+    }
 }
 
 
@@ -301,7 +313,12 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
     }
     write_decision(home, card, "go", &accepter, &trace);
     jsonl(home, role, card, &trace, "signal.go", &format!(",\"accepter\":\"{}\"", accepter));
-    Ok(format!("go signaled for #{} by {} — werk-demo unblocks, act continues to merge", card, accepter))
+    // #3327 — GO is one silent ceremony. The go is RECORDED above (witness + signal.go
+    // event, which finalize gates on); the human-facing announce is dropped. GO=accept
+    // (#3311/DEC-048): the go happened at the demo, and finalize() runs in this same
+    // invocation, so a "go signaled… act continues to merge" line here is a phantom
+    // second-go for work already done. Return empty → run_accept shows finalize alone.
+    Ok(String::new())
 }
 
 
