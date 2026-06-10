@@ -1216,7 +1216,11 @@ fn run_crate_mode(args: &[String]) -> R<String> {
         emit_spine(&home, "deploy.rolled_back", &role, card, &trace, &[("crate", &name)]);
         return Ok(format!("{} rolled back target=canonical", name));
     }
+    jsonl(&home, &role, card, &trace, "deploy.started", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"crate\":\"{}\"", name));
     deploy_crate_canonical(&home, &role, card, &trace, &name)?;
+    // Witness the standalone crate deploy in the jsonl (the in-flow path writes its own
+    // whole-deploy deploy.completed in deploy_canonical; this is the crate-mode analogue).
+    jsonl(&home, &role, card, &trace, "deploy.completed", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"deployed\":\"{}\"", name));
     Ok(format!("{} deployed target=canonical", name))
 }
 
