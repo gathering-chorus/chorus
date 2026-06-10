@@ -1,0 +1,16 @@
+[package]
+name = "werk-unpull"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies (ADR-032 §1 blueprint). std only; `git`,
+# `cards`, `chorus-werk`, `role-state`, `chorus-log` as subprocesses.
+[dependencies]
+
+[[bin]]
+name = "werk-unpull"
+path = "src/main.rs"
+
+[lib]
+name = "werk_unpull"
+path = "src/lib.rs"
