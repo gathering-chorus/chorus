@@ -328,6 +328,7 @@ jobs:
           - platform/services/werk-build
           - platform/services/werk-deploy
           - platform/services/werk-sync
+          - platform/services/werk-unpull
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
