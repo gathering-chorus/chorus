@@ -1299,55 +1299,12 @@ const CHORUS_WERK = 'chorus-werk';
 const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 
 
-// #2689/#2697 — classifiers extracted from executeCommit to keep cognitive
-// complexity under threshold. Each returns the typed reason for its phase.
-export function classifyCommitFailure(stderr: string): 'hook-fail' | 'commit-fail' {
-  // #2699 — tightened from /^pre-commit:|^.. blocked|hook failed/i. Old regex
-  // matched any pre-commit-prefixed line (incl. warnings) and the bare 'hook
-  // failed' substring anywhere. New form requires a failure marker (red circle,
-  // X, 'failed', 'blocked') on the same line as the 'pre-commit:' prefix.
-  // Wren observed the over-match during #2689 acp dogfood 2026-05-03.
-  return /pre-commit:.*(?:🔴|❌|failed|blocked)/i.test(stderr) ? 'hook-fail' : 'commit-fail';
-}
-
-// #3040 — a squash-merge leaves no commits between main and the card branch, so
-// `gh pr create` fails with "No commits between <base> and <head>". That is NOT
-// a real pr-create-fail: the work is already on main. acp must recover (skip the
-// PR, finish werk-close + cards-done) instead of refusing — otherwise the card
-// stays WIP and the werk/branch leak. Hit live on #3025 and #3038.
-export function prCreateMeansAlreadyMerged(stderr: string): boolean {
-  return /no commits between .+ and /i.test(stderr);
-}
-
-// #3011 — pick the line that actually explains the failure. When pre-commit
-// PASSES (🟢 N/N) but `git commit` fails downstream, git flushes the hook's
-// stdout into its own stderr, so stderr's first line is the green success line.
-// The old refusal used stderr.split('\n')[0] and surfaced
-// "commit-fail — pre-commit: 🟢 2/2 checks passed" — a contradiction that hid
-// the real cause (observed live 2026-05-20, 3x). Skip pre-commit SUCCESS/
-// progress lines (a `pre-commit:` line with no failure marker) and return the
-// first meaningful line. A genuine `pre-commit: 🔴 …` line carries a failure
-// marker, so it is NOT skipped — hook-fail detail is preserved (AC3).
-export function commitFailureDetail(stderr: string): string {
-  const isPrecommitNoise = (line: string): boolean =>
-    /pre-commit:/i.test(line) && !/🔴|❌|failed|blocked/i.test(line);
-  const lines = stderr
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  const meaningful = lines.find((l) => !isPrecommitNoise(l));
-  return meaningful ?? lines[0] ?? stderr.slice(0, 200);
-}
-
-// #3011 — a path that doesn't exist on disk makes git emit the cryptic
-// "fatal: pathspec '<p>' did not match any files" (the #3008 caller bug Wren
-// debugged live). Catch it before git-queue and refuse with a precise reason
-// naming the offenders. Only meaningful when staging (no_add=false); a no_add
-// commit lands staged deletes whose paths are intentionally gone from disk.
-// Untracked NEW files DO exist on disk, so they pass — git add stages them.
-export function findMissingPaths(paths: string[], exists: (p: string) => boolean): string[] {
-  return paths.filter((p) => !exists(p));
-}
+// #3331 — classifyCommitFailure / prCreateMeansAlreadyMerged / commitFailureDetail /
+// findMissingPaths REMOVED: orphaned exports of the cut v1 chorus_commit / chorus_acp
+// paths (#3178 retired chorus_commit; the live werk-commit path goes through
+// executeWerkVerb's generic reason= parse). Zero call sites confirmed semantically
+// (ast-grep across the repo: no calls; only the dead test files #3324 already
+// deleted referenced them).
 
 function extractStderr(err: unknown): string {
   return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
@@ -1368,23 +1325,9 @@ function extractStderr(err: unknown): string {
 // No caching (the #2779 lesson): the set of werk dirs changes within a session
 // as cards are pulled and acp'd. readdir is microseconds; this is per-MCP-
 // request. Correctness over a cache that silently goes stale.
-// #3173 — resolve acp's promote SOURCE to the ONE live deploy slot:
-// $WERK_<ROLE>_BIN (chorus-werk/<role>-bin/), exactly where werk-deploy /
-// werk-deploy --target werk installs and the verb wrapper reads. Prefers the
-// explicit env var (the same one deploy + wrapper use — one convention); derives
-// chorus-werk/<role>-bin only as a fallback. The retired `repoRoot/.werk-bin`
-// path (chorus-env-setup.sh:104) is gone. Pure for test.
-export function resolveWerkBinDir(
-  role: string,
-  env: Record<string, string | undefined>,
-  repoRoot: string,
-): string {
-  const explicit = env[`WERK_${role.toUpperCase()}_BIN`];
-  if (explicit) return explicit;
-  const p = require('node:path') as typeof import('node:path');
-  const werkBase = env.CHORUS_WERK_BASE ?? p.join(p.dirname(repoRoot), 'chorus-werk');
-  return p.join(werkBase, `${role}-bin`);
-}
+// #3331 — resolveWerkBinDir REMOVED: the acp promote-werk-bin path that consumed it
+// is gone (promote = rebuild + prove-cdhash, not copy). Zero call sites confirmed
+// semantically (ast-grep: no calls anywhere).
 
 export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

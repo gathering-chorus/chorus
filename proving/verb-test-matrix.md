@@ -75,9 +75,10 @@ optionally don't record "fail" when `<werk>/Cargo.toml` is absent (can't-run ≠
    (e2e `refusals_success_spine_and_continue_reconflict`).
 8. werk-demo: wrong-status/no-ac refusals driven end-to-end; #3319 prework-standby branch.
 
-**Dead-code removals (need blast-radius, #3148):** werk-demo `read_decision`/`Decision`;
-werk-accept `branch_name`; mcp-server orphaned exports (`commitFailureDetail`,
-`classifyCommitFailure`, `findMissingPaths`, `prCreateMeansAlreadyMerged`, `resolveWerkBinDir`).
+**Dead-code removals: CLOSED by #3331 (2026-06-10)** — werk-demo `read_decision`/`Decision`,
+werk-accept `branch_name`, and mcp-server's five orphaned exports all removed, each after
+semantic zero-reference proof (ast-grep call-pattern sweep repo-wide; chorus-hooks' unrelated
+`Decision` type verified distinct). Suites green + clippy/tsc clean after each removal.
 
 ## Proposed fill cards (filed on Jeff's go at demo)
 
