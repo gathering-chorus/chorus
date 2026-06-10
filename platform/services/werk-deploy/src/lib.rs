@@ -635,7 +635,7 @@ fn path(p: &Path) -> R<&str> {
 /// #3315 — ADR-037 approval gate for deploy (the OTHER irreversible verb; mirrors
 /// werk-merge's #3297 require_approval). ONE gate, two doors — adapted for deploy's
 /// --target axis:
-///   • in-flow (no --atomic): the chorus_werk_land GO already authorized; the land sets
+///   • in-flow (no --atomic): the werk-land GO already authorized; the land sets
 ///     $ACCEPTER → record, don't gate. Returns the accepter, or "flow". NEVER blocks —
 ///     this is the load-bearing safety (no double-gate deadlock of the pipeline).
 ///   • standalone `--atomic --target canonical` (mutates PROD): DEMANDS an accepter or

@@ -58,7 +58,7 @@ assert "werk.yml triggers on workflow_dispatch" "yes" \
   "$(present "$WERK" 'workflow_dispatch')"
 
 # Full prove→land sequence present.
-for tool in werk-commit werk-push werk-build chorus_env_up werk-merge; do
+for tool in werk-commit werk-push werk-build werk-deploy werk-merge; do
   assert "werk.yml runs $tool (via MCP)" "yes" "$(present "$WERK" "$tool")"
 done
 assert "werk.yml deploys to werk slot then canonical" "yes" \

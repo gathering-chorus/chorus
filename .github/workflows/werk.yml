@@ -103,7 +103,7 @@ jobs:
 
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
-        run: chorus-mcp-call.sh "${ROLE}" chorus_deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
+        run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
         # #3240 — env-up posts chorus/env-up/<card> via a step-level gh-status (the verb emits
@@ -114,14 +114,14 @@ jobs:
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
           post pending
-          if chorus-mcp-call.sh "${ROLE}" chorus_env_up "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
+          if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
       - name: demo
         # werk-demo (#3116; PRESENT-AND-EXIT since #3279). The proving ceremony against the
         # env-up'd slot: it PRESENTS the running variant + decision surface and EXITS. It no
         # longer BLOCKS for the go — blocking held the synchronous MCP call open for the whole
         # human wait, which dropped on long waits (#3277) and could not survive a 12h walk-away.
-        # Half A of the pipeline ENDS here. Jeff's GO runs Half B (werk-land.yml). Failure
+        # Half A of the pipeline ENDS here. Jeff's GO re-invokes chorus_werk with go:true (#3311). Failure
         # (variant didn't come up) stops the job → nothing to land.
         run: DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}"
 
@@ -130,12 +130,12 @@ jobs:
         # Half A is done: the variant is up and presented; NOTHING is held — no connection to
         # drop, no detached process to leak. Tell the human what to look at and how to land it.
         # The GO is a SEPARATE short run (Half B = werk-land.yml: merge → ff-sync → deploy-prod
-        # → finalize), so the wait between holds nothing and survives a 12h walk-away or reboot.
+        # → accept; GO = accept, #3311), so the wait holds nothing and survives a 12h walk-away.
         # no-go/more = simply don't land; the werk is preserved for iteration.
         run: |
           echo "[presented] #${CARD_ID} — variant up, demo presented. Half A done; NOTHING is held."
           echo "  Look at the variant, then your call (Half B — a separate short run):"
-          echo "    GO         → chorus_werk_land {role:${ROLE}, card_id:${CARD_ID}}   (merge → ff-sync → deploy-prod → finalize)"
+          echo "    GO         → chorus_werk {role:${ROLE}, card_id:${CARD_ID}, go:true}   (merge → ff-sync → deploy-prod → accept)"
           echo "    no-go/more → do nothing; the werk is preserved for iteration."
 
       # --- orchestrator witness close (pairs with werk.started) ---
