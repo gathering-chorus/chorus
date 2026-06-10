@@ -1112,8 +1112,27 @@ fn detach_self_deploy(
         .open(log_dir.join("werk-deploy-detached.log"))
         .map_err(|e| format!("detached log open failed: {}", e))?;
     let err_log = log.try_clone().map_err(|e| format!("detached log clone failed: {}", e))?;
-    let child = Command::new(&exe)
-        .args(detach_argv(name, rollback))
+    // #3323 — the detached child loses the user security session, so its gh keyring
+    // auth 401s (broke werk-pull/werk-merge team-wide after every self-deploy). The
+    // PARENT still has keychain access: capture `gh auth token` here and inject
+    // GH_TOKEN into the child's env — scoped to process env, never written to disk
+    // or logs. Capture failure is NON-FATAL but witnessed: a gh-less child is
+    // strictly better than no deploy.
+    let gh_token = Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|t| !t.is_empty());
+    if gh_token.is_none() {
+        jsonl(home, role, card, trace, "gh-token-capture.failed",
+            ",\"detail\":\"parent could not capture gh auth token; detached child runs gh-less\"");
+        emit_spine(home, "deploy.detach.warn", role, card, trace,
+            &[("crate", name), ("reason", "gh-token-capture-failed")]);
+    }
+    let mut cmd = Command::new(&exe);
+    cmd.args(detach_argv(name, rollback))
         .env("CHORUS_DETACHED", "1")
         .env("CHORUS_TRACE_ID", trace)
         .env("DEPLOY_ROLE", role)
@@ -1121,7 +1140,11 @@ fn detach_self_deploy(
         .stdin(std::process::Stdio::null())
         .stdout(log)
         .stderr(err_log)
-        .process_group(0)
+        .process_group(0);
+    if let Some(t) = &gh_token {
+        cmd.env("GH_TOKEN", t);
+    }
+    let child = cmd
         .spawn()
         .map_err(|e| format!("detached self-deploy spawn failed: {}", e))?;
     let pid = child.id().to_string();
