@@ -350,50 +350,8 @@ exit 0
     let _ = fs::remove_file(trace_path);
 }
 
-// #3237 — go/no-go/more decision reader: the pure core of the blocking demo
-// step. Jeff's ONE input (go=accept / no-go=reject / more=iterate) is read from
-// the witness; act gates the merge on the exit code. Written failing-first; the
-// impl lives in lib.rs.
-fn decision_line(card: u64, decision: &str) -> String {
-    format!(
-        r#"{{"ts":1,"event":"demo.decision","role":"wren","card_id":{},"trace_id":"t","decision":"{}","reason":""}}"#,
-        card, decision
-    )
-}
-
-#[test]
-fn read_decision_none_when_no_decision_recorded() {
-    // No decision yet → None → the binary keeps blocking.
-    assert_eq!(werk_demo::read_decision("", 3237), None);
-}
-
-#[test]
-fn read_decision_parses_each_verdict() {
-    use werk_demo::Decision;
-    assert_eq!(werk_demo::read_decision(&decision_line(3237, "go"), 3237), Some(Decision::Go));
-    assert_eq!(werk_demo::read_decision(&decision_line(3237, "no-go"), 3237), Some(Decision::NoGo));
-    assert_eq!(werk_demo::read_decision(&decision_line(3237, "more"), 3237), Some(Decision::More));
-}
-
-#[test]
-fn read_decision_latest_wins() {
-    // Jeff said "more", then changed to "go" — the most recent decision stands.
-    use werk_demo::Decision;
-    let w = format!("{}\n{}", decision_line(3237, "more"), decision_line(3237, "go"));
-    assert_eq!(werk_demo::read_decision(&w, 3237), Some(Decision::Go));
-}
-
-#[test]
-fn read_decision_ignores_other_cards_comma_terminated() {
-    // a "go" for card 31 must NOT satisfy card 3 (anti #3/#31 collision).
-    assert_eq!(werk_demo::read_decision(&decision_line(31, "go"), 3), None);
-}
-
-#[test]
-fn decision_exit_codes_match_the_contract() {
-    // go → 0 (act merges); no-go | more → 2 (clean stop); never 1 (that's error).
-    use werk_demo::Decision;
-    assert_eq!(Decision::Go.exit_code(), 0);
-    assert_eq!(Decision::NoGo.exit_code(), 2);
-    assert_eq!(Decision::More.exit_code(), 2);
-}
+// #3324 AUDIT — the #3237 read_decision/Decision tests were DELETED here: #3279
+// retired the blocking-decision step (demo presents-and-exits; werk-land's
+// shared-trace records the verdict), leaving read_decision/Decision::exit_code
+// with zero production callers. The tests pinned retired behavior. Removing the
+// orphaned lib code itself is a fill card (needs blast-radius pass, #3148).

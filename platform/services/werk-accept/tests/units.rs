@@ -34,15 +34,9 @@ fn parse_accept_args_recognizes_atomic_anywhere() {
     assert!(parse_accept_args(&["3298".into()]).is_err(), "role required");
 }
 
-#[test]
-fn demo_decision_line_carries_more_and_no_go() {
-    let more = demo_decision_line(1, 42, "more", "wren", "t");
-    let nogo = demo_decision_line(1, 42, "no-go", "wren", "t");
-    assert!(more.contains("\"decision\":\"more\""), "more: {}", more);
-    assert!(nogo.contains("\"decision\":\"no-go\""), "no-go: {}", nogo);
-    // the comma guard holds for any card id.
-    assert!(more.contains("\"card_id\":42,") && nogo.contains("\"card_id\":42,"), "comma guard");
-}
+// #3324 AUDIT — demo_decision_line_carries_more_and_no_go deleted: no-go/more
+// emission belonged to werk-do-more, removed by #3311; nothing writes those
+// values (write_decision is only ever called with "go").
 
 #[test]
 fn script_path_resolves_absolute_under_home_platform_scripts() {
@@ -86,10 +80,9 @@ fn non_authority_roles_cannot_accept() {
     assert!(!can_accept("silas", "kade"));
 }
 
-#[test]
-fn branch_name_is_role_slash_card() {
-    assert_eq!(branch_name("kade", 3057), "kade/3057");
-}
+// #3324 AUDIT — branch_name test deleted: the helper has zero callers in lib.rs
+// (accept is finalize-only since #3175; branch close is chorus-werk remove's).
+// Removing the dead helper itself is a fill card (blast-radius pass, #3148).
 
 #[test]
 fn demo_verdict_pass_reads_the_demo_witness() {

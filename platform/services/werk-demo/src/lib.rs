@@ -1003,11 +1003,8 @@ mod tests {
         assert!(!announce_ready("", 3319, false), "no gates at all ⇒ never announce");
     }
 
-    #[test]
-    fn announce_skip_drives_tail_for_test_suite() {
-        // skip_gate_check (unit/e2e) drives the full tail directly regardless of witness.
-        assert!(announce_ready("", 3319, true), "skip_gate_check ⇒ suite drives the tail");
-    }
+    // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
+    // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
 
     #[test]
     fn gates_missing_ignores_other_cards_comma_terminated() {
