@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.eventloop-probe</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-eventloop-probe-worker.sh</string>
+    </array>
+    <!-- #3082: PERSISTENT detector, not interval-fired. KeepAlive restarts it if it
+         ever exits; the worker itself loops forever (probe → measure → wait). Unlike
+         reindex (one pass per StartInterval), this must watch chorus-api continuously. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/.chorus/eventloop-probe.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/.chorus/eventloop-probe.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <!-- nvm v20.11.1 first so PATH-resolved node matches chorus-api's; the worker
+             script also pins node by absolute path (committed == installed). -->
+        <string>/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

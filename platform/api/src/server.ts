@@ -3346,11 +3346,15 @@ if (require.main === module) {
   // volume. Revisit when CHORUS_API_PORT routing + worker-thread ALS land
   // (#3096 follow-on) — those eliminate the underlying overlap classes and
   // the threshold can come back down.
+  // #3082: the in-process detector stays until the off-loop probe worker is verified
+  // live (activate-before-retire); detector=in-process distinguishes its alerts from
+  // the probe's (detector=probe) during the overlap, so the retirement is provable
+  // from the data. This whole block is retired by the follow-on once the probe is proven.
   startEventloopAlert({
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         'domain=chorus',
-        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`], () => {}),
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=in-process'], () => {}),
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
     threshold: 3000,
   });
