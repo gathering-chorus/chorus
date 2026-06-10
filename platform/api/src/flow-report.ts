@@ -38,6 +38,16 @@ export interface FlowReport {
   cards: CardFlow[];
   errorClasses: Array<{ event: string; count: number }>;
   totals: { cards: number; landed: number; withErrors: number; errorEvents: number };
+  /** Overall cycle stats across LANDED cards (seconds) — the leading indicator
+   *  (Jeff, 2026-02-21: "instrument cycle time and lead time"). Lead time (card
+   *  created→accepted) needs the board join — #3266's layer, not computed here. */
+  cycleStats: { landedCards: number; medianS: number | null; avgS: number | null; p90S: number | null };
+}
+
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
+  return sorted[Math.max(0, idx)];
 }
 
 /** Lifecycle checkpoints in order. A step's duration = its checkpoint minus the
@@ -141,9 +151,18 @@ export function aggregateFlow(events: FlowEvent[]): FlowReport {
     .map(([event, count]) => ({ event, count }))
     .sort((a, b) => b.count - a.count || a.event.localeCompare(b.event));
 
+  const landedCycles = cards.filter((c) => c.landed).map((c) => c.cycleS).sort((a, b) => a - b);
+  const cycleStats = {
+    landedCards: landedCycles.length,
+    medianS: percentile(landedCycles, 50),
+    avgS: landedCycles.length ? Math.round(landedCycles.reduce((a, b) => a + b, 0) / landedCycles.length) : null,
+    p90S: percentile(landedCycles, 90),
+  };
+
   return {
     cards,
     errorClasses,
     totals: { cards: cards.length, landed: landedCount, withErrors, errorEvents },
+    cycleStats,
   };
 }

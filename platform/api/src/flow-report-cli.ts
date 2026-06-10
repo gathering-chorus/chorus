@@ -99,7 +99,7 @@ export function buildHtml(report: FlowReport & { generatedAt: string; windowHour
 th,td{text-align:left;padding:4px 8px;border-bottom:1px solid #eee}th{background:#222;color:#fff;font-size:11px;text-transform:uppercase}
 .err{color:#a33;font-size:12px;padding:1px 0}</style></head><body>
 <h1>Card Cycle Report — cycle · step time · errors enumerated per card</h1>
-<p>Generated ${report.generatedAt} · ${report.totals.cards} cards (${report.windowHours}h) · ${report.totals.errorEvents} error/warning events · ${report.totals.landed} landed${report.truncated ? ' · <b style="color:#b00">TRUNCATED at page limit</b>' : ''}</p>
+<p>Generated ${report.generatedAt} · ${report.totals.cards} cards (${report.windowHours}h) · ${report.totals.errorEvents} error/warning events · ${report.totals.landed} landed · CYCLE median ${fmt(report.cycleStats.medianS)} / avg ${fmt(report.cycleStats.avgS)} / p90 ${fmt(report.cycleStats.p90S)}${report.truncated ? ' · <b style="color:#b00">TRUNCATED at page limit</b>' : ''}</p>
 <table><thead><tr><th>card</th><th>landed</th><th>CYCLE</th><th>work</th><th>push</th><th>build</th><th>deploy</th><th>demo</th><th>merge</th><th>final</th><th>errors / warnings</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <h2>Error classes ranked</h2><ul>${classes}</ul>

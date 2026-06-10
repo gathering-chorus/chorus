@@ -134,6 +134,23 @@ describe('aggregateFlow (#3269)', () => {
   });
 });
 
+describe('cycleStats (#3269) — overall cycle as leading indicator', () => {
+  test('median/avg/p90 over LANDED cards only; empty-safe', () => {
+    const events: FlowEvent[] = [
+      ev(201, 'pull.completed', 0), ev(201, 'card.accepted', 10),   // 600s
+      ev(202, 'pull.completed', 0), ev(202, 'card.accepted', 20),   // 1200s
+      ev(203, 'pull.completed', 0), ev(203, 'card.accepted', 100),  // 6000s
+      ev(204, 'pull.completed', 0), ev(204, 'demo.refused', 5),     // not landed
+    ];
+    const r = aggregateFlow(events);
+    expect(r.cycleStats.landedCards).toBe(3);
+    expect(r.cycleStats.medianS).toBe(1200);
+    expect(r.cycleStats.avgS).toBe(2600);
+    expect(r.cycleStats.p90S).toBe(6000);
+    expect(aggregateFlow([]).cycleStats).toEqual({ landedCards: 0, medianS: null, avgS: null, p90S: null });
+  });
+});
+
 describe('normalizeLine (#3269) — both Loki source shapes', () => {
   test('werk-verbs jsonl shape (ts epoch-ms)', () => {
     const e = normalizeLine('{"ts":1781131618313,"event":"build.completed","role":"kade","card_id":3299,"name":"werk-pull"}');
