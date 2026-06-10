@@ -27,6 +27,20 @@ const DUMP_ENV = `printf '{"argv":"%s","DEPLOY_ROLE":"%s","CHORUS_ROLE":"%s","CH
 
 async function withServer(binDir: string, fn: (client: Client) => Promise<void>) {
   const orig = process.env.CHORUS_BIN;
+  // Synthetic failures must NEVER reach the live error surface (the
+  // feedback_no_live_role_identifiers_in_tests class — this suite's first run
+  // broadcast "something exploded" as real mcp.error nudges onto Jeff's
+  // terminal). Same containment dispatch-error-integration.test.ts uses:
+  // chorus.log to a temp file, pulse/nudge notify to a dead port.
+  const origLog = process.env.CHORUS_LOG_FILE;
+  const origPulse = process.env.CHORUS_PULSE_URL;
+  process.env.CHORUS_LOG_FILE = join(mkdtempSync(join(tmpdir(), 'wwc-log-')), 'chorus.log');
+  process.env.CHORUS_PULSE_URL = 'http://127.0.0.1:1';
+  // CHORUS_SYNTHETIC=1 — Silas's emitter-guard key (Wren is landing the
+  // suppression): synthetic test traffic is marked at the source so the nudge
+  // broadcast drops it while the event itself still logs.
+  const origSynth = process.env.CHORUS_SYNTHETIC;
+  process.env.CHORUS_SYNTHETIC = '1';
   process.env.CHORUS_BIN = binDir;
   const server = buildMcpServer(() => 'kade', { cardsPath: '/fake/cards' });
   const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -39,6 +53,12 @@ async function withServer(binDir: string, fn: (client: Client) => Promise<void>)
     await server.close();
     if (orig === undefined) delete process.env.CHORUS_BIN;
     else process.env.CHORUS_BIN = orig;
+    if (origLog === undefined) delete process.env.CHORUS_LOG_FILE;
+    else process.env.CHORUS_LOG_FILE = origLog;
+    if (origPulse === undefined) delete process.env.CHORUS_PULSE_URL;
+    else process.env.CHORUS_PULSE_URL = origPulse;
+    if (origSynth === undefined) delete process.env.CHORUS_SYNTHETIC;
+    else process.env.CHORUS_SYNTHETIC = origSynth;
   }
 }
 
