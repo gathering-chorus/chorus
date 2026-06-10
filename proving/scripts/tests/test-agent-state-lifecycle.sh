@@ -4,11 +4,11 @@
 # Covers:
 #   T1: status on a running service returns 0 with PID + state
 #   T2: deploy on unknown crate refuses with exit 2 + service.deploy.failed reason=service-not-found
-#   T3: deploy emits paired service.deploy.{started,completed} on the happy path (mocked chorus-deploy)
+#   T3: deploy emits paired service.deploy.{started,completed} on the happy path (mocked werk-deploy, #3317)
 #   T4: deploy detects cdhash divergence (pre==post when expecting change) → service.deploy.failed reason=cdhash-divergence
 #   T5: rollback refuses on unknown crate with exit 2 + service.rollback.failed reason=service-not-found
 #
-# Strategy: tests stub chorus-deploy + launchctl + codesign via PATH precedence so we don't
+# Strategy: tests stub werk-deploy + launchctl + codesign via PATH precedence so we don't
 # touch production services. Real integration sits behind CHORUS_LIFECYCLE_LIVE=1 (not set here).
 #
 # Usage: bash proving/scripts/tests/test-agent-state-lifecycle.sh
@@ -34,12 +34,13 @@ echo "\$@" >> "$SPINE_LOG"
 EOF
 chmod +x "$TMPDIR/stub-bin/chorus-log"
 
-# chorus-deploy stub — succeeds by default.
-cat > "$TMPDIR/stub-bin/chorus-deploy" <<'EOF'
+# werk-deploy stub (#3317: agent-state deploys via `werk-deploy crate <name>`) — succeeds by default.
+cat > "$TMPDIR/stub-bin/werk-deploy" <<'EOF'
 #!/bin/bash
-exit "${STUB_CHORUS_DEPLOY_EXIT:-0}"
+exit "${STUB_WERK_DEPLOY_EXIT:-0}"
 EOF
-chmod +x "$TMPDIR/stub-bin/chorus-deploy"
+chmod +x "$TMPDIR/stub-bin/werk-deploy"
+export CHORUS_WERK_DEPLOY_BIN="$TMPDIR/stub-bin/werk-deploy"
 
 # launchctl stub — list returns a fake PID; kickstart succeeds.
 cat > "$TMPDIR/stub-bin/launchctl" <<'EOF'

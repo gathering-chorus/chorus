@@ -149,31 +149,123 @@ pub fn extract_running_cdhash(codesign_out: &str) -> Option<String> {
     None
 }
 
-/// #3179 — every binary a crate emits, each flagged `is_service` (true = the binary
-/// the crate's launchd service runs; that's the one whose cdhash gates the deploy).
-/// Mirrors build-signed.sh's chorus-hooks shortcut, which signs+installs BOTH the
-/// daemon (chorus-hooks/main.rs, runs com.chorus.hooks) and the PreToolUse shim
-/// (chorus-hook-shim). werk-deploy previously installed/verified only ONE binary per
-/// crate (the shim for chorus-hooks), so the daemon ran stale code behind a green
-/// deploy — a merged≠live false-green caught only by content hash.
-pub fn crate_binaries(crate_name: &str) -> Vec<(String, bool)> {
-    match crate_name {
-        "chorus-hooks" => vec![
-            ("chorus-hooks".to_string(), true),       // the daemon (com.chorus.hooks)
-            ("chorus-hook-shim".to_string(), false),  // PreToolUse shim, no daemon
-        ],
-        other => vec![(other.to_string(), true)],
-    }
+/// #3317 — every binary a crate emits, discovered STRUCTURALLY (`crate_binaries_in`),
+/// each flagged `is_service` (true = the binary the crate's launchd service runs;
+/// that's the one whose cdhash gates the deploy). The service binary is the one named
+/// like the crate (cargo's package binary — chorus-hooks' daemon, not its shim);
+/// when no binary carries the crate name, the first discovered one is the service.
+/// Replaces the hardcoded per-crate map (#3179's fix, which itself drifted the moment
+/// a crate gained a binary nobody added by hand — the #3250/#3313 allowlist class).
+pub fn crate_binaries_with_service_in(crate_dir: &Path, crate_name: &str) -> Vec<(String, bool)> {
+    let bins = crate_binaries_in(crate_dir);
+    let svc_name = if bins.iter().any(|b| b == crate_name) {
+        crate_name.to_string()
+    } else {
+        bins.first().cloned().unwrap_or_else(|| crate_name.to_string())
+    };
+    bins.into_iter().map(|b| { let is_svc = b == svc_name; (b, is_svc) }).collect()
 }
 
-/// The single binary the crate's launchd service runs (RustService.bin / verify target).
-/// Derived from `crate_binaries` so there is one source of truth (#3179).
-pub fn crate_binary(crate_name: &str) -> String {
-    crate_binaries(crate_name)
-        .into_iter()
-        .find(|(_, is_service)| *is_service)
-        .map(|(b, _)| b)
-        .unwrap_or_else(|| crate_name.to_string())
+/// #3317 — STRUCTURAL binary discovery (port of bash chorus-deploy's crate_binaries; the
+/// #3179/#3250 union rule). Every binary a crate emits = the UNION of cargo's two default
+/// rules: explicit `[[bin]] name = ...` entries ∪ `src/bin/*.rs` autobins, with the package
+/// name as the single-binary fallback (when no [[bin]], or when src/main.rs exists alongside
+/// autobins). NO hardcoded list — a crate that gains a binary is discovered structurally,
+/// closing the allowlist class (#3132/#3313). Dedup, first-seen order; no Cargo.toml → the
+/// dir basename. Supersedes the hardcoded crate_binaries(&str) once callers pass the dir.
+pub fn crate_binaries_in(crate_dir: &Path) -> Vec<String> {
+    let toml = match fs::read_to_string(crate_dir.join("Cargo.toml")) {
+        Ok(c) => c,
+        Err(_) => {
+            return crate_dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| vec![s.to_string()])
+                .unwrap_or_default();
+        }
+    };
+    let explicit = bin_names_in_toml(&toml);
+    let pkg = package_name_in_toml(&toml);
+    let mut autobins: Vec<String> = Vec::new();
+    if let Ok(rd) = fs::read_dir(crate_dir.join("src").join("bin")) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+                if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                    autobins.push(stem.to_string());
+                }
+            }
+        }
+        autobins.sort(); // read_dir is unordered — make discovery deterministic
+    }
+    let mut out: Vec<String> = Vec::new();
+    if !explicit.is_empty() {
+        out.extend(explicit);
+    } else if autobins.is_empty() {
+        out.extend(pkg.clone());
+    } else if crate_dir.join("src").join("main.rs").is_file() {
+        out.extend(pkg.clone());
+    }
+    out.extend(autobins);
+    let mut seen = std::collections::HashSet::new();
+    out.into_iter().filter(|b| !b.is_empty() && seen.insert(b.clone())).collect()
+}
+
+/// `[[bin]] name = "..."` entries from a Cargo.toml (mirrors chorus-deploy's awk: inside a
+/// [[bin]] table until the next [ header, capture name = "...").
+fn bin_names_in_toml(toml: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_bin = false;
+    for line in toml.lines() {
+        let t = line.trim_start();
+        if t.starts_with("[[bin]]") {
+            in_bin = true;
+            continue;
+        }
+        if t.starts_with('[') {
+            in_bin = false;
+        }
+        if in_bin {
+            if let Some(name) = toml_name_value(t) {
+                out.push(name);
+            }
+        }
+    }
+    out
+}
+
+/// `[package] name = "..."` from a Cargo.toml.
+fn package_name_in_toml(toml: &str) -> Option<String> {
+    let mut in_pkg = false;
+    for line in toml.lines() {
+        let t = line.trim_start();
+        if t.starts_with("[package]") {
+            in_pkg = true;
+            continue;
+        }
+        if t.starts_with('[') {
+            in_pkg = false;
+        }
+        if in_pkg {
+            if let Some(name) = toml_name_value(t) {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// Parse a `name = "value"` line → the value between the first pair of quotes.
+fn toml_name_value(line: &str) -> Option<String> {
+    let t = line.trim_start();
+    if t.split('=').next()?.trim() != "name" {
+        return None;
+    }
+    let after = t.split_once('=')?.1;
+    let start = after.find('"')? + 1;
+    let rest = &after[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 /// launchd service name for a crate (kickstart target on prod deploy).
@@ -338,7 +430,13 @@ pub fn target_class_in(name: &str, werk_root: &Path) -> R<TargetClass> {
     // Rust crate? platform/services/<name>/Cargo.toml.
     let crate_dir = werk_root.join(format!("platform/services/{}", name));
     if crate_dir.join("Cargo.toml").is_file() {
-        let bin = crate_binary(name);
+        // #3317 — the service binary comes from structural discovery (the binary named
+        // like the crate = cargo's package binary), not a hardcoded crate→bin map.
+        let bin = crate_binaries_with_service_in(&crate_dir, name)
+            .into_iter()
+            .find(|(_, is_service)| *is_service)
+            .map(|(b, _)| b)
+            .unwrap_or_else(|| name.to_string());
         let svc = service_for_crate(name);
         // RustService iff a committed plist with that label exists in the repo.
         let has_plist = find_plists(werk_root).iter().any(|p| {
@@ -568,11 +666,14 @@ pub fn run_deploy() -> R<String> {
         match first.as_str() {
             "env-up" => return run_env_up(&argv[1..]),
             "env-down" => return run_env_down(&argv[1..]),
+            // #3317 — crate-scoped canonical deploy, the standalone surface that
+            // replaced bash `chorus-deploy <crate> [--rollback]`.
+            "crate" => return run_crate_mode(&argv[1..]),
             _ => {}
         }
     }
 
-    let card_arg = argv.first().ok_or_else(|| "usage: werk-deploy <card> <role> [--target werk|canonical]  |  werk-deploy env-{up,down} <role> [card]".to_string())?;
+    let card_arg = argv.first().ok_or_else(|| "usage: werk-deploy <card> <role> [--target werk|canonical]  |  werk-deploy env-{up,down} <role> [card]  |  werk-deploy crate <name> [--rollback]".to_string())?;
     let card: u64 = card_arg.parse().map_err(|_| format!("card id is not a number: {}", card_arg))?;
     let role = argv
         .get(1)
@@ -789,10 +890,334 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     Ok(format!("{} target={}", joined, target))
 }
 
-/// chorus-deploy (the single prod install/verify/kickstart path) resolved by absolute
-/// path under canonical — bare-name resolution fails under the daemon PATH (#3151/#3183).
-fn chorus_deploy_cmd(home: &Path) -> String {
-    canonical_root_path(home) + "/platform/scripts/chorus-deploy"
+// === #3317 — NATIVE canonical deploy engine (absorbs bash chorus-deploy) ===
+// The shell-out seam to platform/scripts/chorus-deploy is gone; install/verify/
+// kickstart/smoke for canonical deploys is native Rust, driven by structural
+// discovery (crate_binaries_in / target_class_in) — no KNOWN_CRATES allowlist.
+
+/// Card id from a commit subject ("silas: #3317 (#534)" → 3317). Bash parity:
+/// first `#NNNN` wins; 0 when absent (hand-edited commits).
+pub fn card_from_subject(subject: &str) -> u64 {
+    let bytes = subject.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            let digits: String = subject[i + 1..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !digits.is_empty() {
+                return digits.parse().unwrap_or(0);
+            }
+        }
+        i += 1;
+    }
+    0
+}
+
+/// #3270 port — is what's now live actually origin/main? true only when HEAD is
+/// neither behind nor ahead. Pure half, unit-testable.
+pub fn live_main_flag(behind: u64, ahead: u64) -> &'static str {
+    if behind == 0 && ahead == 0 { "true" } else { "false" }
+}
+
+fn live_main(root: &str) -> &'static str {
+    if run_env(Some(root), &[], "git", &["-C", root, "rev-parse", "--verify", "-q", "origin/main"]).is_err() {
+        return "unknown";
+    }
+    let count = |range: &str| -> u64 {
+        run_env(Some(root), &[], "git", &["-C", root, "rev-list", "--count", range])
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(1)
+    };
+    live_main_flag(count("HEAD..origin/main"), count("origin/main..HEAD"))
+}
+
+/// #3181 port — canonical build-source must be synced BEFORE building/installing.
+/// Fast-forward canonical to origin/main; REFUSE (don't force) when it can't ff
+/// cleanly (ahead/diverged/dirty). No-ops without git / origin/main (can't determine
+/// sync state → don't block). This was the merged≠live engine: canonical sat 13
+/// commits behind and a deploy shipped a stale daemon while reporting success.
+pub fn canonical_ff_sync(root: &str) -> R<()> {
+    if run_env(Some(root), &[], "git", &["-C", root, "rev-parse", "--git-dir"]).is_err() {
+        return Ok(());
+    }
+    let _ = run_env(Some(root), &[], "git", &["-C", root, "fetch", "-q", "origin", "main"]);
+    if run_env(Some(root), &[], "git", &["-C", root, "rev-parse", "--verify", "-q", "origin/main"]).is_err() {
+        return Ok(());
+    }
+    let count = |range: &str| -> u64 {
+        run_env(Some(root), &[], "git", &["-C", root, "rev-list", "--count", range])
+            .ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+    };
+    let behind = count("HEAD..origin/main");
+    if behind == 0 {
+        return Ok(());
+    }
+    let ahead = count("origin/main..HEAD");
+    let dirty = run_env(Some(root), &[], "git", &["-C", root, "status", "--porcelain"])
+        .map(|s| !s.trim().is_empty()).unwrap_or(false);
+    if ahead > 0 || dirty {
+        return Err(format!(
+            "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}). Run 'chorus-werk-sync recover', then re-deploy.",
+            behind, ahead, dirty
+        ));
+    }
+    run_env(Some(root), &[], "git", &["-C", root, "merge", "--ff-only", "origin/main"])
+        .map(|_| ())
+        .map_err(|e| format!("ff to origin/main failed; run 'chorus-werk-sync recover': {}", e))
+}
+
+/// #2997 port — did the MCP daemon answer a real JSON-RPC initialize as a valid
+/// server? The SSE body must carry `protocolVersion` inside a `result` (not an
+/// error wrapper, not a generic 200 from the wrong handler). Pure half.
+pub fn mcp_init_ready(body: &str) -> bool {
+    body.lines().any(|l| {
+        let l = l.trim();
+        l.starts_with("data:") && l.contains("\"result\"") && l.contains("\"protocolVersion\"")
+    })
+}
+
+fn smoke_timeout() -> Duration {
+    Duration::from_secs(
+        env::var("CHORUS_MCP_SMOKE_TIMEOUT_S").ok().and_then(|s| s.parse().ok()).unwrap_or(30),
+    )
+}
+
+/// Poll a real MCP initialize until the daemon answers as a valid server (#2993/#2997).
+fn wait_for_mcp_ready(url: &str) -> R<()> {
+    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"werk-deploy-smoke","version":"1.0"}}}"#;
+    let deadline = Instant::now() + smoke_timeout();
+    loop {
+        if let Ok(out) = Command::new("curl")
+            .args(["-s", "-m", "2", "-X", "POST", url,
+                   "-H", "Accept: application/json, text/event-stream",
+                   "-H", "Content-Type: application/json", "-d", body])
+            .output()
+        {
+            if mcp_init_ready(&String::from_utf8_lossy(&out.stdout)) {
+                return Ok(());
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("MCP smoke at {} timed out after {:?}", url, smoke_timeout()));
+        }
+        sleep(Duration::from_millis(250));
+    }
+}
+
+/// Poll the chorus-api health endpoint until it reports healthy (#2993 port).
+fn wait_for_api_healthy(url: &str) -> R<()> {
+    let deadline = Instant::now() + smoke_timeout();
+    loop {
+        if let Ok(out) = Command::new("curl").args(["-s", "-m", "2", url]).output() {
+            if String::from_utf8_lossy(&out.stdout).contains("\"status\":\"healthy\"") {
+                return Ok(());
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("health smoke at {} timed out after {:?}", url, smoke_timeout()));
+        }
+        sleep(Duration::from_millis(250));
+    }
+}
+
+/// #3232 port — a kickstarted daemon is only up once launchctl reports running
+/// AND (for com.chorus.hooks) its socket is live. The socket is the liveness the
+/// 2026-06-04 outage lacked: launchctl said loaded, the socket was gone, every
+/// guard was offline team-wide. Timeout env-overridable for tests.
+fn wait_for_service_up(svc: &str) -> R<()> {
+    let timeout = Duration::from_secs(
+        env::var("CHORUS_DEPLOY_LIVENESS_TIMEOUT_S").ok().and_then(|s| s.parse().ok()).unwrap_or(15),
+    );
+    wait_for_liveness(svc, timeout)?;
+    if svc == "com.chorus.hooks" {
+        let sock = env::var("CHORUS_HOOKS_SOCK").unwrap_or_else(|_| "/tmp/chorus-hooks.sock".to_string());
+        let deadline = Instant::now() + timeout;
+        while !Path::new(&sock).exists() {
+            if Instant::now() >= deadline {
+                return Err(format!("{} reports running but its socket {} never came up (the 2026-06-04 outage class)", svc, sock));
+            }
+            sleep(Duration::from_millis(250));
+        }
+    }
+    Ok(())
+}
+
+/// The two TS daemons bash chorus-deploy special-cased: (dir_rel, launchd svc,
+/// default smoke URL, smoke kind). They live OUTSIDE platform/services/ and are
+/// npm-built in place (no dist copy) — the canonical deploy builds them FROM
+/// canonical, mirroring the bash branches 1:1.
+fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
+    match name {
+        "chorus-api" => Some((
+            "platform/api",
+            "com.chorus.api",
+            env::var("CHORUS_API_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3340/api/chorus/health".to_string()),
+            false, // health-check smoke
+        )),
+        "chorus-mcp" => Some((
+            "platform/mcp-server",
+            "com.chorus.mcp",
+            env::var("CHORUS_MCP_DAEMON_SMOKE_URL").unwrap_or_else(|_| "http://localhost:3341/mcp".to_string()),
+            true, // MCP-initialize smoke
+        )),
+        _ => None,
+    }
+}
+
+/// #3317 — native canonical deploy of a TS daemon (chorus-api / chorus-mcp), the
+/// bash branches ported: preserve dist→dist.prev, npm-build IN canonical, kickstart
+/// (warn-only, like bash), smoke-gate deploy.completed, restore dist.prev on build
+/// fail. `rollback=true` restores dist.prev + kickstart + smoke instead.
+fn deploy_ts_daemon_canonical(
+    home: &Path, role: &str, card: u64, trace: &str, name: &str, rollback_mode: bool,
+) -> R<String> {
+    let (dir_rel, svc, smoke_url, is_mcp) =
+        ts_daemon(name).ok_or_else(|| format!("{} is not a TS daemon", name))?;
+    let root = canonical_root_path(home);
+    let dir = format!("{}/{}", root, dir_rel);
+    let dist = format!("{}/dist", dir);
+    let prev = format!("{}.prev", dist);
+    if !Path::new(&dir).is_dir() {
+        return Err(died(home, role, card, trace, "dir-not-found", format!("{} dir not found at {}", name, dir)));
+    }
+    let kickstart = || run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+    let smoke = || if is_mcp { wait_for_mcp_ready(&smoke_url) } else { wait_for_api_healthy(&smoke_url) };
+
+    if rollback_mode {
+        if !Path::new(&prev).is_dir() {
+            return Err(format!("no dist.prev to rollback to ({} not found) — no prior deploy to restore", prev));
+        }
+        let _ = fs::remove_dir_all(&dist);
+        fs::rename(&prev, &dist).map_err(|e| format!("restore {} → {}: {}", prev, dist, e))?;
+        let _ = kickstart(); // bash parity: warn-only
+        smoke().map_err(|e| died(home, role, card, trace, "smoke-timeout-rollback", e))?;
+        emit_spine(home, "deploy.rolled_back", role, card, trace, &[("crate", name)]);
+        jsonl(home, role, card, trace, "deploy.rolledback", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\"", name));
+        return Ok(format!("{} rolled back", name));
+    }
+
+    // preserve current dist for rollback, then build from canonical source.
+    if Path::new(&dist).is_dir() {
+        let _ = fs::remove_dir_all(&prev);
+        fs::rename(&dist, &prev).map_err(|e| format!("preserve {} → {}: {}", dist, prev, e))?;
+    }
+    if let Err(e) = run_env(Some(&dir), &[], "npm", &["run", "build"]) {
+        // restore disk to match the still-running prior code.
+        if Path::new(&prev).is_dir() {
+            let _ = fs::remove_dir_all(&dist);
+            let _ = fs::rename(&prev, &dist);
+        }
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail")]);
+        return Err(died(home, role, card, trace, "npm-build-fail", format!("npm run build failed for {}: {}", name, e)));
+    }
+    let _ = kickstart(); // bash parity: warn-only — the smoke is the gate
+    if let Err(e) = smoke() {
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout")]);
+        return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
+    }
+    jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"target\":\"canonical\"", name));
+    Ok(format!("{} deployed", name))
+}
+
+/// #3317 — native canonical deploy of ONE unit (the per-crate engine that replaces
+/// `chorus-deploy --target canonical <crate>`). Dispatches: TS daemons → npm-build
+/// path; Rust crates → the same install/verify/kickstart path the werk slot uses
+/// (deploy_rust_service / deploy_cli_verb), rooted at CANONICAL (where werk-build
+/// --target canonical just built). Emits the #3270 deploy.completed envelope.
+fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name: &str) -> R<String> {
+    let start = Instant::now();
+    let root = canonical_root_path(home);
+    let artifact_class;
+    if ts_daemon(name).is_some() {
+        deploy_ts_daemon_canonical(home, role, card, trace, name, false)?;
+        artifact_class = "ts-daemon";
+    } else {
+        let class = target_class_in(name, Path::new(&root))?;
+        match &class {
+            TargetClass::RustService { svc, bin } => {
+                let built = file_cdhash(&format!("{}/platform/services/{}/target/release/{}", root, name, bin))
+                    .unwrap_or_default();
+                deploy_rust_service(home, &root, role, card, "canonical", trace, name, &built, svc, bin)?;
+                artifact_class = "rust-daemon";
+            }
+            TargetClass::CliVerb { bin } => {
+                let built = file_cdhash(&format!("{}/platform/services/{}/target/release/{}", root, name, bin))
+                    .ok_or_else(|| format!(
+                        "binary missing for {} — run werk-build --target canonical first ({}/platform/services/{}/target/release/{})",
+                        name, root, name, bin
+                    ))?;
+                deploy_cli_verb(home, &root, role, card, "canonical", trace, name, &built, bin)?;
+                artifact_class = "rust-cli";
+            }
+            other => {
+                return Err(format!(
+                    "canonical deploy for {:?} is not supported by the native engine yet (unit {}) — TS services/packages deploy via the in-flow path",
+                    other, name
+                ));
+            }
+        }
+    }
+    // #3270 — deploy.completed carries the ground-truth envelope: loaded cdhash,
+    // live_main (is what's now live actually origin/main?), artifact_class.
+    let commit = run_env(Some(&root), &[], "git", &["-C", &root, "rev-parse", "--short", "HEAD"])
+        .map(|s| s.trim().to_string()).unwrap_or_else(|_| "unknown".to_string());
+    let cdhash = match target_class_in(name, Path::new(&root)) {
+        Ok(TargetClass::RustService { bin, .. }) | Ok(TargetClass::CliVerb { bin }) => {
+            file_cdhash(&installed_path("canonical", role, &bin)).unwrap_or_default()
+        }
+        _ => String::new(),
+    };
+    let ms = start.elapsed().as_millis().to_string();
+    emit_spine(home, "deploy.completed", role, card, trace, &[
+        ("verb", "deploy"), ("step", "deploy"), ("outcome", "success"),
+        ("artifact_class", artifact_class), ("commit", &commit), ("crate", name),
+        ("cdhash", &cdhash), ("deploy_target", "canonical"), ("live_main", live_main(&root)),
+        ("duration_ms", &ms),
+    ]);
+    Ok(name.to_string())
+}
+
+/// #3317 — `werk-deploy crate <name> [--rollback]`: the standalone crate-scoped
+/// canonical deploy that replaces bash `chorus-deploy <crate> [--rollback]` for
+/// operational callers (agent-state.sh deploy/rollback, ops by hand). ff-syncs
+/// canonical first (#3181), resolves role from DEPLOY_ROLE/CHORUS_ROLE and card
+/// from the latest commit subject (bash parity).
+fn run_crate_mode(args: &[String]) -> R<String> {
+    let name = args.iter().find(|a| !a.starts_with("--"))
+        .ok_or_else(|| "usage: werk-deploy crate <name> [--rollback]".to_string())?
+        .clone();
+    let rollback_mode = args.iter().any(|a| a == "--rollback");
+    let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
+    let root = canonical_root_path(&home);
+    let role = env::var("DEPLOY_ROLE").or_else(|_| env::var("CHORUS_ROLE")).unwrap_or_else(|_| "system".to_string());
+    let card = run_env(Some(&root), &[], "git", &["-C", &root, "log", "-1", "--pretty=%s"])
+        .map(|s| card_from_subject(&s)).unwrap_or(0);
+    let trace = resolve_trace(card);
+    if !rollback_mode {
+        canonical_ff_sync(&root)?;
+    }
+    if rollback_mode {
+        if ts_daemon(&name).is_some() {
+            return deploy_ts_daemon_canonical(&home, &role, card, &trace, &name, true);
+        }
+        // Rust crate: restore each binary via chorus-bin-install --rollback, then
+        // kickstart + liveness when it's a service.
+        let crate_dir = Path::new(&root).join(format!("platform/services/{}", name));
+        let cbi = chorus_bin_install_cmd(&home, &root);
+        for (b, _) in crate_binaries_with_service_in(&crate_dir, &name) {
+            run_env(Some(&root), &[("CHORUS_ROLE", &role)], &cbi, &["--target", "canonical", "--rollback", &b])
+                .map_err(|e| format!("rollback of {} failed: {}", b, e))?;
+        }
+        if let Ok(TargetClass::RustService { svc, .. }) = target_class_in(&name, Path::new(&root)) {
+            run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
+                .map_err(|e| format!("kickstart {} after rollback failed: {}", svc, e))?;
+            wait_for_service_up(&svc)?;
+        }
+        emit_spine(&home, "deploy.rolled_back", &role, card, &trace, &[("crate", &name)]);
+        return Ok(format!("{} rolled back target=canonical", name));
+    }
+    deploy_crate_canonical(&home, &role, card, &trace, &name)?;
+    Ok(format!("{} deployed target=canonical", name))
 }
 
 /// The card's changed SERVICE crate(s): names under `platform/services/<X>/` in the diff,
@@ -815,9 +1240,9 @@ pub fn changed_service_crates(diff: &str) -> Vec<String> {
 /// #3243 — the card's changed TS SERVICES: chorus-mcp (`platform/mcp-server`) and chorus-api
 /// (`platform/api`). These live OUTSIDE `platform/services/`, so `changed_service_crates`
 /// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (chorus_werk)
-/// merge to main but stay un-deployed until a manual `chorus-deploy`. They are built by
-/// `chorus-deploy` itself (npm → dist + kickstart), NOT by `werk-build` (target/release), so
-/// deploy_canonical routes them straight to `chorus-deploy` and skips the werk-build step.
+/// merge to main but stay un-deployed until a manual deploy. They are npm-built in place
+/// (dist + kickstart), NOT by `werk-build` (target/release), so deploy_canonical routes
+/// them to the native TS-daemon path (#3317) and skips the werk-build step.
 pub fn changed_ts_services(diff: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut add = |name: &str| {
@@ -838,7 +1263,7 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 
 /// #3222 — target=canonical: build the card's crate(s) from CANONICAL ff-synced to
 /// origin/main (werk-build --target canonical --only), then install/verify/kickstart each
-/// via the single prod path (chorus-deploy --target canonical). The werk is read ONLY to
+/// via the native engine (deploy_crate_canonical, #3317). The werk is read ONLY to
 /// derive which crates changed (merge-base diff — survives the squash-merge: the merge-base
 /// is the stable fork point even after origin/main moves ahead). NOTHING is built from the
 /// werk: prod binaries are structurally a build of main (the merged≠live fix).
@@ -852,8 +1277,8 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         .unwrap_or_default();
     let crates = changed_service_crates(&diff);
     // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
-    // OUTSIDE platform/services/, so changed_service_crates misses them. chorus-deploy builds
-    // them itself (npm → dist), so they deploy via chorus-deploy WITHOUT a werk-build step.
+    // OUTSIDE platform/services/, so changed_service_crates misses them. They are npm-built
+    // in place by the native TS-daemon path (#3317), WITHOUT a werk-build step.
     let ts = changed_ts_services(&diff);
 
     if crates.is_empty() && ts.is_empty() {
@@ -867,7 +1292,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // Build the card's RUST crate(s) from canonical@origin/main — the one structural build
     // tool, crate-scoped so a prod deploy never rebuilds the whole tree (no full-repo tsc at
     // acp, no coupling the card's deploy to unrelated crates' health on main). TS services are
-    // NOT built here — chorus-deploy npm-builds them from canonical in the deploy loop below.
+    // NOT built here — the native TS-daemon path npm-builds them from canonical below (#3317).
     let mut prod_hashes: Vec<(String, String)> = Vec::new();
     if !crates.is_empty() {
         let only = crates.join(",");
@@ -914,22 +1339,21 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
-    // Install/verify/kickstart each via the single prod path. CHORUS_ROOT=canonical so a Rust
-    // crate's chorus-deploy reads the freshly-built target/release (where werk-build just
-    // built), and a TS service's chorus-deploy npm-builds + kickstarts from canonical. #3181
-    // ff is a no-op (werk-build already ff-synced canonical; TS path ff-syncs too).
-    let cdeploy = chorus_deploy_cmd(home);
+    // #3317 — install/verify/kickstart each NATIVELY (the engine that absorbed bash
+    // chorus-deploy). Rust crates read the freshly-built canonical target/release
+    // (where werk-build --target canonical just built); TS daemons npm-build from
+    // canonical. #3181 ff is a no-op here (werk-build already ff-synced canonical;
+    // a TS-only card has no werk-build step, so ff-sync canonical first).
     let home_s = canonical_root_path(home);
+    if crates.is_empty() {
+        canonical_ff_sync(&home_s)
+            .map_err(|e| died(home, role, card, trace, "canonical-ff-fail", e))?;
+    }
     let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
     for c in &deployed {
-        run_env(
-            Some(&home_s),
-            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role), ("CHORUS_ROOT", &home_s)],
-            &cdeploy,
-            &["--target", "canonical", c],
-        )
-        .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
-            format!("chorus-deploy --target canonical {} failed: {}", c, e)))?;
+        deploy_crate_canonical(home, role, card, trace, c)
+            .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
+                format!("canonical deploy of {} failed: {}", c, e)))?;
     }
 
     let only = deployed.join(",");
@@ -964,9 +1388,12 @@ fn deploy_rust_service(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
     crate_name: &str, built_summary_cdhash: &str, svc: &str, bin: &str,
 ) -> R<()> {
-    // #3179 — install EVERY binary the crate emits, not just `bin`. chorus-hooks emits
-    // the daemon (chorus-hooks, runs com.chorus.hooks) + the shim (chorus-hook-shim).
-    let bins = crate_binaries(crate_name);
+    // #3179/#3317 — install EVERY binary the crate emits, discovered STRUCTURALLY from
+    // the crate's own Cargo.toml + src/bin (no hardcoded list to drift). `werk_s` is the
+    // SOURCE ROOT the built artifacts live under — the card's werk for in-werk deploys,
+    // canonical for build-from-main canonical deploys (#3317).
+    let crate_dir = Path::new(werk_s).join(format!("platform/services/{}", crate_name));
+    let bins = crate_binaries_with_service_in(&crate_dir, crate_name);
     let built_path = |b: &str| format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, b);
 
     // AC2 stale-build guard + #3132 hash-gate (canonical only). Skip install+kickstart
@@ -1009,6 +1436,15 @@ fn deploy_rust_service(
         if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
             rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
             return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
+        }
+        // #3317 (bash #3232 port) — verify the daemon actually came UP. `launchctl
+        // kickstart` returns BEFORE the daemon binds, so a crash-on-start otherwise
+        // ships green while the service is down (the 2026-06-04 chorus-hooks outage:
+        // launchctl said loaded, the socket was gone). launchctl liveness for every
+        // service; for com.chorus.hooks additionally require its socket to be live.
+        if let Err(e) = wait_for_service_up(svc) {
+            rollback(home, werk_s, role, card, trace, target, bin, "not-running");
+            return Err(format!("{} did not come up after kickstart; rolled back: {}", svc, e));
         }
         // #3179 — verify the DAEMON (service) binary specifically: `bin` is the
         // is_service binary com.chorus.<svc> runs. Installed cdhash == its built

@@ -34,7 +34,7 @@ const PORT = parseInt(process.env.CHORUS_MCP_PORT || '3341', 10);
 const app: Application = express();
 app.use(express.json({ limit: '10mb' }));
 
-// Health endpoint — mirrors chorus-api shape so chorus-deploy MCP-smoke and
+// Health endpoint — mirrors chorus-api shape so the werk-deploy MCP-smoke and
 // chorus-health probes can hit a known URL.
 const START_TS = Date.now();
 app.get('/api/chorus/health', (_req: Request, res: Response) => {

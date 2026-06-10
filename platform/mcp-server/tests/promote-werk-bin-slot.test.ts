@@ -1,5 +1,5 @@
 // #3173 — acp's promote-werk-bin must read the role's LIVE deploy slot
-// ($WERK_<ROLE>_BIN = chorus-werk/<role>-bin/), exactly where chorus-deploy /
+// ($WERK_<ROLE>_BIN = chorus-werk/<role>-bin/), exactly where werk-deploy /
 // werk-deploy --target werk installs and the verb wrapper resolves. The pre-fix
 // code read `repoRoot/.werk-bin` — a RETIRED slot (chorus-env-setup.sh:104, it broke
 // with >1 card open) that no longer exists at deploy time. So existsSync was false,

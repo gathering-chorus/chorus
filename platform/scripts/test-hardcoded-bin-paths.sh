@@ -42,7 +42,7 @@ count_hardcoded() {
 # resolution, they often keep target/release/ as a fallback, which still
 # counts (the file matches the grep). Lower the baseline only when a file
 # stops referencing target/release/ entirely.
-BASELINE=27
+BASELINE=26  # 27→26: #3317 deleted bash chorus-deploy (one fewer target/release referrer)
 
 current=$(count_hardcoded)
 

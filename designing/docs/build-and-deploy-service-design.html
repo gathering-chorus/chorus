@@ -35,7 +35,7 @@
   <li><strong>One build verb.</strong> Every build — demo, test, prod — is <code>werk-build</code>. Nothing else builds.</li>
   <li><strong>One deploy verb.</strong> Every deploy — demo, test, prod — is <code>werk-deploy</code>; the target is an <em>argument</em>, not a different tool.</li>
   <li><strong>One engine.</strong> <code>werk-build</code>/<code>werk-deploy</code> are the engines. The MCP tools wrap them under those exact names; there is no parallel CLI or script.</li>
-  <li><strong>One artifact.</strong> A card is built once. The exact artifact demo'd is the artifact promoted to prod — never rebuilt.</li>
+  <li><strong>One artifact, proven by reproducible build.</strong> What you demo is what ships — delivered by REBUILDING from merged main and PROVING the prod cdhash equals the demo'd cdhash (#3316; build is a pure function of source, so identical source ⇒ identical cdhash). Promote is rebuild+prove, never a copy of the demo binary.</li>
 </ul>
 </div>
 
@@ -54,12 +54,12 @@ flowchart LR
     DeployProd --> Accept["werk-accept<br/>(board Done)"]
   end
   Demo -->|"human: GO"| Merge
-  Artifact -. "same artifact promoted, never rebuilt" .-> DeployProd
+  Artifact -. "same source rebuilt, cdhash proven equal (#3316)" .-> DeployProd
   Build --> Spine["spine: build.artifact.hashed,<br/>manifest.entry.added"]
   DeployProd --> Spine2["spine: binary.deployed, deploy.completed"]
 </pre>
 
-<p>Two short synchronous halves with the human between. Half A builds the card once and presents the running variant, then stops — nothing held. The human's GO runs Half B, which promotes the exact built artifact to prod. The wait between holds no connection (survives minutes, hours, a reboot).</p>
+<p>Two short synchronous halves with the human between. Half A builds the card once and presents the running variant, then stops — nothing held. The human's GO runs Half B, which rebuilds from merged main and proves the prod cdhash equals the demo'd cdhash (#3316) — the demo'd identity ships, by proof rather than by copy. The wait between holds no connection (survives minutes, hours, a reboot).</p>
 
 <h2>Build domain</h2>
 <p><strong>Source → artifact, reproducibly.</strong> Owner: Silas. Verb: <code>werk-build</code> (Rust).</p>
@@ -96,7 +96,7 @@ These were the pre-ADR-032 sprawl — competing names/engines for build and depl
   <li><code>building-pipeline.yml</code> — replaced by <code>werk.yml</code> (Half A) + <code>werk-land.yml</code> (Half B).</li>
   <li><code>chorus_werk_land</code> as a distinct verb — its work is just <code>werk-merge</code> + <code>werk-deploy --target prod</code> + <code>werk-accept</code>.</li>
   <li><code>werk-finalize</code> — folds back into <code>werk-accept</code> (the board-Done + teardown step).</li>
-  <li>prod <strong>rebuild-from-main</strong> — the <em>behavior</em> is retired (prod stops rebuilding from main and promotes the demo'd artifact). This is a change <em>inside</em> <code>deploy_canonical</code>, not a retired surface: the function stays as the prod path, its strategy flips to promote (see Open work, step 3). <em>(Retired-behavior vs live-function distinction caught in the 2026-06-08 SA↔DE coherence audit with Kade — it was wrongly listed here as a retired surface.)</em></li>
+  <li>prod <strong>blind rebuild-from-main</strong> — the <em>unproven</em> rebuild is retired: prod still rebuilds from merged main (Jeff's ruling 2026-06-09: promote = rebuild + prove, NOT copy), but the rebuild is now PROVEN against the demo'd cdhash (#3316 emits deploy.cdhash.matched/diverged). <code>deploy_canonical</code> stays as the prod path; since #3317 it is all-native Rust (bash chorus-deploy absorbed and deleted).</li>
 </ul>
 </div>
 
@@ -109,20 +109,20 @@ These were the pre-ADR-032 sprawl — competing names/engines for build and depl
 <thead><tr><th>Step</th><th>Change</th></tr></thead>
 <tbody>
 <tr><td>1. Rename MCP tools</td><td><code>chorus_build</code>→<code>werk-build</code>, <code>chorus_deploy</code>→<code>werk-deploy</code>, fold <code>chorus_env_up</code>. Repoint the 4 caller sites (<code>werk.yml:77,106,117</code>, <code>werk-land.yml:86</code>) + 2 test files. Handlers already exec the Rust verbs.</td></tr>
-<tr><td>2. Absorb the bash engine</td><td>Move <code>platform/scripts/chorus-deploy</code> logic (TS-service build, kickstart, cdhash-verify) into Rust <code>werk-deploy</code>; delete the script; no caller invokes it.</td></tr>
-<tr><td>3. Promote, don't rebuild</td><td>Change <code>werk-deploy</code>'s prod path (<code>deploy_canonical</code> in werk-deploy/src/lib.rs) to install the already-built artifact instead of rebuilding from main.</td></tr>
+<tr><td>2. Absorb the bash engine — <strong>DONE #3317</strong></td><td>bash <code>chorus-deploy</code> absorbed into Rust <code>werk-deploy</code> (structural binary discovery, TS-daemon npm-build path, socket-liveness, <code>crate</code> subcommand for operational callers) and deleted; no caller invokes it.</td></tr>
+<tr><td>3. Promote = rebuild + prove — <strong>DONE #3316</strong></td><td><code>deploy_canonical</code> rebuilds from merged main and proves the prod cdhash equals the demo'd cdhash (deploy.cdhash.matched / .diverged on the spine). Reproducible build delivers "what you demo is what ships" — no artifact copy. (Jeff's ruling 2026-06-09 corrected this row's earlier install-the-already-built-artifact framing.)</td></tr>
 <tr><td>Proof</td><td>A real card runs commit→build→deploy(test)→demo→[go]→promote→done through the werk verbs, the same artifact start to finish.</td></tr>
 </tbody>
 </table>
 
 <h2>Boundary &amp; related decisions</h2>
-<p><strong>Boundary (confirmed clean, 2026-06-08 coherence audit).</strong> Build/deploy <em>mechanics</em> are this doc's authority — what the prod deploy does (<strong>promote, not rebuild</strong>), cdhash/signing, install location, rollback. The <a href="http://localhost:3340/designing/docs/ci-pipeline-service-design.html">CI/CD design</a> <em>sequences</em> the build+deploy steps but defers their mechanics here; the <a href="http://localhost:3340/designing/docs/version-control-service-design.html">Version Control design</a> owns the git lifecycle. Where CI/CD and this doc disagreed on the prod step (its old "rebuild from main" vs this doc's promote), <strong>this doc is authoritative</strong> and CI/CD reconciles to promote-not-rebuild.</p>
+<p><strong>Boundary (confirmed clean, 2026-06-08 coherence audit).</strong> Build/deploy <em>mechanics</em> are this doc's authority — what the prod deploy does (<strong>promote = rebuild from merged main + prove cdhash == demo'd, #3316</strong>), cdhash/signing, install location, rollback. The <a href="http://localhost:3340/designing/docs/ci-pipeline-service-design.html">CI/CD design</a> <em>sequences</em> the build+deploy steps but defers their mechanics here; the <a href="http://localhost:3340/designing/docs/version-control-service-design.html">Version Control design</a> owns the git lifecycle. Where CI/CD and this doc disagreed on the prod step, <strong>this doc is authoritative</strong>; both now state promote = rebuild + prove (Jeff's ruling 2026-06-09; Kade reconciled the CI/CD framing).</p>
 <ul>
   <li><strong>ADR-032</strong> — verb contract (zero-dep Rust, cdhash, all-or-nothing rollback): the blueprint <code>werk-build</code>/<code>werk-deploy</code> build to.</li>
   <li><strong>ADR-037</strong> — <code>--atomic</code> execution + the human-authorizes-prod gate (one gate, two doors): the canonical home of the <code>--atomic</code> model this doc references rather than restates.</li>
   <li><strong>ADR-038</strong> — Rust as the go-forward substrate language; names the bash <code>chorus-deploy</code> as the largest port-debt item, paid by Open-work step 2 here.</li>
 </ul>
-<p class="date">Cross-checked against the Version Control + CI/CD service designs in the 2026-06-08 two-lens (SA↔DE) coherence audit. The prod-build strategy contradiction (CI/CD rebuild-from-main vs this doc's promote) and the <code>deploy_canonical</code> retired-vs-live mislisting were the findings folded back here.</p>
+<p class="date">Cross-checked against the Version Control + CI/CD service designs in the 2026-06-08 two-lens (SA↔DE) coherence audit. The prod-build strategy contradiction and the <code>deploy_canonical</code> retired-vs-live mislisting were the findings folded back here; the promote-as-copy framing itself was corrected to rebuild+prove on 2026-06-09 (Jeff), proven live by #3316.</p>
 
 </body>
 </html>

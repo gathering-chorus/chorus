@@ -41,8 +41,10 @@ assert "gemba skill no longer calls gemba-tick.sh" bash -c "! grep -q 'gemba-tic
 assert "gemba skill no longer claims a CronCreate loop (#3274)" bash -c "! grep -q 'CronCreate' '$ROOT/skills/gemba/SKILL.md'"
 assert "gemba skill no longer CronDeletes a loop (#3274)" bash -c "! grep -q 'CronDelete' '$ROOT/skills/gemba/SKILL.md'"
 
-# Deploy path knows the verb (so it ships — merged≠live guard)
-assert "chorus-deploy registers pulse-gather" grep -q "pulse-gather" "$ROOT/platform/scripts/chorus-deploy"
+# Deploy path knows the verb (so it ships — merged≠live guard). #3317: discovery is
+# STRUCTURAL (werk-deploy reads the crate's Cargo.toml; no registration list) — the
+# ships-condition is the crate existing where discovery looks.
+assert "pulse-gather is structurally deployable (crate exists)" test -f "$ROOT/platform/services/pulse-gather/Cargo.toml"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
