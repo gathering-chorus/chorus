@@ -77,7 +77,7 @@ jobs:
             echo "   [ok] 5.5 canonical ff-synced to origin/main"
             echo "SYNC_OK=1" >> "$GITHUB_ENV"
           else
-            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'chorus-werk-sync recover'" >&2
+            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'werk-sync recover'" >&2
             echo "SYNC_OK=0" >> "$GITHUB_ENV"
           fi
 
@@ -102,7 +102,7 @@ jobs:
           if [ "${SYNC_OK:-0}" = "1" ]; then
             echo "[landed] #${CARD_ID} built-of-main, deployed + LIVE, accepted by ${ACCEPTER} (GO=accept)."
           else
-            echo "[accepted, NOT yet live] #${CARD_ID} merged + deployed + accepted, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'chorus-werk-sync recover'." >&2
+            echo "[accepted, NOT yet live] #${CARD_ID} merged + deployed + accepted, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'werk-sync recover'." >&2
           fi
 
       # --- orchestrator witness close (pairs with werk.land.started) ---
