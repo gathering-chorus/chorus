@@ -436,3 +436,94 @@ fn continue_and_abort_refuse_when_no_rebase_is_in_progress() {
         .expect_err("--abort without a held rebase must refuse");
     assert!(e.contains("no rebase"), "typed no-rebase refusal: {e}");
 }
+
+// #3330 (#3324 matrix, werk-commit gaps) — no-werk / wrong-branch refusals driven,
+// the success-path spine emit captured (was only asserted on refusals), and the
+// #3304 continue-RE-conflict branch: a multi-commit replay where a LATER commit
+// conflicts again after the first --continue → holds again, same contract.
+#[test]
+fn refusals_success_spine_and_continue_reconflict() {
+    // origin with f.txt + g.txt; card werk edits BOTH in two commits; peer rewrites
+    // both on main → replaying commit 1 conflicts, then commit 2 conflicts again.
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("f.txt"), "base-f\n").unwrap();
+    fs::write(origin.join("g.txt"), "base-g\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+    let werk_base = tmp("werk");
+
+    // spine capture at the absolute chorus-log path.
+    let log = home.join("platform/scripts/chorus-log");
+    fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let cap = home.join("spine-capture.txt");
+    fs::write(&log, format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display())).unwrap();
+    let mut perm = fs::metadata(&log).unwrap().permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perm.set_mode(0o755);
+    fs::set_permissions(&log, perm).unwrap();
+
+    // ── no-werk: never pulled → typed refusal.
+    let err = commit(9301, "kade", "x", &home, &werk_base).expect_err("no werk must refuse");
+    assert!(err.contains("pull the card first"), "typed no-werk refusal: {err}");
+
+    // ── wrong-branch: werk on another branch → typed refusal (the #2641 class).
+    let werk = werk_base.join("kade-9302");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/other", werk.to_str().unwrap(), "origin/main"]);
+    fs::write(werk.join("w.txt"), "x").unwrap();
+    let err = commit(9302, "kade", "x", &home, &werk_base).expect_err("wrong branch must refuse");
+    assert!(err.contains("refusing to commit"), "typed wrong-branch refusal: {err}");
+
+    // ── success-path spine: a clean commit emits commit.completed with the sha.
+    let werk3 = werk_base.join("kade-9303");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/9303", werk3.to_str().unwrap(), "origin/main"]);
+    fs::write(werk3.join("ok.txt"), "y").unwrap();
+    let sha = commit(9303, "kade", "clean", &home, &werk_base).expect("clean commit ok");
+    let emitted = fs::read_to_string(&cap).unwrap_or_default();
+    assert!(emitted.contains("commit.completed") && emitted.contains(&format!("sha={}", sha)),
+        "success path reached the spine with the sha: {emitted}");
+
+    // ── continue-re-conflict: TWO card commits each touching a file the peer
+    // rewrote → first hold, edit f, --continue → the SECOND replayed commit
+    // conflicts on g → holds AGAIN with the same in-verb instruction; edit g,
+    // --continue → lands with both resolutions, 0 behind main.
+    let werk4 = werk_base.join("kade-9304");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/9304", werk4.to_str().unwrap(), "origin/main"]);
+    fs::write(werk4.join("f.txt"), "card-f\n").unwrap();
+    git(&werk4, &["add", "."]);
+    git(&werk4, &["commit", "-q", "-m", "kade: #9304 — f"]);
+    fs::write(werk4.join("g.txt"), "card-g\n").unwrap();
+    git(&werk4, &["add", "."]);
+    git(&werk4, &["commit", "-q", "-m", "kade: #9304 — g"]);
+    fs::write(origin.join("f.txt"), "peer-f\n").unwrap();
+    fs::write(origin.join("g.txt"), "peer-g\n").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer rewrites both"]);
+
+    let err = commit(9304, "kade", "two commits", &home, &werk_base)
+        .expect_err("first replay conflict holds");
+    assert!(err.contains("--continue") && err.contains("f.txt"), "first hold names f.txt: {err}");
+    fs::write(werk4.join("f.txt"), "resolved-f\n").unwrap();
+
+    let err = werk_commit::commit_continue(9304, "kade", &home, &werk_base)
+        .expect_err("the SECOND replayed commit must hold again");
+    assert!(err.contains("--continue") && err.contains("g.txt"),
+        "re-conflict holds with the same in-verb contract, naming g.txt: {err}");
+    fs::write(werk4.join("g.txt"), "resolved-g\n").unwrap();
+
+    let sha = werk_commit::commit_continue(9304, "kade", &home, &werk_base)
+        .expect("second --continue finishes the whole replay");
+    assert!(sha.len() >= 7);
+    assert_eq!(fs::read_to_string(werk4.join("f.txt")).unwrap(), "resolved-f\n");
+    assert_eq!(fs::read_to_string(werk4.join("g.txt")).unwrap(), "resolved-g\n");
+    git(&werk4, &["fetch", "-q", "origin", "main"]);
+    let behind = Command::new("git")
+        .args(["-C", werk4.to_str().unwrap(), "rev-list", "--count", "HEAD..origin/main"])
+        .output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&behind.stdout).trim(), "0", "landed on current main");
+}

@@ -10,8 +10,12 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use werk_merge::merge;
+
+// Both e2e fns mutate process env (PATH / ORIGIN / GH_*); serialize them.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn nanos() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
@@ -75,6 +79,7 @@ fn origin_main_has(origin: &Path, file: &str) -> bool {
 
 #[test]
 fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     // ── stateful gh shim on PATH ───────────────────────────────────────────────
     let bin = tmp("bin");
     write_exec(&bin.join("gh"), GH_SHIM);
@@ -241,3 +246,90 @@ api) exit 0;;
 esac
 exit 0
 "#;
+
+// #3330 (#3324 matrix, werk-merge gaps) — the --atomic approval gate proven to
+// refuse BEFORE any side effect, merge.approved spine emit captured with the
+// accepter, and the two PR-creation refusals (pr-create-fail / no-open-pr).
+#[test]
+fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // knob-wrapping gh shim: logs every call, fails/no-ops `pr create` on demand,
+    // otherwise delegates to the stateful GH_SHIM (real squash into ORIGIN).
+    let bin = tmp("bin2");
+    write_exec(&bin.join("gh-real"), GH_SHIM);
+    write_exec(&bin.join("gh"),
+        "#!/bin/sh\necho \"$@\" >> \"$GH_CALLS\"\nif [ \"$1 $2\" = \"pr create\" ]; then\n  [ -n \"$GH_PR_CREATE_EXIT\" ] && exit \"$GH_PR_CREATE_EXIT\"\n  [ -n \"$GH_CREATE_NOOP\" ] && { echo noop; exit 0; }\nfi\nexec \"$(dirname \"$0\")/gh-real\" \"$@\"\n");
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::remove_var("GH_PR_CREATE_EXIT");
+    std::env::remove_var("GH_CREATE_NOOP");
+    std::env::remove_var("GH_FAKE_MERGE");
+
+    // ── --atomic with NO accepter refuses BEFORE any side effect: zero gh calls,
+    // zero jsonl events for the card (the gate is FIRST in merge_inner — pin it).
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9401);
+        let _sha = commit_and_push(&werk, "kade/9401", "a.txt", "alpha");
+        let calls = tmp("calls1").join("log");
+        std::env::set_var("GH_CALLS", calls.to_str().unwrap());
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate1").to_str().unwrap());
+        let err = werk_merge::merge_atomic(9401, "kade", &home, &werk_base, None)
+            .expect_err("--atomic without an accepter must refuse");
+        assert!(err.to_lowercase().contains("accepter"), "names the missing accepter: {err}");
+        assert!(fs::read_to_string(&calls).unwrap_or_default().is_empty(),
+            "refusal ordered BEFORE side effects — zero gh calls");
+        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(!witness.contains("9401"), "no witness events before the gate: {witness}");
+    }
+
+    // ── --atomic WITH an accepter lands, and merge.approved reaches the SPINE
+    // carrying {accepter, pr, atomic} (ADR-037 {who,what,when} — was unasserted).
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9402);
+        let _sha = commit_and_push(&werk, "kade/9402", "b.txt", "beta");
+        std::env::set_var("GH_CALLS", tmp("calls2").join("log").to_str().unwrap());
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate2").to_str().unwrap());
+        let log = home.join("platform/scripts/chorus-log");
+        fs::create_dir_all(log.parent().unwrap()).unwrap();
+        let cap = home.join("spine-capture.txt");
+        write_exec(&log, &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
+
+        let main_sha = werk_merge::merge_atomic(9402, "kade", &home, &werk_base, Some("jeff".into()))
+            .expect("--atomic with accepter lands");
+        assert!(main_sha.len() >= 7);
+        assert!(origin_main_has(&origin, "b.txt"), "work really landed on origin main");
+        let emitted = fs::read_to_string(&cap).unwrap_or_default();
+        assert!(emitted.contains("merge.approved") && emitted.contains("accepter=jeff")
+            && emitted.contains("atomic=true"),
+            "merge.approved on the spine with {{who,what,when}}: {emitted}");
+    }
+
+    // ── pr-create-fail: gh pr create exits non-zero → typed refusal, nothing merged.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9403);
+        let _sha = commit_and_push(&werk, "kade/9403", "c.txt", "gamma");
+        std::env::set_var("GH_CALLS", tmp("calls3").join("log").to_str().unwrap());
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate3").to_str().unwrap());
+        std::env::set_var("GH_PR_CREATE_EXIT", "1");
+        let err = merge(9403, "kade", &home, &werk_base).expect_err("pr create failure must refuse");
+        std::env::remove_var("GH_PR_CREATE_EXIT");
+        assert!(err.contains("pr-create-fail"), "typed pr-create-fail: {err}");
+        assert!(!origin_main_has(&origin, "c.txt"), "nothing landed");
+    }
+
+    // ── no-open-pr: create 'succeeds' but no PR is resolvable by oid → typed refusal.
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9404);
+        let _sha = commit_and_push(&werk, "kade/9404", "d.txt", "delta");
+        std::env::set_var("GH_CALLS", tmp("calls4").join("log").to_str().unwrap());
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", tmp("ghstate4").to_str().unwrap());
+        std::env::set_var("GH_CREATE_NOOP", "1");
+        let err = merge(9404, "kade", &home, &werk_base).expect_err("unresolvable PR must refuse");
+        std::env::remove_var("GH_CREATE_NOOP");
+        assert!(err.contains("no-open-pr"), "typed no-open-pr: {err}");
+        assert!(!origin_main_has(&origin, "d.txt"), "nothing landed");
+    }
+}

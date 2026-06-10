@@ -7,8 +7,12 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use werk_push::push;
+
+// Both e2e fns mutate process env (PATH/GH_*); serialize them (werk-deploy pattern).
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn nanos() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
@@ -44,6 +48,7 @@ fn remote_has(home: &Path, branch: &str) -> bool {
 
 #[test]
 fn push_pushes_committed_branch_and_registers_gh() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     // gh shim on PATH — logs calls, succeeds.
     let bin = tmp("bin");
     write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
@@ -144,4 +149,83 @@ fn push_pushes_committed_branch_and_registers_gh() {
 
     // no-werk: never pulled -> refuse, no push.
     assert!(push(9999, "kade", &home, &werk_base).is_err(), "no werk => refuse");
+}
+
+// #3330 (#3324 matrix, werk-push gaps) — the three uncovered seams:
+// wrong-branch (the #2580 cross-role guard's ONLY uncovered taxonomy entry),
+// the _GIT_QUEUE_PUSH sanctioned-pusher sentinel actually reaching git, and the
+// gh-register-fail rollback (the just-pushed ref deleted, no orphan).
+#[test]
+fn wrong_branch_refuses_sentinel_reaches_git_and_gh_fail_rolls_back() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let bin = tmp("bin2");
+    write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    let gh_log = tmp("ghlog2").join("calls");
+    std::env::set_var("GH_LOG", gh_log.to_str().unwrap());
+    std::env::set_var("GH_EXIT", "0");
+
+    let origin = tmp("origin2");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home3");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    // spine capture (same seam the #3163 test uses).
+    let log = home.join("platform/scripts/chorus-log");
+    fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let cap = home.join("spine-capture.txt");
+    write_exec(&log, &format!("#!/bin/sh\necho \"$@\" >> \"{}\"\n", cap.display()));
+
+    let werk_base = tmp("werk3");
+    let werk = werk_base.join("kade-9101");
+    git(&home, &["worktree", "add", "-q", "-b", "kade/9101", werk.to_str().unwrap(), "origin/main"]);
+    fs::write(werk.join("w.txt"), "x").unwrap();
+    git(&werk, &["add", "."]);
+    git(&werk, &["commit", "-q", "-m", "kade: #9101 — work"]);
+
+    // ── wrong-branch: the werk drifts onto another branch → typed refusal, spine'd,
+    // and NOTHING pushed (the #2580 cross-role class: a kade werk must only ever
+    // push kade/<card>).
+    git(&werk, &["checkout", "-q", "-b", "silas/999"]);
+    let err = push(9101, "kade", &home, &werk_base).expect_err("wrong branch must refuse");
+    assert!(err.contains("refusing to push"), "typed wrong-branch refusal: {err}");
+    assert!(!remote_has(&home, "kade/9101") && !remote_has(&home, "silas/999"), "nothing pushed");
+    let emitted = fs::read_to_string(&cap).unwrap_or_default();
+    assert!(emitted.contains("push.refused") && emitted.contains("reason=wrong-branch"),
+        "wrong-branch refusal reached the spine: {emitted}");
+    git(&werk, &["checkout", "-q", "kade/9101"]);
+
+    // ── sentinel: a client-side pre-push hook that REJECTS unless the sanctioned-
+    // pusher sentinel is in env (the real #2598 hook's contract). Raw git fails;
+    // the verb passes — proof _GIT_QUEUE_PUSH=1 reaches the git subprocess.
+    let hooks = home.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    write_exec(&hooks.join("pre-push"),
+        "#!/bin/sh\n[ \"$_GIT_QUEUE_PUSH\" = \"1\" ] || { echo 'BLOCKED: not sanctioned' >&2; exit 1; }\nexit 0\n");
+    let raw = Command::new("git").args(["push", "origin", "kade/9101"]).current_dir(&werk).output().unwrap();
+    assert!(!raw.status.success(), "raw git push (no sentinel) must be blocked by the hook");
+    let sha = push(9101, "kade", &home, &werk_base).expect("verb push carries the sentinel through to git");
+    assert!(remote_has(&home, "kade/9101"), "verb push landed");
+    assert!(sha.len() >= 7);
+
+    // ── gh-register-fail rollback: new commit so the push isn't idempotent, gh
+    // fails → the just-pushed ref is DELETED (delete carries the sentinel too —
+    // it must pass the same hook), refusal names the rollback, spine witnesses it.
+    fs::write(werk.join("w2.txt"), "y").unwrap();
+    git(&werk, &["add", "."]);
+    git(&werk, &["commit", "-q", "-m", "kade: #9101 — more"]);
+    std::env::set_var("GH_EXIT", "1");
+    let err = push(9101, "kade", &home, &werk_base).expect_err("gh fail must refuse");
+    std::env::set_var("GH_EXIT", "0");
+    assert!(err.contains("deleted the pushed ref"), "refusal names the rollback: {err}");
+    assert!(!remote_has(&home, "kade/9101"), "no orphan ref — the pushed branch was rolled back");
+    let emitted = fs::read_to_string(&cap).unwrap_or_default();
+    assert!(emitted.contains("push.rolledback") && emitted.contains("reason=gh-register-fail"),
+        "rollback reached the spine: {emitted}");
 }
