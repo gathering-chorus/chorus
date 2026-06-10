@@ -531,4 +531,37 @@ mod tests {
         let r = check(&input, &state).await;
         assert_eq!(r.exit_code, 2, "tool_output_is_error alone must block");
     }
+
+    #[tokio::test]
+    async fn contract_full_documented_failure_payload() {
+        // #3334 CONTRACT TEST (Kade's review ask): the FULL documented PostToolUseFailure
+        // payload, verbatim from the Claude Code hooks docs (code.claude.com/docs/hooks),
+        // deserializes and blocks. If Claude Code drifts this shape again, THIS goes red
+        // instead of the hook silently going zero-fires for another year.
+        let raw = json!({
+            "session_id": "abc123",
+            "transcript_path": "/Users/dev/.claude/projects/x/transcript.jsonl",
+            "cwd": "/project",
+            "permission_mode": "default",
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm install --frozen-lockfile"},
+            "tool_output": {"stdout": "", "stderr": "npm ERR! code ENOENT", "exit_code": 127},
+            "tool_output_is_error": true
+        });
+        let input: HookInput = serde_json::from_value(raw).expect("documented payload deserializes");
+        let state = AppState::new();
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "documented failure payload must block");
+    }
+
+    #[tokio::test]
+    async fn werk_verb_typed_refusals_are_not_benign() {
+        // Kade's hold: werk-* exit 1/2 are TYPED refusals — a refused werk-commit must
+        // block the next call (that's the desired enforcement), unlike grep-no-match.
+        let state = AppState::new();
+        let input = make_input_numeric("werk-commit 9999 kade", 1);
+        let r = check(&input, &state).await;
+        assert_eq!(r.exit_code, 2, "a refused werk verb is a real stop, not benign");
+    }
 }
