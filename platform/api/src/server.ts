@@ -1646,6 +1646,21 @@ app.get('/api/chorus/health/detail', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// --- GET /api/chorus/hooks/friction (#3280) ---
+// Ranked friction view: which hook blocks whom, how often, per role, inside a
+// sliding window (?hours=N, default 12). Reads hooks.log directly — no store.
+
+import { fetchHookFriction } from './handlers/hook-friction';
+app.get('/api/chorus/hooks/friction', (req: Request, res: Response) => {
+  const HOOKS_LOG = path.join(os.homedir(), 'Library/Logs/Gathering/hooks.log');
+  const hours = Number(req.query.hours);
+  const r = fetchHookFriction({
+    readLog: () => safeReadFile(HOOKS_LOG),
+    windowHours: Number.isFinite(hours) && hours > 0 && hours <= 24 * 14 ? hours : undefined,
+  });
+  res.status(r.status).json(r.body);
+});
+
 // --- GET /api/chorus/hooks/metrics (#2277) ---
 
 let hooksMetricsCache: { data: unknown; ts: number } | null = null;
