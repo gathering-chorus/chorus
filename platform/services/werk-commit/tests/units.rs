@@ -2,7 +2,73 @@
 //! (AC1): branch/card handling, the jsonl witness line shape, and commit-message
 //! assembly. No git, no env — pure functions, deterministic.
 
-use werk_commit::{branch_name, commit_message, jsonl_line, resolve_trace_in, spine_args};
+use werk_commit::{
+    branch_name, commit_message, conflict_hold_message, jsonl_line, parse_commit_args,
+    resolve_trace_in, spine_args, Mode,
+};
+
+fn args(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+// #3304 — the CLI seam (the #3294 pattern: parse_<verb>_args recognizes flags
+// anywhere, unit-tested where the contract lives). Four modes, mutually exclusive.
+#[test]
+fn parse_recognizes_the_four_modes_with_flags_anywhere() {
+    let p = parse_commit_args(&args(&["3304", "kade", "a", "summary"])).unwrap();
+    assert_eq!((p.card, p.role.as_deref(), p.mode), (3304, Some("kade"), Mode::Flow));
+    assert_eq!(p.summary, "a summary");
+
+    let p = parse_commit_args(&args(&["--atomic", "3304", "kade"])).unwrap();
+    assert_eq!(p.mode, Mode::Atomic, "--atomic recognized anywhere");
+
+    let p = parse_commit_args(&args(&["3304", "kade", "--continue"])).unwrap();
+    assert_eq!(p.mode, Mode::Continue);
+
+    let p = parse_commit_args(&args(&["3304", "--abort", "kade"])).unwrap();
+    assert_eq!((p.mode, p.role.as_deref()), (Mode::Abort, Some("kade")));
+}
+
+#[test]
+fn parse_refuses_conflicting_modes_and_bad_card() {
+    assert!(parse_commit_args(&args(&["3304", "kade", "--continue", "--abort"])).is_err(),
+        "--continue + --abort is a usage error");
+    assert!(parse_commit_args(&args(&["3304", "kade", "--atomic", "--continue"])).is_err(),
+        "--atomic + --continue is a usage error");
+    assert!(parse_commit_args(&args(&["notanumber", "kade"])).is_err());
+    assert!(parse_commit_args(&args(&[])).is_err());
+}
+
+// #3304 — the held-conflict instruction: names the conflicted files and BOTH
+// in-verb follow-ups. The human edits files, never runs raw git — the guard
+// stays whole because the resolution is reachable only through the verb.
+#[test]
+fn conflict_hold_message_names_files_and_both_verb_follow_ups() {
+    let m = conflict_hold_message(3304, "kade", &["src/lib.rs".to_string(), "README".to_string()]);
+    assert!(m.contains("src/lib.rs") && m.contains("README"), "conflicted files named: {m}");
+    assert!(m.contains("werk-commit 3304 kade --continue"), "continue follow-up named: {m}");
+    assert!(m.contains("werk-commit 3304 kade --abort"), "abort follow-up named: {m}");
+    assert!(!m.contains("git rebase"), "never instructs raw git: {m}");
+}
+
+// #3304 AC4 — guard regression tripwire: the resolution lives in the verb, NEVER
+// as a raw-git exception in infra_guardrails. The mutating `git rebase <ref>`
+// block must still exist, and the guard must carry no werk-commit carve-out.
+#[test]
+fn infra_guardrails_has_no_new_raw_git_carve_out() {
+    let guard_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../chorus-hooks/src/hooks/infra_guardrails.rs");
+    let src = std::fs::read_to_string(&guard_src)
+        .unwrap_or_else(|e| panic!("guard source must exist at {}: {}", guard_src.display(), e));
+    assert!(
+        src.contains(r"\bgit\s+rebase\b"),
+        "the mutating-rebase block regex must remain in infra_guardrails"
+    );
+    assert!(
+        !src.contains("werk-commit"),
+        "infra_guardrails must carry NO werk-commit-specific carve-out (resolution lives in the verb)"
+    );
+}
 
 #[test]
 fn branch_name_is_role_slash_card() {
