@@ -59,7 +59,9 @@ fn e2e_deploy_both_slots_and_guards() {
     write_exec(&bin.join("werk-build"), &format!("#!/bin/sh\necho \"$@\" >> {bs:?}\necho 'chorus-inject=DEADBEEF'\n"));
     // install: log argv + touch the marker (so codesign returns the NEW cdhash after).
     write_exec(&bin.join("chorus-bin-install"), &format!("#!/bin/sh\necho \"$@\" >> {inst:?}\ntouch \"$CS_MARKER\"\nexit 0\n"));
-    write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nexit 0\n"));
+    // launchctl shim: log argv; answer `print` with a live job (state=running + pid) so
+    // the #3317 post-kickstart liveness gate (bash #3232 port) sees the daemon up.
+    write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nif [ \"$1\" = print ]; then echo 'state = running'; echo 'pid = 123'; fi\nexit 0\n"));
     // #3179 — path-aware: codesign of the WERK's BUILT file (…/target/release/…) is
     // always the freshly-built hash ($CS_BUILT, default DEADBEEF, matching werk-build's
     // echo). codesign of the INSTALLED file is marker-based: post-install/new
@@ -74,26 +76,29 @@ fn e2e_deploy_both_slots_and_guards() {
     let origin = tmp("origin");
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::write(origin.join("README"), "x").unwrap();
+    // #3132/#3317: a Rust SERVICE is structurally a crate (Cargo.toml) WITH a committed
+    // com.chorus.<svc> plist (the "is it kickstarted?" signal read from the repo, not
+    // a hardcoded name). The crate lives on MAIN (the native canonical path classifies
+    // + installs from canonical, the post-merge reality); the card then modifies it.
+    fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
+    fs::write(origin.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
+    fs::write(origin.join("platform/services/chorus-inject/src/lib.rs"), "// v0\n").unwrap();
+    fs::create_dir_all(origin.join("config/launchagents")).unwrap();
+    fs::write(origin.join("config/launchagents/com.chorus.inject.plist"),
+        "<plist><string>chorus-inject</string></plist>").unwrap();
     git(&origin, &["add", "."]); git(&origin, &["commit", "-q", "-m", "init"]);
     let home = tmp("home");
     assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()]).status().unwrap().success());
     let werk_base = tmp("werk");
     std::env::set_var("CHORUS_BIN", tmp("chorusbin").to_str().unwrap());
     std::env::set_var("WERK_SILAS_BIN", tmp("werkbin").to_str().unwrap());
+    std::env::set_var("CHORUS_DEPLOY_LIVENESS_TIMEOUT_S", "3");
 
     // --- no werk → refuse ---
     assert!(deploy(7001, "silas", "canonical", &home, &werk_base).is_err(), "no werk => refuse");
 
     let werk = werk_base.join("silas-7001");
     git(&home, &["worktree", "add", "-q", "-b", "silas/7001", werk.to_str().unwrap(), "origin/main"]);
-    // #3132: a Rust SERVICE is structurally a crate (Cargo.toml) WITH a committed
-    // com.chorus.<svc> plist (the "is it kickstarted?" signal read from the repo, not
-    // a hardcoded name). This synthetic crate stands in for the RustService path.
-    fs::create_dir_all(werk.join("platform/services/chorus-inject/src")).unwrap();
-    fs::write(werk.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
-    fs::create_dir_all(werk.join("config/launchagents")).unwrap();
-    fs::write(werk.join("config/launchagents/com.chorus.inject.plist"),
-        "<plist><string>chorus-inject</string></plist>").unwrap();
     fs::write(werk.join("platform/services/chorus-inject/src/lib.rs"), "// w\n").unwrap();
     git(&werk, &["add", "."]); git(&werk, &["commit", "-q", "-m", "chorus-inject"]);
 
@@ -105,38 +110,36 @@ fn e2e_deploy_both_slots_and_guards() {
     assert!(read(&inst).contains("--target werk"), "installed to werk slot: {}", read(&inst));
     assert!(read(&lc).is_empty(), "DEMO must NOT kickstart: {}", read(&lc));
 
-    // === TEST-IN-PROD: target=canonical → DELEGATE (build-from-main + chorus-deploy) ===
-    // #3222: canonical no longer builds from the werk or installs here. It derives the
-    // card's crate(s) from the werk diff, builds them from CANONICAL via
-    // `werk-build --target canonical --only <crates>` (the one structural build tool,
-    // crate-scoped), and installs/verifies/kickstarts via the single prod path
-    // (`chorus-deploy --target canonical <crate>`). The install/verify/rollback/cdhash
-    // hardening now lives in chorus-deploy (its own bats), not here — this proves the
-    // ORCHESTRATION; werk-build's e2e proves the build truly comes from main.
-    // chorus-deploy is resolved by ABSOLUTE path (canonical/platform/scripts/chorus-deploy,
-    // #3151/#3183), so the shim lives in home, not on PATH.
-    let cdscripts = home.join("platform/scripts");
-    fs::create_dir_all(&cdscripts).unwrap();
-    let cdl = logd.join("chorus-deploy");
-    write_exec(&cdscripts.join("chorus-deploy"), &format!("#!/bin/sh\necho \"$@\" >> {cdl:?}\nexit 0\n"));
+    // === TEST-IN-PROD: target=canonical → NATIVE build-from-main install (#3317) ===
+    // #3222: canonical no longer builds from the werk. It derives the card's crate(s)
+    // from the werk diff, builds them from CANONICAL via `werk-build --target canonical
+    // --only <crates>` (the one structural build tool, crate-scoped), then installs/
+    // verifies/kickstarts NATIVELY — the bash chorus-deploy shell-out seam is gone
+    // (#3317 absorbed it). The install drives chorus-bin-install; the kickstart is
+    // liveness-gated (bash #3232 port); cdhash verify is built==installed per binary.
     std::env::set_var("CHORUS_HOME", home.to_str().unwrap()); // canonical_root_path anchor
 
     fs::write(&bs, "").unwrap(); // reset werk-build call log
-    let r = deploy(7001, "silas", "canonical", &home, &werk_base).expect("prod deploy via delegation");
+    let _ = fs::remove_file(&marker); // installed slot reads OLD until install runs
+    fs::write(&inst, "").unwrap(); let _ = fs::write(&lc, "");
+    let r = deploy(7001, "silas", "canonical", &home, &werk_base).expect("native prod deploy");
     assert!(r.contains("target=canonical") && r.contains("chorus-inject"), "prod summary: {}", r);
     // built from canonical, crate-scoped, via the one structural build tool
     assert!(read(&bs).contains("--target canonical"), "werk-build built from canonical: {}", read(&bs));
     assert!(read(&bs).contains("--only chorus-inject"), "crate-scoped to the card's crate: {}", read(&bs));
-    // installed/verified via the single prod path
-    assert!(read(&cdl).contains("--target canonical") && read(&cdl).contains("chorus-inject"),
-        "delegated install to chorus-deploy: {}", read(&cdl));
+    // installed natively via chorus-bin-install to canonical (no chorus-deploy delegation)
+    assert!(read(&inst).contains("--target canonical") && read(&inst).contains("chorus-inject"),
+        "native install via chorus-bin-install: {}", read(&inst));
+    // kickstarted the service and liveness-checked it (kickstart + print in the launchctl log)
+    assert!(read(&lc).contains("kickstart") && read(&lc).contains("com.chorus.inject"),
+        "kickstarted the launchd service: {}", read(&lc));
+    assert!(read(&lc).contains("print"), "liveness-verified after kickstart (#3232 port): {}", read(&lc));
 
     // === AC2: a werk BEHIND origin/main still deploys — the werk-stale guard is GONE ===
     // A peer moves origin/main ahead so the werk is behind. The old path refused
     // "werk-stale"; the from-main path builds from main regardless (nothing to be stale
     // against), so canonical must deploy, not refuse.
     git(&origin, &["commit", "-q", "--allow-empty", "-m", "peer moves main ahead"]);
-    fs::write(&cdl, "").unwrap();
     let r2 = deploy(7001, "silas", "canonical", &home, &werk_base)
         .expect("behind-werk canonical must NOT refuse werk-stale (#3222 removed the guard)");
     assert!(r2.contains("target=canonical"), "behind werk still deploys from main: {}", r2);

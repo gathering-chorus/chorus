@@ -145,7 +145,7 @@ fi
 # fixed port, so isolation is per-session ENDPOINT instead. Canonical chorus-mcp
 # listens on CHORUS_MCP_PORT_CANONICAL (:3341). When the role has an active werk
 # whose werk-mcp daemon is deployed (marker file present, written by
-# `chorus-deploy --target werk chorus-mcp`), the session resolves its own daemon
+# `werk-deploy <card> <role> --target werk`), the session resolves its own daemon
 # on a deterministic per-role port; .mcp.json interpolates CHORUS_MCP_PORT into
 # its url. No active werk daemon → canonical :3341 (no-regression default, AC6).
 export CHORUS_MCP_PORT_CANONICAL="${CHORUS_MCP_PORT_CANONICAL:-3341}"
