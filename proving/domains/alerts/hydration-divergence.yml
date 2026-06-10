@@ -1,13 +1,17 @@
-# hydration-divergence.yml — Alert when high filesystem activity but no crawler indexing
-# Card #2817 (#2861 — bash-only check; success/quiet branches emit literal "ok")
+# hydration-divergence.yml — Alert when the crawler misses its own cadence despite activity
+# Card #2817 (#2861 — bash-only check) · #3322 — expectation aligned to the interval design
 #
-# Watch-path-misconfigured signal: chorus tree had >10 file changes via git
-# in last 5 min but crawler.domain.indexed shows 0 in 3 consecutive runs.
+# Cadence-missed signal: chorus tree had >10 file changes in the last 40 min but
+# crawler.domain.indexed shows 0 events in that window (one full 30-min cycle + grace).
+# The old premise ("WatchPaths misconfigured", indexing within 3 min of changes) modeled
+# the pre-#3068 design — Jeff removed WatchPaths 2026-05-24; StartInterval=1800 is the
+# SOLE trigger by design, so a busy stretch between runs is NORMAL, and the 3-min window
+# fired phantom 5+ times (05-09 → 06-10).
 #
 # alert-runner contract: stdout must equal literal "ok" for success.
 
 name: hydration-divergence
-description: chorus crawler running but not picking up filesystem changes
+description: chorus crawler missed its 30-min indexing cadence despite filesystem activity
 severity: warning
 owner: kade
 schedule: "*/10 * * * *"
@@ -15,14 +19,14 @@ schedule: "*/10 * * * *"
 check: |
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/hydration-divergence-check.py"
   CHORUS_TREE="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-  CHANGES=$(cd "$CHORUS_TREE" && git log --since='5 minutes ago' --name-only --pretty=format: 2>/dev/null | grep -v '^$' | sort -u | wc -l | tr -d ' ')
+  CHANGES=$(cd "$CHORUS_TREE" && git log --since='40 minutes ago' --name-only --pretty=format: 2>/dev/null | grep -v '^$' | sort -u | wc -l | tr -d ' ')
   if [ "$CHANGES" -lt 10 ]; then
     echo "ok"
     exit 0
   fi
-  LAST_3MIN=$(tail -2000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.indexed" | python3 "$SIBLING" 2>/dev/null || echo 0)
-  if [ "$LAST_3MIN" -eq 0 ] 2>/dev/null; then
-    echo "divergent:high-activity=${CHANGES}-no-indexing-in-3min"
+  LAST_CYCLE=$(tail -4000 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "crawler.domain.indexed" | python3 "$SIBLING" 2>/dev/null || echo 0)
+  if [ "$LAST_CYCLE" -eq 0 ] 2>/dev/null; then
+    echo "divergent:high-activity=${CHANGES}-no-indexing-in-40min"
     exit 1
   fi
   echo "ok"
@@ -30,4 +34,4 @@ check: |
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" kade "hydration-divergence: filesystem activity high but crawler not indexing. WatchPaths misconfigured OR filter too narrow OR launchd event coalescing. Check com.chorus.crawler-index plist WatchPaths block + index-crawler-snapshots.sh." 2>/dev/null || true
+  "$OPS_NUDGE" kade "hydration-divergence: crawler missed its 30-min cadence (StartInterval=1800 is the sole trigger by design; no WatchPaths since 2026-05-24). Check launchctl print gui/501/com.chorus.crawler-index + the index-crawler-snapshots.sh log." 2>/dev/null || true
