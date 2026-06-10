@@ -188,7 +188,9 @@ pub fn spine_args(event: &str, role: &str, extras: &[(&str, &str)]) -> Vec<Strin
 
 /// Emit one event to the ONE spine via the canonical `chorus-log` subprocess —
 /// best-effort, never blocks the verb. Mirrors werk-pull's emit_spine.
-fn emit_spine(home: &Path, event: &str, role: &str, extras: &[(&str, &str)]) {
+/// Pub since #3319: loom-gemba links this crate as the gather core and emits
+/// its own `gemba.observed` events through the same one path.
+pub fn emit_spine(home: &Path, event: &str, role: &str, extras: &[(&str, &str)]) {
     let log = home.join("platform/scripts/chorus-log");
     let log_s = match log.to_str() {
         Some(s) => s.to_string(),
@@ -201,7 +203,9 @@ fn emit_spine(home: &Path, event: &str, role: &str, extras: &[(&str, &str)]) {
 }
 
 /// Resolve the observation stream for a role. The observer writes here today.
-fn observations_path(target: &str) -> PathBuf {
+/// Pub since #3319: the stream location is part of the gather core's contract —
+/// consumers (loom-gemba) must read the SAME stream, not re-derive the path.
+pub fn observations_path(target: &str) -> PathBuf {
     PathBuf::from(format!("/tmp/claude-team-scan/{}-observations.jsonl", target))
 }
 

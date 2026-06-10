@@ -1,0 +1,16 @@
+# loom-gemba — observation verb (a SENSE: looking at a role working) built ON the
+# pulse-gather short-term-memory core (#3319). Links the pulse-gather crate directly —
+# one implementation of the gather mechanics (stream read, cursor, windowing), no
+# shell-out, no second implementation. Jeff 2026-06-10: pulse-gather <> gemba —
+# the sense consumes memory; it isn't memory.
+[package]
+name = "loom-gemba"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pulse-gather = { path = "../pulse-gather" }
+
+[[bin]]
+name = "loom-gemba"
+path = "src/main.rs"

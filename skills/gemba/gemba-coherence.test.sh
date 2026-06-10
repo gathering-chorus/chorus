@@ -44,6 +44,14 @@ assert "gemba skill no longer CronDeletes a loop (#3274)" bash -c "! grep -q 'Cr
 # Deploy path knows the verb (so it ships — merged≠live guard)
 assert "chorus-deploy registers pulse-gather" grep -q "pulse-gather" "$ROOT/platform/scripts/chorus-deploy"
 
+# #3319: gemba is the loom-gemba verb (observation semantics) ON the pulse-gather core
+assert "loom-gemba crate exists" test -f "$ROOT/platform/services/loom-gemba/Cargo.toml"
+assert "loom-gemba has unit tests" test -f "$ROOT/platform/services/loom-gemba/tests/units.rs"
+assert "loom-gemba links pulse-gather (no second implementation)" grep -q 'path = "../pulse-gather"' "$ROOT/platform/services/loom-gemba/Cargo.toml"
+assert "gemba skill invokes the loom-gemba MCP tool" grep -q "loom-gemba" "$ROOT/skills/gemba/SKILL.md"
+assert "chorus-deploy registers loom-gemba" grep -q "loom-gemba" "$ROOT/platform/scripts/chorus-deploy"
+assert "MCP server exposes loom-gemba" grep -q "LOOM_GEMBA_TOOL_DEF" "$ROOT/platform/mcp-server/src/server.ts"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
