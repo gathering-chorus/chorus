@@ -1728,17 +1728,39 @@ async function appendChorusLog(event: string, role: string, fields: Record<strin
   }
 }
 
+// #3335 — synthetic/test card-id sentinels. MIRRORS the canonical predicate in
+// chorus-api logs-query.ts (SYNTHETIC_CARD_IDS, #3029) — kept in sync by value because
+// the two live in separate packages with no shared module today. UNIFYING these into a
+// shared package (chorus-sdk) is the proper one-path fix; carded as a follow-on.
+export const SYNTHETIC_CARD_IDS = new Set(['99998', '99999']);
+
+/** #3335 — decide whether an mcp.tool.error should NUDGE ops (silas). Pure + testable.
+ *  Suppress the NUDGE only — the spine event was already written by the caller, so a
+ *  suppressed nudge stays fully observable (#3283: never add a loss mechanism). False when:
+ *  - synthetic === true: the caller ran with CHORUS_SYNTHETIC=1 (a test harness running the
+ *    server in-process, e.g. #3329's MCP-wrapper tests) — its errors are not ops incidents.
+ *  - cardId is a synthetic sentinel (99998/99999).
+ *  - errorMessage is a caller-side validation/refusal (#3022) — anchored as ONE group so a
+ *    real error merely CONTAINING "expected one of"/"refused:" mid-message is NOT suppressed
+ *    (Pattern-9 over-suppression fix: the old alternation left those branches unanchored). */
+export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic: boolean): boolean {
+  if (synthetic) return false;
+  if (SYNTHETIC_CARD_IDS.has(cardId)) return false;
+  if (/^(Invalid (arguments|option)|expected one of|refused:)/i.test(errorMessage)) return false;
+  return true;
+}
+
 async function notifySilasOfMcpError(event: string, fields: Record<string, unknown>): Promise<void> {
   const tool = String(fields['tool'] ?? '');
   const errorType = String(fields['error_type'] ?? fields['kind'] ?? '');
   const errorMessage = String(fields['error_message'] ?? '');
   const traceId = String(fields['trace_id'] ?? '');
-  // #3022 — caller-error suppression: validation errors and typed refusals are
-  // the caller's own bad call, already returned to that caller in the tool
-  // result. They are not ops incidents, so they must not intrude on the ops
-  // session. Only unexpected/systemic failures notify. The spine event was
-  // already written by the caller above, so these stay fully observable.
-  if (/^Invalid (arguments|option)|expected one of|refused:/i.test(errorMessage)) {
+  const cardId = String(fields['card_id'] ?? fields['card'] ?? '');
+  // #3022 + #3335: only unexpected/systemic failures notify ops. Caller-side validation/
+  // refusals (their own bad call, already returned to them) AND synthetic/test traffic
+  // (CHORUS_SYNTHETIC=1 or a synthetic card-id) are suppressed from the NUDGE — the spine
+  // event is already written above, so they stay fully observable. Suppress nudge, not event.
+  if (!shouldNotifyOps(errorMessage, cardId, process.env.CHORUS_SYNTHETIC === '1')) {
     return;
   }
   const summary = [
