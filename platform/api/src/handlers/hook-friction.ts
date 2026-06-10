@@ -22,8 +22,36 @@ import type { FetchResult } from './codebase-topology';
 
 export interface HookFrictionDeps {
   readLog: () => string | null;
+  /** #3282 — judgment-as-code: the committed classification rules
+   *  (config/hook-friction-classes.json). Optional; absent → all unjudged. */
+  readClasses?: () => string | null;
   now?: () => number;
   windowHours?: number;
+}
+
+/** #3282 — a classification rule: module (+ optional tool) → class. First match
+ *  wins; rules with a tool are checked before module-only defaults. */
+type ClassRule = { module: string; tool?: string; class: string; why?: string };
+
+function parseRules(raw: string | null): ClassRule[] {
+  if (!raw) return [];
+  try {
+    const d = JSON.parse(raw) as { rules?: unknown };
+    if (!Array.isArray(d.rules)) return [];
+    return d.rules.filter(
+      (r): r is ClassRule => !!r && typeof (r as ClassRule).module === 'string' && typeof (r as ClassRule).class === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Classify one event. Tool-specific rules outrank module defaults; no match → unjudged. */
+function classify(rules: ClassRule[], module: string, tool: string): string {
+  const withTool = rules.find((r) => r.module === module && r.tool !== undefined && r.tool === tool);
+  if (withTool) return withTool.class;
+  const moduleOnly = rules.find((r) => r.module === module && r.tool === undefined);
+  return moduleOnly ? moduleOnly.class : 'unjudged';
 }
 
 type HookRow = {
@@ -32,9 +60,11 @@ type HookRow = {
   deny: number;
   warn: number;
   byRole: Record<string, number>;
+  /** #3282 — per-class event counts for this module (real-catch / pure-friction / unjudged). */
+  classes: Record<string, number>;
 };
 
-function parseJsonLine(line: string): { module: string; role: string; decision: string; tsMs: number } | null {
+function parseJsonLine(line: string): { module: string; role: string; decision: string; tool: string; tsMs: number } | null {
   const t = line.trim();
   if (!t.startsWith('{')) return null;
   try {
@@ -42,9 +72,10 @@ function parseJsonLine(line: string): { module: string; role: string; decision: 
     const module = typeof d.module === 'string' ? d.module : '';
     const decision = typeof d.decision === 'string' ? d.decision.toLowerCase() : '';
     const role = typeof d.role === 'string' && d.role ? d.role : 'unknown';
+    const tool = typeof d.tool === 'string' ? d.tool : '';
     const tsMs = Date.parse(typeof d.timestamp === 'string' ? d.timestamp : '');
     if (!module || module === 'none' || Number.isNaN(tsMs)) return null;
-    return { module, role, decision, tsMs };
+    return { module, role, decision, tool, tsMs };
   } catch {
     return null;
   }
@@ -58,7 +89,9 @@ export function fetchHookFriction(deps: HookFrictionDeps): FetchResult {
     return { status: 503, body: { error: 'hooks.log not found' } };
   }
   const cutoff = now() - windowHours * 60 * 60 * 1000;
+  const rules = parseRules(deps.readClasses ? deps.readClasses() : null);
   const byModule = new Map<string, HookRow>();
+  const totals: Record<string, number> = {};
   let totalFriction = 0;
 
   for (const line of raw.split('\n')) {
@@ -70,13 +103,16 @@ export function fetchHookFriction(deps: HookFrictionDeps): FetchResult {
 
     let row = byModule.get(p.module);
     if (!row) {
-      row = { module: p.module, total: 0, deny: 0, warn: 0, byRole: {} };
+      row = { module: p.module, total: 0, deny: 0, warn: 0, byRole: {}, classes: {} };
       byModule.set(p.module, row);
     }
     row.total++;
     if (isDeny) row.deny++;
     else row.warn++;
     row.byRole[p.role] = (row.byRole[p.role] ?? 0) + 1;
+    const cls = classify(rules, p.module, p.tool);
+    row.classes[cls] = (row.classes[cls] ?? 0) + 1;
+    totals[cls] = (totals[cls] ?? 0) + 1;
     totalFriction++;
   }
 
@@ -90,6 +126,7 @@ export function fetchHookFriction(deps: HookFrictionDeps): FetchResult {
     body: {
       windowHours,
       totalFriction,
+      totals,
       hooks,
       generatedAt: new Date(now()).toISOString(),
     },

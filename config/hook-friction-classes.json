@@ -1,0 +1,57 @@
+{
+  "_doc": "#3282 — judgment-as-code: classify hook decisions real-catch vs pure-friction. Joined at read by the friction view (hook-friction.ts); suppressing NOTHING — every event still counts, this only labels. Rules match (module + optional tool); tool-specific rules outrank module defaults; first match wins; no match = unjudged. Grow this by evidence, never by vibes: each rule cites why. Corpus skew caveat: per the 2026-06-10 reconciliation (designing/docs/friction-reconciliation-2026-06-10.md), captured data underrepresents hard agent-side denials — judge what is captured, remember what is not.",
+  "rules": [
+    {
+      "module": "accept_gate",
+      "tool": "Skill",
+      "class": "pure-friction",
+      "why": "The AC-checkbox / evidence-chain format class — two detectors disagreeing on checkbox format, demo:preflight comment chains (retired by #3116 but the refusals persist). Zero caught mistakes on record; named pure-friction in #3282's own AC."
+    },
+    {
+      "module": "accept_gate",
+      "class": "real-catch",
+      "why": "DEC-048 authority gate. Proven 2026-06-10 twice: refused kade self-accepting #3320 and wren self-deciding #3319 — both correct, both load-bearing."
+    },
+    {
+      "module": "ops_awareness",
+      "class": "pure-friction",
+      "why": "Ambient fire-and-allow warns (171/12h on 2026-06-10) that no role ever sees — non-blocking by construction, so they can catch nothing. Volume noise in the friction ranking."
+    },
+    {
+      "module": "prompt_pipeline",
+      "class": "pure-friction",
+      "why": "Per-prompt pipeline warns, ambient and invisible like ops_awareness — fire-and-allow internals, zero behavioral effect."
+    },
+    {
+      "module": "canonical_write_guard",
+      "class": "real-catch",
+      "why": "Routes canonical writes into card werks. Fired correctly twice 2026-06-10 (alert-fix edit redirected → became carded #3322). Every fire that produces a werk redirect is value."
+    },
+    {
+      "module": "autonomy_guard",
+      "class": "real-catch",
+      "why": "Enforces DEC-069 (don't ask permission for predicted-yes) — fires exactly when the agent does the thing Jeff explicitly corrected. A fire IS a caught regression of a standing feedback."
+    },
+    {
+      "module": "infra_guardrails",
+      "tool": "Bash",
+      "class": "unjudged",
+      "why": "MIXED, judged per-fire for now: the raw-process class it guards is real (service-kill prevention), but 2026-06-10 produced 3 proven false-fires — substring-matching the guarded word inside card-comment TEXT (the audit's own filing blocked twice) and blocking the load-100 outage fix. Needs reason-grain before a blanket class; see #3283 report addendum."
+    },
+    {
+      "module": "memory_first",
+      "class": "unjudged",
+      "why": "DEC-074 search-hierarchy intent is real (crash recovery via Chorus search has receipts), but 2026-06-10 shows it blocking legitimate filesystem ops mid-incident. Needs catch-evidence before judging; candidates for reason-grain rules."
+    },
+    {
+      "module": "search_hierarchy",
+      "class": "unjudged",
+      "why": "Same DEC-074 family as memory_first — same open judgment, same evidence needed."
+    },
+    {
+      "module": "tdd_gate",
+      "class": "real-catch",
+      "why": "Blocks code writes without failing tests first (DEC-1674). The class it guards (#1665: 5+ fix cycles with Jeff as live tester) is the costliest known failure mode; a fire is cheap relative to one recurrence."
+    }
+  ]
+}
