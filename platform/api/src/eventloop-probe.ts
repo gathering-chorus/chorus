@@ -55,9 +55,13 @@ export interface EventloopProbeDeps {
   ticks?: number;
 }
 
-/** The probe loop: measure → if blocked, emit (always) + nudge (throttled) → wait.
- *  Emits the same BlockAlert shape as the in-process detector; the only difference
- *  is it can't be starved by the block it's measuring. */
+/** The probe loop: measure → on the RISING EDGE of a block (healthy→blocked) emit once
+ *  + nudge (throttled); re-arm on recovery. Emits the same BlockAlert shape as the
+ *  in-process detector, and the SAME once-per-block-episode semantics — a sustained or
+ *  chronically-slow loop emits ONCE per episode, not once per 2s probe (#3082 Kade
+ *  review: don't flood eventloop.blocked events the way the synthetic-flood did today).
+ *  The only difference from the in-process detector is the vantage: this can't be
+ *  starved by the block it's measuring. */
 export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void> {
   const threshold = deps.threshold ?? 1000;
   const throttleMs = deps.throttleMs ?? 300_000;
@@ -66,6 +70,7 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const bounded = typeof deps.ticks === 'number';
   let lastNudge = Number.NEGATIVE_INFINITY;
+  let inBlock = false; // edge state: are we inside an ongoing block episode?
   let t = 0;
 
   while (!bounded || t < (deps.ticks as number)) {
@@ -78,11 +83,18 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
       timedOut,
     });
     if (a) {
-      deps.emit(a);
-      if (now() - lastNudge >= throttleMs) {
-        lastNudge = now();
-        deps.nudge(a);
+      if (!inBlock) {
+        // rising edge: a NEW block episode — emit the witness once, nudge if past throttle.
+        inBlock = true;
+        deps.emit(a);
+        if (now() - lastNudge >= throttleMs) {
+          lastNudge = now();
+          deps.nudge(a);
+        }
       }
+      // still blocked (inBlock): suppress — one episode, one alert. No flood.
+    } else {
+      inBlock = false; // recovered → re-arm for the next episode
     }
     await sleep(intervalMs);
     t++;
@@ -110,6 +122,11 @@ if (require.main === module) {
   const OPS_NUDGE = path.join(root, 'platform/scripts/ops-nudge');
 
   const probe = async (): Promise<ProbeResult> => {
+    // #3082 Kade review: the probe op MUST be cheap + constant-cost so latency reads
+    // pure loop-availability, not handler work — a heavy endpoint would conflate a
+    // loop block with its own compute. /context/health is a cache READ (healthCache
+    // .snapshot(), in-memory) — constant-cost; it only "slows" when the loop can't run
+    // it, which is exactly the signal we want. Do NOT point this at an aggregating route.
     const start = Date.now();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
