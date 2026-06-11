@@ -20,6 +20,15 @@ FUSEKI="${CHORUS_FUSEKI:-http://localhost:3030/pods}"
 NS="https://jeffbridwell.com/chorus#"
 PASS=0; FAIL=0
 
+# Cleanup runs on ANY exit (gate-quality catch: a mid-script assert failure must
+# not leak sacrificial subjects into the live instances graph).
+cleanup() {
+  for s_iri in "${NS}role-dal-e2e-sacrificial" "${NS}role-dal-e2e-target" "${NS}role-dal-e2e-sacrificial-2"; do
+    curl -sf --data-urlencode "update=DELETE WHERE { GRAPH <urn:chorus:instances> { <$s_iri> ?p ?o } }" "$FUSEKI/update" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup EXIT
+
 ok()   { PASS=$((PASS+1)); echo "  ok  - $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  FAIL - $1"; }
 

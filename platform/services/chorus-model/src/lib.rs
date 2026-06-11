@@ -245,6 +245,26 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     Ok((subject, format!("{} .\n", lines.join(" ;\n"))))
 }
 
+/// UTC ISO timestamp via the `date` subprocess (zero-dep house pattern);
+/// falls back to epoch seconds if `date` is unavailable.
+fn now_iso() -> String {
+    Command::new("date")
+        .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "epoch:{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            )
+        })
+}
+
 /// Spine witness — every write and every refusal is logged via chorus-log
 /// (the crawler's zero-dep pattern). Best-effort: a logging failure goes to
 /// stderr but never changes the write's outcome.
@@ -300,14 +320,41 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     }
 
     // Idempotent: replace the subject's triples wholesale in one UPDATE.
+    // KNOWN v2 CONSTRAINT (named in the 2026-06-11 authored/derived convergence,
+    // #3345): replace-subject semantics assume ONE writer per subject. When the
+    // two-lane design lands (authored via domains API, derived via crawler), a
+    // full rewrite on a shared subject would wipe the other lane's triples —
+    // v2 scopes updates per-lane/per-property. Single-writer v1 is safe.
     let label_extra = if req.fields.contains_key("label") {
         String::new()
     } else {
         format!("<{}> <{}label> \"{}\" .\n", subject, NS, esc(&req.name))
     };
+
+    // Audit envelope (Jeff's ruling, 2026-06-11: one write path = unforgeable
+    // audit): dcterms created/modified/creator stamped on every write.
+    // created survives rewrites — read the existing value before the replace.
+    const DCT: &str = "http://purl.org/dc/terms/";
+    let now = now_iso();
+    // Kade's review catch: never mis-attribute the audit trail — unknown caller
+    // is stamped "system", not a default role.
+    let creator = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "system".to_string());
+    let existing_created = store
+        .select_v(&format!(
+            "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
+            g = INSTANCES_GRAPH, s = subject, d = DCT
+        ))?
+        .into_iter()
+        .next();
+    let created = existing_created.unwrap_or_else(|| now.clone());
+    let stamps = format!(
+        "<{s}> <{d}created> \"{c}\" .\n<{s}> <{d}modified> \"{m}\" .\n<{s}> <{d}creator> \"{cr}\" .\n",
+        s = subject, d = DCT, c = esc(&created), m = esc(&now), cr = esc(&creator)
+    );
+
     store.update(&format!(
-        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ {t}{l} }} }}",
-        g = INSTANCES_GRAPH, s = subject, t = turtle, l = label_extra
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ {t}{l}{a} }} }}",
+        g = INSTANCES_GRAPH, s = subject, t = turtle, l = label_extra, a = stamps
     ))?;
     let (nf, ne) = (req.fields.len().to_string(), req.edges.len().to_string());
     witness("model.write", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("iri", subject.as_str()), ("fields", nf.as_str()), ("edges", ne.as_str())]);
@@ -452,6 +499,19 @@ mod tests {
         assert_eq!(ups.len(), 1);
         assert!(ups[0].contains("DELETE WHERE"), "idempotent replace-subject");
         assert!(ups[0].contains(INSTANCES_GRAPH), "casing-routed to instances graph");
+    }
+
+    #[test]
+    fn write_stamps_audit_envelope_and_preserves_created() {
+        // Jeff's ruling 2026-06-11: dcterms created/modified/creator on every
+        // write; created survives a rewrite (read before replace).
+        let store = stub(&[], &[]);
+        let req = WriteReq { kind: "role".into(), name: "audit-x".into(), ..Default::default() };
+        write(&store, &req).unwrap();
+        let up = store.updates.borrow()[0].clone();
+        assert!(up.contains("dc/terms/created"), "created stamped");
+        assert!(up.contains("dc/terms/modified"), "modified stamped");
+        assert!(up.contains("dc/terms/creator"), "creator stamped");
     }
 
     #[test]
