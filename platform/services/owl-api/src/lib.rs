@@ -179,8 +179,9 @@ pub struct RouteTable {
 /// ontology graph and derive the route table.
 pub fn generate(class_local: &str) -> R<RouteTable> {
     let class = format!("{}{}", NS, class_local);
+    // fields WITH their kind: name|datatype:<xsd> or name|edge:<Class> or name|plain
     let q = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', COALESCE(CONCAT('datatype:', REPLACE(STR(?dt), '.*#', '')), CONCAT('edge:', REPLACE(STR(?cl), '.*#', '')), 'plain')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let body = sparql_json(&q)?;
@@ -279,12 +280,23 @@ fn entity_json(name: &str) -> R<String> {
     for rowv in prs {
         let (p, o) = match rowv.split_once('|') { Some((a, b)) => (a.to_string(), b.to_string()), None => continue };
         let key = p.rsplit(['#', '/']).next().unwrap_or(&p).to_string();
-        let val = if o.starts_with("http") && o.contains('#') {
-            o.rsplit('#').next().unwrap_or(&o).to_string()
+        if o.starts_with(NS) {
+            // EDGE RESOLUTION (#3354 AC2): linked entities return name + label,
+            // not a bare fragment — one extra lookup per edge, detail-route only.
+            let target_name = o.rsplit('#').next().unwrap_or(&o).to_string();
+            let label = sparql_json(&format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{o}> <{ns}label> ?l }} BIND(STR(?l) AS ?v) }}",
+                g = INSTANCES_GRAPH, o = o, ns = NS
+            )).ok().map(|b| select_v(&b).into_iter().next().unwrap_or_default()).unwrap_or_default();
+            parts.push(format!(
+                "\"{}\": {{ \"name\": \"{}\", \"label\": \"{}\" }}",
+                json_escape(&key), json_escape(&target_name), json_escape(&label)
+            ));
+        } else if o.starts_with("http") && o.contains('#') {
+            parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
         } else {
-            o
-        };
-        parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&val)));
+            parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
+        }
     }
     Ok(format!("{{ {} }}", parts.join(", ")))
 }
