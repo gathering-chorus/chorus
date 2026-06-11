@@ -199,6 +199,13 @@ pub fn handle(path: &str, table: &RouteTable) -> (u16, String) {
 }
 
 /// The std-only HTTP loop. One thread, GET-only, JSON-only — a spike server.
+///
+/// THE IoC SEAM (#3350 AC5, Jeff's inversion-of-control design): every request
+/// passes through exactly one point — the `handle()` call below — before any
+/// route logic runs. v1 wraps that single call with the injected cross-cuts
+/// (auth, request logging, validation, rate limits) ONCE, and every generated
+/// route inherits them. No per-route wiring, ever — that's the payoff of
+/// generating: the seam is structural, not conventional.
 pub fn serve(port: u16, table: &RouteTable) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     eprintln!("owl-api: serving generated {} API on :{} (read-only; writes go through chorus-model)", table.class, port);

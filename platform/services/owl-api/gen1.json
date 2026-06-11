@@ -1,0 +1,6 @@
+{
+  "generatedFrom": "https://jeffbridwell.com/chorus#Domain",
+  "graph": "urn:chorus:ontology",
+  "fields": ["atStep", "comment", "contains", "gaps", "hasDesignDoc", "label", "ownedBy", "status"],
+  "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /schema/domain"]
+}
