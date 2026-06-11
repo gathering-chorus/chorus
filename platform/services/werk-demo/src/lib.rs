@@ -167,7 +167,7 @@ pub fn render_execution_state(events_text: &str, test_result: Option<&str>) -> S
         None => "-",
     };
     format!(
-        "commit {}  push {}  build {}  test {}  deploy-werk {}  env-up {}  ▸ demo ◂ ⏸ HERE\n on GO → merge · ff-sync · deploy-prod · finalize",
+        "commit {}  push {}  build {}  test {}  deploy-werk {}  env-up {}  ▸ demo ◂ ⏸ HERE\n on GO → merge · sync · deploy · accept",
         mark(done("commit.completed")),
         mark(done("push.completed")),
         mark(done("build.completed")),
@@ -770,7 +770,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // surface, posted above) and EXITS cleanly — Half A of the pipeline ends here.
     // NOTHING is held: there is no wait to drop and no detached process to leak.
     // Jeff decides whenever — minutes, or hours, or after a reboot — and his GO runs
-    // Half B (werk-land.yml: merge → ff-sync → deploy-prod → finalize). The "wait"
+    // Half B (werk.yml's go-gated `land` job: merge → sync → deploy → accept). The "wait"
     // costs nothing because it is a stopped pipeline, not a held connection.
     jsonl(home, role, card, &trace, "demo.presented",
           &format!(",\"ac\":\"{}/{}\",\"variant\":\"{}\"", checked, total, variant_url));
@@ -1019,7 +1019,7 @@ mod tests {
         assert!(s.contains("deploy-werk -"), "no deploy event → -: {}", s);
         assert!(s.contains("env-up -"), "no env-up event → -: {}", s);
         assert!(s.contains("▸ demo ◂"), "demo is the HERE marker: {}", s);
-        assert!(s.contains("on GO → merge · ff-sync · deploy-prod · finalize"), "{}", s);
+        assert!(s.contains("on GO → merge · sync · deploy · accept"), "{}", s);
     }
 
     #[test]

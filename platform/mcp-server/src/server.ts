@@ -411,7 +411,7 @@ const WerkRunInput = z.object({
   card_id: z.number().int().min(1).describe('Card to run through the pipeline.'),
   accepter: z.enum(['jeff', 'wren', 'kade', 'silas']).optional().describe('Authorizing identity (DEC-048). Default jeff. With go:true, who the accept runs under.'),
   // #3311 — ONE trigger: go=false/absent runs to the demo stop (werk.yml); go=true
-  // resumes past it (werk-land.yml: merge → deploy-prod → accept). GO = accept.
+  // resumes past it (werk.yml's go-gated `land` job: merge → sync → deploy → accept). GO = accept.
   go: z.boolean().optional().describe('The human GO — resume past the demo stop.'),
 });
 
@@ -501,7 +501,7 @@ const CHORUS_WERK_TOOL_DEF = {
   // pseudo-verbs (chorus_werk_land, and briefly werk-present/werk-land) are DELETED —
   // the werk- namespace is the seven verbs only.
   name: 'chorus_werk',
-  description: 'THE pipeline trigger — the verb sequence with a stop at the demo. Default (no go): runs commit→push→build→test→deploy-werk→env-up→demo via act (werk.yml), PRESENTS the running variant, and STOPS (#3279) — returns in minutes with {ok, phase:"presented"}; nothing is held across the human wait. With go:true (ONLY on Jeff/Wren\'s explicit GO for a presented card): resumes past the stop via act (werk-land.yml) — werk-merge → werk-deploy --target canonical → werk-accept. GO = accept (DEC-048): the accepter named here is the authority werk-accept runs under. Do NOT shell out to `act` directly, and never pass go:true without the human\'s explicit go.',
+  description: 'THE pipeline trigger — the verb sequence with a stop at the demo. Default (no go): runs commit→push→build→test→deploy-werk→env-up→demo via act (werk.yml), PRESENTS the running variant, and STOPS (#3279) — returns in minutes with {ok, phase:"presented"}; nothing is held across the human wait. With go:true (ONLY on Jeff/Wren\'s explicit GO for a presented card): resumes past the stop via act (the same werk.yml, go-gated `land` job) — werk-merge → werk-deploy --target canonical → werk-accept. GO = accept (DEC-048): the accepter named here is the authority werk-accept runs under. Do NOT shell out to `act` directly, and never pass go:true without the human\'s explicit go.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2033,7 +2033,7 @@ async function executeChorusWerk(
   };
 }
 
-// #3279 — Half B: THE GO. Runs werk-land.yml synchronously (merge → ff-sync →
+// #3279/#3193 — Half B: THE GO. Runs werk.yml's go-gated `land` job synchronously (merge → ff-sync →
 // deploy-prod → finalize). Short — no human pause inside — so the call returns in
 // minutes and cannot drop. Invoked on Jeff's go after he has seen the presented variant.
 // Stop-before-accept (DEC-048): it lands to prod and prints the accept command.
@@ -2047,7 +2047,9 @@ async function executeChorusWerkLand(
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
   const accepter = args.accepter || 'jeff';
-  const workflow = pathMod.join(home, '.github', 'workflows', 'werk-land.yml');
+  // #3193 — one-file pipeline: the land half is werk.yml's go-gated `land` job
+  // (werk-land.yml deleted).
+  const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
   const actArgs = [
@@ -2055,6 +2057,7 @@ async function executeChorusWerkLand(
     '--input', `card_id=${args.card_id}`,
     '--input', `role=${args.role}`,
     '--input', `accepter=${accepter}`,
+    '--input', 'go=true', // #3193 — selects the go-gated `land` job in the ONE werk.yml
   ];
   let stdout = '';
   let stderr = '';

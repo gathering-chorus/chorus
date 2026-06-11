@@ -13,12 +13,12 @@
 # Invariants (each maps to a card AC + an upstream fix the act path must carry):
 #   - workflow_dispatch trigger
 #   - Half A (werk.yml): commit, push, build, test, review, deploy(werk), env-up, demo —
-#     presents and STOPS (#3279). Half B (werk-land.yml, on GO): merge, sync, deploy(canonical),
+#     presents and STOPS (#3279). Half B (werk.yml `land` job, on GO): merge, sync, deploy(canonical),
 #     accept (GO=accept, #3311 — the print-the-accept-command era ended; accept RUNS on GO)
 #   - canonical ff-sync present, live-claim gated on SYNC_OK       (#3234 merged≠live)
 #   - NO standalone `git rebase` step                             (#3186 rebase is inside werk-commit)
 #   - verbs go through the MCP helper; no bare verb-binary call    (single toolchain)
-#   - exactly ONE pipeline workflow (no demo.yml/acp.yml split)
+#   - exactly ONE pipeline workflow file (no demo.yml/acp.yml/werk-land.yml split)
 
 set -uo pipefail
 # #3193 — step names MATCH verb names (Jeff 2026-06-11): no build-demo/deploy-demo/
@@ -27,7 +27,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 WF="$REPO/.github/workflows"
 WERK="$WF/werk.yml"
-LAND="$WF/werk-land.yml"
+LAND="$WF/werk.yml"  # #3193 one-file collapse: the land half is werk.yml's go-gated job
 
 PASSED=0
 FAILED=0
@@ -66,9 +66,9 @@ for tool in werk-commit werk-push werk-build werk-deploy; do
 done
 assert "werk.yml deploys to werk slot then canonical" "yes" \
   "$(present "$WERK" 'target.{0,4}werk')"
-assert "werk-land.yml runs werk-merge (via MCP)" "yes" \
+assert "werk.yml land job runs werk-merge (via MCP)" "yes" \
   "$(present "$LAND" 'werk-merge')"
-assert "werk-land.yml deploys to canonical (land)" "yes" \
+assert "werk.yml land job deploys to canonical" "yes" \
   "$(present "$LAND" 'target.{0,9}canonical')"
 # Test is its OWN step before demo (Jeff's model: test AND demo at end).
 assert "werk.yml has an explicit test step (cargo/jest hermetic gate)" "yes" \
@@ -77,15 +77,21 @@ assert "werk.yml runs the demo (werk-demo)" "yes" \
   "$(present "$WERK" 'werk-demo')"
 
 # #3311 GO=accept: Half A never accepts; Half B RUNS werk-accept under the named accepter.
-assert "werk.yml (Half A) does NOT invoke werk-accept" "yes" \
-  "$(absent "$WERK" 'chorus-mcp-call\.sh[[:space:]]+[a-z]+[[:space:]]+werk-accept|^[[:space:]]*werk-accept[[:space:]]')"
-assert "werk-land.yml (Half B) RUNS werk-accept on GO (#3311 GO=accept)" "yes" \
+# Half A (the prove job, everything before the `land:` job) must never accept.
+PROVE_HALF=$(mktemp); sed -n '1,/^  land:$/p' "$WERK" > "$PROVE_HALF"
+assert "werk.yml prove job does NOT invoke werk-accept" "yes" \
+  "$(absent "$PROVE_HALF" 'werk-accept[[:space:]]+\$\{CARD_ID\}|DEPLOY_ROLE.*werk-accept')"
+assert "werk.yml land job is go-gated" "yes" \
+  "$(present "$WERK" "inputs.go == 'true'")"
+assert "werk.yml prove job is go-gated off" "yes" \
+  "$(present "$WERK" "inputs.go != 'true'")"
+assert "werk.yml land job RUNS werk-accept on GO (#3311 GO=accept)" "yes" \
   "$(present "$LAND" 'werk-accept')"
 
 # #3234: canonical ff-sync + SYNC_OK-gated live-claim.
-assert "werk-land.yml has canonical ff-sync step (#3234)" "yes" \
+assert "werk.yml land job has canonical ff-sync step (#3234)" "yes" \
   "$(present "$LAND" 'merge[[:space:]]+--ff-only[[:space:]]+origin/main')"
-assert "werk-land.yml gates live-claim on sync (SYNC_OK #3234)" "yes" \
+assert "werk.yml land job gates live-claim on sync (SYNC_OK #3234)" "yes" \
   "$(present "$LAND" 'SYNC_OK')"
 
 # #3186: no standalone rebase step.
