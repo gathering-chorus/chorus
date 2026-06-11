@@ -46,12 +46,21 @@ export class BoardClient {
   private async api<T>(method: string, endpoint: string, body?: object): Promise<T> {
     const url = new URL(`/api/v1${endpoint}`, this.url);
 
+    // #3347 — HARD client timeout on every API call. The 2026-06-11 box
+    // starvation (×2): this request had NO timeout, so a slow/blocked API hung
+    // each CLI invocation forever (observed 36 min); a 60s poller turned that
+    // into a 197-process pile at load 95. A cards call must die in seconds
+    // with a typed error, never hang. Covers BOTH stall modes: connect-but-
+    // silent (socket timeout) and total wall-clock (failsafe timer).
+    const timeoutMs = Number(process.env.CARDS_API_TIMEOUT_MS) || 8000;
+
     return new Promise((resolve, reject) => {
       const options = {
         method,
         hostname: url.hostname,
         port: url.port,
         path: url.pathname + url.search,
+        timeout: timeoutMs, // socket-level: fires on connect/idle stall
         headers: {
           'Authorization': `Bearer ${this.token}`,
           'Content-Type': 'application/json',
@@ -62,6 +71,7 @@ export class BoardClient {
         let data = '';
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
+          clearTimeout(failsafe);
           if (res.statusCode && res.statusCode >= 400) {
             reject(new Error(`API ${method} ${endpoint}: ${res.statusCode} ${data}`));
             return;
@@ -74,7 +84,21 @@ export class BoardClient {
         });
       });
 
-      req.on('error', reject);
+      // Wall-clock failsafe — catches slow-drip responses the socket timeout
+      // can't (server sends a byte every few seconds forever). unref'd so it
+      // never holds the process open on its own.
+      const failsafe = setTimeout(() => {
+        req.destroy(new Error(`API ${method} ${endpoint}: timeout after ${timeoutMs}ms (wall clock)`));
+      }, timeoutMs);
+      failsafe.unref();
+
+      req.on('timeout', () => {
+        req.destroy(new Error(`API ${method} ${endpoint}: timeout after ${timeoutMs}ms (socket)`));
+      });
+      req.on('error', (err) => {
+        clearTimeout(failsafe);
+        reject(err);
+      });
       if (body) req.write(JSON.stringify(body));
       req.end();
     });
