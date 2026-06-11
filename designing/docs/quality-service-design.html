@@ -80,7 +80,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 <tr><td>File touched matches test glob</td><td>Test file classified into pyramid layer</td><td>Borg quality page</td><td><code>/api/chorus/quality/summary</code> pyramid[]</td></tr>
 <tr><td>Pre-commit staged</td><td>tsc + jest --forceExit per package</td><td>Pre-commit hook decision</td><td><code>.git/hooks/pre-commit</code> exit code</td></tr>
 <tr><td>Card reaches gate-code</td><td>Test ratio + coverage + lint state</td><td>Wren (product) / Silas (arch) gate decision</td><td>Skill invocation</td></tr>
-<tr><td>Card reaches demo-preflight</td><td>Integration + E2E green check</td><td>Demo go/no-go</td><td><code>demo-preflight.sh</code></td></tr>
+<tr><td>Card reaches demo</td><td>Witnessed floor: <code>demo.test_result</code> + 5 <code>demo.gate.result</code> + <code>review.floor</code>/<code>review.verdict</code></td><td>The cockpit Jeff reads before go/no/more</td><td><code>ops/logs/werk-demo.jsonl</code> / <code>werk-review.jsonl</code></td></tr>
 <tr><td>Service fails in production</td><td>(should produce) bug-escape event</td><td>(should feed) test-suite weakness report</td><td><strong>NOT WIRED</strong></td></tr>
 </table>
 
@@ -218,7 +218,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 
 <h2>Not in scope for this design</h2>
 <ul>
-  <li><strong>Enforcement mechanisms themselves.</strong> Quality defines the model and measures it; gates (gate-code, gate-quality, pre-commit, demo-preflight) are separate sub-products that consume Quality state and bite. If a gate needs to change, that's a card against the gate, not against Quality.</li>
+  <li><strong>Enforcement mechanisms themselves.</strong> Quality defines the model and measures it; gates (the 5 demo gates, cold-eyes review, pre-commit-inside-werk-commit) are separate sub-products that consume Quality state and bite. If a gate needs to change, that's a card against the gate, not against Quality.</li>
   <li><strong>Individual test authoring.</strong> Service owners write tests for their domains. Quality defines the shape those tests collectively should form.</li>
   <li><strong>Security scanning depth.</strong> When security becomes a first-class sub-product, that's its own service design. Quality surfaces security-test presence in the pyramid; it doesn't own the scanning.</li>
   <li><strong>Performance SLOs.</strong> Performance tests live in the pyramid; SLO definitions are a separate product/ops conversation.</li>
