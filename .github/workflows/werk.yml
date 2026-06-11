@@ -101,8 +101,8 @@ jobs:
           if [ "$rc" = 0 ]; then post success; else post failure; fi
           echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
 
-      - name: review-floor
-        # #3193 — werk-review's STRUCTURED FLOOR, ADVISORY (same contract as the test
+      - name: review
+        # #3193 — werk-review, ADVISORY. This step runs the verb's STRUCTURED FLOOR (same contract as the test
         # step above): records review.floor findings (unchecked AC, src-without-test,
         # removed pub symbols) to the witness + a chorus/review/<card> gh status.
         # The cold-eyes AGENT half runs session-side in the demoer's prework batch and
@@ -118,7 +118,7 @@ jobs:
           out=$(DEPLOY_ROLE="${ROLE}" werk-review "${CARD_ID}" "${ROLE}" 2>&1) || true
           echo "$out"
           case "$out" in *"floor clean"*) post success ;; *) post failure ;; esac
-          echo "review-floor: advisory — findings inform the cold-eyes agent + the demo surface"
+          echo "review: advisory — floor findings inform the cold-eyes agent + the demo surface"
 
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
