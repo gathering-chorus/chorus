@@ -200,6 +200,55 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     Ok(RouteTable { class, fields, routes })
 }
 
+/// dashboards.json — the observability config as a GENERATED artifact
+/// (#3354: regenerate-not-reload applies to observability too). Emitted
+/// beside routes.json; file-drops into shared-observability/dashboards/
+/// where Grafana's provisioning picks it up within 30s. Panels derive from
+/// the class + the telemetry envelope: rate, latency, typed-status split,
+/// the silent-broken-chain watch (count:0 + ok).
+pub fn dashboards_json(t: &RouteTable) -> String {
+    let class_l = t.class.rsplit('#').next().unwrap_or("domain").to_lowercase();
+    let class_short = t.class.rsplit('#').next().unwrap_or("").to_string();
+    // LogQL line filters use BACKTICK literals — no quote escaping inside JSON.
+    let q_all = format!("{{{{job=\"werk-verbs\"}}}} |= `api.request.served` |= `\"class\":\"{}\"`", class_short);
+    let q_err = format!("{} |= `\"status\":\"error`", q_all);
+    let q_chain = format!("{} |= `\"result_count\":0` |= `\"status\":\"ok\"`", q_all);
+    format!(
+        r#"{{
+  "annotations": {{ "list": [] }},
+  "editable": true,
+  "id": null,
+  "panels": [
+    {{ "type": "row", "gridPos": {{ "h": 1, "w": 24, "x": 0, "y": 0 }}, "id": 1,
+      "title": "owl-api — generated {class_l} API (generated dashboard — do not hand-edit)" }},
+    {{ "type": "logs", "datasource": {{ "type": "loki", "uid": "loki" }},
+      "gridPos": {{ "h": 8, "w": 24, "x": 0, "y": 1 }}, "id": 2,
+      "title": "requests (telemetry envelope)",
+      "targets": [ {{ "expr": "{q_all}", "refId": "A" }} ] }},
+    {{ "type": "logs", "datasource": {{ "type": "loki", "uid": "loki" }},
+      "gridPos": {{ "h": 6, "w": 12, "x": 0, "y": 9 }}, "id": 3,
+      "title": "errors (typed — refusals excluded)",
+      "targets": [ {{ "expr": "{q_err}", "refId": "A" }} ] }},
+    {{ "type": "logs", "datasource": {{ "type": "loki", "uid": "loki" }},
+      "gridPos": {{ "h": 6, "w": 12, "x": 12, "y": 9 }}, "id": 4,
+      "title": "silent-broken-chain watch (ok + result_count:0)",
+      "targets": [ {{ "expr": "{q_chain}", "refId": "A" }} ] }}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": {{ "from": "now-6h", "to": "now" }},
+  "title": "OWL API — {class_l}",
+  "uid": "owl-api-{class_l}",
+  "version": 1
+}}
+"#,
+        class_l = class_l,
+        q_all = q_all.replace('"', "\\\""),
+        q_err = q_err.replace('"', "\\\""),
+        q_chain = q_chain.replace('"', "\\\"")
+    )
+}
+
 /// Serialize the route table as routes.json (the generated artifact).
 pub fn routes_json(t: &RouteTable) -> String {
     let fields = t.fields.iter().map(|f| format!("\"{}\"", f)).collect::<Vec<_>>().join(", ");
