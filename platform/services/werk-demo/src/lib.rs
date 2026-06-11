@@ -496,7 +496,7 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// All four are best-effort (the act has already gated; signal is the announcement,
 /// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
 /// curl as a subprocess, mirroring the verb-contract).
-fn signal(card: u64, role: &str, home: &Path, trace: &str) {
+fn signal(card: u64, role: &str, home: &Path, trace: &str) -> Vec<String> {
     let card_s = card.to_string();
     // board demo signal
     let _ = run(&script_path(home, "cards"), &["demo", &card_s]);
@@ -520,12 +520,21 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) {
     // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
     // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
     // path in demo() for AC #2).
+    //
+    // #3352 — a failed gather send is LOUD, never silent. The old behavior wrote
+    // demo.nudge.failed to a log nobody reads and walked on as if the team had
+    // been asked — the "secret back door" Jeff named: the ceremony's sends fail
+    // mid-pipeline under load and nobody learns until he asks "did u nudge the
+    // team". Failed peers are returned so demo() puts them ON the surface.
+    let mut send_failed: Vec<String> = Vec::new();
     for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
         if let Err(e) = send_mcp_nudge(role, other, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
                   &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+            send_failed.push(other.to_string());
         }
     }
+    send_failed
 }
 
 // --- the demo act ---
@@ -678,7 +687,25 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // Step 5: signal — board demo + spine event + Bridge + feedback nudges (best-effort,
     // the act has already gated; this announces). Step 4 stakes-brief is human-driven
     // content; demo-v2 records it in spine events, not as a separate gate.
-    signal(card, role, home, &trace);
+    let gather_send_failed = signal(card, role, home, &trace);
+    if !gather_send_failed.is_empty() {
+        // #3352 — surface the send failure in the returned message itself: the
+        // demoer (and Jeff) see it in-window and send by hand; the announce
+        // stays held anyway (gathers_missing requires replies).
+        jsonl(home, role, card, &trace, "demo.gather.send_failed",
+              &format!(",\"peers\":\"{}\"", gather_send_failed.join(",")));
+        return Ok(DemoOutcome {
+            message: format!(
+                "demo #{} — GATHER SEND FAILED to [{}]. The feedback nudges did NOT \
+                 reach those peers (MCP send error mid-pipeline — see demo.nudge.failed \
+                 in the witness). Send the 4 questions by hand (werk-demo gather-text {}) \
+                 and record replies (werk-demo gather {} <peer> replied), then re-invoke. \
+                 No announce until the team is actually asked.",
+                card, gather_send_failed.join(","), card, card
+            ),
+            exit: 0,
+        });
+    }
     jsonl(home, role, card, &trace, "demo.signal.completed", "");
 
     // #3116 — the ACT is OUT of demo. build → deploy → env-up are the PRIOR

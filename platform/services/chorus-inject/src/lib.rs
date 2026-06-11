@@ -145,18 +145,17 @@ pub fn build_inject_by_tty_script(tty: &str, escaped_text: &str) -> String {
         repeat with t in tabs of w
             try
                 if (tty of t) is "{tty}" then
-                    set selected tab of w to t
-                    activate
-                    set frontmost of w to true
-                    delay 0.15
-                    tell application "System Events"
-                        tell process "Terminal"
-                            keystroke "{text}"
-                            delay 0.3
-                            key code 36
-                        end tell
-                    end tell
-                    delay 0.3
+                    -- #3352 (Jeff's diagnosis 2026-06-11): write into the MATCHED
+                    -- TAB directly -- focus-independent, race-free, no focus theft.
+                    -- The old focus-typed path sprayed into whichever window Jeff
+                    -- was typing in (every demo).
+                    do script "{text}" in t
+                    -- #3352: the text's trailing newline arrives as PASTED input,
+                    -- which Claude treats as a line-break, not submit (Jeff: "u are
+                    -- missing cr-lf"). A bare follow-up do script sends the real
+                    -- newline that submits. Proven live on ttys001 2026-06-11.
+                    delay 0.1
+                    do script "" in t
                     return "ok"
                 end if
             end try
@@ -513,15 +512,11 @@ mod inject_script_tests {
 
     #[test]
     fn uses_keystroke_and_key_code_36() {
-        // #2029 — keystroke + Return, never the legacy do-script path.
-        let s = build("wren", "hi", "wren");
+        // name-match path still types via keystroke (window-title match selects
+        // the window first). The tty path is the do-script one (#3352).
+        let s = build("silas", "hello", "silas");
         assert!(s.contains("keystroke"));
         assert!(s.contains("key code 36"));
-        // Split literal so inject_integration's source-gate (which greps for
-        // the phrase "do script" in lib source) doesn't false-positive on
-        // this test assertion.
-        let forbidden = concat!("do", " ", "script");
-        assert!(!s.contains(forbidden));
     }
 
     #[test]
@@ -566,14 +561,11 @@ mod inject_by_tty_script_tests {
         assert!(!s.contains("frontApp"));
     }
 
-    #[test]
-    fn activates_terminal_to_land_keystroke() {
-        // #3128 — keystroke lands in the frontmost app, so we must activate
-        // Terminal on a tty match to deliver reliably (overrides #2277 by
-        // explicit decision).
-        let s = build("ttys003", "hello");
-        assert!(s.contains("activate"));
-    }
+    // #3128's activates_terminal_to_land_keystroke deleted by #3352: the tty
+    // transport no longer focuses anything — do-script writes into the matched
+    // tab without activation, so the always-wake contract is moot (and the
+    // focus-spray it caused is the reason). no-activate is pinned in
+    // uses_do_script_into_matched_tab_not_focus_keystroke.
 
     #[test]
     fn still_routes_by_exact_tty() {
@@ -583,10 +575,15 @@ mod inject_by_tty_script_tests {
     }
 
     #[test]
-    fn uses_keystroke_and_key_code_36() {
-        let s = build("ttys003", "hi");
-        assert!(s.contains("keystroke"));
-        assert!(s.contains("key code 36"));
+    fn uses_do_script_into_matched_tab_not_focus_keystroke() {
+        // #3352 — tty delivery must be focus-independent: `do script ... in t`
+        // writes into the MATCHED tab. keystroke typed into the FOCUSED window
+        // (the race Jeff lost all day 2026-06-11) and must never return here.
+        let s = build("ttys001", "hello");
+        assert!(s.contains(r#"do script "hello" in t"#), "do-script into the matched tab: {}", s);
+        assert!(!s.contains("keystroke"), "focus-typed keystroke is retired: {}", s);
+        assert!(!s.contains("System Events"), "no System Events focus dependency: {}", s);
+        assert!(!s.contains("activate"), "no focus theft on delivery: {}", s);
     }
 
     #[test]
