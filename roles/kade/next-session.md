@@ -1,34 +1,27 @@
 # Kade — Next Session
 
-## READ FIRST — behavioral (Jeff named these, hard)
-- **Jeff is in auto-accept + focus mode and CANNOT read our output torrent.** Default to ONE line, signal only. Expand only on ask. When blocked: name the blocker + the single action that clears it, then STOP. Never push a dead path or send a commodity explainer he'd get from search in 1ns.
-- **Consult memory/Loki/chorus BEFORE asserting.** Verify with the right tool; show observable reality, never assert from memory.
+## READ FIRST — behavioral (Jeff named these 2026-05-28, hard)
+- **Jeff is in auto-accept + focus mode and CANNOT read our output torrent.** Default to ONE line, signal only. Expand only on ask. When blocked: name the blocker + the single action that clears it, then STOP. Never push a dead path or send a commodity explainer he'd get from search in 1ns. See [[feedback-jeff-auto-focus-cant-read-torrents]].
+- **Consult memory/Loki/chorus BEFORE asserting.** This session I read a roles page *I helped write*, called it Silas's, and claimed "no episodic memory" — false (chorus-inject feeds my past into every prompt). I have the brain; use it. Scarecrow.
 
----
+## Landed this session
+- **#3115 cclsp fix — DONE, merged (PR #382), accepted.** `.mcp.json`: `--config` arg → `CCLSP_CONFIG_PATH` env. Proven via real JSON-RPC initialize handshake. (Had to mark PR #382 ready — acp opened it draft and refused to merge a draft. Recurring acp gap.)
 
-**Last session ended:** 2026-06-05 ~17:55 Boston via /reboot. ~9hr session.
-(Canonical roles/kade/ is read-only mid-session per the #2913 guard — this lives in the kade-3193 werk; read it via git diff / the werk in the morning.)
+## #3118 chorus-hooks build-break fix — WIP, fix committed, NOT demo'd, NOT acp'd
+- **The fix:** deleted orphaned `pub mod batch_progress;` (mod.rs:22). File dropped in #3046 squash → E0583 → chorus-hooks hasn't compiled on main for 2 weeks. Live binary (May 26) predates the break so no outage, but no hook change could ship. Committed `e611bc0c` on `kade/3118`. cargo check exit 0, zero `batch_progress::` refs.
+- **gate-code:** build clean PASS, warnings PASS (13 ≤ baseline 36; deletion adds none). **Tests 440 pass / 1 fail.**
+- **The 1 red = NOT mine, pre-existing, cross-domain:** `live_roles_pass_contract` — silas's CLAUDE.md `VersionMismatch{stamp 1.5, live 1.4}`, **cores identical** (cded…b0c). Pure version-stamp drift, not content. `M designing/claudemd/PROTOCOL_VERSION` in working tree is the cause — bumped to 1.5, silas's file not regenerated. **This drift-detector lives inside chorus-hooks — dark for 2 weeks; my fix re-lit it and it immediately caught a real drift.**
+- **NEXT:** decide silas-drift handling (card to Silas to regenerate his stamp + known-fail it, OR Silas fixes live) → then /demo 3118 → Jeff /acp. The fix itself is solid; only the unrelated red blocks the chain. Was asking Jeff this when /reboot came.
 
-## Accomplished (landed live)
-- **#3236 + #3241 + #3240** — werk pipeline collapsed: act = local orchestrator (KEPT — the big arc was "keep act, gh gets all our steps," not remove it), run via the ONE `chorus_werk` MCP verb, every step mirrors to gh as `chorus/<step>/<card>` statuses. Self-hosted-runner detour thrown away.
-- **#3219 — werk-acp RETIRED, live** (crate + chorus_acp MCP tool + test-acp.sh gone; retirement gate added; verified gone from the running MCP). 2nd real card through the new go/no-go flow.
-- **#3237** (Wren's, paired) — werk-demo = blocking human gate (go/no-go/more → exit 0/2/1); werk-accept = go-signal; werk-finalize = mechanical back-half. Built + seam-proven (GO=0/MORE=2) + landed live.
-- Reviewed Silas #3242/#3247 (Shaping docs) + Wren #3205 (pulse-gather) — real critique, all acted on.
+## Design threads — do NOT lose (Jeff drove these today)
+- **chorus-inject → per-turn prompt-driven context HYDRATOR that can't be blown off.** Today it's a canned boot recap. Jeff wants: read the prompt, pull entities, query Chorus+Loki, inject RESOLVED FACTS (not search hits) before I answer. Delivery is deterministic; consumption = push resolved answers + stop-the-line check (#2145 shape) catching assertions that contradict hydrated facts. This is the "beats solo Claude Code" line — we built the memory store, never the consumption.
+- **werk-acp = native Rust orchestrator should BE acp-v2.** chorus_acp (MCP, thin) → `werk-acp` → 6 leaf verbs, host-side. **No werk-acp binary, no crate exists.** Current acp-v2 shells to `act`+acp.yml → fails auth (act runs empty GITHUB_TOKEN; host gh authed as WJeffBridwell in keyring). Host-side native wrapper = auth dissolves. Follows werk-pull blueprint. Mine to build (coordinate w/ Silas who reworked werk-accept today 13:06).
+- **cclsp is team infra (Jeff: "100% for the whole team").** Roll the `CCLSP_CONFIG_PATH` env form into silas + wren `.mcp.json` (they have NO cclsp entry). Not blarf — Distinguished Engineer puts cross-cutting substrate under the whole team.
+- **LSP can't be shown in-session — needs a reboot** to load cclsp. After this reboot: first thing, run live `findReferences` on chorus code (owed demo). ast-grep works in-session (no reload).
 
-## WIP
-- **#3193 werk-review** — design DONE + committed in THIS werk (`designing/docs/werk-review-service-design.html`, sha 15731f04; opened in my Chrome window for Jeff). Cold-eyes gate: fresh sub-agent (diff+AC only, adversarial), before demo, advisory-first→hard-gate, structured floor (blast-radius + AC-coverage). **NEXT: build the verb from the design.**
+## Two gate gaps surfaced by #3118 (small, worth carding)
+- TDD gate's no-signature exemption covers `use`/`pub use` but NOT `pub mod` — over-fires on module-declaration removal (tdd_gate.rs `has_behavioral_content`).
+- `card_type_for_role` returns "unknown" when a role has 2 WIP cards (readdir-glob can't disambiguate) → gate enforces strictest. Also `chorus_commit` same readdir-ambiguity: stale empty `kade-bin` werk dir false-failed commit (`commit-fail` empty detail) until I rmdir'd it.
 
-## Morning pickup (recommended order)
-1. **#3190 werk-test** — keystone: turns today's *advisory* test step into a real enforced gate. Highest value (closes a real gap, not polish).
-2. **#3193 werk-review** — build the verb (design's done).
-3. Crawler = Silas's morning focus (hydration-divergence / #3055, routed to him).
-
-## Open follow-ons (mine unless noted)
-- `werk-code` — STILL NO CARD. Card it (the coding phase as a verb; completes the verb sequence pull→code→commit→…).
-- #3244 (gh-status helper + carry-forward — statuses split across 2 commits today), #3113 (MCP-wrap remaining verbs demo/env-down/finalize/do-more+review), #3229, #3201, #3223, #3148 (dep Wren).
-- **Silas:** skip-deleted-crates deploy fix (#3250-sibling, surfaced by #3219), #2317 (heartbeat→pulse-gather).
-
-## Watch
-- deploy_canonical edge-cases: autobins gap (#3250 fixed) + deleted-crate choke (Silas's follow-on). Verify-LIVE after any crate add/remove.
-- chorus_werk-over-MCP has a ~10min timeout → human-gated land runs need act-direct (no timeout) or a prompt go.
-- werk-acp-retired.bats test-1 checks dir-existence → false-trips on stale untracked `target/` build artifacts; sharpen to git-tracked check (tiny).
+## Side debt noted
+- chorus-hooks carries dead-code warnings from #3046's demo retirement (demo_gate/preflight/etc. left behind). Cleanup card, not urgent.

@@ -260,19 +260,41 @@ pub fn floor(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     }
     let werk_s = werk.to_string_lossy().to_string();
 
-    // the card diff, exactly as deploy_canonical computes it (merge-base survives squash).
+    // the card diff, exactly as deploy_canonical computes it (merge-base survives
+    // squash). An unreadable diff is a typed refusal — the floor cannot attest to
+    // inputs it could not read (dirty-floor-inputs, AC1).
     let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
     let base = run_in(&werk_s, "git", &["merge-base", "origin/main", "HEAD"])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-    let range = if base.is_empty() { "origin/main..HEAD".to_string() } else { format!("{}..HEAD", base) };
-    let names = run_in(&werk_s, "git", &["diff", "--name-only", &range]).unwrap_or_default();
+        .map_err(|e| {
+            jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"dirty-floor-inputs\"");
+            format!("dirty-floor-inputs: cannot read the card diff (merge-base failed): {}", e)
+        })?
+        .trim()
+        .to_string();
+    let range = format!("{}..HEAD", base);
+    let names = run_in(&werk_s, "git", &["diff", "--name-only", &range]).map_err(|e| {
+        jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"dirty-floor-inputs\"");
+        format!("dirty-floor-inputs: cannot read the card diff: {}", e)
+    })?;
     let diff = run_in(&werk_s, "git", &["diff", &range]).unwrap_or_default();
 
     let mut findings: Vec<String> = Vec::new();
 
     // 1) open AC boxes (cards human view — same source werk-demo's ac_counts reads).
+    // A card with NO checkboxes at all is a typed refusal: there is no contract to
+    // review the diff against (no-ac, AC1) — mirrors werk-demo's no-ac refuse.
     let view = run(&script(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+    let total_boxes = view
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            t.starts_with("- [ ]") || t.starts_with("- [x]") || t.starts_with("- [X]")
+        })
+        .count();
+    if total_boxes == 0 {
+        jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"no-ac\"");
+        return Err(format!("no-ac: card #{} has no AC checkboxes — nothing to review the diff against", card));
+    }
     let open = unchecked_ac(&view);
     if !open.is_empty() {
         findings.push(format!("unchecked AC ({}): {}", open.len(), open.join(" | ")));
@@ -290,12 +312,12 @@ pub fn floor(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         let have_ast_grep = Command::new("ast-grep").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
         for sym in &gone {
             if have_ast_grep {
-                let refs = Command::new("ast-grep")
+                let no_survivors = Command::new("ast-grep")
                     .args(["run", "--pattern", &format!("{}($$$)", sym), &werk_s])
                     .output()
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().is_empty())
                     .unwrap_or(true);
-                if refs {
+                if no_survivors {
                     findings.push(format!("removed pub symbol '{}' (no surviving references — verify intentional)", sym));
                 } else {
                     findings.push(format!("removed pub symbol '{}' STILL REFERENCED in the werk (grep-blind removal?)", sym));

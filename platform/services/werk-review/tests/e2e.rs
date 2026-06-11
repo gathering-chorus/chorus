@@ -147,3 +147,28 @@ fn floor_refuses_typed_on_missing_werk() {
     let err = floor(9105, "kade", &home, &werk_base).expect_err("no werk refuses");
     assert!(err.contains("no-werk"), "typed no-werk: {err}");
 }
+
+// #3193 cold-eyes finding (its own first catch): AC1 promised typed no-ac and
+// dirty-floor-inputs refusals; only no-werk existed. RED-first for both.
+#[test]
+fn floor_refuses_no_ac_when_the_card_has_no_checkboxes() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // a card view with NO AC checkboxes at all — nothing to review against.
+    std::env::set_var("CARDS_AC", "just prose, no checkbox lines");
+    let (home, werk_base, _spine) = scenario(9106, true, false);
+    let err = floor(9106, "kade", &home, &werk_base).expect_err("no AC must refuse");
+    std::env::remove_var("CARDS_AC");
+    assert!(err.contains("no-ac"), "typed no-ac refusal: {err}");
+}
+
+#[test]
+fn floor_refuses_dirty_floor_inputs_when_the_diff_is_unreadable() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    std::env::set_var("CARDS_AC", "- [x] done");
+    let (home, werk_base, _spine) = scenario(9107, false, true);
+    // corrupt the werk's git linkage → merge-base/diff cannot run.
+    fs::remove_file(werk_base.join("kade-9107/.git")).unwrap();
+    let err = floor(9107, "kade", &home, &werk_base).expect_err("unreadable diff must refuse");
+    std::env::remove_var("CARDS_AC");
+    assert!(err.contains("dirty-floor-inputs"), "typed dirty-floor-inputs refusal: {err}");
+}
