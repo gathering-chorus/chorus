@@ -55,10 +55,17 @@
 
 <h1>werk-review — the cold-eyes gate</h1>
 <p class="sub">The machine reviews the code before Jeff does.</p>
-<p class="meta">Kade · 2026-06-05 · #3193 · service design · shaped with Jeff · companion to the werk verb-sequence (pull→code→commit→push→build→test→<b>review</b>→demo→merge→accept→finalize)</p>
+<p class="meta">Kade · v2 2026-06-11 (v1 2026-06-05) · #3193 · service design · shaped with Jeff · BUILT — see AC · companion to the werk verb-sequence (pull→code→commit→push→build→test→<b>review</b>→demo→merge→accept→finalize)</p>
 
 <p class="lead">werk-review is the <b>machine's independent review of the diff</b>, run before the <b>human's review (demo)</b>. Two distinct provings, not one: <b>review</b> = independent-agent-eyes on <em>diff-vs-AC</em>; <b>demo</b> = Jeff's eyes on <em>does it do what I wanted</em>. Complementary — the cold eyes catch code problems so Jeff's attention is spent on intent, not bugs.</p>
 
+<h2>0 · v2 — the two-layer shape (built 2026-06-11)</h2>
+<p><strong>The #3284 lesson applied:</strong> an LLM cannot run inside the headless zero-dep pipeline, so werk-review splits exactly like demo/gates did:</p>
+<ul>
+<li><strong>The <code>werk-review</code> binary</strong> (zero-dep, ADR-032) owns the STRUCTURED FLOOR + witness: merge-base diff (the deploy_canonical commands), objective checks (unchecked AC boxes, src-changed-without-test, removed pub symbols survivor-checked via ast-grep with graceful degrade — the #3148 dependency was removed, the floor calls tools directly), <code>review.floor</code> / <code>review.verdict</code> events to ops/logs/werk-review.jsonl + spine. Surfaces: <code>werk-review &lt;card&gt; &lt;role&gt;</code> (floor) · <code>verdict &lt;card&gt; pass|fail &lt;findings&gt;</code> (the agent's recorder; rejects empty-findings-fail and verdict-before-floor) · <code>check &lt;card&gt;</code> (the future hard-gate read: pass=0, fail-or-missing=1).</li>
+<li><strong>The cold-eyes agent</strong> runs session-side as ONE Explore-type subagent in the demoer's existing prework batch (read-only, zero permission prompts — the post-fan-out-incident model), fresh context (diff + AC only), adversarial, recording through the binary.</li>
+</ul>
+<p><strong>Placement (built):</strong> werk.yml <code>review-floor</code> step after test, ADVISORY (mirrors the test step's advisory-until-promoted pattern; posts <code>chorus/review/&lt;card&gt;</code> gh status). The blocking flip = a <code>werk-review check</code> exit-gating step, no rewiring.</p>
 <h2>1 · Placement — after test, before demo</h2>
 <div class="flow">
   … build → test → <b class="rv">werk-review</b> → deploy-werk → env-up → <b class="hm">demo</b> → merge → …

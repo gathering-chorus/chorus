@@ -101,6 +101,25 @@ jobs:
           if [ "$rc" = 0 ]; then post success; else post failure; fi
           echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
 
+      - name: review-floor
+        # #3193 — werk-review's STRUCTURED FLOOR, ADVISORY (same contract as the test
+        # step above): records review.floor findings (unchecked AC, src-without-test,
+        # removed pub symbols) to the witness + a chorus/review/<card> gh status.
+        # The cold-eyes AGENT half runs session-side in the demoer's prework batch and
+        # records review.verdict via `werk-review verdict` — an LLM can't run here
+        # (the #3284 lesson). The flip to blocking is `werk-review check <card>` as an
+        # exit-gating step, once proven not-ceremony.
+        run: |
+          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
+          post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" \
+            -f "context=chorus/review/${CARD_ID}" \
+            -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (advisory floor — #3193)" >/dev/null 2>&1 || true; }
+          post pending
+          out=$(DEPLOY_ROLE="${ROLE}" werk-review "${CARD_ID}" "${ROLE}" 2>&1) || true
+          echo "$out"
+          case "$out" in *"floor clean"*) post success ;; *) post failure ;; esac
+          echo "review-floor: advisory — findings inform the cold-eyes agent + the demo surface"
+
       - name: deploy-demo
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"

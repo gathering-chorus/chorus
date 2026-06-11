@@ -66,6 +66,8 @@ Then for each result:
 2. **Route it for review** — a result-carrying review-nudge to the owning role (async,
    non-blocking): a finished artifact to review, *not* work to do.
 
+**Cold-eyes review (#3193) — one MORE subagent in the same batch.** Alongside the 5 gates, spawn ONE Explore-type review subagent with FRESH context: give it ONLY the card's AC and the branch diff (`git diff $(git merge-base origin/main HEAD)..HEAD` in the werk) — no build conversation, no rationale, so it cannot rationalize. Prompt it ADVERSARIALLY (find problems, default-skeptical), hunting: AC items the diff doesn't actually cover (the #1 lie), aspirational-as-built, bugs, missing tests, scope creep. Record its result via `werk-review verdict <card-id> pass|fail <findings>` — the binary REJECTS a fail with no specific findings and any verdict recorded before the pipeline's review-floor ran (anti-ceremony, #3193). Advisory today: a fail informs Jeff's go, it does not block the present.
+
 **Ready-gate (the announce contract):** only after all 5 gates are recorded AND the
 variant is reachable do you proceed to Step 2 (present → announce). If any gate FAILS or
 the variant is down, **STOP — do not present, do not announce.** Report `NOT READY: <gate
