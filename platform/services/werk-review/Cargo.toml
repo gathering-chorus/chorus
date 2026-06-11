@@ -1,0 +1,16 @@
+[package]
+name = "werk-review"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies (ADR-032 §1 blueprint). std only; `git`,
+# `cards`, `chorus-log` as subprocesses; `ast-grep` optional (graceful degrade).
+[dependencies]
+
+[[bin]]
+name = "werk-review"
+path = "src/main.rs"
+
+[lib]
+name = "werk_review"
+path = "src/lib.rs"

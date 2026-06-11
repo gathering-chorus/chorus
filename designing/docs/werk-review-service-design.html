@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>werk-review — Service Design (the cold-eyes gate)</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --mut:#666; --line:#e3e1dc; --bg:#fbfaf7; --paper:#fff;
+    --review:#7c3aed;   /* the cold-eyes verb */
+    --review-bg:#f3ecfe;
+    --human:#1d4ed8;    /* demo = Jeff's eyes */
+    --human-bg:#e8eefc;
+    --warn:#b91c1c;
+    --ok:#0f7a3d;
+    --soft:#f4f2ec; --code:#f3f1ea;
+  }
+  *{box-sizing:border-box}
+  body{font-family:Georgia,'Iowan Old Style',serif;color:var(--ink);background:var(--bg);
+       line-height:1.6;margin:0 auto;max-width:880px;padding:46px 26px 120px}
+  h1{font-size:1.95em;line-height:1.15;margin:0 0 6px;border-bottom:3px solid var(--ink);padding-bottom:13px}
+  .sub{color:#333;font-size:1.04em;font-style:italic;margin:0 0 6px}
+  .meta{color:var(--mut);font-size:.8em;font-family:-apple-system,system-ui,sans-serif;margin:10px 0 30px}
+  h2{font-size:1.3em;margin:42px 0 8px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:1.04em;margin:22px 0 5px;font-family:-apple-system,system-ui,sans-serif}
+  p{margin:9px 0}
+  code{font-family:'SF Mono',Menlo,monospace;font-size:.85em;background:var(--code);padding:1px 5px;border-radius:3px}
+  .lead{font-size:1.07em;background:var(--soft);border-left:4px solid var(--review);
+        padding:13px 18px;border-radius:0 6px 6px 0;margin:8px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:14px 17px;background:var(--paper)}
+  .card.rev{border-top:3px solid var(--review)} .card.hum{border-top:3px solid var(--human)}
+  .card h4{margin:0 0 6px;font-family:-apple-system,system-ui,sans-serif;font-size:.96em}
+  .card.rev h4{color:var(--review)} .card.hum h4{color:var(--human)}
+  .flow{font-family:-apple-system,system-ui,sans-serif;font-size:.84em;background:var(--soft);
+        border:1px solid var(--line);border-radius:8px;padding:16px;margin:16px 0;text-align:center;line-height:2}
+  .flow b{padding:3px 9px;border-radius:6px}
+  .flow .rv{background:var(--review-bg);color:var(--review);font-weight:700}
+  .flow .hm{background:var(--human-bg);color:var(--human);font-weight:700}
+  ul{margin:8px 0;padding-left:22px} li{margin:4px 0}
+  .hunt li{margin:6px 0}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:.87em;font-family:-apple-system,system-ui,sans-serif}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:700}
+  .tag{display:inline-block;font-family:-apple-system,system-ui,sans-serif;font-size:.72em;font-weight:700;
+       padding:1px 8px;border-radius:10px;vertical-align:middle;margin-left:8px;background:var(--review-bg);color:var(--review)}
+  .warnbox{background:#fdecec;border:1px solid var(--warn);border-radius:7px;padding:12px 16px;margin:14px 0;font-size:.95em}
+  .warnbox b{color:var(--warn)}
+  pre{background:var(--code);border:1px solid var(--line);border-left:3px solid var(--review);
+      border-radius:5px;padding:12px 15px;overflow-x:auto;font-size:.82em;line-height:1.5}
+  .note{font-family:-apple-system,system-ui,sans-serif;font-size:.84em;color:var(--mut)}
+</style>
+</head>
+<body>
+
+<h1>werk-review — the cold-eyes gate</h1>
+<p class="sub">The machine reviews the code before Jeff does.</p>
+<p class="meta">Kade · v2 2026-06-11 (v1 2026-06-05) · #3193 · service design · shaped with Jeff · BUILT — see AC · companion to the werk verb-sequence (pull→code→commit→push→build→test→<b>review</b>→demo→merge→accept→finalize)</p>
+
+<p class="lead">werk-review is the <b>machine's independent review of the diff</b>, run before the <b>human's review (demo)</b>. Two distinct provings, not one: <b>review</b> = independent-agent-eyes on <em>diff-vs-AC</em>; <b>demo</b> = Jeff's eyes on <em>does it do what I wanted</em>. Complementary — the cold eyes catch code problems so Jeff's attention is spent on intent, not bugs.</p>
+
+<h2>0 · v2 — the two-layer shape (built 2026-06-11)</h2>
+<p><strong>The #3284 lesson applied:</strong> an LLM cannot run inside the headless zero-dep pipeline, so werk-review splits exactly like demo/gates did:</p>
+<ul>
+<li><strong>The <code>werk-review</code> binary</strong> (zero-dep, ADR-032) owns the STRUCTURED FLOOR + witness: merge-base diff (the deploy_canonical commands), objective checks (unchecked AC boxes, src-changed-without-test, removed pub symbols survivor-checked via ast-grep with graceful degrade — the #3148 dependency was removed, the floor calls tools directly), <code>review.floor</code> / <code>review.verdict</code> events to ops/logs/werk-review.jsonl + spine. Surfaces: <code>werk-review &lt;card&gt; &lt;role&gt;</code> (floor) · <code>verdict &lt;card&gt; pass|fail &lt;findings&gt;</code> (the agent's recorder; rejects empty-findings-fail and verdict-before-floor) · <code>check &lt;card&gt;</code> (the future hard-gate read: pass=0, fail-or-missing=1).</li>
+<li><strong>The cold-eyes agent</strong> runs session-side as ONE Explore-type subagent in the demoer's existing prework batch (read-only, zero permission prompts — the post-fan-out-incident model), fresh context (diff + AC only), adversarial, recording through the binary.</li>
+</ul>
+<p><strong>Placement (built):</strong> werk.yml <code>review-floor</code> step after test, ADVISORY (mirrors the test step's advisory-until-promoted pattern; posts <code>chorus/review/&lt;card&gt;</code> gh status). The blocking flip = a <code>werk-review check</code> exit-gating step, no rewiring.</p>
+<h2>1 · Placement — after test, before demo</h2>
+<div class="flow">
+  … build → test → <b class="rv">werk-review</b> → deploy-werk → env-up → <b class="hm">demo</b> → merge → …
+</div>
+<p>Review needs the diff (it exists after commit/push) and gates <em>before</em> Jeff spends demo attention. Code is already green (test passed) when the cold eyes read it; if review fails, the builder fixes before the human is ever pulled in.</p>
+
+<div class="two">
+  <div class="card rev"><h4>werk-review — the machine's eyes</h4><p class="note">A fresh agent reads the diff against the AC. Adversarial: its job is to find problems. Returns a verdict + specific findings. Catches code-level issues (AC not covered, aspirational-as-built, bugs, missing tests).</p></div>
+  <div class="card hum"><h4>demo — Jeff's eyes (#3237)</h4><p class="note">Jeff judges intent against the live instance: go / no-go / more. The human gate. Catches "this isn't what I meant" — which no agent can.</p></div>
+</div>
+
+<h2>2 · What "cold eyes" actually means <span class="tag">load-bearing</span></h2>
+<p>A <b>fresh review sub-agent given ONLY the diff + the card's AC</b> — no build conversation, no rationale, no "I know I meant X." No build context = it cannot rationalize the way the builder can. And it is prompted <b>adversarially</b>: default-skeptical, its job is to <em>find problems</em>, not to bless.</p>
+<h3>What it hunts</h3>
+<ul class="hunt">
+  <li><b>AC items the diff doesn't actually cover</b> — the #1 lie (a checked box with no code behind it).</li>
+  <li><b>Aspirational-as-built</b> — comments/claims that say more than the code does (the exact class caught in Silas's #3242: "the generator emits" when the generator is unbuilt).</li>
+  <li><b>Bugs</b> — logic the test didn't catch.</li>
+  <li><b>Missing tests</b> — AC behavior with no covering test.</li>
+  <li><b>Scope creep</b> — changes beyond the AC.</li>
+</ul>
+
+<h2>3 · Verdict &amp; contract</h2>
+<p>Mirrors werk-demo's exit-code contract so act blocks on it the same way:</p>
+<pre>review.verdict { card_id, verdict: pass|fail, findings: [{file:line | "AC item N", issue}] }
+  pass → exit 0 → act continues to demo
+  fail → exit non-0 → act stops; builder fixes</pre>
+<p>Findings <b>must be specific</b> — <code>file:line</code> or <code>"AC item N not covered"</code>. A verdict with no specific findings is not a pass — it's the failure mode (see below).</p>
+
+<h2>4 · The anti-ceremony guard</h2>
+<div class="warnbox"><b>The risk:</b> a review agent that rubber-stamps ("lgtm") is worse than nothing — it manufactures false confidence. This is the concern that kept werk-review parked while the pipeline was half-built. The defenses are the design:</div>
+<ul>
+  <li><b>Adversarial prompt</b> — find problems, default-skeptical (the verify-pattern, not the bless-pattern).</li>
+  <li><b>Required specific findings</b> — "lgtm" with no <code>file:line</code> is rejected as a non-review.</li>
+  <li><b>A structured floor it cannot skip</b> — blast-radius (#3148) + AC-coverage check run regardless of the agent. Even a lazy agent run still does the objective minimum.</li>
+</ul>
+
+<h2>5 · Resolved design calls</h2>
+<table>
+  <tr><th>Call</th><th>Decision</th><th>Why</th></tr>
+  <tr><td>Agent vs structured check</td><td><b>Both</b></td><td>Agent for judgment (catches what a check can't); blast-radius + AC-coverage as the objective floor.</td></tr>
+  <tr><td>Who reviews</td><td><b>Fresh sub-agent</b></td><td>Automatable in-pipeline, no peer-blocking; only the diff + AC, no build context.</td></tr>
+  <tr><td>Fail handling</td><td><b>Advisory first → hard-gate</b></td><td>Land it posting verdicts (like test is now until werk-test); promote to blocking once proven not-ceremony. Earn trust.</td></tr>
+  <tr><td>Placement</td><td><b>Before demo</b></td><td>Machine eyes, then Jeff's eyes — not gating merge.</td></tr>
+</table>
+
+<h2>6 · Dependencies &amp; relations</h2>
+<ul>
+  <li><b>#3148</b> (semantic blast-radius, LSP + ast-grep) — the structured floor.</li>
+  <li><b>#3237</b> (werk-demo blocking gate, landed) — the human proving werk-review precedes.</li>
+  <li><b>#3190</b> (werk-test) — sibling: test proves it runs, review proves it's right. Both feed demo.</li>
+  <li><b>#3113</b> — werk-review is one of the verbs to MCP-wrap once built.</li>
+</ul>
+
+<p class="lead" style="border-left-color:var(--ok);margin-top:28px">In one line: <b>a fresh, adversarial agent reads the diff against the AC before Jeff demos it — specific findings or it failed, with a blast-radius/AC-coverage floor underneath — landed advisory, promoted to a hard gate once it proves it's not ceremony.</b></p>
+
+</body>
+</html>
