@@ -43,6 +43,12 @@ first because it makes the rest mechanical:
 > IRI in authored TTL/JSON is reviewed as a smell. You cannot misname what
 > you never name. (This is the inversion-of-control move: the convention
 > lives in one mint, not in every author's memory.)
+>
+> **Interim protocol (this ADR landed, #3257 DAL not yet):** authors form IRIs
+> by hand FROM the Level-3 table below and mark the file
+> `conformance: ADR-040-manual` in its header comment — the reconcile gate at
+> model-3 re-verifies everything minted during the gap. Kade's #3340
+> `0.1.0-provisional-pre-3256` marker is the pattern.
 
 ### Level 1 — Graph names (WHERE triples live): `urn:`
 
