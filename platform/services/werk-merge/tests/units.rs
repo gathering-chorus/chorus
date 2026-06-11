@@ -115,3 +115,12 @@ fn require_approval_gates_atomic_without_an_accepter() {
     // FLOW with no explicit accepter → ok (the demo→GO was the approval, not the verb's gate)
     assert!(require_approval(false, None).is_ok());
 }
+
+// #3336 — content-verify idempotency: `git diff --quiet` exit 0 (Ok→true) means trees
+// identical = HEAD's content already on origin/main. Pin the exit-code→meaning mapping.
+#[test]
+fn head_content_merged_maps_diff_quiet_to_merged() {
+    use werk_merge::head_content_merged;
+    assert!(head_content_merged(true), "diff --quiet exit 0 (no diff) => content already on main");
+    assert!(!head_content_merged(false), "diff present => not yet merged, proceed to merge");
+}

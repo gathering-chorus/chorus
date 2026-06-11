@@ -187,6 +187,42 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         std::env::set_var("GH_STATE", state.to_str().unwrap());
         assert!(merge(9999, "kade", &home, &werk_base).is_err(), "no werk => refuse");
     }
+
+    // ── Scenario F (#3336): CONTENT-VERIFY idempotency — a dropped-land resume where PR
+    //    resolution MISSES (squash orphaned the oid AND the branch's PR records are gone,
+    //    as if GitHub deleted the branch on merge). by-oid + open both return None, so the
+    //    old code would refuse no-open-pr and strand the card in WIP. The content of HEAD
+    //    is already on origin/main, so the new content-verify must NO-OP success. ─────────
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9106);
+        commit_and_push(&werk, "kade/9106", "f.txt", "foxtrot");
+        let state = tmp("ghstate");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", state.to_str().unwrap());
+        std::env::remove_var("GH_FAKE_MERGE");
+
+        // First land: real squash-merge → f.txt is on origin/main (new squash sha).
+        let landed = merge(9106, "kade", &home, &werk_base).expect("first land squash-merges");
+        assert!(origin_main_has(&origin, "f.txt"), "scenario F: work landed on origin/main");
+
+        // Simulate the dropped-land + branch deletion: wipe ALL PR state so neither the
+        // merged-by-oid nor the open-PR resolution can find anything for this branch.
+        for entry in fs::read_dir(&state).unwrap() {
+            let p = entry.unwrap().path();
+            if p.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with("pr-")).unwrap_or(false) {
+                fs::remove_file(p).unwrap();
+            }
+        }
+
+        // Re-run (the dropped-land resume): no PR resolvable, but content IS on main →
+        // content-verify no-ops to the SAME main sha instead of refusing no-open-pr.
+        let again = merge(9106, "kade", &home, &werk_base)
+            .expect("content-verify resume: no PR resolvable, but work is on main → no-op success");
+        assert_eq!(again, landed, "resume returns the same main sha, merges nothing new");
+        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(witness.contains(r#""reason":"content-on-main""#),
+            "the content-verify idempotency is witnessed, not a silent pass");
+    }
 }
 
 /// Stateful `gh` shim. Emulates the narrow surface werk-merge uses, over a real temp
