@@ -66,7 +66,8 @@ jobs:
         # branch name — retires the stale-PR false-green), squash-merges, content-verifies.
         run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
-      - name: sync-canonical
+      - name: sync
+        # canonical ff-sync — the werk-sync verb's territory (#3300); inline today, see follow-on.
         # 5.5 (#3234) — ff-sync canonical to origin/main so SCRIPT-only changes go LIVE with
         # zero manual steps. deploy-prod handles crate binaries; this makes canonical ==
         # origin/main immediately. SYNC_OK crosses to the landed step to gate the "live" claim.
@@ -81,7 +82,8 @@ jobs:
             echo "SYNC_OK=0" >> "$GITHUB_ENV"
           fi
 
-      - name: deploy-prod
+      - name: deploy
+        # target=canonical: prod is a build of MAIN.
         # werk-deploy target=canonical, via MCP (#3311 rename). SELF-BUILDS from canonical@origin/main
         # (#3222) — prod binaries are structurally a build of MAIN, not the werk.
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"

@@ -73,7 +73,8 @@ jobs:
       - name: push
         run: chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
-      - name: build-demo
+      - name: build
+        # target=werk implied: builds the card's werk for the demo slot.
         run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
@@ -120,7 +121,7 @@ jobs:
           case "$out" in *"floor clean"*) post success ;; *) post failure ;; esac
           echo "review: advisory — floor findings inform the cold-eyes agent + the demo surface"
 
-      - name: deploy-demo
+      - name: deploy
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
