@@ -25,11 +25,19 @@
 # is a CONTRACT for the ingestion work, not a queryable surface yet).
 # A class that can't answer a query is decoration and was cut.
 #
-# GRAIN: extends silas/ontology/chorus.ttl v0.3.0 (canonical). The
-# IRI-formation layer is PROVISIONAL pending #3256 (model-1 keystone ADR) —
-# class IRIs use the canonical chorus: namespace + CamelCase classes /
-# kebab-case instances, matching the existing corpus. When #3256 lands, this
-# file conforms in the same change that lands the convention's CI name-test.
+# GRAIN: extends silas/ontology/chorus.ttl v0.3.0 (canonical). Conforms to
+# ADR-040 (IRI-formation convention, drafted on silas/3256, reviewed against
+# this file by Silas 2026-06-11): classes CamelCase in chorus: namespace;
+# instances type-prefixed kebab (chorus:<type>-<name>) except bare
+# product/domain; NO new -domain suffix mints (write-frozen legacy); Rule 0 —
+# IRIs are MINTED by the DAL from (type,name), never hand-typed, so the
+# owl-api generator consumes the mint once the DAL (model-2) exists. Full
+# conformance + CI name-test lands with ADR-040's enforcement (§6).
+#
+# SILAS HOLD (review 2026-06-11, accepted): chorus:dataSource +
+# chorus:ingestionStatus are MODEL-GOVERNANCE vocabulary — relocate to the
+# canonical core at the model-3 reconcile so future domain OWLs share one
+# mint instead of re-inventing variants. Acceptable here for 0.1.0.
 #
 # OWNER: Kade (domain owner authors the vertical; Silas reviews as OWL-DBA —
 # schema coherence, constraints, evolution — per the loom division).
@@ -39,7 +47,7 @@
     dcterms:title "Werk Domains — cicd, version-control, code, tests" ;
     dcterms:creator "Kade (Engineer)" ;
     dcterms:date "2026-06-11" ;
-    owl:versionInfo "0.1.0-provisional-pre-3256" ;
+    owl:versionInfo "0.1.0-adr040-aligned" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 

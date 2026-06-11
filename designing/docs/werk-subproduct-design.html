@@ -132,7 +132,7 @@ flowchart TD
 <p>Each domain composes into the services/verbs that actually run. Those are the specific, carded work — specified in their own docs, not re-asserted here (and TO-BE as Athena <code>hosts</code> graph instances, per Path-to-close #5):</p>
 <ul>
   <li><strong>pipelines</strong> → the v2 verb binaries + <code>act</code> orchestration — <a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> + the v2 cards.</li>
-  <li><strong>version-control</strong> → chorus_commit/acp, git-queue, werks, hook-shim — <a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a>.</li>
+  <li><strong>version-control</strong> → the verb binaries (commit/push/merge/sync/unpull), ephemeral werks, guards — <a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> (reconciled #3339).</li>
   <li><strong>code</strong> → lint + complexity gates, blast-radius tooling — <a href="/designing/docs/quality-service-design.html">quality-service-design.html</a> (reconciled #3339).</li>
   <li><strong>tests</strong> → jest / cargo / bats — no service-design yet (the domain's first need).</li>
 </ul>
