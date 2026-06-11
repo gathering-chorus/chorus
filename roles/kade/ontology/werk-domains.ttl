@@ -1,0 +1,237 @@
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix chorus:  <https://jeffbridwell.com/chorus#> .
+
+# =============================================================================
+# Werk Domains — Kade's four-domain refinement (#3340, 2026-06-11)
+# cicd (pipelines) · version-control · code · tests
+# =============================================================================
+#
+# PURPOSE (Jeff's direction, 2026-06-11): this file is GENERATOR INPUT, not
+# documentation. owl-api consumes it to generate the domain APIs
+# deterministically; those APIs are query surfaces over the graph. werk-test
+# (#3190) is the first generated-API customer (which-tests-for-which-card).
+#
+# AUTHORING RULE — QUERY-BACKWARDS: every class/property maps to graph data
+# that exists or has a defined ingestion path. Each class carries a
+# `chorus:dataSource` annotation naming where its instances come from, and a
+# `chorus:ingestionStatus` of "landing" (data flows today), "ingestible"
+# (data exists in witnesses, ingestion path defined, not yet flowing), or
+# "needs-identity" (the data does not yet exist in queryable form — the class
+# is a CONTRACT for the ingestion work, not a queryable surface yet).
+# A class that can't answer a query is decoration and was cut.
+#
+# GRAIN: extends silas/ontology/chorus.ttl v0.3.0 (canonical). Conforms to
+# ADR-040 (IRI-formation convention, drafted on silas/3256, reviewed against
+# this file by Silas 2026-06-11): classes CamelCase in chorus: namespace;
+# instances type-prefixed kebab (chorus:<type>-<name>) except bare
+# product/domain; NO new -domain suffix mints (write-frozen legacy); Rule 0 —
+# IRIs are MINTED by the DAL from (type,name), never hand-typed, so the
+# owl-api generator consumes the mint once the DAL (model-2) exists. Full
+# conformance + CI name-test lands with ADR-040's enforcement (§6).
+#
+# SILAS HOLD (review 2026-06-11, accepted): chorus:dataSource +
+# chorus:ingestionStatus are MODEL-GOVERNANCE vocabulary — relocate to the
+# canonical core at the model-3 reconcile so future domain OWLs share one
+# mint instead of re-inventing variants. Acceptable here for 0.1.0.
+#
+# OWNER: Kade (domain owner authors the vertical; Silas reviews as OWL-DBA —
+# schema coherence, constraints, evolution — per the loom division).
+# =============================================================================
+
+<https://jeffbridwell.com/chorus/werk-domains> a owl:Ontology ;
+    dcterms:title "Werk Domains — cicd, version-control, code, tests" ;
+    dcterms:creator "Kade (Engineer)" ;
+    dcterms:date "2026-06-11" ;
+    owl:versionInfo "0.1.0-adr040-aligned" ;
+    rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
+    rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
+
+# --- annotation properties (the query-backwards bookkeeping) ----------------
+
+chorus:dataSource a owl:AnnotationProperty ;
+    rdfs:label "data source" ;
+    rdfs:comment "Where instances of this class come from: a witness file, spine event family, CLI, or API." .
+
+chorus:ingestionStatus a owl:AnnotationProperty ;
+    rdfs:label "ingestion status" ;
+    rdfs:comment "landing | ingestible | needs-identity — whether instance data reaches the graph today." .
+
+# =============================================================================
+# SHARED SPINE — classes every domain references
+# =============================================================================
+
+chorus:VerbRun a owl:Class ;
+    rdfs:label "Verb Run" ;
+    rdfs:comment "One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability." ;
+    chorus:dataSource "spine: <verb>.started/.completed/.refused + ops/logs/werk-<verb>.jsonl (one line per run, shared trace)" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:TypedRefusal a owl:Class ;
+    rdfs:label "Typed Refusal" ;
+    rdfs:comment "A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected)." ;
+    chorus:dataSource "jsonl witnesses: *.refused events with reason field; spine mirror" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:Witness a owl:Class ;
+    rdfs:label "Witness" ;
+    rdfs:comment "An append-only jsonl evidence stream owned by one verb (ops/logs/werk-<verb>.jsonl). The durable record a resume/recovery reads." ;
+    chorus:dataSource "filesystem: ops/logs/*.jsonl (file-per-verb)" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:hasVerbRun a owl:ObjectProperty ;
+    rdfs:label "has verb run" ;
+    rdfs:domain chorus:Card ; rdfs:range chorus:VerbRun ;
+    rdfs:comment "Card → each verb execution in its lifecycle, ordered by ts on the shared trace." .
+
+chorus:refusedWith a owl:ObjectProperty ;
+    rdfs:domain chorus:VerbRun ; rdfs:range chorus:TypedRefusal .
+
+chorus:traceId a owl:DatatypeProperty ;
+    rdfs:domain chorus:VerbRun ; rdfs:range xsd:string ;
+    rdfs:comment "The shared trace threading both pipeline halves (CHORUS_TRACE_ID)." .
+
+# =============================================================================
+# DOMAIN: cicd (the pipelines instance Kade owns)
+# Query the generated API answers: "what happened to card N in the pipeline,
+# and is what's running what we built?"
+# =============================================================================
+
+chorus:PipelineRun a owl:Class ;
+    rdfs:label "Pipeline Run" ;
+    rdfs:comment "One act dispatch of werk.yml for a card: the prove job (go!=true) or the land job (go=true). Brackets a set of VerbRuns under one trace." ;
+    chorus:dataSource "ops/logs/werk.jsonl: werk.started/werk.landed/werk.land.failed; act job tags" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:GateResult a owl:Class ;
+    rdfs:label "Gate Result" ;
+    rdfs:comment "One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284)." ;
+    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.gate.result {gate, result, findings}" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:ReviewVerdict a owl:Class ;
+    rdfs:label "Review Verdict" ;
+    rdfs:comment "The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder." ;
+    chorus:dataSource "ops/logs/werk-review.jsonl: review.floor / review.verdict / review.refused" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:DemoVerdict a owl:Class ;
+    rdfs:label "Demo Verdict" ;
+    rdfs:comment "The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against." ;
+    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.verdict {verdict, prover, decision}" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:Deployment a owl:Class ;
+    chorus:dataSource "spine: binary.deployed {binary, cdhash, commit, role}; deploy.cdhash.matched; deploy.detached" ;
+    chorus:ingestionStatus "ingestible" ;
+    rdfs:comment "EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical." .
+
+chorus:hasGateResult a owl:ObjectProperty ;
+    rdfs:domain chorus:Card ; rdfs:range chorus:GateResult .
+chorus:hasReviewVerdict a owl:ObjectProperty ;
+    rdfs:domain chorus:Card ; rdfs:range chorus:ReviewVerdict .
+chorus:hasDemoVerdict a owl:ObjectProperty ;
+    rdfs:domain chorus:Card ; rdfs:range chorus:DemoVerdict .
+chorus:cdhash a owl:DatatypeProperty ;
+    rdfs:domain chorus:Deployment ; rdfs:range xsd:string ;
+    rdfs:comment "The signed binary identity that survives TCC; the deployed==running discriminator." .
+
+# =============================================================================
+# DOMAIN: version-control
+# Query: "where is card N's code — werk, branch, PR, main — and how did it move?"
+# =============================================================================
+
+chorus:WerkSlot a owl:Class ;
+    rdfs:label "Werk Slot" ;
+    rdfs:comment "An ephemeral per-card worktree (chorus-werk/<role>-<card>/, branch <role>/<card>), born on pull, removed on accept (#2913). Never branch-swapped in place." ;
+    chorus:dataSource "spine: card.pulled / card.unpulled / card.branch.closed; chorus-werk status CLI" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:MergeEvent a owl:Class ;
+    rdfs:label "Merge Event" ;
+    rdfs:comment "A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297)." ;
+    chorus:dataSource "ops/logs/werk-merge.jsonl: merge.approved / merge.idempotent / merge.refused; gh PR record" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:ConflictHold a owl:Class ;
+    rdfs:label "Conflict Hold" ;
+    rdfs:comment "A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted." ;
+    chorus:dataSource "ops/logs/werk-commit.jsonl: rebase.conflict.held; spine commit.conflict {disposition}" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:RecoveryAction a owl:Class ;
+    rdfs:label "Recovery Action" ;
+    rdfs:comment "A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299)." ;
+    chorus:dataSource "spine: canonical.repaired / recovery.stashed / recovery.completed / card.unpulled" ;
+    chorus:ingestionStatus "ingestible" .
+
+# =============================================================================
+# DOMAIN: code
+# Query: "what does card N's diff touch, and does it conform?"
+# =============================================================================
+
+chorus:CardDiff a owl:Class ;
+    rdfs:label "Card Diff" ;
+    rdfs:comment "The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands)." ;
+    chorus:dataSource "review.floor {files_changed}; werk-deploy unit discovery; derivable on demand from git" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:QualityFinding a owl:Class ;
+    rdfs:label "Quality Finding" ;
+    rdfs:comment "An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses." ;
+    chorus:dataSource "review.floor findings; pre-commit refusal events; cog.override.used audit events" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:BlastRadius a owl:Class ;
+    rdfs:label "Blast Radius" ;
+    rdfs:comment "The reference set of a removed/renamed symbol (ast-grep/LSP survivor check — the grep-blind-removal class). Computed by the review floor; future werk-code verb deepens it (#3148 lineage)." ;
+    chorus:dataSource "review.floor removed-symbol findings (computed, not stored per-symbol today)" ;
+    chorus:ingestionStatus "needs-identity" .
+
+# =============================================================================
+# DOMAIN: tests — THE HONEST ONE
+# Query werk-test (#3190) needs: "which tests prove card N's changed units,
+# and what is their current state?" — TODAY UNANSWERABLE from the graph.
+# =============================================================================
+#
+# DE FINDING (sequences the work): tests is the least graph-ready of the four.
+# Suite-level results land in transient jsonl (demo.test_result pass|fail per
+# card) with NO per-test identity. The classes below are split: TestSuiteRun
+# is ingestible today; Test/TestResult are CONTRACTS for the ingestion work
+# (#2818/#2819 tagging + a result-emission path) that must land BEFORE
+# werk-test can query which-tests-for-which-card. Ship ingestion first.
+
+chorus:Test a owl:Class ;
+    rdfs:label "Test" ;
+    rdfs:comment "ONE test with durable identity (file + name), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
+    chorus:dataSource "NONE TODAY — the #2818/#2819 tagging pass creates identity; cargo/jest emit names at run time but nothing lands them" ;
+    chorus:ingestionStatus "needs-identity" .
+
+chorus:TestSuiteRun a owl:Class ;
+    rdfs:label "Test Suite Run" ;
+    rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain." ;
+    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:TestResult a owl:Class ;
+    rdfs:label "Test Result" ;
+    rdfs:comment "One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first." ;
+    chorus:dataSource "NONE TODAY — depends on chorus:Test identity + a per-test result emission path" ;
+    chorus:ingestionStatus "needs-identity" .
+
+chorus:covers a owl:ObjectProperty ;
+    rdfs:label "covers" ;
+    rdfs:domain chorus:Test ; rdfs:range chorus:SubDomain ;
+    rdfs:comment "Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging." .
+
+chorus:pyramidLayer a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "unit | integration | e2e | bdd — declarative, replacing filename inference (quality design gap 7)." .
+
+chorus:validityClass a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "The #3324 taxonomy class — making test-value queryable, not a one-time audit." .

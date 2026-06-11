@@ -795,7 +795,7 @@ chorus:infrastructure-domain a chorus:SubDomain ;
 
 chorus:version-control-domain a chorus:SubDomain ;
     rdfs:label "Version Control" ;
-    rdfs:comment "How code is versioned across its full lifecycle: branch creation, commit, push, pull, rebase, merge, tag. Adapter is git + git-queue.sh; gates run via pre-commit and pre-push hooks; agents commit through chorus_commit. 'Commits' is one verb in this surface, not the whole." ;
+    rdfs:comment "How code is versioned across its full lifecycle: branch, commit, push, pull, rebase, merge, tag. Adapter is git driven by the zero-dep Rust verb binaries (werk-commit/push/merge/sync/unpull); checks run inside the verbs; werks are ephemeral per-card worktrees (#2913). Refined in kade/ontology/werk-domains.ttl (#3340)." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building ;
     chorus:belongsTo chorus:observability-domain .
@@ -974,7 +974,7 @@ chorus:code-domain a chorus:SubDomain ;
 
 chorus:tests-domain a chorus:SubDomain ;
     rdfs:label "Tests" ;
-    rdfs:comment "Test files, coverage, test pyramid. Discover-tests herald: 98 tests across 23 domains." ;
+    rdfs:comment "Test files, coverage, pyramid, validity (#3324 taxonomy). Least graph-ready werk domain — per-test identity is the ingestion prerequisite (see kade/ontology/werk-domains.ttl #3340)." ;
     chorus:ownedBy chorus:kade ;
     chorus:primaryStep chorus:Building .
 
