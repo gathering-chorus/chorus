@@ -58,7 +58,7 @@ jobs:
           echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
           echo "minted trace=$trace for card=#${CARD_ID} role=${ROLE} accepter=${ACCEPTER}"
           mkdir -p "${CHORUS_HOME}/ops/logs" 2>/dev/null || true
-          ts=$(date +%s%3N)
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
           printf '{"ts":%s,"event":"werk.started","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s"}\n' \
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
@@ -144,7 +144,7 @@ jobs:
         # has merged or deployed. werk.landed is emitted by Half B (werk-land.yml) on the go.
         if: success()
         run: |
-          ts=$(date +%s%3N)
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
           printf '{"ts":%s,"event":"werk.presented","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success"}\n' \
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
@@ -152,7 +152,7 @@ jobs:
       - name: werk-failed
         if: failure()
         run: |
-          ts=$(date +%s%3N)
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
           printf '{"ts":%s,"event":"werk.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true

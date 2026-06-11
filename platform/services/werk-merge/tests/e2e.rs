@@ -130,6 +130,27 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         assert_eq!(again, main_sha, "idempotent re-run returns the same main sha, merges nothing new");
     }
 
+    // ── Scenario D (#3266): GitHub's list API lags its create API — the #3269
+    //    false-red. With a 2-call lag the bounded resolve-retry must absorb the
+    //    race and land; the witness records the retries. ───────────────────────
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9104);
+        commit_and_push(&werk, "kade/9104", "d.txt", "delta");
+        let state = tmp("ghstate");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", state.to_str().unwrap());
+        std::env::set_var("GH_LIST_LAG", "2");
+        std::env::remove_var("GH_FAKE_MERGE");
+
+        let main_sha = merge(9104, "kade", &home, &werk_base)
+            .expect("resolve-retry must absorb the create->list lag instead of refusing no-open-pr");
+        assert!(main_sha.len() >= 7);
+        assert!(origin_main_has(&origin, "d.txt"), "scenario D: the work landed despite list lag");
+        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(witness.contains("merge.pr.resolve.retry"), "the retry is witnessed, not silent");
+        std::env::remove_var("GH_LIST_LAG");
+    }
+
     // ── Scenario C: content-verify guard — gh LIES (reports MERGED, lands nothing).
     //    The post-merge content-verify must catch it and REFUSE. ─────────────────
     {
@@ -186,6 +207,16 @@ pr)
         *) shift;;
       esac
     done
+    # GH_LIST_LAG: emulate GitHub's list API lagging create — return [] for the
+    # first N list calls made AFTER a create (the #3269/#3266 false-red race).
+    if [ -n "$GH_LIST_LAG" ] && [ -f "$GH_STATE/created" ]; then
+      lagged=$(cat "$GH_STATE/lagged" 2>/dev/null || echo 0)
+      if [ "$lagged" -lt "$GH_LIST_LAG" ]; then
+        echo $((lagged+1)) > "$GH_STATE/lagged"
+        printf '[]'
+        exit 0
+      fi
+    fi
     out="["; first=1
     for f in "$GH_STATE"/pr-*; do
       [ -e "$f" ] || continue
@@ -212,6 +243,7 @@ pr)
       echo "PR_STATE=open"
       echo "PR_MERGE="
     } > "$GH_STATE/pr-$n"
+    : > "$GH_STATE/created"
     echo "https://github.test/pr/$n"
     ;;
   merge)

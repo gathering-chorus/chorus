@@ -368,10 +368,25 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                 jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"pr-create-fail\"");
                 format!("pr-create-fail: {}", e)
             })?;
-            // re-resolve by oid; a created PR that still can't be found is no-open-pr.
-            open_pr_for_sha(&werk_s, &branch, &head_sha)?.ok_or_else(|| {
+            // re-resolve by oid. GitHub's list API lags its create API — tonight's
+            // #3269 land hit exactly this (create succeeded, immediate re-list missed
+            // it, land went red while the PR sat open). A bounded backoff kills that
+            // false-red class (#3266 AC1); a PR still invisible after ~14s is real.
+            let mut found = None;
+            for (attempt, wait_s) in [0u64, 2, 4, 8].iter().enumerate() {
+                if *wait_s > 0 {
+                    std::thread::sleep(Duration::from_secs(*wait_s));
+                    jsonl(home, role, card, &trace, "merge.pr.resolve.retry",
+                        &format!(",\"attempt\":{}", attempt));
+                }
+                found = open_pr_for_sha(&werk_s, &branch, &head_sha)?;
+                if found.is_some() {
+                    break;
+                }
+            }
+            found.ok_or_else(|| {
                 jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"no-open-pr\"");
-                "no-open-pr: created a PR but none open matches HEAD oid".to_string()
+                "no-open-pr: created a PR but none open matches HEAD oid (after 4 resolve attempts over ~14s)".to_string()
             })?
         }
     };

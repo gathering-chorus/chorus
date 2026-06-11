@@ -14,7 +14,7 @@
  * No silent caps: if a Loki page hits its limit, the output carries
  * truncated=true so a consumer never mistakes a cap for completeness.
  */
-import { aggregateFlow, FlowEvent, FlowReport } from './flow-report';
+import { aggregateFlow, deriveWalkAway, FlowEvent, FlowReport, WalkAway } from './flow-report';
 
 const LOKI = process.env.CHORUS_LOKI_URL || 'http://localhost:3102';
 const PAGE_LIMIT = 5000;
@@ -27,7 +27,14 @@ export function normalizeLine(line: string): FlowEvent | null {
   try {
     d = JSON.parse(t) as Record<string, unknown>;
   } catch {
-    return null;
+    // #3266 — werk.jsonl witness lines were written with a malformed epoch
+    // ("ts":17811076913N — BSD date lacks %3N) for their whole history. The
+    // emitters are fixed, but the backlog only parses with the N stripped.
+    try {
+      d = JSON.parse(t.replace(/"ts":(\d+)N,/, '"ts":$1,')) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
   const event = typeof d.event === 'string' ? d.event : '';
   if (!event) return null;
@@ -83,7 +90,7 @@ export function esc(s: string): string {
  *  columns + a time filter over the loaded window. DOM-built (textContent), so
  *  log-sourced strings can't inject markup; the embedded JSON escapes `<` to
  *  block </script> breakout (the gate-quality concern, held in the rewrite). */
-export function buildHtml(report: FlowReport & { generatedAt: string; windowHours: number; truncated: boolean }): string {
+export function buildHtml(report: FlowReport & { generatedAt: string; windowHours: number; truncated: boolean; walkAway?: WalkAway }): string {
   const data = JSON.stringify(report).replace(/</g, '\\u003c');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Card Cycle Report</title>
 <style>body{font:13px/1.45 ui-monospace,Menlo,monospace;margin:1.5rem;background:#f7f4ee}table{border-collapse:collapse;width:100%;background:#fff}
@@ -130,7 +137,8 @@ function render(){
   document.getElementById('head').textContent =
     'Generated '+DATA.generatedAt+' · '+cards.length+' of '+DATA.totals.cards+' cards ('+DATA.windowHours+'h window) · '
     +DATA.totals.errorEvents+' error/warning events · '+DATA.totals.landed+' landed · CYCLE median '+fmt(cs.medianS)+' / avg '+fmt(cs.avgS)+' / p90 '+fmt(cs.p90S)
-    +(DATA.truncated?' · TRUNCATED at page cap':'');
+    +(DATA.truncated?' · TRUNCATED at page cap':'')
+    +(DATA.walkAway ? ' · WALK-AWAY: '+(DATA.walkAway.ready?'READY':'not ready')+' ('+DATA.walkAway.currentStreak+'/'+DATA.walkAway.k+' clean unattended lands)' : '');
   const hdr = document.getElementById('hdr'); hdr.textContent='';
   for (const col of COLS){
     const th = document.createElement('th');
@@ -192,11 +200,17 @@ async function main(): Promise<void> {
     if (e) events.push(e);
   }
 
+  // #3266 — the walk-away bar rides the same event set. K default 10 (named with
+  // Jeff; override with --k or CHORUS_WALKAWAY_K while the number settles).
+  const kIdx = args.indexOf('--k');
+  const k = kIdx >= 0 ? Number(args[kIdx + 1]) || 10 : Number(process.env.CHORUS_WALKAWAY_K) || 10;
+
   const report = {
     generatedAt: new Date().toISOString(),
     windowHours: hours,
     truncated: verbs.truncated || spine.truncated,
     ...aggregateFlow(events),
+    walkAway: deriveWalkAway(events, k),
   };
 
   if (htmlPath) {
