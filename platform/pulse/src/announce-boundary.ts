@@ -40,15 +40,28 @@ export interface Decision {
  *  sender joining the nudge surface should be a conscious decision. */
 const MACHINE_SENDERS = new Set(['system', 'chorus-mcp', 'chorus-api', 'pulse']);
 
-/** Typed-refusal recognizer: the verb/tool refusal grammar ("<tool> refused:
- *  <class> — …"). A refusal is control flow the calling agent already handled;
- *  announcing it to a human is the bug this card kills. */
-const REFUSAL_RE = /\brefused:\s*[a-z][a-z0-9-]*/i;
+/** Typed-refusal recognizer — KNOWN CLASSES ONLY (the #3334 benign-list,
+ *  here as code). A bare /refused:/ match would eat real errors ("connection
+ *  refused: timeout" — cold-eyes catch on this card), so membership in the
+ *  finite refusal taxonomy is required; an unknown refused:-class FAILS OPEN
+ *  to class=error and DELIVERS. Adding a class here is a conscious edit. */
+export const BENIGN_REFUSAL_CLASSES = new Set([
+  'use-cards-set', 'no-status-changes', 'wrong-status', 'wrong-owner',
+  'no-werk', 'no-ac', 'dirty-floor-inputs', 'ceremony-rejected',
+  'gates-missing', 'no-open-pr', 'no-approval', 'card-not-found',
+  'ac-missing', 'experience-missing', 'move-fail', 'branch-fail',
+  'werk-dirty', 'werk-not-initialized', 'werk-corrupt',
+]);
+const REFUSAL_RE = /\brefused:\s*([a-z][a-z0-9-]*)/i;
+function isBenignRefusal(content: string): boolean {
+  const m = REFUSAL_RE.exec(content);
+  return m !== null && BENIGN_REFUSAL_CLASSES.has(m[1].toLowerCase());
+}
 
 export function classify(from: string, _to: string, content: string): Classification {
   const lane: Lane = MACHINE_SENDERS.has(from) ? 'machine' : 'role';
   if (lane === 'role') return { lane, cls: 'message' };
-  if (REFUSAL_RE.test(content)) return { lane, cls: 'refusal' };
+  if (isBenignRefusal(content)) return { lane, cls: 'refusal' };
   if (/mcp\.tool\.error|error|fail|ENOENT|exception/i.test(content)) return { lane, cls: 'error' };
   return { lane, cls: 'alert' };
 }
@@ -70,6 +83,10 @@ export function signature(content: string): string {
  *  short enough that an ongoing incident re-surfaces twice an hour. */
 export const MACHINE_COOLDOWN_MS = 30 * 60_000;
 
+// DECIDED (Jeff's 20×3 datum, 2026-06-11): the window is keyed by signature
+// ONLY — recipient-agnostic. One incident announces ONCE ANYWHERE, because the
+// same alert fanned to three terminals all land in front of the same human.
+// If per-recipient once-each is ever wanted, key by (signature, to) here.
 interface WindowEntry {
   openedAt: number;
   suppressed: number;

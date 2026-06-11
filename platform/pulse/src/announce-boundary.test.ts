@@ -132,3 +132,18 @@ describe("#3357 AC6 — replay today's tape: ≤1/3 the deliveries, zero loss", 
     expect(delivered).toBeGreaterThan(0); // never silent — the incident IS announced
   });
 });
+
+describe('#3357 cold-eyes catch — refusal matching is allowlist, fail-open', () => {
+  test('a real error containing "connection refused: timeout" DELIVERS as error', () => {
+    const st = new AnnounceState();
+    const d = decide('chorus-mcp', 'wren', '[mcp.error] db connection refused: timeout after 8s', 1000, st);
+    expect(d.deliver).toBe(true);
+    expect(d.cls).toBe('error');
+  });
+
+  test('an unknown refused:-class fails open to delivery', () => {
+    const st = new AnnounceState();
+    const d = decide('chorus-mcp', 'wren', 'tool refused: some-brand-new-class — details', 1000, st);
+    expect(d.deliver).toBe(true);
+  });
+});
