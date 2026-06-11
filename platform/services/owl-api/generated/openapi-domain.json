@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "OWL API — generated Domain API", "version": "0", "description": "Generated from https://jeffbridwell.com/chorus#Domain shapes in urn:chorus:ontology. Regenerate, never hand-edit (#3354)." },
+  "paths": {
+    "/domains": { "get": { "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/List" } } } }, "404": { "description": "typed refusal" } } } },
+    "/domains/{name}": { "get": { "parameters": [ { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Domain" } } } }, "404": { "description": "typed refusal" } } } },
+    "/domains/{name}/contains": { "get": { "parameters": [ { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Fold" } } } }, "404": { "description": "typed refusal" } } } },
+    "/schema/domain": { "get": { "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Schema" } } } }, "404": { "description": "typed refusal" } } } }
+  },
+  "components": { "schemas": {
+    "EdgeRef": { "type": "object", "properties": { "name": { "type": "string" }, "label": { "type": "string" } } },
+    "Domain": { "type": "object", "properties": { "atStep": { "$ref": "#/components/schemas/EdgeRef" }, "comment": { "type": "string" }, "contains": { "type": "string" }, "created": { "type": "string" }, "creator": { "type": "string" }, "gaps": { "type": "string" }, "hasDesignDoc": { "$ref": "#/components/schemas/EdgeRef" }, "iri": { "type": "string" }, "label": { "type": "string" }, "modified": { "type": "string" }, "ownedBy": { "$ref": "#/components/schemas/EdgeRef" }, "status": { "type": "string" }, "type": { "$ref": "#/components/schemas/EdgeRef" } } },
+    "List": { "type": "object", "properties": { "count": { "type": "integer" }, "items": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "label": { "type": "string" }, "status": { "type": "string" } } } } } },
+    "Fold": { "type": "object", "properties": { "domain": { "type": "string" }, "count": { "type": "integer" }, "contains": { "type": "array", "items": { "type": "string" } } } },
+    "Schema": { "type": "object" }
+  } }
+}

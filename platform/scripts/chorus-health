@@ -92,6 +92,26 @@ else
   warn "pipeline-run-pairing" "building-pipeline-health check failed to run"
 fi
 
+# owl-api generated-API health (#3364 AC4/AC5): the generated Domain API must
+# be up, drift-free, and contract-conformant. Drift = the ontology and the
+# served API disagree; contract = live responses match the generated OpenAPI.
+# Red here is a red boot — ops' first task (DEC-022), the standing teeth.
+if curl -s --max-time 3 "http://localhost:3360/health" | grep -q '"ok": true'; then
+  pass "owl-api-up" "generated Domain API answering on :3360"
+  if drift_out=$(bash "${SCRIPTS}/../tests/owl-api-drift-check.sh" 2>&1); then
+    pass "owl-api-drift" "generated artifacts match committed baselines"
+  else
+    fail "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1)"
+  fi
+  if conf_out=$(bash "${SCRIPTS}/../tests/owl-api-conformance.sh" 2>&1); then
+    pass "owl-api-conformance" "$(echo "$conf_out" | tail -1)"
+  else
+    fail "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1)"
+  fi
+else
+  fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
+fi
+
 # hooks-executable — pre-commit + pre-push in platform/hooks; post-commit in canonical .git/hooks
 # CHORUS_ROOT is the worktree; canonical git dir is always at CHORUS_HOME/.git/
 CHORUS_CANONICAL="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
@@ -195,7 +215,8 @@ for ep in \
   "http://localhost:3340/borg/quality/|borg-quality" \
   "http://localhost:3340/borg/fitness/|borg-fitness" \
   "http://localhost:3340/borg/cost/|borg-cost" \
-  "http://localhost:3340/borg/hooks/|borg-hooks"; do
+  "http://localhost:3340/borg/hooks/|borg-hooks" \
+  "http://localhost:3360/health|owl-api"; do
   url="${ep%%|*}"; name="${ep##*|}"
   code=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null); curl_rc=$?
   if [[ "$code" =~ ^(200|204|301|302|308)$ ]]; then
