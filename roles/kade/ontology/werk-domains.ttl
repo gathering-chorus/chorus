@@ -192,6 +192,27 @@ chorus:BlastRadius a owl:Class ;
     chorus:dataSource "review.floor removed-symbol findings (computed, not stored per-symbol today)" ;
     chorus:ingestionStatus "needs-identity" .
 
+chorus:SourceFile a owl:Class ;
+    rdfs:label "Source File" ;
+    rdfs:comment "ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files." ;
+    chorus:dataSource "crawler code-files collector (exists today, writes path-classified instances); also derivable from any CardDiff" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:filePath a owl:DatatypeProperty ;
+    rdfs:label "file path" ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes." .
+
+chorus:testName a owl:DatatypeProperty ;
+    rdfs:label "test name" ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "The test's declared name within its file. Identity = (filePath, testName) — the IRI mint key for Test." .
+
+chorus:inFile a owl:ObjectProperty ;
+    rdfs:label "in file" ;
+    rdfs:domain chorus:Test ; rdfs:range chorus:SourceFile ;
+    rdfs:comment "Test → the SourceFile that declares it. The join CardDiff uses: changed paths → SourceFiles → Tests in/covering them." .
+
 # =============================================================================
 # DOMAIN: tests — THE HONEST ONE
 # Query werk-test (#3190) needs: "which tests prove card N's changed units,
@@ -207,7 +228,7 @@ chorus:BlastRadius a owl:Class ;
 
 chorus:Test a owl:Class ;
     rdfs:label "Test" ;
-    rdfs:comment "ONE test with durable identity (file + name), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
+    rdfs:comment "ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
     chorus:dataSource "NONE TODAY — the #2818/#2819 tagging pass creates identity; cargo/jest emit names at run time but nothing lands them" ;
     chorus:ingestionStatus "needs-identity" .
 
