@@ -5,6 +5,7 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
 @prefix chorus:  <https://jeffbridwell.com/chorus#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
 
 # =============================================================================
 # Werk Domains — Kade's four-domain refinement (#3340, 2026-06-11)
@@ -79,6 +80,21 @@ chorus:provenance a owl:AnnotationProperty ;
 
 # =============================================================================
 # SHARED SPINE — classes every domain references
+
+# --- shared instance properties (the jsonl witness fields, modeled) ---------
+chorus:cardId a owl:DatatypeProperty ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "The card a record belongs to. Shared across event classes; no rdfs:domain on purpose." .
+chorus:ts a owl:DatatypeProperty ;
+    rdfs:range xsd:dateTime ;
+    rdfs:comment "Event timestamp (witness ts, ms epoch normalized to xsd:dateTime at ingest). DAL also stamps dcterms:created/modified + dcterms:creator on every write (audit envelope — core vocab)." .
+chorus:verb a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "The werk verb name on spine-family records." .
+chorus:result a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "pass | fail on gate/test/review records." .
+
 # =============================================================================
 
 chorus:VerbRun a owl:Class ;
@@ -353,4 +369,125 @@ chorus:tests-domain
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;
     rdfs:comment "Domain -> the record classes whose instances fill its folds. The generated domain API's per-domain query catalog. Graduates to core with the rest of the governance vocab (model-3)." .
+
+# =============================================================================
+# SHACL SHAPES — written WITH the model, not after (Jeff, 2026-06-11: "the shacl
+# must be done now not later"). The rule: every class requires at least its
+# mint-key properties (identity is never optional — PK discipline); every edge
+# carries sh:class (the FK check). Enforced by the DAL at WRITE time with typed
+# refusals — SPARQL fails silently on broken chains, so the write path is the
+# only place referential integrity exists.
+# =============================================================================
+
+chorus:VerbRunShape a sh:NodeShape ;
+    sh:targetClass chorus:VerbRun ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:TypedRefusalShape a sh:NodeShape ;
+    sh:targetClass chorus:TypedRefusal ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:WitnessShape a sh:NodeShape ;
+    sh:targetClass chorus:Witness ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ]  .
+
+chorus:PipelineRunShape a sh:NodeShape ;
+    sh:targetClass chorus:PipelineRun ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ]  .
+
+chorus:GateResultShape a sh:NodeShape ;
+    sh:targetClass chorus:GateResult ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:ReviewVerdictShape a sh:NodeShape ;
+    sh:targetClass chorus:ReviewVerdict ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:DemoVerdictShape a sh:NodeShape ;
+    sh:targetClass chorus:DemoVerdict ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:DeploymentShape a sh:NodeShape ;
+    sh:targetClass chorus:Deployment ;
+    sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ]  .
+
+chorus:WerkSlotShape a sh:NodeShape ;
+    sh:targetClass chorus:WerkSlot ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:MergeEventShape a sh:NodeShape ;
+    sh:targetClass chorus:MergeEvent ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:ConflictHoldShape a sh:NodeShape ;
+    sh:targetClass chorus:ConflictHold ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:RecoveryActionShape a sh:NodeShape ;
+    sh:targetClass chorus:RecoveryAction ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:CardDiffShape a sh:NodeShape ;
+    sh:targetClass chorus:CardDiff ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:QualityFindingShape a sh:NodeShape ;
+    sh:targetClass chorus:QualityFinding ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:SourceFileShape a sh:NodeShape ;
+    sh:targetClass chorus:SourceFile ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ]  .
+
+chorus:TestShape a sh:NodeShape ;
+    sh:targetClass chorus:Test ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
+
+chorus:TestSuiteRunShape a sh:NodeShape ;
+    sh:targetClass chorus:TestSuiteRun ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:TestResultShape a sh:NodeShape ;
+    sh:targetClass chorus:TestResult ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:TestEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:Test ;
+    sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:SourceFile ] ;
+    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ; sh:in ( "unit" "integration" "e2e" "contract" "fitness" "smoke" "bdd" ) ] .
+
+chorus:VerbRunEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:VerbRun ;
+    sh:property [ sh:path chorus:refusedWith ; sh:class chorus:TypedRefusal ] .
+
+chorus:ScenarioVerifiedByShape a sh:NodeShape ;
+    sh:targetClass chorus:Scenario ;
+    sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
+
+chorus:TestResultEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:TestResult ;
+    sh:property [ sh:path chorus:ofTest ; sh:minCount 1 ; sh:class chorus:Test ] .
+
+chorus:ofTest a owl:ObjectProperty ;
+    rdfs:label "of test" ;
+    rdfs:domain chorus:TestResult ; rdfs:range chorus:Test ;
+    rdfs:comment "TestResult -> its Test. The FK that makes the result chain joinable; required by shape." .
 

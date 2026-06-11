@@ -256,6 +256,9 @@ flowchart TB
 <tr><td><code>validityClass</code></td><td><code>Test</code> &rarr; string</td><td>The #3324 taxonomy class — making test-value queryable, not a one-time audit.</td></tr>
 </tbody></table>
 
+<h4>Constraints (22 SHACL shapes — written with the model, not after)</h4>
+<p>The rule (Jeff, 2026-06-11): <strong>every class's shape requires at least its mint-key properties</strong> — identity is never optional (PK discipline) — and <strong>every edge carries <code>sh:class</code></strong> (the FK check: <code>covers</code> must point at a real SubDomain, <code>inFile</code> at a real SourceFile, <code>ofTest</code> at a real Test). Enforced by the DAL at <em>write time</em> with typed refusals, because SPARQL fails silently on broken chains — the write path is the only place referential integrity exists. Relational rigor, relocated entirely to the write side.</p>
+
 <h2>OWL + SHACL — conformance to Athena v2</h2>
 <p>This subproduct adds no new structural classes. It uses Athena's <code>chorus:Product</code> / <code>chorus:Domain</code> / <code>chorus:Service</code> with the recursive containment model. The Werk-specific shape is:</p>
 
