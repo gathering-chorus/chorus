@@ -1051,16 +1051,15 @@ const PULSE_URL = process.env.PULSE_URL || 'http://localhost:3475';
 async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
   const { execFile } = require('child_process');
   console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), 5000);
     const resp = await fetch(`${PULSE_URL}/api/jeff-input`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Chorus-Clearing-Caller': '1' },
       body: JSON.stringify({ to: target, content: safeMsg }),
       signal: ctrl.signal,
     });
-    clearTimeout(timeoutId);
     if (!resp.ok) {
       const errBody = await resp.text().catch(() => '');
       throw new Error(`pulse ${resp.status}: ${errBody.slice(0, 160)}`);
@@ -1078,5 +1077,7 @@ async function deliverJeffMessageToTarget(target: string, safeMsg: string, clean
       ['jeff.input.failed', 'bridge', `to=${target}`, `chars=${safeMsg.length}`, `reason=${reason}`],
       () => { /* fire-and-forget */ });
     return reason;
+  } finally {
+    clearTimeout(timeoutId); // both paths — a failed fetch must not leave the abort timer dangling
   }
 }
