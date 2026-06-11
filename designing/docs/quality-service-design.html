@@ -38,7 +38,8 @@
 <body>
 
 <h1>Quality <span>— Service Design</span></h1>
-<p class="date">2026-04-18 — Kade. Draft. Source: /borg/quality page (pyramid reporting surface), quality-guide.md (Gathering-scoped), tarpaulin + jest configs, pre-commit hook, existing gates (gate-code, gate-quality, demo-preflight, TDD gate), loom-principles (quality-at-source, speed-and-quality-correlate), DEC-1674 (TDD discipline).</p>
+<p class="date">Kade. <strong>As-is reconcile 2026-06-11 (#3339)</strong> — supersedes the 2026-04-18 draft. Sources now also include: the verb test audit + matrix (#3324, <code>proving/verb-test-matrix.md</code>), the demo gates model (#3284), werk-review (#3193), the friction board's real-catch classification, ADR-026 quality layers, ADR-032 verb test contract.</p>
+<div class="source-note"><strong>What changed in the 2026-06-11 reconcile (#3339):</strong> the test-value policy — the April draft's &ldquo;largest gap&rdquo; — now EXISTS as the #3324 audit taxonomy and is written in below; gates rewrote (demo-preflight retired → <code>demo.verdict</code> + 5 recorded gates + cold-eyes review; gates run as Explore subagents in demo prework); the advisory→gate flip pattern added; stop-the-line revival (#3334) noted; declarative test-layer assignment is now carded (#2818/#2819 tests-domain) and feeds the generated tests domain API that werk-test (#3190) depends on; nightly runner state updated.</div>
 
 <div class="promise">
 Every change ships with confidence proportional to its blast radius. When Quality is healthy, Jeff can ask "does this work?" and the answer is trustworthy: failing tests mean user-visible behavior broke, passing tests mean what Jeff cares about is still intact, coverage numbers reflect protection not ritual. When Quality drifts, tests accumulate without catching bugs, coverage targets get gamed, gates pass work that a thoughtful reviewer would reject, and Jeff becomes the test suite — finding regressions by touching the product and re-teaching what "green" should have meant.
@@ -61,10 +62,10 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 <tr><td>Coverage measurement (Rust)</td><td><span class="tag-real">REAL</span></td><td>tarpaulin per-crate, configs with per-file + global floors</td><td>ops.rs seam work proved feasible (77.69%); some crates still baseline-as-floor</td></tr>
 <tr><td>Coverage measurement (TS)</td><td><span class="tag-partial">PARTIAL</span></td><td>jest per-package, per-file thresholds</td><td>Global platform/api threshold at 0%; HTTP-over-wire tests don't instrument server.ts; gameable via mock-farming</td></tr>
 <tr><td>Pre-commit gate</td><td><span class="tag-real">REAL</span></td><td>.git/hooks/pre-commit runs tsc + jest + secret scan</td><td>Doesn't run coverage check; no per-layer enforcement</td></tr>
-<tr><td>Nightly fitness</td><td><span class="tag-partial">PARTIAL</span></td><td>run-all-tests.sh --coverage aggregates per-service; emits coverage.measured spine events</td><td>No bug-escape-rate; no pyramid-shape check; aggregate hides per-layer skew</td></tr>
-<tr><td>gate-code / gate-quality / demo-preflight</td><td><span class="tag-real">REAL</span></td><td>Skills with ACs enforced at acceptance time</td><td>Coverage-farm-friendly; no test-value check</td></tr>
-<tr><td>Stop-the-line</td><td><span class="tag-real">REAL</span></td><td>stop_on_error.rs hook blocks on cargo/jest errors mid-build</td><td>Reactive; doesn't catch weak tests, only broken ones</td></tr>
-<tr><td>Test-value policy</td><td><span class="tag-none">MISSING</span></td><td>&mdash;</td><td><strong>The largest gap.</strong> No written definition of what makes a test valuable &mdash; the reason #2167 shipped 170 unit tests that added coverage without adding confidence</td></tr>
+<tr><td>Nightly suites</td><td><span class="tag-partial">PARTIAL — NOT TRUSTED</span></td><td><code>com.chorus.nightly-suites</code> discovers all cargo crates + npm packages automatically</td><td>The 2026-06-11 73-red blast was a runner-env break, not 73 regressions; reporter double-sends with conflicting counts. Silas owns the nightly-not-trusted chunk (#2527/#3272/#3273). A gate cannot key on nightly reds until this closes</td></tr>
+<tr><td>5 demo gates + cold-eyes review</td><td><span class="tag-real">REAL (#3284/#3193)</span></td><td>Explore-type subagents in demo prework, recorded via <code>werk-demo gate</code> / <code>werk-review verdict</code>; werk-demo REFUSES to present un-gated</td><td>Gate findings quality varies; the friction board tracks real-catch rate (a gate-quality subagent caught a live XSS-class bug 2026-06-10 — the existence proof)</td></tr>
+<tr><td>Stop-the-line</td><td><span class="tag-real">REAL (revived #3334)</span></td><td>stop_on_error hook; revival makes werk-verb typed refusals non-benign (a refusal stops the line, not just compiler errors)</td><td>Reactive; doesn't catch weak tests, only broken ones</td></tr>
+<tr><td>Test-value policy</td><td><span class="tag-real">REAL (written 2026-06-10, #3324)</span></td><td>The audit taxonomy below + <code>proving/verb-test-matrix.md</code></td><td>Applied to the verb crates (119 tests classified, 20 deleted); not yet applied portfolio-wide</td></tr>
 <tr><td>Per-domain per-layer floors</td><td><span class="tag-none">MISSING</span></td><td>&mdash;</td><td>Single global coverage % is blunt; pyramid shape not enforced per domain</td></tr>
 <tr><td>Bug-escape measurement</td><td><span class="tag-none">MISSING</span></td><td>&mdash;</td><td>No feedback loop from production bugs back to test-suite weakness</td></tr>
 </table>
@@ -79,7 +80,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 <tr><td>File touched matches test glob</td><td>Test file classified into pyramid layer</td><td>Borg quality page</td><td><code>/api/chorus/quality/summary</code> pyramid[]</td></tr>
 <tr><td>Pre-commit staged</td><td>tsc + jest --forceExit per package</td><td>Pre-commit hook decision</td><td><code>.git/hooks/pre-commit</code> exit code</td></tr>
 <tr><td>Card reaches gate-code</td><td>Test ratio + coverage + lint state</td><td>Wren (product) / Silas (arch) gate decision</td><td>Skill invocation</td></tr>
-<tr><td>Card reaches demo-preflight</td><td>Integration + E2E green check</td><td>Demo go/no-go</td><td><code>demo-preflight.sh</code></td></tr>
+<tr><td>Card reaches demo</td><td>Witnessed floor: <code>demo.test_result</code> + 5 <code>demo.gate.result</code> + <code>review.floor</code>/<code>review.verdict</code></td><td>The cockpit Jeff reads before go/no/more</td><td><code>ops/logs/werk-demo.jsonl</code> / <code>werk-review.jsonl</code></td></tr>
 <tr><td>Service fails in production</td><td>(should produce) bug-escape event</td><td>(should feed) test-suite weakness report</td><td><strong>NOT WIRED</strong></td></tr>
 </table>
 
@@ -109,20 +110,29 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 </div>
 
 <div class="component">
-<h3>Gates</h3>
-<p>Five gate surfaces, each biting at a different point in the change lifecycle:</p>
+<h3>Gates (as-is, 2026-06-11)</h3>
+<p>The gate surfaces, each biting at a different point in the change lifecycle:</p>
 <ul>
-  <li><strong>Pre-commit hook</strong> (<code>.git/hooks/pre-commit</code>): runs tsc + jest + secret scan + werk auto-bump. Does not currently run coverage threshold check.</li>
-  <li><strong>TDD gate</strong> (<code>tdd_gate.rs</code> in chorus-hooks): blocks edits to production code if no test was written first in the session. Enforces DEC-1674.</li>
-  <li><strong>gate-code</strong>: Kade-owned, at card acceptance &mdash; lint, build, test pass/fail, no test deletions, no console.log in request-path.</li>
-  <li><strong>gate-quality</strong>: owner-invoked at card acceptance; structural quality check.</li>
-  <li><strong>demo-preflight</strong>: pre-demo; blocks if integration tests fail.</li>
+  <li><strong>Pre-commit checks inside <code>werk-commit</code></strong>: tsc, hermetic tests, lint/dup-string/cog-complexity, secrets, oversize — run inside the verb, not a standalone hook a habit can skip.</li>
+  <li><strong>TDD gate</strong> (<code>tdd_gate</code> in chorus-hooks): blocks production-code edits with no test first in session (DEC-1674).</li>
+  <li><strong>Pipeline advisory middle (test + review)</strong>: the <code>test</code> step records hermetic-suite results (<code>demo.test_result</code>); the <code>review</code> step runs werk-review's structured floor (<code>review.floor</code>). Both ADVISORY — recorded, surfaced on the cockpit, never blocking — until their flips (#3190 werk-test; review's <code>check</code> promotion). <strong>The flip pattern is the quality model's core move</strong>: a gate runs advisory until its signal is proven trustworthy and not-ceremony, then a <code>check</code>-style read becomes exit-gating with no rewiring.</li>
+  <li><strong>The 5 demo gates</strong> (product/code/quality/arch/ops, #3284): Explore-type subagents in the demoer's prework batch, each recorded via <code>werk-demo gate &lt;card&gt; &lt;gate&gt; pass|fail &lt;findings&gt;</code>; <code>werk-demo</code> REFUSES to present un-gated. Gates inform Jeff's go; they never veto it.</li>
+  <li><strong>Cold-eyes review</strong> (#3193): ONE fresh adversarial agent with only diff + AC, recording <code>review.verdict</code> behind anti-ceremony guards (empty-findings-fail rejected; verdict-before-floor rejected). Hunts: AC-not-covered, aspirational-as-built, bugs, missing tests, scope creep. Caught its own builder twice on its first card — the existence proof.</li>
+  <li><strong>werk-accept verdict gate</strong>: finalize only against <code>demo.verdict=pass</code> on the witness; DEC-048 authority inside the verb (a builder can never self-accept). GO=accept (#3311).</li>
 </ul>
+<p><em>Retired:</em> demo-preflight (→ the demo.verdict model, #3116/#3237); standalone gate-nudge relays (→ demoer-run subagents, #3284).</p>
 </div>
 
 <div class="component">
-<h3>Test-value policy (currently absent)</h3>
-<p>The missing core piece. A test is <strong>valuable</strong> when its failure would cause Jeff to change his behavior &mdash; fix code, revert a deploy, escalate. A test is <strong>non-valuable</strong> when its failure means only "implementation changed." Concrete signals: tests whose names don't describe observable behavior; tests that assert on mocks rather than real dependencies; tests that survive rewriting the implementation with a different algorithm; tests added purely to raise a coverage number. The policy belongs in loom-policies once #2151 lands; until then, this gap is the single biggest reason Quality drifts.</p>
+<h3>Test-value policy (written 2026-06-10, #3324 — the audit taxonomy)</h3>
+<p>A test is <strong>valuable</strong> when its failure would cause Jeff to change his behavior — fix code, revert a deploy, escalate. The #3324 audit operationalized this into four classes, applied test-by-test to the verb crates (119 classified → 98 valid, 20 deleted, 1 fixed; ledger at <code>proving/verb-test-matrix.md</code>):</p>
+<ul>
+<li><strong>valid</strong> — asserts user-visible behavior at a real seam (CLI parse, exit code, witness line, refusal text);</li>
+<li><strong>asserts-retired-behavior</strong> — pins a behavior the system no longer has; DELETE, the test is now a lie;</li>
+<li><strong>passes-by-definition</strong> — cannot fail (asserts the mock, tautological fixture); DELETE;</li>
+<li><strong>integration-not-gated</strong> — touches live services without an explicit gate; move behind the integration gate or make hermetic.</li>
+</ul>
+<p>House pattern making hermetic cheap: <strong>PATH-shim e2e</strong> — temp repos + stub <code>cards</code>/<code>gh</code>/<code>chorus-log</code> scripts at the absolute home path = hermetic-by-construction integration tests of the real binary. Synthetic-traffic isolation (temp <code>CHORUS_LOG_FILE</code>, dead pulse port, <code>CHORUS_SYNTHETIC=1</code>, #3329) keeps test events off the live spine. Remaining gap: the taxonomy is applied to the verb crates only — the 489-file portfolio sweep is the tests-domain work (#2818/#2819).</p>
 </div>
 
 <div class="component">
@@ -159,10 +169,10 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 <table>
 <tr><th>Consumer</th><th>Uses</th><th>Status</th></tr>
 <tr><td>Pre-commit hook</td><td>tsc + jest exit codes</td><td><span class="tag-real">WIRED</span> (no coverage check yet)</td></tr>
-<tr><td>CI pipeline / nightly</td><td>run-all-tests.sh --coverage aggregation</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>CI (schedule-only quality.yml)</td><td><code>cargo-test-verbs</code> job: full suites of every werk-* crate (#3324); hermetic tiers for TS</td><td><span class="tag-real">WIRED</span> (per-PR disconnected — cost stop)</td></tr>
 <tr><td>gate-code</td><td>coverage + lint + test counts at acceptance</td><td><span class="tag-real">WIRED</span> (coverage-farm-friendly)</td></tr>
 <tr><td>gate-quality</td><td>structural quality at acceptance</td><td><span class="tag-real">WIRED</span></td></tr>
-<tr><td>demo-preflight</td><td>integration + E2E green check</td><td><span class="tag-real">WIRED</span></td></tr>
+<tr><td>Demo cockpit (tests/review lines)</td><td><code>demo.test_result</code> + <code>review.floor</code>/<code>review.verdict</code> witnesses</td><td><span class="tag-real">WIRED (#3237/#3193)</span></td></tr>
 <tr><td>Borg quality dashboard</td><td>/api/chorus/quality/summary</td><td><span class="tag-real">WIRED</span></td></tr>
 <tr><td>Fitness dashboards (Pulse, fitness page)</td><td>coverage.measured spine events</td><td><span class="tag-partial">PARTIAL</span> &mdash; pulse reads some; no pyramid-shape surfacing</td></tr>
 <tr><td>Stop-the-line (stop_on_error.rs)</td><td>mid-build cargo/jest errors</td><td><span class="tag-real">WIRED</span></td></tr>
@@ -172,7 +182,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 
 <h2>Gaps</h2>
 
-<div class="gap"><strong>1. No written test-value policy.</strong> The largest gap. Without a definition of what makes a test worth keeping, gates can't reject weak tests, coverage targets incentivize the wrong work, and horizontal-quality reviews are the only protection. <em>Observed cost:</em> #2167 shipped 170 unit tests over a day, most of which test implementation details or string matches in argv. Coverage went up 20 points; chorus-wide protection did not.</div>
+<div class="gap"><strong>1. Test-value policy — CLOSED for the verb crates (#3324), open portfolio-wide.</strong> The taxonomy exists and was applied with teeth (20 deletions). The 489-file portfolio sweep rides the tests-domain work (#2818/#2819), which also feeds the generated tests domain API that werk-test (#3190) depends on.</div>
 
 <div class="gap"><strong>2. Coverage metric not aligned with pyramid design.</strong> "80% coverage" is a scalar; the pyramid is a shape. Two systems with identical coverage numbers can have opposite test health &mdash; one integration-heavy, one unit-test-farming. Current gates read the scalar; the design requires the shape.</div>
 
@@ -184,10 +194,11 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 
 <div class="gap"><strong>6. No bug-escape measurement.</strong> No feedback from production incidents back to the test suite. A regression that Jeff catches by using the product should produce a spine event that's triaged into either (a) a new test of the specific behavior, or (b) a pyramid-shape signal ("we're missing a whole E2E layer here").</div>
 
-<div class="gap"><strong>7. Pyramid inference by filename is brittle.</strong> A test in <code>tests/foo.test.ts</code> could be a unit test or an HTTP integration test; the shape report can't tell. Declarative layer assignment (frontmatter tag, config block, per-test metadata) would make the pyramid trustworthy.</div>
+<div class="gap"><strong>7. Pyramid inference by filename is brittle — CARDED (#2818/#2819 tests-domain).</strong> Declarative tagging across 489 test files + REST/MCP API + drift hook. This is also the model layer for Jeff's 2026-06-11 direction: tests as an OWL-modeled domain whose API is GENERATED (owl-api), queried by werk-test for which-tests-for-which-card.</div>
 
 <div class="gap"><strong>8. Pre-commit hook doesn't run coverage.</strong> The hook runs <code>tsc</code> + <code>jest --forceExit</code> (no <code>--coverage</code>). jest's <code>coverageThreshold</code> is never enforced at commit time. A gate that looks real but doesn't bite.</div>
 
+<div class="gap"><strong>10. No flake quarantine (#2530).</strong> One flaky test can poison a future blocking gate for the whole team; registry + TTL + auto-promote-to-card is the named upstream of the werk-test flip.</div>
 <div class="gap"><strong>9. No role-level quality review cadence.</strong> Jeff reviews quality posture by asking for numbers and catching drift himself. The horizontal quality role should produce a per-session quality report that names drift before Jeff does. <em>Observed 2026-04-17/18:</em> Kade reported per-file wins and hid the chorus-wide number until Jeff asked. Process gap, not just individual lapse.</div>
 
 <h2>Next Steps</h2>
@@ -207,7 +218,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 
 <h2>Not in scope for this design</h2>
 <ul>
-  <li><strong>Enforcement mechanisms themselves.</strong> Quality defines the model and measures it; gates (gate-code, gate-quality, pre-commit, demo-preflight) are separate sub-products that consume Quality state and bite. If a gate needs to change, that's a card against the gate, not against Quality.</li>
+  <li><strong>Enforcement mechanisms themselves.</strong> Quality defines the model and measures it; gates (the 5 demo gates, cold-eyes review, pre-commit-inside-werk-commit) are separate sub-products that consume Quality state and bite. If a gate needs to change, that's a card against the gate, not against Quality.</li>
   <li><strong>Individual test authoring.</strong> Service owners write tests for their domains. Quality defines the shape those tests collectively should form.</li>
   <li><strong>Security scanning depth.</strong> When security becomes a first-class sub-product, that's its own service design. Quality surfaces security-test presence in the pyramid; it doesn't own the scanning.</li>
   <li><strong>Performance SLOs.</strong> Performance tests live in the pyramid; SLO definitions are a separate product/ops conversation.</li>
