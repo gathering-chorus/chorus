@@ -80,6 +80,9 @@ fn origin_main_has(origin: &Path, file: &str) -> bool {
 #[test]
 fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // #3365 — these scenarios test merge mechanics; the announce gate has its own
+    // scenario below. Use the explicit witnessed override everywhere else.
+    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics");
     // ── stateful gh shim on PATH ───────────────────────────────────────────────
     let bin = tmp("bin");
     write_exec(&bin.join("gh"), GH_SHIM);
@@ -186,6 +189,41 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         std::env::set_var("ORIGIN", origin.to_str().unwrap());
         std::env::set_var("GH_STATE", state.to_str().unwrap());
         assert!(merge(9999, "kade", &home, &werk_base).is_err(), "no werk => refuse");
+    }
+
+    // ── Scenario G (#3365): NO GO BEFORE ANNOUNCE, per round. A merge without a
+    //    demo.presented for THIS card at THIS round refuses typed; with the
+    //    announce seeded for the exact round (sha[..12]) it proceeds. ─────────
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9365);
+        let sha = commit_and_push(&werk, "kade/9365", "g.txt", "golf");
+        let state = tmp("ghstate");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", state.to_str().unwrap());
+        std::env::remove_var("GH_FAKE_MERGE");
+        std::env::remove_var("CHORUS_GO_OVERRIDE"); // the gate is LIVE here
+
+        let r = merge(9365, "kade", &home, &werk_base);
+        assert!(r.is_err(), "go without announce must refuse");
+        assert!(r.unwrap_err().contains("announce-missing-this-round"), "typed refusal");
+        assert!(!origin_main_has(&origin, "g.txt"), "nothing landed before the announce");
+
+        // Seed the announce for THIS round → merge proceeds.
+        fs::create_dir_all(home.join("ops/logs")).unwrap();
+        fs::write(home.join("ops/logs/werk-demo.jsonl"), format!(
+            "{{\"ts\":1,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9365,\"trace_id\":\"t\",\"ac\":\"1/1\",\"round\":\"{}\",\"variant\":\"x\"}}\n",
+            &sha[..12]
+        )).unwrap();
+        let landed = merge(9365, "kade", &home, &werk_base).expect("announce present => go proceeds");
+        assert!(landed.len() >= 7);
+        assert!(origin_main_has(&origin, "g.txt"), "the work landed after the announce");
+
+        // Silas's ACK ask (#3365): SAME-ROUND RESUME ≠ STALE. A re-run go on the
+        // already-merged sha (his live #3364 case: two go re-runs, same sha) must
+        // no-op-pass via idempotency — the gate guards NEW merges, never recovery.
+        let again = merge(9365, "kade", &home, &werk_base).expect("same-round resume passes (idempotent), never refuses as stale");
+        assert_eq!(again, landed, "resume returns the same landed sha");
+        std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics"); // restore for later scenarios
     }
 
     // ── Scenario F (#3336): CONTENT-VERIFY idempotency — a dropped-land resume where PR
@@ -321,7 +359,9 @@ exit 0
 #[test]
 fn atomic_gate_orders_before_side_effects_and_pr_refusals_are_typed() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    // knob-wrapping gh shim: logs every call, fails/no-ops `pr create` on demand,
+
+    // #3365 — mechanics test; the announce gate is covered by Scenario G.
+    std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-atomic-mechanics");    // knob-wrapping gh shim: logs every call, fails/no-ops `pr create` on demand,
     // otherwise delegates to the stateful GH_SHIM (real squash into ORIGIN).
     let bin = tmp("bin2");
     write_exec(&bin.join("gh-real"), GH_SHIM);

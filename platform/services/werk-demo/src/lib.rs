@@ -95,8 +95,8 @@ pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "op
 /// returns true: every required gate is recorded for the card, OR the test suite is
 /// driving the tail directly (skip_gate_check). False ⇒ stand by silently, no announce —
 /// Jeff is never pulled into a demo before its gates exist.
-pub fn announce_ready(witness: &str, card: u64, skip_gate_check: bool) -> bool {
-    skip_gate_check || gates_missing(witness, card).is_empty()
+pub fn announce_ready(witness: &str, card: u64, round: &str, skip_gate_check: bool) -> bool {
+    skip_gate_check || gates_missing(witness, card, round).is_empty()
 }
 
 /// #3352 — the demo ceremony as an INVARIANT ordering, verb-enforced:
@@ -108,8 +108,41 @@ pub fn announce_ready(witness: &str, card: u64, skip_gate_check: bool) -> bool {
 /// predicate: every gate recorded AND every peer's 4-question gather REPLIED.
 /// skip (act/headless/test-suite) skips BOTH identically — scoped at birth,
 /// the #3318 lesson (never land-breaking-then-scope).
-pub fn announce_ready_full(witness: &str, card: u64, role: &str, skip: bool) -> bool {
-    skip || (gates_missing(witness, card).is_empty() && gathers_missing(witness, card, role).is_empty())
+/// #3365 — ROUND identity: Jeff's five steps run per ROUND, not per card.
+/// A round is the commit sha being demoed (the werk's HEAD). Every gate,
+/// gather, and announce record carries it; every check matches on it — so a
+/// card with last round's records cannot land this round's commits unreviewed
+/// (the hole that let #3352's own final round close without feedback).
+/// CHORUS_DEMO_ROUND overrides for tests; git failure yields "round-unknown",
+/// which never matches a recorded round by construction.
+pub fn current_round(role: &str, card: u64) -> String {
+    if let Ok(r) = env::var("CHORUS_DEMO_ROUND") {
+        if !r.trim().is_empty() { return r.trim().to_string(); }
+    }
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    std::process::Command::new("git")
+        .args(["-C", &werk, "rev-parse", "--short=12", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "round-unknown".to_string())
+}
+
+/// A witness line matches the current round iff it carries this round's key.
+/// Pre-#3365 records have NO round field and therefore match nothing — old
+/// evidence ages out structurally the moment this lands.
+fn line_in_round(line: &str, round: &str) -> bool {
+    line.contains(&format!("\"round\":\"{}\"", round))
+}
+
+pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, skip: bool) -> bool {
+    skip || (gates_missing(witness, card, round).is_empty() && gathers_missing(witness, card, role, round).is_empty())
 }
 
 /// The two peer roles owed a 4-question gather for this demo: everyone but the
@@ -123,7 +156,7 @@ pub fn gather_peers(role: &str) -> Vec<&'static str> {
 /// (comma-terminated card match, same anti-collision rule). A gather reply is
 /// recorded via `werk-demo gather <card> <peer> replied` when the peer's ACK
 /// arrives — evidence on the witness, never a model claim.
-pub fn gathers_missing(witness: &str, card: u64, role: &str) -> Vec<&'static str> {
+pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     gather_peers(role)
         .into_iter()
@@ -133,12 +166,13 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str) -> Vec<&'static str
                 l.contains("\"event\":\"demo.gather.replied\"")
                     && l.contains(&card_key)
                     && l.contains(&peer_key)
+                    && line_in_round(l, round)
             })
         })
         .collect()
 }
 
-pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
+pub fn gates_missing(witness: &str, card: u64, round: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     REQUIRED_GATES
         .iter()
@@ -149,6 +183,7 @@ pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
                 l.contains("\"event\":\"demo.gate.result\"")
                     && l.contains(&card_key)
                     && l.contains(&gate_key)
+                    && line_in_round(l, round)
             })
         })
         .collect()
@@ -598,9 +633,13 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let in_act = std::env::var("ACT").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
     let skip_gate_check =
         std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false);
+    // #3365 — the round this demo proves: the werk's HEAD sha. All step
+    // evidence (gates, gathers, announce) must carry it; prior rounds' records
+    // never satisfy this one.
+    let round = current_round(role, card);
     if !skip_gate_check && !in_act {
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        let absent = gates_missing(&witness, card);
+        let absent = gates_missing(&witness, card, &round);
         if !absent.is_empty() {
             jsonl(home, role, card, &trace, "demo.refused",
                   &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", absent.join(",")));
@@ -660,9 +699,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         // Jeff's spec: "announce happens b4 role feedback so go precedes that" — the
         // announce may not exist until the team's feedback is IN. Typed standby names
         // exactly what's missing so the demoer knows the next prework step.
-        if !announce_ready_full(&witness_pre, card, role, skip_gate_check) {
-            let gates_absent = gates_missing(&witness_pre, card);
-            let gathers_absent = gathers_missing(&witness_pre, card, role);
+        if !announce_ready_full(&witness_pre, card, role, &round, skip_gate_check) {
+            let gates_absent = gates_missing(&witness_pre, card, &round);
+            let gathers_absent = gathers_missing(&witness_pre, card, role, &round);
             let reason = if !gates_absent.is_empty() { "gates-pending" } else { "gathers-pending" };
             emit_spine(home, "demo.prework.standby", role, card, &trace);
             jsonl(home, role, card, &trace, "demo.prework.standby",
@@ -851,7 +890,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // Half B (werk.yml's go-gated `land` job: merge → sync → deploy → accept). The "wait"
     // costs nothing because it is a stopped pipeline, not a held connection.
     jsonl(home, role, card, &trace, "demo.presented",
-          &format!(",\"ac\":\"{}/{}\",\"variant\":\"{}\"", checked, total, variant_url));
+          &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\"", checked, total, round, variant_url));
     emit_spine(home, "demo.presented", role, card, &trace);
     // #3284 — RETURN the announce as the verb's message. In auto/focus mode the agent
     // pastes this verbatim into its end-of-turn reply — the ONLY surface Jeff sees.
@@ -864,13 +903,13 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 /// verify the gate gather ran. Called by the /demo skill's gate subagents via
 /// `werk-demo gate <card> <gate> <result>`. The witness is the same
 /// ops/logs/werk-demo.jsonl the verdict + werk-accept read — one evidence file.
-fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str) {
+fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, findings: &str, round: &str) {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
     jsonl(home, role, card, &trace, "demo.gate.result",
-          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"findings\":\"{}\"", gate, result, f));
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"findings\":\"{}\"", gate, result, round, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
@@ -925,7 +964,8 @@ pub fn run_demo() -> R<DemoOutcome> {
         }
         let result = args.next().unwrap_or_else(|| "pass".to_string());
         let findings = args.collect::<Vec<_>>().join(" ");
-        record_gate(&home, role.trim(), card, &gate, &result, &findings);
+        let round = current_round(role.trim(), card);
+        record_gate(&home, role.trim(), card, &gate, &result, &findings, &round);
         return Ok(DemoOutcome {
             message: format!(
                 "gate {} recorded for #{}: {} — {}",
@@ -977,8 +1017,9 @@ pub fn run_demo() -> R<DemoOutcome> {
         let note = args.collect::<Vec<_>>().join(" ").replace('\\', " ").replace('"', "'").replace('\n', " ");
         let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
         let event = format!("demo.gather.{}", phase);
+        let round = current_round(role.trim(), card);
         jsonl(&home, role.trim(), card, &trace, &event,
-              &format!(",\"peer\":\"{}\",\"note\":\"{}\"", peer, note));
+              &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"note\":\"{}\"", peer, round, note));
         emit_spine(&home, &event, role.trim(), card, &trace);
         return Ok(DemoOutcome {
             message: format!("gather {} recorded for #{}: peer={}", phase, card, peer),
@@ -1041,7 +1082,7 @@ mod tests {
     // unless all 5 gates left a demo.gate.result in the witness for the card.
     fn gate_line(card: u64, gate: &str) -> String {
         format!(
-            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","result":"pass"}}"#,
+            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","round":"r1","result":"pass"}}"#,
             card, gate
         )
     }
@@ -1053,36 +1094,36 @@ mod tests {
             .map(|g| gate_line(3237, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(gates_missing(&w, 3237).is_empty(), "all 5 gates present → none missing");
+        assert!(gates_missing(&w, 3237, "r1").is_empty(), "all 5 gates present → none missing");
     }
 
     #[test]
     fn gates_missing_lists_absent_gates() {
         let w = format!("{}\n{}", gate_line(3237, "product"), gate_line(3237, "code"));
-        assert_eq!(gates_missing(&w, 3237), vec!["quality", "arch", "ops"]);
+        assert_eq!(gates_missing(&w, 3237, "r1"), vec!["quality", "arch", "ops"]);
     }
 
     #[test]
     fn gates_missing_all_when_witness_empty() {
-        assert_eq!(gates_missing("", 3237).len(), 5);
+        assert_eq!(gates_missing("", 3237, "r1").len(), 5);
     }
 
     // #3319 — the announce is the ready-gate: no announce fires until gates are recorded.
     #[test]
     fn announce_blocked_when_any_gate_missing() {
         let w = format!("{}\n{}", gate_line(3319, "product"), gate_line(3319, "code"));
-        assert!(!announce_ready(&w, 3319, false), "missing gates ⇒ stand by, no announce");
+        assert!(!announce_ready(&w, 3319, "r1", false), "missing gates ⇒ stand by, no announce");
     }
 
     #[test]
     fn announce_allowed_when_all_five_recorded() {
         let w = REQUIRED_GATES.iter().map(|g| gate_line(3319, g)).collect::<Vec<_>>().join("\n");
-        assert!(announce_ready(&w, 3319, false), "all 5 gates ⇒ announce may fire");
+        assert!(announce_ready(&w, 3319, "r1", false), "all 5 gates ⇒ announce may fire");
     }
 
     #[test]
     fn announce_blocked_when_witness_empty() {
-        assert!(!announce_ready("", 3319, false), "no gates at all ⇒ never announce");
+        assert!(!announce_ready("", 3319, "r1", false), "no gates at all ⇒ never announce");
     }
 
     // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
@@ -1091,7 +1132,7 @@ mod tests {
     // #3352 — the full invariant: gates AND gathers-replied before any announce.
     fn gather_line(card: u64, peer: &str) -> String {
         format!(
-            r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","note":"ack"}}"#,
+            r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","round":"r1","note":"ack"}}"#,
             card, peer
         )
     }
@@ -1107,8 +1148,8 @@ mod tests {
         // The 2026-06-11 class: all 5 gates recorded, NO peer feedback — the old
         // announce fired here and Jeff's go preceded the team's input. Now: standby.
         let w = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect::<Vec<_>>().join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", false), "gates without gathers ⇒ no announce");
-        assert_eq!(gathers_missing(&w, 3352, "wren"), vec!["silas", "kade"]);
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "gates without gathers ⇒ no announce");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1"), vec!["silas", "kade"]);
     }
 
     #[test]
@@ -1116,8 +1157,8 @@ mod tests {
         let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", false), "one peer's reply is not the team's feedback");
-        assert_eq!(gathers_missing(&w, 3352, "wren"), vec!["silas"]);
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "one peer's reply is not the team's feedback");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1"), vec!["silas"]);
     }
 
     #[test]
@@ -1126,7 +1167,7 @@ mod tests {
         lines.push(gather_line(3352, "silas"));
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(announce_ready_full(&w, 3352, "wren", false), "gates + both replies ⇒ announce");
+        assert!(announce_ready_full(&w, 3352, "wren", "r1", false), "gates + both replies ⇒ announce");
     }
 
     #[test]
@@ -1134,17 +1175,74 @@ mod tests {
         // Sending the 4 questions is not receiving feedback — only replied counts.
         let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
         lines.push(format!(
-            r#"{{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3352,"trace_id":"t","peer":"silas","note":""}}"#
+            r#"{{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3352,"trace_id":"t","peer":"silas","round":"r1","note":""}}"#
         ));
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", false), "sent != replied");
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "sent != replied");
+    }
+
+    // #3365 — THE core proof: a prior round's records never satisfy this round.
+    #[test]
+    fn round2_with_only_round1_records_refuses_everything() {
+        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3365, g)).collect();
+        lines.push(gather_line(3365, "silas"));
+        lines.push(gather_line(3365, "kade"));
+        let w = lines.join("\n"); // a fully-passed ROUND r1
+        assert!(announce_ready_full(&w, 3365, "wren", "r1", false), "r1 evidence satisfies r1");
+        assert!(!announce_ready_full(&w, 3365, "wren", "r2", false), "r1 evidence must NOT satisfy r2");
+        assert_eq!(gates_missing(&w, 3365, "r2").len(), 5, "all gates fresh per round");
+        assert_eq!(gathers_missing(&w, 3365, "wren", "r2").len(), 2, "all feedback fresh per round");
+    }
+
+    #[test]
+    fn pre_3365_records_without_round_field_match_nothing() {
+        // Old evidence (no round field) ages out structurally on landing.
+        let w = r#"{"ts":1,"event":"demo.gate.result","role":"wren","card_id":3365,"trace_id":"t","gate":"product","result":"pass"}"#;
+        assert_eq!(gates_missing(w, 3365, "r1").len(), 5);
+    }
+
+    // #3365 cross-verb contract (Kade's ACK ask): werk-demo's current_round and
+    // werk-merge's head_sha[..12] MUST resolve identically for the same repo
+    // state. Pinned here against a real git repo: short=12 == full-sha[..12]
+    // (git guarantees prefix identity); Scenario G in werk-merge pins the other
+    // side by seeding the announce with head_sha[..12] and merging against it.
+    #[test]
+    fn current_round_matches_merge_side_derivation() {
+        let dir = std::env::temp_dir().join(format!("wd-round-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("wren-9999")).unwrap();
+        let werk = dir.join("wren-9999");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(&werk).args(args)
+                .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
+                .output().unwrap()
+        };
+        git(&["init", "-q", "."]);
+        std::fs::write(werk.join("f"), "x").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "c"]);
+        let full = String::from_utf8(git(&["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+        std::env::remove_var("CHORUS_DEMO_ROUND");
+        std::env::set_var("CHORUS_WERK_BASE", dir.to_str().unwrap());
+        let demo_side = current_round("wren", 9999);
+        std::env::remove_var("CHORUS_WERK_BASE");
+        assert_eq!(demo_side, full[..12].to_string(), "demo-side round == merge-side head_sha[..12]");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn current_round_env_override_wins() {
+        std::env::set_var("CHORUS_DEMO_ROUND", "test-round-x");
+        assert_eq!(current_round("wren", 3365), "test-round-x");
+        std::env::remove_var("CHORUS_DEMO_ROUND");
     }
 
     #[test]
     fn gathers_missing_ignores_other_cards_comma_terminated() {
         let w = format!("{}\n{}", gather_line(33520, "silas"), gather_line(33520, "kade"));
-        assert_eq!(gathers_missing(&w, 3352, "wren").len(), 2, "card 33520's gathers must not satisfy 3352");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1").len(), 2, "card 33520's gathers must not satisfy 3352");
     }
 
     #[test]
@@ -1155,13 +1253,13 @@ mod tests {
             .map(|g| gate_line(31, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(gates_missing(&w, 3).len(), 5, "card 31's gates must not satisfy card 3");
+        assert_eq!(gates_missing(&w, 3, "r1").len(), 5, "card 31's gates must not satisfy card 3");
     }
 
     // #3284 — gate VERDICTS in the decision surface (AC7): show what each gate found.
     fn gate_line_result(card: u64, gate: &str, result: &str) -> String {
         format!(
-            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","result":"{}"}}"#,
+            r#"{{"ts":1,"event":"demo.gate.result","role":"wren","card_id":{},"trace_id":"t","gate":"{}","round":"r1","result":"{}"}}"#,
             card, gate, result
         )
     }
