@@ -212,6 +212,15 @@ fn open_pr_for_sha(werk_s: &str, branch: &str, head_sha: &str) -> R<Option<u64>>
     Ok(pr_number_for_sha(&json, head_sha))
 }
 
+/// #3336 — content-verify idempotency decision. `git diff --quiet origin/main HEAD`
+/// exits 0 (-> diff_quiet_ok=true) iff the two trees are IDENTICAL, i.e. HEAD's content
+/// is already on origin/main. This is the squash/branch-deletion-robust "did this land?"
+/// signal the by-oid PR match can't give. Pure so the exit-code→meaning mapping is pinned
+/// by test (a future refactor that inverts the sense fails loudly).
+pub fn head_content_merged(diff_quiet_ok: bool) -> bool {
+    diff_quiet_ok
+}
+
 /// Resolve a MERGED PR for `head_sha` (idempotency: this exact work already landed).
 fn merged_pr_for_sha(werk_s: &str, branch: &str, head_sha: &str) -> Option<u64> {
     run_in(
@@ -348,6 +357,24 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         return Ok(main_sha);
     }
 
+    // #3336 — CONTENT-VERIFY idempotency (the dropped-land-resume fix). The by-oid check
+    // above is brittle: a SQUASH merge orphans the branch tip's oid, and GitHub may delete
+    // the branch on merge, so `gh pr list --head <branch>` + headRefOid match can miss a
+    // land that genuinely happened. The robust signal is CONTENT: if HEAD's tree is already
+    // identical to origin/main (`git diff --quiet` exits 0 = no diff), the work is on main —
+    // no-op success regardless of PR/branch/oid state. This makes a transport-dropped land
+    // resume cleanly (re-run finalizes) instead of a false no-open-pr stranding it in WIP.
+    // `git diff --quiet A B` exits 0 (Ok) when the trees are identical, 1 (Err) when they
+    // differ — so is_ok() == "HEAD's content is already on origin/main". head_content_merged
+    // encodes that semantic as a pure, testable boolean.
+    let diff_quiet_ok = run_in(&werk_s, "git", &["diff", "--quiet", "origin/main", "HEAD"]).is_ok();
+    if head_content_merged(diff_quiet_ok) {
+        let main_sha = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).unwrap_or_default().trim().to_string();
+        jsonl(home, role, card, &trace, "merge.idempotent",
+            &format!(",\"reason\":\"content-on-main\",\"sha\":\"{}\"", main_sha));
+        return Ok(main_sha);
+    }
+
     // Resolve the OPEN PR for the current HEAD oid — NOT the branch name. Create one
     // if none open for this oid (covers never-PR'd AND the stale-merged-PR case that
     // generated the false-green). This is the #3175 fix.
@@ -386,7 +413,13 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
             }
             found.ok_or_else(|| {
                 jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"no-open-pr\"");
-                "no-open-pr: created a PR but none open matches HEAD oid (after 4 resolve attempts over ~14s)".to_string()
+                // #3336 — if you hit this on a MANUAL resume, the usual cause is operator
+                // discipline, not a bug: the local HEAD commit was not PUSHED before go, so
+                // no PR matches the oid (and the content-verify above found nothing on main
+                // either, because the unpushed work never merged). PUSH first, then resume.
+                "no-open-pr: created a PR but none open matches HEAD oid (after 4 resolve attempts over ~14s). \
+                 If resuming a manual land: push HEAD first (the content isn't on main and no PR matches the oid)."
+                    .to_string()
             })?
         }
     };
