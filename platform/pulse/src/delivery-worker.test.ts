@@ -372,3 +372,71 @@ describe('DeliveryWorker startupSmoke (#2727 AC12)', () => {
     expect(events[0].fields.rc).toBe(1);
   });
 });
+
+// #3343 — jeff-input delivery kind: same transport, distinct spine family.
+describe('#3343 jeff-input kind — event family follows row.kind', () => {
+  test('eventPrefix maps jeff-input → jeff.input, default/nudge → nudge', () => {
+    const { eventPrefix } = require('./delivery-worker');
+    expect(eventPrefix('jeff-input')).toBe('jeff.input');
+    expect(eventPrefix('nudge')).toBe('nudge');
+    expect(eventPrefix(undefined)).toBe('nudge');
+  });
+
+  test('successful jeff-input delivery emits jeff.input.surfaced — never nudge.surfaced', async () => {
+    const events: Array<{ event: string }> = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => ({ rc: 0, stderr: '' }),
+      async (event) => { events.push({ event }); },
+      [],
+    );
+    const id = store.sendJeffInput('wren', 'raw jeff words');
+    await worker.enqueue({ id, from: 'jeff', to: 'wren', content: 'raw jeff words', delivery_attempts: 0, kind: 'jeff-input' });
+    expect(events.map(e => e.event)).toContain('jeff.input.surfaced');
+    expect(events.map(e => e.event).filter(e => e.startsWith('nudge.'))).toEqual([]);
+    expect(store.getDeliveryRecord(id).delivery_status).toBe('delivered');
+  });
+
+  test('permanent jeff-input failure emits jeff.input.surface.failed — fold-clean', async () => {
+    const events: string[] = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => ({ rc: 1, stderr: 'no claude window found for wren' }),
+      async (event) => { events.push(event); },
+      [],
+    );
+    const id = store.sendJeffInput('wren', 'words');
+    await worker.enqueue({ id, from: 'jeff', to: 'wren', content: 'words', delivery_attempts: 0, kind: 'jeff-input' });
+    expect(events).toContain('jeff.input.surface.failed');
+    expect(events.filter(e => e.startsWith('nudge.'))).toEqual([]);
+    expect(store.getDeliveryRecord(id).delivery_status).toBe('failed');
+  });
+
+  test('rows without kind still emit nudge.* (all pre-#3343 callers unchanged)', async () => {
+    const events: string[] = [];
+    const worker = new DeliveryWorker(
+      store,
+      async () => ({ rc: 0, stderr: '' }),
+      async (event) => { events.push(event); },
+      [],
+    );
+    const id = store.sendNudge('silas', 'wren', 'peer nudge');
+    await worker.enqueue(rowFor(id));
+    expect(events).toContain('nudge.surfaced');
+  });
+
+  test('restart-requeue picks up pending jeff-input rows WITH kind (scanAndRequeue)', async () => {
+    const events: string[] = [];
+    const id = store.sendJeffInput('kade', 'resumed after pulse restart');
+    const worker = new DeliveryWorker(
+      store,
+      async () => ({ rc: 0, stderr: '' }),
+      async (event) => { events.push(event); },
+      [],
+    );
+    await worker.scanAndRequeue();
+    // drain the kade chain
+    await worker.enqueue({ id: id + 1000, from: 'x', to: 'kade', content: 'drain', delivery_attempts: 0 });
+    expect(events).toContain('jeff.input.surfaced');
+  });
+});

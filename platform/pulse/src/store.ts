@@ -39,7 +39,7 @@ export class MessageStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL CHECK(type IN ('nudge', 'chat', 'board-event', 'role-state')),
+        type TEXT NOT NULL CHECK(type IN ('nudge', 'chat', 'board-event', 'role-state', 'jeff-input')),
         "from" TEXT NOT NULL,
         "to" TEXT NOT NULL,
         content TEXT NOT NULL,
@@ -104,6 +104,46 @@ export class MessageStore {
     if (!colNames.includes('trace_id')) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN trace_id TEXT`);
     }
+
+    // #3343 migration: existing DBs carry the old type CHECK (no 'jeff-input').
+    // SQLite can't ALTER a CHECK — rebuild the table once, idempotently
+    // (guarded by inspecting the live DDL in sqlite_master). Explicit column
+    // lists on both sides so the copy is order-independent; runs AFTER the
+    // column migrations above so all delivery columns exist to copy.
+    const ddl = this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'`).get() as { sql: string } | undefined;
+    if (ddl && !ddl.sql.includes('jeff-input')) {
+      this.db.exec(`
+        BEGIN;
+        CREATE TABLE messages_3343_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          type TEXT NOT NULL CHECK(type IN ('nudge', 'chat', 'board-event', 'role-state', 'jeff-input')),
+          "from" TEXT NOT NULL,
+          "to" TEXT NOT NULL,
+          content TEXT NOT NULL,
+          chat_id TEXT,
+          acknowledged INTEGER DEFAULT 0,
+          delivery_attempts INTEGER DEFAULT 0,
+          dead_letter INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          acknowledged_at TEXT,
+          dead_lettered_at TEXT,
+          delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK(delivery_status IN ('pending','delivered','failed')),
+          delivered_at TEXT,
+          last_delivery_error TEXT,
+          trace_id TEXT
+        );
+        INSERT INTO messages_3343_new (id, type, "from", "to", content, chat_id, acknowledged, delivery_attempts, dead_letter, created_at, acknowledged_at, dead_lettered_at, delivery_status, delivered_at, last_delivery_error, trace_id)
+          SELECT id, type, "from", "to", content, chat_id, acknowledged, delivery_attempts, dead_letter, created_at, acknowledged_at, dead_lettered_at, delivery_status, delivered_at, last_delivery_error, trace_id FROM messages;
+        DROP TABLE messages;
+        ALTER TABLE messages_3343_new RENAME TO messages;
+        COMMIT;
+      `);
+      // Indexes dropped with the old table — recreate the full set.
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_to ON messages("to", acknowledged)`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id) WHERE chat_id IS NOT NULL`);
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at)`);
+    }
+
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL`);
   }
@@ -123,6 +163,24 @@ export class MessageStore {
     return Number(stmt.run(from, to, content).lastInsertRowid);
   }
 
+  // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
+  // (worker, retry, per-role serialization) but is a DISTINCT row type: content
+  // stays RAW (no [nudge from] framing — that would strip Jeff's authority at
+  // the receiving session), and type='jeff-input' keeps nudge queries/folds
+  // from ever picking it up.
+  sendJeffInput(to: string, content: string, traceId?: string): number {
+    if (traceId) {
+      const stmt = this.db.prepare(
+        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?)'
+      );
+      return Number(stmt.run(to, content, traceId).lastInsertRowid);
+    }
+    const stmt = this.db.prepare(
+      'INSERT INTO messages (type, "from", "to", content) VALUES (\'jeff-input\', \'jeff\', ?, ?)'
+    );
+    return Number(stmt.run(to, content).lastInsertRowid);
+  }
+
   // #2727 AC1: delivery state surface. Worker drives transitions via
   // markDelivered / markFailed; pulse boot scans getPendingDeliveries
   // for restart-requeue. getDeliveryRecord exposes failure detail.
@@ -139,10 +197,12 @@ export class MessageStore {
     ).run(reason, id);
   }
 
-  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null }> {
+  // #3343: restart-requeue covers BOTH delivery kinds; `kind` tells the worker
+  // which spine-event family to emit (jeff.input.* vs nudge.*).
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }> {
     return this.db.prepare(
-      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id FROM messages WHERE delivery_status = 'pending' AND type = 'nudge' ORDER BY id ASC`
-    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null }>;
+      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind FROM messages WHERE delivery_status = 'pending' AND type IN ('nudge', 'jeff-input') ORDER BY id ASC`
+    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }>;
   }
 
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null } {

@@ -400,3 +400,46 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
     expect(store.getDeliveryRecord(r2.body.id).trace_id).toBeNull();
   });
 });
+
+// #3343 — POST /api/jeff-input: nudge transport without nudge contract.
+describe('#3343 POST /api/jeff-input', () => {
+  it('rejects without X-Chorus-Clearing-Caller header (escape hatch off)', async () => {
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    const { app } = fresh();
+    const res = await request(app).post('/api/jeff-input').send({ to: 'wren', content: 'hi' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('not-canonical-caller');
+    process.env.PULSE_ALLOW_DIRECT_POST = '1';
+  });
+
+  it('accepts with the Clearing caller header and stores RAW content (no [nudge from] framing)', async () => {
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    const { app, store } = fresh();
+    const res = await request(app)
+      .post('/api/jeff-input')
+      .set('X-Chorus-Clearing-Caller', '1')
+      .send({ to: 'wren', content: 'approve 123' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    const row = store.getPendingDeliveries().find(r => r.id === res.body.id);
+    expect(row!.content).toBe('approve 123');
+    expect(row!.content.startsWith('[nudge from')).toBe(false);
+    expect(row!.kind).toBe('jeff-input');
+    process.env.PULSE_ALLOW_DIRECT_POST = '1';
+  });
+
+  it('does NOT dedup — Jeff resending identical words is intentional', async () => {
+    const { app, store } = fresh();
+    const body = { to: 'wren', content: 'same words' };
+    const r1 = await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send(body);
+    const r2 = await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send(body);
+    expect(r1.body.id).not.toBe(r2.body.id);
+    expect(store.getPendingDeliveries().filter(r => r.kind === 'jeff-input')).toHaveLength(2);
+  });
+
+  it('400 on missing to/content', async () => {
+    const { app } = fresh();
+    const res = await request(app).post('/api/jeff-input').set('X-Chorus-Clearing-Caller', '1').send({ to: 'wren' });
+    expect(res.status).toBe(400);
+  });
+});

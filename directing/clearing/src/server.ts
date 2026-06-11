@@ -854,7 +854,7 @@ io.on('connection', (socket) => {
   });
 
   // Message from The Clearing UI — Jeff or guest (#1719, #1802 reverted to working state)
-  socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
+  socket.on('jeff-message', async (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const { text } = data;
     if (!text.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
 
@@ -867,7 +867,7 @@ io.on('connection', (socket) => {
     const safeMsg = finalText.replace(/"/g, '\\"');
 
     for (const target of targets) {
-      const err = deliverJeffMessageToTarget(target, safeMsg, cleanText);
+      const err = await deliverJeffMessageToTarget(target, safeMsg, cleanText);
       if (err) { ack?.({ ok: false, error: err }); return; }
     }
     ack?.({ ok: true });
@@ -1030,43 +1030,54 @@ function pickJeffMessageTargets(text: string): string[] {
 }
 
 // Returns null on success, error string on failure (#2036).
-// #2575: Jeff's Clearing input → chorus-inject DIRECTLY (synchronous, fail-loud).
-// Earlier path called `nudge --force` via execSync expecting INJECT_FAILED on
-// failure, but #2435 atomic cutover removed sender-side inject from nudge —
-// nudge now just emits a spine event and returns SUCCESS regardless. The
-// INJECT_FAILED substring check matched dead output.
+// #3343: Jeff's Clearing input → POST pulse /api/jeff-input. The pulse
+// delivery worker owns the keystroke (same machinery as nudges: per-role
+// serialization + retry-with-backoff — the worker retries through the
+// busy-session moments that made the old one-shot direct inject fail), but
+// the content travels RAW: no [nudge from] framing, so Jeff's input keeps
+// its authority at the receiving session (approvals, /card).
 //
-// Per Jeff (verbatim): "my inputs in the clearing get nudge --force to right
-// claude code session so u can act immediately - background will never work."
-// chorus-inject is fail-loud (lib.rs:144-176, exit 0 only if osascript stdout
-// 'ok'); HTTP response IS the delivery confirmation.
+// History: #2575 shelled chorus-inject directly here; #2804 retired direct
+// invocation (not-canonical-caller) which broke this path silently —
+// jeff.input.failed ×29/7d, every Clearing delivery refused. The pulse POST
+// is the supported surface.
 //
-// Side effect: emit jeff.input.{delivered,failed} spine event fire-and-forget
-// for audit. Logging doesn't add latency to Jeff's UI feedback.
-const INJECT_BIN = `${CHORUS_ROOT}/platform/services/chorus-inject/target/release/chorus-inject`;
+// The HTTP ack confirms HAND-OFF to the worker (enqueue), not the keystroke
+// itself — the worker's jeff.input.{surfaced,surface.failed} spine events
+// carry the terminal verdict. Side effect: emit jeff.input.{delivered,failed}
+// fire-and-forget for audit continuity with the pre-#3343 event names.
+const PULSE_URL = process.env.PULSE_URL || 'http://localhost:3475';
 
-function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): string | null {
-  const { execFileSync, execFile } = require('child_process');
+async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
+  const { execFile } = require('child_process');
   console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 5000);
   try {
-    execFileSync(INJECT_BIN, [target, safeMsg], {
-      timeout: 10_000,
-      encoding: 'utf-8',
-      env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' },
+    const resp = await fetch(`${PULSE_URL}/api/jeff-input`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Chorus-Clearing-Caller': '1' },
+      body: JSON.stringify({ to: target, content: safeMsg }),
+      signal: ctrl.signal,
     });
-    console.log(`[clearing] DELIVERED to ${target}`);
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`pulse ${resp.status}: ${errBody.slice(0, 160)}`);
+    }
+    console.log(`[clearing] HANDED OFF to pulse worker for ${target}`);
     // Fire-and-forget audit event — don't block on logging.
     execFile(`${CHORUS_ROOT}/platform/scripts/chorus-log`,
       ['jeff.input.delivered', 'bridge', `to=${target}`, `chars=${safeMsg.length}`],
       () => { /* fire-and-forget */ });
     return null;
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr ?? '';
-    const reason = (stderr.split('\n')[0] || (err instanceof Error ? err.message : String(err))).trim();
-    console.error(`[clearing] inject failed for ${target}: ${reason}`);
+    const reason = (err instanceof Error ? err.message : String(err)).split('\n')[0].trim();
+    console.error(`[clearing] jeff-input hand-off failed for ${target}: ${reason}`);
     execFile(`${CHORUS_ROOT}/platform/scripts/chorus-log`,
       ['jeff.input.failed', 'bridge', `to=${target}`, `chars=${safeMsg.length}`, `reason=${reason}`],
       () => { /* fire-and-forget */ });
     return reason;
+  } finally {
+    clearTimeout(timeoutId); // both paths — a failed fetch must not leave the abort timer dangling
   }
 }
