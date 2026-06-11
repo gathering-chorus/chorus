@@ -1,0 +1,34 @@
+// #3335 Pattern 7 -- in-memory dedup of identical concurrent nudges.
+//
+// POST /api/nudge had no uniqueness check: the same (from, to, content) posted twice
+// in quick succession (a retry, a double-fire) queued two rows -> double delivery. This
+// is a SHORT-WINDOW guard (seconds): a true re-send minutes later is legitimate and not
+// deduped. Pure + testable; the caller owns the Map (module-level, pruned on access).
+
+/** Stable key for a nudge's identity, joined with a printable "|" delimiter that cannot
+ *  appear in a role name, so the parts can't run together. (Printable on purpose: a NUL
+ *  separator made the file read as BINARY to git -- blinding grep/diff/review. #3335.) */
+export function dedupeKey(from: string, to: string, content: string): string {
+  return `${from}|${to}|${content}`;
+}
+
+/** True if this key was seen within windowMs (-> caller drops the duplicate). On a miss,
+ *  records nowMs and returns false. Prunes entries older than windowMs on each call so
+ *  the Map can't grow unbounded. */
+export function seenRecently(
+  key: string,
+  nowMs: number,
+  seen: Map<string, number>,
+  windowMs: number,
+): boolean {
+  // prune stale entries (cheap; the live set is tiny -- recent nudges only)
+  for (const [k, ts] of seen) {
+    if (nowMs - ts >= windowMs) seen.delete(k);
+  }
+  const prev = seen.get(key);
+  if (prev !== undefined && nowMs - prev < windowMs) {
+    return true; // duplicate within the window
+  }
+  seen.set(key, nowMs);
+  return false;
+}

@@ -9,6 +9,7 @@ import express, { Express } from 'express';
 import { MessageStore } from './store';
 import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, resolveRoleTarget } from './session-registry';
+import { dedupeKey, seenRecently } from './nudge-dedup';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
 import { appendFile } from 'fs/promises';
@@ -16,6 +17,12 @@ import * as path from 'path';
 import * as os from 'os';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
+
+// #3335 Pattern 7 — short-window dedup of identical concurrent nudges (from,to,content).
+// A retry or double-fire within DEDUP_WINDOW_MS is dropped (returns ok, deduped:true);
+// a legitimate re-send after the window goes through. Module-level, pruned on access.
+const recentNudges = new Map<string, number>();
+const DEDUP_WINDOW_MS = 10_000;
 
 /**
  * Build an Express app bound to the given MessageStore. Factored out of the
@@ -106,6 +113,12 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     const marked = content.startsWith('[nudge from')
       ? content
       : `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
+    // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
+    // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
+    if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
+      log('info', 'nudge.deduped', { from, to, chars: marked.length, trace_id: traceId || undefined });
+      return res.json({ ok: true, deduped: true });
+    }
     const id = store.sendNudge(from, to, marked, traceId);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
