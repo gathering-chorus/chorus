@@ -38,30 +38,34 @@
 <body>
 
 <h1>CI/CD Pipeline <span>— Service Design</span></h1>
-<p class="date">Kade. Related: <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS</a> · <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build+deploy</a>.</p>
+<p class="date">Kade. <strong>As-is reconcile 2026-06-11 (#3339)</strong> — prior pass 2026-06-08 (#3287). Related: <a href="http://localhost:3340/designing/docs/version-control-service-design.html">VCS</a> · <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">build+deploy</a>.</p>
+<div class="source-note"><strong>What changed in the 2026-06-11 reconcile (#3339):</strong> the pipeline driver is act/<code>werk.yml</code> — <code>werk-mcp.sh</code> is retired (#3236) and <code>act</code> is live, not staged; <code>werk-land.yml</code> was folded into the ONE <code>werk.yml</code> as a go-gated <code>land</code> job (#3193, 2026-06-11); test and <strong>review</strong> run as advisory steps between build and deploy (#3193; test flips to a gate at #3190); GO=accept (#3311); detached chorus-mcp self-deploy (#3320/#3323); per-PR CI remains disconnected — schedule-only — with the new <code>cargo-test-verbs</code> job covering every werk-* crate (#3324); verb-named steps pinned by <code>werk-pipeline-shape.test.sh</code> 22/22.</div>
 
 <h2 id="pipeline">The pipeline</h2>
-<p>The CI/CD pipeline <strong>is the werk verbs run in sequence &mdash; there is no orchestrator.</strong> Each verb is a self-contained atomic unit (own flock, typed refusals, spine emit, inherited card trace); the &ldquo;pipeline&rdquo; is a dumb fail-fast list (<code>werk-mcp.sh</code>) that runs them in order and stops on the first refusal. <code>act</code>, when used, is only a <em>trigger</em> that fires the sequence on merge &mdash; never a controller that owns logic. There is exactly <strong>one environment, production</strong> &mdash; no preview, no staging; <code>gh</code> holds <code>main</code> (source of truth) and the per-card process state, keyed by <code>card#</code>.</p>
+<p>The CI/CD pipeline <strong>is the werk verbs run in sequence &mdash; there is no orchestrator that owns logic.</strong> Each verb is a self-contained atomic unit (own flock, typed refusals, spine emit, inherited card trace). The driver is <strong>act running the ONE workflow file, <code>.github/workflows/werk.yml</code></strong> (#3236 retired <code>werk-mcp.sh</code>; #3193 folded <code>werk-land.yml</code> back in): act sequences the verbs as legible steps — every step named for its verb — and stops on the first refusal; gh mirrors each step as a per-verb commit status. The single MCP trigger is <code>chorus_werk</code>; agents never shell to <code>act</code> directly. There is exactly <strong>one environment, production</strong> — no preview, no staging; the per-card werk slot is the demo variant, and <code>gh</code> holds <code>main</code> (source of truth) keyed by <code>card#</code>.</p>
 
-<p>The sequence runs in <strong>two halves with a human GO between them</strong> (the present-and-exit / land split, #3279):</p>
-<p><strong>Half A — prove (present-and-exit):</strong></p>
+<p>ONE file, <strong>two go-gated jobs with the human GO between them</strong> (#3279 stop-and-resume; #3193 one-file collapse). The wait between them costs nothing — it is a <em>stopped pipeline, not a held connection</em>.</p>
+<p><strong>Job <code>werk</code> — prove (go &ne; true; presents and STOPS):</strong></p>
 <ol>
-<li><code>werk-pull</code> &mdash; worktree off <code>origin/main</code>, register <code>{card, trace, branch}</code></li>
-<li><code>werk-commit</code> &mdash; rebase onto <code>origin/main</code> and commit (gates run inside the verb)</li>
-<li><code>werk-push</code> &mdash; push the branch (<code>--force-with-lease</code> on re-run)</li>
-<li><code>werk-build</code> &rarr; <code>werk-deploy --target test</code> &mdash; build the card's code, deploy it to the live test surface</li>
-<li><code>werk-demo</code> &mdash; <strong>present</strong> the running variant and <strong>stop</strong>. The test suite runs here as a step and its result is a signal, but the proving verdict is the human's (Jeff's eyes, or an explicit machine assertion) &mdash; not the test run alone.</li>
+<li><code>commit</code> — <code>werk-commit</code>: rebase onto <code>origin/main</code> (conflict HOLDS for <code>--continue</code>/<code>--abort</code>, #3304) and commit; checks inside the verb</li>
+<li><code>push</code> — <code>werk-push</code> (<code>--force-with-lease</code> on re-run; branch-ownership inside)</li>
+<li><code>build</code> — <code>werk-build</code> for the card's werk</li>
+<li><code>test</code> — hermetic suites (cargo hermetic + jest), <strong>ADVISORY until werk-test #3190</strong>: result recorded (<code>demo.test_result</code> + <code>chorus/test/&lt;card&gt;</code> gh status), never blocks</li>
+<li><code>review</code> — <code>werk-review</code>'s structured floor (#3193), <strong>ADVISORY</strong>: objective findings (unchecked AC, src-without-test, removed pub symbols) witnessed as <code>review.floor</code> + <code>chorus/review/&lt;card&gt;</code> gh status; the cold-eyes <em>agent</em> half runs session-side in demo prework and records <code>review.verdict</code> through the binary</li>
+<li><code>deploy</code> — <code>werk-deploy --target werk</code>: the per-card slot, main untouched</li>
+<li><code>env-up</code> — the variant comes up; reachability posted</li>
+<li><code>demo</code> — <code>werk-demo</code> presents the cockpit (verbs · 5 gates · tests · review · variant) and <strong>stops</strong>. Refuses to present un-gated (#3284). The verdict is the human's — go / no / more.</li>
 </ol>
-<p><strong>&larr; human GO &mdash; the demo&rarr;go decision (DEC-048) &rarr;</strong> Half A <em>exits</em> here; nothing is held. The GO drives Half B.</p>
-<p><strong>Half B — land (on GO):</strong></p>
-<ol start="6">
-<li><code>werk-merge</code> &mdash; resolve the open PR by HEAD oid, squash to <code>main</code>, content-verify</li>
-<li><code>werk-deploy --target prod</code> &mdash; <strong>promote</strong> the artifact already built and demo'd in Half A. <em>No rebuild from <code>main</code></em> (rebuilding would ship something never demo'd &mdash; the integration trap). Mechanics: <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> / #3285.</li>
-<li><code>werk-accept</code> &mdash; finalize: cards-done, close branch + werk. Atomic and finalize-only &mdash; no separate <code>werk-acp</code>.</li>
+<p><strong>&larr; the GO (DEC-048) — and GO = ACCEPT (#3311): Jeff's go at the demo IS the acceptance; there is no second accept moment &rarr;</strong></p>
+<p><strong>Job <code>land</code> — on GO (<code>chorus_werk {go:true}</code> dispatches the same werk.yml with <code>--input go=true</code>):</strong></p>
+<ol start="9">
+<li><code>merge</code> — <code>werk-merge</code>: resolve the open PR by HEAD oid, squash to <code>main</code>, content-verify (idempotent on already-landed work, #3336)</li>
+<li><code>sync</code> — canonical ff-sync to <code>origin/main</code> so script-only changes go live (<code>SYNC_OK</code> gates the &ldquo;live&rdquo; claim; <code>werk-sync recover</code> is the recovery verb, #3300)</li>
+<li><code>deploy</code> — <code>werk-deploy --target canonical</code>: prod is structurally <strong>a build of MAIN</strong> (#3222), with structural unit discovery (no crate registry) and the detached self-deploy for <code>chorus-mcp</code> (#3320/#3323 — the continuation survives its own daemon restart)</li>
+<li><code>accept</code> — <code>werk-accept</code> runs under the accepter named on the GO: records the authority-gated decision and finalizes (Done, teardown, <code>card.accepted</code>)</li>
 </ol>
-<p><code>act</code>, when activated, is the trigger that fires Half B on the GO &mdash; it owns no logic.</p>
 
-<p>Each verb's completion surfaces as a <strong>commit-status check on the card's PR</strong> (<code>chorus/commit &middot; build &middot; deploy &middot; demo &middot; merge &middot; accept</code>), derived from the artifact it produced &mdash; integrity, not mere existence &mdash; so all-green means every verb genuinely ran. Rollback is all-or-nothing per verb; logs are witness-only, never transactional.</p>
+<p>Each verb's completion surfaces as a <strong>commit-status check on the card's PR</strong> (<code>chorus/commit &middot; build &middot; test &middot; review &middot; deploy &middot; env-up &middot; demo &middot; merge &middot; accept</code>), derived from the artifact it produced &mdash; integrity, not mere existence &mdash; so all-green means every verb genuinely ran. Rollback is all-or-nothing per verb; logs are witness-only, never transactional.</p>
 
 <div class="source-note">
 <strong>Two axes in this doc.</strong> <em>Delivery</em> &mdash; how a change moves pull &rarr; demo &rarr; land (the sequence above). <em>CI enforcement &amp; quality</em> &mdash; keeping <code>main</code> green (hooks, gates, scheduled CI, drift), covered in the enforcement sections below. Two layers of one pipeline, not competing states. The git layer (worktree, commit, push, branches) lives in the <a href="http://localhost:3340/designing/docs/version-control-service-design.html">Version Control design</a>; build + deploy in <a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> (ownership: VC &mdash; Kade; build/deploy &mdash; Silas; gates &mdash; all roles).
@@ -87,7 +91,7 @@ Every change that reaches <code>main</code> is measured by the same gates regard
 <tr><th>Internal term</th><th>Industry standard</th><th>What it actually is</th></tr>
 <tr><td>Pre-merge enforcement layer</td><td>Pre-commit + branch protection + lint gates</td><td>Five hooks that run before code reaches <code>main</code></td></tr>
 <tr><td>Role gates (<code>/gate-*</code>)</td><td>Code review checklists encoded as skills</td><td>Five named checks recorded as PR/card comments</td></tr>
-<tr><td><code>werk</code></td><td>Deploy wrapper script</td><td>Shell script bundling cargo build + claudemd-gen + install-hooks under a SHA gate</td></tr>
+<tr><td><code>werk.yml</code></td><td>Pipeline-as-code (one workflow)</td><td>THE pipeline file: two go-gated jobs (prove / land) run by act, every step named for its verb; shape pinned by <code>werk-pipeline-shape.test.sh</code></td></tr>
 <tr><td><code>git-queue.sh</code> <span class="tag-missing">RETIRED</span></td><td>(was) serialized commit + push wrapper</td><td><strong>Deleted 2026-06-02 (#3182).</strong> Replaced by the Rust werk verbs (<code>werk-commit</code>/<code>werk-push</code>/<code>werk-merge</code>), which carry their own flock + branch-check + typed refusals. <em>(Until #3290 the guard deny-messages still named this deleted tool.)</em></td></tr>
 <tr><td>Spine events / <code>chorus.log</code></td><td>Structured audit log</td><td>JSONL event stream written by hooks for incident reconstruction</td></tr>
 <tr><td>Card</td><td>Ticket</td><td>Vikunja kanban ticket (e.g. #2627)</td></tr>
@@ -107,7 +111,7 @@ Every change that reaches <code>main</code> is measured by the same gates regard
 <tr><td>1</td><td><strong>Wrong-branch commit</strong> (engineer commits to a branch that isn't theirs)</td><td><code>werk-commit</code> branch-check (inside the verb)</td><td>Cross-role branch contamination</td><td>#2580</td></tr>
 <tr><td>2</td><td><strong>Raw push</strong> (bypassing the queue)</td><td>pre-push hook</td><td><code>git push</code> , wrong-role branch</td><td>#2598</td></tr>
 <tr><td>3</td><td><strong>Dangerous git from agent</strong> (Claude Bash tool runs raw git mutations)</td><td><code>chorus-hook-shim</code> PreToolUse</td><td>Raw <code>git push</code>/<code>rebase</code>/<code>cherry-pick</code>/<code>reset --hard</code></td><td>#2598</td></tr>
-<tr><td>4</td><td><strong>Cross-worktree contamination</strong> (running git ops on the canonical clone while another role is mid-build)</td><td>worktree-contamination guard</td><td><code>git checkout</code>/<code>pull</code>/<code>reset</code>/<code>switch</code> on the canonical clone when role-state shows another role active</td><td>#2625</td></tr>
+<tr><td>4</td><td><strong>Canonical mutation</strong> (writing to the read-only canonical instead of the card werk)</td><td><code>canonical_write_guard</code> + <code>infra_guardrails</code></td><td>Edit/Write to canonical from a role session; raw mutating git anywhere (#2913 ephemeral-werk model made the old per-role contamination guard obsolete)</td><td>#2913</td></tr>
 <tr><td>5</td><td><strong>Bad commit content</strong> (typecheck/lint/test failures, secrets, oversize)</td><td>pre-commit hook</td><td>tsc errors, jest/cargo failures, lint violations, dup-strings, cog-complexity over 12, secrets, oversize binaries</td><td>(built up over many cards)</td></tr>
 </table>
 <p>All five emit JSONL audit events to <code>platform/logs/chorus.log</code>.</p>
@@ -206,16 +210,15 @@ flowchart TB
 
 <h2 id="observability">Observability</h2>
 <p>There is no orchestrator, so there are no <code>pipeline.step.*</code> / <code>pipeline.completed</code> events. The pipeline's observability <em>is</em> the flat verb sequence's own spine events: each verb emits <code>&lt;verb&gt;.started</code> / <code>.completed</code> / a typed refusal on the card's inherited trace. The complete per-card trace is the ordered run &mdash; <code>commit.completed</code> &rarr; <code>push.completed</code> &rarr; <code>merge.completed</code> + <code>content.verified</code> &rarr; <code>deploy.completed</code> (with <code>cdhash=binary.running</code> confirming deployed==running). A missing verb event is a pipeline gap, queryable via <code>chorus_logs_for_trace(trace_id)</code> on the inherited trace. The verbs <em>emit</em>; Borg <em>produces</em> the shape and the gap-detection. The hung-pipeline window applies <em>per verb</em>, not to a terminal <code>pipeline.completed</code> that does not exist.</p>
-<p><code>act</code> is built but staged-not-loaded: the workflow files are <code>werk.yml</code> (Half A) + <code>werk-land.yml</code> (Half B), currently <code>workflow_dispatch</code>-only. When activated its role is the merge <em>trigger</em> that fires the sequence &mdash; never an orchestrator that owns logic.</p>
+<p><code>act</code> is LIVE as the driver: ONE workflow file, <code>werk.yml</code>, with go-gated prove/land jobs (<code>werk-land.yml</code> deleted, #3193), dispatched only through the <code>chorus_werk</code> MCP verb. act sequences and makes each verb a legible line in gh; it owns no logic. The witness layer is per-verb: <code>werk.started</code>/<code>werk.landed</code> bracket the run in <code>ops/logs/werk.jsonl</code>; each verb writes its own jsonl witness + spine events on the shared trace.</p>
 
 <h2>Open work (delivery axis)</h2>
-<p>The per-verb binary migration (ADR-032) is done &mdash; <code>pull/commit/push/merge/accept/build/deploy/demo</code> are shipped. What remains completes the <em>flat sequence</em>; there is no orchestrator to build:</p>
+<p>The per-verb binary migration (ADR-032) is done — <code>pull/commit/push/merge/accept/build/deploy/demo/review</code> plus <code>sync/unpull</code> are shipped, act is live, <code>werk-acp</code> and <code>werk-mcp.sh</code> are deleted, and the <code>--atomic</code> build-out landed (#3294–#3297). What remains, in dependency order (Jeff, 2026-06-11):</p>
 <ul>
-<li>The production step <strong>promotes the demo'd artifact</strong> (Build + Deploy / #3285's promote-not-rebuild), never a rebuild from <code>main</code> &mdash; building twice would ship something never demo'd.</li>
-<li>Make <code>werk-demo</code> <strong>run the test suite</strong> against the deployed instance (today it builds + deploys but doesn't run tests &mdash; the stamp-mill gap), gating accept on <code>demo.test.passed</code>.</li>
-<li>Activate <code>act</code> as the merge trigger.</li>
-<li>Retire <code>werk-acp</code> &mdash; delete it from disk so it can't be called by habit; the sequence ends with the atomic <code>werk-accept</code>.</li>
-<li>The <code>--atomic</code> build-out (ADR-037) &mdash; one verb at a time, safest-first. CI-enforcement-axis open work (drift lane, sensor registry, run-tests contract, ratchet signal) is in the Gaps section below.</li>
+<li><strong>werk-test (#3190)</strong> — flip the advisory test step to a gate. Held: depends on the <em>tests domain API</em> (generated from the tests-domain OWL via owl-api — #3339/#3340 → Silas's model program), plus trustworthy nightly reds and flake quarantine (#2530).</li>
+<li><strong>Promote werk-review from advisory</strong> — the <code>werk-review check</code> exit-gating step exists; flips when proven not-ceremony.</li>
+<li><strong>Prod deploy as promote-not-rebuild</strong> (#3285 lineage) — today prod re-builds from MAIN by design (#3222: prod is a build of main); the promote-the-demo'd-artifact-with-cdhash-proof model remains the stated end-state. Note the tension is DECIDED in favor of build-of-main for now.</li>
+<li><strong>Pipeline self-healing</strong> — swap the land job's inline ff-sync step for <code>werk-sync recover</code> (proposed, Silas endorsed, needs Jeff's card).</li>
 </ul>
 
 <h2>Sub-Domain Interaction Model</h2>
@@ -299,9 +302,9 @@ flowchart TB
   <li><strong>Cards (Phase D):</strong> #2333 (Done), #2589 (Done), #2599 (Later), #2152 (Next), #2499 (Later), #2500 (Done)</li>
   <li><code>proving/domains/alerts/ci-main-red.yml</code> — reactive alert</li>
   <li>Pipelines-domain page — <code>http://localhost:3000/gathering-docs/domain-detail.html?id=pipelines-domain</code></li>
-  <li>Quality service design (<code>designing/docs/quality-service-design.md</code>) — sibling layer</li>
+  <li>Quality service design (<code>designing/docs/quality-service-design.html</code> — the .md twin is a deprecation stub) — sibling layer</li>
   <li>Roles service design (<code>designing/docs/roles-service-design.md</code>) — template followed</li>
-  <li>Commits service design (<code>designing/docs/commits-service-design.md</code>) — pre-merge surface sibling</li>
+  <li>Version Control service design (renamed from commits-service-design by #2683) — pre-merge surface sibling</li>
 </ul>
 
 <p class="footer">Domain owner: Kade. This doc describes the pipeline as it stands &mdash; atomic verbs in sequence, no orchestrator, one production environment, two axes (delivery + CI enforcement). It is not a changelog: earlier model revisions live in git history and the referenced ADRs.</p>
