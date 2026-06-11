@@ -1319,3 +1319,4 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - No /acp today across team per Jeff directive
 
 - [Kade] → 2026-05-28: #3115 cclsp fix DONE/merged (PR382). #3118 chorus-hooks build-break fix committed (e611bc0c), gate-code PASS except 1 unrelated red = silas protocol-version drift (1.5/1.4, cores match) re-lit by my fix — NOT demo/acp yet. Design threads captured in next-session.md: chorus-inject per-turn hydrator, werk-acp native orchestrator, cclsp team rollout. → Silas (version drift), Wren
+- 2026-06-11 18:20 [silas] #3364 → shared-observability direct edits (ADR-012, Library): blackbox-owl-api probe + uptime-recording regex + dashboards/owl-api-domain.json drop; prometheus kickstarted, probe_success=1 verified → kade/wren FYI
