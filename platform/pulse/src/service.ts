@@ -135,6 +135,40 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
   // #2435 wedge 7d retired the ack/attempt HTTP surface alongside this.
 }
 
+// #3343 — Jeff's Clearing input. Rides nudge's TRANSPORT (worker, retry,
+// per-role serialization) without nudge's CONTRACT:
+//   - NO [nudge from] framing — content reaches the session RAW. The framing
+//     marks input as relayed-peer-traffic (card_approval_responder ignores it,
+//     input_classifier strips it) and would silently strip Jeff's authority.
+//   - NO dedup window — Jeff resending the same words after a failure is
+//     intentional, never an accidental double-fire.
+//   - Spine family jeff.input.* (worker emits via row.kind) — keeps the nudge
+//     fold (emitted − surfaced − surface.failed) clean of foreign rows.
+// Caller check mirrors #2804: only the Clearing server posts here (marker
+// header), with the same test/migration escape hatch.
+function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: DeliveryWorker): void {
+  app.post('/api/jeff-input', (req, res) => {
+    const clearingHeader = req.headers['x-chorus-clearing-caller'];
+    const allowDirect = process.env.PULSE_ALLOW_DIRECT_POST === '1';
+    if (!clearingHeader && !allowDirect) {
+      return res.status(403).json({
+        error: 'not-canonical-caller',
+        message: 'POST /api/jeff-input accepts only Clearing-server calls (X-Chorus-Clearing-Caller).',
+      });
+    }
+    const { to, content, traceId: bodyTraceId } = req.body;
+    if (!to || !content) return res.status(400).json({ error: 'to, content required' });
+    const headerTrace = req.headers['x-chorus-trace-id'];
+    const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
+    const id = store.sendJeffInput(to, content, traceId);
+    log('info', 'jeff.input.stored', { id, to, chars: content.length, trace_id: traceId || undefined });
+    if (worker) {
+      worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input' }).catch(() => { /* worker handles its own state */ });
+    }
+    res.json({ ok: true, id, traceId });
+  });
+}
+
 function registerChatRoutes(app: Express, store: MessageStore): void {
   app.post('/api/chat/start', (req, res) => {
     const { roleA, roleB, topic } = req.body;
@@ -193,6 +227,7 @@ export function createApp(store: MessageStore, worker?: DeliveryWorker): Express
   registerRequestLogging(app, metrics);
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics, worker);
+  registerJeffInputRoutes(app, store, worker);
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
   return app;

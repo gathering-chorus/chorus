@@ -37,6 +37,17 @@ export interface DeliveryRow {
   // legacy rows or sender that didn't propagate the header (worker mints
   // a fallback when absent so every event still carries one).
   trace_id?: string | null;
+  // #3343: delivery kind selects the spine-event family. 'jeff-input' rows
+  // (Jeff's Clearing input — raw content, no nudge framing) emit jeff.input.*
+  // so the nudge fold (emitted − surfaced − surface.failed) never sees a
+  // surfaced with no matching emitted. Absent = 'nudge' (all pre-#3343 callers).
+  kind?: 'nudge' | 'jeff-input';
+}
+
+// #3343 — spine-event family per delivery kind. Pure so the mapping is pinned
+// by test: jeff-input MUST NOT emit into the nudge.* namespace.
+export function eventPrefix(kind?: 'nudge' | 'jeff-input'): 'nudge' | 'jeff.input' {
+  return kind === 'jeff-input' ? 'jeff.input' : 'nudge';
 }
 
 export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
@@ -129,6 +140,8 @@ export class DeliveryWorker {
    */
   private async deliverOne(row: DeliveryRow): Promise<void> {
     const maxAttempts = this.backoffMs.length + 1;
+    // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
+    const prefix = eventPrefix(row.kind);
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const result = await this.runInject(row.to, row.content);
       const classified = classifyInjectResult(result);
@@ -151,7 +164,7 @@ export class DeliveryWorker {
       // match), so a focus-gate-miss stderr can no longer occur. Nudges deliver,
       // they don't defer behind a focus check.
       if (result.deferred) {
-        await this.emitSpine('nudge.deferred', {
+        await this.emitSpine(`${prefix}.deferred`, {
           ...traceFields,
           id: row.id,
           from: row.from,
@@ -165,7 +178,7 @@ export class DeliveryWorker {
 
       if (classified.kind === 'success') {
         try {
-          await this.emitSpine('nudge.surfaced', {
+          await this.emitSpine(`${prefix}.surfaced`, {
             ...traceFields,
             id: row.id,
             from: row.from,
@@ -180,7 +193,7 @@ export class DeliveryWorker {
       }
 
       if (classified.kind === 'permanent') {
-        await this.emitSpine('nudge.surface.failed', {
+        await this.emitSpine(`${prefix}.surface.failed`, {
           ...traceFields,
           id: row.id,
           from: row.from,
@@ -194,7 +207,7 @@ export class DeliveryWorker {
       }
 
       // transient — emit per-attempt failure event, retry if attempts left
-      await this.emitSpine('nudge.surface.failed', {
+      await this.emitSpine(`${prefix}.surface.failed`, {
         ...traceFields,
         id: row.id,
         from: row.from,

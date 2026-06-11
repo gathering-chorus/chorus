@@ -165,3 +165,65 @@ describe('Query', () => {
     expect(stats.pending).toBe(3);
   });
 });
+
+// #3343 — jeff-input rows: raw content, distinct type, requeue-visible.
+describe('#3343 sendJeffInput', () => {
+  test('stores raw content with type jeff-input from jeff', () => {
+    const id = store.sendJeffInput('wren', 'do the thing', 'trace-ji-1');
+    expect(id).toBeGreaterThan(0);
+    const pending = store.getPendingDeliveries().find(r => r.id === id);
+    expect(pending).toBeDefined();
+    expect(pending!.kind).toBe('jeff-input');
+    expect(pending!.from).toBe('jeff');
+    expect(pending!.content).toBe('do the thing'); // RAW — no [nudge from] framing
+    expect(pending!.trace_id).toBe('trace-ji-1');
+  });
+
+  test('getPendingDeliveries returns both kinds, each correctly labeled', () => {
+    store.sendNudge('silas', 'wren', 'a nudge');
+    store.sendJeffInput('wren', 'jeff words');
+    const kinds = store.getPendingDeliveries().map(r => r.kind).sort();
+    expect(kinds).toEqual(['jeff-input', 'nudge']);
+  });
+});
+
+// #3343 — the LIVE messages.db carries the pre-#3343 CHECK constraint; opening
+// it must rebuild the table once (idempotent) and preserve existing rows.
+describe('#3343 CHECK-constraint rebuild migration', () => {
+  const OLD_DB = path.join(__dirname, '..', 'test-old-schema.db');
+
+  afterEach(() => {
+    if (fs.existsSync(OLD_DB)) fs.unlinkSync(OLD_DB);
+  });
+
+  test('opening a DB with the old CHECK rebuilds it, preserves rows, and accepts jeff-input', () => {
+    // Build a DB with the OLD schema (no jeff-input in CHECK) + one nudge row.
+    const Database = require('better-sqlite3');
+    const raw = new Database(OLD_DB);
+    raw.exec(`
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK(type IN ('nudge', 'chat', 'board-event', 'role-state')),
+        "from" TEXT NOT NULL, "to" TEXT NOT NULL, content TEXT NOT NULL,
+        chat_id TEXT, acknowledged INTEGER DEFAULT 0, delivery_attempts INTEGER DEFAULT 0,
+        dead_letter INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')),
+        acknowledged_at TEXT, dead_lettered_at TEXT
+      );
+      INSERT INTO messages (type, "from", "to", content) VALUES ('nudge', 'silas', 'wren', 'pre-migration row');
+    `);
+    raw.close();
+
+    const migrated = new MessageStore(OLD_DB);
+    // old row survives
+    const rec = migrated.getDeliveryRecord(1);
+    expect(rec.delivery_status).toBe('delivered'); // #2727 backfill applies to pre-worker rows
+    // jeff-input now insertable (old CHECK would have thrown)
+    const id = migrated.sendJeffInput('wren', 'post-migration jeff words');
+    expect(id).toBeGreaterThan(1);
+    // idempotent: reopening does not rebuild again / lose anything
+    migrated.close();
+    const reopened = new MessageStore(OLD_DB);
+    expect(reopened.getPendingDeliveries().find(r => r.id === id)!.content).toBe('post-migration jeff words');
+    reopened.close();
+  });
+});
