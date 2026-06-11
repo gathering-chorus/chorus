@@ -1202,6 +1202,36 @@ mod tests {
         assert_eq!(gates_missing(w, 3365, "r1").len(), 5);
     }
 
+    // #3365 cross-verb contract (Kade's ACK ask): werk-demo's current_round and
+    // werk-merge's head_sha[..12] MUST resolve identically for the same repo
+    // state. Pinned here against a real git repo: short=12 == full-sha[..12]
+    // (git guarantees prefix identity); Scenario G in werk-merge pins the other
+    // side by seeding the announce with head_sha[..12] and merging against it.
+    #[test]
+    fn current_round_matches_merge_side_derivation() {
+        let dir = std::env::temp_dir().join(format!("wd-round-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("wren-9999")).unwrap();
+        let werk = dir.join("wren-9999");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(&werk).args(args)
+                .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
+                .output().unwrap()
+        };
+        git(&["init", "-q", "."]);
+        std::fs::write(werk.join("f"), "x").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "c"]);
+        let full = String::from_utf8(git(&["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+        std::env::remove_var("CHORUS_DEMO_ROUND");
+        std::env::set_var("CHORUS_WERK_BASE", dir.to_str().unwrap());
+        let demo_side = current_round("wren", 9999);
+        std::env::remove_var("CHORUS_WERK_BASE");
+        assert_eq!(demo_side, full[..12].to_string(), "demo-side round == merge-side head_sha[..12]");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn current_round_env_override_wins() {
         std::env::set_var("CHORUS_DEMO_ROUND", "test-round-x");

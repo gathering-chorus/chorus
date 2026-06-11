@@ -452,8 +452,10 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                     return Err(format!(
                         "announce-missing-this-round: no demo.presented for #{} at round {} — \
                          Jeff's go may not precede the announce (steps 1-3 first: gates, \
-                         feedback, announce on THESE commits). Run Half A to present, then go. \
-                         (#3365; explicit override: CHORUS_GO_OVERRIDE=<reason>)",
+                         feedback, announce on THESE commits). If a demo DID pass and then the \
+                         sha moved (mid-round rebase or new commit), that is round expiry working, \
+                         not a bug — the integration state changed, so re-prove it: run Half A, \
+                         then go. (#3365; explicit override: CHORUS_GO_OVERRIDE=<reason>)",
                         card, &head_sha[..12.min(head_sha.len())]
                     ));
                 }

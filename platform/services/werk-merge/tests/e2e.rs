@@ -217,6 +217,12 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         let landed = merge(9365, "kade", &home, &werk_base).expect("announce present => go proceeds");
         assert!(landed.len() >= 7);
         assert!(origin_main_has(&origin, "g.txt"), "the work landed after the announce");
+
+        // Silas's ACK ask (#3365): SAME-ROUND RESUME ≠ STALE. A re-run go on the
+        // already-merged sha (his live #3364 case: two go re-runs, same sha) must
+        // no-op-pass via idempotency — the gate guards NEW merges, never recovery.
+        let again = merge(9365, "kade", &home, &werk_base).expect("same-round resume passes (idempotent), never refuses as stale");
+        assert_eq!(again, landed, "resume returns the same landed sha");
         std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics"); // restore for later scenarios
     }
 
