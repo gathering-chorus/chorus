@@ -52,6 +52,14 @@ export function eventPrefix(kind?: 'nudge' | 'jeff-input'): 'nudge' | 'jeff.inpu
 
 export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
 
+// #3357 — the announce boundary: every delivery is typed/deduped/echo-killed
+// HERE, the one choke point, before any inject. Suppressions are terminal
+// (markDelivered — the row is handled, not failed) and METERED via
+// terminal.announced / terminal.suppressed spine events so interruptions
+// become a queryable budget. The boundary never eats a first occurrence.
+import { decide, AnnounceState } from './announce-boundary';
+
+
 // Per Kade gemba review 2026-05-07: chorus-inject classifies exactly ONE
 // failure structurally — "no claude window found" (lib.rs:105). tcc-denied
 // comes from osascript's stderr verbatim (locale/version-unstable), and
@@ -83,6 +91,8 @@ export type SelfTest = () => Promise<InjectResult>;
 
 export class DeliveryWorker {
   private chains: Map<string, Promise<void>> = new Map();
+  // #3357 — boundary dedup windows (machine-lane class signatures)
+  private announce: AnnounceState = new AnnounceState();
 
   constructor(
     private store: MessageStore,
@@ -142,6 +152,36 @@ export class DeliveryWorker {
     const maxAttempts = this.backoffMs.length + 1;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
     const prefix = eventPrefix(row.kind);
+
+    // #3357 — the announce boundary. jeff-input rows bypass (Jeff's own input
+    // is never noise); everything else is typed and policed here.
+    if (row.kind !== 'jeff-input') {
+      const d = decide(row.from, row.to, row.content, Date.now(), this.announce);
+      const traceF = row.trace_id ? { trace_id: row.trace_id } : {};
+      if (!d.deliver) {
+        await this.emitSpine('terminal.suppressed', {
+          ...traceF,
+          id: row.id,
+          from: row.from,
+          to: row.to,
+          lane: d.lane,
+          class: d.cls,
+          reason: d.suppressReason,
+          ...(d.suppressedCount !== undefined ? { suppressed_count: d.suppressedCount } : {}),
+        });
+        this.store.markDelivered(row.id); // handled, not failed — keeps fold honest
+        return;
+      }
+      await this.emitSpine('terminal.announced', {
+        ...traceF,
+        id: row.id,
+        from: row.from,
+        to: row.to,
+        lane: d.lane,
+        class: d.cls,
+        ...(d.suppressedSinceLast ? { suppressed_since_last: d.suppressedSinceLast } : {}),
+      });
+    }
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const result = await this.runInject(row.to, row.content);
       const classified = classifyInjectResult(result);
