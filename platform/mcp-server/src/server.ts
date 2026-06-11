@@ -515,6 +515,19 @@ const CHORUS_WERK_TOOL_DEF = {
   },
 } as const;
 
+// #3269 — the card cycle/step/error fitness function as a standing instrument.
+const FLOW_REPORT_TOOL_DEF = {
+  name: 'chorus_flow_report',
+  description: 'Use this to get the current flow-fitness of the system: per-card cycle time, per-step times (work/push/build/deploy/demo/merge/final), errors/warnings enumerated per card, and error classes ranked. Sourced from the spine via Loki (werk-verbs + platform-chorus jobs), computed OFF the serving loop (execs dist/flow-report-cli.js). Returns structured JSON; also refreshes ~/.chorus/reports/card-cycle-report.html (the standing form of the 06-06 one-off). The measure behind #3266\'s walk-away bar. Read-only. Output carries truncated=true if the Loki page cap was hit — never mistake a cap for completeness.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      hours: { type: 'integer', minimum: 1, maximum: 720, description: 'Window in hours. Default 120 (5 days).' },
+    },
+    additionalProperties: false,
+  },
+} as const;
+
 // #2652 (AC8) — cards MCP tool defs. Each tool is a thin wrapper around the
 // canonical cards bash CLI; MCP and bash callers run the same code path.
 const CARDS_ADD_TOOL_DEF = {
@@ -2349,6 +2362,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CHORUS_BUILD_TOOL_DEF,
       CHORUS_DEPLOY_TOOL_DEF,
       CHORUS_WERK_TOOL_DEF,
+      FLOW_REPORT_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
       PRINCIPLES_CREATE_TOOL_DEF,
@@ -2432,6 +2446,27 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return executeChorusEnvUp(parsed.data);
         }
         return executeChorusDeploy(parsed.data);
+      }
+      case 'chorus_flow_report': {
+        const hours = Number((req.params.arguments as { hours?: number } | undefined)?.hours);
+        const h = Number.isFinite(hours) && hours > 0 && hours <= 720 ? String(hours) : '120';
+        const pathMod = require('path') as typeof import('path');
+        // CHORUS_ROOT first: the variant daemon's plist points it at the card's werk, so a
+        // demo-test exercises the WERK's dist (Wren's #3331 seam); canonical daemon's
+        // CHORUS_ROOT is canonical. CHORUS_HOME fallback for older contexts.
+        const cli = pathMod.join(process.env.CHORUS_ROOT || process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus', 'platform/api/dist/flow-report-cli.js');
+        const htmlOut = pathMod.join(process.env.HOME || '', '.chorus/reports/card-cycle-report.html');
+        const execFileP = promisify(execFile);
+        try {
+          // process.execPath = the node running THIS daemon — bare 'node' ENOENTs under launchd PATH
+          const { stdout } = await execFileP(process.execPath, [cli, '--hours', h, '--html', htmlOut], {
+            timeout: 120000, maxBuffer: 16 * 1024 * 1024,
+          });
+          return { content: [{ type: 'text' as const, text: stdout }] };
+        } catch (err) {
+          const e = err as { message?: string; stderr?: string };
+          throw new Error(`flow-report-fail — ${e.stderr || e.message || 'unknown'}`);
+        }
       }
       case 'chorus_werk': {
         const parsed = WerkRunInput.safeParse(req.params.arguments);
