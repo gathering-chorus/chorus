@@ -3,7 +3,7 @@
 //!   owl-api generate [--class Domain]            → prints routes.json (the artifact)
 //!   owl-api serve [--class Domain] [--port 3360] → generates, then serves
 
-use owl_api::{dashboards_json, generate, routes_json, serve};
+use owl_api::{dashboards_json, generate, openapi_json, routes_json, serve};
 use std::process::ExitCode;
 
 fn arg(args: &[String], flag: &str, default: &str) -> String {
@@ -17,6 +17,16 @@ fn main() -> ExitCode {
         Some("generate") => match generate(&class) {
             Ok(t) => {
                 print!("{}", routes_json(&t));
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("owl-api: {}", e);
+                ExitCode::FAILURE
+            }
+        },
+        Some("generate-openapi") => match generate(&class) {
+            Ok(t) => {
+                print!("{}", openapi_json(&t));
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -45,7 +55,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("usage: owl-api generate|generate-dashboard [--class Domain] | owl-api serve [--class Domain] [--port 3360]");
+            eprintln!("usage: owl-api generate|generate-dashboard|generate-openapi [--class Domain] | owl-api serve [--class Domain] [--port 3360]");
             ExitCode::FAILURE
         }
     }

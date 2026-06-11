@@ -175,9 +175,45 @@ pub struct RouteTable {
     pub routes: Vec<String>,     // human-readable route list (the artifact)
 }
 
+/// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
+/// emit routes from non-conformant input — L4 naming law enforced where the
+/// API is born, not audited after. Classes are CamelCase, properties are
+/// camelCase. A violation is a typed refusal, never a bad route.
+pub fn adr040_check(class_local: &str, fields: &[String]) -> Result<(), String> {
+    let class_ok = class_local
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_uppercase())
+        .unwrap_or(false)
+        && class_local.chars().all(|c| c.is_ascii_alphanumeric());
+    if !class_ok {
+        return Err(format!(
+            "adr040-violation: class '{}' is not CamelCase (ADR-040 L4: classes CamelCase, e.g. ValueStreamStep)",
+            class_local
+        ));
+    }
+    for f in fields {
+        let name = f.split('|').next().unwrap_or(f);
+        let field_ok = name
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase())
+            .unwrap_or(false)
+            && name.chars().all(|c| c.is_ascii_alphanumeric());
+        if !field_ok {
+            return Err(format!(
+                "adr040-violation: property '{}' is not camelCase (ADR-040 L4: properties camelCase, e.g. ownedBy)",
+                name
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// GENERATE — read the shape's direct-path properties for `class` from the
 /// ontology graph and derive the route table.
 pub fn generate(class_local: &str) -> R<RouteTable> {
+    adr040_check(class_local, &[])?; // refuse before touching the store
     let class = format!("{}{}", NS, class_local);
     // fields WITH their kind: name|datatype:<xsd> or name|edge:<Class> or name|plain
     let q = format!(
@@ -191,6 +227,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     if fields.is_empty() {
         return Err(format!("no shape found for {} in {} — land the schema first", class, ONTOLOGY_GRAPH));
     }
+    adr040_check(class_local, &fields)?; // shape-sourced fields obey the law too
     let plural = format!("{}s", class_local.to_lowercase());
     let routes = vec![
         format!("GET /{}", plural),
@@ -248,6 +285,76 @@ pub fn dashboards_json(t: &RouteTable) -> String {
         q_err = q_err.replace('"', "\\\""),
         q_chain = q_chain.replace('"', "\\\"")
     )
+}
+
+/// OpenAPI 3.0.3 contract (#3364 AC2) — generated from the same shapes as the
+/// routes, in the same pass. The spec IS the api docs AND the validation
+/// contract: the conformance walker validates live responses against it, and
+/// it's committed as a drift baseline beside routes.json. Deterministic.
+pub fn openapi_json(t: &RouteTable) -> String {
+    let class_short = t.class.rsplit('#').next().unwrap_or("").to_string();
+    let class_l = class_short.to_lowercase();
+    let mut props: Vec<String> = vec![
+        "\"iri\": { \"type\": \"string\" }".into(),
+        "\"created\": { \"type\": \"string\" }".into(),
+        "\"creator\": { \"type\": \"string\" }".into(),
+        "\"modified\": { \"type\": \"string\" }".into(),
+        "\"type\": { \"$ref\": \"#/components/schemas/EdgeRef\" }".into(),
+    ];
+    for f in &t.fields {
+        let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
+        let schema = if kind.starts_with("edge:") {
+            "{ \"$ref\": \"#/components/schemas/EdgeRef\" }".to_string()
+        } else {
+            // datatype:* and plain both serialize as JSON strings today
+            "{ \"type\": \"string\" }".to_string()
+        };
+        props.push(format!("\"{}\": {}", name, schema));
+    }
+    props.sort();
+    let mut paths: Vec<String> = t
+        .routes
+        .iter()
+        .map(|r| {
+            let p = r.trim_start_matches("GET ").replace(":name", "{name}");
+            let (resp, params) = if p.ends_with("/{name}") {
+                (format!("#/components/schemas/{}", class_short), NAME_PARAM)
+            } else if p.contains("{name}") {
+                ("#/components/schemas/Fold".to_string(), NAME_PARAM)
+            } else if p.starts_with("/schema") {
+                ("#/components/schemas/Schema".to_string(), "")
+            } else {
+                ("#/components/schemas/List".to_string(), "")
+            };
+            format!(
+                "    \"{}\": {{ \"get\": {{ {}\"responses\": {{ \"200\": {{ \"description\": \"ok\", \"content\": {{ \"application/json\": {{ \"schema\": {{ \"$ref\": \"{}\" }} }} }} }}, \"404\": {{ \"description\": \"typed refusal\" }} }} }} }}",
+                p, params, resp
+            )
+        })
+        .collect();
+    paths.sort();
+    format!(
+        "{{\n  \"openapi\": \"3.0.3\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
+        class_short = class_short,
+        class = t.class,
+        graph = ONTOLOGY_GRAPH,
+        paths = paths.join(",\n"),
+        props = props.join(", "),
+        class_l = class_l
+    )
+}
+
+const NAME_PARAM: &str = "\"parameters\": [ { \"name\": \"name\", \"in\": \"path\", \"required\": true, \"schema\": { \"type\": \"string\" } } ], ";
+
+/// trace mint-when-absent (#3364 AC6, Kade's #3354 finding): a blank/missing
+/// trace header mints a recognizable, joinable id instead of silently logging
+/// trace_id:"" — unjoinable-with-no-complaint is the silent-degradation class.
+pub fn effective_trace(header_value: &str, ts_ms: u128, counter: u64) -> String {
+    if header_value.trim().is_empty() {
+        format!("owl-{}-{}", ts_ms, counter)
+    } else {
+        header_value.to_string()
+    }
 }
 
 /// Serialize the route table as routes.json (the generated artifact).
@@ -415,6 +522,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
 pub fn serve(port: u16, table: &RouteTable) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     eprintln!("owl-api: serving generated {} API on :{} (read-only; writes go through chorus-model)", table.class, port);
+    let mut req_counter: u64 = 0;
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
         let started = std::time::Instant::now();
@@ -454,7 +562,14 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
                 total_ms: started.elapsed().as_millis(),
                 upstream_ms,
                 caller: header("x-chorus-caller"),
-                trace_id: header("x-chorus-trace-id"),
+                trace_id: {
+                    req_counter += 1;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or(0);
+                    effective_trace(&header("x-chorus-trace-id"), now, req_counter)
+                },
             });
         }
     }
