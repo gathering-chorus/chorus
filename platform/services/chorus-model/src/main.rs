@@ -1,0 +1,96 @@
+//! chorus-model CLI — the governed writer's command surface (#3257).
+//!
+//!   chorus-model add --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]
+//!   chorus-model mint --kind <kind> --name <name>
+//!   chorus-model kinds
+//!
+//! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
+//! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
+
+use chorus_model::{mint, to_turtle, write, FusekiStore, WriteReq};
+use std::process::ExitCode;
+
+fn usage() -> String {
+    "chorus-model — the governed RDF/OWL writer (ADR-040 Rule 0; #3257)\n\
+     usage:\n\
+       chorus-model add  --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
+       chorus-model mint --kind <kind> --name <name>\n\
+       chorus-model kinds"
+        .to_string()
+}
+
+fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
+    let mut req = WriteReq::default();
+    let mut dry = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--kind" => {
+                req.kind = args.get(i + 1).ok_or("--kind needs a value")?.clone();
+                i += 2;
+            }
+            "--name" => {
+                req.name = args.get(i + 1).ok_or("--name needs a value")?.clone();
+                i += 2;
+            }
+            "--field" => {
+                let kv = args.get(i + 1).ok_or("--field needs k=v")?;
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("--field '{}' is not k=v", kv))?;
+                req.fields.insert(k.to_string(), v.to_string());
+                i += 2;
+            }
+            "--edge" => {
+                let spec = args.get(i + 1).ok_or("--edge needs prop=kind:name")?;
+                let (prop, target) = spec.split_once('=').ok_or_else(|| format!("--edge '{}' is not prop=kind:name", spec))?;
+                let (tkind, tname) = target.split_once(':').ok_or_else(|| format!("--edge target '{}' is not kind:name", target))?;
+                req.edges.push((prop.to_string(), tkind.to_string(), tname.to_string()));
+                i += 2;
+            }
+            "--dry-run" => {
+                dry = true;
+                i += 1;
+            }
+            other => return Err(format!("unknown arg '{}'\n{}", other, usage())),
+        }
+    }
+    if req.kind.is_empty() || req.name.is_empty() {
+        return Err(format!("--kind and --name are required\n{}", usage()));
+    }
+    Ok((req, dry))
+}
+
+fn run() -> Result<String, String> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("kinds") => Ok("product domain role value-stream-step service principle practice policy skill gate decision document".into()),
+        Some("mint") => {
+            let (req, _) = parse_req(&args[1..])?;
+            mint(&req.kind, &req.name)
+        }
+        Some("add") => {
+            let (req, dry) = parse_req(&args[1..])?;
+            if dry {
+                let (subject, turtle) = to_turtle(&req)?;
+                Ok(format!("# dry-run — nothing written\n# subject: {}\n{}", subject, turtle))
+            } else {
+                let store = FusekiStore::new();
+                let subject = write(&store, &req)?;
+                Ok(format!("written: {}", subject))
+            }
+        }
+        _ => Err(usage()),
+    }
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(out) => {
+            println!("{}", out);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("chorus-model: {}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
