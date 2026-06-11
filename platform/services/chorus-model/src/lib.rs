@@ -193,7 +193,7 @@ impl Store for FusekiStore {
 /// caller logs it; shapes arriving later tighten writes with no code change.
 pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
     let required = store.select_v(&format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }}",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }}",
         g = ONTOLOGY_GRAPH, c = class
     ))?;
     let mut enums: BTreeMap<String, Vec<String>> = BTreeMap::new();
