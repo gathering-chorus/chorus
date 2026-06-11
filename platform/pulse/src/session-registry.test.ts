@@ -71,3 +71,41 @@ describe('planDelivery', () => {
     expect(planDelivery(null, 'kade', 'hello')).toEqual({ kind: 'inject', args: ['kade', 'hello'] });
   });
 });
+
+// #3352 AC-0 — sender-aware planDelivery: the misdelivery class is refused
+// structurally (defer to fold), never keystroked into the sender's session.
+describe('#3352 planDelivery sender-collision refuse', () => {
+  const reg = (role: string, pid: number, tty: string | undefined, host: string) =>
+    ({ role, pid, tty, host, registered_at: '1781199536' }) as never;
+
+  test('target sharing the SENDER pid defers (the 2026-06-11 silas/wren collision)', () => {
+    const silas = reg('silas', 62547, '/dev/ttys003', 'vscode');
+    const wren = reg('wren', 62547, '/dev/ttys003', 'vscode');
+    const plan = planDelivery(silas, 'silas', 'gather nudge', wren);
+    expect(plan).toEqual({ kind: 'defer', reason: 'sender-collision' });
+  });
+
+  test('target sharing the SENDER tty (different pid) also defers', () => {
+    const target = reg('silas', 1111, '/dev/ttys003', 'terminal');
+    const sender = reg('wren', 2222, '/dev/ttys003', 'terminal');
+    expect(planDelivery(target, 'silas', 'x', sender).kind).toBe('defer');
+  });
+
+  test('vscode target with vscode sender defers (focus cannot address a session)', () => {
+    const target = reg('silas', 1111, '/dev/ttys004', 'vscode');
+    const sender = reg('wren', 2222, '/dev/ttys003', 'vscode');
+    expect(planDelivery(target, 'silas', 'x', sender)).toEqual({ kind: 'defer', reason: 'vscode-ambiguous-with-sender' });
+  });
+
+  test('distinct terminal sessions inject by tty as before (no regression)', () => {
+    const target = reg('silas', 1111, '/dev/ttys000', 'terminal');
+    const sender = reg('wren', 2222, '/dev/ttys003', 'vscode');
+    expect(planDelivery(target, 'silas', 'hello', sender)).toEqual({ kind: 'inject', args: ['--tty', '/dev/ttys000', 'hello'] });
+  });
+
+  test('no sender registration (jeff-input, system) keeps pre-#3352 behavior', () => {
+    const target = reg('silas', 1111, undefined, 'vscode');
+    expect(planDelivery(target, 'silas', 'x', null)).toEqual({ kind: 'inject', args: ['--vscode', 'x'] });
+    expect(planDelivery(null, 'silas', 'x', null)).toEqual({ kind: 'inject', args: ['silas', 'x'] });
+  });
+});

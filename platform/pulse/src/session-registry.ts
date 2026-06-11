@@ -118,8 +118,31 @@ export type DeliveryPlan =
  *                           As-is delivery is preserved whenever the registry
  *                           is empty or stale — the new path can never strand.
  */
-export function planDelivery(target: SessionReg | null, role: string, content: string): DeliveryPlan {
+export function planDelivery(
+  target: SessionReg | null,
+  role: string,
+  content: string,
+  sender: SessionReg | null = null,
+): DeliveryPlan {
+  // #3352 AC-0 — structural refuse on sender-collision. The 2026-06-11
+  // misdelivery: silas's registration carried the SAME pid+tty as wren's
+  // (a vscode re-registration collision), so to=silas resolved to the
+  // sender's own session and the keystroke landed ON THE SENDER — recorded
+  // delivered. Rule: a to!=sender delivery whose resolved target shares
+  // pid or tty with the SENDER's registration can only be the sender's
+  // window — DEFER to the fold (identity-correct by construction: each
+  // role's own session hook drains its own inbox), never inject.
+  if (target && sender && (target.pid === sender.pid || (!!target.tty && target.tty === sender.tty))) {
+    return { kind: 'defer', reason: 'sender-collision' };
+  }
   if (target && target.host === 'vscode') {
+    // #3352 AC-0 — `--vscode` keystrokes the FOCUSED Code window (#3130); it
+    // cannot address a specific session. When the sender ALSO lives in
+    // vscode, focus decides who receives — the exact misdelivery class.
+    // Defer to the fold, which delivers in the right session by construction.
+    if (sender && sender.host === 'vscode') {
+      return { kind: 'defer', reason: 'vscode-ambiguous-with-sender' };
+    }
     return { kind: 'inject', args: ['--vscode', content] };
   }
   if (target && target.tty) {
