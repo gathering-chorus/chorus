@@ -1,0 +1,27 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "panels": [
+    { "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1,
+      "title": "owl-api — generated domain API (generated dashboard — do not hand-edit)" },
+    { "type": "logs", "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 }, "id": 2,
+      "title": "requests (telemetry envelope)",
+      "targets": [ { "expr": "{{job=\"werk-verbs\"}} |= `api.request.served` |= `\"class\":\"Domain\"`", "refId": "A" } ] },
+    { "type": "logs", "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 9 }, "id": 3,
+      "title": "errors (typed — refusals excluded)",
+      "targets": [ { "expr": "{{job=\"werk-verbs\"}} |= `api.request.served` |= `\"class\":\"Domain\"` |= `\"status\":\"error`", "refId": "A" } ] },
+    { "type": "logs", "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 9 }, "id": 4,
+      "title": "silent-broken-chain watch (ok + result_count:0)",
+      "targets": [ { "expr": "{{job=\"werk-verbs\"}} |= `api.request.served` |= `\"class\":\"Domain\"` |= `\"result_count\":0` |= `\"status\":\"ok\"`", "refId": "A" } ] }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "OWL API — domain",
+  "uid": "owl-api-domain",
+  "version": 1
+}
