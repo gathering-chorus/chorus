@@ -23,8 +23,8 @@ import { MessageStore } from './store';
 // #3125: `deferred` signals the target is a host osascript can't reach
 // safely (VS Code) — runInject declined to push and the nudge should be
 // handed to the inbox/fold instead of surfaced or failed.
-export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string };
-export type RunInject = (to: string, content: string) => Promise<InjectResult>;
+export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string };
+export type RunInject = (to: string, content: string, from?: string) => Promise<InjectResult>;
 export type EmitSpine = (event: string, fields: Record<string, unknown>) => Promise<void>;
 
 export interface DeliveryRow {
@@ -183,7 +183,7 @@ export class DeliveryWorker {
       });
     }
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.runInject(row.to, row.content);
+      const result = await this.runInject(row.to, row.content, row.from);
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle
@@ -224,6 +224,9 @@ export class DeliveryWorker {
             from: row.from,
             to: row.to,
             attempt,
+            // #3352 — the witness names WHICH session received the keystroke,
+            // so misdelivery is observable instead of a silent true-green.
+            target: result.target || 'unknown',
           });
           this.store.markDelivered(row.id);
         } catch (e) {

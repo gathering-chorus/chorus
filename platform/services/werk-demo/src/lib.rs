@@ -99,6 +99,45 @@ pub fn announce_ready(witness: &str, card: u64, skip_gate_check: bool) -> bool {
     skip_gate_check || gates_missing(witness, card).is_empty()
 }
 
+/// #3352 — the demo ceremony as an INVARIANT ordering, verb-enforced:
+///   gates recorded → gathers sent → gathers REPLIED → announce → go.
+/// Jeff's spec verbatim (2026-06-11): "slow / often skipped gates; role feedback
+/// skipped or failed; announce happens b4 role feedback so go precedes that."
+/// Behavioral discipline failed 4× across 2 roles (3282, 3334, 3269, 3343); the
+/// only durable fix is structural. announce_ready_full is the single ready
+/// predicate: every gate recorded AND every peer's 4-question gather REPLIED.
+/// skip (act/headless/test-suite) skips BOTH identically — scoped at birth,
+/// the #3318 lesson (never land-breaking-then-scope).
+pub fn announce_ready_full(witness: &str, card: u64, role: &str, skip: bool) -> bool {
+    skip || (gates_missing(witness, card).is_empty() && gathers_missing(witness, card, role).is_empty())
+}
+
+/// The two peer roles owed a 4-question gather for this demo: everyone but the
+/// demoer. (jeff is the prover, not a gather peer.)
+pub fn gather_peers(role: &str) -> Vec<&'static str> {
+    ["wren", "silas", "kade"].into_iter().filter(|r| *r != role).collect()
+}
+
+/// Peers with NO demo.gather.replied recorded for the card. Empty = both
+/// peers' feedback is IN — the announce may fire. Mirrors gates_missing
+/// (comma-terminated card match, same anti-collision rule). A gather reply is
+/// recorded via `werk-demo gather <card> <peer> replied` when the peer's ACK
+/// arrives — evidence on the witness, never a model claim.
+pub fn gathers_missing(witness: &str, card: u64, role: &str) -> Vec<&'static str> {
+    let card_key = format!("\"card_id\":{},", card);
+    gather_peers(role)
+        .into_iter()
+        .filter(|peer| {
+            let peer_key = format!("\"peer\":\"{}\"", peer);
+            !witness.lines().any(|l| {
+                l.contains("\"event\":\"demo.gather.replied\"")
+                    && l.contains(&card_key)
+                    && l.contains(&peer_key)
+            })
+        })
+        .collect()
+}
+
 pub fn gates_missing(witness: &str, card: u64) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     REQUIRED_GATES
@@ -608,16 +647,28 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // (skip_gate_check = the unit/e2e suite, which drives the full tail directly.)
     {
         let witness_pre = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        if !announce_ready(&witness_pre, card, skip_gate_check) {
+        // #3352 — the full invariant: gates recorded AND both peer gathers REPLIED.
+        // Jeff's spec: "announce happens b4 role feedback so go precedes that" — the
+        // announce may not exist until the team's feedback is IN. Typed standby names
+        // exactly what's missing so the demoer knows the next prework step.
+        if !announce_ready_full(&witness_pre, card, role, skip_gate_check) {
+            let gates_absent = gates_missing(&witness_pre, card);
+            let gathers_absent = gathers_missing(&witness_pre, card, role);
+            let reason = if !gates_absent.is_empty() { "gates-pending" } else { "gathers-pending" };
             emit_spine(home, "demo.prework.standby", role, card, &trace);
-            jsonl(home, role, card, &trace, "demo.prework.standby", ",\"reason\":\"gates-pending\"");
+            jsonl(home, role, card, &trace, "demo.prework.standby",
+                  &format!(",\"reason\":\"{}\",\"gates_missing\":\"{}\",\"gathers_missing\":\"{}\"",
+                           reason, gates_absent.join(","), gathers_absent.join(",")));
             return Ok(DemoOutcome {
                 message: format!(
-                    "demo #{} — prework standby. Variant is up; gates not yet recorded, so \
-                     NO announce fired (the announce is the ready-gate, #3319). The demoer runs \
-                     the 5 gates as prework, then re-invokes — the announce fires only once every \
-                     gate is recorded. Jeff is not pulled into a demo that can't run yet.",
-                    card
+                    "demo #{} — prework standby ({}). Variant is up; NO announce fired (the \
+                     announce is the ready-gate: gates recorded AND peer gathers replied, \
+                     #3319+#3352). Missing gates: [{}]. Missing gather replies: [{}]. The \
+                     demoer completes prework (run gates via `werk-demo gate`, send the \
+                     4-question gathers, record replies via `werk-demo gather <card> <peer> \
+                     replied`), then re-invokes. Jeff is never asked for a go that precedes \
+                     the team's feedback.",
+                    card, reason, gates_absent.join(","), gathers_absent.join(",")
                 ),
                 exit: 0,
             });
@@ -858,6 +909,56 @@ pub fn run_demo() -> R<DemoOutcome> {
         });
     }
 
+    if first == "gather-text" {
+        // #3352 — the 4-question gather is VERBATIM from the verb, not improvised
+        // per-demoer. The demoer (or orchestrator) sends exactly this text; wording
+        // drift across roles/models is impossible.
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo gather-text <card>")?;
+        return Ok(DemoOutcome {
+            message: format!(
+                "[feedback #{c} — ACK REQUIRED] From: {r}. Read the card. Read the diff (werk {r}-{c}). \
+                 (1) How does this impact your products? (2) How does this impact you and your domain? \
+                 (3) Am I over-building or under-planning? (4) Does this strengthen the system, or just \
+                 please the room? Ack: substantive reply or blocked-on-X within 10 min. Demo HOLDS for \
+                 your reply — record it with: werk-demo gather {c} <your-role> replied",
+                c = card, r = role.trim()
+            ),
+            exit: 0,
+        });
+    }
+
+    if first == "gather" {
+        // #3352 — record gather lifecycle evidence on the witness: sent when the
+        // 4-question nudge goes out, replied when the peer's ACK arrives. The
+        // announce requires `replied` from every peer (gathers_missing); a model
+        // cannot claim feedback that isn't witnessed.
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo gather <card> <peer> <sent|replied> [note]")?;
+        let peer = args.next().ok_or("usage: werk-demo gather <card> <peer> <sent|replied> [note]")?;
+        if !["wren", "silas", "kade"].contains(&peer.as_str()) {
+            return Err(format!("unknown peer '{}' — one of wren|silas|kade", peer));
+        }
+        let phase = args.next().unwrap_or_else(|| "replied".to_string());
+        if !["sent", "replied"].contains(&phase.as_str()) {
+            return Err(format!("unknown gather phase '{}' — sent|replied", phase));
+        }
+        let note = args.collect::<Vec<_>>().join(" ").replace('\\', " ").replace('"', "'").replace('\n', " ");
+        let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+        let event = format!("demo.gather.{}", phase);
+        jsonl(&home, role.trim(), card, &trace, &event,
+              &format!(",\"peer\":\"{}\",\"note\":\"{}\"", peer, note));
+        emit_spine(&home, &event, role.trim(), card, &trace);
+        return Ok(DemoOutcome {
+            message: format!("gather {} recorded for #{}: peer={}", phase, card, peer),
+            exit: 0,
+        });
+    }
+
     if first == "test-result" {
         let card: u64 = args
             .next()
@@ -959,6 +1060,65 @@ mod tests {
 
     // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
     // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
+
+    // #3352 — the full invariant: gates AND gathers-replied before any announce.
+    fn gather_line(card: u64, peer: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","note":"ack"}}"#,
+            card, peer
+        )
+    }
+
+    #[test]
+    fn gather_peers_excludes_the_demoer() {
+        assert_eq!(gather_peers("wren"), vec!["silas", "kade"]);
+        assert_eq!(gather_peers("kade"), vec!["wren", "silas"]);
+    }
+
+    #[test]
+    fn announce_full_blocked_when_gates_present_but_gathers_missing() {
+        // The 2026-06-11 class: all 5 gates recorded, NO peer feedback — the old
+        // announce fired here and Jeff's go preceded the team's input. Now: standby.
+        let w = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect::<Vec<_>>().join("\n");
+        assert!(!announce_ready_full(&w, 3352, "wren", false), "gates without gathers ⇒ no announce");
+        assert_eq!(gathers_missing(&w, 3352, "wren"), vec!["silas", "kade"]);
+    }
+
+    #[test]
+    fn announce_full_blocked_when_only_one_peer_replied() {
+        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
+        lines.push(gather_line(3352, "kade"));
+        let w = lines.join("\n");
+        assert!(!announce_ready_full(&w, 3352, "wren", false), "one peer's reply is not the team's feedback");
+        assert_eq!(gathers_missing(&w, 3352, "wren"), vec!["silas"]);
+    }
+
+    #[test]
+    fn announce_full_fires_when_gates_and_both_gathers_replied() {
+        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
+        lines.push(gather_line(3352, "silas"));
+        lines.push(gather_line(3352, "kade"));
+        let w = lines.join("\n");
+        assert!(announce_ready_full(&w, 3352, "wren", false), "gates + both replies ⇒ announce");
+    }
+
+    #[test]
+    fn gather_sent_alone_does_not_satisfy_replied() {
+        // Sending the 4 questions is not receiving feedback — only replied counts.
+        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
+        lines.push(format!(
+            r#"{{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3352,"trace_id":"t","peer":"silas","note":""}}"#
+        ));
+        lines.push(gather_line(3352, "kade"));
+        let w = lines.join("\n");
+        assert!(!announce_ready_full(&w, 3352, "wren", false), "sent != replied");
+    }
+
+    #[test]
+    fn gathers_missing_ignores_other_cards_comma_terminated() {
+        let w = format!("{}\n{}", gather_line(33520, "silas"), gather_line(33520, "kade"));
+        assert_eq!(gathers_missing(&w, 3352, "wren").len(), 2, "card 33520's gathers must not satisfy 3352");
+    }
 
     #[test]
     fn gates_missing_ignores_other_cards_comma_terminated() {

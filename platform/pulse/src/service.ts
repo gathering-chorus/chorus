@@ -241,16 +241,24 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   const injectBin = process.env.CHORUS_INJECT_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-inject');
   const chorusLog = process.env.CHORUS_LOG || path.join(os.homedir(), '.chorus', 'chorus.log');
 
-  const runInject: RunInject = (to, content) => new Promise(resolve => {
+  const runInject: RunInject = (to, content, from) => new Promise(resolve => {
     // #3125: route by tty when the target role has a LIVE registration.
     // planDelivery returns the legacy `[role, content]` name-match args when
     // nothing is registered, so this is inert (= today's behavior) until the
     // SessionStart registry is populated — as-is delivery can never strand.
-    const plan = planDelivery(resolveRoleTarget(to), to, content);
+    // #3352 AC-0 — sender-aware plan: resolve BOTH ends so a delivery whose
+    // target collides with the sender's own session defers to the fold
+    // instead of keystroking the sender (the 2026-06-11 misdelivery).
+    const targetReg = resolveRoleTarget(to);
+    const senderReg = from ? resolveRoleTarget(from) : null;
+    const plan = planDelivery(targetReg, to, content, senderReg);
+    const targetDesc = plan.kind === 'inject'
+      ? (plan.args[0] === '--vscode' ? 'vscode-focused' : plan.args[0] === '--tty' ? `tty:${plan.args[1]}` : `name-match:${plan.args[0]}`)
+      : `deferred:${plan.reason}`;
     if (plan.kind === 'defer') {
       // VS-Code-hosted target: osascript would leak into the focused app.
       // Hand to the inbox/fold via the worker's deferred path — no keystroke.
-      resolve({ rc: 0, stderr: '', deferred: true, deferReason: plan.reason });
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: plan.reason, target: targetDesc });
       return;
     }
     const proc = spawn(injectBin, plan.args, {
@@ -261,7 +269,7 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     });
     let stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr }));
+    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr, target: targetDesc }));
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
   });
 

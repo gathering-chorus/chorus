@@ -177,6 +177,11 @@ exit 0
     // EXITS — it no longer blocks for a demo.decision, so no "go" seed is needed; the
     // go runs Half B / werk-land separately.)
     gate_seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
+    // #3352 — the announce now ALSO requires both peer gathers REPLIED (the full
+    // invariant: gates -> gathers -> announce -> go). Seed the replies the way the
+    // live flow records them via `werk-demo gather <card> <peer> replied`.
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"note\":\"ack\"}\n");
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"note\":\"ack\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
 
     // --- run the proving ceremony ---
@@ -355,3 +360,66 @@ exit 0
 // shared-trace records the verdict), leaving read_decision/Decision::exit_code
 // with zero production callers. The tests pinned retired behavior. Removing the
 // orphaned lib code itself is a fill card (needs blast-radius pass, #3148).
+
+// #3352 — the OTHER half of the invariant, end-to-end: gates recorded but peer
+// gathers NOT replied → the demo stands by (typed gathers-pending), no announce.
+// Pairs with the happy path above (gates + both replies → announce fires).
+#[test]
+fn e2e_gates_without_gathers_stands_by() {
+    let home = tmp("home-gathers");
+    fs::create_dir_all(home.join("platform/scripts")).unwrap();
+    write_exec(
+        &home.join("platform/scripts/cards"),
+        r#"#!/bin/sh
+if [ "$1" = "view" ] && [ "$3" = "--json" ]; then
+  printf '{ "status": "WIP" }\n'
+  exit 0
+fi
+if [ "$1" = "view" ]; then
+  cat <<'CARDEOF'
+#3052 gathers test card
+  Status: WIP
+  Owner: wren
+  Desc:
+    ## Acceptance Criteria
+    - [x] done
+  Domains: domain:chorus, type:fix
+CARDEOF
+  exit 0
+fi
+exit 0
+"#,
+    );
+    write_exec(&home.join("platform/scripts/smoke-check.sh"), "#!/bin/sh\nexit 0\n");
+    write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
+    std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
+    std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
+    std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
+    std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
+    std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
+    std::env::remove_var("ACT");
+
+    fs::create_dir_all(home.join("ops/logs")).unwrap();
+    let mut seed = String::new();
+    for g in ["product", "code", "quality", "arch", "ops"] {
+        seed.push_str(&format!(
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\",\"findings\":\"ok\"}}\n",
+            g
+        ));
+    }
+    seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
+    // one peer replied, one did not — still standby (the team's feedback, not a sample)
+    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"kade\",\"note\":\"ack\"}\n");
+    fs::write(home.join("ops/logs/werk-demo.jsonl"), &seed).unwrap();
+
+    let out = demo(3052, "wren", &home).expect("standby returns Ok");
+    assert_eq!(out.exit, 0, "standby is a clean exit, not a failure: {}", out.message);
+    assert!(out.message.contains("gathers-pending"), "typed standby reason: {}", out.message);
+    assert!(out.message.contains("silas"), "names the missing peer: {}", out.message);
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
+    assert!(
+        witness.contains("\"reason\":\"gathers-pending\"") && witness.contains("\"gathers_missing\":\"silas\""),
+        "standby witnessed with the missing peer named:\n{}",
+        witness
+    );
+}
