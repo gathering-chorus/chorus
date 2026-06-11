@@ -28,6 +28,14 @@ function rowFor(id: number, to = 'wren', content = 'test'): DeliveryRow {
   return { id, from: 'silas', to, content, delivery_attempts: 0 };
 }
 
+
+// #3357 — delivery-lifecycle view of the emit stream: the boundary's metering
+// events (terminal.announced/suppressed) are asserted separately; these helpers
+// keep the pre-#3357 lifecycle assertions exact.
+function lifecycle<T extends { event: string }>(events: T[]): T[] {
+  return events.filter(e => !e.event.startsWith('terminal.'));
+}
+
 describe('classifyInjectResult', () => {
   test('rc=0 is success', () => {
     expect(classifyInjectResult({ rc: 0, stderr: '' })).toEqual({ kind: 'success', reason: 'ok' });
@@ -89,11 +97,11 @@ describe('DeliveryWorker enqueue → success path', () => {
     await worker.enqueue(rowFor(id));
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('delivered');
-    expect(events).toHaveLength(1);
-    expect(events[0].event).toBe('nudge.surfaced');
-    expect(events[0].fields.id).toBe(id);
-    expect(events[0].fields.to).toBe('wren');
-    expect(events[0].fields.attempt).toBe(1);
+    expect(lifecycle(events)).toHaveLength(1);
+    expect(lifecycle(events)[0].event).toBe('nudge.surfaced');
+    expect(lifecycle(events)[0].fields.id).toBe(id);
+    expect(lifecycle(events)[0].fields.to).toBe('wren');
+    expect(lifecycle(events)[0].fields.attempt).toBe(1);
   });
 });
 
@@ -115,10 +123,10 @@ describe('DeliveryWorker permanent failure path', () => {
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('failed');
     expect(rec.last_delivery_error).toBe('no-window-found');
-    expect(events).toHaveLength(1);
-    expect(events[0].event).toBe('nudge.surface.failed');
-    expect(events[0].fields.permanent).toBe(true);
-    expect(events[0].fields.reason).toBe('no-window-found');
+    expect(lifecycle(events)).toHaveLength(1);
+    expect(lifecycle(events)[0].event).toBe('nudge.surface.failed');
+    expect(lifecycle(events)[0].fields.permanent).toBe(true);
+    expect(lifecycle(events)[0].fields.reason).toBe('no-window-found');
   });
 });
 
@@ -146,13 +154,13 @@ describe('DeliveryWorker transient failure → retry → success', () => {
     expect(injectCalls).toBe(3);
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('delivered');
-    const eventTypes = events.map(e => e.event);
+    const eventTypes = lifecycle(events).map(e => e.event);
     expect(eventTypes).toEqual(['nudge.surface.failed', 'nudge.surface.failed', 'nudge.surfaced']);
-    expect(events[2].fields.attempt).toBe(3);
+    expect(lifecycle(events)[2].fields.attempt).toBe(3);
 
     // trace_id must be STABLE across retries — operator joining "this nudge
     // that took 4 attempts" sees one thread, not three.
-    const traces = events.map(e => e.fields.trace_id);
+    const traces = lifecycle(events).map(e => e.fields.trace_id);
     expect(traces).toEqual(['018f-stable-trace', '018f-stable-trace', '018f-stable-trace']);
   });
 });
@@ -175,9 +183,9 @@ describe('DeliveryWorker exhausted retries', () => {
     expect(injectCalls).toBe(3);
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('failed');
-    expect(events).toHaveLength(3);
-    expect(events.every(e => e.event === 'nudge.surface.failed')).toBe(true);
-    expect(events.every(e => e.fields.permanent === false)).toBe(true);
+    expect(lifecycle(events)).toHaveLength(3);
+    expect(lifecycle(events).every(e => e.event === 'nudge.surface.failed')).toBe(true);
+    expect(lifecycle(events).every(e => e.fields.permanent === false)).toBe(true);
   });
 });
 
@@ -279,11 +287,11 @@ describe('DeliveryWorker VS-Code deferral (#3125 AC6)', () => {
     );
     await worker.enqueue(rowFor(id, 'wren'));
     expect(injectCalls).toBe(1); // no retry churn
-    const types = events.map(e => e.event);
+    const types = lifecycle(events).map(e => e.event);
     expect(types).toContain('nudge.deferred');
     expect(types).not.toContain('nudge.surfaced');
     expect(types).not.toContain('nudge.surface.failed');
-    expect(events[0].fields.reason).toBe('vscode-inbox');
+    expect(lifecycle(events)[0].fields.reason).toBe('vscode-inbox');
     // row reaches terminal state so it isn't re-scanned forever
     expect(store.getDeliveryRecord(id).delivery_status).toBe('delivered');
   });
@@ -295,7 +303,7 @@ describe('DeliveryWorker #3128 — always wake: focus-gate-miss no longer defers
     // (it always wakes by activating Terminal), so focus-gate-miss can't occur.
     // Even if such a stderr appeared, the worker must NOT route it to the
     // nudge.deferred/fold path — that focus-string match is gone.
-    const id = store.sendNudge('silas', 'silas', 'hi');
+    const id = store.sendNudge('silas', 'wren', 'hi'); // #3357: avoid self-echo kill
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
     const worker = new DeliveryWorker(
       store,
@@ -304,7 +312,7 @@ describe('DeliveryWorker #3128 — always wake: focus-gate-miss no longer defers
       [10, 20],
       async () => { /* no real sleep */ },
     );
-    await worker.enqueue(rowFor(id, 'silas'));
+    await worker.enqueue(rowFor(id, 'wren'));
     const deferred = events.filter(e => e.event === 'nudge.deferred');
     expect(deferred.every(e => e.fields.reason !== 'focus-gate-miss')).toBe(true);
   });
@@ -312,7 +320,9 @@ describe('DeliveryWorker #3128 — always wake: focus-gate-miss no longer defers
   test('a genuine VS-Code-host deferral (result.deferred) still defers to the fold', async () => {
     // The host-mismatch deferral path remains: when runInject declines because
     // the target isn't an addressable Terminal tab, it defers with reason inbox.
-    const id = store.sendNudge('silas', 'silas', 'hi');
+    // #3357: silas→silas would now be killed as self-echo before inject;
+    // this test's subject is the deferral path, so use a cross-role pair.
+    const id = store.sendNudge('silas', 'wren', 'hi');
     let calls = 0;
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
     const worker = new DeliveryWorker(
@@ -322,12 +332,12 @@ describe('DeliveryWorker #3128 — always wake: focus-gate-miss no longer defers
       [10, 20],
       async () => { /* no real sleep */ },
     );
-    await worker.enqueue(rowFor(id, 'silas'));
+    await worker.enqueue(rowFor(id, 'wren'));
     expect(calls).toBe(1); // no retry churn
-    const types = events.map(e => e.event);
+    const types = lifecycle(events).map(e => e.event);
     expect(types).toContain('nudge.deferred');
     expect(types).not.toContain('nudge.surface.failed');
-    expect(events[0].fields.reason).toBe('inbox');
+    expect(lifecycle(events)[0].fields.reason).toBe('inbox');
   });
 });
 
@@ -351,7 +361,7 @@ describe('DeliveryWorker startupSmoke (#2727 AC12)', () => {
       async () => ({ rc: 0, stderr: '' }), // selfTest pass
     );
     await worker.startupSmoke();
-    expect(events).toHaveLength(1);
+    expect(lifecycle(events)).toHaveLength(1);
     expect(events[0].event).toBe('nudge.health.smoke_ok');
   });
 
@@ -367,7 +377,7 @@ describe('DeliveryWorker startupSmoke (#2727 AC12)', () => {
       async () => ({ rc: 1, stderr: 'tcc-denied at boot' }),
     );
     await expect(worker.startupSmoke()).rejects.toThrow(/startup smoke failed.*tcc-denied/);
-    expect(events).toHaveLength(1);
+    expect(lifecycle(events)).toHaveLength(1);
     expect(events[0].event).toBe('nudge.health.smoke_failed');
     expect(events[0].fields.rc).toBe(1);
   });
@@ -392,8 +402,8 @@ describe('#3343 jeff-input kind — event family follows row.kind', () => {
     );
     const id = store.sendJeffInput('wren', 'raw jeff words');
     await worker.enqueue({ id, from: 'jeff', to: 'wren', content: 'raw jeff words', delivery_attempts: 0, kind: 'jeff-input' });
-    expect(events.map(e => e.event)).toContain('jeff.input.surfaced');
-    expect(events.map(e => e.event).filter(e => e.startsWith('nudge.'))).toEqual([]);
+    expect(lifecycle(events).map(e => e.event)).toContain('jeff.input.surfaced');
+    expect(lifecycle(events).map(e => e.event).filter(e => e.startsWith('nudge.'))).toEqual([]);
     expect(store.getDeliveryRecord(id).delivery_status).toBe('delivered');
   });
 
