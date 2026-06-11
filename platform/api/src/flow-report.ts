@@ -169,3 +169,56 @@ export function aggregateFlow(events: FlowEvent[]): FlowReport {
     cycleStats,
   };
 }
+
+/** #3266 — the walk-away bar, derived (never declared). A card's land is:
+ *  - a LAND when it reached card.accepted (outcome truth);
+ *  - CLEAN when it landed in exactly ONE land run (one werk.land.started, no
+ *    werk.land.failed, a werk.landed) — a retry or an orphan-completion
+ *    (accepted without werk.landed) means a human touched it, so it is a land
+ *    but not an unattended one. The streak counts consecutive clean lands in
+ *    accept order; ready = streak >= K. K is named with Jeff, not assumed.
+ */
+export interface WalkAway {
+  k: number;
+  lands: number;
+  cleanLands: number;
+  currentStreak: number;
+  ready: boolean;
+}
+
+export function deriveWalkAway(events: FlowEvent[], k: number): WalkAway {
+  const byCard = new Map<number, FlowEvent[]>();
+  for (const e of events) {
+    if (typeof e.card_id !== 'number') continue;
+    const list = byCard.get(e.card_id) ?? [];
+    list.push(e);
+    byCard.set(e.card_id, list);
+  }
+
+  // Per landed card: acceptance time + cleanliness.
+  const landed: Array<{ acceptedAt: number; clean: boolean }> = [];
+  for (const list of byCard.values()) {
+    const accepted = list.filter((e) => e.event === 'card.accepted');
+    if (accepted.length === 0) continue;
+    const acceptedAt = Math.max(...accepted.map((e) => e.ts));
+    const starts = list.filter((e) => e.event === 'werk.land.started').length;
+    const fails = list.filter((e) => e.event === 'werk.land.failed').length;
+    const landedEvt = list.some((e) => e.event === 'werk.landed');
+    const clean = landedEvt && starts === 1 && fails === 0;
+    landed.push({ acceptedAt, clean });
+  }
+  landed.sort((a, b) => a.acceptedAt - b.acceptedAt);
+
+  let streak = 0;
+  for (const l of landed) {
+    streak = l.clean ? streak + 1 : 0;
+  }
+
+  return {
+    k,
+    lands: landed.length,
+    cleanLands: landed.filter((l) => l.clean).length,
+    currentStreak: streak,
+    ready: streak >= k,
+  };
+}

@@ -6,7 +6,7 @@
  * children, ranked error classes). The instrument behind #3266's walk-away
  * bar, replacing the 06-06 one-off bash→Loki→HTML report.
  */
-import { aggregateFlow, FlowEvent } from '../src/flow-report';
+import { aggregateFlow, FlowEvent, deriveWalkAway } from '../src/flow-report';
 import { normalizeLine, esc, buildHtml } from '../src/flow-report-cli';
 
 const T0 = Date.parse('2026-06-10T10:00:00-04:00');
@@ -191,5 +191,68 @@ describe('buildHtml escaping (#3269 gate-quality catch, held through the interac
     expect(html).not.toContain('</script><script>alert');
     expect(html).not.toContain('<b>evil</b>');
     expect(html).toContain('\\u003c/script>'); // the payload, defanged in the embed (< escaped = no tag can form)
+  });
+});
+
+describe('deriveWalkAway (#3266) — the walk-away bar', () => {
+  const L = (card: number, mins: number, event: string): FlowEvent =>
+    ({ ts: T0 + mins * MIN, event, card_id: card, role: 'silas', detail: '' });
+
+  test('clean unattended land extends the streak; manual recovery breaks it', () => {
+    const events: FlowEvent[] = [
+      // card 1: clean — land run started and landed, accepted inside it
+      L(1, 0, 'werk.land.started'), L(1, 5, 'werk.landed'), L(1, 5, 'card.accepted'),
+      // card 2: clean
+      L(2, 10, 'werk.land.started'), L(2, 15, 'werk.landed'), L(2, 15, 'card.accepted'),
+      // card 3: MANUAL RECOVERY — accepted but no werk.landed (the orphan-completion class)
+      L(3, 20, 'werk.land.started'), L(3, 21, 'werk.land.failed'), L(3, 30, 'card.accepted'),
+      // card 4: clean again — streak restarts after the break
+      L(4, 40, 'werk.land.started'), L(4, 45, 'werk.landed'), L(4, 45, 'card.accepted'),
+    ];
+    const w = deriveWalkAway(events, 3);
+    expect(w.k).toBe(3);
+    expect(w.currentStreak).toBe(1);          // only card 4 since the card-3 break
+    expect(w.lands).toBe(4);                  // accepted cards observed
+    expect(w.cleanLands).toBe(3);
+    expect(w.ready).toBe(false);
+  });
+
+  test('ready flips true only at K consecutive clean lands', () => {
+    const events: FlowEvent[] = [];
+    for (let i = 1; i <= 5; i++) {
+      events.push(L(i, i * 10, 'werk.land.started'), L(i, i * 10 + 5, 'werk.landed'), L(i, i * 10 + 5, 'card.accepted'));
+    }
+    const w = deriveWalkAway(events, 5);
+    expect(w.currentStreak).toBe(5);
+    expect(w.ready).toBe(true);
+  });
+
+  test('a land.failed whose card still werk.landed later is NOT a streak break (false-red survived)', () => {
+    const events: FlowEvent[] = [
+      // the tonight-class: merge race emits land.failed, retry lands clean in-run
+      L(7, 0, 'werk.land.started'), L(7, 1, 'werk.land.failed'),
+      L(7, 5, 'werk.land.started'), L(7, 9, 'werk.landed'), L(7, 9, 'card.accepted'),
+    ];
+    const w = deriveWalkAway(events, 1);
+    // outcome-truth: the card landed via the act path — but it took a RETRY, so it
+    // counts as a land, NOT as unattended-clean (someone re-fired it).
+    expect(w.lands).toBe(1);
+    expect(w.cleanLands).toBe(0);
+    expect(w.currentStreak).toBe(0);
+    expect(w.ready).toBe(false);
+  });
+
+  test('empty events → not-ready, zero streak, never throws', () => {
+    const w = deriveWalkAway([], 10);
+    expect(w).toMatchObject({ k: 10, lands: 0, cleanLands: 0, currentStreak: 0, ready: false });
+  });
+});
+
+describe('normalizeLine malformed-ts tolerance (#3266 — the BSD %3N corruption)', () => {
+  test('the historical "ts":...N lines parse with the N stripped', () => {
+    const e = normalizeLine('{"ts":17811076913N,"event":"werk.landed","card_id":3322,"role":"silas","status":"success"}');
+    expect(e?.event).toBe('werk.landed');
+    expect(e?.card_id).toBe(3322);
+    expect(e?.ts).toBe(17811076913);
   });
 });
