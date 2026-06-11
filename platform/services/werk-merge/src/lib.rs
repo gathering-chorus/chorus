@@ -424,6 +424,43 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         }
     };
 
+    // #3365 — Jeff's step 5 gated by step 3: NO GO BEFORE ANNOUNCE, per round.
+    // The round is the sha being landed (short=12, matching werk-demo's
+    // current_round). A merge may only proceed when the witness carries a
+    // demo.presented for THIS card and THIS round — i.e. the five-step
+    // sequence reached the announce on these exact commits. A Jeff override
+    // exists but is explicit and witnessed (CHORUS_GO_OVERRIDE=<reason>),
+    // never ambient.
+    {
+        let round_key = format!("\"round\":\"{}\"", &head_sha[..12.min(head_sha.len())]);
+        let card_key = format!("\"card_id\":{},", card);
+        let demo_witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+        let announced = demo_witness.lines().any(|l| {
+            l.contains("\"event\":\"demo.presented\"") && l.contains(&card_key) && l.contains(&round_key)
+        });
+        if !announced {
+            match env::var("CHORUS_GO_OVERRIDE") {
+                Ok(reason) if !reason.trim().is_empty() => {
+                    jsonl(home, role, card, &trace, "merge.override",
+                          &format!(",\"reason\":\"announce-missing-this-round\",\"justification\":\"{}\"",
+                                   reason.replace('"', "'")));
+                    emit_spine(home, "merge.override", role, card, &trace,
+                               &[("reason", "announce-missing-this-round")]);
+                }
+                _ => {
+                    jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"announce-missing-this-round\"");
+                    return Err(format!(
+                        "announce-missing-this-round: no demo.presented for #{} at round {} — \
+                         Jeff's go may not precede the announce (steps 1-3 first: gates, \
+                         feedback, announce on THESE commits). Run Half A to present, then go. \
+                         (#3365; explicit override: CHORUS_GO_OVERRIDE=<reason>)",
+                        card, &head_sha[..12.min(head_sha.len())]
+                    ));
+                }
+            }
+        }
+    }
+
     // #3297 — record the approval on the spine BEFORE the irreversible merge (ADR-037
     // {who, what, when} — kills "invisible"). Flow approvals carry accepter="flow".
     jsonl(home, role, card, &trace, "merge.approved",

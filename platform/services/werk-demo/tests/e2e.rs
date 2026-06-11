@@ -147,6 +147,7 @@ exit 0
     // #3263: the demo runs the card's tests in its werk; there's no real werk here,
     // so skip the run (the fixture seeds demo.test_result directly).
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
+    std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
 
     // #3284 (AC6): with NO gates recorded, the demo REFUSES to present (invariant gate
     // execution) — exit 1, typed gates-missing — BEFORE any announce. This is the
@@ -167,7 +168,7 @@ exit 0
     let mut gate_seed = String::new();
     for g in ["product", "code", "quality", "arch", "ops"] {
         gate_seed.push_str(&format!(
-            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\",\"findings\":\"{} reviewed, no concerns\"}}\n",
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"gate\":\"{}\",\"round\":\"e2e-r1\",\"result\":\"pass\",\"findings\":\"{} reviewed, no concerns\"}}\n",
             g, g
         ));
     }
@@ -180,8 +181,8 @@ exit 0
     // #3352 — the announce now ALSO requires both peer gathers REPLIED (the full
     // invariant: gates -> gathers -> announce -> go). Seed the replies the way the
     // live flow records them via `werk-demo gather <card> <peer> replied`.
-    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"note\":\"ack\"}\n");
-    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"note\":\"ack\"}\n");
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
 
     // --- run the proving ceremony ---
@@ -397,19 +398,20 @@ exit 0
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
     std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
+    std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
     std::env::remove_var("ACT");
 
     fs::create_dir_all(home.join("ops/logs")).unwrap();
     let mut seed = String::new();
     for g in ["product", "code", "quality", "arch", "ops"] {
         seed.push_str(&format!(
-            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"gate\":\"{}\",\"result\":\"pass\",\"findings\":\"ok\"}}\n",
+            "{{\"ts\":1,\"event\":\"demo.gate.result\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"gate\":\"{}\",\"round\":\"e2e-r1\",\"result\":\"pass\",\"findings\":\"ok\"}}\n",
             g
         ));
     }
     seed.push_str("{\"ts\":1,\"event\":\"demo.test_result\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"result\":\"pass\"}\n");
     // one peer replied, one did not — still standby (the team's feedback, not a sample)
-    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"kade\",\"note\":\"ack\"}\n");
+    seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &seed).unwrap();
 
     let out = demo(3052, "wren", &home).expect("standby returns Ok");
