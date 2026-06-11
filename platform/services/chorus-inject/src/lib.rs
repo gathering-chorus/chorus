@@ -150,6 +150,12 @@ pub fn build_inject_by_tty_script(tty: &str, escaped_text: &str) -> String {
                     -- The old focus-typed path sprayed into whichever window Jeff
                     -- was typing in (every demo).
                     do script "{text}" in t
+                    -- #3352: the text's trailing newline arrives as PASTED input,
+                    -- which Claude treats as a line-break, not submit (Jeff: "u are
+                    -- missing cr-lf"). A bare follow-up do script sends the real
+                    -- newline that submits. Proven live on ttys001 2026-06-11.
+                    delay 0.1
+                    do script "" in t
                     return "ok"
                 end if
             end try
