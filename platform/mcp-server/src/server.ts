@@ -952,6 +952,26 @@ const WERK_UNPULL_TOOL_DEF = {
   inputSchema: UNPULL_CARD_TOOL_DEF.inputSchema,
 } as const;
 
+// #3193 — werk-review verb tool def: the cold-eyes gate's binary half. floor /
+// verdict / check as ONE tool (mode arg), thin skin over the rust verb.
+const WERK_REVIEW_TOOL_DEF = {
+  name: 'werk-review',
+  description:
+    'Use this for the cold-eyes review gate (#3193). Thin skin over the rust werk-review verb. Three modes: mode=floor runs the STRUCTURED FLOOR on the card\'s werk (merge-base diff; objective checks: unchecked AC, src-without-test, removed pub symbols w/ ast-grep survivor check) and records review.floor; mode=verdict records the cold-eyes agent\'s review.verdict (requires verdict pass|fail + findings — REJECTED if a fail has no findings or the floor never ran, the anti-ceremony guard); mode=check reads the latest verdict (pass→ok, fail-or-missing→error — the future hard-gate read). Advisory today: a fail informs Jeff\'s go. Refusal taxonomy: no-werk | no-ac | dirty-floor-inputs | ceremony-rejected. The /demo skill\'s cold-eyes subagent records through this.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      mode: { type: 'string', enum: ['floor', 'verdict', 'check'], description: 'floor = run objective checks; verdict = record the agent review; check = read the latest verdict.' },
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk is reviewed (floor mode).' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card under review.' },
+      verdict: { type: 'string', enum: ['pass', 'fail'], description: 'verdict mode only.' },
+      findings: { type: 'string', description: 'verdict mode: specific findings (file:line / AC item N). Required on fail.' },
+    },
+    required: ['mode', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
 const PULL_CARD_TOOL_DEF = {
   name: 'werk-pull',
   description:
@@ -1849,7 +1869,7 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-unpull' | 'loom-gemba',
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-unpull' | 'werk-review' | 'loom-gemba',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -2392,6 +2412,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       WERK_ACCEPT_TOOL_DEF,
       UNPULL_CARD_TOOL_DEF,
       WERK_UNPULL_TOOL_DEF,
+      WERK_REVIEW_TOOL_DEF,
           DESIGN_REFRESH_TOOL_DEF,
       DOC_CATALOG_ADD_TOOL_DEF,
       LOGS_QUERY_TOOL_DEF,
@@ -2646,6 +2667,23 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         // #3178: role = builder (werk location); accepter = caller identity via DEPLOY_ROLE (DEC-048).
         return executeWerkVerb('werk-accept', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, { DEPLOY_ROLE: getCallerRole() });
+      }
+      case 'werk-review': {
+        const a = (req.params.arguments ?? {}) as { mode?: string; role?: string; card_id?: number; verdict?: string; findings?: string };
+        if (!a.mode || !a.card_id) {
+          throw new Error('Invalid arguments: mode and card_id are required');
+        }
+        // #3193 — thin skin → rust werk-review (floor | verdict | check).
+        if (a.mode === 'floor') {
+          if (!a.role) throw new Error('Invalid arguments: floor mode requires role');
+          return executeWerkVerb('werk-review', [String(a.card_id), a.role], a.role, a.card_id, {});
+        }
+        if (a.mode === 'verdict') {
+          if (a.verdict !== 'pass' && a.verdict !== 'fail') throw new Error('Invalid arguments: verdict mode requires verdict pass|fail');
+          const argv = ['verdict', String(a.card_id), a.verdict, ...(a.findings ? [a.findings] : [])];
+          return executeWerkVerb('werk-review', argv, getCallerRole(), a.card_id, {});
+        }
+        return executeWerkVerb('werk-review', ['check', String(a.card_id)], getCallerRole(), a.card_id, {});
       }
       case 'werk-unpull':
       case 'chorus_unpull_card': {

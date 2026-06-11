@@ -171,7 +171,7 @@ test('non-zero exit with no marker falls back to work-fail', async () => {
 // werk-merge or resurrecting a #3311-deleted tool failed nothing. This pins the
 // verb-shaped surface exactly. Changing it is a deliberate product decision that
 // must touch this test in the same commit.
-test('the verb-shaped MCP surface is exactly the eight verbs + chorus_werk + loom-gemba', async () => {
+test('the verb-shaped MCP surface is exactly the nine verbs + chorus_werk + loom-gemba', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'wwc-surface-'));
   await withServer(dir, async (client) => {
     const names = (await client.listTools()).tools.map((t) => t.name);
@@ -190,6 +190,7 @@ test('the verb-shaped MCP surface is exactly the eight verbs + chorus_werk + loo
         'werk-merge',
         'werk-pull',
         'werk-push',
+        'werk-review', // #3193 — the cold-eyes gate joined the family (deliberate pin edit)
         'werk-unpull', // #3299 — the /pull inverse joined the verb family (deliberate pin edit)
       ],
       'exact verb surface — a removal or resurrection must consciously edit this pin',
