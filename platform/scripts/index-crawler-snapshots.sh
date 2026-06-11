@@ -11,7 +11,7 @@
 set -euo pipefail
 
 API_URL="${API_URL:-http://localhost:3340}"
-DB_PATH="$HOME/.chorus/index.db"
+DB_PATH="${CRAWLER_DB_PATH:-$HOME/.chorus/index.db}"  # overridable so tests never write the live index (#3019)
 TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 STATUS_FILE="${CRAWLER_STATUS_FILE:-/tmp/crawler-domain-status.json}"
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
@@ -101,7 +101,7 @@ d['$domain']={'status':'error','duration_ms':$duration_ms,'timestamp':'$TIMESTAM
 print(json.dumps(d))
 " 2>/dev/null)
     echo "WARN: Crawl failed for $domain (${duration_ms}ms, ${new_failures} consecutive)" >&2
-    "$CHORUS_LOG" crawler.domain.failed system domain="$domain" duration_ms="$duration_ms" consecutive="$new_failures" trigger="$TRIGGER" 2>/dev/null || true
+    "$CHORUS_LOG" crawler.domain.failed system domain="$domain" duration_ms="$duration_ms" consecutive="$new_failures" trigger="$TRIGGER" synthetic="${CHORUS_SYNTHETIC:-0}" 2>/dev/null || true
     ((errors++))
     continue
   }
