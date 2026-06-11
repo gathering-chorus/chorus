@@ -1060,6 +1060,22 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
             env::var("CHORUS_MCP_DAEMON_SMOKE_URL").unwrap_or_else(|_| "http://localhost:3341/mcp".to_string()),
             true, // MCP-initialize smoke
         )),
+        // #3352 — pulse + clearing were INVISIBLE to deploy discovery (Kade's specimen:
+        // #3357's land reported deploy-success while the running pulse stayed stale;
+        // the whole 2026-06-11 misdelivery fix needed a hand rebuild + kickstart).
+        // Same native TS-daemon path as api/mcp: npm-built in place, kickstart, smoke.
+        "pulse" => Some((
+            "platform/pulse",
+            "com.chorus.pulse",
+            env::var("CHORUS_PULSE_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3475/health".to_string()),
+            false, // health-check smoke
+        )),
+        "clearing" => Some((
+            "directing/clearing",
+            "com.chorus.clearing",
+            env::var("CHORUS_CLEARING_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3470/health".to_string()),
+            false, // health-check smoke
+        )),
         _ => None,
     }
 }
@@ -1371,6 +1387,12 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
             add("chorus-mcp");
         } else if l.starts_with("platform/api/") {
             add("chorus-api");
+        } else if l.starts_with("platform/pulse/") {
+            // #3352 — see ts_daemon: pulse/clearing join the discovery so a merged
+            // change actually deploys (the merged-but-stale class, 3 specimens today).
+            add("pulse");
+        } else if l.starts_with("directing/clearing/") {
+            add("clearing");
         }
     }
     out
