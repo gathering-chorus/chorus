@@ -5,6 +5,7 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
 @prefix chorus:  <https://jeffbridwell.com/chorus#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
 
 # =============================================================================
 # Werk Domains — Kade's four-domain refinement (#3340, 2026-06-11)
@@ -34,10 +35,18 @@
 # owl-api generator consumes the mint once the DAL (model-2) exists. Full
 # conformance + CI name-test lands with ADR-040's enforcement (§6).
 #
-# SILAS HOLD (review 2026-06-11, accepted): chorus:dataSource +
-# chorus:ingestionStatus are MODEL-GOVERNANCE vocabulary — relocate to the
-# canonical core at the model-3 reconcile so future domain OWLs share one
-# mint instead of re-inventing variants. Acceptable here for 0.1.0.
+# CONVERGED CONTRACT (Jeff+Kade session 12:00-12:30 + Silas 12:46, 2026-06-11):
+# - fold = query = endpoint: each record class serves a named fold on the
+#   Athena domain page; the generated domain API is the fold-query catalog.
+# - authored vs derived, structural: authored facets get CRUD via the domains
+#   API (SHACL-validated); derived folds get GETs ONLY — the crawler is their
+#   sole writer. Nobody hand-writes reality; nobody crawls intent.
+# - ONE write path: crawler collects -> DAL writes (#3257 authored lane v1;
+#   ingest lane = model-4 crawler->DAL rewrite). Verbs never touch SPARQL.
+# - chorus:mintKey is declared HERE as a class annotation; the DAL reads it
+#   from the graph (no code registry). ADR-040 Level-3a covers composite keys.
+# - mintKey / provenance / ingestionStatus GRADUATE TO CORE at model-3
+#   (Silas hold, now load-bearing).
 #
 # OWNER: Kade (domain owner authors the vertical; Silas reviews as OWL-DBA —
 # schema coherence, constraints, evolution — per the loom division).
@@ -47,7 +56,7 @@
     dcterms:title "Werk Domains — cicd, version-control, code, tests" ;
     dcterms:creator "Kade (Engineer)" ;
     dcterms:date "2026-06-11" ;
-    owl:versionInfo "0.1.0-adr040-aligned" ;
+    owl:versionInfo "0.2.0-converged-2026-06-11" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -61,23 +70,52 @@ chorus:ingestionStatus a owl:AnnotationProperty ;
     rdfs:label "ingestion status" ;
     rdfs:comment "landing | ingestible | needs-identity — whether instance data reaches the graph today." .
 
+chorus:mintKey a owl:AnnotationProperty ;
+    rdfs:label "mint key" ;
+    rdfs:comment "The (ordered) property list the DAL mints this class's instance IRIs from (ADR-040 Rule 0 + Level-3a composite keys). Declared in the owner's extension; read from the graph, never a code registry." .
+
+chorus:provenance a owl:AnnotationProperty ;
+    rdfs:label "provenance" ;
+    rdfs:comment "authored (domains API, CRUD+SHACL) | derived-crawl (crawler reads files/configs) | derived-sweep (crawler sweeps witnesses) | derived-computed (at query time). Derived classes get NO write endpoints in the generated API." .
+
 # =============================================================================
 # SHARED SPINE — classes every domain references
+
+# --- shared instance properties (the jsonl witness fields, modeled) ---------
+chorus:cardId a owl:DatatypeProperty ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "The card a record belongs to. Shared across event classes; no rdfs:domain on purpose." .
+chorus:ts a owl:DatatypeProperty ;
+    rdfs:range xsd:dateTime ;
+    rdfs:comment "Event timestamp (witness ts, ms epoch normalized to xsd:dateTime at ingest). DAL also stamps dcterms:created/modified + dcterms:creator on every write (audit envelope — core vocab)." .
+chorus:verb a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "The werk verb name on spine-family records." .
+chorus:result a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "pass | fail on gate/test/review records." .
+
 # =============================================================================
 
 chorus:VerbRun a owl:Class ;
+    chorus:mintKey ("traceId" "verb" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Verb Run" ;
     rdfs:comment "One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability." ;
     chorus:dataSource "spine: <verb>.started/.completed/.refused + ops/logs/werk-<verb>.jsonl (one line per run, shared trace)" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:TypedRefusal a owl:Class ;
+    chorus:mintKey ("traceId" "verb" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Typed Refusal" ;
     rdfs:comment "A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected)." ;
     chorus:dataSource "jsonl witnesses: *.refused events with reason field; spine mirror" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:Witness a owl:Class ;
+    chorus:mintKey ("verb") ;
+    chorus:provenance "derived-crawl" ;
     rdfs:label "Witness" ;
     rdfs:comment "An append-only jsonl evidence stream owned by one verb (ops/logs/werk-<verb>.jsonl). The durable record a resume/recovery reads." ;
     chorus:dataSource "filesystem: ops/logs/*.jsonl (file-per-verb)" ;
@@ -102,30 +140,40 @@ chorus:traceId a owl:DatatypeProperty ;
 # =============================================================================
 
 chorus:PipelineRun a owl:Class ;
+    chorus:mintKey ("traceId" "job") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Pipeline Run" ;
     rdfs:comment "One act dispatch of werk.yml for a card: the prove job (go!=true) or the land job (go=true). Brackets a set of VerbRuns under one trace." ;
     chorus:dataSource "ops/logs/werk.jsonl: werk.started/werk.landed/werk.land.failed; act job tags" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:GateResult a owl:Class ;
+    chorus:mintKey ("cardId" "gate" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Gate Result" ;
     rdfs:comment "One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284)." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.gate.result {gate, result, findings}" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:ReviewVerdict a owl:Class ;
+    chorus:mintKey ("cardId" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Review Verdict" ;
     rdfs:comment "The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder." ;
     chorus:dataSource "ops/logs/werk-review.jsonl: review.floor / review.verdict / review.refused" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:DemoVerdict a owl:Class ;
+    chorus:mintKey ("cardId" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Demo Verdict" ;
     rdfs:comment "The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.verdict {verdict, prover, decision}" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:Deployment a owl:Class ;
+    chorus:mintKey ("binary" "cdhash") ;
+    chorus:provenance "derived-sweep" ;
     chorus:dataSource "spine: binary.deployed {binary, cdhash, commit, role}; deploy.cdhash.matched; deploy.detached" ;
     chorus:ingestionStatus "ingestible" ;
     rdfs:comment "EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical." .
@@ -146,24 +194,32 @@ chorus:cdhash a owl:DatatypeProperty ;
 # =============================================================================
 
 chorus:WerkSlot a owl:Class ;
+    chorus:mintKey ("role" "cardId") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Werk Slot" ;
     rdfs:comment "An ephemeral per-card worktree (chorus-werk/<role>-<card>/, branch <role>/<card>), born on pull, removed on accept (#2913). Never branch-swapped in place." ;
     chorus:dataSource "spine: card.pulled / card.unpulled / card.branch.closed; chorus-werk status CLI" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:MergeEvent a owl:Class ;
+    chorus:mintKey ("cardId" "sha") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Merge Event" ;
     rdfs:comment "A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297)." ;
     chorus:dataSource "ops/logs/werk-merge.jsonl: merge.approved / merge.idempotent / merge.refused; gh PR record" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:ConflictHold a owl:Class ;
+    chorus:mintKey ("cardId" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Conflict Hold" ;
     rdfs:comment "A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted." ;
     chorus:dataSource "ops/logs/werk-commit.jsonl: rebase.conflict.held; spine commit.conflict {disposition}" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:RecoveryAction a owl:Class ;
+    chorus:mintKey ("ts" "kind") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Recovery Action" ;
     rdfs:comment "A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299)." ;
     chorus:dataSource "spine: canonical.repaired / recovery.stashed / recovery.completed / card.unpulled" ;
@@ -175,22 +231,45 @@ chorus:RecoveryAction a owl:Class ;
 # =============================================================================
 
 chorus:CardDiff a owl:Class ;
+    chorus:mintKey ("cardId" "sha") ;
+    chorus:provenance "derived-computed" ;
     rdfs:label "Card Diff" ;
     rdfs:comment "The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands)." ;
     chorus:dataSource "review.floor {files_changed}; werk-deploy unit discovery; derivable on demand from git" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:QualityFinding a owl:Class ;
+    chorus:mintKey ("cardId" "ts" "kind") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Quality Finding" ;
     rdfs:comment "An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses." ;
     chorus:dataSource "review.floor findings; pre-commit refusal events; cog.override.used audit events" ;
     chorus:ingestionStatus "ingestible" .
 
-chorus:BlastRadius a owl:Class ;
-    rdfs:label "Blast Radius" ;
-    rdfs:comment "The reference set of a removed/renamed symbol (ast-grep/LSP survivor check — the grep-blind-removal class). Computed by the review floor; future werk-code verb deepens it (#3148 lineage)." ;
-    chorus:dataSource "review.floor removed-symbol findings (computed, not stored per-symbol today)" ;
-    chorus:ingestionStatus "needs-identity" .
+# BlastRadius CUT 2026-06-11 (converged session): computed-on-demand by the review floor today; first-class entity defers to the werk-code verb (#3148 lineage). A class that does not serve a fold or a werk-test move was cut.
+
+chorus:SourceFile a owl:Class ;
+    chorus:mintKey ("filePath") ;
+    chorus:provenance "derived-crawl" ;
+    rdfs:label "Source File" ;
+    rdfs:comment "ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files." ;
+    chorus:dataSource "crawler code-files collector (exists today, writes path-classified instances); also derivable from any CardDiff" ;
+    chorus:ingestionStatus "ingestible" .
+
+chorus:filePath a owl:DatatypeProperty ;
+    rdfs:label "file path" ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes." .
+
+chorus:testName a owl:DatatypeProperty ;
+    rdfs:label "test name" ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "The test's declared name within its file. Identity = (filePath, testName) — the IRI mint key for Test." .
+
+chorus:inFile a owl:ObjectProperty ;
+    rdfs:label "in file" ;
+    rdfs:domain chorus:Test ; rdfs:range chorus:SourceFile ;
+    rdfs:comment "Test → the SourceFile that declares it. The join CardDiff uses: changed paths → SourceFiles → Tests in/covering them." .
 
 # =============================================================================
 # DOMAIN: tests — THE HONEST ONE
@@ -206,18 +285,24 @@ chorus:BlastRadius a owl:Class ;
 # werk-test can query which-tests-for-which-card. Ship ingestion first.
 
 chorus:Test a owl:Class ;
+    chorus:mintKey ("filePath" "testName") ;
+    chorus:provenance "derived-crawl" ;
     rdfs:label "Test" ;
-    rdfs:comment "ONE test with durable identity (file + name), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
+    rdfs:comment "ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
     chorus:dataSource "NONE TODAY — the #2818/#2819 tagging pass creates identity; cargo/jest emit names at run time but nothing lands them" ;
     chorus:ingestionStatus "needs-identity" .
 
 chorus:TestSuiteRun a owl:Class ;
+    chorus:mintKey ("cardId" "ts") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Test Suite Run" ;
     rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:TestResult a owl:Class ;
+    chorus:mintKey ("filePath" "testName" "runTs") ;
+    chorus:provenance "derived-sweep" ;
     rdfs:label "Test Result" ;
     rdfs:comment "One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first." ;
     chorus:dataSource "NONE TODAY — depends on chorus:Test identity + a per-test result emission path" ;
@@ -232,6 +317,177 @@ chorus:pyramidLayer a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "unit | integration | e2e | bdd — declarative, replacing filename inference (quality design gap 7)." .
 
+chorus:verifiedBy a owl:ObjectProperty ;
+    rdfs:label "verified by" ;
+    rdfs:domain chorus:Scenario ; rdfs:range chorus:Test ;
+    rdfs:comment "Authored intent bound to derived proof: a Scenario (core class, authored via the domains API) is verified by the Tests that exercise it. The completeness story's load-bearing edge; werk-test's eventual which-scenarios-does-this-card-threaten query." .
+
 chorus:validityClass a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "The #3324 taxonomy class — making test-value queryable, not a one-time audit." .
+
+# =============================================================================
+# INSTANCE ASSERTIONS — extending EXISTING nodes (no new IRI mints pre-DAL;
+# legacy -domain IRIs are write-frozen per ADR-040 but extant — extended in
+# place; the DAL migration re-mints at model-2+).
+# =============================================================================
+
+chorus:werk-product
+    chorus:status "operating" ;
+    chorus:vision "Output you can stand behind: every card leaves as merged source on origin/main with a coherent receipt — one trace from pull to running cdhash." ;
+    chorus:valueProposition "A green result can't lie: ten atomic verbs, one go-gated pipeline, witnesses at every step, GO=accept." ;
+    chorus:audience "the three roles building Chorus and Gathering; Jeff accepting the work" ;
+    chorus:hasDesignDoc "designing/docs/werk-subproduct-design.html" ;
+    chorus:gaps "werk-test (#3190) held behind the generated tests domain API" ,
+        "tests domain lacks per-test identity (ingestion-first)" ,
+        "advisory test+review not yet promoted to gates (deliberate flip pattern)" .
+
+chorus:pipelines-domain
+    chorus:status "operating" ;
+    chorus:hasDesignDoc "designing/docs/ci-pipeline-service-design.html" ;
+    chorus:gaps "per-PR CI disconnected (cost stop); nightly not yet trusted" ;
+    chorus:hasRecordClass chorus:PipelineRun , chorus:GateResult , chorus:ReviewVerdict , chorus:DemoVerdict , chorus:Deployment .
+
+chorus:version-control-domain
+    chorus:status "operating" ;
+    chorus:hasDesignDoc "designing/docs/version-control-service-design.html" ;
+    chorus:gaps "phantom git-queue references in guard deny-text (#3290)" ;
+    chorus:hasRecordClass chorus:WerkSlot , chorus:MergeEvent , chorus:ConflictHold , chorus:RecoveryAction .
+
+chorus:code-domain
+    chorus:status "building" ;
+    chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
+    chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" ;
+    chorus:hasRecordClass chorus:SourceFile , chorus:CardDiff , chorus:QualityFinding .
+
+chorus:tests-domain
+    chorus:status "building" ;
+    chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
+    chorus:gaps "no per-test identity in the graph — Test/TestResult are ingestion contracts (#2818/#2819); werk-test (#3190) blocked on this" ;
+    chorus:hasRecordClass chorus:Test , chorus:TestSuiteRun , chorus:TestResult .
+
+chorus:hasRecordClass a owl:AnnotationProperty ;
+    rdfs:label "has record class" ;
+    rdfs:comment "Domain -> the record classes whose instances fill its folds. The generated domain API's per-domain query catalog. Graduates to core with the rest of the governance vocab (model-3)." .
+
+# =============================================================================
+# SHACL SHAPES — written WITH the model, not after (Jeff, 2026-06-11: "the shacl
+# must be done now not later"). The rule: every class requires at least its
+# mint-key properties (identity is never optional — PK discipline); every edge
+# carries sh:class (the FK check). Enforced by the DAL at WRITE time with typed
+# refusals — SPARQL fails silently on broken chains, so the write path is the
+# only place referential integrity exists.
+# =============================================================================
+
+chorus:VerbRunShape a sh:NodeShape ;
+    sh:targetClass chorus:VerbRun ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:TypedRefusalShape a sh:NodeShape ;
+    sh:targetClass chorus:TypedRefusal ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:WitnessShape a sh:NodeShape ;
+    sh:targetClass chorus:Witness ;
+    sh:property [ sh:path chorus:verb ; sh:minCount 1 ]  .
+
+chorus:PipelineRunShape a sh:NodeShape ;
+    sh:targetClass chorus:PipelineRun ;
+    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ]  .
+
+chorus:GateResultShape a sh:NodeShape ;
+    sh:targetClass chorus:GateResult ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:ReviewVerdictShape a sh:NodeShape ;
+    sh:targetClass chorus:ReviewVerdict ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:DemoVerdictShape a sh:NodeShape ;
+    sh:targetClass chorus:DemoVerdict ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:DeploymentShape a sh:NodeShape ;
+    sh:targetClass chorus:Deployment ;
+    sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ]  .
+
+chorus:WerkSlotShape a sh:NodeShape ;
+    sh:targetClass chorus:WerkSlot ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:MergeEventShape a sh:NodeShape ;
+    sh:targetClass chorus:MergeEvent ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:ConflictHoldShape a sh:NodeShape ;
+    sh:targetClass chorus:ConflictHold ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:RecoveryActionShape a sh:NodeShape ;
+    sh:targetClass chorus:RecoveryAction ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:CardDiffShape a sh:NodeShape ;
+    sh:targetClass chorus:CardDiff ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
+
+chorus:QualityFindingShape a sh:NodeShape ;
+    sh:targetClass chorus:QualityFinding ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
+
+chorus:SourceFileShape a sh:NodeShape ;
+    sh:targetClass chorus:SourceFile ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ]  .
+
+chorus:TestShape a sh:NodeShape ;
+    sh:targetClass chorus:Test ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
+
+chorus:TestSuiteRunShape a sh:NodeShape ;
+    sh:targetClass chorus:TestSuiteRun ;
+    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:TestResultShape a sh:NodeShape ;
+    sh:targetClass chorus:TestResult ;
+    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+
+chorus:TestEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:Test ;
+    sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:SourceFile ] ;
+    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ; sh:in ( "unit" "integration" "e2e" "contract" "fitness" "smoke" "bdd" ) ] .
+
+chorus:VerbRunEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:VerbRun ;
+    sh:property [ sh:path chorus:refusedWith ; sh:class chorus:TypedRefusal ] .
+
+chorus:ScenarioVerifiedByShape a sh:NodeShape ;
+    sh:targetClass chorus:Scenario ;
+    sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
+
+chorus:TestResultEdgesShape a sh:NodeShape ;
+    sh:targetClass chorus:TestResult ;
+    sh:property [ sh:path chorus:ofTest ; sh:minCount 1 ; sh:class chorus:Test ] .
+
+chorus:ofTest a owl:ObjectProperty ;
+    rdfs:label "of test" ;
+    rdfs:domain chorus:TestResult ; rdfs:range chorus:Test ;
+    rdfs:comment "TestResult -> its Test. The FK that makes the result chain joinable; required by shape." .
+

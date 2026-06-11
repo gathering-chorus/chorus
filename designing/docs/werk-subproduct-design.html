@@ -173,6 +173,92 @@ flowchart TD
 <p>The chain: werk stable+observable &rarr; werk's witnesses/spine events land as graph data &rarr; the OWL models the four domains &rarr; owl-api GENERATES the domain APIs deterministically &rarr; the APIs are query surfaces over the graph, never hand-built handlers. This ends the reconcile treadmill structurally: generated surfaces cannot forget to notice that the system changed.</p>
 <p><strong>The authoring rule — query-backwards:</strong> every class and property must map to graph data that exists or has a defined ingestion path (witnesses in <code>ops/logs/werk-*.jsonl</code>, spine events, verb runs, gate results, review verdicts, cards). A class that cannot answer a query is decoration and gets cut. First artifact: <code>roles/kade/ontology/werk-domains.ttl</code> — the four-domain refinement (cicd, version-control, code, tests), each class annotated with its data source and ingestion status. Grain: extends the canonical <code>chorus:</code> model (silas/ontology/chorus.ttl v0.3.0); the IRI-formation layer is explicitly PROVISIONAL pending Silas's #3256 keystone ADR (model-1) so the namespace grain lands once. Consumers: Silas's model program (model-3 reconcile cross-checks; model-5 owl-api generates); <strong>werk-test (#3190) is the first generated-API customer</strong> — it queries the tests domain for which-tests-for-which-card.</p>
 <p><strong>The DE finding that sequences the work:</strong> cicd and version-control are graph-ready today (rich, well-named witness events per verb run, gate, deploy); <strong>tests is not</strong> — no per-test identity, results transient. The tests OWL therefore ships ingestion-path-first or not at all.</p>
+
+<h3 id="owl-model">The model — entities, relationships, properties</h3>
+<p><strong>Generated from: <code>roles/kade/ontology/werk-domains.ttl</code> · 0.2.0-converged-2026-06-11</strong> — this section renders the model; it never forks it. <strong>The converged contract (2026-06-11):</strong> fold = query = endpoint; <span style="background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:3px">authored</span> facets get CRUD via the domains API (SHACL-validated); <span style="background:#d1fae5;color:#065f46;padding:1px 5px;border-radius:3px">derived</span> folds get GETs only — the crawler is their sole writer, through the DAL (#3257), with <code>mintKey</code> read from this file (no code registry). Green = ingestible today · red = needs-identity (ingestion contract — fills at #2818/#2819).</p>
+<pre class="mermaid">
+flowchart TB
+  CARD(["Card"])
+  SCEN(["Scenario (authored)"]):::auth
+  subgraph SPINE["shared spine"]
+    VR["VerbRun"]; TR["TypedRefusal"]; WIT["Witness"]
+  end
+  subgraph CICD["cicd"]
+    PR2["PipelineRun"]; GR["GateResult"]; RV["ReviewVerdict"]; DV["DemoVerdict — the GO"]; DEP["Deployment {cdhash}"]
+  end
+  subgraph VC["version-control"]
+    WS["WerkSlot"]; ME["MergeEvent"]; CH["ConflictHold"]; RA["RecoveryAction"]
+  end
+  subgraph CODE["code"]
+    SF["SourceFile {filePath}"]; CD["CardDiff"]; QF["QualityFinding"]
+  end
+  subgraph TESTS["tests — ingestion-first"]
+    T["Test {filePath+testName} ⚠"]; TSR["TestSuiteRun"]; TRES["TestResult ⚠"]
+  end
+  CARD -->|hasVerbRun| VR
+  VR -->|refusedWith| TR
+  VR -.->|written to| WIT
+  CARD -->|hasGateResult| GR
+  CARD -->|hasReviewVerdict| RV
+  CARD -->|hasDemoVerdict| DV
+  DV ==>|"GO=accept #3311"| ME
+  CD -->|changed paths| SF
+  T -->|inFile| SF
+  T -->|"covers — the werk-test edge"| SD(["SubDomain"])
+  SCEN -->|"verifiedBy — intent bound to proof"| T
+  T -.-> TRES
+  TRES -.-> TSR
+  classDef ok fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef gap fill:#fee2e2,stroke:#991b1b,color:#991b1b;
+  classDef auth fill:#e0e7ff,stroke:#3730a3,color:#3730a3;
+  class VR,TR,WIT,PR2,GR,RV,DV,DEP,WS,ME,CH,RA,CD,QF,TSR,SF ok;
+  class T,TRES gap;
+</pre>
+<h4>Entities (18 classes)</h4>
+<table><tbody><tr><th>Class</th><th>Domain</th><th>What it is</th><th>Mint key</th><th>Provenance</th><th>Status</th></tr>
+<tr><td><code>VerbRun</code></td><td>spine</td><td>One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability.</td><td><code style="font-size:0.85em">("traceId" "verb" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>TypedRefusal</code></td><td>spine</td><td>A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected).</td><td><code style="font-size:0.85em">("traceId" "verb" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Witness</code></td><td>spine</td><td>An append-only jsonl evidence stream owned by one verb (ops/logs/werk-&lt;verb&gt;.jsonl). The durable record a resume/recovery reads.</td><td><code style="font-size:0.85em">("verb")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>PipelineRun</code></td><td>cicd</td><td>One act dispatch of werk.yml for a card: the prove job (go!=true) or the land job (go=true). Brackets a set of VerbRuns under one trace.</td><td><code style="font-size:0.85em">("traceId" "job")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>GateResult</code></td><td>cicd</td><td>One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284).</td><td><code style="font-size:0.85em">("cardId" "gate" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>ReviewVerdict</code></td><td>cicd</td><td>The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>DemoVerdict</code></td><td>cicd</td><td>The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Deployment</code></td><td>cicd</td><td>EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical.</td><td><code style="font-size:0.85em">("binary" "cdhash")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>WerkSlot</code></td><td>version-control</td><td>An ephemeral per-card worktree (chorus-werk/&lt;role&gt;-&lt;card&gt;/, branch &lt;role&gt;/&lt;card&gt;), born on pull, removed on accept (#2913). Never branch-swapped in place.</td><td><code style="font-size:0.85em">("role" "cardId")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>MergeEvent</code></td><td>version-control</td><td>A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297).</td><td><code style="font-size:0.85em">("cardId" "sha")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>ConflictHold</code></td><td>version-control</td><td>A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>RecoveryAction</code></td><td>version-control</td><td>A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299).</td><td><code style="font-size:0.85em">("ts" "kind")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>CardDiff</code></td><td>code</td><td>The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands).</td><td><code style="font-size:0.85em">("cardId" "sha")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-computed</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>QualityFinding</code></td><td>code</td><td>An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses.</td><td><code style="font-size:0.85em">("cardId" "ts" "kind")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>SourceFile</code></td><td>code</td><td>ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files.</td><td><code style="font-size:0.85em">("filePath")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Test</code></td><td>tests</td><td>ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818).</td><td><code style="font-size:0.85em">("filePath" "testName")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-missing">needs-identity</span></td></tr>
+<tr><td><code>TestSuiteRun</code></td><td>tests</td><td>A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>TestResult</code></td><td>tests</td><td>One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first.</td><td><code style="font-size:0.85em">("filePath" "testName" "runTs")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-missing">needs-identity</span></td></tr>
+</tbody></table>
+<h4>Relationships (8 object properties)</h4>
+<table><tbody><tr><th>Property</th><th>Domain &rarr; Range</th><th>Meaning</th></tr>
+<tr><td><code>hasVerbRun</code></td><td><code>Card</code> &rarr; <code>VerbRun</code></td><td>Card → each verb execution in its lifecycle, ordered by ts on the shared trace.</td></tr>
+<tr><td><code>refusedWith</code></td><td><code>VerbRun</code> &rarr; <code>TypedRefusal</code></td><td></td></tr>
+<tr><td><code>hasGateResult</code></td><td><code>Card</code> &rarr; <code>GateResult</code></td><td></td></tr>
+<tr><td><code>hasReviewVerdict</code></td><td><code>Card</code> &rarr; <code>ReviewVerdict</code></td><td></td></tr>
+<tr><td><code>hasDemoVerdict</code></td><td><code>Card</code> &rarr; <code>DemoVerdict</code></td><td></td></tr>
+<tr><td><code>inFile</code></td><td><code>Test</code> &rarr; <code>SourceFile</code></td><td>Test → the SourceFile that declares it. The join CardDiff uses: changed paths → SourceFiles → Tests in/covering them.</td></tr>
+<tr><td><code>covers</code></td><td><code>Test</code> &rarr; <code>SubDomain</code></td><td>Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging.</td></tr>
+<tr><td><code>verifiedBy</code></td><td><code>Scenario</code> &rarr; <code>Test</code></td><td>Authored intent bound to derived proof: a Scenario (core class, authored via the domains API) is verified by the Tests that exercise it. The completeness story's load-bearing edge; werk-test's eventual which-scenarios-does-this-card-threaten query.</td></tr>
+</tbody></table>
+<h4>Properties (6 datatype properties)</h4>
+<table><tbody><tr><th>Property</th><th>On &rarr; Type</th><th>Meaning</th></tr>
+<tr><td><code>traceId</code></td><td><code>VerbRun</code> &rarr; string</td><td>The shared trace threading both pipeline halves (CHORUS_TRACE_ID).</td></tr>
+<tr><td><code>cdhash</code></td><td><code>Deployment</code> &rarr; string</td><td>The signed binary identity that survives TCC; the deployed==running discriminator.</td></tr>
+<tr><td><code>filePath</code></td><td><code>(shared)</code> &rarr; string</td><td>Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes.</td></tr>
+<tr><td><code>testName</code></td><td><code>Test</code> &rarr; string</td><td>The test's declared name within its file. Identity = (filePath, testName) — the IRI mint key for Test.</td></tr>
+<tr><td><code>pyramidLayer</code></td><td><code>Test</code> &rarr; string</td><td>unit | integration | e2e | bdd — declarative, replacing filename inference (quality design gap 7).</td></tr>
+<tr><td><code>validityClass</code></td><td><code>Test</code> &rarr; string</td><td>The #3324 taxonomy class — making test-value queryable, not a one-time audit.</td></tr>
+</tbody></table>
+
+<h4>Constraints (22 SHACL shapes — written with the model, not after)</h4>
+<p>The rule (Jeff, 2026-06-11): <strong>every class's shape requires at least its mint-key properties</strong> — identity is never optional (PK discipline) — and <strong>every edge carries <code>sh:class</code></strong> (the FK check: <code>covers</code> must point at a real SubDomain, <code>inFile</code> at a real SourceFile, <code>ofTest</code> at a real Test). Enforced by the DAL at <em>write time</em> with typed refusals, because SPARQL fails silently on broken chains — the write path is the only place referential integrity exists. Relational rigor, relocated entirely to the write side.</p>
+
 <h2>OWL + SHACL — conformance to Athena v2</h2>
 <p>This subproduct adds no new structural classes. It uses Athena's <code>chorus:Product</code> / <code>chorus:Domain</code> / <code>chorus:Service</code> with the recursive containment model. The Werk-specific shape is:</p>
 
