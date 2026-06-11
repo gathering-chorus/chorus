@@ -124,25 +124,19 @@ export function planDelivery(
   content: string,
   sender: SessionReg | null = null,
 ): DeliveryPlan {
-  // #3352 AC-0 — structural refuse on sender-collision. The 2026-06-11
-  // misdelivery: silas's registration carried the SAME pid+tty as wren's
-  // (a vscode re-registration collision), so to=silas resolved to the
-  // sender's own session and the keystroke landed ON THE SENDER — recorded
-  // delivered. Rule: a to!=sender delivery whose resolved target shares
-  // pid or tty with the SENDER's registration can only be the sender's
-  // window — DEFER to the fold (identity-correct by construction: each
-  // role's own session hook drains its own inbox), never inject.
+  // #3352 final form, Jeff's ruling (2026-06-11, DEC-107 re-affirmed): "osascript
+  // all the time" — delivery is UNCONDITIONAL. The defer-on-collision/-ambiguity
+  // rules shipped earlier today made delivery conditional and silenced team wakes
+  // for 2 hours; they are deleted. The 06-11 misdeliveries were a TARGETING DATA
+  // bug (a stale registration claiming silas at wren's pid) — fixed as data, not
+  // by skipping delivery. `sender` stays in the signature: a target registration
+  // that collides with the SENDER is treated as STALE DATA and ignored, so
+  // resolution falls through to the legacy role name-match — still a keystroke,
+  // never a skip.
   if (target && sender && (target.pid === sender.pid || (!!target.tty && target.tty === sender.tty))) {
-    return { kind: 'defer', reason: 'sender-collision' };
+    return { kind: 'inject', args: [role, content] }; // stale reg ignored — name-match delivers
   }
   if (target && target.host === 'vscode') {
-    // #3352 AC-0 — `--vscode` keystrokes the FOCUSED Code window (#3130); it
-    // cannot address a specific session. When the sender ALSO lives in
-    // vscode, focus decides who receives — the exact misdelivery class.
-    // Defer to the fold, which delivers in the right session by construction.
-    if (sender && sender.host === 'vscode') {
-      return { kind: 'defer', reason: 'vscode-ambiguous-with-sender' };
-    }
     return { kind: 'inject', args: ['--vscode', content] };
   }
   if (target && target.tty) {

@@ -507,3 +507,18 @@ fn detached_ack_is_distinguishable_from_completed_deploys() {
     assert!(!werk_deploy::is_detached_ack("chorus-mcp deployed target=canonical"));
     assert!(!werk_deploy::is_detached_ack("chorus-mcp rolled back"));
 }
+
+// #3352 — pulse + clearing join TS-service deploy discovery (the merged-but-stale
+// class: #3357's land said deploy-success while running pulse stayed stale).
+#[test]
+fn changed_ts_services_detects_pulse_and_clearing() {
+    let diff = "platform/pulse/src/session-registry.ts\ndirecting/clearing/src/server.ts\nplatform/api/src/server.ts\n";
+    let ts = werk_deploy::changed_ts_services(diff);
+    assert_eq!(ts, vec!["pulse".to_string(), "clearing".to_string(), "chorus-api".to_string()]); // diff-line order
+}
+
+#[test]
+fn changed_ts_services_dedupes_pulse() {
+    let diff = "platform/pulse/src/a.ts\nplatform/pulse/src/b.ts\n";
+    assert_eq!(werk_deploy::changed_ts_services(diff), vec!["pulse".to_string()]);
+}
