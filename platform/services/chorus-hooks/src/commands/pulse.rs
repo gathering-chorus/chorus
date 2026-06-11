@@ -352,14 +352,60 @@ fn assemble_board() -> serde_json::Value {
     }
 
     // Stale path: refresh via cards CLI, update snapshot as side effect.
+    //
+    // #3347 — STAMPEDE GUARD. This fn runs on EVERY UserPromptSubmit in EVERY
+    // session. When the API is slow, the snapshot stays stale (the refresh
+    // hangs, never writes), so every prompt across all sessions spawned
+    // another blocking `cards list` — the prime multiplier behind the
+    // 2026-06-11 197-process box starvation (×2 in one day). Rule: at most
+    // ONE refresh in flight machine-wide; everyone else serves the stale
+    // snapshot (better stale than a process pile). Lock = O_EXCL create;
+    // a lock older than 60s is treated as crashed and reclaimed (the CLI's
+    // own watchdog (30s) guarantees the child is dead by then).
+    let lock_file = "/tmp/board-wip-snapshot.lock";
+    let lock_stale = fs::metadata(lock_file).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_secs() > 60)
+        .unwrap_or(true);
+    let serve_stale = || -> serde_json::Value {
+        // Serve the last-known snapshot whatever its age — stale beats a pile.
+        if let Ok(content) = fs::read_to_string(snapshot_file) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(obj) = v.as_object() {
+                    let wip = obj.get("wip_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    let swat = obj.get("swat_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    let next = obj.get("next_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                    return serde_json::json!({
+                        "wip_count": wip.len(),
+                        "wip_cards": wip,
+                        "swat_cards": swat,
+                        "next_cards": next,
+                        "stale": "refresh-in-flight",
+                    });
+                }
+            }
+        }
+        serde_json::json!({"wip_count": 0, "wip_cards": [], "swat_cards": [], "next_cards": [], "stale": "refresh-in-flight"})
+    };
+    if !lock_stale {
+        return serve_stale(); // refresh already in flight elsewhere
+    }
+    let _ = fs::remove_file(lock_file); // reclaim a stale lock before retake
+    if fs::OpenOptions::new().write(true).create_new(true).open(lock_file).is_err() {
+        return serve_stale(); // lost the take race — another prompt holds it
+    }
+
     let board_ts = format!("{}/platform/scripts/cards", repo_root());
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    if let Ok(output) = std::process::Command::new("bash")
+    let spawn_result = std::process::Command::new("bash")
         .args(["-l", "-c", &format!("{} list 2>/dev/null", board_ts)])
         .env("CHORUS_ROOT", repo_root())
         .env("HOME", &home)
         .env("PATH", format!("{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", home))
-        .output()
+        .output();
+    let _ = fs::remove_file(lock_file); // release regardless of outcome
+    if let Ok(output) = spawn_result
     {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);

@@ -87,14 +87,25 @@ export function parseCardsListOutput(stdout: string): CachedCard[] {
 export function createBoardCache(deps: BoardCacheDeps): BoardCache {
   let cards: CachedCard[] = [];
   let lastRefresh = 0;
+  // #3347 — no-overlap guard. The 2026-06-11 box starvation: the 60s refresh
+  // interval kept spawning `cards list` while prior invocations hung against a
+  // slow API, snowballing to 197 processes at load 95. A new refresh while one
+  // is in flight is ALWAYS wrong — it can only pile onto whatever is slow.
+  // Skip, and let the in-flight one (now bounded by the CLI's own
+  // timeout/watchdog) finish or die.
+  let inFlight = false;
 
   const refresh = async (): Promise<void> => {
+    if (inFlight) return; // previous refresh still running — never stack
+    inFlight = true;
     try {
       const stdout = await deps.run();
       cards = parseCardsListOutput(stdout);
       lastRefresh = Date.now();
     } catch {
       // Keep the previous snapshot on failure — better stale than empty.
+    } finally {
+      inFlight = false;
     }
   };
 

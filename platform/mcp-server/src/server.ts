@@ -2184,8 +2184,18 @@ async function execCardsCli(
       logEvent('info', `mcp.cards.${verb}.refused`, { from, reason: 'needs-approval' });
       return out || '(card-approval refusal — the structured ask is in the pickup file)';
     }
-    const errMsg = err instanceof Error ? err.message : String(err);
-    logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg });
+    // #3347 — surface the REAL failure, never an opaque "Command failed".
+    // The 2026-06-11 starvation: cards add exceeded this exec's 10s timeout,
+    // execFile KILLED it (a killed process emits no stderr), and the error
+    // reached the caller as "Command failed: <command>" with zero diagnosis —
+    // twice, while the box starved. Name the timeout-kill case explicitly and
+    // append whatever output tail exists.
+    const killed = Boolean((err as { killed?: boolean }).killed) || (err as { signal?: string }).signal === 'SIGTERM';
+    const outTail = out.trim().slice(-400);
+    const errMsg = killed
+      ? `cards ${verb} timed out and was killed (exec timeout) — API slow/blocked? (#3347)${outTail ? ` | output tail: ${outTail}` : ''}`
+      : `${err instanceof Error ? err.message : String(err)}${outTail ? ` | output tail: ${outTail}` : ''}`;
+    logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg.slice(0, 500) });
     throw new Error(`${toolName} failed: ${errMsg}`);
   }
 }

@@ -149,3 +149,48 @@ describe('createBoardCache', () => {
     expect(age).toBeLessThanOrEqual(after);
   });
 });
+
+// #3347 — no-overlap guard: a refresh tick while one is in flight must NOT
+// stack a second runner invocation (the 197-process snowball mechanism).
+describe('#3347 refresh no-overlap', () => {
+  test('concurrent refresh calls run the runner once, not N times', async () => {
+    let running = 0;
+    let maxConcurrent = 0;
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const cache = createBoardCache({
+      run: async () => {
+        calls++; running++;
+        maxConcurrent = Math.max(maxConcurrent, running);
+        await gate; // simulate the slow API hang
+        running--;
+        return 'WIP (0)\n';
+      },
+    });
+    const first = cache.refresh();
+    // Three poller ticks land while the first refresh hangs:
+    await Promise.all([cache.refresh(), cache.refresh(), cache.refresh()]);
+    expect(calls).toBe(1);          // ticks skipped, nothing stacked
+    release();
+    await first;
+    expect(maxConcurrent).toBe(1);
+    // Guard releases: a later refresh runs again
+    await cache.refresh();
+    expect(calls).toBe(2);
+  });
+
+  test('a throwing run releases the guard (finally) — next refresh still works', async () => {
+    let calls = 0;
+    const cache = createBoardCache({
+      run: async () => {
+        calls++;
+        if (calls === 1) throw new Error('api down');
+        return 'WIP (0)\n';
+      },
+    });
+    await cache.refresh(); // throws internally, swallowed
+    await cache.refresh(); // must NOT be blocked by a wedged inFlight flag
+    expect(calls).toBe(2);
+  });
+});

@@ -53,6 +53,19 @@ function die(msg: string): never {
   process.exit(1);
 }
 
+// #3347 — process watchdog. Belt to the client timeout's suspenders: NO cards
+// CLI invocation may outlive CARDS_WATCHDOG_MS wall-clock, no matter what hangs
+// (a transport the client timeout doesn't cover, a wedged child, a future code
+// path without a timeout). The 2026-06-11 starvation was 197 cli.ts processes
+// alive 36+ minutes at load 95; this caps any pile at watchdog-window depth.
+// unref'd so it never holds a fast invocation open — it only fires if something
+// ELSE (a hung socket) is keeping the process alive past the deadline.
+const WATCHDOG_MS = Number(process.env.CARDS_WATCHDOG_MS) || 30_000;
+setTimeout(() => {
+  console.error(`ERROR: cards watchdog — process exceeded ${WATCHDOG_MS}ms wall clock; exiting 124 (slow/blocked API?)`);
+  process.exit(124);
+}, WATCHDOG_MS).unref();
+
 function parseGlobalFlags(args: string[]): {
   boardSelection: 'gathering' | 'self';
   productFilter?: 'gathering' | 'chorus';
