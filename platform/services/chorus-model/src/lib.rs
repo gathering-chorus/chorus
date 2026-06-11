@@ -245,6 +245,23 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     Ok((subject, format!("{} .\n", lines.join(" ;\n"))))
 }
 
+/// Spine witness — every write and every refusal is logged via chorus-log
+/// (the crawler's zero-dep pattern). Best-effort: a logging failure goes to
+/// stderr but never changes the write's outcome.
+fn witness(event: &str, kvs: &[(&str, &str)]) {
+    let root = std::env::var("CHORUS_ROOT")
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "silas".to_string());
+    let mut args: Vec<String> = vec![event.to_string(), role];
+    for (k, v) in kvs {
+        args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
+    }
+    let r = Command::new(format!("{}/platform/scripts/chorus-log", root)).args(&args).output();
+    if let Err(e) = r {
+        eprintln!("chorus-model: witness emit failed ({}): {}", e, event);
+    }
+}
+
 /// Full governed write: shape check → referential integrity → idempotent UPDATE.
 pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     let class = class_iri(&req.kind)?;
@@ -257,6 +274,7 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
             || req.edges.iter().any(|(p, _, _)| p == need)
             || need == "label"; // label is auto-derived below when absent
         if !satisfied {
+            witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", need)]);
             return Err(format!("shape-violation: {} requires '{}' (sh:minCount 1, from {})", class, need, ONTOLOGY_GRAPH));
         }
     }
@@ -273,6 +291,7 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
         let target = mint(tkind, tname)?;
         let exists = store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", target))?;
         if !exists {
+            witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "unknown-target"), ("edge", prop)]);
             return Err(format!(
                 "unknown-target: {} → <{}> does not exist in the store — create the target first (referential integrity, fail-closed)",
                 prop, target
@@ -290,6 +309,8 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ {t}{l} }} }}",
         g = INSTANCES_GRAPH, s = subject, t = turtle, l = label_extra
     ))?;
+    let (nf, ne) = (req.fields.len().to_string(), req.edges.len().to_string());
+    witness("model.write", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("iri", subject.as_str()), ("fields", nf.as_str()), ("edges", ne.as_str())]);
     Ok(subject)
 }
 
