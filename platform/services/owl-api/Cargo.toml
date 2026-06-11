@@ -1,0 +1,21 @@
+[package]
+name = "owl-api"
+version = "0.1.0"
+edition = "2021"
+
+# owl-api (#3350, model-5 spike) — generates the Domain API FROM the OWL.
+# `generate` reads chorus:Domain + DomainShape from urn:chorus:ontology and
+# emits routes.json (deterministic: same OWL in, same routes out).
+# `serve` loads routes.json and serves it over HTTP — its own process, OFF the
+# chorus-api Node event loop (the ADR-034 lesson), read-only (writes go
+# through chorus-model, the DAL — never through this API).
+# Zero dependencies (ADR-032 §1): std TcpListener HTTP; Fuseki via curl.
+[dependencies]
+
+[[bin]]
+name = "owl-api"
+path = "src/main.rs"
+
+[lib]
+name = "owl_api"
+path = "src/lib.rs"
