@@ -32,6 +32,11 @@
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 
+// #3379 — the on-demand index/embed/reindex routes spawn detached workers;
+// tests must never fire real passes against live ~/.chorus state.
+process.env.CHORUS_EMBED_WORKER_SCRIPT = '/usr/bin/true';
+process.env.CHORUS_REINDEX_WORKER_SCRIPT = '/usr/bin/true';
+
 export interface TestApp {
   baseUrl: string;
   port: number;

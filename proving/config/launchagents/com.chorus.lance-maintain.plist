@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.lance-maintain</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-lance-maintain.sh</string>
+    </array>
+    <!-- 03:30 nightly — after the 03:00 nightly suites, before the 06:00 review
+         tier reads deep-health (whose DAILY_LOGS watches lance-maintain.log). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/lance-maintain.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/lance-maintain.err</string>
+</dict>
+</plist>
