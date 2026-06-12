@@ -1004,17 +1004,52 @@ fn wait_for_mcp_ready(url: &str) -> R<()> {
     }
 }
 
-/// Poll the chorus-api health endpoint until it reports healthy (#2993 port).
+/// #3375 — is this health body healthy? Pure half of the TS health smoke.
+/// chorus-api answers {"status":"healthy",...}; pulse and clearing (added to the
+/// same smoke by #3352) answer {"status":"ok",...}. The old check required the
+/// literal "healthy" string, so both new daemons false-negatived every deploy:
+/// 30s of polling against a service answering in 0.17s, then a bare "timeout"
+/// refusal (blocked #3366's land 3x, 2026-06-12). Anchored on the status KEY —
+/// "ok"/"healthy" elsewhere in the body must not pass (the 6.401ms substring class).
+pub fn health_body_ok(body: &str) -> bool {
+    let b: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    b.contains("\"status\":\"healthy\"") || b.contains("\"status\":\"ok\"")
+}
+
+/// #3375 AC3 — a health-smoke timeout refusal names what it polled and the last
+/// body it saw. "30s timeout" with no evidence made today's false-negative
+/// undiagnosable from the refusal alone.
+pub fn health_timeout_err(url: &str, timeout: Duration, last_body: Option<&str>) -> String {
+    let seen = match last_body {
+        Some(b) if !b.trim().is_empty() => {
+            let snippet: String = b.trim().chars().take(160).collect();
+            format!("last body: {}", snippet)
+        }
+        _ => "no response (connection refused or empty body every poll)".to_string(),
+    };
+    format!(
+        "health smoke at {} timed out after {:?} — {}. If the body looks healthy but isn't matched, the predicate is wrong (werk-deploy health_body_ok), not the service.",
+        url, timeout, seen
+    )
+}
+
+/// Poll a TS daemon's health endpoint until it reports healthy (#2993 port;
+/// #3375 shape-tolerant predicate + evidence-carrying refusal).
 fn wait_for_api_healthy(url: &str) -> R<()> {
     let deadline = Instant::now() + smoke_timeout();
+    let mut last_body: Option<String> = None;
     loop {
         if let Ok(out) = Command::new("curl").args(["-s", "-m", "2", url]).output() {
-            if String::from_utf8_lossy(&out.stdout).contains("\"status\":\"healthy\"") {
+            let body = String::from_utf8_lossy(&out.stdout).to_string();
+            if health_body_ok(&body) {
                 return Ok(());
+            }
+            if !body.trim().is_empty() {
+                last_body = Some(body);
             }
         }
         if Instant::now() >= deadline {
-            return Err(format!("health smoke at {} timed out after {:?}", url, smoke_timeout()));
+            return Err(health_timeout_err(url, smoke_timeout(), last_body.as_deref()));
         }
         sleep(Duration::from_millis(250));
     }
