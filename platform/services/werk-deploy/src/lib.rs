@@ -1840,6 +1840,21 @@ fn deploy_ts_service(
 /// the binary EXCEPT a role with a live werk containing this crate's source —
 /// that slot is an ACTIVE demo variant and is owned by the demo (#3101).
 pub fn slots_to_refresh(werk_base: &str, crate_name: &str, bin: &str) -> Vec<String> {
+    slots_to_refresh_with(werk_base, crate_name, bin, &werk_diff_touches_crate)
+}
+
+/// Pure-decidable core: `is_variant(werk_dir, crate)` answers "is this live werk
+/// actually MODIFYING this crate?" — injected so tests can model full checkouts
+/// honestly (the first cut checked crate-dir-EXISTS, which is true for EVERY
+/// crate in EVERY werk since werks are full checkouts: the exception swallowed
+/// the rule and the refresh was a production no-op — caught by cold-eyes before
+/// land, 2026-06-12).
+pub fn slots_to_refresh_with(
+    werk_base: &str,
+    crate_name: &str,
+    bin: &str,
+    is_variant: &dyn Fn(&str, &str) -> bool,
+) -> Vec<String> {
     let mut out = Vec::new();
     for role in ["wren", "silas", "kade"] {
         let slot = Path::new(werk_base).join(format!("{}-bin", role)).join(bin);
@@ -1854,7 +1869,7 @@ pub fn slots_to_refresh(werk_base: &str, crate_name: &str, bin: &str) -> Vec<Str
                         let n = e.file_name().to_string_lossy().to_string();
                         n.starts_with(&format!("{}-", role)) && !n.ends_with("-bin")
                     })
-                    .any(|e| e.path().join("platform/services").join(crate_name).is_dir())
+                    .any(|e| is_variant(&e.path().to_string_lossy(), crate_name))
             })
             .unwrap_or(false);
         if !has_live_variant {
@@ -1862,6 +1877,24 @@ pub fn slots_to_refresh(werk_base: &str, crate_name: &str, bin: &str) -> Vec<Str
         }
     }
     out
+}
+
+/// A werk is a VARIANT of a crate iff its branch diff vs origin/main touches
+/// `platform/services/<crate>/` — modification, not presence. Unreadable werk /
+/// git failure → NOT a variant (refresh proceeds): a true variant's own next
+/// pipeline run re-installs its slot via target=werk anyway, so the cost of a
+/// wrong refresh is one re-deploy; the cost of wrongly protecting is the exact
+/// stale-slot class this card exists to kill.
+pub fn werk_diff_touches_crate(werk_dir: &str, crate_name: &str) -> bool {
+    let needle = format!("platform/services/{}/", crate_name);
+    std::process::Command::new("git")
+        .args(["-C", werk_dir, "diff", "--name-only", "origin/main...HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|out| out.lines().any(|l| l.trim().starts_with(&needle)))
+        .unwrap_or(false)
 }
 
 /// Execute the #3376 refresh after a verified canonical install: copy the
@@ -1884,8 +1917,17 @@ fn refresh_role_slots(home: &Path, role: &str, card: u64, trace: &str, crate_nam
                   &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
         } else {
             let _ = fs::remove_file(&tmp);
-            jsonl(home, role, card, trace, "slot.refresh_failed",
-                  &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
+            // A failed refresh must NOT leave the STALE slot executable — the
+            // wrapper would keep routing to last week's semantics (silent-drift
+            // reborn). Retire it aside so fall-through serves CANONICAL: degrade
+            // to current, never to stale. (Cold-eyes probe 3, 2026-06-12.)
+            if fs::rename(&slot, format!("{}.stale", slot)).is_ok() {
+                jsonl(home, role, card, trace, "slot.retired_stale",
+                      &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
+            } else {
+                jsonl(home, role, card, trace, "slot.refresh_failed",
+                      &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
+            }
         }
     }
 }

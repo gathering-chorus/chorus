@@ -582,54 +582,97 @@ fn health_timeout_err_names_url_and_last_body() {
 
 // #3376 — stale role-slot verb binaries. The #3101 wrapper routes CHORUS_ROLE to
 // $WERK_<ROLE>_BIN/<verb> FIRST; nothing refreshed those slots on canonical
-// deploy, so a role kept executing last week's verb semantics after every land
-// (live specimen 2026-06-12: kade-bin/werk-demo predated #3352/#3365 — no gather
-// verb, no round identity — while canonical was current). Ruling executed here:
-// canonical deploys refresh every role slot EXCEPT a role with a live werk
-// containing that crate (an active demo variant owns its slot).
+// deploy. Tests drive slots_to_refresh_with an injected is_variant so fixtures
+// model the REAL property (every werk is a full checkout — presence of a crate
+// dir discriminates nothing; only the branch DIFF does). The first cut's
+// crate-dir-exists guard was a production no-op caught by cold-eyes — these
+// fixtures exist so that false-green cannot recur.
+
+fn full_checkout_werk(base: &std::path::Path, name: &str) {
+    // models reality: EVERY werk contains EVERY crate dir
+    for c in ["werk-demo", "werk-merge", "werk-deploy", "owl-api"] {
+        std::fs::create_dir_all(base.join(name).join("platform/services").join(c)).unwrap();
+    }
+}
+
 #[test]
-fn slots_to_refresh_includes_stale_slot_without_active_werk() {
+fn slots_to_refresh_includes_stale_slot_when_no_werk_modifies_the_crate() {
     let base = std::env::temp_dir().join(format!("s3376-a-{}", std::process::id()));
-    let bin_dir = base.join("kade-bin");
-    std::fs::create_dir_all(&bin_dir).unwrap();
-    std::fs::write(bin_dir.join("werk-demo"), b"old").unwrap();
-    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
-    assert_eq!(r, vec!["kade".to_string()], "stale slot, no live werk → refresh");
+    std::fs::create_dir_all(base.join("kade-bin")).unwrap();
+    std::fs::write(base.join("kade-bin/werk-demo"), b"old").unwrap();
+    full_checkout_werk(&base, "kade-9999"); // live werk, full checkout, MODIFIES NOTHING here
+    let r = werk_deploy::slots_to_refresh_with(
+        base.to_str().unwrap(), "werk-demo", "werk-demo",
+        &|_werk, _crate| false, // branch diff touches nothing
+    );
+    assert_eq!(r, vec!["kade".to_string()],
+        "full checkout present but crate NOT modified → slot refreshes (the no-op guard regression)");
     let _ = std::fs::remove_dir_all(&base);
 }
 
 #[test]
-fn slots_to_refresh_skips_role_with_live_werk_owning_the_crate() {
+fn slots_to_refresh_skips_role_whose_live_werk_modifies_the_crate() {
     let base = std::env::temp_dir().join(format!("s3376-b-{}", std::process::id()));
     std::fs::create_dir_all(base.join("wren-bin")).unwrap();
     std::fs::write(base.join("wren-bin/werk-demo"), b"variant").unwrap();
-    // wren has a LIVE werk for card 9999 that contains the crate source → her
-    // slot is an active demo variant; canonical refresh must not clobber it.
-    std::fs::create_dir_all(base.join("wren-9999/platform/services/werk-demo")).unwrap();
-    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
-    assert!(r.is_empty(), "active variant owns its slot; got {:?}", r);
+    full_checkout_werk(&base, "wren-9999");
+    let r = werk_deploy::slots_to_refresh_with(
+        base.to_str().unwrap(), "werk-demo", "werk-demo",
+        &|werk, krate| werk.ends_with("wren-9999") && krate == "werk-demo",
+    );
+    assert!(r.is_empty(), "live werk MODIFYING the crate owns its slot; got {:?}", r);
     let _ = std::fs::remove_dir_all(&base);
 }
 
 #[test]
 fn slots_to_refresh_skips_roles_without_slot_binary() {
     let base = std::env::temp_dir().join(format!("s3376-c-{}", std::process::id()));
-    std::fs::create_dir_all(base.join("silas-bin")).unwrap(); // dir exists, no binary
-    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    std::fs::create_dir_all(base.join("silas-bin")).unwrap();
+    let r = werk_deploy::slots_to_refresh_with(
+        base.to_str().unwrap(), "werk-demo", "werk-demo", &|_, _| false);
     assert!(r.is_empty(), "no slot binary → nothing to refresh; got {:?}", r);
     let _ = std::fs::remove_dir_all(&base);
 }
 
 #[test]
-fn slots_to_refresh_live_werk_for_other_crate_does_not_protect() {
+fn slots_to_refresh_werk_modifying_other_crate_does_not_protect() {
     let base = std::env::temp_dir().join(format!("s3376-d-{}", std::process::id()));
     std::fs::create_dir_all(base.join("silas-bin")).unwrap();
     std::fs::write(base.join("silas-bin/werk-demo"), b"old").unwrap();
-    // silas's live werk touches a DIFFERENT crate — werk-demo slot is not a
-    // variant of this card; it must refresh.
-    std::fs::create_dir_all(base.join("silas-8888/platform/services/werk-merge")).unwrap();
-    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    full_checkout_werk(&base, "silas-8888");
+    let r = werk_deploy::slots_to_refresh_with(
+        base.to_str().unwrap(), "werk-demo", "werk-demo",
+        &|werk, krate| werk.ends_with("silas-8888") && krate == "werk-merge", // modifies a DIFFERENT crate
+    );
     assert_eq!(r, vec!["silas".to_string()]);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn werk_diff_touches_crate_detects_modification_via_real_git() {
+    // the production discriminator: branch diff vs origin/main touches the crate.
+    let base = std::env::temp_dir().join(format!("s3376-g-{}", std::process::id()));
+    let werk = base.join("repo");
+    std::fs::create_dir_all(werk.join("platform/services/werk-demo")).unwrap();
+    let git = |args: &[&str]| {
+        assert!(std::process::Command::new("git").arg("-C").arg(&werk)
+            .envs([("GIT_AUTHOR_NAME","t"),("GIT_AUTHOR_EMAIL","t@t"),
+                   ("GIT_COMMITTER_NAME","t"),("GIT_COMMITTER_EMAIL","t@t")])
+            .args(args).status().unwrap().success());
+    };
+    git(&["init", "-q", "-b", "main"]);
+    std::fs::write(werk.join("platform/services/werk-demo/f.rs"), b"a").unwrap();
+    git(&["add", "."]); git(&["commit", "-q", "-m", "base"]);
+    // simulate origin/main at base
+    git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    assert!(!werk_deploy::werk_diff_touches_crate(werk.to_str().unwrap(), "werk-demo"),
+        "no modification → not a variant");
+    std::fs::write(werk.join("platform/services/werk-demo/f.rs"), b"changed").unwrap();
+    git(&["add", "."]); git(&["commit", "-q", "-m", "variant"]);
+    assert!(werk_deploy::werk_diff_touches_crate(werk.to_str().unwrap(), "werk-demo"),
+        "branch modifies the crate → variant");
+    assert!(!werk_deploy::werk_diff_touches_crate(werk.to_str().unwrap(), "werk-merge"),
+        "other crates not protected by this werk");
     let _ = std::fs::remove_dir_all(&base);
 }
 
@@ -650,5 +693,27 @@ fn refresh_executor_makes_slot_content_equal_canonical() {
     assert_eq!(got, b"NEW-CANONICAL", "slot content must equal canonical after refresh");
     let w = std::fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl")).unwrap_or_default();
     assert!(w.contains("slot.refreshed"), "refresh witnessed; got: {}", w);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn refresh_failure_retires_stale_slot_aside_so_canonical_serves() {
+    // #3376 cold-eyes probe 3 — a FAILED refresh must not leave the stale slot
+    // executable (wrapper would keep routing to last week's semantics). The slot
+    // is renamed aside (.stale) so fall-through serves canonical; witnessed.
+    let base = std::env::temp_dir().join(format!("s3376-f-{}", std::process::id()));
+    let home = base.join("home");
+    std::fs::create_dir_all(home.join("ops/logs")).unwrap();
+    std::fs::create_dir_all(base.join("kade-bin")).unwrap();
+    std::fs::write(base.join("kade-bin/werk-x"), b"STALE").unwrap();
+    std::env::set_var("CHORUS_WERK_BASE", base.to_str().unwrap());
+    // canonical path does NOT exist → fs::copy fails → retire-aside branch
+    let missing = base.join("no-such-canonical");
+    werk_deploy::refresh_role_slots_for_test(&home, "kade", 9376, "t", "werk-x", "werk-x", missing.to_str().unwrap());
+    std::env::remove_var("CHORUS_WERK_BASE");
+    assert!(!base.join("kade-bin/werk-x").exists(), "stale slot must be GONE from the exec name");
+    assert_eq!(std::fs::read(base.join("kade-bin/werk-x.stale")).unwrap(), b"STALE", "retired aside, not deleted");
+    let w = std::fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl")).unwrap_or_default();
+    assert!(w.contains("slot.retired_stale"), "retirement witnessed; got: {}", w);
     let _ = std::fs::remove_dir_all(&base);
 }
