@@ -117,9 +117,9 @@ for log in "$LOG_DIR"/*.log; do
 done
 
 # --- 4. Loki reachability from Bedroom (direct LAN, no tunnel — #1988) ---
-bedroom_loki=$(ssh -o ConnectTimeout=5 bedroom "curl -sf --max-time 3 http://192.168.86.36:3102/ready 2>/dev/null" || true)
+bedroom_loki=$(ssh -o ConnectTimeout=5 bedroom "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" || true)
 if [ "$bedroom_loki" != "ready" ]; then
-  FAILURES+=("loki-bedroom: Bedroom cannot reach Loki at 192.168.86.36:3102")
+  FAILURES+=("loki-bedroom: Bedroom cannot reach Loki at Jeffs-Mac-Mini-M1-3.local:3102")
 fi
 
 # --- 5. Session index freshness (#2270) ---
@@ -248,8 +248,8 @@ HEALTH_ENDPOINTS=(
   "http://localhost:9115/metrics|blackbox-http|endpoint probing"
   "http://localhost:9101/metrics|node-exporter-http|host metrics"
   # Bedroom
-  "http://192.168.86.242:3001/|images-api-http|Bedroom photos"
-  "http://192.168.86.242:11434/api/tags|ollama-http|semantic search"
+  "http://Jeffs-Mac-mini.local:3001/|images-api-http|Bedroom photos"
+  "http://Jeffs-Mac-mini.local:11434/api/tags|ollama-http|semantic search"
 )
 
 # --- 11b. LanceDB sync drift (#1920 — replaces mtime check) ---

@@ -28,7 +28,7 @@ No formal ICD — infrastructure is operational, not a data domain. Governed by:
 | Prometheus config | `shared-observability/config/prometheus/prometheus-native.yml` | All scrape targets |
 | Alerting rules | `shared-observability/config/grafana/provisioning/alerting/chorus-alerts.yaml` | 6 rules including 3 NiFi |
 | Chorus hooks | `messages/services/chorus-hooks/` | Rust binary, ~25 hooks |
-| NiFi | `https://192.168.86.242:8443` | Bedroom, admin/nifi-gathering-2026 |
+| NiFi | `https://Jeffs-Mac-mini.local (192.168.86.242 reserved):8443` | Bedroom, admin/nifi-gathering-2026 |
 | Loki tunnel | `com.gathering.loki-tunnel-bedroom` LaunchAgent on Library | Reverse SSH tunnel for Promtail |
 
 ## Key Decisions
@@ -45,7 +45,7 @@ No formal ICD — infrastructure is operational, not a data domain. Governed by:
 - **Service lifecycle uses the right script per app.** `agent-state.sh` for chorus services (`com.chorus.*`), `chorus-deploy <crate>` for chorus binary deploys (handles `launchctl kickstart com.chorus.api` and similar), `app-state.sh` for the gathering personal-site stack (`com.gathering.*`). Never kill PIDs manually. Never `launchctl unload` without going through one of these scripts. Do not call `app-state.sh` for chorus services — it is hardcoded to `com.gathering.*`.
 - **Library disk at 71%.** Warning at 90%, critical at 95%. Every new service or data store needs a disk impact estimate.
 - **Bedroom is storage and media serving, not compute.** Don't run Gathering app services there. NiFi is the exception (governed data pipelines).
-- **NiFi binds to machine IP (192.168.86.242:8443), not localhost.** Go's pure-Go networking can't reach cross-machine HTTP — use reverse SSH tunnel for Promtail→Loki.
+- **NiFi binds to machine IP (Jeffs-Mac-mini.local (192.168.86.242 reserved):8443), not localhost.** Go's pure-Go networking can't reach cross-machine HTTP — use reverse SSH tunnel for Promtail→Loki.
 - **CSC hook is live (#1685).** Writing pipeline artifacts to `/tmp/` will be blocked. Use `/Volumes/Gathering/<domain>/generated/`.
 - **Nudge injection uses osascript keystroke via TTY lookup (#1687).** `do script` runs shell commands, not keystrokes. The fix: find TTY → find Terminal tab → select → keystroke → Return.
 - **APFS disk reporting is unreliable.** Never use `df`/`du` on Library. Use `diskutil info /` or Finder. Purgeable space and iCloud stubs make `df` wrong.

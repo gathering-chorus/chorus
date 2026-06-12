@@ -9,7 +9,7 @@
 set -eo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-BEDROOM="192.168.86.242"
+BEDROOM="Jeffs-Mac-mini.local"
 BOARD_TS="$CHORUS_ROOT/platform/scripts/cards"
 CHORUS_LOG="$CHORUS_ROOT/platform/scripts/chorus-log"
 CARD_MODE=false
@@ -51,7 +51,7 @@ elif [ "$OLLAMA_DIM" != "768" ]; then
   WARNINGS+=("Ollama embedding returned unexpected dim=$OLLAMA_DIM (expected 768)")
 fi
 
-# 3c. Fuseki — not installed on Bedroom. Library (192.168.86.36:3030) is primary.
+# 3c. Fuseki — not installed on Bedroom. Library (Jeffs-Mac-Mini-M1-3.local:3030) is primary.
 
 # 3d. NiFi process check (#1853 feedback from Kade)
 NIFI_PID=$(ssh -o ConnectTimeout=5 "$BEDROOM" "pgrep -f 'nifi.*run' 2>/dev/null || echo 0" 2>/dev/null)

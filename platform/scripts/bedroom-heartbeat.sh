@@ -3,7 +3,7 @@
 # Runs via LaunchAgent every 5 minutes.
 # Silas owns. 2026-03-23.
 
-BEDROOM_IP="192.168.86.242"
+BEDROOM_IP="Jeffs-Mac-mini.local"
 STATE_FILE="/tmp/bedroom-heartbeat-state"
 LOG="/tmp/bedroom-heartbeat.log"
 
@@ -20,7 +20,7 @@ else
   # Bedroom is down
   if [ ! -f "$STATE_FILE" ] || [ "$(cat "$STATE_FILE")" != "down" ]; then
     # First detection of outage
-    osascript -e "display notification \"Bedroom Mac is unreachable — check power/network\" with title \"Gathering\" subtitle \"192.168.86.242 not responding\" sound name \"Basso\"" 2>/dev/null
+    osascript -e "display notification \"Bedroom Mac is unreachable — check power/network\" with title \"Gathering\" subtitle \"Jeffs-Mac-mini.local not responding\" sound name \"Basso\"" 2>/dev/null
     echo "$(TZ=America/New_York date '+%H:%M') DOWN" >> "$LOG"
   fi
   echo "down" > "$STATE_FILE"
