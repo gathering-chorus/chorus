@@ -519,6 +519,19 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
 /// (auth, request logging, validation, rate limits) ONCE, and every generated
 /// route inherits them. No per-route wiring, ever — that's the payoff of
 /// generating: the seam is structural, not conventional.
+/// Build the full HTTP response. Pure seam (the `effective_trace` pattern) so
+/// the wire shape is testable. #3373: responses carry CORS — pages ride beside
+/// their generated APIs, and a :3340-served page must read this loopback-bound
+/// API cross-origin. The permissive origin is loopback-scoped (listener binds
+/// 127.0.0.1, tunnel never exposes it); the #3355 expiry tooth (security ADR
+/// #3372) supersedes it when generated authn lands.
+pub fn http_response(status: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        status, body.len(), body
+    )
+}
+
 pub fn serve(port: u16, table: &RouteTable) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     eprintln!("owl-api: serving generated {} API on :{} (read-only; writes go through chorus-model)", table.class, port);
@@ -540,10 +553,7 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
         let ((code, body), meta) = handle_meta(&path, table);
         let upstream_ms = upstream_started.elapsed().as_millis();
         let status = match code { 200 => "200 OK", 404 => "404 Not Found", _ => "502 Bad Gateway" };
-        let resp = format!(
-            "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            status, body.len(), body
-        );
+        let resp = http_response(status, &body);
         let _ = stream.write_all(resp.as_bytes());
         // THE SEAM: every request passes here once — telemetry now; auth,
         // validation, rate limits inject at this same point (the IoC payoff).
