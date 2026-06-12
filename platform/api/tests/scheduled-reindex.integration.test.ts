@@ -43,23 +43,16 @@ describe('Scheduled reindex — index_freshness (#1960)', () => {
     if (spine) expect(spine.age_seconds).toBeLessThan(1200);
   });
 
-  test('POST /api/chorus/reindex succeeds (manual trigger still works)', async () => {
+  test('POST /api/chorus/reindex spawns the workers (202, never runs on the loop — #3379)', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/reindex`, { method: 'POST' });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(202);
     const body = await res.json();
-    expect(body.status).toBe('ok');
+    expect(body.status).toBe('spawned');
+    expect(body.workers).toEqual(['reindex', 'embed']);
     expect(body.timestamp).toBeDefined();
   }, 30_000);
 
-  test('after reindex, spine and claude sources have staleness_ratio <= 1', async () => {
-    await fetch(`${harness.baseUrl}/api/chorus/reindex`, { method: 'POST' });
-    const res = await fetch(`${harness.baseUrl}/api/chorus/freshness`);
-    const body = await res.json();
-    const critical = body.sources.filter(function(s) {
-      return s.source === 'spine' || s.source === 'claude';
-    });
-    for (const src of critical) {
-      expect(src.staleness_ratio).toBeLessThanOrEqual(1.0);
-    }
-  }, 30_000);
+  // #3379: the 'freshness improves after POST /reindex' test is retired with its
+  // premise — the route spawns the worker instead of running the pass inline.
+  // The 'last_indexed within 20 minutes' test above is the live freshness proof.
 });

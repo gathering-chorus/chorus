@@ -9,7 +9,7 @@
  */
 import express, { Request, Response, NextFunction } from 'express';
 import Database from 'better-sqlite3';
-import { execFile, exec } from 'child_process';
+import { execFile, exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
@@ -281,8 +281,11 @@ app.use((req, res, next) => {
   next();
 });
 const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
-const DB_PATH = path.join(os.homedir(), '.chorus', 'index.db');
-const LANCE_DIR = path.join(os.homedir(), '.chorus', 'lance');
+// #3379 — env-overridable: demo VARIANTS must not open production's stores
+// (three api processes sharing index.db+lance was the day's wedge root; the
+// env-up isolation follow-on passes per-werk paths through these seams).
+const DB_PATH = process.env.CHORUS_DB_PATH || path.join(os.homedir(), '.chorus', 'index.db');
+const LANCE_DIR = process.env.CHORUS_LANCE_DIR || path.join(os.homedir(), '.chorus', 'lance');
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 // #3217 — split the embed host: SEARCH query-embed stays on OLLAMA_URL (localhost,
 // latency-critical, same box as chorus-api); BULK embed-delta uses OLLAMA_BULK_URL
@@ -290,7 +293,6 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 // dead Bedroom host took search down for hours (2026-06-04). Defaults to OLLAMA_URL
 // when unset (no behavior change without the env). Both set in the TRACKED
 // chorus-env-setup.sh so a plist regen can't revert them.
-const OLLAMA_BULK_URL = process.env.OLLAMA_BULK_URL || OLLAMA_URL;
 const EMBED_MODEL = 'nomic-embed-text';
 // Prefer repo scripts (always present), fall back to ~/.chorus/scripts
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -328,46 +330,39 @@ setInterval(() => {
 // --- LanceDB semantic search (#2205 wave 11: init + search extracted) ---
 
 let lanceTable: lancedb.Table | null = null;
-let lanceDb: lancedb.Connection | null = null;
 
 import { createLanceInit, searchInTable } from './lance-store';
 const _lanceInit = createLanceInit({ fs, lancedb, lanceDir: LANCE_DIR });
 
 async function initLance(): Promise<void> {
   const r = await _lanceInit();
-  lanceDb = r.db as lancedb.Connection | null;
   lanceTable = r.table as lancedb.Table | null;
 }
 
 // --- Embed-at-ingest: embed new messages after indexing ---
 
-import { MIN_EMBED_LENGTH } from './embed-floor';  // #2754 — single source of truth
-const EMBED_PAGE_SIZE = 100;  // Process one page per cycle, timer handles the rest (#1920)
-
-// embedDelta extracted to src/embed-delta.ts (#2205 wave 16).
-// Lance init is still called here — the extracted delta takes the store as a dep.
-import { createEmbedDelta, singleFlight } from './embed-delta';
-// #3214 — single-flight the backfill. 3 triggers (incl. POST /api/chorus/index,
-// hit by the reindex-worker) must not spawn CONCURRENT embed loops that storm the
-// shared Ollama connection pool and starve the search's query-embed (the live
-// 48s semantic timeout 2026-06-04). One in-flight run; overlapping calls coalesce.
-const _embedDeltaInner = singleFlight(createEmbedDelta({
-  dbPath: DB_PATH,
-  DatabaseCtor: Database,
-  getLanceStore: () => ({
-    db: lanceDb as unknown as { createTable: (n: string, rec: Record<string, unknown>[]) => Promise<unknown> } | null,
-    table: lanceTable as unknown as { add: (rec: Record<string, unknown>[]) => Promise<void> } | null,
-  }),
-  setLanceTable: (t) => { lanceTable = t as lancedb.Table; },
-  embed: (t: string) => embedBulk(t), // #3217 — bulk → Bedroom, not the search host
-  minLength: MIN_EMBED_LENGTH,
-  pageSize: EMBED_PAGE_SIZE,
-}));
-async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama_failures: number }> {
-  if (!lanceDb) await initLance();
-  const db = lanceDb as lancedb.Connection | null;
-  if (!db) return { embedded: 0, skipped: 0, ollama_failures: 0 };
-  return _embedDeltaInner();
+// #3379 — embed-delta NO LONGER RUNS IN-PROCESS. The pass interleaves
+// synchronous better-sqlite3 page reads with lance writes; on this event loop
+// it wedged the whole API (2026-06-12: 5 outages, convicted by isolation —
+// 2.6% CPU calm with the pass off, 65-100% wedges with it on). The wiring
+// moved whole to embed-delta-deps.ts (the #3085 index-all-sources-deps
+// pattern) and runs in dist/embed-delta-worker.js via chorus-embed-worker.sh.
+// On-demand triggers below SPAWN the worker detached; they never run the pass.
+// (#3214's single-flight concern moved with it: the launcher's lockfile is the
+// cross-process single-flight; in-process coalescing lives on in the deps.)
+const EMBED_WORKER_SCRIPT = process.env.CHORUS_EMBED_WORKER_SCRIPT
+  || path.join(CHORUS_ROOT, 'platform/scripts/chorus-embed-worker.sh');
+const REINDEX_WORKER_SCRIPT = process.env.CHORUS_REINDEX_WORKER_SCRIPT
+  || path.join(CHORUS_ROOT, 'platform/scripts/chorus-reindex-worker.sh');
+function spawnDetachedWorker(script: string): void {
+  const child = spawn('/bin/bash', [script], { detached: true, stdio: 'ignore' });
+  // Kade's #3379 gather catch: a 202 that spawns nothing is a false-green
+  // sibling. Without this listener an ENOENT 'error' event is also an
+  // UNHANDLED EventEmitter error — it would crash the API. Log loud instead.
+  child.on('error', (err) => {
+    console.error(`[spawn-worker] FAILED to spawn ${script}: ${err.message}`);
+  });
+  child.unref();
 }
 
 // Embed query helper (extracted to src/embed-query.ts in #2205 wave 2).
@@ -376,9 +371,8 @@ async function embedDelta(): Promise<{ embedded: number; skipped: number; ollama
 import { createEmbedder } from './embed-query';
 
 const embedQuery = createEmbedder({ ollamaUrl: OLLAMA_URL, model: EMBED_MODEL });
-// #3217 — separate embedder for BULK embed-delta (Bedroom GPU); search never routes
-// cross-machine. Same model + retry/cache; only the host differs.
-const embedBulk = createEmbedder({ ollamaUrl: OLLAMA_BULK_URL, model: EMBED_MODEL });
+// #3217's bulk embedder (Bedroom GPU) moved to embed-delta-deps.ts with the
+// pass itself (#3379) — OLLAMA_BULK_URL is read there from the same env.
 
 interface SemanticResult {
   msg_id: number;
@@ -1174,43 +1168,25 @@ app.post('/api/cards/view', async (req: Request, res: Response) => {
 // --- POST /api/chorus/reindex (#1879) ---
 // Trigger full re-index + re-embed without app restart
 
-app.post('/api/chorus/reindex', async (_req: Request, res: Response) => {
-  try {
-    const indexResult = await indexAllSources();
-    const embedResult = await embedDelta();
-    res.json({
-      status: 'ok',
-      ...indexResult,
-      embedded: embedResult.embedded,
-      skipped: embedResult.skipped,
-      timestamp: bostonNow(),
-    });
-  } catch (err: unknown) {
-    res.status(500).json({ error: errMsg(err) });
-  }
+app.post('/api/chorus/reindex', (_req: Request, res: Response) => {
+  // #3379 — never run index/embed on this loop; hand both to their workers.
+  spawnDetachedWorker(REINDEX_WORKER_SCRIPT);
+  spawnDetachedWorker(EMBED_WORKER_SCRIPT);
+  res.status(202).json({ status: 'spawned', workers: ['reindex', 'embed'], timestamp: bostonNow() });
 });
 
 // --- POST /api/chorus/index ---
 // Inline indexing — replaces deleted bash scripts (#1879)
 
-app.post('/api/chorus/index', async (_req: Request, res: Response) => {
-  try {
-    const result = await indexAllSources();
-    embedDelta().catch(err =>
-      console.error(`[embed-delta] post-index embed failed: ${err.message}`)
-    );
-    res.json(result);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errMsg(err) });
-  }
+app.post('/api/chorus/index', (_req: Request, res: Response) => {
+  // #3379 — off-loop; the embed cadence (com.chorus.embed-worker) follows up.
+  spawnDetachedWorker(REINDEX_WORKER_SCRIPT);
+  res.status(202).json({ status: 'spawned', workers: ['reindex'], timestamp: bostonNow() });
 });
 
-// indexAllSources extracted to src/index-all-sources.ts (#2205 wave 18).
-// Deps wiring (incl. the perf-tuned readTail #3067 / readSince #3077) shared with
-// the standalone reindex worker via index-all-sources-deps.ts so the two cannot
-// drift (#3085, chorus:principle-no-competing-implementations).
-import { makeIndexAllSources } from './index-all-sources-deps';
-const indexAllSources = makeIndexAllSources({ dbPath: DB_PATH, repoRoot: REPO_ROOT });
+// indexAllSources left server.ts entirely in #3379 — the worker
+// (index-worker.ts via index-all-sources-deps.ts) is the only runner; the
+// on-demand routes above spawn it detached instead of importing it.
 
 
 // --- GET /api/chorus/self — Read-only filtered endpoint for Self (DEC-068) ---
@@ -1239,13 +1215,10 @@ app.get('/api/chorus/self', async (req: Request, res: Response) => {
 
 // --- POST /api/chorus/embed (trigger embed-delta on demand) ---
 
-app.post('/api/chorus/embed', async (_req: Request, res: Response) => {
-  try {
-    const result = await embedDelta();
-    res.json(result);
-  } catch (err: unknown) {
-    res.status(500).json({ error: errMsg(err) });
-  }
+app.post('/api/chorus/embed', (_req: Request, res: Response) => {
+  // #3379 — the pass runs in dist/embed-delta-worker.js, never here.
+  spawnDetachedWorker(EMBED_WORKER_SCRIPT);
+  res.status(202).json({ status: 'spawned', workers: ['embed'], timestamp: bostonNow() });
 });
 
 // --- POST /api/chorus/pulse (spine event emission — replaces chorus-log.sh) ---

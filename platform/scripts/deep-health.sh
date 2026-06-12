@@ -63,7 +63,7 @@ STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.std
 # leftover logs must not resurrect a liveness expectation (#3369).
 LIVENESS_LOGS="chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
-DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log"
+DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log lance-maintain.log"
 # Weekly / multi-day jobs — 8 day threshold
 WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log"
 
