@@ -15,6 +15,7 @@ import { MessageRouter } from './router';
 import { ChorusLogTailer } from './tailer';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
+import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -41,7 +42,38 @@ try {
   require('fs').writeFileSync(BRIDGE_TOKEN_FILE, BRIDGE_TOKEN);
 }
 console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
-console.log(`[clearing] remote URL: http://192.168.86.36:${PORT}?token=${BRIDGE_TOKEN}`);
+
+// #3366: LAN URLs derived at boot, never hardcoded — DHCP moved this machine
+// off 192.168.86.36 and every printed URL died. The .local Bonjour name is
+// canonical (IP-proof); the numeric IP is the fallback. A from→to address
+// change emits clearing.lan.ip.drifted so drift is visible, not silent.
+function readLocalHostName(): string | null {
+  try {
+    return require('child_process').execFileSync('scutil', ['--get', 'LocalHostName'],
+      { encoding: 'utf-8', timeout: 2000 }).trim() || null;
+  } catch {
+    return require('os').hostname() || null;
+  }
+}
+const LOCAL_HOST_NAME = readLocalHostName();
+for (const line of startupLanLines(PORT, undefined, LOCAL_HOST_NAME)) console.log(line);
+
+const LAN_IP_FILE = `${CHORUS_HOME}/clearing-lan-ip`;
+{
+  const currentLanIp = lanAddress();
+  let previousLanIp: string | null = null;
+  try { previousLanIp = require('fs').readFileSync(LAN_IP_FILE, 'utf-8').trim() || null; } catch { /* first boot */ }
+  const drift = detectIpDrift(previousLanIp, currentLanIp);
+  if (drift.drifted) {
+    console.log(`[clearing] LAN IP drifted: ${drift.from} -> ${drift.to} (bookmarks pinned to the old IP are dead; .local URL unaffected)`);
+    require('child_process').execFile(`${CHORUS_ROOT}/platform/scripts/chorus-log`,
+      ['clearing.lan.ip.drifted', 'system', `from=${drift.from}`, `to=${drift.to}`],
+      () => { /* fire-and-forget breadcrumb */ });
+  }
+  if (currentLanIp) {
+    try { require('fs').writeFileSync(LAN_IP_FILE, currentLanIp); } catch { /* non-fatal */ }
+  }
+}
 
 const app = express();
 const server = createServer(app);
@@ -1003,7 +1035,8 @@ if (require.main === module) {
     // Attach Socket.IO to HTTPS server too — same handlers via shared app
     io.attach(httpsServer);
     httpsServer.listen(HTTPS_PORT, () => {
-      console.log(`The Clearing HTTPS listening on https://192.168.86.36:${HTTPS_PORT} (mic-enabled)`);
+      const httpsHost = bonjourHost(LOCAL_HOST_NAME) ?? lanAddress() ?? 'localhost';
+      console.log(`The Clearing HTTPS listening on https://${httpsHost}:${HTTPS_PORT} (mic-enabled)`);
     });
   } catch (err: unknown) {
     console.log(`[clearing] HTTPS not available: ${err instanceof Error ? err.message : String(err)} — mic requires tunnel URL`);

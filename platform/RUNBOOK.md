@@ -94,7 +94,7 @@ bash chorus/proving/scripts/alert-runner.sh --rule synthetic-test
 
 ## Service Inventory
 
-### Library Mac (192.168.86.36)
+### Library Mac (`jeffs-mac-mini-m1-3.local` — IP DHCP-volatile; .23 as of 2026-06-11, was .36)
 
 #### Native LaunchAgents
 All managed via `launchctl`. Plists in `~/Library/LaunchAgents/`.
