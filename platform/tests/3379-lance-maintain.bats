@@ -59,3 +59,21 @@ DEEP_HEALTH="$REPO/platform/scripts/deep-health.sh"
 @test "worker emits a spine event so the run is witnessed" {
   grep -qE "lance.maintain|chorus-log" "$SCRIPT"
 }
+
+@test "embed-worker script runs its own node worker, never curls the embed route" {
+  # #3379's core retire: the curl-the-API model ran the pass ON the serving
+  # loop. The script must exec dist/embed-delta-worker.js and must not POST
+  # /api/chorus/embed.
+  EMBED_SH="$REPO/platform/scripts/chorus-embed-worker.sh"
+  grep -q "dist/embed-delta-worker.js" "$EMBED_SH"
+  # (the route appears in a history comment; assert no LIVE curl of it)
+  run grep -cE "curl.*api/chorus/embed" "$EMBED_SH"
+  [ "$output" = "0" ]
+}
+
+@test "server.ts never runs index/embed passes in-process (spawn-only)" {
+  SERVER="$REPO/platform/api/src/server.ts"
+  run grep -cE "await (embedDelta|indexAllSources)\(" "$SERVER"
+  [ "$output" = "0" ]
+  grep -q "spawnDetachedWorker" "$SERVER"
+}
