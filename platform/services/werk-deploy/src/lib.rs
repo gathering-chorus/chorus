@@ -1832,6 +1832,69 @@ fn deploy_ts_service(
 /// orchestrator after build+deploy (Wren's lane on werk-demo). For
 /// `target=werk` the installed binary IS the role's slot binary; no wrapper
 /// (a wrapper there would loop into itself).
+/// #3376 — role slots owed a refresh when a verb lands canonical. The #3101
+/// wrapper routes CHORUS_ROLE to $WERK_<ROLE>_BIN/<bin> FIRST; without refresh
+/// a role keeps running last week's verb after every land (the merged≠live
+/// class one layer down — kade-bin/werk-demo predated #3352/#3365 live on
+/// 2026-06-12 while canonical was current). Refresh every role slot holding
+/// the binary EXCEPT a role with a live werk containing this crate's source —
+/// that slot is an ACTIVE demo variant and is owned by the demo (#3101).
+pub fn slots_to_refresh(werk_base: &str, crate_name: &str, bin: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for role in ["wren", "silas", "kade"] {
+        let slot = Path::new(werk_base).join(format!("{}-bin", role)).join(bin);
+        if !slot.is_file() {
+            continue;
+        }
+        let has_live_variant = fs::read_dir(werk_base)
+            .ok()
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        n.starts_with(&format!("{}-", role)) && !n.ends_with("-bin")
+                    })
+                    .any(|e| e.path().join("platform/services").join(crate_name).is_dir())
+            })
+            .unwrap_or(false);
+        if !has_live_variant {
+            out.push(role.to_string());
+        }
+    }
+    out
+}
+
+/// Execute the #3376 refresh after a verified canonical install: copy the
+/// canonical `-bin` content over each owed slot (atomic via tmp+rename), emit
+/// slot.refreshed per slot. Best-effort per slot — a failed slot refresh is
+/// LOUD on the witness but does not fail the deploy (canonical is the truth;
+/// the wrapper's fall-through still serves it if a slot copy is lost).
+fn refresh_role_slots(home: &Path, role: &str, card: u64, trace: &str, crate_name: &str, bin: &str, canonical_path: &str) {
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    for slot_role in slots_to_refresh(&werk_base, crate_name, bin) {
+        let slot = format!("{}/{}-bin/{}", werk_base, slot_role, bin);
+        let tmp = format!("{}.refresh-tmp", slot);
+        let ok = fs::copy(canonical_path, &tmp).is_ok()
+            && run_env(None, &[], "chmod", &["+x", &tmp]).is_ok()
+            && fs::rename(&tmp, &slot).is_ok();
+        if ok {
+            jsonl(home, role, card, trace, "slot.refreshed",
+                  &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
+        } else {
+            let _ = fs::remove_file(&tmp);
+            jsonl(home, role, card, trace, "slot.refresh_failed",
+                  &format!(",\"bin\":\"{}\",\"slot_role\":\"{}\"", bin, slot_role));
+        }
+    }
+}
+
+/// Test seam for refresh_role_slots (env-driven werk base; fs side effects).
+pub fn refresh_role_slots_for_test(home: &Path, role: &str, card: u64, trace: &str, crate_name: &str, bin: &str, canonical_path: &str) {
+    refresh_role_slots(home, role, card, trace, crate_name, bin, canonical_path)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn deploy_cli_verb(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
@@ -1910,6 +1973,12 @@ exec \"{bin_path}\" \"$@\"\n",
         // chmod +x via std (Unix permissions; mode 0o755).
         let _ = run_env(None, &[], "chmod", &["+x", &wrapper_path]);
         jsonl(home, role, card, trace, "wrapper-installed", &format!(",\"name\":\"{}\",\"wrapper\":\"{}\",\"bin\":\"{}\"", crate_name, wrapper_path, bin_path));
+
+        // #3376 — canonical landed: refresh every role slot that holds this verb
+        // (except live demo variants). Without this, the wrapper above keeps
+        // routing roles to whatever sha their slot last saw — the merged≠live
+        // class one layer down, proven live 2026-06-12.
+        refresh_role_slots(home, role, card, trace, crate_name, bin, &bin_path);
     }
     Ok(())
 }

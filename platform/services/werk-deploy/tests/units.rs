@@ -578,3 +578,77 @@ fn health_timeout_err_names_url_and_last_body() {
     assert!(e2.contains("no response"), "no-answer case named: {}", e2);
     assert!(e2.contains("curl exit: 7"), "connection-refused exit visible: {}", e2);
 }
+
+
+// #3376 — stale role-slot verb binaries. The #3101 wrapper routes CHORUS_ROLE to
+// $WERK_<ROLE>_BIN/<verb> FIRST; nothing refreshed those slots on canonical
+// deploy, so a role kept executing last week's verb semantics after every land
+// (live specimen 2026-06-12: kade-bin/werk-demo predated #3352/#3365 — no gather
+// verb, no round identity — while canonical was current). Ruling executed here:
+// canonical deploys refresh every role slot EXCEPT a role with a live werk
+// containing that crate (an active demo variant owns its slot).
+#[test]
+fn slots_to_refresh_includes_stale_slot_without_active_werk() {
+    let base = std::env::temp_dir().join(format!("s3376-a-{}", std::process::id()));
+    let bin_dir = base.join("kade-bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::write(bin_dir.join("werk-demo"), b"old").unwrap();
+    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    assert_eq!(r, vec!["kade".to_string()], "stale slot, no live werk → refresh");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn slots_to_refresh_skips_role_with_live_werk_owning_the_crate() {
+    let base = std::env::temp_dir().join(format!("s3376-b-{}", std::process::id()));
+    std::fs::create_dir_all(base.join("wren-bin")).unwrap();
+    std::fs::write(base.join("wren-bin/werk-demo"), b"variant").unwrap();
+    // wren has a LIVE werk for card 9999 that contains the crate source → her
+    // slot is an active demo variant; canonical refresh must not clobber it.
+    std::fs::create_dir_all(base.join("wren-9999/platform/services/werk-demo")).unwrap();
+    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    assert!(r.is_empty(), "active variant owns its slot; got {:?}", r);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn slots_to_refresh_skips_roles_without_slot_binary() {
+    let base = std::env::temp_dir().join(format!("s3376-c-{}", std::process::id()));
+    std::fs::create_dir_all(base.join("silas-bin")).unwrap(); // dir exists, no binary
+    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    assert!(r.is_empty(), "no slot binary → nothing to refresh; got {:?}", r);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn slots_to_refresh_live_werk_for_other_crate_does_not_protect() {
+    let base = std::env::temp_dir().join(format!("s3376-d-{}", std::process::id()));
+    std::fs::create_dir_all(base.join("silas-bin")).unwrap();
+    std::fs::write(base.join("silas-bin/werk-demo"), b"old").unwrap();
+    // silas's live werk touches a DIFFERENT crate — werk-demo slot is not a
+    // variant of this card; it must refresh.
+    std::fs::create_dir_all(base.join("silas-8888/platform/services/werk-merge")).unwrap();
+    let r = werk_deploy::slots_to_refresh(base.to_str().unwrap(), "werk-demo", "werk-demo");
+    assert_eq!(r, vec!["silas".to_string()]);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn refresh_executor_makes_slot_content_equal_canonical() {
+    // #3376 AC3 — post-refresh, the role-resolved binary content == canonical.
+    let base = std::env::temp_dir().join(format!("s3376-e-{}", std::process::id()));
+    let home = base.join("home");
+    std::fs::create_dir_all(home.join("ops/logs")).unwrap();
+    std::fs::create_dir_all(base.join("kade-bin")).unwrap();
+    std::fs::write(base.join("kade-bin/werk-x"), b"OLD").unwrap();
+    let canonical = base.join("werk-x-bin");
+    std::fs::write(&canonical, b"NEW-CANONICAL").unwrap();
+    std::env::set_var("CHORUS_WERK_BASE", base.to_str().unwrap());
+    werk_deploy::refresh_role_slots_for_test(&home, "kade", 9376, "t", "werk-x", "werk-x", canonical.to_str().unwrap());
+    std::env::remove_var("CHORUS_WERK_BASE");
+    let got = std::fs::read(base.join("kade-bin/werk-x")).unwrap();
+    assert_eq!(got, b"NEW-CANONICAL", "slot content must equal canonical after refresh");
+    let w = std::fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl")).unwrap_or_default();
+    assert!(w.contains("slot.refreshed"), "refresh witnessed; got: {}", w);
+    let _ = std::fs::remove_dir_all(&base);
+}
