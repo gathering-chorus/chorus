@@ -536,6 +536,13 @@ Edges are first-class resources, not embedded fields. <strong>Reads</strong> pro
 <h3><code>/athena/edges</code> — read-only predicate-pattern query</h3>
 <p><code>GET /athena/edges?subject=&amp;predicate=&amp;object=</code> answers "which triples match this pattern" — direct equivalent of <code>logs_query</code> for the graph. Any combination of the three slots may be bound or wildcard. Read-only by guard; the typed mutation endpoints above are the only write surface for edges. This is the verb that closes the substrate-shift master-lever ("make the graph as interrogable as the logs already are").</p>
 
+<h2>Pages &amp; Flow — the UX of the model <span style="color:#d97706;font-size:0.7em;">#3378</span></h2>
+<div class="frame">
+Jeff's ruling (2026-06-12): <em>"the pages and owl are all part of the athena product design."</em> The UX is a flow of pages — <strong>landing (the value stream itself, five steps + seven products) → step → product → domain → service</strong> — where every page is a rendering of its class's generated API plus its schema, and every inter-page link follows a real model edge. Navigation starts from the value stream, not products (CMDB ruling, April). The <code>domains</code> domain's page renders THE SET — the generated catalog live (one taxonomy source with <code>catalog/domains.md</code> and the #2159 board hierarchy). A step encapsulates its child value stream (<code>hasValueStream</code> — werk is Building's stream, its steps the verb sequence).
+<br><br>
+Artifacts: <a href="athena-flow-mock/index.html">the walkable mock</a> (domain pages live on the generated API; product/service pages are static exemplars that ARE the #3351 page spec) and <a href="athena-flow-mock/anatomy.html">the page anatomy</a> (breadcrumb → identity → promise → stats → honest-folds → provenance layer-labels → edges-are-links; the review standard for every fan-out leg's page until pages are generator-emitted).
+</div>
+
 <h2>API Surface — Athena v2 <span style="color:#d97706;font-size:0.7em;">TO-BE</span></h2>
 <div class="frame">
 The <code>reasoning-substrate-shift.html</code> master lever: <em>"make the graph as interrogable as the logs already are."</em> Today <code>logs_query</code> is a full LogQL passthrough; the graph gets <code>subdomains_get</code> and <code>subdomains_list</code> (4-field flat records, no edges, no traversal). Athena v2 replaces this with three resource namespaces — <code>/athena/product</code>, <code>/athena/domain</code>, <code>/athena/service</code> — one per structural class, plus edge / query / passthrough endpoints.

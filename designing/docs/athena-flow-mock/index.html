@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Chorus — Athena Flow Mock</title>
+<link rel="stylesheet" href="flow.css"><script src="flow.js"></script></head>
+<body><div class="wrap">
+<div class="mock-banner">#3378 MOCK — landing page. Navigation starts from the VALUE STREAM (Jeff's CMDB ruling). Domain counts are LIVE from the generated API; products/steps are exemplar = #3351's spec.</div>
+<h1>Chorus <span class="kind">— the value stream</span></h1>
+<div class="promise">Five steps, seven products, one model. Every box below is a real graph entity; every click follows a real model edge.</div>
+<div class="stats">
+  <div class="stat"><div class="v">5</div><div class="l">Steps</div></div>
+  <div class="stat"><div class="v">7</div><div class="l">Products</div></div>
+  <div class="stat"><div class="v" id="domain-count">…</div><div class="l">Domains (live :3360)</div></div>
+</div>
+<div class="stream" id="stream"></div>
+<div class="layer-label">The recursion — a step encapsulates its own value stream (hasValueStream)</div>
+<div class="substream" id="recursion-demo"></div>
+<p style="margin-top:18px;font-size:.85rem;color:var(--muted)">The set of domains lives on the <a class="edge" href="domain.html?d=domains">domains page</a> — the generated catalog rendered live.</p>
+</div>
+<script>
+(async function () {
+  const domains = await fetchDomains();
+  document.getElementById('domain-count').textContent = domains ? domains.length : 'API down';
+  const byStep = {};
+  if (domains) for (const d of domains) {
+    // step comes from the live record's atStep on the detail; the list is flat,
+    // so the per-step counts hydrate from the detail pages in the real build.
+  }
+  let html = '';
+  for (const col of STREAM) {
+    html += '<div class="step-col ' + col.key + '"><h2><a href="step.html?step=' + col.key + '">' + col.step + '</a></h2>';
+    html += '<div class="count">step — opens its products + domains</div>';
+    for (const p of col.products) {
+      html += '<a class="prod" href="product.html?p=' + p.name + '"><strong>' + p.label + '</strong>';
+      if (p.children) for (const c of p.children) html += '<span class="child">↳ ' + c.label + ' (hasChild)</span>';
+      html += '</a>';
+    }
+    html += '</div>';
+  }
+  document.getElementById('stream').innerHTML = html;
+  const b = STREAM.find(s => s.key === 'building');
+  document.getElementById('recursion-demo').innerHTML =
+    '<strong>Building</strong> —hasValueStream→ <a class="edge" href="product.html?p=werk">werk\'s stream</a>, whose steps are the verb sequence: ' +
+    b.substream.steps.map(v => '<span class="verb">' + v + '</span>').join('→');
+})();
+</script>
+</body></html>

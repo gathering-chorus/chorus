@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Service — Athena Flow Mock</title>
+<link rel="stylesheet" href="flow.css"><script src="flow.js"></script></head>
+<body><div class="wrap">
+<div class="mock-banner">#3378 MOCK — service page, STATIC EXEMPLAR (werk-commit). Two property layers: DESIGN (v2 shapes today) + OPERATIONAL (lifted from borg:Environment, re-homed chorus: — the layer Borg's deep-health reads). Spec for #3351's Service API + page.</div>
+<div class="crumb"><a href="index.html">value stream</a> → <a class="edge" href="step.html?step=building">Building</a> → <a class="edge" href="product.html?p=werk">werk</a> → <a class="edge" href="domain.html?d=version-control">version-control</a> → werk-commit</div>
+<h1>werk-commit <span class="kind">— Service</span></h1>
+<div class="promise"><strong>overview (the promise):</strong> Stage the card werk's changes and commit through the pre-commit gate chain, returning the sha — "&lt;role&gt;: #&lt;card&gt; — &lt;summary&gt;", witnessed. <span class="empty">(chorus:overview)</span></div>
+<div class="stats">
+  <div class="stat"><div class="v"><span class="owner-dot kade"></span>Kade</div><div class="l">Owner</div></div>
+  <div class="stat"><div class="v"><span class="badge building">Building</span></div><div class="l">Step</div></div>
+  <div class="stat"><div class="v">operating</div><div class="l">Status</div></div>
+  <div class="stat"><div class="v"><a class="edge" href="domain.html?d=version-control">version-control</a></div><div class="l">Hosting Domain (hosts⁻¹)</div></div>
+</div>
+<div class="layer-label">Design layer — authored (provenance: authored)</div>
+<details class="fold" open><summary>As-Is / To-Be / Path to Close <span class="src">chorus:asIs · toBe · pathToClose</span></summary><div class="body">
+<p><strong>asIs:</strong> Rust verb binary, --atomic contract, MCP skin execs it; witnessed via commit.started/completed spine events.</p>
+<p><strong>toBe:</strong> round-keyed evidence feeding werk-test when #3190 slots in.</p>
+<p><strong>pathToClose:</strong> stable — maintenance mode.</p></div></details>
+<details class="fold" open><summary>Depends On <span class="src">chorus:dependsOn → Service (model edges)</span></summary><div class="body">
+<table><tr><th>Service</th><th>Why</th></tr>
+<tr><td><a class="edge" href="service.html?s=werk-pull">werk-pull</a></td><td>werk must exist on the card branch</td></tr>
+<tr><td>chorus-log</td><td>spine witness emission</td></tr></table></div></details>
+<div class="layer-label">Operational layer — hydrated (provenance: crawler/deploy events; NEVER hand-authored)</div>
+<details class="fold" open><summary>Runtime <span class="src">runtimeForm · deployVia · healthAt — the Borg layer</span></summary><div class="body">
+<table><tr><th>Property</th><th>Value</th></tr>
+<tr><td>runtimeForm</td><td>verb binary (~/.chorus/bin/werk-commit)</td></tr>
+<tr><td>deployVia</td><td>werk-deploy crate → chorus-bin-install (cdhash witnessed)</td></tr>
+<tr><td>emitsEvent</td><td>commit.started · commit.completed</td></tr>
+<tr><td>logPath</td><td>ops/logs/werk-commit.jsonl (per-werk)</td></tr>
+<tr><td>healthAt</td><td>— (invoked, not resident; Deployment instance carries cdhash)</td></tr></table>
+<p style="font-size:.82rem;color:var(--muted)">These facts live today in plists, borg-health-contract.json, and scripts — nowhere queryable. This layer is what Borg's deep-health starts reading from the model.</p></div></details>
+</div></body></html>

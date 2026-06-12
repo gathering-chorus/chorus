@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Domain — Athena Flow Mock</title>
+<link rel="stylesheet" href="flow.css"><script src="flow.js"></script></head>
+<body><div class="wrap">
+<div class="mock-banner">#3378 MOCK — domain page, running LIVE on the generated Domain API (:3360). The <code>domains</code> domain renders THE SET (Jeff's ruling: "it's important for us to solve these in our domains page").</div>
+<div class="crumb"><a href="index.html">value stream</a> → <span id="bc-step">…</span> → <span id="bc-name">…</span></div>
+<h1 id="title">… <span class="kind">— Domain</span></h1>
+<div class="promise" id="promise">loading from :3360…</div>
+<div class="stats" id="stats"></div>
+<div id="folds"></div>
+</div>
+<script>
+(async function () {
+  const name = new URLSearchParams(location.search).get('d') || 'domains';
+  const g = await fetchDomain(name);
+  if (!g) {
+    document.getElementById('promise').innerHTML = '<strong>:3360 unreachable or unknown domain.</strong> The real page falls back to v1 here (non-fatal by construction, #3373).';
+    return;
+  }
+  const step = (g.atStep && g.atStep.label) || '?';
+  document.title = g.label + ' — Domain';
+  document.getElementById('title').innerHTML = esc(g.label) + ' <span class="kind">— Domain</span>';
+  document.getElementById('bc-step').innerHTML = '<a class="edge" href="step.html?step=' + step.toLowerCase() + '">' + step + '</a>';
+  document.getElementById('bc-name').textContent = g.label;
+  document.getElementById('promise').textContent = (g.comment || '').replace(/\\\\u2014/g, '—');
+  document.getElementById('stats').innerHTML =
+    '<div class="stat"><div class="v">' + ownerDot((g.ownedBy || {}).label) + '</div><div class="l">Owner (ownedBy)</div></div>' +
+    '<div class="stat"><div class="v">' + stepBadge(step) + '</div><div class="l">Step (atStep)</div></div>' +
+    '<div class="stat"><div class="v">' + esc(g.status || '?') + '</div><div class="l">Status</div></div>';
+
+  let folds = '';
+  // THE SET — on the domains domain, contains renders all 34 (the catalog view).
+  if (name === 'domains') {
+    const all = await fetchDomains();
+    let rows = '';
+    if (all) {
+      const details = await Promise.all(all.map(d => fetchDomain(d.name)));
+      for (const d of details) {
+        if (!d) continue;
+        const s = (d.atStep && d.atStep.label) || '?';
+        rows += '<tr><td><a class="edge" href="domain.html?d=' + esc(d.label) + '">' + esc(d.label) + '</a></td>' +
+          '<td>' + stepBadge(s) + '</td><td>' + ownerDot((d.ownedBy || {}).label) + '</td>' +
+          '<td>' + esc(d.status) + '</td></tr>';
+      }
+    }
+    folds += fold('The Set — all domains (the generated catalog, live)', 'GET :3360/domains + /domains/:name',
+      rows ? '<table><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr>' + rows + '</table>' : null,
+      ':3360 unreachable — catalog unavailable');
+  }
+  // Child domains — the recursion fold. Renders ALWAYS (honest-folds).
+  const c = await fetchContains(name);
+  const kids = (c && c.contains) || [];
+  folds += fold('Child Domains (hasChild — recursive)', 'GET :3360/domains/' + esc(name) + '/contains',
+    kids.length ? '<table><tr><th>Child</th></tr>' + kids.map(k =>
+      '<tr><td><a class="edge" href="domain.html?d=' + esc(k.name || k) + '">' + esc(k.label || k.name || k) + '</a></td></tr>').join('') + '</table>' : null,
+    '0 children — edges not yet minted (the #3351 instance work; v1\'s 49-subdomain hierarchy is the mint source)');
+  // Design doc edge.
+  folds += fold('Design Doc (hasDesignDoc)', 'model edge → Document instance',
+    g.hasDesignDoc ? '<p>' + esc((g.hasDesignDoc.label || g.hasDesignDoc.name)) + ' <span class="empty">(becomes a served Document instance on Silas\'s ingest leg)</span></p>' : null,
+    'no design doc linked');
+  // Gaps.
+  folds += fold('Gaps', 'authored on the shape', g.gaps && g.gaps !== 'none declared' ? '<p>' + esc(g.gaps) + '</p>' : null, 'none declared');
+  // What the FULL page keeps from today (scanner facets) — named, not faked.
+  folds += fold('Services · Code · Tests · Alerts (scanner facets)', 'stay on v1 until crawler-leg hydration',
+    null, 'rendered from the existing facet endpoints in the real page — out of mock scope, unchanged by the migration');
+  document.getElementById('folds').innerHTML = folds;
+})();
+</script>
+</body></html>
