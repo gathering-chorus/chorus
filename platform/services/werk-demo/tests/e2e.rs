@@ -259,37 +259,23 @@ exit 0
         build_calls
     );
 
-    // (5a) #3100 AC1+AC2+AC4: feedback nudges go through MCP (chorus_nudge_message
-    //      tools/call), NOT the legacy :3340/api/chorus/nudge 404. Uses -f so a
-    //      bad endpoint surfaces instead of silently exiting 0.
+    // (5a) #3305 — this scenario seeds BOTH peers' demo.gather.replied for the
+    //      round, so the announce fires with ZERO gather nudges: an acked peer is
+    //      never re-asked, however many times the demo re-presents. (The old
+    //      assertion here pinned exactly the re-fire bug — 2 unconditional nudges
+    //      to already-replied peers; 8 live sightings on 2026-06-12 alone.)
+    //      The MCP wire shape (tools/call + chorus_nudge_message) is pinned by
+    //      the mcp_nudge_body unit test; the legacy-endpoint ban stays here.
     let curl_calls = fs::read_to_string(&curl_log).unwrap_or_default();
-    assert!(
-        curl_calls.contains("chorus_nudge_message"),
-        "feedback nudges must invoke chorus_nudge_message via MCP tools/call; got:\n{}",
-        curl_calls
-    );
-    assert!(
-        curl_calls.contains("tools/call"),
-        "MCP nudge POST must use JSON-RPC tools/call method; got:\n{}",
-        curl_calls
-    );
     assert!(
         !curl_calls.contains("http://localhost:3340/api/chorus/nudge"),
         "must NOT POST to the legacy 404 :3340/api/chorus/nudge; got:\n{}",
         curl_calls
     );
-    assert!(
-        curl_calls.contains(" -f "),
-        "curl must use -f so silent-success-on-error class can't recur; got:\n{}",
-        curl_calls
-    );
-    // #3116: the feedback gather is FIRE-AND-MOVE-ON — ONE nudge per non-builder
-    // peer (silas, kade), NO re-nudge, NO [FEEDBACK STALL] banner. The old #3100
-    // re-nudge+escalate spammed peers and Jeff on every demo; it's removed.
     let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
     assert_eq!(
-        mcp_post_count, 2,
-        "expected exactly 2 MCP nudges (one gather per non-builder peer, no re-nudge); got {} in:\n{}",
+        mcp_post_count, 0,
+        "both peers already replied this round — re-presenting must re-fire ZERO gather nudges (#3305); got {} in:\n{}",
         mcp_post_count, curl_calls
     );
     assert!(

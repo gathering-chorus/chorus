@@ -122,16 +122,38 @@ pub fn current_round(role: &str, card: u64) -> String {
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
     });
-    let werk = format!("{}/{}-{}", werk_base, role, card);
+    // #3305 — try the invoker's own werk first (the demoer fast path), then fall
+    // back to the card's werk under ANY role. A card has exactly one werk; a PEER
+    // recording a gather on the demoer's card previously probed <invoker>-<card>
+    // (nonexistent) and minted "round-unknown" — a record structurally invisible
+    // to the announce gate. That was face two of the #3305 family (live specimen:
+    // silas's 13:11 reply on kade's #3375, round-unknown on the witness).
+    let own = format!("{}/{}-{}", werk_base, role, card);
+    if let Some(r) = git_short12(&own) { return r; }
+    round_for_card(&werk_base, card)
+}
+
+/// Resolve the round (HEAD short-12) from the CARD's werk, whichever role owns
+/// it. "round-unknown" only when no role has a werk for the card.
+pub fn round_for_card(werk_base: &str, card: u64) -> String {
+    for r in ["wren", "silas", "kade"] {
+        if let Some(sha) = git_short12(&format!("{}/{}-{}", werk_base, r, card)) {
+            return sha;
+        }
+    }
+    "round-unknown".to_string()
+}
+
+fn git_short12(werk: &str) -> Option<String> {
+    if !Path::new(werk).is_dir() { return None; }
     std::process::Command::new("git")
-        .args(["-C", &werk, "rev-parse", "--short=12", "HEAD"])
+        .args(["-C", werk, "rev-parse", "--short=12", "HEAD"])
         .output()
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "round-unknown".to_string())
 }
 
 /// A witness line matches the current round iff it carries this round's key.
@@ -139,6 +161,14 @@ pub fn current_round(role: &str, card: u64) -> String {
 /// evidence ages out structurally the moment this lands.
 fn line_in_round(line: &str, round: &str) -> bool {
     line.contains(&format!("\"round\":\"{}\"", round))
+}
+
+/// #3305 AC2/AC3 — the peers actually OWED a gather nudge this round: exactly
+/// gathers_missing. A peer whose reply is on the witness for THIS round is
+/// never re-nudged, however many times the demo re-presents. A new round
+/// re-asks everyone by design (#3365 round discipline, not the re-fire bug).
+pub fn nudge_targets(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
+    gathers_missing(witness, card, role, round)
 }
 
 pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, skip: bool) -> bool {
@@ -507,14 +537,20 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 /// Returns Err with curl's exit if the POST fails (status check via -f).
 /// Used by signal() for the initial round and by demo() for re-nudge on
 /// unacked peers (#3100 AC #2).
+/// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
+/// chorus_nudge_message. Unit-pinned (the e2e happy path now legitimately
+/// sends zero nudges, so the shape can't be pinned there).
+pub fn mcp_nudge_body(to: &str, message: &str) -> String {
+    format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        to, message
+    )
+}
+
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    let msg = feedback_message(card, from);
-    let body = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
-        other, msg
-    );
+    let body = mcp_nudge_body(other, &feedback_message(card, from));
     run("curl", &[
         "-s", "-f", "-X", "POST",
         &mcp_url,
@@ -531,7 +567,7 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// All four are best-effort (the act has already gated; signal is the announcement,
 /// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
 /// curl as a subprocess, mirroring the verb-contract).
-fn signal(card: u64, role: &str, home: &Path, trace: &str) -> Vec<String> {
+fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec<String> {
     let card_s = card.to_string();
     // board demo signal
     let _ = run(&script_path(home, "cards"), &["demo", &card_s]);
@@ -562,7 +598,12 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str) -> Vec<String> {
     // mid-pipeline under load and nobody learns until he asks "did u nudge the
     // team". Failed peers are returned so demo() puts them ON the surface.
     let mut send_failed: Vec<String> = Vec::new();
-    for other in ["wren", "silas", "kade"].iter().filter(|r| **r != role) {
+    // #3305 — only the peers still OWED this round (nudge_targets). Previously
+    // this loop hit BOTH peers unconditionally on every re-present: 8 sightings
+    // in one day (5x silas, refire storms on wren + kade), each one an
+    // ACK-REQUIRED on an already-answered gather — the 2-touch contract broken
+    // by the ceremony itself.
+    for other in owed.iter() {
         if let Err(e) = send_mcp_nudge(role, other, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
                   &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
@@ -709,14 +750,14 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
                            reason, gates_absent.join(","), gathers_absent.join(",")));
             return Ok(DemoOutcome {
                 message: format!(
-                    "demo #{} — prework standby ({}). Variant is up; NO announce fired (the \
+                    "demo #{} — prework standby ({}, round {}). Variant is up; NO announce fired (the \
                      announce is the ready-gate: gates recorded AND peer gathers replied, \
-                     #3319+#3352). Missing gates: [{}]. Missing gather replies: [{}]. The \
+                     #3319+#3352, all keyed to THIS round). Missing gates: [{}]. Missing gather replies: [{}]. The \
                      demoer completes prework (run gates via `werk-demo gate`, send the \
                      4-question gathers, record replies via `werk-demo gather <card> <peer> \
                      replied`), then re-invokes. Jeff is never asked for a go that precedes \
                      the team's feedback.",
-                    card, reason, gates_absent.join(","), gathers_absent.join(",")
+                    card, reason, round, gates_absent.join(","), gathers_absent.join(",")
                 ),
                 exit: 0,
             });
@@ -726,7 +767,12 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // Step 5: signal — board demo + spine event + Bridge + feedback nudges (best-effort,
     // the act has already gated; this announces). Step 4 stakes-brief is human-driven
     // content; demo-v2 records it in spine events, not as a separate gate.
-    let gather_send_failed = signal(card, role, home, &trace);
+    // #3305 — fresh witness read at the send site: only peers still owed THIS
+    // round get the 4-question nudge; an acked peer is never re-fired however
+    // many times the demo re-presents.
+    let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let owed = nudge_targets(&witness_now, card, role, &round);
+    let gather_send_failed = signal(card, role, home, &trace, &owed);
     if !gather_send_failed.is_empty() {
         // #3352 — surface the send failure in the returned message itself: the
         // demoer (and Jeff) see it in-window and send by hand; the announce
@@ -1237,6 +1283,76 @@ mod tests {
         std::env::set_var("CHORUS_DEMO_ROUND", "test-round-x");
         assert_eq!(current_round("wren", 3365), "test-round-x");
         std::env::remove_var("CHORUS_DEMO_ROUND");
+    }
+
+    // #3305 — the gather re-fire + cross-role round-unknown family.
+
+    #[test]
+    fn mcp_nudge_body_pins_tools_call_shape() {
+        let b = mcp_nudge_body("silas", "msg");
+        assert!(b.contains("\"method\":\"tools/call\""));
+        assert!(b.contains("\"name\":\"chorus_nudge_message\""));
+        assert!(b.contains("\"to\":\"silas\""));
+    }
+
+    #[test]
+    fn nudge_targets_skips_replied_peers_same_round() {
+        // wren already replied this round → only silas is owed a nudge (AC2).
+        let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
+        assert_eq!(nudge_targets(w, 3305, "kade", "r1"), vec!["silas"]);
+    }
+
+    #[test]
+    fn nudge_targets_empty_when_all_replied_no_refire_on_represent() {
+        // both peers replied this round → re-presenting fires ZERO nudges (AC3:
+        // re-running a demo does not reset acked peers; sightings #1-#8, 2026-06-12).
+        let w = format!(
+            "{}
+{}",
+            r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#,
+            r#"{"ts":2,"event":"demo.gather.replied","role":"silas","card_id":3305,"trace_id":"t","peer":"silas","round":"r1","note":""}"#
+        );
+        assert!(nudge_targets(&w, 3305, "kade", "r1").is_empty(), "no re-fire to acked peers");
+    }
+
+    #[test]
+    fn nudge_targets_fresh_round_renudges_per_3365() {
+        // a NEW round legitimately re-asks: #3365 expires evidence per round —
+        // that is round discipline, not the re-fire bug.
+        let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
+        assert_eq!(nudge_targets(w, 3305, "kade", "r2"), vec!["wren", "silas"]);
+    }
+
+    #[test]
+    fn round_for_card_resolves_owners_werk_regardless_of_invoker() {
+        // #3305 face two: silas records a gather on KADE's card — the round must
+        // resolve from the CARD's werk (kade-<card>), not the invoker's role path
+        // (silas-<card>, which doesn't exist → "round-unknown" → record invisible
+        // to the announce gate; live specimen 2026-06-12 13:11 witness line).
+        let base = std::env::temp_dir().join(format!("w3305-{}", std::process::id()));
+        let werk = base.join("kade-9305");
+        std::fs::create_dir_all(&werk).unwrap();
+        for args in [vec!["init", "-q"], vec!["commit", "-q", "--allow-empty", "-m", "x"]] {
+            let mut c = std::process::Command::new("git");
+            c.arg("-C").arg(&werk);
+            if args[0] == "commit" {
+                c.env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
+                 .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t");
+            }
+            assert!(c.args(&args).status().unwrap().success());
+        }
+        let r = round_for_card(base.to_str().unwrap(), 9305);
+        assert_ne!(r, "round-unknown", "card werk exists under ANOTHER role → must still resolve");
+        assert_eq!(r.len(), 12, "short-12 sha");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn round_for_card_unknown_when_no_werk_exists() {
+        let base = std::env::temp_dir().join(format!("w3305-none-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        assert_eq!(round_for_card(base.to_str().unwrap(), 9306), "round-unknown");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
