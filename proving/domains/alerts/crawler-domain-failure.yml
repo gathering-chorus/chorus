@@ -1,3 +1,12 @@
+# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
+# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — Jeff:
+# "i have doubts about the function of crawler-index in current state".
+# This check is SILENCED while the crawler is retired: a staleness alert for
+# a deliberately-stopped service is a tombstone page, not a signal (it fired
+# 4x on 2026-06-12 after the retirement, each one a Jeff-screen tax).
+# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
+# (#3185/#3242 — facet-heralds through the DAL) and re-enables its own
+# monitoring. Restore the original check below by removing this short-circuit.
 # crawler-domain-failure.yml — Per-domain crawler failure alert (#1885)
 # Fires when any domain has 3+ consecutive crawl failures.
 # Status tracked in /tmp/crawler-domain-status.json by index-crawler-snapshots.sh.
@@ -8,6 +17,10 @@ severity: warning
 schedule: "0 * * * *"
 
 check: |
+  # tombstone short-circuit — see header; original check preserved below, inert
+  echo "ok"
+  exit 0
+  # ORIGINAL CHECK (inert while retired):
   STATUS_FILE="/tmp/crawler-domain-status.json"
   if [ ! -f "$STATUS_FILE" ]; then
     echo "ok:no-status-file"

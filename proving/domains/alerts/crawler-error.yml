@@ -1,3 +1,12 @@
+# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
+# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — Jeff:
+# "i have doubts about the function of crawler-index in current state".
+# This check is SILENCED while the crawler is retired: a staleness alert for
+# a deliberately-stopped service is a tombstone page, not a signal (it fired
+# 4x on 2026-06-12 after the retirement, each one a Jeff-screen tax).
+# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
+# (#3185/#3242 — facet-heralds through the DAL) and re-enables its own
+# monitoring. Restore the original check below by removing this short-circuit.
 # crawler-error.yml — Alert when chorus crawler reports persistent failures
 # Card #2817 (#2861 — bash-only check; #2871 — tune to consecutive>=2)
 #
@@ -26,6 +35,10 @@ owner: kade
 schedule: "*/5 * * * *"
 
 check: |
+  # tombstone short-circuit — see header; original check preserved below, inert
+  echo "ok"
+  exit 0
+  # ORIGINAL CHECK (inert while retired):
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-error-check.py"
   MAX_CONSEC=$(python3 "$SIBLING" 2>/dev/null || echo 0)
   if [ "$MAX_CONSEC" -ge 2 ] 2>/dev/null; then

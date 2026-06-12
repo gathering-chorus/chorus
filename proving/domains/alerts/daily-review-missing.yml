@@ -22,7 +22,10 @@ check: |
   fi
   # Look for ops.review.completed in today's chorus log
   TODAY=$(TZ=America/New_York date '+%Y-%m-%d')
-  LOG="$HOME/Library/Logs/Chorus/chorus.log"
+  # #3380: was $HOME/Library/Logs/Chorus/chorus.log — a path that has NEVER
+  # existed, so the grep failed and this fired EVERY morning all month
+  # (alert id daily-review-2026-06). The spine log lives at ~/.chorus/chorus.log.
+  LOG="$HOME/.chorus/chorus.log"
   if grep "ops.review.completed" "$LOG" 2>/dev/null | grep -q "$TODAY"; then
     echo "ok"
     exit 0

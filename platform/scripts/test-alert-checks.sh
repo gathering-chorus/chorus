@@ -22,7 +22,10 @@ trap '_rc=$?; if [ $_rc -eq 0 ]; then echo "=== Results: $PASS passed, $FAIL fai
 PASS=0
 FAIL=0
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus-werk/kade}"
+# #3380: default to THIS checkout (was a hardcoded stale persistent-werk path —
+# the phantom-path class; tests silently ran against another tree's rules).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 ALERT_DIR="$CHORUS_ROOT/proving/domains/alerts"
 TMPDIR=$(mktemp -d)
 trap_orig=$(trap -p EXIT)
@@ -94,7 +97,19 @@ mkdir -p "$empty_log_dir/.chorus"
 : > "$empty_log_dir/.chorus/chorus.log"
 result=$(HOME="$empty_log_dir" CHORUS_ROOT="$CHORUS_ROOT" bash -c "$(awk '/^check: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$ALERT_DIR/crawler-stale.yml")" 2>&1 || true)
 rm -rf "$empty_log_dir"
-if [ "$result" != "ok" ]; then
+# #3380: crawler-stale is TOMBSTONED (crawler retired-until-rewrite, Jeff's
+# ruling 2026-06-12) — silent-by-ruling even on empty log. When the rewrite
+# leg un-silences the rule, the tombstone grep fails and the original
+# fires-on-empty expectation below reasserts itself automatically.
+if grep -q "TOMBSTONE" "$ALERT_DIR/crawler-stale.yml"; then
+  if [ "$result" = "ok" ]; then
+    echo "PASS [crawler-stale tombstoned: silent by ruling]: returned '$result'"
+    PASS=$((PASS+1))
+  else
+    echo "FAIL [crawler-stale tombstoned: should short-circuit ok]: returned '$result'"
+    FAIL=$((FAIL+1))
+  fi
+elif [ "$result" != "ok" ]; then
   echo "PASS [crawler-stale-empty-log fires correctly]: returned '$result'"
   PASS=$((PASS+1))
 else

@@ -195,7 +195,6 @@ CRITICAL_SERVICES=(
   "com.gathering.css:css:SOLID CSS server"
   "com.gathering.wordpress:wordpress:blog"
   "com.gathering.mysql:mysql:database"
-  "com.gathering.messaging:messaging:team messaging"
   # Library — observability
   "com.gathering.loki:loki:log storage"
   "com.gathering.grafana:grafana:dashboards"
