@@ -4,7 +4,7 @@
 
 **Scope:** Chorus product domains only. Gathering-only domains out of scope.
 
-**Sources:** chorus-product-tree.md (2026-05-14/16), athena-subproduct-design.html (2026-05-15), chorus-service-design.html (2026-04-11/18), chorus-pulse-tobe.html, ADRs 024 / 028 / 031 / 032 / 095, all role CLAUDE.md files, TEAM_PROTOCOL.md, live Athena subdomain registry.
+**Sources:** chorus-product-tree.md (2026-05-14/16), athena-product-design.html (2026-05-15), chorus-service-design.html (2026-04-11/18), chorus-pulse-tobe.html, ADRs 024 / 028 / 031 / 032 / 095, all role CLAUDE.md files, TEAM_PROTOCOL.md, live Athena subdomain registry.
 
 **Open meta-decision (Jeff, 2026-05-28):** Werk is the team's universal protocol for moving any unit of work through state across all five value-streams (Shaping / Designing / Directing / Building / Proving), not a Building-step subproduct. Glossary entries below need to be reread under that reframe. The Werk entry already reflects it; Spine and most others probably do too. Flagged at the bottom.
 
@@ -19,7 +19,7 @@
   - Ontology — Athena uses the ontology; Athena is the instance layer
   - Catalog — Athena feeds the catalog but is broader (typed API over RDF + SHACL)
 - **Canonical sub-terms:** Product, Domain, Service, Role, ValueStreamStep, Record (Actor, Scenario, Decision, Endpoint, Page, Pipeline, LogStream, Alert, Test, Component, Glossary, Reference, Release, PriorArt, ConsumerContract).
-- **Citations:** athena-subproduct-design.html; ADR-025; ADR-028.
+- **Citations:** athena-product-design.html; ADR-025; ADR-028.
 - **Conflicts surfaced:** Recursive Product collapse (SubProduct → Product/hasChild) is in-flight intentional refactor. Service nodes (cards-service, gates-service) currently mis-typed as SubDomain — API exposes 3 of 29 node types until type-migration completes.
 
 ---

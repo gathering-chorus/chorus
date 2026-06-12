@@ -8,8 +8,8 @@
  *
  * Transition to Move 1: when SHACL lands in chorus.ttl + shapes.ttl, these schemas
  * regenerate from the SHACL contract (per the SHACL → OpenAPI generation requirement
- * in athena-subproduct-design.html). Until then, hand-synced to mirror the schema
- * documented at designing/docs/athena-subproduct-design.html.
+ * in athena-product-design.html). Until then, hand-synced to mirror the schema
+ * documented at designing/docs/athena-product-design.html.
  *
  * Canonical edges (containment direction stored on subject side):
  *   - Product → hasChild → Product       (recursive)
