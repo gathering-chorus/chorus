@@ -3,7 +3,9 @@
 # What Jeff sees: a brief ready by 6am with codebase weather, trust verification,
 # backlog coherence, and golfball detection. No session required.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/daily-signal-scan.sh"
+# #3369: resolve relative to this repo (werk or canonical), not a hardcoded
+# canonical path — the old pin made in-werk runs test the UNFIXED main copy.
+SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)/daily-signal-scan.sh"
 
 @test "AC8: script exists and is executable" {
   [ -x "$SCRIPT" ]

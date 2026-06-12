@@ -77,7 +77,11 @@ trust_verification() {
 
   # Deep health status
   local health_result
-  health_result=$(bash "$CHORUS/platform/scripts/deep-health.sh" 2>&1 | head -1)
+  # A nonzero deep-health is signal CONTENT, not a reason to die: under
+  # set -euo pipefail this substitution aborted the whole scan at 06:00 every
+  # morning when deep-health crashed (#3369). Capture, never propagate.
+  health_result=$(bash "$CHORUS/platform/scripts/deep-health.sh" 2>&1 | head -1 || true)
+  [ -n "$health_result" ] || health_result="deep-health produced no output (exit nonzero) — investigate deep-health.sh itself"
   echo "- **Deep health:** ${health_result}"
   echo ""
 }

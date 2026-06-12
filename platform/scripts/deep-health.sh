@@ -59,7 +59,9 @@ SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Persistent daemons — silence is healthy when the process is alive.
 # Format: "logname:launchctl_label" — check PID via launchctl, skip mtime.
-LIVENESS_LOGS="bridge-subscriber-silas.log:com.chorus.bridge-subscriber-silas bridge-subscriber-wren.log:com.chorus.bridge-subscriber-wren bridge-subscriber-kade.log:com.chorus.bridge-subscriber-kade chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
+# bridge-subscriber-{silas,wren,kade} retired by #3352 (always-inject); their
+# leftover logs must not resurrect a liveness expectation (#3369).
+LIVENESS_LOGS="chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log"
 # Weekly / multi-day jobs — 8 day threshold
@@ -84,7 +86,10 @@ for log in "$LOG_DIR"/*.log; do
     fi
   done
   if [ -n "$liveness_match" ]; then
-    pid=$(launchctl list 2>/dev/null | grep "$liveness_match" | awk '{print $1}')
+    # grep no-match exits 1; under set -e that killed the whole script with
+    # zero output (#3369 — the 6am daily-signal-scan crash). Never let a
+    # missing label be fatal; it's a WARNING, not a crash.
+    pid=$(launchctl list 2>/dev/null | grep "$liveness_match" | awk '{print $1}' || true)
     if [ "$pid" = "-" ] || [ -z "$pid" ]; then
       WARNINGS+=("liveness: $name — process $liveness_match not running")
     fi
@@ -269,9 +274,17 @@ elif [ -z "$(find "$VIKUNJA_LOG" -mmin -60 2>/dev/null)" ]; then
 fi
 
 # --- 11d. Vikunja auth probe — cards CLI 401 detection (#2147) ---
-CARDS_OUT=$(timeout 8 cards list --limit 1 2>&1)
-CARDS_EXIT=$?
-if echo "$CARDS_OUT" | grep -qE "401|403|Unauthorized|Forbidden"; then
+# `timeout` does not exist on this machine (no coreutils) — the old
+# `timeout 8 cards ...` exit-127'd, and under set -e a failing $() assignment
+# is fatal, so every run died HERE with no output and the auth check below
+# was unreachable (#3369). Guard the substitution; capture the real exit.
+CARDS_EXIT=0
+CARDS_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cards"
+[ -x "$CARDS_BIN" ] || CARDS_BIN="cards"   # PATH fallback for symlinked deploys
+CARDS_OUT=$("$CARDS_BIN" list --limit 1 2>&1) || CARDS_EXIT=$?
+# Anchor on the API's auth-error shape, not bare "401|403" — card titles,
+# latencies (6.401ms), and ids substring-matched and fired false alarms (#3369).
+if echo "$CARDS_OUT" | grep -qE "status[= ]40[13]|code=40[13]|HTTP[/ ]?[0-9.]* ?40[13]|Unauthorized|Forbidden|invalid token"; then
   FAILURES+=("vikunja-auth: cards CLI auth failure — check VIKUNJA_API_TOKEN (env unset, token expired, or wrapper edited)")
 elif [ "$CARDS_EXIT" -ne 0 ]; then
   FAILURES+=("vikunja-auth: cards CLI non-zero exit (${CARDS_EXIT}) — Vikunja may be down or token invalid")
