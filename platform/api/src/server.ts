@@ -281,8 +281,11 @@ app.use((req, res, next) => {
   next();
 });
 const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
-const DB_PATH = path.join(os.homedir(), '.chorus', 'index.db');
-const LANCE_DIR = path.join(os.homedir(), '.chorus', 'lance');
+// #3379 — env-overridable: demo VARIANTS must not open production's stores
+// (three api processes sharing index.db+lance was the day's wedge root; the
+// env-up isolation follow-on passes per-werk paths through these seams).
+const DB_PATH = process.env.CHORUS_DB_PATH || path.join(os.homedir(), '.chorus', 'index.db');
+const LANCE_DIR = process.env.CHORUS_LANCE_DIR || path.join(os.homedir(), '.chorus', 'lance');
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 // #3217 — split the embed host: SEARCH query-embed stays on OLLAMA_URL (localhost,
 // latency-critical, same box as chorus-api); BULK embed-delta uses OLLAMA_BULK_URL
@@ -353,6 +356,12 @@ const REINDEX_WORKER_SCRIPT = process.env.CHORUS_REINDEX_WORKER_SCRIPT
   || path.join(CHORUS_ROOT, 'platform/scripts/chorus-reindex-worker.sh');
 function spawnDetachedWorker(script: string): void {
   const child = spawn('/bin/bash', [script], { detached: true, stdio: 'ignore' });
+  // Kade's #3379 gather catch: a 202 that spawns nothing is a false-green
+  // sibling. Without this listener an ENOENT 'error' event is also an
+  // UNHANDLED EventEmitter error — it would crash the API. Log loud instead.
+  child.on('error', (err) => {
+    console.error(`[spawn-worker] FAILED to spawn ${script}: ${err.message}`);
+  });
   child.unref();
 }
 
