@@ -590,14 +590,9 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
   } finally { if (db) db.close(); }
 });
 
-// --- GET /api/chorus/domain/:domain/code-files --- DEPRECATED by #2060
-// Replaced by GET /api/chorus/domain/:name/code (consolidated domain API).
-// Kept temporarily for backwards compatibility — remove after confirming no consumers.
-import { fetchChorusCodeFiles } from './handlers/chorus-code-files';
-app.get('/api/chorus/domain/:domain/code-files', async (req: Request, res: Response) => {
-  const r = await fetchChorusCodeFiles({ sparql: athenaSparqlQuery }, req.params.domain);
-  res.status(r.status).json(r.body);
-});
+// #3373: /api/chorus/domain/:domain/code-files RETIRED (deprecated by #2060,
+// zero non-test consumers confirmed by grep). /code is the surviving facet.
+// Retirement gate: platform/tests/3373-code-files-retired.bats.
 
 // --- Consolidated domain facet API (#2060) ---
 // One endpoint per facet under /api/chorus/domain/:name/.

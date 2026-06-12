@@ -1,6 +1,46 @@
 if (typeof mermaid !== 'undefined') { mermaid.initialize({ startOnLoad: false, theme: 'neutral' }); }
 const ATHENA = '/api/athena';
 const DOMAIN_API = '/api/chorus/domain'; // #2060: consolidated facet endpoints
+// #3373: the generated Domain API (owl-api, loopback-bound, CORS-enabled).
+// Identity fields overlay from here when this page's v1 id resolves to a v2
+// domain; everything is non-fatal by construction — generated API down or no
+// v2 home means the page renders exactly as before from v1.
+const OWL_API = 'http://localhost:3360';
+
+// Map a v1 page id onto a v2 domain name: exact match, else the v1 naming
+// suffix (-domain / -service) stripped. Null = no v2 home (stays v1).
+function resolveV2DomainName(id, v2Names) {
+  if (v2Names.indexOf(id) !== -1) return id;
+  var stripped = id.replace(/-(domain|service)$/, '');
+  if (stripped !== id && v2Names.indexOf(stripped) !== -1) return stripped;
+  return null;
+}
+
+// #3373: overlay model-owned identity fields (owner, step, comment) from the
+// generated API onto the v1 record. Display label stays v1 (v2 names are
+// lowercase keys, not display strings). A value difference here is the model
+// being the source of truth, not a rendering change — layout and behavior are
+// untouched. data-identity-source marks the swap for verification without any
+// visual change.
+async function overlayGeneratedDomain(d) {
+  try {
+    var listRes = await fetch(OWL_API + '/domains');
+    if (!listRes.ok) return;
+    var list = await listRes.json();
+    var names = (list.items || []).map(function(x) { return x.name; });
+    var v2 = resolveV2DomainName(domainId, names);
+    if (!v2) return;
+    var gRes = await fetch(OWL_API + '/domains/' + encodeURIComponent(v2));
+    if (!gRes.ok) return;
+    var g = await gRes.json();
+    if (g.comment) d.comment = g.comment;
+    if (g.ownedBy && g.ownedBy.label) d.owner = g.ownedBy.label;
+    if (g.atStep && g.atStep.label) d.step = g.atStep.label;
+    d.identitySource = OWL_API + '/domains/' + v2;
+    var sb = document.getElementById('stats-bar');
+    if (sb) sb.setAttribute('data-identity-source', 'generated-api');
+  } catch (e) { /* non-fatal: v1 rendering preserved */ }
+}
 
 // #2431 — per-instance enrichment cache keyed by URI. Populated on first
 // fetch of /api/loom/principles, /api/loom/policies, etc. and read by the
@@ -380,6 +420,7 @@ async function init() {
     if (!res.ok) throw new Error('Athena ' + res.status);
     const body = await res.json();
     const d = body.data;
+    await overlayGeneratedDomain(d); // #3373: model-owned identity from the generated API
 
     const [brRes, cardsRes, codeRes, testsRes, alertsRes, compRes, actorsRes, scenariosRes, contractRes, priorArtRes, pagesRes, integrationsRes, persistenceRes, servicesRes, pipelineRes, logsRes, gapsRes, docsRes, infraRes, depsRes, relRes, decRes] = await Promise.all([
       tracedFetch(ATHENA + '/subdomains/' + domainId + '/blast-radius'),
