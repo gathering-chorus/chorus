@@ -522,3 +522,59 @@ fn changed_ts_services_dedupes_pulse() {
     let diff = "platform/pulse/src/a.ts\nplatform/pulse/src/b.ts\n";
     assert_eq!(werk_deploy::changed_ts_services(diff), vec!["pulse".to_string()]);
 }
+
+// #3375 — the TS smoke false-negative: wait_for_api_healthy required the literal
+// body "status":"healthy" (chorus-api's shape). #3352 added pulse + clearing to
+// the same smoke, but both answer {"status":"ok",...} — never matched, so every
+// deploy spun the full 30s and refused "health timeout" against a service
+// answering in 0.17s (blocked #3366's land 3x on 2026-06-12). The predicate is
+// now pure + shape-tolerant: healthy|ok on an anchored "status" key, nothing else.
+#[test]
+fn health_body_accepts_clearing_ok_shape() {
+    // clearing's literal /health body, 2026-06-12
+    assert!(werk_deploy::health_body_ok(r#"{"status":"ok","port":3470}"#));
+}
+
+#[test]
+fn health_body_accepts_pulse_ok_shape() {
+    assert!(werk_deploy::health_body_ok(
+        r#"{"status":"ok","port":3475,"total":17015,"pending":17013}"#
+    ));
+}
+
+#[test]
+fn health_body_accepts_chorus_api_healthy_shape() {
+    assert!(werk_deploy::health_body_ok(r#"{"status":"healthy","checks":[]}"#));
+}
+
+#[test]
+fn health_body_rejects_unhealthy_and_noise() {
+    // degraded/down must NOT pass
+    assert!(!werk_deploy::health_body_ok(r#"{"status":"degraded","failures":6}"#));
+    assert!(!werk_deploy::health_body_ok(r#"{"status":"down"}"#));
+    // an error page or empty body must not pass
+    assert!(!werk_deploy::health_body_ok("502 Bad Gateway"));
+    assert!(!werk_deploy::health_body_ok(""));
+    // "ok"/"healthy" appearing OUTSIDE the status key must not pass (substring trap,
+    // the 6.401ms class from #3369)
+    assert!(!werk_deploy::health_body_ok(r#"{"status":"error","note":"last ok 2h ago"}"#));
+}
+
+#[test]
+fn health_timeout_err_names_url_and_last_body() {
+    // #3375 AC3 — a real timeout refusal must say WHAT it polled and what it last
+    // saw, never a bare "30s timeout".
+    let e = werk_deploy::health_timeout_err(
+        "http://localhost:3470/health",
+        std::time::Duration::from_secs(30),
+        Some(r#"{"status":"degraded","failures":6}"#),
+        Some(0),
+    );
+    assert!(e.contains("http://localhost:3470/health"), "names the polled URL: {}", e);
+    assert!(e.contains("degraded"), "carries the last observed body: {}", e);
+    assert!(e.contains("curl exit: 0"), "carries the last curl exit: {}", e);
+    // connection refused: curl exit 7, no body — distinguishable from empty-200
+    let e2 = werk_deploy::health_timeout_err("http://x/health", std::time::Duration::from_secs(30), None, Some(7));
+    assert!(e2.contains("no response"), "no-answer case named: {}", e2);
+    assert!(e2.contains("curl exit: 7"), "connection-refused exit visible: {}", e2);
+}
