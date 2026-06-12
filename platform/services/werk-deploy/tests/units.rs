@@ -568,9 +568,13 @@ fn health_timeout_err_names_url_and_last_body() {
         "http://localhost:3470/health",
         std::time::Duration::from_secs(30),
         Some(r#"{"status":"degraded","failures":6}"#),
+        Some(0),
     );
     assert!(e.contains("http://localhost:3470/health"), "names the polled URL: {}", e);
     assert!(e.contains("degraded"), "carries the last observed body: {}", e);
-    let e2 = werk_deploy::health_timeout_err("http://x/health", std::time::Duration::from_secs(30), None);
+    assert!(e.contains("curl exit: 0"), "carries the last curl exit: {}", e);
+    // connection refused: curl exit 7, no body — distinguishable from empty-200
+    let e2 = werk_deploy::health_timeout_err("http://x/health", std::time::Duration::from_secs(30), None, Some(7));
     assert!(e2.contains("no response"), "no-answer case named: {}", e2);
+    assert!(e2.contains("curl exit: 7"), "connection-refused exit visible: {}", e2);
 }

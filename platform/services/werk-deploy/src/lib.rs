@@ -1016,16 +1016,26 @@ pub fn health_body_ok(body: &str) -> bool {
     b.contains("\"status\":\"healthy\"") || b.contains("\"status\":\"ok\"")
 }
 
-/// #3375 AC3 — a health-smoke timeout refusal names what it polled and the last
-/// body it saw. "30s timeout" with no evidence made today's false-negative
-/// undiagnosable from the refusal alone.
-pub fn health_timeout_err(url: &str, timeout: Duration, last_body: Option<&str>) -> String {
+/// #3375 AC3 — a health-smoke timeout refusal names what it polled, the last
+/// body it saw, and the last curl exit — so connection-refused (curl 7) and
+/// empty-200 (curl 0, no body) are distinguishable from the refusal alone.
+/// "30s timeout" with no evidence made today's false-negative undiagnosable.
+pub fn health_timeout_err(
+    url: &str,
+    timeout: Duration,
+    last_body: Option<&str>,
+    last_curl_exit: Option<i32>,
+) -> String {
+    let exit = match last_curl_exit {
+        Some(c) => format!("last curl exit: {}", c),
+        None => "curl never ran".to_string(),
+    };
     let seen = match last_body {
         Some(b) if !b.trim().is_empty() => {
             let snippet: String = b.trim().chars().take(160).collect();
-            format!("last body: {}", snippet)
+            format!("last body: {} ({})", snippet, exit)
         }
-        _ => "no response (connection refused or empty body every poll)".to_string(),
+        _ => format!("no response body ({})", exit),
     };
     format!(
         "health smoke at {} timed out after {:?} — {}. If the body looks healthy but isn't matched, the predicate is wrong (werk-deploy health_body_ok), not the service.",
@@ -1038,8 +1048,10 @@ pub fn health_timeout_err(url: &str, timeout: Duration, last_body: Option<&str>)
 fn wait_for_api_healthy(url: &str) -> R<()> {
     let deadline = Instant::now() + smoke_timeout();
     let mut last_body: Option<String> = None;
+    let mut last_exit: Option<i32> = None;
     loop {
         if let Ok(out) = Command::new("curl").args(["-s", "-m", "2", url]).output() {
+            last_exit = out.status.code();
             let body = String::from_utf8_lossy(&out.stdout).to_string();
             if health_body_ok(&body) {
                 return Ok(());
@@ -1049,7 +1061,7 @@ fn wait_for_api_healthy(url: &str) -> R<()> {
             }
         }
         if Instant::now() >= deadline {
-            return Err(health_timeout_err(url, smoke_timeout(), last_body.as_deref()));
+            return Err(health_timeout_err(url, smoke_timeout(), last_body.as_deref(), last_exit));
         }
         sleep(Duration::from_millis(250));
     }
