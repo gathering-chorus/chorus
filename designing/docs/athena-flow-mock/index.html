@@ -7,7 +7,7 @@
 <div class="promise">Five steps, seven products, one model. Every box below is a real graph entity; every click follows a real model edge.</div>
 <div class="stats">
   <div class="stat"><div class="v">5</div><div class="l">Steps</div></div>
-  <div class="stat"><div class="v">7</div><div class="l">Products</div></div>
+  <div class="stat"><div class="v" id="product-count">…</div><div class="l">Products (incl. children)</div></div>
   <div class="stat"><div class="v" id="domain-count">…</div><div class="l">Domains (live :3360)</div></div>
 </div>
 <div class="stream" id="stream"></div>
@@ -19,6 +19,10 @@
 (async function () {
   const domains = await fetchDomains();
   document.getElementById('domain-count').textContent = domains ? domains.length : 'API down';
+  // Count derived from STREAM, never hardcoded (cold-eyes: 7-vs-6 drift).
+  let pc = 0;
+  for (const col of STREAM) for (const p of col.products) { pc++; if (p.children) pc += p.children.length; }
+  document.getElementById('product-count').textContent = pc;
   const byStep = {};
   if (domains) for (const d of domains) {
     // step comes from the live record's atStep on the detail; the list is flat,

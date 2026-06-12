@@ -43,12 +43,12 @@ async function fetchContains(name) {
 }
 
 function stepBadge(label) {
-  const k = (label || '').toLowerCase();
-  return '<span class="badge ' + k + '">' + label + '</span>';
+  const k = esc((label || '').toLowerCase());
+  return '<span class="badge ' + k + '">' + esc(label) + '</span>';
 }
 function ownerDot(label) {
-  const k = (label || '').toLowerCase();
-  return '<span class="owner-dot ' + k + '"></span>' + (label || '?');
+  const k = esc((label || '').toLowerCase());
+  return '<span class="owner-dot ' + k + '"></span>' + esc(label || '?');
 }
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

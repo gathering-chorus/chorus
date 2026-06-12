@@ -171,7 +171,7 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     // ranking + ownership map. Graceful degradation: any failure injects a
     // one-line note rather than blocking boot.
     //
-    // INVARIANT (Silas gate:arch #2940; cross-link: designing/docs/athena-subproduct-design.html):
+    // INVARIANT (Silas gate:arch #2940; cross-link: designing/docs/athena-product-design.html):
     // SessionStart reads the Athena tree from the STATIC JSON at data/athena/tree.json.
     // It does NOT call SPARQL or any live query, even after Move 1's SHACL/OWL lands.
     // Boot latency is the surface defended; turning this into a live query at any
