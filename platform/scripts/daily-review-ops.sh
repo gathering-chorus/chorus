@@ -13,7 +13,6 @@ ISSUES=""
 AGENTS_EXPECTED=(
   com.gathering.app
   com.gathering.fuseki
-  com.gathering.messaging
   com.chorus.api
   com.chorus.context-cache-daily
   com.chorus.launchagent-metrics

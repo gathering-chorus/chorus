@@ -1,3 +1,9 @@
+# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
+# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — hydration
+# divergence cannot be measured while nothing hydrates; this fired 18:24 as the
+# FOURTH crawler-class alert (Kade's catch — escaped the first tombstone sweep).
+# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
+# (#3185/#3242) and re-enables its own monitoring.
 # hydration-divergence.yml — Alert when the crawler misses its own cadence despite activity
 # Card #2817 (#2861 — bash-only check) · #3322 — expectation aligned to the interval design
 #
@@ -17,6 +23,10 @@ owner: kade
 schedule: "*/10 * * * *"
 
 check: |
+  # tombstone short-circuit — see header; original check preserved below, inert
+  echo "ok"
+  exit 0
+  # ORIGINAL CHECK (inert while retired):
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/hydration-divergence-check.py"
   CHORUS_TREE="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
   CHANGES=$(cd "$CHORUS_TREE" && git log --since='40 minutes ago' --name-only --pretty=format: 2>/dev/null | grep -v '^$' | sort -u | wc -l | tr -d ' ')

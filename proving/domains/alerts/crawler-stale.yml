@@ -1,3 +1,12 @@
+# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
+# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — Jeff:
+# "i have doubts about the function of crawler-index in current state".
+# This check is SILENCED while the crawler is retired: a staleness alert for
+# a deliberately-stopped service is a tombstone page, not a signal (it fired
+# 4x on 2026-06-12 after the retirement, each one a Jeff-screen tax).
+# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
+# (#3185/#3242 — facet-heralds through the DAL) and re-enables its own
+# monitoring. Restore the original check below by removing this short-circuit.
 # crawler-stale.yml — Alert when chorus crawler hasn't indexed recently
 # Card #2817 (#2861 — bash-only check; python moved to sibling)
 #
@@ -17,6 +26,10 @@ owner: kade
 schedule: "*/5 * * * *"
 
 check: |
+  # tombstone short-circuit — see header; original check preserved below, inert
+  echo "ok"
+  exit 0
+  # ORIGINAL CHECK (inert while retired):
   SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-stale-check.py"
   THRESHOLD_SEC=3000
   LAST=$(grep "crawler.domain.indexed" "$HOME/.chorus/chorus.log" 2>/dev/null | tail -1)
