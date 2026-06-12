@@ -30,8 +30,8 @@ Feature: Clearing access paths
     Then the message "public-probe" appears in the message feed
 
   @lan @iphone
-  Scenario: Jeff via LAN IP on iPhone wifi
-    When Jeff loads "http://192.168.86.36:3470" without auth
+  Scenario: Jeff via LAN URL on iPhone wifi
+    When Jeff loads the LAN URL without auth
     Then the page returns 200
     And the page contains "The Clearing"
     When Jeff enters the name "jeff" via LAN

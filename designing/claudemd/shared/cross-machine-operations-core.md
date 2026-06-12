@@ -1,6 +1,6 @@
 ## Cross-Machine Operations (ADR-012)
 
-Two machines: **Library** (192.168.86.36) and **Bedroom** (192.168.86.242).
+Two machines: **Library** (`jeffs-mac-mini-m1-3.local` — IP DHCP-volatile, .23 as of 2026-06-11) and **Bedroom** (192.168.86.242).
 
 **Read is free.** Health checks, log reads, status queries — no card needed.
 **Write/mutate requires a card.** Log in `../../../activity.md` with machine name.

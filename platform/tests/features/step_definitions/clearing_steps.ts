@@ -12,7 +12,9 @@ let nameAccepted = false;
 
 // Endpoints
 const LOCAL = 'http://localhost:3470';
-const LAN = 'http://192.168.86.36:3470';
+// #3366: LAN endpoint is the Bonjour name, never a DHCP-volatile numeric IP
+// (the hardcoded .36 went stale when DHCP moved the machine to .23).
+const LAN = process.env.CLEARING_LAN_URL || 'http://jeffs-mac-mini-m1-3.local:3470';
 const PUBLIC = 'https://clearing.lightlifeurbangardens.com';
 
 function curl(url: string, opts: string = ''): { status: number; body: string } {
@@ -71,6 +73,12 @@ When('Jeff loads {string} with token cookie', function (url: string) {
 
 When('Jeff loads {string} without auth', function (url: string) {
   lastResponse = curl(url, '-L');
+});
+
+// #3366: the LAN URL lives in one place (the LAN constant above) so the
+// scenario text never carries a DHCP-volatile literal address.
+When('Jeff loads the LAN URL without auth', function () {
+  lastResponse = curl(LAN, '-L');
 });
 
 Then('the page returns {int}', function (expectedStatus: number) {
