@@ -4,7 +4,7 @@
 # Runs via LaunchAgent at 2am. Logs to ~/Library/Logs/Chorus/rsync-backup.log
 set -euo pipefail
 
-REMOTE="192.168.86.242"
+REMOTE="Jeffs-Mac-mini.local"
 DEST="/Users/jeffbridwell/Backups/library"
 LOG_TAG="rsync-backup"
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
@@ -66,7 +66,7 @@ fi
 # To restore from Bedroom backup to Library:
 #
 # 1. ALWAYS dry-run first:
-#    rsync -azn --stats -e ssh 192.168.86.242:/Users/jeffbridwell/Backups/library/<target>/ ~/<dest>/
+#    rsync -azn --stats -e ssh Jeffs-Mac-mini.local:/Users/jeffbridwell/Backups/library/<target>/ ~/<dest>/
 #
 # 2. Review dry-run output — check "Number of files transferred"
 #

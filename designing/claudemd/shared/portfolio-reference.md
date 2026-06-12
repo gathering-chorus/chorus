@@ -9,7 +9,7 @@
 | chorus | `../../` | Primary | Protocol service — bridge, scripts, hooks, board |
 | product-manager | `../product-manager` | Primary | PM role (Wren) |
 
-**Library** (primary): Mac mini M1, 16GB, 2TB SSD — `jeffs-mac-mini-m1-3.local` (IP is DHCP-volatile; was .36, now .23 as of 2026-06-11 — use the hostname)
-**Bedroom** (secondary): Mac mini M2 Pro, 32GB, ~178TB external (192.168.86.242)
+**Library** (primary): Mac mini M1, 16GB, 2TB SSD — `Jeffs-Mac-Mini-M1-3.local` (192.168.86.36 reserved in router 2026-06-12, wired; hostname is canonical)
+**Bedroom** (secondary): Mac mini M2 Pro, 32GB, ~178TB external — `Jeffs-Mac-mini.local` (192.168.86.242 reserved in router 2026-06-12; hostname is canonical)
 
 See `infrastructure-constraints.md` for hard constraints (C1-C7) and disk budget.

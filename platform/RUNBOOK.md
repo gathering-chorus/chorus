@@ -94,7 +94,7 @@ bash chorus/proving/scripts/alert-runner.sh --rule synthetic-test
 
 ## Service Inventory
 
-### Library Mac (`jeffs-mac-mini-m1-3.local` — IP DHCP-volatile; .23 as of 2026-06-11, was .36)
+### Library Mac (`Jeffs-Mac-Mini-M1-3.local` — 192.168.86.36 reserved in router 2026-06-12, wired; hostname canonical)
 
 #### Native LaunchAgents
 All managed via `launchctl`. Plists in `~/Library/LaunchAgents/`.
@@ -125,9 +125,9 @@ All managed via `launchctl`. Plists in `~/Library/LaunchAgents/`.
 - `com.gathering.messaging` — Pulse messaging
 - `com.gathering.wordpress` — WordPress
 
-### Bedroom Mac (192.168.86.242)
+### Bedroom Mac (Jeffs-Mac-mini.local (192.168.86.242 reserved))
 
-SSH: `ssh 192.168.86.242` (do NOT use `jeff@` — config supplies username)
+SSH: `ssh Jeffs-Mac-mini.local (192.168.86.242 reserved)` (do NOT use `jeff@` — config supplies username)
 
 **Services:**
 - `com.gathering.promtail` — Log shipping to Library Loki

@@ -48,7 +48,7 @@ clear_strikes() {
 MAX_STRIKES=3
 
 # === Check 1: Bedroom SSH ===
-if ssh -o ConnectTimeout=5 -o BatchMode=yes jeffbridwell@192.168.86.242 "echo ok" > /dev/null 2>&1; then
+if ssh -o ConnectTimeout=5 -o BatchMode=yes jeffbridwell@Jeffs-Mac-mini.local "echo ok" > /dev/null 2>&1; then
   clear_strikes "bedroom-ssh"
 else
   STRIKES=$(check_strikes "bedroom-ssh")
@@ -81,7 +81,7 @@ fi
 # === Check 4: NiFi queue backup ===
 NIFI_TOKEN_FILE="$HOME/Library/Logs/Gathering/nifi-token"
 if [ -f "$NIFI_TOKEN_FILE" ]; then
-  NIFI_QUEUED=$(ssh -o ConnectTimeout=5 jeffbridwell@192.168.86.242 "curl -sk 'https://jeffs-mac-mini.lan:8443/nifi-api/flow/process-groups/root' -H 'Authorization: Bearer $(cat $NIFI_TOKEN_FILE)' 2>/dev/null" 2>/dev/null | python3 -c "
+  NIFI_QUEUED=$(ssh -o ConnectTimeout=5 jeffbridwell@Jeffs-Mac-mini.local "curl -sk 'https://jeffs-mac-mini.lan:8443/nifi-api/flow/process-groups/root' -H 'Authorization: Bearer $(cat $NIFI_TOKEN_FILE)' 2>/dev/null" 2>/dev/null | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
