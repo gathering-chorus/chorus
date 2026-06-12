@@ -315,10 +315,14 @@ jobs:
     # by the #3324 audit — so they run in the required tier without the hermetic_*
     # rename churn. A red verb test blocks merge: the verbs are the land path,
     # and werk-build's e2e once rode main RED undetected (#3229).
+    # #3373: owl-api joins the matrix — it's the fan-out's generator/serving
+    # engine and its suite (ilities/observability/cors) is pure-function
+    # hermetic; before this it ran in NO CI job (cold-eyes catch).
     strategy:
       fail-fast: false
       matrix:
         crate:
+          - platform/services/owl-api
           - platform/services/werk-pull
           - platform/services/werk-commit
           - platform/services/werk-push
