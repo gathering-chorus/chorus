@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Page Anatomy — Athena Flow Mock</title>
+<link rel="stylesheet" href="flow.css"></head>
+<body><div class="wrap">
+<div class="mock-banner">#3378 — the page-pattern anatomy. This section rides the Athena product design (Jeff's ruling 2026-06-12: "the pages and owl are all part of the athena product design"). Every #3351-generated page conforms to this anatomy; conformance is checkable because pages are renderings of shapes.</div>
+<h1>Page Anatomy <span class="kind">— the pattern every generated page follows</span></h1>
+
+<div class="promise">A page is a <strong>rendering of its class's generated API plus its schema</strong>. The anatomy below is derivable from the shape: identity fields come from required properties, folds from edges and folds in the API, links from object-property ranges. One anatomy, N classes — the presentation-layer twin of "one generator, zero forked code paths."</div>
+
+<details class="fold" open><summary>1 · Breadcrumb — the walk back up</summary><div class="body">
+<p>Always renders the containment path to the value stream: <code>value stream → step → product → domain → service</code>. Each crumb is a real model edge (atStep, hasDomain, hosts). Navigation starts from the value stream (Jeff's CMDB ruling) — so every page can walk home.</p></div></details>
+
+<details class="fold" open><summary>2 · Identity header — name + kind</summary><div class="body">
+<p><code>label</code> as the title, the class as the kind suffix ("— Domain"). Display labels may differ from IRI-derived names (lowercase keys); pages show labels, links carry names.</p></div></details>
+
+<details class="fold" open><summary>3 · Promise block — the one-paragraph answer</summary><div class="body">
+<p><code>comment</code> (Domain), <code>vision</code> (Product), <code>overview</code> (Service). The first thing a human reads; the field every shape requires (minCount 1).</p></div></details>
+
+<details class="fold" open><summary>4 · Stats bar — owner, step, status</summary><div class="body">
+<p><code>ownedBy</code> (role dot), <code>atStep</code> (step badge, colored by the five-step palette), <code>status</code> (the exploring|building|operating|retiring enum). Same three on every class — they're the properties every shape carries.</p></div></details>
+
+<details class="fold" open><summary>5 · Folds — one per edge or fold route, rendering ALWAYS</summary><div class="body">
+<p>Each object property or generated fold route becomes a fold: <code>hasDomain</code>, <code>contains</code>, <code>dependsOn</code>, <code>hasValueStream</code>, <code>hasSurface</code>, <code>hasDesignDoc</code>. <strong>Honest-folds rule:</strong> a fold renders even when empty — "0 children — edges not yet minted" is information; a hidden fold is a lie of omission. Every fold carries a <span class="src" style="float:none">source tag</span> naming its API route, so live vs authored vs hydrated is always visible.</p></div></details>
+
+<details class="fold" open><summary>6 · Layer labels — authored above, hydrated below</summary><div class="body">
+<p>Where a class carries both provenance layers (Service: design + operational), the page draws the line visibly. Authored facts (asIs, toBe, vision) never mix with hydrated facts (runtimeForm, healthAt, cdhash) — the same authored-vs-hydrated annotation that drives #3372's authz derivation drives the page's visual grouping. One annotation, two consumers.</p></div></details>
+
+<details class="fold" open><summary>7 · Edges are links — no dead text</summary><div class="body">
+<p>Any value that is a model entity renders as a link to that entity's page. If it can't be a link, either the edge isn't real or the page is missing — both are model findings, not styling choices. This is what makes the flow walkable and the model self-evident.</p></div></details>
+
+<details class="fold" open><summary>Conformance — how this gets teeth</summary><div class="body">
+<p>Because pages are generated from the same shapes as the APIs, anatomy conformance is structural: the generator emits the anatomy; a hand-built page that drifts is visible against the schema. Until pages are generator-emitted, this document is the review standard for every fan-out leg's page (#3351 Product/Service, Silas's three, Kade's four).</p></div></details>
+
+<p style="font-size:.85rem;color:var(--muted);margin-top:16px">Walk the anatomy live: <a class="edge" href="index.html">landing</a> · <a class="edge" href="step.html?step=building">step</a> · <a class="edge" href="product.html?p=werk">product</a> · <a class="edge" href="domain.html?d=domains">domain (the set)</a> · <a class="edge" href="service.html?s=werk-commit">service</a></p>
+</div></body></html>

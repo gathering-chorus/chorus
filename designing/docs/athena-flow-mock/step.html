@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Step — Athena Flow Mock</title>
+<link rel="stylesheet" href="flow.css"><script src="flow.js"></script></head>
+<body><div class="wrap">
+<div class="mock-banner">#3378 MOCK — step page. Products are exemplar; the domains-at-this-step table is LIVE from :3360. The encapsulated child stream renders on steps that have one (Building → werk).</div>
+<div class="crumb"><a href="index.html">value stream</a> → <span id="bc">…</span></div>
+<h1 id="title">… <span class="kind">— Value Stream Step</span></h1>
+<div class="stats" id="stats"></div>
+<div id="products-fold"></div>
+<div id="substream-fold"></div>
+<div id="domains-fold"></div>
+</div>
+<script>
+(async function () {
+  const key = (new URLSearchParams(location.search).get('step') || 'building').toLowerCase();
+  const col = STREAM.find(s => s.key === key) || STREAM[3];
+  document.title = col.step + ' — Step';
+  document.getElementById('title').innerHTML = col.step + ' <span class="kind">— Value Stream Step</span>';
+  document.getElementById('bc').textContent = col.step;
+  document.getElementById('stats').innerHTML =
+    '<div class="stat"><div class="v">' + stepBadge(col.step) + '</div><div class="l">Step</div></div>' +
+    '<div class="stat"><div class="v">' + col.products.length + '</div><div class="l">Products (atStep)</div></div>' +
+    '<div class="stat"><div class="v" id="dcount">…</div><div class="l">Domains (live)</div></div>';
+  document.getElementById('products-fold').innerHTML = fold('Products at this step (atStep⁻¹)', 'model edges',
+    '<table><tr><th>Product</th></tr>' + col.products.map(p =>
+      '<tr><td><a class="edge" href="product.html?p=' + p.name + '">' + p.label + '</a>' +
+      (p.children ? p.children.map(c => ' <span class="empty">↳ ' + c.label + '</span>').join('') : '') + '</td></tr>').join('') + '</table>', '');
+  document.getElementById('substream-fold').innerHTML = col.substream
+    ? fold('Encapsulated value stream (hasValueStream — Jeff\'s recursion rule)', 'NEW shape property, #3351',
+        '<div class="substream"><strong>' + col.substream.of + '\'s stream:</strong> ' +
+        col.substream.steps.map(v => '<span class="verb">' + v + '</span>').join('→') + '</div>', '')
+    : fold('Encapsulated value stream (hasValueStream)', 'NEW shape property, #3351', null,
+        'no child stream minted for this step yet — Building→werk is the proven example');
+  // LIVE: domains whose atStep is this step.
+  const all = await fetchDomains();
+  let rows = '', n = 0;
+  if (all) {
+    const details = await Promise.all(all.map(d => fetchDomain(d.name)));
+    for (const d of details) {
+      if (!d || !d.atStep) continue;
+      if ((d.atStep.label || '').toLowerCase() !== col.step.toLowerCase()) continue;
+      n++;
+      rows += '<tr><td><a class="edge" href="domain.html?d=' + esc(d.label) + '">' + esc(d.label) + '</a></td>' +
+        '<td>' + ownerDot((d.ownedBy || {}).label) + '</td><td>' + esc(d.status) + '</td></tr>';
+    }
+  }
+  document.getElementById('dcount').textContent = all ? n : 'API down';
+  document.getElementById('domains-fold').innerHTML = fold('Domains at this step (live)', 'GET :3360 atStep filter',
+    rows ? '<table><tr><th>Domain</th><th>Owner</th><th>Status</th></tr>' + rows + '</table>' : null,
+    all ? 'no domains at this step in the graph yet' : ':3360 unreachable');
+})();
+</script>
+</body></html>

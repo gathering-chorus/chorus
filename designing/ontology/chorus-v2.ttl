@@ -1,4 +1,4 @@
-# EXTRACTED 2026-06-11 (#3350) from athena-subproduct-design.html — the canonical
+# EXTRACTED 2026-06-11 (#3350) from athena-product-design.html — the canonical
 # v2 schema per ADR-040 (class vocabulary of record). This file is the landing
 # source for urn:chorus:ontology; the design doc remains the narrative home.
 # conformance: ADR-040-manual
