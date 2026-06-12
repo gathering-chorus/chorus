@@ -13,7 +13,7 @@ BASELINE="$REPO/platform/tests/3370-lan-ip-baseline.txt"
   fails=""
   while IFS=: read -r file allowed; do
     [ -z "$file" ] && continue
-    actual=$(grep -c "192\.168\.86\." "$REPO/$file" 2>/dev/null || echo 0)
+    actual=$(grep -c "192\.168\.86\." "$REPO/$file" 2>/dev/null) || actual=0
     if [ "$actual" -gt "$allowed" ]; then
       fails="$fails $file($actual>$allowed)"
     fi
@@ -22,7 +22,7 @@ BASELINE="$REPO/platform/tests/3370-lan-ip-baseline.txt"
   while IFS= read -r hit; do
     grep -q "^${hit}:" "$BASELINE" || fails="$fails NEW:$hit"
   done < <(grep -rl "192\.168\.86\." "$REPO/platform" "$REPO/proving" "$REPO/designing" "$REPO/.github" 2>/dev/null \
-    | grep -vE "\.git|node_modules|/dist|/coverage|/logs/|board-snapshot|baseline" \
+    | grep -vE "\.git|node_modules|/dist|/coverage|/logs/|/target/|board-snapshot|baseline" \
     | sed "s|^$REPO/||")
   [ -z "$fails" ] || { echo "ratchet violations:$fails"; false; }
 }

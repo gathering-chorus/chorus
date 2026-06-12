@@ -2,10 +2,10 @@
 
 ### SSH Examples (always safe — read-only)
 ```bash
-ssh jeffbridwell@Jeffs-Mac-mini.local (192.168.86.242 reserved) "pgrep -la node"
-ssh jeffbridwell@Jeffs-Mac-mini.local (192.168.86.242 reserved) "curl -s http://localhost:8082/health"
-ssh jeffbridwell@Jeffs-Mac-mini.local (192.168.86.242 reserved) "tail -20 /tmp/images-api-server.log"
-ssh jeffbridwell@Jeffs-Mac-mini.local (192.168.86.242 reserved) "df -h"
+ssh jeffbridwell@Jeffs-Mac-mini.local "pgrep -la node"
+ssh jeffbridwell@Jeffs-Mac-mini.local "curl -s http://localhost:8082/health"
+ssh jeffbridwell@Jeffs-Mac-mini.local "tail -20 /tmp/images-api-server.log"
+ssh jeffbridwell@Jeffs-Mac-mini.local "df -h"
 ```
 
 ### Service Registry (Library LaunchAgents)
