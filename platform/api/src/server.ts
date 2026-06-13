@@ -116,6 +116,16 @@ app.get('/loom/:role', sendChorusPage('loom.html'));
 app.get('/flow', sendChorusPage('flow.html'));
 app.get('/model-data', sendChorusPage('model-data.html'));
 app.get('/ontology-views/:domain', sendChorusPage('model-data.html'));
+// #3408 — re-live the /werk cockpit. Its client JS fetches these; they 404'd
+// after the #3361 page move. Schema = the spine-events vocab, already in the
+// chorus tree at designing/schemas (served straight from disk, no new data dep).
+app.get('/api/werk/schema', (_req: Request, res: Response) => {
+  const p = path.join(chorusRepoRoot, 'designing', 'schemas', 'spine-events.json');
+  fs.readFile(p, 'utf-8', (err, raw) => {
+    if (err) { res.status(404).json({ error: 'spine-events.json not found' }); return; }
+    res.type('json').send(raw);
+  });
+});
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));
