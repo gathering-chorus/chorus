@@ -1019,8 +1019,13 @@ export { app, server, io, tilePoller, messageRouter, clearingChat };
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`The Clearing listening on http://localhost:${PORT}`);
+  // #3390 — the HTTP listener has no cross-machine consumer (the tunnel fronts
+  // it via localhost), so bind loopback (ADR-042 §8). The HTTPS listener below
+  // (:3471) is the documented LAN exception — it stays all-interfaces for phone
+  // mic access (#1782, getUserMedia secure-context), do NOT loopback it.
+  const BIND_HOST = process.env.CHORUS_BIND || '127.0.0.1';
+  server.listen(PORT, BIND_HOST, () => {
+    console.log(`The Clearing listening on http://${BIND_HOST}:${PORT}`);
   });
 
   // HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)
