@@ -62,6 +62,7 @@ fn drain_pending_inner(conn: &mut Connection, role: &str) -> rusqlite::Result<Ve
                WHERE "to" = ?1
                  AND type = 'nudge'
                  AND delivery_status = 'pending'
+                 AND "from" != "to"
                ORDER BY created_at ASC, id ASC"#,
         )?;
         let rows = stmt.query_map([role], |r| {
@@ -258,6 +259,19 @@ mod tests {
         let drained = drain_pending(&mut conn, "silas");
         assert_eq!(drained.len(), 1, "only type='nudge' drains; chat/board-event ignored");
         assert_eq!(drained[0].content, "real-nudge");
+    }
+
+    #[test]
+    fn excludes_self_sent() {
+        // A self-sent row (from == to) must never surface as a peer interruption,
+        // even though it matches recipient+type+pending (Silas review, #3218).
+        let mut conn = setup_db();
+        insert(&conn, "nudge", "silas", "silas", "talking-to-myself", "2026-06-13 10:00:01");
+        insert(&conn, "nudge", "wren", "silas", "real-peer-nudge", "2026-06-13 10:00:02");
+
+        let drained = drain_pending(&mut conn, "silas");
+        assert_eq!(drained.len(), 1, "self-sent row is not a peer nudge");
+        assert_eq!(drained[0].content, "real-peer-nudge");
     }
 
     #[test]

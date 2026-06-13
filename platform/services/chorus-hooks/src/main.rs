@@ -917,8 +917,12 @@ async fn stop_hook(
         if let Some(block) =
             hooks::nudge_drain::drain_block_from_db(&role, &shared::state_paths::messages_db())
         {
+            // Name the senders (the block lists from/trace/content) and state the
+            // bound — an opaque Stop-block reads as a trap even when it isn't
+            // (Silas review #3218). Drain-once means addressing them clears it.
             let resp = HookResponse::block_with_stderr(&format!(
-                "Pending peer nudge(s) — address before going idle (Attention Contract):\n{block}"
+                "Pending peer nudge(s) — address before going idle (Attention Contract). \
+                 Bounded: drain-once means ONE continuation clears this block (not a loop).\n{block}"
             ));
             emit_hook_decision("stop_hook", &input, "nudge_drain", &resp, start).await;
             return Json(resp);
