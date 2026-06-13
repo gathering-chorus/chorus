@@ -181,13 +181,13 @@ pub async fn check(input: &HookInput) -> HookResponse {
                 if GIT_CHERRY_PICK_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-cherry-pick").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git cherry-pick is prohibited in the team repo (#2598)."
+                        "BLOCKED: Direct git cherry-pick is prohibited in the chorus repo (#2598). The werk pipeline owns history on canonical (Jeff/werk-only). For a foreign repo, use `git -C <repo-path> cherry-pick`."
                     ));
                 }
                 if GIT_RESET_HARD_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-reset-hard").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598)."
+                        "BLOCKED: Direct git reset --hard is prohibited in the chorus repo (#2598). Canonical re-alignment is chorus-werk-sync (Jeff/werk-only). For a foreign repo, use `git -C <repo-path> reset --hard`."
                     ));
                 }
                 if GIT_CHECKOUT_RE.is_match(&cmd_for_match) {
@@ -576,11 +576,17 @@ mod tests {
     // exercised a command that no longer exists on disk.)
     #[tokio::test]
     async fn test_no_deny_string_names_retired_git_queue() {
+        // ALL 9 mutating-git deny paths — not just the 5 named in AC1. AC3 says
+        // "zero git-queue references remain in the guardrail deny strings" (every
+        // one), and AC2 says each names a real path. cherry-pick + reset --hard
+        // were the gap the cold-eyes review caught.
         let ops = [
             "git commit -m 'x'",
             "git add .",
             "git push",
             "git rebase main",
+            "git cherry-pick abc123",
+            "git reset --hard HEAD~1",
             "git checkout main",
             "git switch main",
             "git branch newbranch",
