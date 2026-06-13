@@ -54,6 +54,11 @@ use std::time::Duration;
 /// N and marks ONLY those delivered, so a large backlog (e.g. a delivery-outage
 /// recovery) drains N-per-tool-call oldest-first instead of flooding the agent's
 /// context in one shot — and per-call cost stays bounded to N rows.
+///
+/// Note (Kade): a one-time outage backlog catches up at N/Stop. But under
+/// SUSTAINED delivery-down where inflow exceeds N per Stop, the backlog holds
+/// steady rather than shrinks — that is CORRECT behavior (the fix is to restore
+/// delivery, not to drain harder). A held backlog here is not a drain bug.
 const DRAIN_CAP: usize = 20;
 
 /// One pending nudge drained from messages.db, in delivery (FIFO) order.
