@@ -70,60 +70,48 @@ pub struct PendingNudge {
     pub trace_id: Option<String>,
 }
 
-/// Atomically drain the pending nudges addressed to `role`: select every
-/// `type='nudge'` row with `delivery_status='pending'`, oldest-first (FIFO), and
-/// mark them delivered in the SAME transaction. Returns the drained set in
-/// delivery order; a second call returns empty (drain-once).
+/// The inbound peer-nudges to `role` that it has NOT yet answered: nudges
+/// addressed to `role` (from someone else) whose `created_at` is newer than
+/// `role`'s most recent OUTBOUND nudge. Plain English: *has the agent replied to
+/// anything since the last nudge it got?* If not, it owes a response.
 ///
-/// Never blocks and never panics: any DB error yields an empty result, because a
-/// drain failure must never refuse a tool call (inject-as-context, not a gate).
-pub fn drain_pending(conn: &mut Connection, role: &str) -> Vec<PendingNudge> {
-    drain_pending_inner(conn, role).unwrap_or_default()
+/// This is the #3218 signal, and it is deliberately NOT `delivery_status`:
+/// osascript flips a nudge to `delivered` within ~1s, so a pending-based gate
+/// never sees a real nudge (proven the hard way on Silas — delivered_at one
+/// second after created, gate never fired). `created_at` does not change on
+/// delivery, so this catches the nudge regardless of osascript. It is also immune
+/// to the ~7,500-row historical backlog: only the NEWEST inbound vs the newest
+/// outbound matters, so nudges the agent already moved past never block.
+///
+/// The agent clears it simply by REPLYING — sending a nudge advances its newest
+/// outbound past the inbound, so the next tool call sees nothing owed. No
+/// marking, no drain, no mutation of messages.db: the reply IS the clear.
+fn unanswered_inbound(conn: &Connection, role: &str) -> Vec<PendingNudge> {
+    unanswered_inbound_inner(conn, role).unwrap_or_default()
 }
 
-fn drain_pending_inner(conn: &mut Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
-    let tx = conn.transaction()?;
-    let drained: Vec<PendingNudge> = {
-        let mut stmt = tx.prepare(
-            r#"SELECT id, "from", content, trace_id
-               FROM messages
-               WHERE "to" = ?1
-                 AND type = 'nudge'
-                 AND delivery_status = 'pending'
-                 AND "from" != "to"
-               ORDER BY created_at ASC, id ASC
-               LIMIT ?2"#,
-        )?;
-        let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
-            Ok(PendingNudge {
-                id: r.get(0)?,
-                from: r.get(1)?,
-                content: r.get(2)?,
-                trace_id: r.get(3)?,
-            })
-        })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
-
-    if !drained.is_empty() {
-        // Mark delivered in the same txn — drain-once, atomic with the read.
-        // ids come straight from the DB (i64), so the IN-list is injection-safe.
-        let id_list = drained
-            .iter()
-            .map(|n| n.id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        tx.execute(
-            &format!(
-                "UPDATE messages SET delivery_status='delivered', \
-                 delivered_at=datetime('now') WHERE id IN ({id_list})"
-            ),
-            [],
-        )?;
-    }
-
-    tx.commit()?;
-    Ok(drained)
+fn unanswered_inbound_inner(conn: &Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT id, "from", content, trace_id
+           FROM messages
+           WHERE "to" = ?1
+             AND type = 'nudge'
+             AND "from" != ?1
+             AND created_at > COALESCE(
+                   (SELECT MAX(created_at) FROM messages
+                    WHERE "from" = ?1 AND type = 'nudge'), '')
+           ORDER BY created_at ASC, id ASC
+           LIMIT ?2"#,
+    )?;
+    let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
+        Ok(PendingNudge {
+            id: r.get(0)?,
+            from: r.get(1)?,
+            content: r.get(2)?,
+            trace_id: r.get(3)?,
+        })
+    })?;
+    rows.collect()
 }
 
 /// Format drained nudges into a markdown block for additionalContext injection.
@@ -134,7 +122,7 @@ pub fn format_drain_block(role: &str, nudges: &[PendingNudge]) -> Option<String>
         return None;
     }
     let mut out = format!(
-        "\n## Pending nudges ({} for {} — FIFO, act on the oldest first)\n",
+        "\n## Unanswered peer nudges ({} for {} — reply to clear, oldest first)\n",
         nudges.len(),
         role
     );
@@ -142,11 +130,9 @@ pub fn format_drain_block(role: &str, nudges: &[PendingNudge]) -> Option<String>
         let tid = n.trace_id.as_deref().unwrap_or("-");
         out.push_str(&format!("- from {} ({}): {}\n", n.from, tid, n.content));
     }
-    // #3218 (Kade): when a full cap was drained there may be more pending — say so,
-    // so a backlog reads as "draining in batches", not "this is all there is".
     if nudges.len() >= DRAIN_CAP {
         out.push_str(&format!(
-            "- (oldest {DRAIN_CAP} shown — cap; more pending drain on your next tool calls)\n"
+            "- (oldest {DRAIN_CAP} shown — cap; the rest clear once you reply)\n"
         ));
     }
     Some(out)
@@ -170,34 +156,17 @@ fn cached_conn(db_path: &str) -> Option<&'static Mutex<Connection>> {
     Some(DRAIN_CONN.get_or_init(|| Mutex::new(conn)))
 }
 
-/// Drain `role`'s pending nudges from the live messages.db and return the
-/// formatted additionalContext block — or `None` when nothing is pending, the DB
-/// is unreachable, or we're running headless. NEVER blocks: any error yields
-/// `None` and the tool call proceeds.
-pub fn drain_block_from_db(role: &str, db_path: &str) -> Option<String> {
-    // #3218 (Kade, the #3318 lesson): inside the act/werk.yml runner there is no
-    // role terminal — the drain MUST be a hard no-op or it stalls/fails the demo
-    // and land jobs team-wide. Scope it in from the start, never land-then-scope.
-    if std::env::var("GITHUB_ACTIONS").is_ok()
-        || std::env::var("ACT").is_ok()
-        || std::env::var("CHORUS_HEADLESS").is_ok()
-    {
-        return None;
-    }
-    let conn_lock = cached_conn(db_path)?;
-    let mut conn = conn_lock.lock().ok()?;
-    let drained = drain_pending(&mut conn, role);
-    format_drain_block(role, &drained)
-}
-
-/// PEEK the pending nudges for `role` WITHOUT marking them delivered — returns
-/// the formatted block if any are pending. This backs the #3218 respond-first
-/// gate: the gate must keep blocking the agent's tool calls until it actually
-/// RESPONDS, so the read must NOT consume (consuming would clear the block after
-/// one tool call and re-enable defer). The queue is cleared separately, only
-/// when the agent sends its reply (via `drain_block_from_db` on the reply path).
-/// Headless = no-op, same guard as the drain.
-pub fn peek_pending_block(role: &str, db_path: &str) -> Option<String> {
+/// Does `role` owe a peer a response? Returns the formatted block of unanswered
+/// inbound nudges if so — the #3218 respond-first gate blocks every tool call
+/// (except the reply) until this returns `None`. The agent clears it by REPLYING;
+/// no marking or mutation of messages.db happens here (the reply advances the
+/// agent's newest-outbound past the inbound, so the next call owes nothing).
+///
+/// NEVER blocks on failure: DB unreachable or any error yields `None` and the
+/// tool proceeds. Headless (GITHUB_ACTIONS / ACT / CHORUS_HEADLESS) is a HARD
+/// no-op — there is no terminal to reply from, so blocking would freeze the
+/// act/werk.yml pipeline team-wide (the #3318 lesson; verified by test).
+pub fn owes_response_block(role: &str, db_path: &str) -> Option<String> {
     if std::env::var("GITHUB_ACTIONS").is_ok()
         || std::env::var("ACT").is_ok()
         || std::env::var("CHORUS_HEADLESS").is_ok()
@@ -206,36 +175,8 @@ pub fn peek_pending_block(role: &str, db_path: &str) -> Option<String> {
     }
     let conn_lock = cached_conn(db_path)?;
     let conn = conn_lock.lock().ok()?;
-    let pending = peek_pending(&conn, role);
-    format_drain_block(role, &pending)
-}
-
-/// Read the pending nudges for `role` without marking them delivered (the
-/// non-consuming counterpart to `drain_pending`). Same scope + cap + FIFO order.
-fn peek_pending(conn: &Connection, role: &str) -> Vec<PendingNudge> {
-    peek_pending_inner(conn, role).unwrap_or_default()
-}
-
-fn peek_pending_inner(conn: &Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
-    let mut stmt = conn.prepare(
-        r#"SELECT id, "from", content, trace_id
-           FROM messages
-           WHERE "to" = ?1
-             AND type = 'nudge'
-             AND delivery_status = 'pending'
-             AND "from" != "to"
-           ORDER BY created_at ASC, id ASC
-           LIMIT ?2"#,
-    )?;
-    let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
-        Ok(PendingNudge {
-            id: r.get(0)?,
-            from: r.get(1)?,
-            content: r.get(2)?,
-            trace_id: r.get(3)?,
-        })
-    })?;
-    rows.collect()
+    let owed = unanswered_inbound(&conn, role);
+    format_drain_block(role, &owed)
 }
 
 #[cfg(test)]
@@ -275,224 +216,163 @@ mod tests {
         .expect("insert message");
     }
 
-    #[test]
-    fn drains_pending_fifo_oldest_first() {
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "first", "2026-06-13 10:00:01");
-        insert(&conn, "nudge", "kade", "silas", "second", "2026-06-13 10:00:02");
-        insert(&conn, "nudge", "wren", "silas", "third", "2026-06-13 10:00:03");
-
-        let drained = drain_pending(&mut conn, "silas");
-        let order: Vec<&str> = drained.iter().map(|n| n.content.as_str()).collect();
-        assert_eq!(order, vec!["first", "second", "third"], "FIFO oldest-first");
+    /// Insert an OUTBOUND nudge from `role` (a reply) at `created_at`.
+    fn reply(conn: &Connection, role: &str, to: &str, created_at: &str) {
+        insert(conn, "nudge", role, to, &format!("reply-{created_at}"), created_at);
     }
 
     #[test]
-    fn drain_once_second_call_is_empty() {
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "only", "2026-06-13 10:00:01");
-
-        let first = drain_pending(&mut conn, "silas");
-        assert_eq!(first.len(), 1, "first drain returns the pending nudge");
-        let second = drain_pending(&mut conn, "silas");
-        assert!(second.is_empty(), "drain-once: second call is empty (marked delivered)");
+    fn owes_when_nudged_after_last_reply() {
+        let conn = setup_db();
+        reply(&conn, "silas", "kade", "2026-06-13 10:00:01"); // silas's last reply
+        insert(&conn, "nudge", "wren", "silas", "answer me", "2026-06-13 10:00:05"); // inbound, newer
+        let owed = unanswered_inbound(&conn, "silas");
+        assert_eq!(owed.len(), 1, "a nudge newer than the last reply is owed");
+        assert_eq!(owed[0].content, "answer me");
     }
 
     #[test]
-    fn respond_first_blocks_until_reply() {
-        // END-TO-END proof of the respond-first gate against a real temp DB — no
-        // deploy needed. A pending peer nudge blocks the agent's tool calls; the
-        // block PERSISTS across calls (peek doesn't consume); only the reply
-        // clears it; then work resumes. This is the gate's behavior, provable.
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "silas", "wren", "answer me first", "2026-06-13 10:00:01");
-
-        // 1. pending nudge → the gate has a block to serve (every non-reply tool refused)
-        assert!(
-            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
-            "pending nudge BLOCKS the agent's tool call"
-        );
-        // 2. the block PERSISTS — the agent can't slip past by calling another tool
-        assert!(
-            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
-            "block persists across tool calls (peek does not consume)"
-        );
-        // 3. the agent replies (chorus_nudge_message → drain clears the queue)
-        assert_eq!(
-            drain_pending(&mut conn, "wren").len(),
-            1,
-            "the reply clears the pending nudge"
-        );
-        // 4. unblocked — the agent's next tool call proceeds
-        assert!(
-            format_drain_block("wren", &peek_pending(&conn, "wren")).is_none(),
-            "after the reply, NO block — the agent's work resumes"
-        );
-    }
-
-    #[test]
-    fn peek_does_not_consume() {
-        // The respond-first gate depends on this: peeking must NOT mark delivered,
-        // or the block would clear after one tool call and re-enable defer (#3218).
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "still-here", "2026-06-13 10:00:01");
-
-        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek sees the pending nudge");
-        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek again — still there, peek must not consume");
-        // Only a real drain (the reply path) clears it.
-        assert_eq!(drain_pending(&mut conn, "silas").len(), 1, "drain consumes it");
-        assert!(peek_pending(&conn, "silas").is_empty(), "after the reply-path drain, the block clears");
-    }
-
-    #[test]
-    fn marks_delivered_atomically() {
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "mark-me", "2026-06-13 10:00:01");
-
-        drain_pending(&mut conn, "silas");
-        let (status, delivered): (String, Option<String>) = conn
-            .query_row(
-                "SELECT delivery_status, delivered_at FROM messages WHERE content='mark-me'",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .expect("row exists");
-        assert_eq!(status, "delivered", "row flipped to delivered");
-        assert!(delivered.is_some(), "delivered_at stamped");
-    }
-
-    #[test]
-    fn excludes_already_delivered() {
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "pending-one", "2026-06-13 10:00:02");
+    fn delivered_nudge_still_owes() {
+        // THE bug the old code had: osascript flips a nudge to 'delivered' in ~1s,
+        // and the old gate keyed on delivery_status='pending', so it never fired on
+        // a real peer (proven on Silas). The owes-response signal is created_at, so
+        // a DELIVERED nudge newer than the last reply STILL owes — gate still fires.
+        let conn = setup_db();
         conn.execute(
-            r#"INSERT INTO messages (type, "from", "to", content, created_at, delivery_status)
-               VALUES ('nudge', 'kade', 'silas', 'already-gone', '2026-06-13 10:00:01', 'delivered')"#,
+            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status,delivered_at)
+               VALUES ('nudge','wren','silas','delivered but unanswered','2026-06-13 10:00:05','delivered','2026-06-13 10:00:06')"#,
             [],
-        )
-        .unwrap();
-
-        let drained = drain_pending(&mut conn, "silas");
-        assert_eq!(drained.len(), 1, "only the pending nudge drains");
-        assert_eq!(drained[0].content, "pending-one");
+        ).unwrap();
+        let owed = unanswered_inbound(&conn, "silas");
+        assert_eq!(owed.len(), 1, "delivered != answered — osascript delivery does NOT clear the debt");
+        assert_eq!(owed[0].content, "delivered but unanswered");
     }
 
     #[test]
-    fn recipient_scoped() {
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "kade", "for-kade", "2026-06-13 10:00:01");
-        insert(&conn, "nudge", "wren", "silas", "for-silas", "2026-06-13 10:00:02");
+    fn cleared_when_reply_is_newer() {
+        let conn = setup_db();
+        insert(&conn, "nudge", "wren", "silas", "answer me", "2026-06-13 10:00:05"); // inbound
+        reply(&conn, "silas", "wren", "2026-06-13 10:00:06");                        // silas replies, newer
+        assert!(
+            unanswered_inbound(&conn, "silas").is_empty(),
+            "replying clears the debt — newest outbound > inbound"
+        );
+    }
 
-        let drained = drain_pending(&mut conn, "silas");
-        assert_eq!(drained.len(), 1, "only silas's nudge drains");
-        assert_eq!(drained[0].content, "for-silas");
-        // kade's nudge is untouched (still pending for a later kade drain)
-        let kade = drain_pending(&mut conn, "kade");
-        assert_eq!(kade.len(), 1, "kade's nudge was not consumed by silas's drain");
+    #[test]
+    fn backlog_excluded_only_newest_matters() {
+        // The ~7,500-row history must NOT block: an old inbound the agent already
+        // replied past is not owed. Only inbound newer than the last reply counts.
+        let conn = setup_db();
+        insert(&conn, "nudge", "wren", "silas", "old nudge", "2026-06-13 09:00:00");
+        reply(&conn, "silas", "wren", "2026-06-13 09:00:01"); // silas already replied past it
+        assert!(
+            unanswered_inbound(&conn, "silas").is_empty(),
+            "an answered-long-ago nudge does not block"
+        );
+    }
+
+    #[test]
+    fn no_owe_when_no_inbound() {
+        let conn = setup_db();
+        reply(&conn, "silas", "wren", "2026-06-13 10:00:01");
+        assert!(unanswered_inbound(&conn, "silas").is_empty(), "no inbound peer nudge → owes nothing");
+    }
+
+    #[test]
+    fn self_sent_not_owed() {
+        let conn = setup_db();
+        insert(&conn, "nudge", "silas", "silas", "talking-to-myself", "2026-06-13 10:00:05");
+        assert!(unanswered_inbound(&conn, "silas").is_empty(), "a self-sent nudge is not a peer debt");
     }
 
     #[test]
     fn nudge_type_only() {
-        let mut conn = setup_db();
-        insert(&conn, "chat", "wren", "silas", "just-chatter", "2026-06-13 10:00:01");
-        insert(&conn, "board-event", "system", "silas", "a-board-event", "2026-06-13 10:00:02");
-        insert(&conn, "nudge", "wren", "silas", "real-nudge", "2026-06-13 10:00:03");
-
-        let drained = drain_pending(&mut conn, "silas");
-        assert_eq!(drained.len(), 1, "only type='nudge' drains; chat/board-event ignored");
-        assert_eq!(drained[0].content, "real-nudge");
+        let conn = setup_db();
+        insert(&conn, "chat", "wren", "silas", "chatter", "2026-06-13 10:00:05");
+        insert(&conn, "board-event", "system", "silas", "an-event", "2026-06-13 10:00:06");
+        assert!(unanswered_inbound(&conn, "silas").is_empty(), "only type='nudge' creates a debt");
+        insert(&conn, "nudge", "wren", "silas", "real-nudge", "2026-06-13 10:00:07");
+        assert_eq!(unanswered_inbound(&conn, "silas").len(), 1, "a real nudge does");
     }
 
     #[test]
-    fn excludes_self_sent() {
-        // A self-sent row (from == to) must never surface as a peer interruption,
-        // even though it matches recipient+type+pending (Silas review, #3218).
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "silas", "silas", "talking-to-myself", "2026-06-13 10:00:01");
-        insert(&conn, "nudge", "wren", "silas", "real-peer-nudge", "2026-06-13 10:00:02");
-
-        let drained = drain_pending(&mut conn, "silas");
-        assert_eq!(drained.len(), 1, "self-sent row is not a peer nudge");
-        assert_eq!(drained[0].content, "real-peer-nudge");
+    fn recipient_scoped() {
+        let conn = setup_db();
+        insert(&conn, "nudge", "wren", "kade", "for-kade", "2026-06-13 10:00:05");
+        assert!(unanswered_inbound(&conn, "silas").is_empty(), "kade's nudge is not silas's debt");
+        assert_eq!(unanswered_inbound(&conn, "kade").len(), 1, "it is kade's");
     }
 
     #[test]
-    fn empty_when_none_pending_no_error() {
-        let mut conn = setup_db();
-        let drained = drain_pending(&mut conn, "silas");
-        assert!(drained.is_empty(), "no pending → empty, no error, never blocks");
-    }
-
-    #[test]
-    fn caps_drain_at_limit_and_catches_up() {
-        // #3218 (Kade): a backlog must not flood — drain at most DRAIN_CAP per
-        // call, oldest-first, marking only those delivered, and catch up over
-        // subsequent calls.
-        let mut conn = setup_db();
+    fn owed_set_is_oldest_first_and_capped() {
+        let conn = setup_db();
+        reply(&conn, "silas", "wren", "2026-06-13 09:59:00"); // old last reply
         for i in 0..(DRAIN_CAP + 5) {
-            insert(&conn, "nudge", "wren", "silas", &format!("n{i}"), &format!("2026-06-13 10:00:{i:02}"));
+            insert(&conn, "nudge", "wren", "silas", &format!("n{i:02}"), &format!("2026-06-13 10:{i:02}:00"));
         }
-        let first = drain_pending(&mut conn, "silas");
-        assert_eq!(first.len(), DRAIN_CAP, "first call drains at most the cap");
-        assert_eq!(first[0].content, "n0", "oldest-first within the cap");
-        let block = format_drain_block("silas", &first).expect("non-empty");
-        assert!(block.contains("more pending"), "cap footer warns of remainder: {block}");
-        // The next call drains the remaining 5 — the backlog catches up.
-        let second = drain_pending(&mut conn, "silas");
-        assert_eq!(second.len(), 5, "remaining backlog drains on the next call");
-        assert_eq!(second[0].content, format!("n{DRAIN_CAP}"), "continues oldest-first");
-    }
-
-    #[test]
-    fn headless_act_context_is_noop() {
-        // #3218 (Kade, #3318 lesson): inside act/werk.yml BOTH the drain AND the
-        // respond-first PEEK must hard no-op. The peek guard is the load-bearing
-        // one — if it ever returned Some in a headless runner, the gate would
-        // block every tool call in a context that can NEVER reply, freezing the
-        // pipeline team-wide. So this is verified, not asserted. The guard fires
-        // before any DB open, so db_path is irrelevant.
-        std::env::set_var("ACT", "true");
-        let drained = drain_block_from_db("silas", "/nonexistent/messages.db");
-        let peeked = peek_pending_block("silas", "/nonexistent/messages.db");
-        std::env::remove_var("ACT");
-        assert!(drained.is_none(), "headless (ACT): drain is a hard no-op");
+        let owed = unanswered_inbound(&conn, "silas");
+        assert_eq!(owed.len(), DRAIN_CAP, "owed set is capped at DRAIN_CAP");
+        assert_eq!(owed[0].content, "n00", "oldest first");
         assert!(
-            peeked.is_none(),
-            "headless (ACT): peek_pending_block must no-op — the single guard against a frozen pipeline"
+            format_drain_block("silas", &owed).unwrap().contains("clear once you reply"),
+            "cap footer present"
         );
     }
 
     #[test]
-    fn fifo_tiebreak_by_id_within_same_second() {
-        // created_at is second-resolution; two nudges in the same second must
-        // still drain in arrival (id) order, not arbitrary.
-        let mut conn = setup_db();
-        insert(&conn, "nudge", "wren", "silas", "earlier-id", "2026-06-13 10:00:01");
-        insert(&conn, "nudge", "kade", "silas", "later-id", "2026-06-13 10:00:01");
+    fn respond_first_end_to_end() {
+        // The full gate behavior against a real temp DB, no deploy: a peer nudges
+        // silas → silas owes (block) — and crucially the inbound is DELIVERED
+        // (osascript), still blocks. silas replies → owes nothing (resume).
+        let conn = setup_db();
+        conn.execute(
+            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status)
+               VALUES ('nudge','wren','silas','answer me first','2026-06-13 10:00:05','delivered')"#,
+            [],
+        ).unwrap();
+        // 1. owes → the gate blocks every non-reply tool (the case the OLD gate missed)
+        assert!(
+            format_drain_block("silas", &unanswered_inbound(&conn, "silas")).is_some(),
+            "delivered-but-unanswered nudge BLOCKS"
+        );
+        // 2. silas replies (any outbound nudge, newer)
+        reply(&conn, "silas", "wren", "2026-06-13 10:00:06");
+        // 3. owes nothing → work resumes
+        assert!(
+            format_drain_block("silas", &unanswered_inbound(&conn, "silas")).is_none(),
+            "after the reply, no debt — work resumes"
+        );
+    }
 
-        let drained = drain_pending(&mut conn, "silas");
-        let order: Vec<&str> = drained.iter().map(|n| n.content.as_str()).collect();
-        assert_eq!(order, vec!["earlier-id", "later-id"], "id breaks created_at ties FIFO");
+    #[test]
+    fn headless_act_is_noop() {
+        // owes_response_block must hard no-op headless or it freezes the pipeline
+        // (block every tool in a context that can never reply). Guard precedes any
+        // DB open, so the path is irrelevant.
+        std::env::set_var("ACT", "true");
+        let out = owes_response_block("silas", "/nonexistent/messages.db");
+        std::env::remove_var("ACT");
+        assert!(out.is_none(), "headless (ACT): owes_response_block must no-op");
     }
 
     #[test]
     fn format_block_none_when_empty() {
-        assert!(format_drain_block("silas", &[]).is_none(), "nothing pending → no block");
+        assert!(format_drain_block("silas", &[]).is_none(), "nothing owed → no block");
     }
 
     #[test]
-    fn format_block_preserves_fifo_and_names_fields() {
+    fn format_block_names_fields_oldest_first() {
         let nudges = vec![
             PendingNudge { id: 1, from: "wren".into(), content: "review #3218".into(), trace_id: Some("ntr-1".into()) },
             PendingNudge { id: 2, from: "kade".into(), content: "gather please".into(), trace_id: None },
         ];
         let block = format_drain_block("silas", &nudges).expect("non-empty");
         assert!(block.contains("2 for silas"), "header counts: {block}");
-        assert!(block.contains("FIFO"), "header states FIFO order: {block}");
-        // oldest (id 1) must appear before newer (id 2)
+        assert!(block.contains("reply to clear"), "header says reply clears it: {block}");
         let wren_at = block.find("from wren").expect("wren line");
         let kade_at = block.find("from kade").expect("kade line");
-        assert!(wren_at < kade_at, "FIFO order preserved in the block");
+        assert!(wren_at < kade_at, "oldest first preserved");
         assert!(block.contains("review #3218"), "content shown");
         assert!(block.contains("ntr-1"), "trace shown");
         assert!(block.contains("(-)"), "missing trace renders as '-'");
