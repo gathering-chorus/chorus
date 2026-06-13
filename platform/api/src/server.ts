@@ -526,7 +526,12 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 // Memory domain — join six data sources into a card timeline. #1947
 
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
-import { safeReadFile } from './lib/log-reader';
+import { safeReadFile, readFileTail } from './lib/log-reader';
+
+// #3406 — tail budget for the /context/spine log read. 4MB holds ~8x MAX_LIMIT(500)
+// recent JSONL spine events; reading only this (vs the full ~535MB log) keeps the
+// synchronous read off the multi-second freeze path.
+const SPINE_TAIL_BYTES = 4 * 1024 * 1024;
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
   const cardsScript = path.resolve(__dirname, '../../scripts/cards');
   const MESSAGING_URL = 'http://localhost:3475';
@@ -977,18 +982,12 @@ app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
 
 app.get('/api/chorus/context/spine', async (req: Request, res: Response) => {
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
-  const readLog = () => {
-    const candidates = [
-      `${process.env.HOME}/.chorus/chorus.log`,
-    ];
-    const logPath = candidates.find((p) => fs.existsSync(p));
-    if (!logPath) return null;
-    try {
-      return fs.readFileSync(logPath, 'utf-8');
-    } catch {
-      return null;
-    }
-  };
+  // #3406 — bound the spine read to its tail. This endpoint used to fs.readFileSync
+  // the WHOLE ~535MB chorus.log on every request, synchronously blocking the event
+  // loop 5-8s — the chronic freeze root (profiler-proven). 4MB holds ~8x the
+  // MAX_LIMIT(500) recent JSONL events; parseTailEvents scans from the end and
+  // skips the partial leading line, so the recent slice is identical for ~0 cost.
+  const readLog = () => readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
   const r = await fetchContextSpine({ sparql: _athena, readLog }, req.originalUrl, limit);
   res.status(r.status).json(r.body);
 });

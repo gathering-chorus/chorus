@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { safeReadFile, readLogLines } from '../src/lib/log-reader';
+import { safeReadFile, readLogLines, readFileTail } from '../src/lib/log-reader';
 
 describe('log-reader', () => {
   describe('safeReadFile', () => {
@@ -38,6 +38,39 @@ describe('log-reader', () => {
       fs.writeFileSync(tmp, 'one\ntwo\n\nthree\n');
       try {
         expect(readLogLines(tmp)).toEqual(['one', 'two', 'three']);
+      } finally {
+        fs.unlinkSync(tmp);
+      }
+    });
+  });
+
+  // #3406 — the event-loop freeze root: /context/spine readFileSync'd the whole
+  // 535MB chorus.log on every request. readFileTail bounds that to the tail (the
+  // recent events parseTailEvents wants), so the loop never blocks on a giant read.
+  describe('readFileTail', () => {
+    it('returns null for a missing file (does not throw)', () => {
+      expect(readFileTail('/tmp/__definitely-not-a-real-file-3406__.log', 1024)).toBeNull();
+    });
+
+    it('returns the whole file when it is smaller than maxBytes', () => {
+      const tmp = path.join(os.tmpdir(), `log-reader-tail-${process.pid}-${Date.now()}.log`);
+      fs.writeFileSync(tmp, 'small\ncontent\n');
+      try {
+        expect(readFileTail(tmp, 1024)).toBe('small\ncontent\n');
+      } finally {
+        fs.unlinkSync(tmp);
+      }
+    });
+
+    it('returns ONLY the last maxBytes when the file exceeds it (never the full read)', () => {
+      const tmp = path.join(os.tmpdir(), `log-reader-tail-${process.pid}-${Date.now()}-2.log`);
+      // a big file: filler + a marker at the very end (the "recent events")
+      fs.writeFileSync(tmp, 'X'.repeat(5000) + 'TAIL_MARKER');
+      try {
+        const got = readFileTail(tmp, 100);
+        expect(got).not.toBeNull();
+        expect(got!.length).toBe(100);                // bounded, not 5011 bytes
+        expect(got!.endsWith('TAIL_MARKER')).toBe(true); // it's the END of the file
       } finally {
         fs.unlinkSync(tmp);
       }

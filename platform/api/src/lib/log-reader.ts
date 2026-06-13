@@ -40,6 +40,32 @@ export function safeReadFile(filePath: string): string | null {
 }
 
 /**
+ * Read only the last `maxBytes` of a file as utf-8 (or the whole file if smaller),
+ * or null if missing / unreadable. The #3067 tail pattern (index-all-sources-deps
+ * `readTail`), lifted here for request-path callers: reading a multi-hundred-MB log
+ * synchronously on the event loop is the freeze (#3406 — /context/spine read the
+ * whole 535MB chorus.log per request). Consumers that scan from the end and tolerate
+ * a partial leading line (parseTailEvents) get the same recent events for ~0 cost.
+ */
+export function readFileTail(filePath: string, maxBytes: number): string | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const size = fs.statSync(filePath).size;
+    if (size <= maxBytes) return fs.readFileSync(filePath, 'utf-8');
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buf = Buffer.alloc(maxBytes);
+      fs.readSync(fd, buf, 0, maxBytes, size - maxBytes);
+      return buf.toString('utf-8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read a log file and return its non-empty lines, or [] if missing.
  */
 export function readLogLines(filePath: string): string[] {
