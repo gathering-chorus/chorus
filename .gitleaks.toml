@@ -1,0 +1,24 @@
+# .gitleaks.toml — secret-scanning config (#2709 AC1)
+# Extends gitleaks' default ruleset; adds repo-specific allowlist.
+# Baseline of 35 known historical findings lives in .gitleaks-baseline.json
+# (redacted, fingerprint-matched) — pass --baseline-path to suppress them.
+# The baseline is "accepted as of 2026-06-13, pending triage" — NOT "safe":
+# 28/35 are auth strings captured in runtime LOG files that should not be in
+# git at all (follow-on: gitignore + remove platform/logs, ops/logs — ties to
+# ADR-041 logs=proving/borg runtime, not committed); the rest are the LAN-only
+# Fuseki admin credential from the 2026-03-29 401-storm work (rotate-or-allowlist
+# in triage). New findings beyond the baseline FAIL.
+title = "chorus gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Paths that are test fixtures or generated, not real secrets"
+paths = [
+  '''platform/services/chorus-hooks/src/hooks/write_scrubber\.rs''',  # the scrubber's own test patterns
+  '''.*/seed_steps\.ts''',                                            # cucumber seed fixtures
+  '''roles/silas/scripts/seed-probe\.sh''',                           # seed probe fixture
+  '''platform/tests/2709-gitleaks-baseline\.bats''',                  # this card's own test fixture (intentional fake secret)
+  '''\.gitleaks-baseline\.json''',                                   # the baseline record itself — scanning it is circular
+]
