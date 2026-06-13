@@ -324,7 +324,7 @@ chorus:werk-product
   <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.</li>
   <li><a href="/designing/docs/athena-product-design.html">athena-product-design.html</a> — Wren. The structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines.</li>
   <li><a href="/designing/docs/loom-subproduct-design.html">loom-subproduct-design.html</a> — Wren. Sibling subproduct (principles / practices / decisions / policies).</li>
-  <li>ADR-033 — werk pipeline model (git ⊃ env ⊃ DSL on act; one env = production; gh = source-of-truth + per-card process-holder; one commit-status check per verb). <em>Ratified; file landing via Silas — not yet in roles/silas/adr/.</em></li>
+  <li>ADR-033 — werk pipeline model. <em>RETIRED 2026-06-13 (#3393): never landed as an independent ADR; superseded by ADR-037 (atomic verbs, no orchestrator) + ADR-036 (one build/deploy path) + ADR-032 (verb contract). See the ADR-033 retirement stub. The surviving model (one env = production; gh = source-of-truth + per-card process-holder; one commit-status per verb) lives in those ADRs.</em></li>
   <li>ADR-032 — verb contract v1 (per-verb build contract: zero-dep, env contract, shared trace, all-or-nothing rollback).</li>
   <li>ADR-031 — resource/verb/grain convention (MCP + REST surface bindings).</li>
   <li>ADR-026 — CI architecture + lock-file policy.</li>

@@ -1,6 +1,6 @@
 # ADR-042: Generator-Layer Security — Gathering-Realm Phase 1
 
-**Status:** Proposed — 2026-06-13 (Silas, SA + ops/security owner DEC-022). Pending: Jeff (final). Kade + Wren converged on the inputs 2026-06-12.
+**Status:** Accepted — 2026-06-13 (Silas, SA + ops/security owner DEC-022). Landed via #3372 (Kade + Wren converged; Jeff GO 2026-06-13).
 **Card:** #3372 (sibling of ADR-041).
 **Inputs:** gathering's working security (`solid-auth.service.ts` + `service-token.middleware.ts`, verified live 2026-06-12) · Kade's `owl-api-research-synthesis.md` (TopBraid blast-radius, dry-run mutation, EDG warn-and-proceed rot) · the owl-api generator (#3354 IoC seam) · the Jeff+Silas SA conversation 2026-06-12.
 **Builds on:** ADR-040 (IRI/provenance vocabulary — authored-vs-hydrated, mintKey) · ADR-012 (network-bind security) · `#3356` (DEPLOY_ROLE forgeability) · `#3355` (shared-security spin-off, parked).
