@@ -113,31 +113,36 @@ jobs:
           # old `cargo test` from the werk ROOT always failed ("could not find Cargo.toml")
           # — the other half of the false tests:fail. Each crate is platform/services/<name>.
           # Compile only the crates THIS card changed (compiling all ~20 was the real tax);
-          # a TS-only card runs no cargo at all.
+          # a TS-only card runs no cargo at all. ASSUMPTION: Rust crates live under
+          # platform/services/<name> (current layout) — a crate elsewhere would be skipped.
           for crate in $(echo "$CHANGED" | grep -oE '^platform/services/[^/]+' | sort -u); do
             [ -f "$WERK/$crate/Cargo.toml" ] || continue
             echo "-- cargo: $crate --"
             ( cd "$WERK/$crate" && cargo test --lib --bins ) 2>&1 | tail -15 || rc=1
           done
-          # #3397 — jest runs PER-PACKAGE. There is no root jest config and the werk has
-          # no node_modules, so the old `npx jest` from the werk ROOT could never run: npx
-          # had to fetch jest@X (the ENOTEMPTY race) and even then had no config to find
-          # the suites → a perpetual FALSE `tests:fail` on EVERY card (the recurring flake).
-          # Fix: for each TS package that ships a jest config, symlink its node_modules from
-          # canonical ($CHORUS_HOME — same committed lockfile = identical deps, instant vs a
-          # minutes-long npm ci), then run that package's own jest binary. (Symlink is correct
-          # while the werk's lockfile matches canonical's, i.e. the card didn't change deps;
-          # a dep-changing card would need a real install — out of scope here.)
+          # #3397 — jest runs PER CHANGED PACKAGE. The old `npx jest` from the werk ROOT could
+          # never run (no root jest config, no node_modules → npx fetch flake) = a perpetual
+          # FALSE tests:fail on every card. Fix, hardened per cold-eyes review:
+          #  - only run a package whose files THIS card changed (no unrelated false-red);
+          #  - provide deps by symlinking node_modules from canonical ($CHORUS_HOME) ONLY when
+          #    the werk's package-lock matches canonical's (no dep drift — else the deps are
+          #    wrong and we must not guess);
+          #  - if a CHANGED package's jest still can't run (CHORUS_HOME unset / lockfile drift),
+          #    FAIL LOUD (rc=1) — never a silent skip. A silent skip is a FALSE GREEN, the
+          #    #3190 masking anti-pattern; honest-red beats lying-green.
           for pkg in platform/api platform/chorus-sdk platform/pulse platform/workflow-engine; do
+            echo "$CHANGED" | grep -q "^$pkg/" || continue
             [ -d "$WERK/$pkg" ] || continue
-            if [ ! -e "$WERK/$pkg/node_modules" ] && [ -d "$CHORUS_HOME/$pkg/node_modules" ]; then
+            if [ ! -x "$WERK/$pkg/node_modules/.bin/jest" ] \
+               && [ -n "$CHORUS_HOME" ] && [ -d "$CHORUS_HOME/$pkg/node_modules" ] \
+               && cmp -s "$WERK/$pkg/package-lock.json" "$CHORUS_HOME/$pkg/package-lock.json"; then
               ln -sfn "$CHORUS_HOME/$pkg/node_modules" "$WERK/$pkg/node_modules"
             fi
             if [ -x "$WERK/$pkg/node_modules/.bin/jest" ]; then
               echo "-- jest: $pkg --"
               ( cd "$WERK/$pkg" && node_modules/.bin/jest --ci --forceExit --passWithNoTests ) 2>&1 | tail -12 || rc=1
             else
-              echo "-- jest: $pkg has no deps in canonical — skipped --"
+              echo "!! jest: $pkg CHANGED but deps unavailable (CHORUS_HOME unset / lockfile drift) — FAIL LOUD"; rc=1
             fi
           done
           if [ "$rc" = 0 ]; then post success; else post failure; fi
