@@ -1,0 +1,23 @@
+#!/bin/bash
+# pre-commit — secret scan on staged changes (#2709 AC1)
+# Fails the commit on any NEW secret (beyond the accepted baseline). Skippable
+# with --no-verify locally, but CI is authoritative on main (ADR-026 quality layers).
+set -euo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not installed (brew install gitleaks) — secret scan SKIPPED" >&2
+  exit 0  # fail-open on missing tool: don't block work on a dev-setup gap; CI gates hard
+fi
+# 'protect --staged' scans only what's being committed, against the config +
+# baseline. New finding (not in baseline, not allowlisted) => nonzero => block.
+if ! gitleaks protect --staged \
+      --config "$REPO/.gitleaks.toml" \
+      --baseline-path "$REPO/.gitleaks-baseline.json" \
+      --redact --no-banner 2>/tmp/gitleaks-precommit.out; then
+  echo "" >&2
+  echo "🔒 pre-commit BLOCKED: a new secret was detected in your staged changes." >&2
+  echo "   Review /tmp/gitleaks-precommit.out (redacted)." >&2
+  echo "   If it's a false positive: add the path to .gitleaks.toml [allowlist]." >&2
+  echo "   If it's real: remove it, and rotate the credential. Never --no-verify a real hit." >&2
+  exit 1
+fi
