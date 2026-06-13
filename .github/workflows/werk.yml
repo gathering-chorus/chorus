@@ -108,7 +108,27 @@ jobs:
           echo "-- test (hermetic, ADVISORY until werk-test #3190) in $WERK --"
           rc=0
           ( cd "$WERK" && cargo test --lib --bins --test 'hermetic_*' ) 2>&1 | tail -25 || rc=1
-          ( cd "$WERK" && npx jest --forceExit --passWithNoTests --randomize ) 2>&1 | tail -20 || rc=1
+          # #3397 — jest runs PER-PACKAGE. There is no root jest config and the werk has
+          # no node_modules, so the old `npx jest` from the werk ROOT could never run: npx
+          # had to fetch jest@X (the ENOTEMPTY race) and even then had no config to find
+          # the suites → a perpetual FALSE `tests:fail` on EVERY card (the recurring flake).
+          # Fix: for each TS package that ships a jest config, symlink its node_modules from
+          # canonical ($CHORUS_HOME — same committed lockfile = identical deps, instant vs a
+          # minutes-long npm ci), then run that package's own jest binary. (Symlink is correct
+          # while the werk's lockfile matches canonical's, i.e. the card didn't change deps;
+          # a dep-changing card would need a real install — out of scope here.)
+          for pkg in platform/api platform/chorus-sdk platform/pulse platform/workflow-engine; do
+            [ -d "$WERK/$pkg" ] || continue
+            if [ ! -e "$WERK/$pkg/node_modules" ] && [ -d "$CHORUS_HOME/$pkg/node_modules" ]; then
+              ln -sfn "$CHORUS_HOME/$pkg/node_modules" "$WERK/$pkg/node_modules"
+            fi
+            if [ -x "$WERK/$pkg/node_modules/.bin/jest" ]; then
+              echo "-- jest: $pkg --"
+              ( cd "$WERK/$pkg" && node_modules/.bin/jest --ci --forceExit --passWithNoTests ) 2>&1 | tail -12 || rc=1
+            else
+              echo "-- jest: $pkg has no deps in canonical — skipped --"
+            fi
+          done
           if [ "$rc" = 0 ]; then post success; else post failure; fi
           echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
 
