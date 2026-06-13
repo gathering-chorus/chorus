@@ -299,6 +299,38 @@ mod tests {
     }
 
     #[test]
+    fn respond_first_blocks_until_reply() {
+        // END-TO-END proof of the respond-first gate against a real temp DB — no
+        // deploy needed. A pending peer nudge blocks the agent's tool calls; the
+        // block PERSISTS across calls (peek doesn't consume); only the reply
+        // clears it; then work resumes. This is the gate's behavior, provable.
+        let mut conn = setup_db();
+        insert(&conn, "nudge", "silas", "wren", "answer me first", "2026-06-13 10:00:01");
+
+        // 1. pending nudge → the gate has a block to serve (every non-reply tool refused)
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
+            "pending nudge BLOCKS the agent's tool call"
+        );
+        // 2. the block PERSISTS — the agent can't slip past by calling another tool
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
+            "block persists across tool calls (peek does not consume)"
+        );
+        // 3. the agent replies (chorus_nudge_message → drain clears the queue)
+        assert_eq!(
+            drain_pending(&mut conn, "wren").len(),
+            1,
+            "the reply clears the pending nudge"
+        );
+        // 4. unblocked — the agent's next tool call proceeds
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_none(),
+            "after the reply, NO block — the agent's work resumes"
+        );
+    }
+
+    #[test]
     fn peek_does_not_consume() {
         // The respond-first gate depends on this: peeking must NOT mark delivered,
         // or the block would clear after one tool call and re-enable defer (#3218).
