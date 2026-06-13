@@ -149,7 +149,9 @@ if (require.main === module) {
       // probe catching blocks), not inferred from the in-process detector's absence.
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas', 'domain=chorus',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=probe'], () => {}),
-    nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+    // #3407 — chorus-api is Wren's layer; route the event-loop-block ALERT to wren
+    // (the spine-emit role above stays the chorus-api emitter context).
+    nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
     threshold: 3000,
   });
 }
