@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HIP-002 — The Generated Seam</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.62em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>HIP-002 — The Generated Seam <span>A Harness Integration Pattern · sibling to HIP-001 (The Forcing Pattern)</span></h1>
+<div class="date">Wren · 2026-06-13 · the integration pattern behind athena-forge</div>
+
+<p><strong>One line:</strong> forge every surface from one model through one seam; weave cross-cutting control in <em>at the seam, at generation time</em>, and every surface — the agent's (AX) and the human's (JX) — inherits it by construction. The guarantee is in the generator, not in each endpoint's goodwill.</p>
+
+<h2>Lineage — why "HIP"</h2>
+<p>HIP = Harness Integration Pattern: a pattern at the layer between EIP (system integration) and the agent-orchestration catalogs — the <em>harness</em>, the runtime where control is woven into the agent's loop. <strong>HIP-001 (The Forcing Pattern)</strong> integrates control at a turn-door (a block at a choke point). <strong>HIP-002</strong> integrates control at the <em>generated seam</em> — the single request point every forged route crosses. Where HIP-001 forces a behavior at runtime, HIP-002 bakes the concern in at <em>generation</em> time, so it cannot be omitted.</p>
+
+<h2>Problem</h2>
+<p>Hand-wired surfaces drift and leak. With N surfaces × M cross-cutting concerns (auth, authz, logging, validation, rate-limit), there are N×M places to get it right, and every one depends on an endpoint author remembering. Worse for agents: the agent's tool and the human's page are usually <em>separate</em> code paths over <em>separate</em> data fetches — so they disagree, and the disagreement is invisible until it bites. "Add auth to every route" and "keep the page in sync with the API" are asks; asks get skipped.</p>
+
+<h2>Solution — the recipe</h2>
+<ol>
+  <li><strong>One model is the source</strong> (OWL/SHACL) — the single description every surface derives from.</li>
+  <li><strong>A generator forges every surface</strong> from it — routes (API), MCP tool, skill, page — so there is no hand-wired surface to drift.</li>
+  <li><strong>All generated routes pass ONE seam</strong> — the single request/response point (an IoC seam), not per-route plumbing.</li>
+  <li><strong>Inject cross-cutting concerns at the seam</strong> — auth, authz, logging, the HIP-001 force — born pre-wrapped; every route inherits them because every route crosses the seam.</li>
+  <li><strong>AX and JX render from the same generated API</strong> → they match on data by construction. One source, no second path, no drift.</li>
+</ol>
+<pre class="mermaid">
+flowchart LR
+  M["OWL / SHACL<br/>(one model)"] -->|forge| SEAM{{"THE SEAM<br/>(one IoC point)"}}
+  SEAM --> API["routes — AX"]
+  SEAM --> MCP["MCP tool — AX"]
+  SEAM --> PG["page — JX"]
+  X["cross-cutting:<br/>auth · authz · logging · force"] -.injected once.-> SEAM
+</pre>
+<div class="caption">Every forged surface crosses one seam; concerns inject there, once. AX and JX are the same API, so they cannot disagree.</div>
+
+<h2>Variants — by what's injected at the seam</h2>
+<table>
+<tr><th>Injected concern</th><th>Effect</th><th>Live instance</th></tr>
+<tr><td>CORS / transport</td><td>every route page-consumable</td><td>athena-forge <code>http_response</code> seam (#3382)</td></tr>
+<tr><td>Authn / authz</td><td>routes born pre-wrapped; authz derived from model annotations</td><td>ADR-042 §1 (security as a generator layer)</td></tr>
+<tr><td>Logging / telemetry</td><td>uniform observability, no per-route opt-in</td><td>the seam's telemetry line (#3354)</td></tr>
+<tr><td>The force (HIP-001)</td><td>the agent is made to heed the surface, not scroll past it</td><td>DEC-074 search-hierarchy</td></tr>
+</table>
+
+<h2>Forces (trade-offs)</h2>
+<ul>
+  <li><strong>The seam must be the ONLY path.</strong> One hand-wired bypass route and the guarantee is gone — the whole value is that there is no other door.</li>
+  <li><strong>Generation must be deterministic.</strong> Same model → same surfaces, or the seam's guarantees become non-reproducible.</li>
+  <li><strong>Coherence flows from the model.</strong> A garbage model forges garbage surfaces uniformly — the seam amplifies whatever the model says, good or bad. (Hence the write-door + SHACL discipline; the seam assumes a coherent model.)</li>
+  <li><strong>One seam, two postures.</strong> Localhost-default vs authenticated is a posture <em>at</em> the seam, not a per-route choice — flip it once.</li>
+</ul>
+
+<h2>Anti-pattern — "the hand-wired surface"</h2>
+<p>Per-endpoint cross-cutting (each route re-implements auth/logging) → N×M drift, and the one route someone forgets is the hole. Two data paths (the page fetches differently than the agent's tool) → guaranteed disagreement, invisible until a demo or an incident. If a surface isn't forged from the model through the seam, it is a place the system can quietly diverge from itself.</p>
+
+<div class="footer">HIP-002 · domain:chorus subproduct:loom · companions: FORCING_PATTERN_HIP (HIP-001), value-stream-template.html (§3 forge, §4 AX=JX), athena-value-stream-design.html (the live instance) · ADR-042 (security as generator layer)</div>
+</body>
+</html>

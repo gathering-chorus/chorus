@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The API-Driven Value Stream — Template</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>The API-Driven Value Stream <span>— Template · the reusable structure every product's value stream follows</span></h1>
+<div class="date">Wren · 2026-06-13 · the generic pattern. Athena is its first instance (see <code>athena-value-stream-design.html</code>); werk is the Building-step instance.</div>
+
+<div class="frame">
+<strong>What this is.</strong> The reusable shape for a value stream in Chorus — <em>independent of which product realizes it.</em> Author a model once; the generator forges its surfaces; the step structure organizes the work; one API spine serves both the agent (AX) and the human (JX). A new product's value stream is built by <em>instantiating this template</em>, not by inventing structure. That's the leverage: build the template (and the generator) once, materialize every stream.
+</div>
+
+<h2>1 · A value stream is an ordered step structure</h2>
+<p>A value stream is a sequence of <strong>steps</strong>, and each step can <strong>encapsulate a child value stream</strong> (<code>hasValueStream</code>) — the structure is fractal. The steps form a <strong>refinement pipeline</strong>: each step's output is the next step's input, which is exactly why the order is fixed.</p>
+<pre class="mermaid">
+flowchart LR
+  A["step n"] -->|"handoff artifact<br/><i>refined one stage</i>"| B["step n+1"]
+  A -.hasValueStream.-> C["child stream<br/>(its own ordered steps)"]
+</pre>
+<div class="caption">Generic step structure: ordered steps (output→input), each optionally encapsulating a child stream. Instances name the steps (Chorus: Shaping→Designing→Directing→Building→Proving; werk: pull→…→accept; athena: shape→forge→seed→validate).</div>
+
+<h2>2 · The generative cascade — the model is the root</h2>
+<p>Within a stream, the structure is generated top-down, not assembled bottom-up. Design the model spine first; it generates everything below.</p>
+<pre class="mermaid">
+flowchart TD
+  VS["ValueStream (root — design first)"] --> ST["ValueStreamStep (+ child stream)"]
+  ST -->|realized by| P["Product (atStep)"]
+  P -->|hasDomain| D["Domain"]
+  D -->|hosts| SV["Service"]
+</pre>
+<p>Every <code>Product</code>/<code>Domain</code>/<code>Service</code> mandates <code>atStep</code> → the value-stream/step model is the thing every other class points at. It is the generative root.</p>
+
+<h2>3 · The forge mechanism — one model, every surface</h2>
+<p>A generator reads the OWL/SHACL model and <strong>forges</strong> the surfaces deterministically. The generator is the high-leverage asset: the marginal cost of a new class's surfaces drops to ~zero once the shape exists.</p>
+<pre><code>OWL + SHACL (the model)
+      │   forge (generate)
+      ▼
+  ┌── routes (the API) ──┬── MCP tool ──┬── skill ──┬── page (HTML) ──┐
+  │      read it          │  call it     │ foundational│  render it      │
+  └───────────────────────┴──────────────┴─────────────┴─────────────────┘
+</code></pre>
+<p>Re-runs on every model change (it re-forges, it doesn't pour-once). Cross-cutting concerns (security, authz, logging) are born pre-wrapped at the generated seam — a generator layer, not per-endpoint goodwill (see the Harness Integration Pattern).</p>
+
+<h2>4 · AX = JX, one source</h2>
+<p>The generated API is the single spine. <strong>AX</strong> (agent experience) and <strong>JX</strong> (human experience) are both surfaces over it — never separate data paths.</p>
+<ul>
+  <li><strong>AX</strong> = MCP tool + API + skills (the agent's foundational actions).</li>
+  <li><strong>JX</strong> = the UI renders from that same API → matches AX <em>on data by construction</em>: one source, no drift.</li>
+</ul>
+<div class="frame">The acceptance test for an instance: the human walks the page <em>while</em> an agent calls the tool — same data, because it is the same API.</div>
+
+<h2>5 · The OWL / SHACL shapes (generic)</h2>
+<div class="finding">Coherence is enforced at the <strong>write-door (DAL, fail-closed)</strong> + <strong>SHACL</strong> as the generator's contract — not by OWL alone (open-world: the schema sits below the data, describing what <em>could</em> exist, not gating what does).</div>
+<pre><code># The structural classes every instance shares (source: the model repo):
+ValueStream / ValueStreamStep   # inStream (→parent), hasValueStream (→child), stepOrder
+Product   # label·ownedBy·vision·status·gaps·atStep·hasDesignDoc·hasDomain (+hasChild, hasSurface, consumes)
+Domain    # label·ownedBy·atStep·status·gaps·hasDesignDoc·contains(content)·hasChild(structural)
+Service   # design layer (asIs·toBe·pathToClose·dependsOn) + operational layer (runtimeForm·port·healthAt·deployVia)
+# contains = CONTENT membership; hasChild = STRUCTURAL recursion. Never interchangeable.
+</code></pre>
+
+<h2>6 · How to instantiate (the recipe)</h2>
+<ol>
+  <li><strong>Author the model</strong> — the value stream's steps + the product/domain/service classes for it, in OWL+SHACL (rigorously; the model is the source of record).</li>
+  <li><strong>Forge</strong> — run the generator: it emits routes + MCP + skill + page from the model.</li>
+  <li><strong>Seed</strong> — populate instances through the write-door (DAL).</li>
+  <li><strong>Validate</strong> — tree-vs-graph conformance; the generated output matches the model.</li>
+  <li><strong>Demo</strong> — the human walks the page while an agent calls the tool (AX=JX, same data).</li>
+</ol>
+<p>Each instance names its own step verbs and its forge engine. The pattern is fixed; the names and the model are what change.</p>
+
+<h2>7 · Instances</h2>
+<ul>
+  <li><strong>Athena</strong> (Designing step) — engine <code>athena-forge</code>; cycle <code>shape → forge → seed → validate</code>. The first full instance; see <code>athena-value-stream-design.html</code>.</li>
+  <li><strong>werk</strong> (Building step) — cycle <code>pull → commit → push → build → test → deploy → demo → merge → accept</code>. The build instance.</li>
+  <li>Future product streams instantiate the same template.</li>
+</ul>
+
+<h2>8 · References</h2>
+<ul>
+  <li><code>athena-value-stream-design.html</code> — the first instance (Athena / Designing).</li>
+  <li>The Harness Integration Pattern docs — the force layer that makes agents heed the generated surface.</li>
+  <li>Prior art: Team Topologies (stream-aligned teams), DDD (bounded contexts), Wardley Maps, Architecture for Flow (Kaiser) — each seated at a value-stream step (Wardley→Shaping, DDD→Designing, Team Topologies→ownership).</li>
+</ul>
+
+<div class="footer">domain:chorus subproduct:athena step:designing · the reusable template; instances reference it · ingests as a chorus:Document</div>
+</body>
+</html>
