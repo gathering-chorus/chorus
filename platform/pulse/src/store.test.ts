@@ -6,7 +6,7 @@
  * unlinks the file so failures don't leave artifacts on disk.
  */
 
-import { MessageStore } from './store';
+import { MessageStore, inferNudgeClass } from './store';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -44,6 +44,48 @@ describe('Nudge persist (canonical path — DEC-107)', () => {
   // store-side ack/attempt cycle. The acknowledged / delivery_attempts
   // / dead_letter columns are vestigial — write-once-zero — until a
   // separate column-drop migration card lands.
+});
+
+describe('Nudge envelope (#3403 — class r2r/a2r + expects)', () => {
+  test('migration adds nudge_class + nudge_expects; sendNudge carries them', () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    store.sendNudge('silas', 'wren', 'review my card', undefined, 'r2r', 'reply');
+    const rows = store.queryMessages({ type: 'nudge', to: 'wren' }) as any[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].nudge_class).toBe('r2r');
+    expect(rows[0].nudge_expects).toBe('reply');
+  });
+
+  test('a peer fyi is r2r/none; a system alert is a2r/none — neither shape can over-trap', () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    store.sendNudge('kade', 'wren', 'heads up', undefined, 'r2r', 'none');
+    store.sendNudge('system', 'wren', 'eventloop blocked', undefined, 'a2r', 'none');
+    const rows = store.queryMessages({ type: 'nudge', to: 'wren' }) as any[];
+    const peer = rows.find(r => r.from === 'kade');
+    const alert = rows.find(r => r.from === 'system');
+    expect(peer.nudge_class).toBe('r2r');
+    expect(peer.nudge_expects).toBe('none');
+    expect(alert.nudge_class).toBe('a2r');
+    expect(alert.nudge_expects).toBe('none');
+  });
+
+  test('inferNudgeClass: peers are r2r, machine/alert senders are a2r', () => {
+    expect(inferNudgeClass('wren')).toBe('r2r');
+    expect(inferNudgeClass('silas')).toBe('r2r');
+    expect(inferNudgeClass('kade')).toBe('r2r');
+    expect(inferNudgeClass('jeff')).toBe('r2r');
+    expect(inferNudgeClass('system')).toBe('a2r');
+    expect(inferNudgeClass('chorus-mcp')).toBe('a2r');
+    expect(inferNudgeClass('pulse')).toBe('a2r');
+  });
+
+  test('defaults are safe: bare sendNudge is r2r/none (cannot trap until expects is set)', () => {
+    expect(MessageStore.prototype.queryMessages).toBeDefined();
+    store.sendNudge('silas', 'wren', 'no envelope given');
+    const rows = store.queryMessages({ type: 'nudge', to: 'wren' }) as any[];
+    expect(rows[0].nudge_class).toBe('r2r');
+    expect(rows[0].nudge_expects).toBe('none');
+  });
 });
 
 describe('Delivery columns (#2727 AC1)', () => {

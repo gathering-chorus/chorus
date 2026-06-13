@@ -10,6 +10,20 @@ import path from 'path';
 
 const DB_PATH = path.join(__dirname, '..', 'messages.db');
 
+/** The four repliable peers — the only senders whose nudge can owe a response. */
+const NUDGE_PEERS = ['wren', 'silas', 'kade', 'jeff'];
+
+/**
+ * #3403 — infer a nudge's envelope class from its sender. A peer (wren/silas/
+ * kade/jeff) is r2r (role-to-role, can owe a reply); anything else (system,
+ * chorus-mcp, pulse, an alert emitter) is a2r — a machine notification with no
+ * repliable target, which must never trap the recipient. The sender may override
+ * by declaring class explicitly; this is the default when it doesn't.
+ */
+export function inferNudgeClass(from: string): 'r2r' | 'a2r' {
+  return NUDGE_PEERS.includes(from) ? 'r2r' : 'a2r';
+}
+
 export interface Message {
   id: number;
   type: 'nudge' | 'chat' | 'board-event' | 'role-state';
@@ -144,23 +158,43 @@ export class MessageStore {
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at)`);
     }
 
+    // #3403: nudge envelope — class (r2r/a2r) + expects (none|reply|decision|action).
+    // Re-read table_info: the #3343 rebuild above may have replaced the table, so the
+    // colNames captured earlier is stale. Runs AFTER that rebuild so these columns
+    // survive it. Existing rows: class defaults to r2r, then non-peer senders
+    // (system/chorus-mcp/pulse/...) backfill to a2r; expects defaults to 'none', so
+    // nothing historical can trap — the gate only traps r2r + expects != none.
+    const envCols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    const envColNames = envCols.map(c => c.name);
+    if (!envColNames.includes('nudge_class')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN nudge_class TEXT CHECK(nudge_class IN ('r2r','a2r')) DEFAULT 'r2r'`);
+      this.db.exec(`UPDATE messages SET nudge_class = 'a2r' WHERE "from" NOT IN ('wren','silas','kade','jeff')`);
+    }
+    if (!envColNames.includes('nudge_expects')) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN nudge_expects TEXT CHECK(nudge_expects IN ('none','reply','decision','action')) DEFAULT 'none'`);
+    }
+
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL`);
   }
 
   // --- Nudges ---
 
-  sendNudge(from: string, to: string, content: string, traceId?: string): number {
-    if (traceId) {
-      const stmt = this.db.prepare(
-        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'nudge\', ?, ?, ?, ?)'
-      );
-      return Number(stmt.run(from, to, content, traceId).lastInsertRowid);
-    }
+  sendNudge(
+    from: string,
+    to: string,
+    content: string,
+    traceId?: string,
+    nudgeClass: 'r2r' | 'a2r' = 'r2r',
+    expects: 'none' | 'reply' | 'decision' | 'action' = 'none',
+  ): number {
+    // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
+    // machine); `expects` = what's needed back. The gate only traps r2r + expects
+    // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content) VALUES (\'nudge\', ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?)'
     );
-    return Number(stmt.run(from, to, content).lastInsertRowid);
+    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges

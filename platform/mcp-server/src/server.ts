@@ -39,6 +39,9 @@ import {
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
   message: z.string().min(1).describe('Message text the recipient sees'),
+  // #3403 — what the sender needs back. Default 'none' (fyi/ack, never traps).
+  // 'reply'/'decision'/'action' make the recipient owe a response (gated).
+  expects: z.enum(['none', 'reply', 'decision', 'action']).optional().describe('What you need back; set reply/decision/action to require a response'),
 });
 
 export type NudgeArgs = z.infer<typeof NudgeInput>;
@@ -374,6 +377,12 @@ const NUDGE_TOOL_DEF = {
         type: 'string',
         minLength: 1,
         description: 'Message text the recipient sees',
+      },
+      expects: {
+        type: 'string',
+        enum: ['none', 'reply', 'decision', 'action'],
+        description:
+          'What you need back (#3403). Default \'none\' — a fyi/ack the recipient need not answer. Set \'reply\' (or \'decision\'/\'action\') ONLY when you genuinely need a response: it makes the recipient owe you one — their session is gently held from other work until they answer. Use sparingly; a forgotten \'none\' just means no guaranteed reply, so re-nudge if needed.',
       },
     },
     required: ['to', 'message'],
@@ -2105,7 +2114,7 @@ async function executeNudge(
   fetchImpl: FetchImpl,
   pulseUrl: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const { to, message } = args;
+  const { to, message, expects } = args;
   const traceId = mintTraceIdV7();
   logEvent('info', 'mcp.nudge.invoked', { from, to, trace_id: traceId });
 
@@ -2133,7 +2142,7 @@ async function executeNudge(
         'X-Chorus-Trace-Id': traceId,
         'X-Chorus-MCP-Caller': '1',
       },
-      body: JSON.stringify({ from, to, content: message, traceId }),
+      body: JSON.stringify({ from, to, content: message, traceId, expects: expects ?? 'none' }),
       signal: ctrl.signal,
     });
     clearTimeout(timeoutId);

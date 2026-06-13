@@ -104,6 +104,8 @@ fn unanswered_inbound_inner(conn: &Connection, role: &str) -> rusqlite::Result<V
              AND type = 'nudge'
              AND "from" != ?1
              AND "from" IN ('wren', 'silas', 'kade', 'jeff')
+             AND nudge_class = 'r2r'
+             AND nudge_expects IN ('reply', 'decision', 'action')
              AND created_at > COALESCE(
                    (SELECT MAX(created_at) FROM messages
                     WHERE "from" = ?1 AND type = 'nudge'), '')
@@ -207,17 +209,22 @@ mod tests {
                  created_at TEXT,
                  delivery_status TEXT NOT NULL DEFAULT 'pending',
                  delivered_at TEXT,
-                 trace_id TEXT
+                 trace_id TEXT,
+                 nudge_class TEXT DEFAULT 'r2r',
+                 nudge_expects TEXT DEFAULT 'none'
                );"#,
         )
         .expect("create messages table");
         conn
     }
 
+    /// Inserts a real r2r ASK (class r2r, expects reply) — the shape that owes a
+    /// response. Existing owes-tests use this so they keep trapping under the
+    /// envelope filter; the a2r / expects=none cases insert their envelope raw.
     fn insert(conn: &Connection, typ: &str, from: &str, to: &str, content: &str, created_at: &str) {
         conn.execute(
-            r#"INSERT INTO messages (type, "from", "to", content, created_at, delivery_status, trace_id)
-               VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)"#,
+            r#"INSERT INTO messages (type, "from", "to", content, created_at, delivery_status, trace_id, nudge_class, nudge_expects)
+               VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, 'r2r', 'reply')"#,
             rusqlite::params![typ, from, to, content, created_at, format!("ntr-{content}")],
         )
         .expect("insert message");
@@ -246,8 +253,8 @@ mod tests {
         // a DELIVERED nudge newer than the last reply STILL owes — gate still fires.
         let conn = setup_db();
         conn.execute(
-            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status,delivered_at)
-               VALUES ('nudge','wren','silas','delivered but unanswered','2026-06-13 10:00:05','delivered','2026-06-13 10:00:06')"#,
+            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status,delivered_at,nudge_class,nudge_expects)
+               VALUES ('nudge','wren','silas','delivered but unanswered','2026-06-13 10:00:05','delivered','2026-06-13 10:00:06','r2r','reply')"#,
             [],
         ).unwrap();
         let owed = unanswered_inbound(&conn, "silas");
@@ -310,6 +317,49 @@ mod tests {
         assert_eq!(unanswered_inbound(&conn, "silas").len(), 1, "a real peer nudge still traps");
     }
 
+    /// Insert an inbound nudge with an explicit envelope (class + expects).
+    fn insert_env(conn: &Connection, from: &str, to: &str, content: &str, created_at: &str, class: &str, expects: &str) {
+        conn.execute(
+            r#"INSERT INTO messages (type, "from", "to", content, created_at, delivery_status, nudge_class, nudge_expects)
+               VALUES ('nudge', ?1, ?2, ?3, ?4, 'pending', ?5, ?6)"#,
+            rusqlite::params![from, to, content, created_at, class, expects],
+        )
+        .expect("insert envelope message");
+    }
+
+    #[test]
+    fn r2r_ask_expects_reply_traps() {
+        // The shape that owes a response: a peer asking for something back.
+        let conn = setup_db();
+        insert_env(&conn, "kade", "silas", "review my card?", "2026-06-13 10:00:05", "r2r", "reply");
+        assert_eq!(unanswered_inbound(&conn, "silas").len(), 1, "r2r + expects=reply traps");
+    }
+
+    #[test]
+    fn r2r_ack_expects_none_does_not_trap() {
+        // THE chip-and-dale fix: a peer ack/fyi (expects=none) must NOT trap, or
+        // every "thanks, got it" re-opens the loop. This is the red→green case —
+        // the peer-only gate trapped this kade ack with no expects filter.
+        let conn = setup_db();
+        insert_env(&conn, "kade", "silas", "thanks, got it", "2026-06-13 10:00:05", "r2r", "none");
+        assert!(
+            unanswered_inbound(&conn, "silas").is_empty(),
+            "r2r + expects=none is a terminal ack — never traps"
+        );
+    }
+
+    #[test]
+    fn a2r_alert_does_not_trap_regardless_of_expects() {
+        // An alert into a terminal can't be answered. class=a2r never traps, even
+        // if some emitter mislabels expects. Belt to the peer-only suspenders.
+        let conn = setup_db();
+        insert_env(&conn, "system", "silas", "eventloop blocked", "2026-06-13 10:00:05", "a2r", "reply");
+        assert!(
+            unanswered_inbound(&conn, "silas").is_empty(),
+            "a2r alerts never trap — no repliable peer"
+        );
+    }
+
     #[test]
     fn nudge_type_only() {
         let conn = setup_db();
@@ -351,8 +401,8 @@ mod tests {
         // (osascript), still blocks. silas replies → owes nothing (resume).
         let conn = setup_db();
         conn.execute(
-            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status)
-               VALUES ('nudge','wren','silas','answer me first','2026-06-13 10:00:05','delivered')"#,
+            r#"INSERT INTO messages (type,"from","to",content,created_at,delivery_status,nudge_class,nudge_expects)
+               VALUES ('nudge','wren','silas','answer me first','2026-06-13 10:00:05','delivered','r2r','reply')"#,
             [],
         ).unwrap();
         // 1. owes → the gate blocks every non-reply tool (the case the OLD gate missed)

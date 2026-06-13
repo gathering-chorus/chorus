@@ -6,7 +6,7 @@
  */
 
 import express, { Express } from 'express';
-import { MessageStore } from './store';
+import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, resolveRoleTarget } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
@@ -119,7 +119,16 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
       log('info', 'nudge.deduped', { from, to, chars: marked.length, trace_id: traceId || undefined });
       return res.json({ ok: true, deduped: true });
     }
-    const id = store.sendNudge(from, to, marked, traceId);
+    // #3403 envelope. class = who's talking — the caller may declare it, else it's
+    // inferred from the sender (peer → r2r, machine/alert → a2r). expects = what's
+    // needed back, declared by the sender, default 'none'. The gate only ever traps
+    // r2r + expects in (reply|decision|action), so an alert or a forgotten expects
+    // can never trap — that's the safe-by-default Jeff chose.
+    const nudgeClass: 'r2r' | 'a2r' =
+      req.body.class === 'r2r' || req.body.class === 'a2r' ? req.body.class : inferNudgeClass(from);
+    const expects: 'none' | 'reply' | 'decision' | 'action' =
+      ['reply', 'decision', 'action', 'none'].includes(req.body.expects) ? req.body.expects : 'none';
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
