@@ -12,9 +12,13 @@
  * calculation across 7d vs previous 7d.
  */
 
-import * as fs from 'fs';
+import { readFileTail } from './lib/log-reader';
 
 const CHORUS_LOG = process.env.CHORUS_LOG_PATH || `${process.env.HOME}/.chorus/chorus.log`;
+// #3406 sibling-audit — chorus.log grows unbounded (535MB+). Reading it whole on
+// the request path is the freeze/OOM-crash root (same ReadFileUtf8 stack the spine
+// endpoint hit). Bound this summary's read to a generous recent tail.
+const CHORUS_LOG_TAIL_BYTES = Number(process.env.CHORUS_LOG_TAIL_BYTES) || 16 * 1024 * 1024;
 
 const ROLES = ['silas', 'wren', 'kade'] as const;
 type Role = typeof ROLES[number];
@@ -57,8 +61,10 @@ export interface FitnessSummaryResponse {
 
 function loadChorusEvents(): ChorusEvent[] {
   try {
-    if (!fs.existsSync(CHORUS_LOG)) return [];
-    const lines = fs.readFileSync(CHORUS_LOG, 'utf-8').trim().split('\n').filter(Boolean);
+    const raw = readFileTail(CHORUS_LOG, CHORUS_LOG_TAIL_BYTES);
+    if (raw === null) return [];
+    // tail may start mid-line; the per-line JSON.parse below discards the partial.
+    const lines = raw.trim().split('\n').filter(Boolean);
     const events: ChorusEvent[] = [];
     for (const line of lines) {
       try {
