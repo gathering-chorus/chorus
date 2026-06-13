@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { readFileTail } from '../src/lib/log-reader';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fitness-test-'));
 process.env.CHORUS_LOG_PATH = path.join(TMP, 'chorus.log');
@@ -264,5 +265,32 @@ describe('getFitnessSummary — log robustness', () => {
     ]);
     const dg = load().getFitnessSummary().functions.find((f: any) => f.id === 'decision-gate-rate');
     expect(dg.overall7d).toBe(1);
+  });
+});
+
+// #3406 sibling-audit — fitness-summary read the whole 535MB chorus.log synchronously
+// (same freeze/OOM-crash class as /context/spine). It now reads a bounded tail via
+// readFileTail. With a tiny tail, events before the tail are NOT counted even though
+// they're inside the 7d window — proving the read is bounded, not whole.
+describe('#3406 — bounded chorus.log read', () => {
+  beforeEach(() => { clear(); jest.resetModules(); });
+  afterEach(() => { delete process.env.CHORUS_LOG_TAIL_BYTES; jest.resetModules(); });
+
+  test('readFileTail bounds the read, and the summary counts only the tail', () => {
+    process.env.CHORUS_LOG_TAIL_BYTES = '500'; // ~6 lines worth
+    // 20 recent jdi events at the START (beyond a 500B tail) + 3 at the END (within it).
+    // All inside the 7d window, so an UNBOUNDED read would count all 23.
+    const start = Array.from({ length: 20 }, (_, i) => ({ event: 'decision.gate.jdi_override', timestamp: ts(1, i), role: 'kade' }));
+    const end = Array.from({ length: 3 }, (_, i) => ({ event: 'decision.gate.jdi_override', timestamp: ts(0, i), role: 'wren' }));
+    writeLog([...start, ...end]);
+    // the bounding mechanism itself: readFileTail returns at most maxBytes, not the whole file
+    const tail = readFileTail(process.env.CHORUS_LOG_PATH!, 500);
+    expect(tail).not.toBeNull();
+    expect(tail!.length).toBeLessThanOrEqual(500);
+    // end-to-end: the summary counts only the tail's events, not all 23
+    jest.resetModules();
+    const jdi = load().getFitnessSummary().functions.find((f: any) => f.id === 'jdi-rate');
+    expect(jdi.overall7d).toBeGreaterThan(0);   // tail read works
+    expect(jdi.overall7d).toBeLessThan(23);     // bounded — did NOT read the whole file
   });
 });

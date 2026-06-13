@@ -14,6 +14,11 @@
 
 import * as fs from 'fs';
 import { CHORUS_ROOT } from './lib/chorus-paths'; // #3197 — single root source
+import { readFileTail } from './lib/log-reader';
+
+// #3406 sibling-audit — chorus.log grows unbounded (535MB+); reading it whole on
+// the request path is the freeze/OOM-crash root. Bound the chorus read to a tail.
+const CHORUS_LOG_TAIL_BYTES = Number(process.env.CHORUS_LOG_TAIL_BYTES) || 16 * 1024 * 1024;
 
 /** Coerce an unknown value to a string for display; non-primitives get the
  *  fallback instead of `[object Object]`. #2463 wave 2 (no-base-to-string). */
@@ -168,7 +173,11 @@ function classifyChorusEvent(obj: Record<string, unknown>): HookEvent | null {
 }
 
 function loadChorusEvents(events: HookEvent[]): void {
-  for (const line of readLogLines(LOG_PATHS.chorus)) {
+  // #3406 — bounded tail read of the 535MB chorus.log (was readLogLines = full
+  // readFileSync). The tail may start mid-line; the per-line JSON.parse discards it.
+  const raw = readFileTail(LOG_PATHS.chorus, CHORUS_LOG_TAIL_BYTES);
+  if (raw === null) return;
+  for (const line of raw.split('\n').filter(Boolean)) {
     try {
       const ev = classifyChorusEvent(JSON.parse(line));
       if (ev) events.push(ev);

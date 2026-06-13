@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { readFileTail } from '../src/lib/log-reader';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-summary-test-'));
 process.env.CHORUS_LOG_PATH = path.join(TMP, 'chorus.log');
@@ -275,5 +276,32 @@ describe('getHooksSummary — robustness', () => {
     writeChorusLog([{ event: 'not.in.any.classifier', timestamp: todayTs }]);
     const r = load().getHooksSummary();
     expect(r.totals.today).toBe(0);
+  });
+});
+
+// #3406 sibling-audit — hooks-summary read the whole 535MB chorus.log synchronously
+// (freeze/OOM-crash class). It now reads a bounded tail via readFileTail. With a tiny
+// tail, today-events before the tail are NOT counted — proving the read is bounded.
+describe('#3406 — bounded chorus.log read', () => {
+  beforeEach(() => { clear(); jest.resetModules(); });
+  afterEach(() => { delete process.env.CHORUS_LOG_TAIL_BYTES; jest.resetModules(); });
+
+  test('readFileTail bounds the read, and the summary counts only the tail', () => {
+    process.env.CHORUS_LOG_TAIL_BYTES = '500';
+    const now = new Date().toISOString();
+    // 20 today decision.gate.matched at the START (beyond a 500B tail) + 3 at the END.
+    // Unbounded, all 23 count toward totals.today.
+    const start = Array.from({ length: 20 }, (_, i) => ({ event: 'decision.gate.matched', timestamp: now, role: 'kade', pref: `s${i}`, question: 'q' }));
+    const end = Array.from({ length: 3 }, (_, i) => ({ event: 'decision.gate.matched', timestamp: now, role: 'wren', pref: `e${i}`, question: 'q' }));
+    writeChorusLog([...start, ...end]);
+    // the bounding mechanism itself returns at most maxBytes, not the whole file
+    const tail = readFileTail(process.env.CHORUS_LOG_PATH!, 500);
+    expect(tail).not.toBeNull();
+    expect(tail!.length).toBeLessThanOrEqual(500);
+    // end-to-end: only the tail's events are counted, not all 23
+    jest.resetModules();
+    const total = load().getHooksSummary().totals.today;
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThan(23);
   });
 });
