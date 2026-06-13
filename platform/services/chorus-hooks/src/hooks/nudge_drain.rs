@@ -29,9 +29,32 @@
 //!                 exit 0; a drain failure returns empty and NEVER refuses a tool.
 //!   always-on   — fires on every PreToolUse incl. mid-Jeff-conversation; the
 //!                 wiring must not narrow it to skip Jeff turns.
+//!
+//! Operational guards (#3218, Kade review):
+//!   headless    — inside the act/werk.yml runner (GITHUB_ACTIONS / ACT /
+//!                 CHORUS_HEADLESS) the drain is a HARD no-op: no terminal to
+//!                 inject into, and a block/inject would stall the pipeline
+//!                 team-wide (the #3318 AC6 lesson — scope in, don't land-scope).
+//!   O(1) idle   — one process-cached connection (no per-tool-call open); the
+//!                 empty-queue hot path is lock + one indexed query (~0 cost).
+//!   backlog cap — at most DRAIN_CAP per call, oldest-first, marking only those
+//!                 delivered: a delivery-outage backlog drains in batches instead
+//!                 of flooding context, and per-call cost stays bounded.
+//!   no deadlock — the drain reads the agent's OWN queue and either injects
+//!                 (non-blocking) or makes it address its OWN pending at Stop; no
+//!                 agent ever waits on another's drain (that was the *gather*
+//!                 ceremony, #3384). drain-once bounds the Stop-block to one
+//!                 continuation. So A-blocks-on-B-blocks-on-A cannot arise here.
 
 use rusqlite::Connection;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+
+/// Max nudges drained per call (#3218, Kade review). The drain takes the oldest
+/// N and marks ONLY those delivered, so a large backlog (e.g. a delivery-outage
+/// recovery) drains N-per-tool-call oldest-first instead of flooding the agent's
+/// context in one shot — and per-call cost stays bounded to N rows.
+const DRAIN_CAP: usize = 20;
 
 /// One pending nudge drained from messages.db, in delivery (FIFO) order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,9 +86,10 @@ fn drain_pending_inner(conn: &mut Connection, role: &str) -> rusqlite::Result<Ve
                  AND type = 'nudge'
                  AND delivery_status = 'pending'
                  AND "from" != "to"
-               ORDER BY created_at ASC, id ASC"#,
+               ORDER BY created_at ASC, id ASC
+               LIMIT ?2"#,
         )?;
-        let rows = stmt.query_map([role], |r| {
+        let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
             Ok(PendingNudge {
                 id: r.get(0)?,
                 from: r.get(1)?,
@@ -113,19 +137,50 @@ pub fn format_drain_block(role: &str, nudges: &[PendingNudge]) -> Option<String>
         let tid = n.trace_id.as_deref().unwrap_or("-");
         out.push_str(&format!("- from {} ({}): {}\n", n.from, tid, n.content));
     }
+    // #3218 (Kade): when a full cap was drained there may be more pending — say so,
+    // so a backlog reads as "draining in batches", not "this is all there is".
+    if nudges.len() >= DRAIN_CAP {
+        out.push_str(&format!(
+            "- (oldest {DRAIN_CAP} shown — cap; more pending drain on your next tool calls)\n"
+        ));
+    }
     Some(out)
 }
 
-/// Open the live messages.db, drain `role`'s pending nudges, and return the
-/// formatted additionalContext block — or `None` when nothing is pending or the
-/// DB is unreachable. NEVER blocks: any open/IO error yields `None` and the tool
-/// call proceeds. A short busy_timeout absorbs contention with chorus-messaging's
-/// writes (on timeout: empty, the nudge stays pending for the next drain).
-pub fn drain_block_from_db(role: &str, db_path: &str) -> Option<String> {
-    let mut conn = Connection::open(db_path).ok()?;
-    // 50ms cap: well under the per-tool-call latency budget; on SQLITE_BUSY the
-    // drain returns empty rather than stalling the tool.
+/// A single cached connection to messages.db, opened once for the life of the
+/// hook process. The empty-queue hot path (#3218, Kade) is then just lock + one
+/// indexed query (no per-tool-call open), so a tool-heavy session pays ~0 when
+/// nothing is pending. rusqlite Connection isn't Sync, so it lives behind a
+/// Mutex; drains are sub-ms, so the serialization is negligible.
+static DRAIN_CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
+
+fn cached_conn(db_path: &str) -> Option<&'static Mutex<Connection>> {
+    if let Some(c) = DRAIN_CONN.get() {
+        return Some(c);
+    }
+    // Open lazily; on failure return None WITHOUT caching, so a transient open
+    // error doesn't wedge the hot path to a permanent no-op (never blocks).
+    let conn = Connection::open(db_path).ok()?;
     let _ = conn.busy_timeout(Duration::from_millis(50));
+    Some(DRAIN_CONN.get_or_init(|| Mutex::new(conn)))
+}
+
+/// Drain `role`'s pending nudges from the live messages.db and return the
+/// formatted additionalContext block — or `None` when nothing is pending, the DB
+/// is unreachable, or we're running headless. NEVER blocks: any error yields
+/// `None` and the tool call proceeds.
+pub fn drain_block_from_db(role: &str, db_path: &str) -> Option<String> {
+    // #3218 (Kade, the #3318 lesson): inside the act/werk.yml runner there is no
+    // role terminal — the drain MUST be a hard no-op or it stalls/fails the demo
+    // and land jobs team-wide. Scope it in from the start, never land-then-scope.
+    if std::env::var("GITHUB_ACTIONS").is_ok()
+        || std::env::var("ACT").is_ok()
+        || std::env::var("CHORUS_HEADLESS").is_ok()
+    {
+        return None;
+    }
+    let conn_lock = cached_conn(db_path)?;
+    let mut conn = conn_lock.lock().ok()?;
     let drained = drain_pending(&mut conn, role);
     format_drain_block(role, &drained)
 }
@@ -279,6 +334,37 @@ mod tests {
         let mut conn = setup_db();
         let drained = drain_pending(&mut conn, "silas");
         assert!(drained.is_empty(), "no pending → empty, no error, never blocks");
+    }
+
+    #[test]
+    fn caps_drain_at_limit_and_catches_up() {
+        // #3218 (Kade): a backlog must not flood — drain at most DRAIN_CAP per
+        // call, oldest-first, marking only those delivered, and catch up over
+        // subsequent calls.
+        let mut conn = setup_db();
+        for i in 0..(DRAIN_CAP + 5) {
+            insert(&conn, "nudge", "wren", "silas", &format!("n{i}"), &format!("2026-06-13 10:00:{i:02}"));
+        }
+        let first = drain_pending(&mut conn, "silas");
+        assert_eq!(first.len(), DRAIN_CAP, "first call drains at most the cap");
+        assert_eq!(first[0].content, "n0", "oldest-first within the cap");
+        let block = format_drain_block("silas", &first).expect("non-empty");
+        assert!(block.contains("more pending"), "cap footer warns of remainder: {block}");
+        // The next call drains the remaining 5 — the backlog catches up.
+        let second = drain_pending(&mut conn, "silas");
+        assert_eq!(second.len(), 5, "remaining backlog drains on the next call");
+        assert_eq!(second[0].content, format!("n{DRAIN_CAP}"), "continues oldest-first");
+    }
+
+    #[test]
+    fn headless_act_context_is_noop() {
+        // #3218 (Kade, #3318 lesson): inside act/werk.yml the drain must hard
+        // no-op or it stalls the pipeline. Guard fires before any DB open, so the
+        // db_path is irrelevant.
+        std::env::set_var("ACT", "true");
+        let out = drain_block_from_db("silas", "/nonexistent/messages.db");
+        std::env::remove_var("ACT");
+        assert!(out.is_none(), "headless (ACT) drain is a hard no-op");
     }
 
     #[test]
