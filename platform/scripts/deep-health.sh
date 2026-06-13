@@ -374,7 +374,7 @@ fi
 # LAN-EXCEPTION ports (documented, allowed on 0.0.0.0): 3340 chorus-api
 # (Bedroom→Library ops), 3102 loki (Bedroom promtail), 3471 clearing-HTTPS
 # (LAN mic #1782), 3000 caddy (tunnel front). Everything else internal = localhost.
-LOCALHOST_ONLY_PORTS="3344 3352 3470 3475 3030 3306"  # mcp, clearing-http, messaging, fuseki, mysqld
+LOCALHOST_ONLY_PORTS="3344 3352 3475 3030 3306"  # mcp, messaging, fuseki, mysqld (NOT 3470: clearing serves LAN intentionally for the phone URL #3366 — its hole is unauth-LAN, an auth-model question, not bind)
 for port in $LOCALHOST_ONLY_PORTS; do
   # match a listener bound to all-interfaces (*:port or 0.0.0.0:port), not 127.0.0.1
   if lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -qE "(\*|0\.0\.0\.0):${port}\b"; then

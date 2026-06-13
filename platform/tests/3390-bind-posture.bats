@@ -14,7 +14,9 @@ DH="$REPO/platform/scripts/deep-health.sh"
 @test "guard's localhost-only set covers the known internal services, excludes the LAN exceptions" {
   line=$(grep "LOCALHOST_ONLY_PORTS=" "$DH")
   # internal-only must be checked
-  for p in 3344 3352 3470 3475 3030 3306; do echo "$line" | grep -q "$p"; done
+  for p in 3344 3352 3475 3030 3306; do echo "$line" | grep -q "$p"; done
+  # 3470 deliberately NOT here: clearing serves LAN for #3366's phone URL (unauth-LAN is an auth question, not bind)
+  ! echo "$line" | grep -qw 3470
   # LAN exceptions must NOT be in the localhost-only set (would false-fire)
   for p in 3340 3102 3471 3000; do ! echo "$line" | grep -q "\b$p\b" || { echo "LAN-exception $p wrongly in localhost-only set"; false; }; done
 }
