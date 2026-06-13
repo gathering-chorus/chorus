@@ -85,6 +85,11 @@ app.use('/designing/schemas', express.static(path.join(chorusRepoRoot, 'designin
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
+// #3361 — value-stream tree mount: chorus UI pages moved home from gathering
+// land under building/ (e.g. building/products/werk/werk-process,
+// building/products/convergence/nifi-chorus-integration-design). Served here so
+// the page lives in its ADR-041 home, not in gathering.
+app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { extensions: ['html'] }));
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));

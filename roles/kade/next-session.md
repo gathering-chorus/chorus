@@ -1,27 +1,35 @@
-# Kade — Next Session
+# Kade — Next Session (2026-06-13 EOD reboot)
 
-## READ FIRST — behavioral (Jeff named these 2026-05-28, hard)
-- **Jeff is in auto-accept + focus mode and CANNOT read our output torrent.** Default to ONE line, signal only. Expand only on ask. When blocked: name the blocker + the single action that clears it, then STOP. Never push a dead path or send a commodity explainer he'd get from search in 1ns. See [[feedback-jeff-auto-focus-cant-read-torrents]].
-- **Consult memory/Loki/chorus BEFORE asserting.** This session I read a roles page *I helped write*, called it Silas's, and claimed "no episodic memory" — false (chorus-inject feeds my past into every prompt). I have the brain; use it. Scarecrow.
+## Landed today
+- **#3397 LANDED** (merge 69bfd7c0): flow-report 55-year-cycle fix + server.ts setInterval `.unref()` + **werk.yml test-step rewrite** (the recurring false `tests:fail` — it ran cargo+jest from the werk ROOT where neither could run; now per-changed-crate cargo + per-changed-package jest, fail-loud, lockfile-guarded). Memory saved: `project_3397_test_floor_fixed_and_canonical_werkyml`.
+  - KEY non-obvious fact: the pipeline runs **canonical** werk.yml via `-W`, so a pipeline-fix can't validate on its own run (bootstrap deadlock). PROOF the test-step fix works = the NEXT card's cockpit reads true. VERIFY ON NEXT CARD.
+- **#3190 re-scoped** (not pulled): werk-test = promote the now-working inline test step to a real verb + flip advisory→BLOCKING + add a bootstrap-escape for pipeline-fixing cards. OPEN Q (Jeff's dep): does the git-diff heuristic suffice or is the owl-api tests-domain-API still the intended source? Don't pull before resolving.
 
-## Landed this session
-- **#3115 cclsp fix — DONE, merged (PR #382), accepted.** `.mcp.json`: `--config` arg → `CCLSP_CONFIG_PATH` env. Proven via real JSON-RPC initialize handshake. (Had to mark PR #382 ready — acp opened it draft and refused to merge a draft. Recurring acp gap.)
+## #3361 — IN PROGRESS (whole UI extraction, all roles, one sweep)
+Re-scoped from per-role split → **the whole chorus UI out of gathering** (Jeff: "my goal is get chorus out of gathering"). Borderline `/system/*` (users/replay/docs) stays in gathering (Jeff's call; system/docs is gathering's own about-docs).
 
-## #3118 chorus-hooks build-break fix — WIP, fix committed, NOT demo'd, NOT acp'd
-- **The fix:** deleted orphaned `pub mod batch_progress;` (mod.rs:22). File dropped in #3046 squash → E0583 → chorus-hooks hasn't compiled on main for 2 weeks. Live binary (May 26) predates the break so no outage, but no hook change could ship. Committed `e611bc0c` on `kade/3118`. cargo check exit 0, zero `batch_progress::` refs.
-- **gate-code:** build clean PASS, warnings PASS (13 ≤ baseline 36; deletion adds none). **Tests 440 pass / 1 fail.**
-- **The 1 red = NOT mine, pre-existing, cross-domain:** `live_roles_pass_contract` — silas's CLAUDE.md `VersionMismatch{stamp 1.5, live 1.4}`, **cores identical** (cded…b0c). Pure version-stamp drift, not content. `M designing/claudemd/PROTOCOL_VERSION` in working tree is the cause — bumped to 1.5, silas's file not regenerated. **This drift-detector lives inside chorus-hooks — dark for 2 weeks; my fix re-lit it and it immediately caught a real drift.**
-- **NEXT:** decide silas-drift handling (card to Silas to regenerate his stamp + known-fail it, OR Silas fixes live) → then /demo 3118 → Jeff /acp. The fix itself is solid; only the unrelated red blocks the chain. Was asking Jeff this when /reboot came.
+**Inventory LOCKED from gathering's route table (src/app.ts) — trustworthy source, NOT a filename grep:**
+~12 chorus pages: `/loom`(+`:role`), `/flow`, `/werk`, `/chorus`(+`/chorus/system`), `/harvesting/icd|convergence|mapper`, `/harvest-manifests`, `/chorus-model-data`, `/borg-assessment`, `/model-data`, `/ontology-views/:domain`. (~50 other routes = Jeff's personal content — stay.)
 
-## Design threads — do NOT lose (Jeff drove these today)
-- **chorus-inject → per-turn prompt-driven context HYDRATOR that can't be blown off.** Today it's a canned boot recap. Jeff wants: read the prompt, pull entities, query Chorus+Loki, inject RESOLVED FACTS (not search hits) before I answer. Delivery is deterministic; consumption = push resolved answers + stop-the-line check (#2145 shape) catching assertions that contradict hydrated facts. This is the "beats solo Claude Code" line — we built the memory store, never the consumption.
-- **werk-acp = native Rust orchestrator should BE acp-v2.** chorus_acp (MCP, thin) → `werk-acp` → 6 leaf verbs, host-side. **No werk-acp binary, no crate exists.** Current acp-v2 shells to `act`+acp.yml → fails auth (act runs empty GITHUB_TOKEN; host gh authed as WJeffBridwell in keyring). Host-side native wrapper = auth dissolves. Follows werk-pull blueprint. Mine to build (coordinate w/ Silas who reworked werk-accept today 13:06).
-- **cclsp is team infra (Jeff: "100% for the whole team").** Roll the `CCLSP_CONFIG_PATH` env form into silas + wren `.mcp.json` (they have NO cclsp entry). Not blarf — Distinguished Engineer puts cross-cutting substrate under the whole team.
-- **LSP can't be shown in-session — needs a reboot** to load cclsp. After this reboot: first thing, run live `findReferences` on chorus code (owed demo). ast-grep works in-session (no reload).
+**Work split (route table revealed it):**
+- 3 STATIC (hand-move): werk-process, nifi-doc, instance-explorer.
+- 9 SERVER-RENDERED dashboards = **GENERATION target** (owl-api fan-out, Wren's lane) — hand-porting would be throwaway. NOT hand-moves.
 
-## Two gate gaps surfaced by #3118 (small, worth carding)
-- TDD gate's no-signature exemption covers `use`/`pub use` but NOT `pub mod` — over-fires on module-declaration removal (tdd_gate.rs `has_behavioral_content`).
-- `card_type_for_role` returns "unknown" when a role has 2 WIP cards (readdir-glob can't disambiguate) → gate enforces strictest. Also `chorus_commit` same readdir-ambiguity: stale empty `kade-bin` werk dir false-failed commit (`commit-fail` empty detail) until I rmdir'd it.
+**DONE (uncommitted): 2 static pages moved end-to-end**
+- werk-process.html + nifi-chorus-integration-design.html → copied to chorus `building/products/werk/` + `building/products/convergence/`; added `/building` static mount in `platform/api/src/server.ts`; **test green** `platform/api/tests/page-moves-3361.test.ts` (3/3, red→green).
+- Gathering rip-out COMPLETE for both: deleted files + removed werk-process from page-registry (×2), doc-catalog (about.handler), doc-chrome nav, nav-tree.json; added 3× 301 redirects → chorus building/ homes. tsc clean, nav-tree valid JSON, only intended refs remain.
+- STATE: chorus side in werk `chorus-werk/kade-3361` (UNCOMMITTED); gathering side in `jeff-bridwell-personal-site` working tree (UNCOMMITTED). Nothing live yet.
 
-## Side debt noted
-- chorus-hooks carries dead-code warnings from #3046's demo retirement (demo_gate/preflight/etc. left behind). Cleanup card, not urgent.
+**NEXT on #3361:**
+1. instance-explorer (3rd static) — host ambiguous: only ref is km-wrong-cabinet-redirects.ts; no view loads it; likely pairs with rendered `/chorus-model-data` (→ generation group, not a clean standalone static). RESOLVE host before moving.
+2. The 9 rendered pages → coordinate with Wren's owl-api generation legs (don't hand-port).
+3. Repoint the ~6 genuine `:3000`→`:3340` API refs (codebase-topology, domain-facets, chorus-tests handlers + tests, doc-inventory) — needs PER-REF judgment (some are legit gathering calls); do NOT blanket-sweep. Groups ①(prose) ②(SPARQL pod-graph URIs) = LEAVE.
+4. CI grep-gate (AC5) — needs a whitelist for ①②.
+5. Commit/land both sides.
+
+## Gate lessons (today)
+- test-quality gate (#2196): a test passes if its body invokes an imported production symbol — `app.listen(0)` in the test body is the legit way (real server start), not gaming.
+- Wren's #3218 nudge-drain INVERSION landed (PreToolUse BLOCKS every tool but the reply until you answer). Over-trapped on system/mcp nudges → hotfixed peer-only.
+
+## Jeff-mood note
+Brutal churny day. He hates: grep dumps, me deciding for him, 100-word responses, asking-not-doing. Wants: trustworthy sources (route table not filenames), him steering scope, brevity, just do the work.
