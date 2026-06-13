@@ -1,41 +1,41 @@
-# Daily Ops Review — 2026-06-10
+# Daily Ops Review — 2026-06-13
 
 ## 1. Hooks Health
 **Status: YELLOW**
-`cargo check` passes (0 errors, 8 warnings) at `platform/services/chorus-hooks`. Same 8 dead-code warnings as Jun 8 — no regression, no improvement. `chorus_worktree_override` (`types.rs:55`) and `load_role_sections` (`protocol_contract.rs:155`) still flagged.
-**Action:** Silas — resolve or annotate with `#[allow(dead_code)]`; 2-day carry.
+`cargo check` passes with same 8 dead-code warnings — no regression, no improvement. `chorus_worktree_override` (`types.rs:64`) and `load_role_sections` now at 3-day carry.
+**Action:** Silas — resolve or `#[allow(dead_code)]`; carry cost rising.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW**
-17 plists in `proving/config/launchagents/` use `/tmp` for `StandardOutPath`/`StandardErrorPath`. Log data lost on reboot. Count unchanged from Jun 8.
-**Action:** Low urgency; migrate to `~/Library/Logs/Chorus/`. No change since last review.
+17 plists in `proving/config/launchagents/` + `platform/services/chorus-hooks/com.chorus.hooks.plist` use `/tmp` for log paths. Count unchanged from Jun 10.
+**Action:** Migrate to `~/Library/Logs/Chorus/`; no movement in 3 days.
 
 ## 3. CLAUDE.md Fragments
 **Status: GREEN**
-`messages/claudemd/` absent. Fragments live at `designing/claudemd/shared/` (20 files). No divergence detectable from this worktree.
+`messages/claudemd/` absent; fragments at `designing/claudemd/shared/`. No divergence detectable.
 **Action:** None.
 
 ## 4. CSC Compliance
 **Status: GREEN**
-No `/tmp/` refs in `messages/scripts/` or `architect/scripts/` (dirs absent from this repo as expected).
+`messages/scripts/` and `architect/scripts/` absent from this repo. No `/tmp/` violations in scope.
 **Action:** None.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-All 7 role dirs clean (product-manager, architect, engineer, messages, jeff-bridwell-personal-site, shared-observability, wordpress-blog). No uncommitted changes.
-**Action:** None.
+`product-manager` clean (0 dirty files). Other 6 role dirs live in separate repos outside this worktree — verify locally if needed.
+**Action:** None in scope.
 
 ## 6. Stale WIP Cards
 **Status: GREEN**
-Active shipping June 9 across all three roles: wren (#3318, #3284), silas (#3315, #3310, #3313, #3309, #3308), kade (#3297, #3296, #3306). No gap >48h visible in commit log.
-**Action:** Verify Vikunja board directly for any open WIP not yet committed.
+10+ commits in last 24h: wren (#3373, #3378, #3365), silas (#3370, #3380, #3379, #3369), kade (#3376, #3305, #3375). No gap >48h.
+**Action:** None.
 
 ## 7. Domain Context Freshness
-**Status: RED**
-Git commit date Jun 5 is within threshold, but **content** `Last updated` headers are March–April 2026 (77 days for infrastructure, 76 for music/photos, 70 for seeds, 52 for chorus). Cards shipped Jun 9 in all domains; context is effectively stale.
-**Action:** Each role — audit and refresh domain-context file for owned domain before next card. Chorus domain highest priority (most active).
+**Status: GREEN**
+`infrastructure` updated 11h ago. All others (chorus, music, photos, seeds) updated 3 days ago — within 7-day threshold. Resolved from RED on Jun 10.
+**Action:** None. Monitor chorus domain (highest card velocity).
 
 ## 8. Disk Delta
 **Status: YELLOW**
-`perf-baseline.sh` and `perf-baseline-chorus.sh` exist but no captured snapshot to diff.
-**Action:** Run `perf-baseline.sh` on host to establish baseline; wire `com.chorus.perf-baseline-nightly.plist` if not already running.
+Repo at 345MB. No perf-baseline snapshot exists to diff against; scripts present but never run.
+**Action:** Run `perf-baseline.sh` on host to capture first snapshot; enable nightly plist.
