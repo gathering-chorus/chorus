@@ -190,16 +190,52 @@ pub fn drain_block_from_db(role: &str, db_path: &str) -> Option<String> {
     format_drain_block(role, &drained)
 }
 
-/// Wrap a drain block as a PreToolUse `additionalContext` payload (exit 0, never
-/// blocks). `hook_event` is the Claude Code hookEventName ("PreToolUse").
-pub fn additional_context_json(block: &str, hook_event: &str) -> String {
-    serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": hook_event,
-            "additionalContext": block
-        }
-    })
-    .to_string()
+/// PEEK the pending nudges for `role` WITHOUT marking them delivered — returns
+/// the formatted block if any are pending. This backs the #3218 respond-first
+/// gate: the gate must keep blocking the agent's tool calls until it actually
+/// RESPONDS, so the read must NOT consume (consuming would clear the block after
+/// one tool call and re-enable defer). The queue is cleared separately, only
+/// when the agent sends its reply (via `drain_block_from_db` on the reply path).
+/// Headless = no-op, same guard as the drain.
+pub fn peek_pending_block(role: &str, db_path: &str) -> Option<String> {
+    if std::env::var("GITHUB_ACTIONS").is_ok()
+        || std::env::var("ACT").is_ok()
+        || std::env::var("CHORUS_HEADLESS").is_ok()
+    {
+        return None;
+    }
+    let conn_lock = cached_conn(db_path)?;
+    let conn = conn_lock.lock().ok()?;
+    let pending = peek_pending(&conn, role);
+    format_drain_block(role, &pending)
+}
+
+/// Read the pending nudges for `role` without marking them delivered (the
+/// non-consuming counterpart to `drain_pending`). Same scope + cap + FIFO order.
+fn peek_pending(conn: &Connection, role: &str) -> Vec<PendingNudge> {
+    peek_pending_inner(conn, role).unwrap_or_default()
+}
+
+fn peek_pending_inner(conn: &Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT id, "from", content, trace_id
+           FROM messages
+           WHERE "to" = ?1
+             AND type = 'nudge'
+             AND delivery_status = 'pending'
+             AND "from" != "to"
+           ORDER BY created_at ASC, id ASC
+           LIMIT ?2"#,
+    )?;
+    let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
+        Ok(PendingNudge {
+            id: r.get(0)?,
+            from: r.get(1)?,
+            content: r.get(2)?,
+            trace_id: r.get(3)?,
+        })
+    })?;
+    rows.collect()
 }
 
 #[cfg(test)]
@@ -260,6 +296,52 @@ mod tests {
         assert_eq!(first.len(), 1, "first drain returns the pending nudge");
         let second = drain_pending(&mut conn, "silas");
         assert!(second.is_empty(), "drain-once: second call is empty (marked delivered)");
+    }
+
+    #[test]
+    fn respond_first_blocks_until_reply() {
+        // END-TO-END proof of the respond-first gate against a real temp DB — no
+        // deploy needed. A pending peer nudge blocks the agent's tool calls; the
+        // block PERSISTS across calls (peek doesn't consume); only the reply
+        // clears it; then work resumes. This is the gate's behavior, provable.
+        let mut conn = setup_db();
+        insert(&conn, "nudge", "silas", "wren", "answer me first", "2026-06-13 10:00:01");
+
+        // 1. pending nudge → the gate has a block to serve (every non-reply tool refused)
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
+            "pending nudge BLOCKS the agent's tool call"
+        );
+        // 2. the block PERSISTS — the agent can't slip past by calling another tool
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_some(),
+            "block persists across tool calls (peek does not consume)"
+        );
+        // 3. the agent replies (chorus_nudge_message → drain clears the queue)
+        assert_eq!(
+            drain_pending(&mut conn, "wren").len(),
+            1,
+            "the reply clears the pending nudge"
+        );
+        // 4. unblocked — the agent's next tool call proceeds
+        assert!(
+            format_drain_block("wren", &peek_pending(&conn, "wren")).is_none(),
+            "after the reply, NO block — the agent's work resumes"
+        );
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        // The respond-first gate depends on this: peeking must NOT mark delivered,
+        // or the block would clear after one tool call and re-enable defer (#3218).
+        let mut conn = setup_db();
+        insert(&conn, "nudge", "wren", "silas", "still-here", "2026-06-13 10:00:01");
+
+        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek sees the pending nudge");
+        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek again — still there, peek must not consume");
+        // Only a real drain (the reply path) clears it.
+        assert_eq!(drain_pending(&mut conn, "silas").len(), 1, "drain consumes it");
+        assert!(peek_pending(&conn, "silas").is_empty(), "after the reply-path drain, the block clears");
     }
 
     #[test]
@@ -363,13 +445,21 @@ mod tests {
 
     #[test]
     fn headless_act_context_is_noop() {
-        // #3218 (Kade, #3318 lesson): inside act/werk.yml the drain must hard
-        // no-op or it stalls the pipeline. Guard fires before any DB open, so the
-        // db_path is irrelevant.
+        // #3218 (Kade, #3318 lesson): inside act/werk.yml BOTH the drain AND the
+        // respond-first PEEK must hard no-op. The peek guard is the load-bearing
+        // one — if it ever returned Some in a headless runner, the gate would
+        // block every tool call in a context that can NEVER reply, freezing the
+        // pipeline team-wide. So this is verified, not asserted. The guard fires
+        // before any DB open, so db_path is irrelevant.
         std::env::set_var("ACT", "true");
-        let out = drain_block_from_db("silas", "/nonexistent/messages.db");
+        let drained = drain_block_from_db("silas", "/nonexistent/messages.db");
+        let peeked = peek_pending_block("silas", "/nonexistent/messages.db");
         std::env::remove_var("ACT");
-        assert!(out.is_none(), "headless (ACT) drain is a hard no-op");
+        assert!(drained.is_none(), "headless (ACT): drain is a hard no-op");
+        assert!(
+            peeked.is_none(),
+            "headless (ACT): peek_pending_block must no-op — the single guard against a frozen pipeline"
+        );
     }
 
     #[test]

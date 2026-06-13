@@ -269,6 +269,35 @@ async fn pre_tool_use_inner(
         hooks::tool_telemetry::pre_tool_use(&input_clone, &state_clone).await;
     });
 
+    // #3218 RESPOND-FIRST gate (Jeff: "respond to them first — not later, not
+    // never"). A pending peer nudge BLOCKS the agent's card work until it
+    // responds. The earlier inject-and-proceed was the bug — it surfaced the
+    // nudge but handed the agent permission to defer. PEEK (no consume) so the
+    // block persists across tool calls until the agent actually replies; the
+    // ONLY tool allowed through while a nudge is pending is the response itself
+    // (chorus_nudge_message), and sending it clears the queue (marks delivered).
+    // Headless = no-op (peek returns None).
+    if let Some(block) =
+        hooks::nudge_drain::peek_pending_block(role.as_str(), &shared::state_paths::messages_db())
+    {
+        if tool == "mcp__chorus-api__chorus_nudge_message" {
+            // The agent is responding — clear the pending and let the reply through.
+            let _ = hooks::nudge_drain::drain_block_from_db(
+                role.as_str(),
+                &shared::state_paths::messages_db(),
+            );
+        } else {
+            return (
+                "nudge_drain".into(),
+                HookResponse::block_with_stderr(&format!(
+                    "RESPOND FIRST (#3218): you have pending peer nudge(s). Answer them via \
+                     chorus_nudge_message BEFORE continuing your card — not later, not at turn \
+                     end. This tool is blocked until you reply.\n{block}"
+                )),
+            );
+        }
+    }
+
     match tool.as_str() {
         "Bash" => {
             // sparql guard
@@ -460,20 +489,6 @@ async fn pre_tool_use_inner(
             }
         }
         _ => {}
-    }
-
-    // #3218 — FIFO nudge drain on the allow path. A role never runs a tool call
-    // blind to a pending peer nudge: drain messages.db oldest-first, mark
-    // delivered (drain-once), inject as additionalContext (exit 0, never blocks).
-    // Drain-on-allow ONLY — a guard above returns early and leaves the nudge
-    // pending for the next allowed tool call, so a deny never silently consumes
-    // it. Always-on, incl. mid-Jeff-conversation (do not narrow to skip turns).
-    if let Some(block) =
-        hooks::nudge_drain::drain_block_from_db(role.as_str(), &shared::state_paths::messages_db())
-    {
-        let json = hooks::nudge_drain::additional_context_json(&block, "PreToolUse");
-        trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow + nudge drain");
-        return ("nudge_drain".into(), HookResponse::allow_with_message(&json));
     }
 
     trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow (no guard triggered)");
