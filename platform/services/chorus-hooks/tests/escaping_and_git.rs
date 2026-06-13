@@ -92,7 +92,7 @@ fn git_commit_allowed_outside_team_repo() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        !stdout.contains("git-queue.sh"),
+        !stdout.contains("BLOCKED"),
         "git commit outside team repo should NOT be blocked, got: {}",
         stdout
     );
@@ -135,9 +135,21 @@ fn git_commit_blocked_inside_team_repo() {
         .expect("shim should run");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    // #3290 — the deny message must BLOCK and name a REAL path (the werk
+    // pipeline), never the retired git-queue.sh (deleted #3182/#3223).
     assert!(
-        stdout.contains("git-queue.sh"),
+        stdout.contains("BLOCKED"),
         "git commit inside team repo should be blocked, got: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("git-queue"),
+        "deny message must not reference the retired git-queue.sh, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("werk"),
+        "deny message must name the real werk path, got: {}",
         stdout
     );
 }

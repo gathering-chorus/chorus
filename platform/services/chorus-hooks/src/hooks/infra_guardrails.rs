@@ -17,9 +17,10 @@ static GIT_ADD_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // #2598: extend the raw-git refusal surface to push/rebase/cherry-pick/reset.
-// Substrate-uniformity (Jeff 2026-04-29) — git-queue.sh is the only sanctioned
-// path for any state-mutating git op. Read-only ops (log, status, diff) are
-// always allowed.
+// Substrate-uniformity (Jeff 2026-04-29) — the werk pipeline (werk-commit /
+// werk-push) is the only sanctioned path for any state-mutating git op on
+// canonical (git-queue.sh retired #3182/#3223). Read-only ops (log, status,
+// diff) are always allowed.
 static GIT_PUSH_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+push\b").unwrap()
 });
@@ -49,9 +50,10 @@ static GIT_RESET_HARD_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // #2711 — Mode-A close (Candidate A from #2706). Deny raw checkout/switch/
-// branch-create at command-position; force routing through git-queue.sh
-// do_checkout/do_switch/do_branch (#2710). Substring/heredoc scoping inherited
-// from #2698 strip_quoted_runs() — the same matching infrastructure.
+// branch-create at command-position; branch/worktree lifecycle is owned by
+// chorus-werk (/pull creates, /acp tears down; git-queue.sh retired #3182).
+// Substring/heredoc scoping inherited from #2698 strip_quoted_runs() — the
+// same matching infrastructure.
 static GIT_CHECKOUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+checkout\b").unwrap()
 });
@@ -155,55 +157,55 @@ pub async fn check(input: &HookInput) -> HookResponse {
                 if GIT_COMMIT_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-commit").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git commit is prohibited in the team repo. Use git-queue.sh which serializes commits across roles with lockf."
+                        "BLOCKED: Direct git commit is prohibited in the chorus repo. Commits land through the werk pipeline — werk-commit (and /acp) stage + commit + push your card's werk under the lock. Loose-canonical recovery is Jeff/werk-only; no agent direct-git on canonical. For a foreign repo, use `git -C <repo-path> commit`."
                     ));
                 }
                 if GIT_ADD_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-add").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git add is prohibited in the team repo. Use git-queue.sh which performs atomic add+commit under lock."
+                        "BLOCKED: Direct git add is prohibited in the chorus repo. The werk pipeline (werk-commit) stages + commits your card's werk atomically under the lock. For a foreign repo, use `git -C <repo-path> add`."
                     ));
                 }
                 if GIT_PUSH_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-push").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git push is prohibited in the team repo (#2598). Use git-queue.sh push which sets the _GIT_QUEUE_PUSH marker so the pre-push hook validates branch + role."
+                        "BLOCKED: Direct git push is prohibited in the chorus repo (#2598). Pushes happen inside the werk pipeline — werk-push validates branch + role before pushing. For a foreign repo, use `git -C <repo-path> push`."
                     ));
                 }
                 if GIT_REBASE_RE.is_match(&cmd) && !GIT_REBASE_CLEANUP_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-rebase").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git rebase is prohibited in the team repo (#2598). Rebase via git-queue.sh push (which rebases onto origin/main internally). (Cleanup flags --abort/--continue/--skip/--edit-todo/--quit/--show-current-patch are allowed and not blocked here.)"
+                        "BLOCKED: Direct git rebase is prohibited in the chorus repo (#2598). The werk pipeline rebases onto origin/main internally; canonical re-alignment is chorus-werk-sync (Jeff/werk-only). (Cleanup flags --abort/--continue/--skip/--edit-todo/--quit/--show-current-patch are allowed and not blocked here.)"
                     ));
                 }
                 if GIT_CHERRY_PICK_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-cherry-pick").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git cherry-pick is prohibited in the team repo (#2598)."
+                        "BLOCKED: Direct git cherry-pick is prohibited in the chorus repo (#2598). The werk pipeline owns history on canonical (Jeff/werk-only). For a foreign repo, use `git -C <repo-path> cherry-pick`."
                     ));
                 }
                 if GIT_RESET_HARD_RE.is_match(&cmd) {
                     log_guardrail("deny", "git-reset-hard").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git reset --hard is prohibited in the team repo (#2598)."
+                        "BLOCKED: Direct git reset --hard is prohibited in the chorus repo (#2598). Canonical re-alignment is chorus-werk-sync (Jeff/werk-only). For a foreign repo, use `git -C <repo-path> reset --hard`."
                     ));
                 }
                 if GIT_CHECKOUT_RE.is_match(&cmd_for_match) {
                     log_guardrail("deny", "git-checkout").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git checkout is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh checkout <branch> — or `bash git-queue.sh checkout -b <new>` for new branches, or `bash git-queue.sh checkout <SHA> -- <file>` for restore-from-ref."
+                        "BLOCKED: Direct git checkout is prohibited in the chorus repo (#2706 Mode-A close). Branch/worktree lifecycle is managed by chorus-werk — /pull creates the card's branch + worktree, /acp tears it down. For a foreign repo, use `git -C <repo-path> checkout`."
                     ));
                 }
                 if GIT_SWITCH_RE.is_match(&cmd_for_match) {
                     log_guardrail("deny", "git-switch").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git switch is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh switch <branch>."
+                        "BLOCKED: Direct git switch is prohibited in the chorus repo (#2706 Mode-A close). chorus-werk manages branches (/pull creates the card's branch). For a foreign repo, use `git -C <repo-path> switch`."
                     ));
                 }
                 if GIT_BRANCH_CREATE_RE.is_match(&cmd_for_match) {
                     log_guardrail("deny", "git-branch-create").await;
                     return HookResponse::deny(&permission_deny_json(
-                        "BLOCKED: Direct git branch <name> (create) is prohibited in the team repo (#2706 Mode-A close). Use bash git-queue.sh branch <name>. (Read-only `git branch` with no args still passes.)"
+                        "BLOCKED: Direct git branch <name> (create) is prohibited in the chorus repo (#2706 Mode-A close). chorus-werk creates the card's branch on /pull. (Read-only `git branch` with no args still passes.)"
                     ));
                 }
             }
@@ -346,7 +348,9 @@ mod tests {
         let input = kade_bash("git commit -m 'test'");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+        let body = r.stdout.unwrap();
+        assert!(body.contains("werk-commit"), "names the real path: {body}");
+        assert!(!body.contains("git-queue"), "no phantom tool: {body}");
     }
 
     #[tokio::test]
@@ -354,7 +358,9 @@ mod tests {
         let input = kade_bash("git add .");
         let r = check(&input).await;
         assert!(r.stdout.is_some());
-        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+        let body = r.stdout.unwrap();
+        assert!(body.contains("werk-commit"), "names the real path: {body}");
+        assert!(!body.contains("git-queue"), "no phantom tool: {body}");
     }
 
     #[tokio::test]
@@ -498,7 +504,9 @@ mod tests {
         let input = kade_bash("git commit -m 'has git push in body'");
         let r = check(&input).await;
         assert!(r.stdout.is_some(), "real git commit at command-position must still block");
-        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+        let body = r.stdout.unwrap();
+        assert!(body.contains("werk-commit") && !body.contains("git-queue"),
+            "blocks naming the real werk path, not the retired git-queue.sh: {body}");
     }
 
     #[tokio::test]
@@ -519,7 +527,8 @@ mod tests {
         let r = check(&input).await;
         assert!(r.stdout.is_some(), "raw git checkout must block");
         let body = r.stdout.unwrap();
-        assert!(body.contains("git-queue.sh"), "stderr names canonical path: {body}");
+        assert!(body.contains("chorus-werk"), "stderr names the real path: {body}");
+        assert!(!body.contains("git-queue"), "stderr must not name retired git-queue.sh: {body}");
         assert!(body.contains("checkout"), "stderr names the op: {body}");
     }
 
@@ -559,15 +568,41 @@ mod tests {
         assert!(r.stdout.is_none(), "git checkout inside heredoc must not block (bypass)");
     }
 
+    // #3290 — regression: NO mutating-git deny string may name the retired
+    // git-queue.sh (deleted #3182/#3223). A guard that prescribes a phantom
+    // tool forces the exact ungoverned hand-hacks it exists to prevent. Every
+    // deny an agent sees must name a REAL path (a werk verb, or `git -C` for a
+    // foreign repo). (Replaces the old test_allow_git_queue_sh_checkout, which
+    // exercised a command that no longer exists on disk.)
     #[tokio::test]
-    async fn test_allow_git_queue_sh_checkout() {
-        // The canonical path: bash git-queue.sh checkout main passes.
-        // The literal "git-queue.sh checkout" should not match the deny regex
-        // because the regex requires `git\s+checkout` at command-position,
-        // not the substring `git-queue.sh checkout`.
-        let input = kade_bash("bash platform/scripts/git-queue.sh checkout main");
-        let r = check(&input).await;
-        assert!(r.stdout.is_none(), "git-queue.sh checkout must pass: {:?}", r.stdout);
+    async fn test_no_deny_string_names_retired_git_queue() {
+        // ALL 9 mutating-git deny paths — not just the 5 named in AC1. AC3 says
+        // "zero git-queue references remain in the guardrail deny strings" (every
+        // one), and AC2 says each names a real path. cherry-pick + reset --hard
+        // were the gap the cold-eyes review caught.
+        let ops = [
+            "git commit -m 'x'",
+            "git add .",
+            "git push",
+            "git rebase main",
+            "git cherry-pick abc123",
+            "git reset --hard HEAD~1",
+            "git checkout main",
+            "git switch main",
+            "git branch newbranch",
+        ];
+        for op in ops {
+            let r = check(&kade_bash(op)).await;
+            let body = r.stdout.expect(&format!("`{op}` must be denied in team repo"));
+            assert!(
+                !body.to_lowercase().contains("git-queue"),
+                "deny string for `{op}` still names the retired git-queue.sh: {body}"
+            );
+            assert!(
+                body.contains("werk") || body.contains("git -C"),
+                "deny string for `{op}` names no real path (werk verb / git -C): {body}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -636,7 +671,9 @@ mod tests {
         let input = kade_bash("git rebase main");
         let r = check(&input).await;
         assert!(r.stdout.is_some(), "git rebase main must still block (mutation form)");
-        assert!(r.stdout.unwrap().contains("git-queue.sh"));
+        let body = r.stdout.unwrap();
+        assert!(body.contains("werk") && !body.contains("git-queue"),
+            "blocks naming the real werk path, not the retired git-queue.sh: {body}");
     }
 
     #[tokio::test]
