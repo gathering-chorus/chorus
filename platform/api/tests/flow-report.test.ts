@@ -124,6 +124,35 @@ describe('aggregateFlow (#3269)', () => {
     expect(c.landed).toBe(true);
   });
 
+  test('#3397: implausibly-clocked events never poison cycleS/mergeS (timing-only sanitize)', () => {
+    const ANCIENT = 17811076913; // ~1970 — the BSD %3N corruption magnitude (#3266)
+    const FUTURE = Date.parse('2081-01-01T00:00:00Z'); // ~2081 — cross-source clock skew
+    const events: FlowEvent[] = [
+      ev(301, 'pull.completed', 0),
+      ev(301, 'commit.completed', 10), // work: 10m
+      ev(301, 'deploy.completed', 12), // deploy: 2m
+      // poison-clocked error events — must be ignored for TIMING, kept for errors:
+      { ts: ANCIENT, event: 'werk.land.failed', card_id: 301, role: 'silas', detail: 'bsd-3N' },
+      ev(301, 'werk.landed', 20), // merge: 8m, a real 2026 land
+      ev(301, 'card.accepted', 21), // final: 1m
+      { ts: FUTURE, event: 'deploy.cdhash.diverged', card_id: 301, role: 'silas', detail: 'skew' },
+    ];
+    const r = aggregateFlow(events);
+    const c = r.cards[0];
+    // cycle + steps bounded by plausible clocks (pull@0 → accepted@21), not 1970/2081
+    expect(c.cycleS).toBe(21 * 60); // NOT a 55-year value
+    expect(c.steps.workS).toBe(10 * 60);
+    expect(c.steps.deployS).toBe(2 * 60);
+    expect(c.steps.mergeS).toBe(8 * 60); // from werk.landed@20, not poisoned to billions
+    expect(c.lastEventTs).toBe(T0 + 21 * MIN); // the future event did not become "last"
+    // timing-only: the poison events still count as errors and still flip landed
+    expect(c.landed).toBe(true);
+    expect(c.errors).toHaveLength(2);
+    expect(c.errors.map((e) => e.event)).toEqual(
+      expect.arrayContaining(['werk.land.failed', 'deploy.cdhash.diverged']),
+    );
+  });
+
   test('events without card_id are ignored (ambient noise is not a card)', () => {
     const events: FlowEvent[] = [
       ev(109, 'pull.completed', 0),
