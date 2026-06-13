@@ -57,13 +57,55 @@ interface SearchMetaResult {
   domain?: string;
 }
 
+// #3400 — anomaly threshold for the watermarks full-table scan. A healthy scan is
+// sub-millisecond; anything at/over this is the pathology we're hunting.
+export const WATERMARKS_SLOW_MS = 50;
+
+// Best-effort spine emit when the scan runs anomalously slow. Lazy-required so the
+// module stays import-light; fires ONLY past the threshold (i.e. only in the
+// pathology), so the per-event process spawn is rare and never on the healthy path.
+// Wrapped so a logging failure can never throw on the search-serve path.
+function emitWatermarksSlow(durationMs: number, rows: number): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { execFile } = require('node:child_process') as typeof import('node:child_process');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nodePath = require('node:path') as typeof import('node:path');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const os = require('node:os') as typeof import('node:os');
+    const root = process.env.CHORUS_ROOT || nodePath.join(os.homedir(), 'CascadeProjects', 'chorus');
+    const chorusLog = nodePath.join(root, 'platform/scripts/chorus-log');
+    execFile('bash', [chorusLog, 'search.watermarks.slow', 'wren', 'domain=chorus',
+      `duration_ms=${durationMs}`, `rows=${rows}`, 'detector=inline'], () => { /* fire-and-forget */ });
+  } catch { /* best-effort; never throw on the serve path */ }
+}
+
+/**
+ * #3400 — the DIRECT verdict surface for the watermarks scan. Immune to the
+ * event-loop detector's blind spots: the live external probe (#3082) computes op
+ * locally and can't see in-process ops, and the in-process op is ALS-masked on the
+ * request path (getCurrentOp is ALS-first; makeRequestOpMiddleware is global). So
+ * we measure the query itself: if it runs >= WATERMARKS_SLOW_MS, record it with its
+ * row count. Slow events correlating with block windows CONFIRM the root; a scan
+ * that's never slow REFUTES it (look at the inject fan-out volume instead). `sink`
+ * is injectable for tests.
+ */
+export function reportWatermarksScan(
+  durationMs: number,
+  rows: number,
+  sink: (durationMs: number, rows: number) => void = emitWatermarksSlow,
+): void {
+  if (durationMs >= WATERMARKS_SLOW_MS) sink(durationMs, rows);
+}
+
 function aggregateWatermarks(db: Database.Database): Map<string, string> {
-  // #3400 (PROVE-FIRST) — tag this synchronous full-table scan so an event-loop
-  // block landing inside it is attributed op="search-meta.watermarks" instead of
-  // op="unknown". It runs on the search-serve path, which context.inject fans out
-  // 2-3x per prompt per role — the suspected block driver. The next block alert
-  // names this op (confirm) or stays unknown (refute); no fix lands before that.
+  // #3400 — setCurrentOp tags the in-process op for correctness, but it CANNOT
+  // render the verdict alone: the live detector is the external probe (op-blind)
+  // and the in-process op is ALS-masked here. The verdict comes from the direct
+  // timing below (reportWatermarksScan), which measures this scan regardless of the
+  // detector. Keep the tag; lean on the timing.
   setCurrentOp('search-meta.watermarks');
+  const t0 = Date.now();
   let watermarks: Array<{ source: string; last_indexed: string }>;
   try {
     watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source')
@@ -71,6 +113,7 @@ function aggregateWatermarks(db: Database.Database): Map<string, string> {
   } finally {
     setCurrentOp(null);
   }
+  reportWatermarksScan(Date.now() - t0, watermarks.length);
   const aggregated = new Map<string, string>();
   for (const w of watermarks) {
     const parts = w.source.split(':');

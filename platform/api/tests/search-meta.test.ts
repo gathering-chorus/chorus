@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { buildSearchMeta, addStaleHeader, SOURCE_CADENCE, STALE_THRESHOLD_MS } from '../src/search-meta';
+import { buildSearchMeta, addStaleHeader, SOURCE_CADENCE, STALE_THRESHOLD_MS, reportWatermarksScan, WATERMARKS_SLOW_MS } from '../src/search-meta';
 import * as ela from '../src/eventloop-alert';
 
 function freshDb() {
@@ -153,5 +153,29 @@ describe('#3400 AC1 — watermarks op instrumentation', () => {
       spy.mockRestore();
       db.close();
     }
+  });
+});
+
+// #3400 — the DIRECT verdict surface. The setCurrentOp tag can't surface (external
+// probe is op-blind; in-process op is ALS-masked on the request path — confirmed by
+// Silas), so the real measurement is the scan's own duration. reportWatermarksScan
+// fires the sink only past the anomaly threshold, with the row count (growth signal).
+describe('#3400 — watermarks scan direct timing', () => {
+  it('reports a slow scan (>= WATERMARKS_SLOW_MS) with its row count', () => {
+    const calls: Array<[number, number]> = [];
+    reportWatermarksScan(WATERMARKS_SLOW_MS + 10, 1200, (d, r) => calls.push([d, r]));
+    expect(calls).toEqual([[WATERMARKS_SLOW_MS + 10, 1200]]);
+  });
+
+  it('does NOT report a fast (sub-threshold) scan — no noise on the healthy path', () => {
+    const calls: number[] = [];
+    reportWatermarksScan(1, 1200, (d) => calls.push(d));
+    expect(calls).toEqual([]);
+  });
+
+  it('reports exactly at the threshold boundary', () => {
+    const calls: number[] = [];
+    reportWatermarksScan(WATERMARKS_SLOW_MS, 5, (d) => calls.push(d));
+    expect(calls).toEqual([WATERMARKS_SLOW_MS]);
   });
 });
