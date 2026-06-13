@@ -10,35 +10,45 @@
 
 | Class | Files | ~LoC | Move effort |
 |---|---|---|---|
-| **REGENERATED** (rip in place, fan-out leg) | ~22 | ~9.9K | zero — deleted when the generated successor lands |
-| **RESIDUE** (real move) | ~11 + 14 TTLs | ~4.5K code + 10.3K TTL | the actual move-cards |
-| **AMBIGUOUS** (owner ruling first) | ~4 | ~0.5K | quality-scanner (cross-repo), cost (consumer) |
+| **REGENERATED** — domain READ-APIs + model-render views (forge emits successor) | ~14 | ~4.3K | zero — deleted in the generating leg |
+| **FUNCTIONAL SURFACE** residue — own-product UIs (board/flow/loom/werk/chorus; forge regenerates the domain-view NOT the UI) | ~7 | ~5.7K | real moves to product homes (Wren's split; ⚠ borderline rows to eyeball-confirm) |
+| **RESIDUE** — engine/lib/model-data/artifacts | ~9 + 14 TTLs | ~3K code + 10.3K TTL | the move-cards |
+| **CONSUMER / resolved** | 2 | ~0.5K | quality-scanner→proving/borg (Silas), cost stays (consumer) |
 
 ## REGENERATED — dies in place, no move (owl-api fan-out replaces)
 
-Each is a domain read surface whose generated Domain/Service API + page supersedes it; the rip-out rule (ADR-041 §4) deletes it in the generating leg.
+**Wren's discriminator (page-owner ruling, folded 2026-06-13):** the forge regenerates the **domain VIEW** (an Athena domain-detail render of the model), NOT the **functional surface** (a product UI with behavior beyond rendering — the cards *board* with kanban+WIP logic, loom's functional pages, the werk dashboard). So a domain READ-API or a model-render view is REGENERATED (dies in place); a functional product UI is RESIDUE that MOVES to its product home — the forge never emits it. The rows below are split on that line.
+
+### REGENERATED — domain READ-APIs + model-render views (forge emits the successor, rip in place)
 
 | Source (gathering) | Type | LoC | Superseded by (fan-out) |
 |---|---|---|---|
 | `src/handlers/icd.handler.ts` | handler | 278 | generated ICD domain API |
 | `src/services/icd.service.ts` | service | 1187 | generated ICD service/read layer |
-| `src/validation/icd-validation.ts` | util | 216 | DAL SHACL (authored-vs-hydrated) — superseded, not moved |
-| `views/icd.ejs` | view | 752 | generated ICD page (API serves own page, §5) |
-| `src/handlers/flow.handler.ts` + `views/flow.ejs` | handler+view | 1025 | generated flow page |
-| `src/handlers/team.handler.ts` + `views/team.ejs` + `views/loom-role.ejs` | handler+views | 1000 | generated loom/team page |
-| `src/services/team.service.ts` | service | 425 | generated cards/board domain service |
-| `src/handlers/cards.handler.ts` + `src/services/cards.service.ts` | handler+service | 384 | generated cards domain API |
-| `src/handlers/roles.handler.ts` + `src/services/roles.service.ts` | handler+service | 157 | generated roles domain API (loom) |
-| `src/handlers/skills.handler.ts` + `src/services/skills.service.ts` | handler+service | 137 | generated skills domain API |
-| `src/handlers/briefs.handler.ts` + `src/services/briefs.service.ts` | handler+service | 165 | generated messages/briefs domain API |
-| `src/handlers/decisions.handler.ts` | handler | 139 | generated decisions (loom) API |
-| `views/werk.ejs` | view | 1914 | generated werk dashboard |
-| `views/chorus.ejs` | view | 958 | generated /chorus page |
-| `src/handlers/hooks.handler.ts` + `views/hooks.ejs` | handler+view | 455 | generated gates/hooks telemetry page (proving/borg gates domain) — reads chorus.log |
-| `src/handlers/fitness-functions.handler.ts` + `views/fitness-functions.ejs` | handler+view | 444 | generated fitness/properties telemetry page (proving/borg properties domain) — reads chorus.log |
+| `src/validation/icd-validation.ts` | util | 216 | DAL SHACL — superseded (see rip-out precondition) |
+| `views/icd.ejs` | view | 752 | generated ICD domain page (model render, API serves own page §5) |
+| `src/services/team.service.ts` | service | 425 | generated cards/board domain READ-API (Vikunja read layer) |
+| `src/handlers/roles.handler.ts` + `src/services/roles.service.ts` | handler+service | 157 | generated roles domain API (loom) — data endpoints, no functional UI |
+| `src/handlers/skills.handler.ts` + `src/services/skills.service.ts` | handler+service | 137 | generated skills domain API — data endpoints |
+| `src/handlers/briefs.handler.ts` + `src/services/briefs.service.ts` | handler+service | 165 | generated messages/briefs domain API — data endpoints |
+| `src/handlers/decisions.handler.ts` | handler | 139 | generated decisions (loom) domain API |
 | `tests/chorus-explorer-filters.test.js` | test | 716 | regenerated with the explorer |
 
-**Rip-out precondition (icd-validation.ts):** it's imported by gathering's OWN domain handlers (stories/photos/social). Its REGENERATED rip must NOT fire until the DAL SHACL successor is live for those callers, or they break — name this as the rip-out guard on the ICD generation leg (sequencing dependency, not a free delete).
+### FUNCTIONAL SURFACES — RESIDUE (own-product UIs; forge regenerates the domain-view, NOT these). ⚠ Wren to eyeball-confirm the borderline rows.
+
+These have behavior beyond rendering the model, so they MOVE to their product home rather than dying in a forge leg. Their *data* may come from a regenerated domain API, but the UI itself is product code.
+
+| Source (gathering) | LoC | ADR-041 product home | Note |
+|---|---|---|---|
+| `src/handlers/cards.handler.ts` + `src/services/cards.service.ts` | 384 | `directing/clearing/domains/cards` | the BOARD — kanban + WIP logic (Wren's explicit example: NOT forge output) |
+| `src/handlers/flow.handler.ts` + `views/flow.ejs` | 1025 | `directing/clearing/domains/cards` (flow view) or `building/werk` | funnel-by-sequence/chunk/domain + 7-day velocity = functional analytics, not a model render |
+| `src/handlers/team.handler.ts` + `views/team.ejs` + `views/loom-role.ejs` | 1000 | `shaping/loom` | /loom team dashboard — role tiles + reflections + metrics = functional loom surface |
+| `views/werk.ejs` | 1914 | `building/products/werk` | werk dashboard (tabs, charts) = functional surface |
+| `views/chorus.ejs` | 958 | `shaping/loom` or athena artifacts | /chorus mind-map — bespoke visualization, not a domain page |
+| `src/handlers/hooks.handler.ts` + `views/hooks.ejs` | 455 | `proving/borg/domains/gates` | ⚠ borg-owner (Silas) confirm: generated borg observability page (REGENERATED) vs functional dashboard (residue)? reads chorus.log |
+| `src/handlers/fitness-functions.handler.ts` + `views/fitness-functions.ejs` | 444 | `proving/borg/domains/properties` | ⚠ same borg-owner question as hooks |
+
+**Rip-out precondition (icd-validation.ts):** imported by gathering's OWN domain handlers (stories/photos/social). Its REGENERATED rip must NOT fire until the DAL SHACL successor is live for those callers — the rip-out guard on the ICD generation leg (sequencing dependency, not a free delete).
 
 ## RESIDUE — real moves, with ADR-041 destinations
 
@@ -74,12 +84,12 @@ No domain API equivalent; reference visualizations.
 | `public/gathering-chorus.html` | 355 | athena artifacts (integration reference) |
 | ADR-006-bridge-scope-guardrail | — | **#2298 IS STALE — ALREADY HOME.** Verified 2026-06-13: ADR-006 already lives at `chorus/roles/silas/adr/ADR-006-bridge-scope-guardrail.md`; no copy in the gathering repo. So #2298 ("migrate ADR-006 from gathering") is a no-op — it was already extracted. Future move target per ADR-041 = `shaping/products/loom/domains/decisions` (decisions is a loom domain, NOT athena), which #2298's title's "chorus/designing/decisions" predates. Recommend: close #2298 as already-done or repoint it to the attrition-relocation of chorus's existing ADRs into the loom tree. |
 
-## AMBIGUOUS — needs an owner ruling before classification (cold-eyes catch)
+## AMBIGUOUS / consumer rulings (cold-eyes catch, resolved)
 
-| Source | LoC | Why ambiguous |
+| Source | LoC | Ruling |
 |---|---|---|
-| `src/handlers/quality.handler.ts` + `src/services/quality-scanner.service.ts` + `views/quality-service.ejs` | ~480 | Scans BOTH gathering-root AND chorus-root — cross-repo. Borg/proving artifact (proving/borg) or a gathering dev-tool that stays? Owner ruling needed (Silas/Jeff). |
-| `src/handlers/cost.handler.ts` | ~varies | Reads chorus `clearing/transcripts` to compute Clearing cost — a chorus-data CONSUMER, not chorus code. Lean: LEAVE in gathering (consumes chorus output like a metrics scrape); one inventory line "consumes-chorus, does-not-move". |
+| `src/handlers/quality.handler.ts` + `src/services/quality-scanner.service.ts` + `views/quality-service.ejs` | ~480 | **RESIDUE → `proving/borg`** (Silas's ruling 2026-06-13): it produces a code-health SIGNAL the team/Borg consumes (coverage/complexity/quality trend) across BOTH roots = observation = Borg's lane (quality or properties domain). If a gathering-SPECIFIC lint half is bundled, split that out to gathering; the cross-root quality observer is Borg's. |
+| `src/handlers/cost.handler.ts` | ~varies | **CONSUMES-CHORUS, DOES-NOT-MOVE**: reads chorus `clearing/transcripts` to compute Clearing cost — a chorus-data consumer (like a metrics scrape), a Gathering cost-dashboard feature. Stays in gathering. |
 
 ## Coupling surface (what any move must shim or cut)
 
