@@ -73,6 +73,24 @@ export function isErrorEvent(event: string): boolean {
   return /\.(failed|refused|error|rolledback|diverged)$/.test(event) || event === 'mcp.tool.error';
 }
 
+/** #3397 — plausibility band for an event's epoch-ms timestamp. Some spine
+ *  emitters have shipped corrupt clocks: BSD `date %3N` fails on macOS and
+ *  yields ~1970-magnitude values (normalizeLine strips the trailing N at #3266
+ *  but the magnitude stays ~100x too small), and cross-source skew can stamp
+ *  the future. A ts outside this band cannot be trusted to bound a duration, so
+ *  it must never define first/last or a step checkpoint — otherwise ONE bad
+ *  event poisons cycleS/mergeS into the billions of seconds (the "55-year
+ *  median" the page showed). Absolute (not now-relative) so the core stays pure
+ *  and the tests stay hermetic; the band is decade-wide, far wider than any
+ *  report window, and only needs a bump past 2035. Timing-only: poison events
+ *  are still counted as errors and still flip `landed`. */
+const TS_PLAUSIBLE_MIN = Date.UTC(2024, 0, 1); // 2024-01-01
+const TS_PLAUSIBLE_MAX = Date.UTC(2035, 0, 1); // 2035-01-01
+
+function plausibleTs(ts: number): boolean {
+  return Number.isFinite(ts) && ts >= TS_PLAUSIBLE_MIN && ts <= TS_PLAUSIBLE_MAX;
+}
+
 export function aggregateFlow(events: FlowEvent[]): FlowReport {
   const byCard = new Map<number, FlowEvent[]>();
   for (const e of events) {
@@ -93,12 +111,21 @@ export function aggregateFlow(events: FlowEvent[]): FlowReport {
 
   for (const [card, list] of byCard) {
     list.sort((a, b) => a.ts - b.ts);
-    const first = list[0].ts;
-    const last = list[list.length - 1].ts;
 
-    // Last occurrence per checkpoint (retries supersede).
+    // #3397 — cycle boundaries and checkpoints come ONLY from plausibly-clocked
+    // events, so a corrupt 1970/2081 timestamp can't define first/last (cycleS)
+    // or a step boundary (mergeS). Fall back to the raw bounds only if a card
+    // has no plausible event at all (degenerate — keeps cycleS finite, not NaN).
+    const timed = list.filter((e) => plausibleTs(e.ts));
+    const first = (timed[0] ?? list[0]).ts;
+    const last = (timed[timed.length - 1] ?? list[list.length - 1]).ts;
+    const cycleS = timed.length ? Math.round((last - first) / 1000) : 0;
+
+    // Last occurrence per checkpoint (retries supersede). Poison-clocked events
+    // are skipped here so they neither set nor advance a checkpoint boundary.
     const checkpointTs = new Map<string, number>();
     for (const e of list) {
+      if (!plausibleTs(e.ts)) continue;
       for (const cp of CHECKPOINTS) {
         if (cp.events.includes(e.event)) checkpointTs.set(cp.step, e.ts);
       }
@@ -138,17 +165,15 @@ export function aggregateFlow(events: FlowEvent[]): FlowReport {
       role: list.find((e) => e.role)?.role ?? 'unknown',
       landed,
       lastEventTs: last,
-      cycleS: Math.round((last - first) / 1000),
+      cycleS,
       steps,
       errors,
     });
   }
 
-  cards.sort((a, b) => {
-    const lastA = Math.max(...(byCard.get(a.card) ?? []).map((e) => e.ts));
-    const lastB = Math.max(...(byCard.get(b.card) ?? []).map((e) => e.ts));
-    return lastB - lastA;
-  });
+  // Sort newest-first by the (plausible) last event already computed per card,
+  // so a poison-future timestamp can't jump a stale card to the top (#3397).
+  cards.sort((a, b) => b.lastEventTs - a.lastEventTs);
 
   const errorClasses = [...classCounts.entries()]
     .map(([event, count]) => ({ event, count }))

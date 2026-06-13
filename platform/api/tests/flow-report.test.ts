@@ -124,6 +124,35 @@ describe('aggregateFlow (#3269)', () => {
     expect(c.landed).toBe(true);
   });
 
+  test('#3397: implausibly-clocked events never poison cycleS/mergeS (timing-only sanitize)', () => {
+    const ANCIENT = 17811076913; // ~1970 — the BSD %3N corruption magnitude (#3266)
+    const FUTURE = Date.parse('2081-01-01T00:00:00Z'); // ~2081 — cross-source clock skew
+    const events: FlowEvent[] = [
+      ev(301, 'pull.completed', 0),
+      ev(301, 'commit.completed', 10), // work: 10m
+      ev(301, 'deploy.completed', 12), // deploy: 2m
+      // poison-clocked error events — must be ignored for TIMING, kept for errors:
+      { ts: ANCIENT, event: 'werk.land.failed', card_id: 301, role: 'silas', detail: 'bsd-3N' },
+      ev(301, 'werk.landed', 20), // merge: 8m, a real 2026 land
+      ev(301, 'card.accepted', 21), // final: 1m
+      { ts: FUTURE, event: 'deploy.cdhash.diverged', card_id: 301, role: 'silas', detail: 'skew' },
+    ];
+    const r = aggregateFlow(events);
+    const c = r.cards[0];
+    // cycle + steps bounded by plausible clocks (pull@0 → accepted@21), not 1970/2081
+    expect(c.cycleS).toBe(21 * 60); // NOT a 55-year value
+    expect(c.steps.workS).toBe(10 * 60);
+    expect(c.steps.deployS).toBe(2 * 60);
+    expect(c.steps.mergeS).toBe(8 * 60); // from werk.landed@20, not poisoned to billions
+    expect(c.lastEventTs).toBe(T0 + 21 * MIN); // the future event did not become "last"
+    // timing-only: the poison events still count as errors and still flip landed
+    expect(c.landed).toBe(true);
+    expect(c.errors).toHaveLength(2);
+    expect(c.errors.map((e) => e.event)).toEqual(
+      expect.arrayContaining(['werk.land.failed', 'deploy.cdhash.diverged']),
+    );
+  });
+
   test('events without card_id are ignored (ambient noise is not a card)', () => {
     const events: FlowEvent[] = [
       ev(109, 'pull.completed', 0),
@@ -148,6 +177,25 @@ describe('cycleStats (#3269) — overall cycle as leading indicator', () => {
     expect(r.cycleStats.avgS).toBe(2600);
     expect(r.cycleStats.p90S).toBe(6000);
     expect(aggregateFlow([]).cycleStats).toEqual({ landedCards: 0, medianS: null, avgS: null, p90S: null });
+  });
+
+  test('#3397: a poison-clocked landed card does not blow cycleStats (the 55-year-median bug)', () => {
+    const events: FlowEvent[] = [
+      ev(401, 'pull.completed', 0), ev(401, 'card.accepted', 10), // 600s
+      ev(402, 'pull.completed', 0), ev(402, 'card.accepted', 20), // 1200s
+      // a LANDED card carrying a ~1970 poison event that, unguarded, would make
+      // its cycleS ~55 years and drag the median to the "55-year" page bug:
+      ev(403, 'pull.completed', 0),
+      { ts: 17811076913, event: 'werk.land.failed', card_id: 403, role: 'silas', detail: 'bsd-3N' },
+      ev(403, 'werk.landed', 30), ev(403, 'card.accepted', 30), // real cycle 1800s
+    ];
+    const r = aggregateFlow(events);
+    const c403 = r.cards.find((c) => c.card === 403);
+    expect(c403?.cycleS).toBe(30 * 60); // bounded to its real span, not 55 years
+    expect(c403?.landed).toBe(true);
+    // median over the real cycles [600,1200,1800] = 1200 — NOT a billion-second value
+    expect(r.cycleStats.medianS).toBe(1200);
+    expect(r.cycleStats.p90S).toBeLessThan(10_000); // sane, never a 55-year p90
   });
 });
 

@@ -321,10 +321,15 @@ const getBoardCards = (): CachedCard[] => boardCache.getCards();
 
 setCurrentOp('boardCache');
 void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
+// .unref() so this background refresh timer never keeps the process alive on
+// its own — in prod the HTTP listener holds the loop; in tests (which import
+// server.ts via startTestApp) an un-unref'd interval kept the jest worker alive
+// → "worker failed to exit gracefully" force-exit → the pipeline read a passing
+// suite as tests:fail. The recurring flake. The timer still fires every 60s.
 setInterval(() => {
   setCurrentOp('boardCache');
   void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
-}, 60_000);
+}, 60_000).unref();
 
 // --- LanceDB semantic search — OFF-PROCESS (#3382) ---
 // The lance handle + searchInTable moved out of chorus-api entirely. lance's
