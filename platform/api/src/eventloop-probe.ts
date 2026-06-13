@@ -104,7 +104,8 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
 // Entry: wire real deps. The probe is an HTTP GET to chorus-api's own health route
 // with a timeout; emit + nudge are IDENTICAL to the in-process detector's wiring
 // (server.ts ~3346) — same chorus-log `eventloop.blocked silas domain=chorus ...`
-// spine event, same ops-nudge to silas, same 3000ms threshold — so retiring the
+// spine event, same ops-nudge to wren (#3407 — chorus-api is Wren's layer; the
+// spine-emit role stays silas as emitter context), same 3000ms threshold — so retiring the
 // in-process detector is a transparent cutover (same alert, only the vantage moves
 // off the blocked loop). Launched by chorus-eventloop-probe-worker.sh as a persistent
 // KeepAlive process (LaunchAgent registration routes through Silas, ADR-012).
@@ -149,7 +150,9 @@ if (require.main === module) {
       // probe catching blocks), not inferred from the in-process detector's absence.
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas', 'domain=chorus',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=probe'], () => {}),
-    nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+    // #3407 — chorus-api is Wren's layer; route the event-loop-block ALERT to wren
+    // (the spine-emit role above stays the chorus-api emitter context).
+    nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
     threshold: 3000,
   });
 }

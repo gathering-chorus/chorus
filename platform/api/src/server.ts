@@ -3284,7 +3284,9 @@ if (require.main === module) {
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         'domain=chorus',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=in-process'], () => {}),
-    nudge: (a) => execFile('bash', [OPS_NUDGE, 'silas', a.message], () => {}),
+    // #3407 — route the event-loop-block ALERT to wren (chorus-api is her layer);
+    // spine-emit role above stays the chorus-api emitter context.
+    nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
     threshold: 3000,
   });
 
