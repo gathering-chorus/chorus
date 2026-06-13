@@ -91,80 +91,31 @@ app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles
 // the page lives in its ADR-041 home, not in gathering.
 app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { extensions: ['html'] }));
 
-// #3361 — server-rendered chorus pages moved home from gathering's app.ts.
-// EJS view layer + templates relocated into platform/api/views (was gathering).
-// Jeff's directive: move the code home now; service-backed data (loom/flow/
-// model-data) gets wired incrementally — these render the page shell and may be
-// data-broken until that work is prioritized. No chorus page lives in gathering.
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '..', 'views'));
-// Relocated views + partials (navbar/session-recorder) read cspNonce unguarded;
-// gathering supplied it via res.locals. Mirror that with an empty default (these
-// are read dashboards; strict inline-script CSP nonce is a fix-later concern).
-app.use((_req: Request, res: Response, next: NextFunction) => { res.locals.cspNonce = ''; next(); });
-const renderChorusPage = (view: string, title: string) =>
-  (_req: Request, res: Response) => res.render(view, { title, cspNonce: '' });
-// Pure view renders (client-side data fetches may 404 until ported — broken-ok).
-app.get('/chorus', renderChorusPage('chorus-system', 'Chorus — System'));
+// #3361 — chorus pages moved home from gathering. Served as PRE-RENDERED STATIC
+// HTML (rendered from the relocated EJS views by render-chorus-pages.cjs, output
+// to public/chorus-pages/). No runtime template engine: a new runtime npm dep
+// (ejs) does not survive the chorus-api deploy's node_modules lifecycle, so the
+// pages serve as committed static files — nothing for the pipeline to drop, and
+// the html lands in canon via git merge + the existing public/ static serving.
+// Live/dynamic data wiring is the prioritized follow-on (#3361); these are shells
+// or empty-data snapshots until then (Jeff: move home now, fix data later).
+const chorusPageDir = path.join(__dirname, '..', 'public', 'chorus-pages');
+const sendChorusPage = (file: string) =>
+  (_req: Request, res: Response) => res.sendFile(path.join(chorusPageDir, file));
+app.get('/chorus', sendChorusPage('chorus.html'));
 app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
-app.get('/chorus-model-data', renderChorusPage('chorus-model-data', 'Chorus Model Data'));
-app.get('/borg-assessment', renderChorusPage('borg-assessment', 'Borg Assessment'));
-app.get('/harvesting/icd', renderChorusPage('icd', 'Convergence Architecture — ICD'));
-app.get('/harvesting/convergence', renderChorusPage('icd', 'Convergence Architecture — ICD'));
+app.get('/chorus-model-data', sendChorusPage('chorus-model-data.html'));
+app.get('/borg-assessment', sendChorusPage('borg-assessment.html'));
+app.get('/harvesting/icd', sendChorusPage('icd.html'));
+app.get('/harvesting/convergence', sendChorusPage('icd.html'));
 app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301, '/harvesting/icd'));
-// File-backed renders — best-effort read from the chorus tree; empty on miss.
-app.get('/werk', (_req: Request, res: Response) => {
-  const workflows: Array<Record<string, unknown>> = [];
-  for (const sub of ['active', 'archive']) {
-    const dir = path.join(chorusRepoRoot, 'platform', 'workflows', sub);
-    try {
-      if (fs.existsSync(dir)) {
-        for (const f of fs.readdirSync(dir).filter((n: string) => n.endsWith('.json'))) {
-          try { workflows.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'))); } catch { /* skip */ }
-        }
-      }
-    } catch { /* broken-ok */ }
-  }
-  res.render('werk', { workflows, cspNonce: '' });
-});
-app.get('/harvest-manifests', (req: Request, res: Response) => {
-  const manifestDir = path.join(chorusRepoRoot, 'platform', 'api', 'data', 'harvest', 'manifests');
-  const filter = req.query.domain as string | undefined;
-  const manifests: Record<string, unknown> = {};
-  try {
-    if (fs.existsSync(manifestDir)) {
-      for (const file of fs.readdirSync(manifestDir).sort()) {
-        if (!file.endsWith('.json')) continue;
-        const name = file.replace('.json', '');
-        if (filter && name !== filter) continue;
-        try { manifests[name] = JSON.parse(fs.readFileSync(path.join(manifestDir, file), 'utf8')); } catch { /* skip */ }
-      }
-    }
-  } catch { /* broken-ok */ }
-  res.render('harvest-manifests', { manifests, filter: filter || '', isFocused: !!filter });
-});
-// Service-backed pages (loom/flow/model-data) — views are home in chorus; their
-// live data (TeamService/SparqlService) is the prioritized follow-on. Render the
-// real view with best-effort empty data; if it throws on absent data, fall back
-// to a valid shell so the page always serves (Jeff: move home now, fix data later).
-const renderOrShell = (res: Response, view: string, title: string, locals: Record<string, unknown>) => {
-  res.render(view, { title, cspNonce: '', ...locals }, (err: Error | null, html?: string) => {
-    if (err || !html) {
-      res.status(200).type('html').send(
-        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title} — Chorus</title></head>` +
-        `<body style="font-family:system-ui;max-width:42rem;margin:4rem auto;line-height:1.5">` +
-        `<h1>${title}</h1><p>This page is now served from Chorus. Live data wiring is the prioritized follow-on (#3361).</p></body></html>`
-      );
-      return;
-    }
-    res.type('html').send(html);
-  });
-};
-app.get('/loom', (_req: Request, res: Response) => renderOrShell(res, 'team', 'Loom — Team', { roles: [], metrics: {}, cards: [] }));
-app.get('/loom/:role', (req: Request, res: Response) => renderOrShell(res, 'loom-role', `Loom — ${req.params.role}`, { role: { id: req.params.role, name: req.params.role } }));
-app.get('/flow', (_req: Request, res: Response) => renderOrShell(res, 'flow', 'Flow', { cards: [], data: {} }));
-app.get('/model-data', (_req: Request, res: Response) => renderOrShell(res, 'ontology-views/model-data', 'Model Data', { domainStats: {}, ontology: {} }));
-app.get('/ontology-views/:domain', (req: Request, res: Response) => renderOrShell(res, `ontology-views/${req.params.domain}`, `Model — ${req.params.domain}`, { stats: {} }));
+app.get('/werk', sendChorusPage('werk.html'));
+app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
+app.get('/loom', sendChorusPage('loom.html'));
+app.get('/loom/:role', sendChorusPage('loom.html'));
+app.get('/flow', sendChorusPage('flow.html'));
+app.get('/model-data', sendChorusPage('model-data.html'));
+app.get('/ontology-views/:domain', sendChorusPage('model-data.html'));
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));

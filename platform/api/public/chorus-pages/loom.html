@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loom | Jeff Bridwell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<meta name="description" content="Jeff Bridwell's personal website with blog, projects, and SOLID authentication">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/css/gathering.css">
+
+<!-- Ghost URL Fix Script -->
+<script nonce="">
+  // Fix for Ghost API URLs with duplicate 'ghost' paths
+  (function() {
+    // Monkey patch XMLHttpRequest to intercept and fix URLs
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+      // Check if this is a Ghost API URL with a duplicate 'ghost' path
+      if (typeof url === 'string' && url.includes('/ghost/ghost/')) {
+        // Fix the URL by removing the duplicate 'ghost'
+        url = url.replace('/ghost/ghost/', '/ghost/');
+        console.log('Ghost URL Fix: Fixed duplicate ghost path in URL:', url);
+      }
+      // Call the original open method with the fixed URL
+      return originalOpen.call(this, method, url, async, user, password);
+    };
+
+    // Monkey patch fetch to intercept and fix URLs
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+      if (typeof input === 'string' && input.includes('/ghost/ghost/')) {
+        // Fix the URL by removing the duplicate 'ghost'
+        input = input.replace('/ghost/ghost/', '/ghost/');
+        console.log('Ghost URL Fix: Fixed duplicate ghost path in fetch URL:', input);
+      }
+      // Call the original fetch with the fixed URL
+      return originalFetch.call(this, input, init);
+    };
+
+    console.log('Ghost URL Fix: URL interception initialized');
+  })();
+</script>
+<script src="/js/event-delegation.js" nonce=""></script>
+
+    <style>
+        /* ═══ Role Tiles ═══ */
+        .role-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-md); margin-bottom: var(--space-xl); }
+        .role-tile { background: var(--card-bg); border-radius: var(--radius-lg); padding: 1rem 1.25rem; box-shadow: var(--shadow-sm); border-top: 3px solid var(--tile-color); position: relative; display: flex; flex-direction: column; }
+        .role-tile:hover { box-shadow: var(--shadow-md); }
+        .role-tile-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .role-tile-header h3 { margin: 0; font-size: 1rem; }
+        .role-tile-header h3 a { color: var(--text-color); text-decoration: none; }
+        .role-tile-header h3 a:hover { color: var(--accent-color); }
+        .role-badge-sm { padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); font-size: 0.65rem; font-weight: 700; color: white; }
+        .badge-jeff { background: #1e293b; }
+        .badge-wren { background: #16a34a; }
+        .badge-silas { background: #d97706; }
+        .badge-kade { background: #2563eb; }
+        .role-tile-stat { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
+        .role-tile-stat .stat { text-align: center; }
+        .role-tile-stat .stat-num { font-size: 1.25rem; font-weight: 700; color: var(--primary-color); }
+        .role-tile-stat .stat-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .role-tile-wip { font-size: 0.75rem; line-height: 1.5; }
+        .role-tile-wip .wip-card { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.15rem; }
+        .wip-card-id { color: var(--text-muted); font-weight: 600; min-width: 2.2rem; }
+        .wip-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .wip-card-age { font-weight: 600; min-width: 1.5rem; text-align: right; margin-left: auto; }
+        .role-tile-empty { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
+        .role-tile-excerpt { padding-top: 0.6rem; border-top: 1px solid var(--bg-muted, #e2e8f0); flex: 1; display: flex; flex-direction: column; }
+        .role-tile-excerpt p { font-size: 0.75rem; line-height: 1.5; color: var(--text-muted); margin: 0; flex: 1; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+        .role-tile-excerpt a { font-size: 0.7rem; color: var(--text-muted); text-decoration: none; margin-top: 0.4rem; }
+        .role-tile-excerpt a:hover { color: var(--accent-color); }
+
+        /* ═══ Metrics Sections ═══ */
+        .loom-section { margin-bottom: var(--space-xl); }
+        .loom-section h2 { font-size: var(--font-size-lg); margin: 0 0 0.75rem 0; color: var(--primary-color); display: flex; align-items: center; gap: var(--space-sm); }
+        .metric-card { background: var(--card-bg); border-radius: var(--radius-lg); padding: var(--space-md) 1.25rem; box-shadow: var(--shadow-sm); margin-bottom: var(--space-md); }
+        .metric-card h4 { margin-top: 0; font-size: var(--font-size-sm); color: var(--text-muted); }
+        .loom-pending { font-size: var(--font-size-sm); color: var(--text-muted); font-style: italic; padding: var(--space-md); background: var(--card-bg); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+
+        /* Section headers */
+        .section-header { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 var(--space-sm) 0; padding-left: 0.5rem; cursor: pointer; list-style: none; }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::before { content: '\25B8 '; font-size: 0.75em; }
+        details[open] > summary::before { content: '\25BE '; }
+
+        /* ═══ Voice Mic Button ═══ */
+        .voice-mic { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--text-muted); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-left: auto; transition: all 0.2s; flex-shrink: 0; }
+        .voice-mic:hover { border-color: var(--tile-color); background: rgba(0,0,0,0.04); }
+        .voice-mic.recording { border-color: #dc2626; background: rgba(220,38,38,0.1); animation: pulse-mic 1.2s infinite; }
+        .voice-mic svg { width: 14px; height: 14px; fill: var(--text-muted); }
+        .voice-mic.recording svg { fill: #dc2626; }
+        .voice-mic-status { font-size: 0.65rem; color: var(--text-muted); text-align: center; margin-top: 2px; min-height: 0.85rem; }
+        .voice-mic-status.transcribing { color: #d97706; }
+        .voice-mic-status.injected { color: #16a34a; }
+        .voice-mic-status.error { color: #dc2626; }
+        @keyframes pulse-mic { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.3); } 50% { box-shadow: 0 0 0 6px rgba(220,38,38,0); } }
+
+        /* ═══ Responsive ═══ */
+        @media (max-width: 900px) { .role-tiles { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 500px) { .role-tiles { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <nav>
+    
+        
+            
+            
+            
+            
+
+            
+            <a href="/">Gathering</a>
+            
+
+            
+        
+
+        <a href="/logout" class="logout-link">Logout</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+    <div class="page-container">
+    <h1 class="page-title">Loom</h1>
+    
+<div class="content-actions" data-title="Loom — Team Dashboard" data-url="">
+    <button class="action-btn" data-btn="print" title="Save as PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        PDF
+    </button>
+    <button class="action-btn" data-btn="share" title="Share this page">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+    </button>
+    <button class="action-btn" data-btn="reflect" title="Send to Reflect AI">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        Reflect
+    </button>
+    <span class="action-toast" id="action-toast"></span>
+</div>
+
+<style>
+    .content-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md, 6px);
+        background: var(--card-bg, #fff);
+        color: var(--text-muted, #718096);
+        font-size: 0.8rem;
+        cursor: pointer;
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+        font-family: inherit;
+    }
+    .action-btn:hover {
+        border-color: var(--accent-color, #6366F1);
+        color: var(--accent-color, #6366F1);
+    }
+    .action-btn svg { flex-shrink: 0; }
+    .action-toast {
+        font-size: 0.75rem;
+        color: var(--accent-color, #6366F1);
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .action-toast.visible { opacity: 1; }
+
+    @media print {
+        .content-actions, nav, .back-link, .annotation-section { display: none !important; }
+        body { max-width: 100% !important; padding: 0.5in !important; font-size: 11pt !important; }
+        .detail-container, .note-container { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        .detail-body, .note-body { font-size: 11pt !important; line-height: 1.5 !important; }
+    }
+</style>
+
+<script nonce="">
+    var contentActions = {
+        print: function() {
+            window.print();
+        },
+        share: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            var pageUrl = document.querySelector('.content-actions')?.dataset.url || window.location.href;
+
+            if (navigator.share) {
+                navigator.share({ title: pageTitle, url: pageUrl }).catch(function() {});
+            } else {
+                navigator.clipboard.writeText(pageUrl).then(function() {
+                    var toast = document.getElementById('action-toast');
+                    toast.textContent = 'Link copied';
+                    toast.classList.add('visible');
+                    setTimeout(function() { toast.classList.remove('visible'); }, 2000);
+                });
+            }
+        },
+        reflect: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            // Extract main content text from the page
+            var contentEl = document.querySelector('.detail-body') ||
+                            document.querySelector('.note-body') ||
+                            document.querySelector('.prose') ||
+                            document.querySelector('.detail-container') ||
+                            document.querySelector('.note-container') ||
+                            document.querySelector('.page-card') ||
+                            document.querySelector('.loom-section') ||
+                            document.querySelector('.page-container');
+            var text = contentEl ? contentEl.innerText.substring(0, 6000) : '';
+            // Store in sessionStorage and navigate to /self
+            sessionStorage.setItem('reflect-context', JSON.stringify({
+                title: pageTitle,
+                text: text,
+                source: window.location.pathname
+            }));
+            window.location.href = '/self';
+        }
+    };
+
+    document.querySelectorAll('.action-btn[data-btn]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var action = this.getAttribute('data-btn');
+            if (contentActions[action]) contentActions[action]();
+        });
+    });
+</script>
+
+
+    
+
+    <!-- ═══ ROLE TILES ═══ -->
+    <div class="role-tiles">
+        <!-- Jeff -->
+        <div class="role-tile" style="--tile-color: #1e293b;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/jeff">Jeff</a></h3>
+                <span class="role-badge-sm badge-jeff">Direction</span>
+            </div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">WIP</div>
+                </div>
+            </div>
+            
+            <div class="role-tile-empty">No active WIP</div>
+            
+            <div class="role-tile-excerpt">
+                <p></p>
+                <a href="/loom/jeff">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Wren -->
+        <div class="role-tile" style="--tile-color: #16a34a;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/wren">Wren</a></h3>
+                <span class="role-badge-sm badge-wren">Product</span>
+                <button class="voice-mic" data-role="wren" title="Voice to Wren"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-wren"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            
+            <div class="role-tile-empty">No active WIP</div>
+            
+            <div class="role-tile-excerpt">
+                <p></p>
+                <a href="/loom/wren">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Silas -->
+        <div class="role-tile" style="--tile-color: #d97706;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/silas">Silas</a></h3>
+                <span class="role-badge-sm badge-silas">Architecture</span>
+                <button class="voice-mic" data-role="silas" title="Voice to Silas"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-silas"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            
+            <div class="role-tile-empty">No active WIP</div>
+            
+            <div class="role-tile-excerpt">
+                <p></p>
+                <a href="/loom/silas">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Kade -->
+        <div class="role-tile" style="--tile-color: #2563eb;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/kade">Kade</a></h3>
+                <span class="role-badge-sm badge-kade">Engineering</span>
+                <button class="voice-mic" data-role="kade" title="Voice to Kade"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-kade"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num">0</div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            
+            <div class="role-tile-empty">No active WIP</div>
+            
+            <div class="role-tile-excerpt">
+                <p></p>
+                <a href="/loom/kade">Read more &rarr;</a>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- ═══ TEAM PULSE ═══ -->
+    <div class="loom-section" id="team-pulse">
+        <h2>Team Pulse</h2>
+        <div style="display:flex; align-items:center; gap:var(--space-sm); margin-bottom:var(--space-md); flex-wrap:wrap;">
+            <div style="display:flex; gap:4px;" id="range-buttons">
+                <button class="range-btn" data-days="7" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">7d</button>
+                <button class="range-btn active" data-days="30" style="padding:0.2rem 0.6rem; border:1px solid var(--primary-color); border-radius:var(--radius-sm); background:var(--primary-color); color:white; cursor:pointer; font-size:var(--font-size-xs);">30d</button>
+                <button class="range-btn" data-days="90" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">90d</button>
+                <button class="range-btn" data-days="0" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">All</button>
+            </div>
+            <span id="range-label" style="font-size:var(--font-size-xs); color:var(--text-muted);"></span>
+            <span id="range-loading" style="font-size:var(--font-size-xs); color:var(--text-muted); display:none;">Loading...</span>
+        </div>
+        
+
+        
+        
+        
+        
+
+        <!-- Flow -->
+        <details open style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:var(--text-muted); border-left:3px solid var(--text-muted);">Flow</summary>
+            <!-- Value Stream -->
+            <div class="metric-card" id="vs-card" style="margin-bottom:var(--space-md);">
+                <h4 title="Cards mapped to Werk value stream stages">0 cards</h4>
+                <div id="vs-bar" style="display:flex; height:2.5rem; border-radius:6px; overflow:hidden; margin-bottom:0.5rem;" title="Value stream distribution">
+                    <div style="width:0%; background:#6366f1;" title="Directing: 0"></div>
+                    <div style="width:0%; background:#d97706;" title="Building: 0"></div>
+                    <div style="width:0%; background:#0891b2;" title="Proving: 0"></div>
+                    <div style="width:0%; background:#16a34a;" title="Shipped: 0"></div>
+                    
+                    
+                    
+                </div>
+                <div id="vs-stages" style="display:flex; gap:0.75rem; font-size:var(--font-size-sm); flex-wrap:wrap;">
+                    <div title="Now + Next + Later" style="cursor:help;"><span style="color:#6366f1; font-weight:700;" id="vs-directing">0</span><span style="color:var(--text-muted);"> directing</span></div>
+                    <div title="WIP + Harvesting" style="cursor:help;"><span style="color:#d97706; font-weight:700;" id="vs-building">0</span><span style="color:var(--text-muted);"> building</span></div>
+                    <div title="Demo + accept gate" style="cursor:help;"><span style="color:#0891b2; font-weight:700;" id="vs-proving">0</span><span style="color:var(--text-muted);"> proving</span></div>
+                    <div title="Done — value delivered" style="cursor:help;"><span style="color:#16a34a; font-weight:700;" id="vs-shipped">0</span><span style="color:var(--text-muted);"> shipped</span></div>
+                    
+                    
+                    
+                </div>
+                <div id="vs-throughput" style="display:flex; gap:1rem; margin-top:0.75rem; font-size:var(--font-size-sm);">
+                    
+                </div>
+            </div>
+
+            <!-- Cards by Role -->
+            <div class="metric-card" id="role-card">
+                <h4 title="Cards marked Done, by owner: label">Cards Shipped by Role</h4>
+                
+                    
+                    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;" id="role-row-silas">
+                        <div style="width:3rem; font-size:var(--font-size-sm); font-weight:600; text-transform:capitalize;">silas</div>
+                        <div style="flex:1; background:var(--bg-muted, #f1f5f9); border-radius:4px; height:1.2rem; overflow:hidden;">
+                            <div id="role-bar-silas" style="width:0%; height:100%; background:#d97706; border-radius:4px; transition:width 0.3s;"></div>
+                        </div>
+                        <div id="role-count-silas" style="width:2.5rem; text-align:right; font-size:var(--font-size-sm); font-weight:600;">0</div>
+                    </div>
+                
+                    
+                    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;" id="role-row-kade">
+                        <div style="width:3rem; font-size:var(--font-size-sm); font-weight:600; text-transform:capitalize;">kade</div>
+                        <div style="flex:1; background:var(--bg-muted, #f1f5f9); border-radius:4px; height:1.2rem; overflow:hidden;">
+                            <div id="role-bar-kade" style="width:0%; height:100%; background:#2563eb; border-radius:4px; transition:width 0.3s;"></div>
+                        </div>
+                        <div id="role-count-kade" style="width:2.5rem; text-align:right; font-size:var(--font-size-sm); font-weight:600;">0</div>
+                    </div>
+                
+                    
+                    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;" id="role-row-wren">
+                        <div style="width:3rem; font-size:var(--font-size-sm); font-weight:600; text-transform:capitalize;">wren</div>
+                        <div style="flex:1; background:var(--bg-muted, #f1f5f9); border-radius:4px; height:1.2rem; overflow:hidden;">
+                            <div id="role-bar-wren" style="width:0%; height:100%; background:#16a34a; border-radius:4px; transition:width 0.3s;"></div>
+                        </div>
+                        <div id="role-count-wren" style="width:2.5rem; text-align:right; font-size:var(--font-size-sm); font-weight:600;">0</div>
+                    </div>
+                
+            </div>
+        </details>
+
+        <!-- Directing -->
+        <details style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:#6366f1; border-left:3px solid #6366f1;">Directing</summary>
+            <div class="metric-card" id="brief-card">
+                <h4 title="Briefs exchanged between role inboxes">Brief Flow</h4>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:0.5rem 2rem;">
+                    
+                </div>
+                
+            </div>
+        </details>
+
+        <!-- Building -->
+        <details style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:#d97706; border-left:3px solid #d97706;">Building</summary>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                <!-- WIP Health -->
+                <div class="metric-card">
+                    <h4 title="Current WIP cards with age">WIP Health</h4>
+                    
+                    <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem;">
+                        <span style="color:#16a34a;">&bull;</span> &lt;3d
+                        <span style="color:#d97706; margin-left:0.5rem;">&bull;</span> 3-7d
+                        <span style="color:#dc2626; margin-left:0.5rem;">&bull;</span> &gt;7d
+                    </div>
+                </div>
+
+                <!-- Proving Gate -->
+                <div class="metric-card" id="quality-card">
+                    <h4 title="Proving gate — cards accepted or rejected after demo">Proving Gate</h4>
+                    <div style="display:flex; gap:1.5rem;">
+                        <div>
+                            <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="q-accepted">0</div>
+                            <div style="font-size:var(--font-size-xs); color:var(--text-muted);">accepted</div>
+                        </div>
+                        <div>
+                            <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="q-rejected">0</div>
+                            <div style="font-size:var(--font-size-xs); color:var(--text-muted);">rejected</div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </details>
+
+        <!-- Operations -->
+        <details style="margin-bottom:var(--space-md);">
+            <summary class="section-header" style="color:var(--text-muted); border-left:3px solid var(--text-muted);">Operations</summary>
+            <div class="metric-card" id="ops-card">
+                <div style="display:flex; gap:1.5rem;">
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-commits">0</div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">commits</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-sessions">0</div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">sessions</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-builds">0</div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">builds</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-deploys">0</div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">deploys</div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </div>
+    
+
+    </div>
+<script nonce="">
+(function() {
+  var btns = document.querySelectorAll('.range-btn');
+  var label = document.getElementById('range-label');
+  var loading = document.getElementById('range-loading');
+  if (!btns.length) return;
+
+  btns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var days = parseInt(btn.dataset.days);
+      btns.forEach(function(b) {
+        b.style.background = 'transparent';
+        b.style.color = 'var(--text-color)';
+        b.style.borderColor = 'var(--text-muted)';
+      });
+      btn.style.background = 'var(--primary-color)';
+      btn.style.color = 'white';
+      btn.style.borderColor = 'var(--primary-color)';
+
+      var url = '/data/loom-metrics.json';
+      if (days > 0) {
+        url = '/data/loom-metrics-' + days + 'd.json';
+        label.textContent = 'Last ' + days + ' days';
+      } else {
+        label.textContent = '';
+      }
+
+      loading.style.display = 'inline';
+      fetch(url).then(function(r) { return r.json(); }).then(function(m) {
+        loading.style.display = 'none';
+        updateMetrics(m);
+      }).catch(function() {
+        loading.style.display = 'none';
+        label.textContent = 'Error loading metrics';
+      });
+    });
+  });
+
+  // Auto-load 30d on page init
+  label.textContent = 'Last 30 days';
+  loading.style.display = 'inline';
+  fetch('/data/loom-metrics-30d.json').then(function(r) { return r.json(); }).then(function(m) {
+    loading.style.display = 'none';
+    updateMetrics(m);
+  }).catch(function() { loading.style.display = 'none'; });
+
+  function $(id) { return document.getElementById(id); }
+
+  function updateMetrics(m) {
+    var b = m.board || {};
+    var stages = b.werk_stages || {};
+    var total = b.total || 1;
+
+    // Value Stream title
+    var vsCard = $('vs-card');
+    if (vsCard) { var h4 = vsCard.querySelector('h4'); if (h4) h4.textContent = (b.total || 0) + ' cards'; }
+
+    // Value stream stage counts
+    $('vs-directing').textContent = stages.directing || 0;
+    $('vs-building').textContent = stages.building || 0;
+    $('vs-proving').textContent = stages.proving || 0;
+    $('vs-shipped').textContent = stages.shipped || 0;
+    var wd = $('vs-wontdo');
+    if (wd) wd.textContent = stages.wont_do || 0;
+    var ideas = $('vs-ideas');
+    if (ideas) ideas.textContent = stages.ideas || 0;
+    var ops = $('vs-ops');
+    if (ops) ops.textContent = stages.ops || 0;
+
+    // Value stream bar
+    var bar = $('vs-bar');
+    if (bar) {
+      var segs = [
+        { pct: Math.round((stages.directing||0)/total*100), bg: '#6366f1', tip: 'Directing: '+(stages.directing||0) },
+        { pct: Math.round((stages.building||0)/total*100), bg: '#d97706', tip: 'Building: '+(stages.building||0) },
+        { pct: Math.round((stages.proving||0)/total*100), bg: '#0891b2', tip: 'Proving: '+(stages.proving||0) },
+        { pct: Math.round((stages.shipped||0)/total*100), bg: '#16a34a', tip: 'Shipped: '+(stages.shipped||0) },
+      ];
+      if (stages.wont_do) segs.push({ pct: Math.round((stages.wont_do||0)/total*100), bg: '#94a3b8', tip: "Won't Do: "+(stages.wont_do||0) });
+      if (stages.ideas) segs.push({ pct: Math.round((stages.ideas||0)/total*100), bg: '#a78bfa', tip: 'Ideas: '+(stages.ideas||0) });
+      if (stages.ops) segs.push({ pct: Math.round((stages.ops||0)/total*100), bg: '#f97316', tip: 'Ops: '+(stages.ops||0) });
+      bar.innerHTML = segs.map(function(s) {
+        return '<div style="width:'+s.pct+'%; background:'+s.bg+';" title="'+s.tip+'"></div>';
+      }).join('');
+    }
+
+    // Weekly throughput
+    var tp = $('vs-throughput');
+    if (tp) {
+      tp.innerHTML = '';
+      Object.entries(m.weekly_throughput || {}).forEach(function(pair) {
+        var d = document.createElement('div');
+        d.title = 'Cards shipped in commits referencing done/shipped';
+        d.innerHTML = '<strong>W/' + pair[0] + '</strong> ' + pair[1];
+        tp.appendChild(d);
+      });
+    }
+
+    // Cards by Role
+    var byRole = b.by_role || {};
+    var maxCards = Math.max.apply(null, Object.values(byRole).concat([1]));
+    ['silas', 'kade', 'wren'].forEach(function(role) {
+      var count = byRole[role] || 0;
+      var barEl = $('role-bar-' + role);
+      var numEl = $('role-count-' + role);
+      if (barEl) barEl.style.width = (maxCards > 0 ? Math.round(count/maxCards*100) : 0) + '%';
+      if (numEl) numEl.textContent = count;
+    });
+
+    // Brief Flow
+    var bc = $('brief-card');
+    if (bc) {
+      var h4 = bc.querySelector('h4');
+      bc.innerHTML = '';
+      bc.appendChild(h4);
+      Object.entries(m.brief_flow || {}).forEach(function(pair) {
+        if (pair[0].startsWith('_')) return;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; font-size:var(--font-size-sm); margin-bottom:0.25rem;';
+        row.innerHTML = '<span>' + pair[0] + '</span><span style="font-weight:600;">' + pair[1] + '</span>';
+        bc.appendChild(row);
+      });
+      if ((m.brief_flow || {})._inbox_totals) {
+        var totals = m.brief_flow._inbox_totals;
+        var tDiv = document.createElement('div');
+        tDiv.style.cssText = 'font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem; border-top:1px solid var(--bg-muted, #e2e8f0); padding-top:0.35rem;';
+        tDiv.textContent = 'Inboxes: ' + Object.entries(totals).map(function(e) { return e[0] + ' ' + e[1]; }).join(' \u00b7 ');
+        bc.appendChild(tDiv);
+      }
+    }
+
+    // Proving Gate
+    var rs = m.reject_stats || {};
+    $('q-accepted').textContent = rs.accepted || 0;
+    $('q-rejected').textContent = rs.rejected || 0;
+
+    // Operations
+    var opsData = m.operations || {};
+    $('ops-commits').textContent = opsData.commits || 0;
+    $('ops-sessions').textContent = opsData.sessions || 0;
+    $('ops-builds').textContent = rs.builds || 0;
+    $('ops-deploys').textContent = rs.deploys || 0;
+  }
+})();
+</script>
+<script>
+// Voice-to-session: record from browser mic, send to Chorus API, inject into role session
+(function() {
+  var CHORUS_API = 'http://localhost:3340';
+  var activeBtn = null;
+  var mediaRecorder = null;
+  var audioChunks = [];
+
+  document.querySelectorAll('.voice-mic').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var role = btn.dataset.role;
+
+      if (activeBtn === btn) {
+        stopRecording(btn, role);
+      } else {
+        if (activeBtn) stopRecording(activeBtn, activeBtn.dataset.role);
+        startRecording(btn, role);
+      }
+    });
+  });
+
+  function setStatus(role, text, cls) {
+    var el = document.getElementById('voice-status-' + role);
+    if (el) { el.textContent = text; el.className = 'voice-mic-status' + (cls ? ' ' + cls : ''); }
+  }
+
+  function startRecording(btn, role) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+      btn.classList.add('recording');
+      activeBtn = btn;
+      setStatus(role, 'Recording...', '');
+    }).catch(function(err) {
+      setStatus(role, 'Mic access denied', 'error');
+    });
+  }
+
+  function stopRecording(btn, role) {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    btn.classList.remove('recording');
+    activeBtn = null;
+    setStatus(role, 'Transcribing...', 'transcribing');
+
+    mediaRecorder.onstop = function() {
+      var blob = new Blob(audioChunks, { type: 'audio/webm' });
+      mediaRecorder.stream.getTracks().forEach(function(t) { t.stop(); });
+      sendAudio(blob, role);
+    };
+    mediaRecorder.stop();
+  }
+
+  function sendAudio(blob, role) {
+    // Convert webm to wav via AudioContext for whisper compatibility
+    var reader = new FileReader();
+    reader.onload = function() {
+      var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.decodeAudioData(reader.result).then(function(buffer) {
+        var wavBlob = audioBufferToWav(buffer);
+        fetch(CHORUS_API + '/api/chorus/voice/' + role, {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/wav' },
+          body: wavBlob
+        }).then(function(res) { return res.json(); }).then(function(data) {
+          if (data.error) {
+            setStatus(role, data.error, 'error');
+          } else {
+            setStatus(role, 'Sent (' + data.latency_ms + 'ms)', 'injected');
+            setTimeout(function() { setStatus(role, '', ''); }, 4000);
+          }
+        }).catch(function(err) {
+          setStatus(role, 'Send failed', 'error');
+        });
+      }).catch(function(err) {
+        setStatus(role, 'Audio decode failed', 'error');
+      });
+    };
+    reader.readAsArrayBuffer(blob);
+  }
+
+  // Minimal WAV encoder — 16-bit PCM mono 16kHz
+  function audioBufferToWav(buffer) {
+    var sampleRate = 16000;
+    var numChannels = 1;
+    // Resample to 16kHz mono
+    var offlineCtx = new OfflineAudioContext(numChannels, buffer.duration * sampleRate, sampleRate);
+    var source = offlineCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    // Can't do offline rendering synchronously — use simpler downsample
+    var data = buffer.getChannelData(0);
+    var ratio = buffer.sampleRate / sampleRate;
+    var newLength = Math.floor(data.length / ratio);
+    var result = new Float32Array(newLength);
+    for (var i = 0; i < newLength; i++) {
+      result[i] = data[Math.floor(i * ratio)];
+    }
+    // Encode WAV
+    var dataLength = result.length * 2;
+    var wavBuffer = new ArrayBuffer(44 + dataLength);
+    var view = new DataView(wavBuffer);
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * 2, true);
+    view.setUint16(32, numChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataLength, true);
+    for (var i = 0; i < result.length; i++) {
+      var s = Math.max(-1, Math.min(1, result[i]));
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return new Blob([wavBuffer], { type: 'audio/wav' });
+  }
+
+  function writeString(view, offset, string) {
+    for (var i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+})();
+</script>
+
+
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Gathering</h3>
+      <p>Personal knowledge graph &middot; RDF/SPARQL &middot; Private by default</p>
+    </div>
+    <div class="footer-section">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/blog">Journal</a></li>
+        <li><a href="/chorus">Chorus</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <p>SOLID pods &middot; ACL visibility &middot; Everything graduates</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Jeff Bridwell &middot; Roslindale, MA &middot; Built with the Loom</p>
+  </div>
+</footer>
+
+</body>
+</html>

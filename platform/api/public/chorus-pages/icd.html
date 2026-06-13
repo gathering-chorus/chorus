@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Convergence Architecture — ICD | Jeff Bridwell</title>
+  <link rel="stylesheet" href="/css/gathering.css">
+
+
+<style>
+  /* ICD uses app design tokens from gathering.css */
+  #icd-root { font-family: var(--font-family); color: var(--primary-color); }
+  #icd-root h1 { font-size: var(--font-size-xl); color: var(--accent-color); margin-bottom: var(--space-xs); }
+  #icd-root .subtitle { color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-lg); }
+
+  .legend { display: flex; gap: var(--space-lg); padding: var(--space-sm) 0; font-size: var(--font-size-xs); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-md); border-bottom: 1px solid var(--border-color); padding-bottom: var(--space-sm); }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: var(--radius-full); }
+  .legend-dot.direct { background: var(--success-color); }
+  .legend-dot.transform { background: var(--warning-color); }
+  .legend-dot.missing { background: var(--danger-color); }
+  .legend-dot.computed { background: var(--accent-color); }
+  .icd-header .legend-dot.computed { background: #fff; }
+
+  .domain { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin-bottom: var(--space-sm); overflow: hidden; box-shadow: var(--shadow-sm); }
+  .domain-header { padding: var(--space-md); cursor: pointer; user-select: none; display: flex; align-items: center; gap: var(--space-sm); transition: background 0.15s; }
+  .domain-header:hover { background: var(--bg-color); }
+  .domain-header .dh-chevron { font-size: var(--font-size-xs); color: var(--accent-color); transition: transform 0.2s; }
+  .domain.open .domain-header .dh-chevron { transform: rotate(90deg); }
+  .domain-header .dh-name { font-size: var(--font-size-lg); font-weight: 700; color: var(--accent-color); }
+  .domain-header .dh-count { font-size: var(--font-size-base); color: var(--text-muted); }
+  .domain-header .dh-meta { font-size: var(--font-size-xs); color: var(--text-muted); margin-left: auto; text-align: right; line-height: 1.3; }
+
+  .domain-body { display: none; }
+  .domain.open .domain-body { display: flex; position: relative; }
+  .harvest-compliance { display: none; }
+  .domain.open .harvest-compliance { display: block; }
+
+  .providers { flex: 0 0 52%; padding: var(--space-sm); overflow-y: auto; max-height: 80vh; }
+  .consumer { flex: 0 0 48%; padding: var(--space-sm); overflow-y: auto; max-height: 80vh; border-left: 1px solid var(--border-color); }
+
+  .icd { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-bottom: var(--space-xs); overflow: hidden; }
+  .icd-header { padding: var(--space-sm) var(--space-md); font-weight: 700; font-size: var(--font-size-sm); color: #fff; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 0.4rem; }
+  .icd-header .chevron { font-size: 0.55rem; transition: transform 0.15s; }
+  .icd.open .icd-header .chevron { transform: rotate(90deg); }
+  .icd-header .icd-meta { margin-left: auto; font-weight: 400; font-size: var(--font-size-xs); opacity: 0.85; }
+  .icd-body { display: none; }
+  .icd.open .icd-body { display: block; }
+
+  .icd-section { border-bottom: 1px solid var(--border-color); }
+  .icd-section-header { padding: var(--space-xs) var(--space-md); font-size: var(--font-size-xs); font-weight: 700; color: var(--accent-color); text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg-color); cursor: pointer; display: flex; align-items: center; gap: 0.3rem; }
+  .icd-section-header .sec-chevron { font-size: 0.5rem; transition: transform 0.15s; }
+  .icd-section.open .icd-section-header .sec-chevron { transform: rotate(90deg); }
+  .icd-section-content { display: none; padding: var(--space-sm) var(--space-md); font-size: var(--font-size-sm); line-height: 1.5; }
+  .icd-section.open .icd-section-content { display: block; }
+
+  .field-row { padding: var(--space-xs) var(--space-sm); padding-left: var(--space-xl); font-size: var(--font-size-xs); border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s; display: flex; align-items: center; }
+  .field-row:hover { background: #EEF2FF; }
+  .field-row .fname { font-weight: 600; flex: 0 0 35%; }
+  .field-row .fdesc { color: var(--text-muted); flex: 1; font-size: var(--font-size-xs); }
+  .field-row .fcov { font-size: var(--font-size-xs); font-weight: 700; border-radius: var(--radius-sm); padding: 0.1rem 0.3rem; }
+  .fcov.high { background: #D1FAE5; color: var(--success-color); }
+  .fcov.medium { background: #FEF3C7; color: var(--warning-color); }
+  .fcov.low { background: #FEE2E2; color: var(--danger-color); }
+
+  .cf-row { padding: var(--space-xs) var(--space-sm); font-size: var(--font-size-xs); border-bottom: 1px solid var(--border-color); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; }
+  .cf-row:hover { background: #EEF2FF; }
+  .cf-row .cf-name { font-weight: 600; }
+  .cf-row .cf-type { color: var(--text-muted); font-size: var(--font-size-xs); }
+  .cf-row .cf-best { font-size: var(--font-size-xs); font-weight: 700; border-radius: var(--radius-sm); padding: 0.1rem 0.4rem; color: #fff; white-space: nowrap; }
+  .cf-row .cf-gate { font-size: 0.55rem; font-weight: 700; border-radius: var(--radius-sm); padding: 0.1rem 0.35rem; margin-right: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .cf-gate.violation { background: #FEE2E2; color: var(--danger-color); }
+  .cf-gate.enrichment { background: #E0E7FF; color: var(--accent-color); }
+
+  .svg-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+  .mapping-line { stroke-width: 2; fill: none; opacity: 0.4; pointer-events: stroke; cursor: pointer; }
+  .mapping-line:hover { opacity: 1; stroke-width: 3.5; }
+  .mapping-line.direct { stroke: var(--success-color); }
+  .mapping-line.transform { stroke: var(--warning-color); stroke-dasharray: 6 3; }
+  .mapping-line.computed { stroke: var(--accent-color); stroke-dasharray: 2 4; }
+
+  .tx-tip { position: fixed; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-sm); font-size: var(--font-size-xs); box-shadow: var(--shadow-md); z-index: 20; max-width: 350px; display: none; pointer-events: none; }
+  .tx-tip.visible { display: block; }
+  .tx-tip .tx-conf { font-weight: 700; margin-right: 0.3rem; }
+  .tx-tip .tx-conf.direct { color: var(--success-color); }
+  .tx-tip .tx-conf.transform { color: var(--warning-color); }
+  .tx-tip .tx-rule { font-family: monospace; font-size: var(--font-size-xs); display: block; margin-top: var(--space-xs); background: var(--bg-color); padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); }
+  .tx-tip .tx-gate { color: var(--danger-color); font-size: var(--font-size-xs); display: block; margin-top: var(--space-xs); border-left: 2px solid var(--danger-color); padding-left: var(--space-sm); }
+
+  .compliance-table { font-size: var(--font-size-xs); width: 100%; border-collapse: collapse; margin: var(--space-xs) 0; }
+  .compliance-table th, .compliance-table td { padding: var(--space-xs) var(--space-sm); text-align: left; border-bottom: 1px solid var(--border-color); }
+  .compliance-table th { color: var(--accent-color); font-size: var(--font-size-xs); text-transform: uppercase; background: var(--bg-color); }
+
+  .loading { text-align: center; padding: var(--space-xl); color: var(--text-muted); font-size: var(--font-size-sm); }
+
+  @media print { .tx-tip { display: none !important; } .domain, .icd { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<nav>
+    
+        <a href="/">Gathering</a>
+        <a href="/login">Login</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+<div class="page-container">
+<div class="page-card">
+
+<div id="icd-root">
+  <div style="display:flex;align-items:baseline;gap:var(--space-md);">
+    <h1>Convergence</h1>
+    <span id="icd-version" style="font-size:var(--font-size-xs);color:var(--text-muted);"></span>
+  </div>
+  <p class="subtitle">Provider ICDs &rarr; Canonical Consumer ICDs &mdash; per domain, per source, with transforms and validation gates (DEC-095: mapper before harvest)</p>
+
+  <div id="icd-filters" style="display:none;margin-bottom:1rem;">
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem;">
+      <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;width:100%;margin-bottom:0.2rem;">Product</span>
+      <span class="icd-filter-chip" data-filter="product" data-value="gathering" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Gathering</span>
+      <span class="icd-filter-chip" data-filter="product" data-value="chorus" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Chorus</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem;">
+      <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;width:100%;margin-bottom:0.2rem;">Value Stream Step</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="sowing" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Sowing</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="growing" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Growing</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="practicing" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Practicing</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="harvesting" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Harvesting</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="reflecting" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Reflecting</span>
+      <span style="margin:0 0.3rem;color:var(--border-color);">|</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="directing" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Directing</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="designing" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Designing</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="building" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Building</span>
+      <span class="icd-filter-chip" data-filter="step" data-value="proving" style="display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);">Proving</span>
+    </div>
+    <div id="icd-domain-chips" style="display:flex;flex-wrap:wrap;gap:0.4rem;">
+      <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;width:100%;margin-bottom:0.2rem;">Domain</span>
+    </div>
+  </div>
+  <div id="domains-container"><div class="loading">Loading ICD domains from graph&hellip;</div></div>
+</div>
+
+<!-- Tooltip -->
+<div class="tx-tip" id="txTip"><span class="tx-conf" id="txConf"></span><span id="txSummary"></span><span class="tx-rule" id="txRule"></span><span class="tx-gate" id="txGate"></span></div>
+
+<script nonce="">
+(function() {
+  var PROVIDER_COLORS = {
+    'apple': '#555', 'osxphotos': '#333', 'google': '#6366F1', 'drive': '#27ae60',
+    'linkedin': '#0077b5', 'facebook': '#1877f2', 'manual': '#c0392b', 'default': '#34495e'
+  };
+
+  function providerColor(name) {
+    var n = (name || '').toLowerCase();
+    if (n.includes('apple')) return PROVIDER_COLORS.apple;
+    if (n.includes('osxphotos')) return PROVIDER_COLORS.osxphotos;
+    if (n.includes('google') && n.includes('drive')) return PROVIDER_COLORS.drive;
+    if (n.includes('google')) return PROVIDER_COLORS.google;
+    if (n.includes('linkedin')) return PROVIDER_COLORS.linkedin;
+    if (n.includes('facebook')) return PROVIDER_COLORS.facebook;
+    if (n.includes('manual') || n.includes('stories')) return PROVIDER_COLORS.manual;
+    return PROVIDER_COLORS.default;
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+  function unesc(s) { var d = document.createElement('div'); d.innerHTML = s || ''; return d.textContent; }
+
+  var icdVersionLabel = '';
+  var lintByDomain = {};
+
+  // Domain classification — loaded from /api/convergence at startup (#1904)
+  // Fallback for domains without ICD data (domains that appear as filter chips but have no TTL)
+  var DOMAIN_META_FALLBACK = {
+    seeds:     { product: 'gathering', step: 'sowing' },
+    glimmers:  { product: 'gathering', step: 'sowing' },
+    ideas:     { product: 'gathering', step: 'growing' },
+    property:  { product: 'gathering', step: 'practicing' },
+    cooking:   { product: 'gathering', step: 'practicing' },
+    reading:   { product: 'gathering', step: 'practicing' },
+    watching:  { product: 'gathering', step: 'practicing' },
+    gallery:   { product: 'gathering', step: 'harvesting' },
+    blog:      { product: 'gathering', step: 'reflecting' },
+    self:      { product: 'gathering', step: 'reflecting' },
+    search:    { product: 'gathering', step: 'practicing' },
+    'knowledge-graph': { product: 'gathering', step: 'practicing' },
+    observability: { product: 'chorus', step: 'building' },
+    loom:      { product: 'chorus',    step: 'directing' },
+    infrastructure: { product: 'chorus', step: 'building' }
+  };
+  var DOMAIN_META = {};
+  var activeFilters = { product: {}, step: {}, domain: {} };
+
+  function applyIcdFilters() {
+    var hasProd = Object.keys(activeFilters.product).length > 0;
+    var hasStep = Object.keys(activeFilters.step).length > 0;
+    var hasDomain = Object.keys(activeFilters.domain).length > 0;
+    var divs = document.querySelectorAll('#domains-container > div');
+    for (var i = 0; i < divs.length; i++) {
+      var prod = divs[i].getAttribute('data-product');
+      var step = divs[i].getAttribute('data-step');
+      var domId = divs[i].getAttribute('data-domain-id');
+      var matchProd = !hasProd || activeFilters.product[prod];
+      var matchStep = !hasStep || activeFilters.step[step];
+      var matchDomain = !hasDomain || activeFilters.domain[domId];
+      divs[i].style.display = (matchProd && matchStep && matchDomain) ? '' : 'none';
+    }
+    var qs = new URLSearchParams();
+    if (hasProd) qs.set('product', Object.keys(activeFilters.product).join(','));
+    if (hasStep) qs.set('step', Object.keys(activeFilters.step).join(','));
+    if (hasDomain) qs.set('domain', Object.keys(activeFilters.domain).join(','));
+    var url = window.location.pathname + (qs.toString() ? '?' + qs.toString() : '');
+    window.history.replaceState(null, '', url);
+  }
+
+  document.addEventListener('click', function(e) {
+    var chip = e.target.closest('.icd-filter-chip');
+    if (!chip) return;
+    var filterType = chip.getAttribute('data-filter');
+    var val = chip.getAttribute('data-value');
+    if (activeFilters[filterType][val]) {
+      delete activeFilters[filterType][val];
+      chip.style.background = '';
+      chip.style.borderColor = 'var(--border-color)';
+      chip.style.color = 'var(--text-muted)';
+    } else {
+      activeFilters[filterType][val] = true;
+      chip.style.background = 'var(--card-bg)';
+      chip.style.borderColor = 'var(--accent-color)';
+      chip.style.color = 'var(--accent-color)';
+    }
+    applyIcdFilters();
+  });
+
+  function restoreIcdFilters() {
+    var params = new URLSearchParams(window.location.search);
+    var prod = params.get('product');
+    var step = params.get('step');
+    if (prod) {
+      prod.split(',').forEach(function(p) { activeFilters.product[p] = true; });
+      document.querySelectorAll('.icd-filter-chip[data-filter="product"]').forEach(function(c) {
+        if (activeFilters.product[c.getAttribute('data-value')]) {
+          c.style.background = 'var(--card-bg)'; c.style.borderColor = 'var(--accent-color)'; c.style.color = 'var(--accent-color)';
+        }
+      });
+    }
+    if (step) {
+      step.split(',').forEach(function(s) { activeFilters.step[s] = true; });
+      document.querySelectorAll('.icd-filter-chip[data-filter="step"]').forEach(function(c) {
+        if (activeFilters.step[c.getAttribute('data-value')]) {
+          c.style.background = 'var(--card-bg)'; c.style.borderColor = 'var(--accent-color)'; c.style.color = 'var(--accent-color)';
+        }
+      });
+    }
+    var dom = params.get('domain');
+    if (dom) {
+      dom.split(',').forEach(function(d) { activeFilters.domain[d] = true; });
+      document.querySelectorAll('.icd-filter-chip[data-filter="domain"]').forEach(function(c) {
+        if (activeFilters.domain[c.getAttribute('data-value')]) {
+          c.style.background = 'var(--card-bg)'; c.style.borderColor = 'var(--accent-color)'; c.style.color = 'var(--accent-color)';
+        }
+      });
+    }
+  }
+
+  function renderDomain(domain, compliance) {
+    var vCount = domain.fieldSummary.violation;
+    var eCount = domain.fieldSummary.enrichment;
+    var provCount = domain.providers.length;
+    var mapCount = domain.providers.reduce(function(sum, p) { return sum + p.mappings.length; }, 0);
+
+    var html = '<div class="domain" id="domain-' + esc(domain.id) + '">';
+    html += '<div class="domain-header" data-action="toggle-domain">';
+    html += '<span class="dh-chevron">&#9654;</span>';
+    html += '<span class="dh-name">' + esc(domain.name) + '</span>';
+    var dmeta = DOMAIN_META[domain.id] || { product: 'gathering', step: 'practicing' };
+    html += ' <span style="display:inline-flex;gap:4px;margin-left:6px;">';
+    html += '<span style="font-size:0.6rem;padding:0.1rem 0.4rem;border-radius:8px;border:1px solid #10b981;color:#10b981;">' + esc(dmeta.product) + '</span>';
+    html += '<span style="font-size:0.6rem;padding:0.1rem 0.4rem;border-radius:8px;border:1px solid #a78bfa;color:#a78bfa;">' + esc(dmeta.step) + '</span>';
+    html += '</span>';
+    // Lint-based compliance badge (headline) + severity counts (secondary)
+    var lint = lintByDomain[domain.name] || lintByDomain[domain.id] || lintByDomain[domain.name.toLowerCase()] || lintByDomain[domain.id.toLowerCase()];
+    var badge = '';
+    if (lint) {
+      if (lint.status === 'pass') {
+        badge = '<span style="background:#D1FAE5;color:var(--success-color);padding:0.15rem 0.5rem;border-radius:var(--radius-sm);font-weight:700;font-size:0.7rem;">\u2713 Compliant</span>';
+      } else {
+        badge = '<span style="background:#FEE2E2;color:var(--danger-color);padding:0.15rem 0.5rem;border-radius:var(--radius-sm);font-weight:700;font-size:0.7rem;">\u2717 ' + lint.errors + ' errors</span>';
+      }
+    }
+    html += '<span class="dh-meta" style="margin-left:auto;text-align:right;line-height:1.4;">' + provCount + ' source' + (provCount !== 1 ? 's' : '') + ', ' + mapCount + ' mapping' + (mapCount !== 1 ? 's' : '') + ' &rarr; ' + esc(domain.consumerType) + '<br>' + badge + '</span>';
+    html += '</div>';
+
+    // Domain body: providers (left) + consumer (right)
+    html += '<div class="domain-body"><svg class="svg-overlay"></svg>';
+
+    // Providers
+    html += '<div class="providers">';
+    domain.providers.forEach(function(prov, provIdx) {
+      var bg = providerColor(prov.name);
+      html += '<div class="icd" data-provider="' + esc(prov.id) + '">';
+      var provMeta = prov.nonFunctionals.volume || (prov.mappings.length > 0 ? prov.mappings.length + ' fields' : 'No ICD yet');
+      html += '<div class="icd-header" style="background:' + bg + '; cursor:pointer;" data-action="toggle-icd"><span class="chevron">&#9654;</span> ' + esc(prov.name) + (icdVersionLabel ? ' <span style="opacity:0.7;font-weight:400;font-size:0.65rem;">' + icdVersionLabel + '</span>' : '') + ' <span class="icd-meta">' + esc(provMeta) + '</span></div>';
+      html += '<div class="icd-body">';
+
+      // === FIXED 5-SECTION DOCUMENT CONTRACT ===
+      // Every provider renders exactly these 5 sections in this order.
+      // Data comes from v2 tree sections (by type), falling back to flat properties.
+      var secs = prov.sections || [];
+      function findSec(type) { return secs.filter(function(s) { return s.type === type; }); }
+
+      // 0. INTEGRATION CONTRACT (#1690, #1891) — always render, placeholder if empty
+      // Strip URI to human label: urn:gathering:icd#BatchRebuild → Batch Rebuild
+      function uriLabel(v) { if (!v) return ''; var frag = v.split('#').pop().split('/').pop(); return frag.replace(/([a-z])([A-Z])/g, '$1 $2'); }
+      var hasIntegrationProps = prov.direction || prov.integrationPattern || prov.interfaceRole || prov.endpoint || prov.nifiFlowName;
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Integration Contract</div><div class="icd-section-content">';
+      if (hasIntegrationProps) {
+        // Flat provider properties — authoritative source
+        html += '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.78rem;">';
+        if (prov.direction) html += '<div><strong>Direction:</strong> ' + esc(uriLabel(prov.direction)) + '</div>';
+        if (prov.integrationPattern) html += '<div><strong>Pattern:</strong> ' + esc(uriLabel(prov.integrationPattern)) + '</div>';
+        if (prov.interfaceRole) html += '<div><strong>Role:</strong> ' + esc(uriLabel(prov.interfaceRole)) + '</div>';
+        if (prov.endpoint) html += '<div><strong>Endpoint:</strong> <code>' + esc(prov.endpoint) + '</code></div>';
+        if (prov.nifiFlowName) {
+          var nifiUrl = prov.nifiFlowId ? 'https://192.168.86.242:8443/nifi/?processGroupId=' + encodeURIComponent(prov.nifiFlowId) : '';
+          html += '<div><strong>Pipeline:</strong> ' + (nifiUrl ? '<a href="' + esc(nifiUrl) + '" target="_blank" style="color:var(--accent-color);">' + esc(prov.nifiFlowName) + '</a>' : esc(prov.nifiFlowName)) + '</div>';
+        }
+        html += '</div>';
+      } else {
+        html += '<p style="color:var(--text-muted);font-style:italic;">Not yet defined</p>';
+      }
+      html += '</div></div>';
+
+      // 1. PURPOSE & SCOPE
+      var purposeSecs = findSec('purpose');
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Purpose &amp; Scope</div><div class="icd-section-content">';
+      if (purposeSecs.length > 0) {
+        purposeSecs.forEach(function(s) { s.paragraphs.forEach(function(p) { html += '<p>' + esc(p) + '</p>'; }); });
+      } else if (prov.purpose) {
+        html += '<p>' + esc(prov.purpose) + '</p>';
+      } else {
+        html += '<p style="color:var(--text-muted);font-style:italic;">No purpose defined yet.</p>';
+      }
+      html += '</div></div>';
+
+      // 2. RISKS
+      var riskSecs = findSec('risks');
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Risks</div><div class="icd-section-content"><ul>';
+      if (riskSecs.length > 0 && riskSecs[0].risks.length > 0) {
+        riskSecs[0].risks.forEach(function(r) {
+          var color = r.status === 'ok' ? 'var(--success-color)' : 'var(--danger-color)';
+          html += '<li style="color:' + color + ';font-weight:600;">' + esc(r.text) + '</li>';
+        });
+      } else if (prov.risks.length > 0) {
+        prov.risks.forEach(function(r) { html += '<li style="color:var(--danger-color);font-weight:600;">' + esc(r) + '</li>'; });
+      } else {
+        html += '<li style="color:var(--text-muted);font-style:italic;">No risks documented.</li>';
+      }
+      html += '</ul></div></div>';
+
+      // 3. NON-FUNCTIONALS
+      var nfSecs = findSec('non-functionals');
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Non-Functionals</div><div class="icd-section-content">';
+      var nf = (nfSecs.length > 0 && nfSecs[0].nonFunctionals) ? nfSecs[0].nonFunctionals : prov.nonFunctionals;
+      if (nf && (nf.volume || nf.freshness || nf.latency || nf.auth)) {
+        html += '<table class="compliance-table"><tr><th>Volume</th><th>Freshness</th><th>Latency</th><th>Auth</th></tr>';
+        html += '<tr><td>' + esc(unesc(nf.volume) || '\u2014') + '</td><td>' + esc(unesc(nf.freshness) || '\u2014') + '</td><td>' + esc(unesc(nf.latency) || '\u2014') + '</td><td>' + esc(unesc(nf.auth) || '\u2014') + '</td></tr></table>';
+      } else {
+        html += '<p style="color:var(--text-muted);font-style:italic;">No non-functionals defined yet.</p>';
+      }
+      html += '</div></div>';
+
+      // 4. INTERFACE (always from mappings data — field-rows for SVG lines)
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Interface</div><div class="icd-section-content" style="padding:0;">';
+      if (prov.mappings.length > 0) {
+        prov.mappings.forEach(function(m) {
+          html += '<div class="field-row" data-source="' + esc(prov.id) + '" data-field="' + esc(m.sourceField) + '" data-maps-to="' + esc(m.mapsTo) + '" data-confidence="' + esc(m.confidence) + '" data-transform="' + esc(m.transform) + '" data-gate="' + esc(m.gate || '') + '">';
+          html += '<span class="fname">' + esc(m.sourceField) + '</span>';
+          html += '<span class="fdesc">' + esc(m.transform) + '</span>';
+          var covText = unesc(m.coverage || '');
+          var covNum = parseFloat(covText);
+          var covClass = !isNaN(covNum) && covNum >= 90 ? 'high' : !isNaN(covNum) && covNum >= 50 ? 'medium' : 'low';
+          html += '<span class="fcov ' + covClass + '">' + esc(covText) + '</span>';
+          html += '</div>';
+        });
+      } else {
+        html += '<p style="padding:var(--space-sm);color:var(--text-muted);font-style:italic;">No field mappings defined yet (DEC-095).</p>';
+      }
+      html += '</div></div>';
+
+      // 5. DIAGRAMS
+      var diagramSecs = findSec('diagrams');
+      html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Diagrams</div><div class="icd-section-content">';
+      if (diagramSecs.length > 0) {
+        diagramSecs.forEach(function(s) {
+          if (s.mermaid) { html += '<div class="mermaid">' + unesc(s.mermaid) + '</div>'; }
+          s.paragraphs.forEach(function(p) { html += '<p>' + esc(p) + '</p>'; });
+        });
+      } else {
+        html += '<p style="color:var(--text-muted);font-style:italic;">No diagrams yet.</p>';
+      }
+      html += '</div></div>';
+
+      html += '</div></div>';
+    });
+    html += '</div>';
+
+    // Consumer ICD — canonical section order (Jeff eye test feedback)
+    // 1. Purpose & Scope  2. Risks  3. Non-Functionals  4. Interface  5. Context Diagram
+    // 6. Merge Policy (multi-source only)  7. Pipeline Status  8. Contract Compliance
+    html += '<div class="consumer">';
+    html += '<div class="icd" style="border-color:var(--accent-color);"><div class="icd-header" style="background:var(--accent-color);cursor:pointer;flex-wrap:wrap;" data-action="toggle-icd"><span class="chevron">&#9654;</span> ' + esc(domain.consumerType) + ' &mdash; Consumer ICD' + (icdVersionLabel ? ' <span style="opacity:0.7;font-weight:400;font-size:0.65rem;">' + icdVersionLabel + '</span>' : '');
+    html += '<span style="margin-left:auto;display:flex;gap:0.6rem;align-items:center;font-size:0.6rem;font-weight:400;opacity:0.85;">';
+    html += '<span style="display:flex;align-items:center;gap:0.15rem;"><span class="legend-dot direct"></span>Direct</span>';
+    html += '<span style="display:flex;align-items:center;gap:0.15rem;"><span class="legend-dot transform"></span>Transform</span>';
+    html += '<span style="display:flex;align-items:center;gap:0.15rem;"><span class="legend-dot missing"></span>Missing</span>';
+    html += '<span style="display:flex;align-items:center;gap:0.15rem;"><span class="legend-dot computed"></span>Computed</span>';
+    html += '</span>';
+    html += '</div><div class="icd-body">';
+
+    var cSecs = domain.consumerSections || [];
+    function findCSec(type) { return cSecs.filter(function(s) { return s.type === type; }); }
+    var isMultiSource = domain.providers.length > 1;
+
+    function renderConsumerSection(title, secs, fallback) {
+      if (secs.length === 0 && !fallback) return '';
+      var h = '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> ' + esc(title) + '</div><div class="icd-section-content">';
+      if (secs.length > 0) {
+        secs.forEach(function(sec) {
+          if (sec.risks && sec.risks.length > 0) {
+            h += '<ul>';
+            sec.risks.forEach(function(r) {
+              var color = r.status === 'ok' ? 'var(--success-color)' : 'var(--danger-color)';
+              h += '<li style="color:' + color + ';font-weight:600;">' + esc(r.text) + '</li>';
+            });
+            h += '</ul>';
+          }
+          if (sec.mermaid) { h += '<div class="mermaid">' + unesc(sec.mermaid) + '</div>'; }
+          if (sec.nonFunctionals) {
+            var nf = sec.nonFunctionals;
+            h += '<table class="compliance-table"><tr><th>Volume</th><th>Freshness</th><th>Latency</th><th>Auth</th></tr>';
+            h += '<tr><td>' + esc(unesc(nf.volume) || '\u2014') + '</td><td>' + esc(unesc(nf.freshness) || '\u2014') + '</td><td>' + esc(unesc(nf.latency) || '\u2014') + '</td><td>' + esc(unesc(nf.auth) || '\u2014') + '</td></tr></table>';
+          }
+          sec.paragraphs.forEach(function(p) { h += '<p>' + esc(p) + '</p>'; });
+        });
+      } else if (fallback) {
+        h += fallback;
+      }
+      h += '</div></div>';
+      return h;
+    }
+
+    // 1. Purpose & Scope (mandatory)
+    html += renderConsumerSection('Purpose & Scope', findCSec('purpose'), '<p style="color:var(--text-muted);font-style:italic;">No purpose defined yet.</p>');
+
+    // 2. Risks (mandatory)
+    html += renderConsumerSection('Risks', findCSec('risks'), '<p style="color:var(--text-muted);font-style:italic;">No risks documented.</p>');
+
+    // 3. Non-Functionals (mandatory)
+    html += renderConsumerSection('Non-Functionals', findCSec('non-functionals'), '<p style="color:var(--text-muted);font-style:italic;">No non-functionals defined yet.</p>');
+
+    // 4. Interface (mandatory — THE contract, centerpiece)
+    html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Interface</div><div class="icd-section-content" style="padding:0;">';
+    domain.fields.forEach(function(f) {
+      html += '<div class="cf-row" data-canonical="' + esc(f.name) + '" data-severity="' + esc(f.severity) + '">';
+      html += '<div><span class="cf-gate ' + esc(f.severity) + '">' + (f.severity === 'violation' ? 'Req' : 'Enr') + '</span>';
+      var cfTypeText = f.description || (f.datatype + (f.cardinality === 'n' ? '[]' : ''));
+      html += '<span class="cf-name">' + esc(f.name) + (f.cardinality === 'n' ? '[]' : '') + '</span><br><span class="cf-type">' + esc(cfTypeText) + '</span></div>';
+      html += '<span class="cf-best" style="background:' + (f.bestSource ? providerColor(f.bestSource) : 'var(--accent-color)') + '">' + esc(f.bestSource || 'Merge') + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    // 5. Context Diagram (mandatory)
+    html += renderConsumerSection('Context Diagram', findCSec('diagrams'), '<p style="color:var(--text-muted);font-style:italic;">No diagrams yet.</p>');
+
+    // 6. Merge Policy (situational — multi-source domains only)
+    if (isMultiSource) {
+      var mergeSecs = findCSec('merge');
+      html += renderConsumerSection('Merge Policy', mergeSecs, '<p style="color:var(--text-muted);font-style:italic;">No merge policy defined yet.</p>');
+    }
+
+    // 7. Pipeline Status (operational — synthesized from provider data)
+    html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Pipeline Status</div><div class="icd-section-content">';
+    html += '<table class="compliance-table"><tr><th>Source</th><th>Mappings</th><th>Status</th></tr>';
+    domain.providers.forEach(function(prov) {
+      var mapCount = prov.mappings.length;
+      var hasNf = prov.nonFunctionals && (prov.nonFunctionals.volume || prov.nonFunctionals.freshness);
+      var status = mapCount > 0 ? (hasNf ? 'Active' : 'Mapped') : 'No ICD';
+      var statusColor = mapCount > 0 ? 'var(--success-color)' : 'var(--danger-color)';
+      html += '<tr><td style="font-weight:600;">' + esc(prov.name) + '</td>';
+      html += '<td style="text-align:right;">' + mapCount + '</td>';
+      html += '<td style="color:' + statusColor + ';font-weight:600;">' + status + '</td></tr>';
+    });
+    html += '</table>';
+    if (compliance && compliance.totalInGraph > 0) {
+      html += '<div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-muted);"><strong>Total in graph:</strong> ' + compliance.totalInGraph.toLocaleString() + ' ' + esc(domain.consumerType) + ' nodes</div>';
+    }
+    html += '</div></div>';
+
+    // 8. Contract Compliance (operational — live SPARQL from compliance API)
+    html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Contract Compliance</div><div class="icd-section-content">';
+    if (compliance && compliance.fieldCoverage && compliance.fieldCoverage.length > 0) {
+      html += '<p style="font-size:0.65rem;color:var(--text-muted);margin-bottom:0.5rem;">Live SPARQL &middot; queried ' + compliance.queriedAt.slice(0, 16).replace('T', ' ') + '</p>';
+      html += '<table class="compliance-table"><tr><th>Field</th><th>Gate</th><th>Count</th><th>Coverage</th></tr>';
+      compliance.fieldCoverage.forEach(function(fc) {
+        var color = parseFloat(fc.coverage) >= 90 ? 'var(--success-color)' : parseFloat(fc.coverage) >= 50 ? 'var(--warning-color)' : 'var(--danger-color)';
+        html += '<tr><td style="font-weight:600;">' + esc(fc.field) + '</td>';
+        html += '<td><span class="cf-gate violation">Req</span></td>';
+        html += '<td style="text-align:right;">' + fc.count.toLocaleString() + ' / ' + fc.total.toLocaleString() + '</td>';
+        html += '<td style="text-align:right;color:' + color + ';font-weight:600;">' + esc(fc.coverage) + '</td></tr>';
+      });
+      html += '</table>';
+    } else if (compliance && compliance.totalInGraph === 0) {
+      html += '<p style="color:var(--warning-color);font-weight:600;">0 records in graph &mdash; harvest not yet run for ' + esc(domain.consumerType) + '</p>';
+    } else {
+      html += '<p style="color:var(--text-muted);font-style:italic;">Compliance data unavailable &mdash; no consumer type mapped.</p>';
+    }
+    html += '</div></div>';
+
+    // 9. Implementation Contract (#1560 — operational plumbing, SPARQL-queryable)
+    var impl = domain.implementation;
+    html += '<div class="icd-section"><div class="icd-section-header" data-action="toggle-section"><span class="sec-chevron">&#9654;</span> Implementation Contract</div><div class="icd-section-content">';
+    if (impl) {
+      html += '<table class="compliance-table"><tr><th>Property</th><th>Value</th></tr>';
+      function implRow(label, vals) {
+        if (!vals || (Array.isArray(vals) && vals.length === 0) || vals === '') return;
+        var display = Array.isArray(vals) ? vals.map(function(v) { return '<code>' + esc(v) + '</code>'; }).join(', ') : '<code>' + esc(vals) + '</code>';
+        html += '<tr><td style="font-weight:600;white-space:nowrap;">' + esc(label) + '</td><td>' + display + '</td></tr>';
+      }
+      implRow('Harvester Script', impl.harvesterScript);
+      implRow('Harvester Transform', impl.harvesterTransform);
+      implRow('Source Path', impl.sourcePath);
+      implRow('Pod Path', impl.podPath);
+      implRow('Fuseki Graph', impl.fusekiGraph);
+      implRow('API Endpoints', impl.apiEndpoint);
+      implRow('Page Routes', impl.pageRoute);
+      implRow('Admin Routes', impl.adminRoute);
+      implRow('Handler Class', impl.handlerClass);
+      implRow('Service Classes', impl.serviceClass);
+      implRow('Validation Gate', impl.validationGate);
+      implRow('Sync Command', impl.syncCommand);
+      implRow('Manifest Path', impl.manifestPath);
+      html += '</table>';
+    } else {
+      html += '<p style="color:var(--text-muted);font-style:italic;">No implementation contract defined yet.</p>';
+    }
+    html += '</div></div>';
+
+    html += '</div></div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  // SVG mapping lines
+  function drawLines(domainEl) {
+    if (!domainEl) return;
+    var svg = domainEl.querySelector('.svg-overlay');
+    if (!svg) return;
+    var body = domainEl.querySelector('.domain-body');
+    if (!body) return;
+    var rect = body.getBoundingClientRect();
+    svg.innerHTML = '';
+    svg.setAttribute('width', rect.width);
+    svg.setAttribute('height', rect.height);
+    var txTip = document.getElementById('txTip');
+
+    body.querySelectorAll('.field-row[data-maps-to]').forEach(function(srcEl) {
+      if (srcEl.offsetParent === null) return;
+      var canonical = srcEl.dataset.mapsTo;
+      var dstEl = body.querySelector('.cf-row[data-canonical="' + canonical + '"]');
+      if (!dstEl || dstEl.offsetParent === null) return;
+
+      var sr = srcEl.getBoundingClientRect();
+      var dr = dstEl.getBoundingClientRect();
+      var x1 = sr.right - rect.left, y1 = sr.top + sr.height/2 - rect.top;
+      var x2 = dr.left - rect.left, y2 = dr.top + dr.height/2 - rect.top;
+      var mx = (x1 + x2) / 2;
+      var conf = srcEl.dataset.confidence || 'direct';
+
+      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2);
+      path.classList.add('mapping-line', conf);
+      path.style.pointerEvents = 'stroke';
+
+      path.addEventListener('mouseenter', function(e) {
+        document.getElementById('txConf').textContent = conf.toUpperCase();
+        document.getElementById('txConf').className = 'tx-conf ' + conf;
+        document.getElementById('txSummary').textContent = ' ' + srcEl.dataset.field + ' \u2192 ' + canonical;
+        document.getElementById('txRule').textContent = srcEl.dataset.transform || 'Copy as-is';
+        var g = document.getElementById('txGate');
+        g.textContent = srcEl.dataset.gate ? 'GATE: ' + srcEl.dataset.gate : '';
+        g.style.display = srcEl.dataset.gate ? 'block' : 'none';
+        txTip.style.left = e.clientX + 12 + 'px';
+        txTip.style.top = e.clientY - 10 + 'px';
+        txTip.classList.add('visible');
+      });
+      path.addEventListener('mousemove', function(e) {
+        txTip.style.left = e.clientX + 12 + 'px';
+        txTip.style.top = e.clientY - 10 + 'px';
+      });
+      path.addEventListener('mouseleave', function() { txTip.classList.remove('visible'); });
+      svg.appendChild(path);
+    });
+  }
+
+  // Bind toggle events via delegation
+  document.getElementById('icd-root').addEventListener('click', function(e) {
+    var target = e.target.closest('[data-action]');
+    if (!target) return;
+    var action = target.dataset.action;
+
+    if (action === 'toggle-domain') {
+      var domain = target.closest('.domain');
+      domain.classList.toggle('open');
+      setTimeout(function() { drawLines(domain); }, 100);
+    } else if (action === 'toggle-icd') {
+      var icd = target.closest('.icd');
+      icd.classList.toggle('open');
+      var domain = icd.closest('.domain');
+      if (domain) setTimeout(function() { drawLines(domain); }, 50);
+    } else if (action === 'toggle-section') {
+      target.closest('.icd-section').classList.toggle('open');
+      var domain = target.closest('.domain');
+      if (domain) setTimeout(function() { drawLines(domain); }, 50);
+    }
+  });
+
+  window.addEventListener('resize', function() {
+    var open = document.querySelector('.domain.open');
+    if (open) drawLines(open);
+  });
+
+  // Load version + lint in parallel (non-blocking), then domains
+  fetch('/api/icd/version').then(function(r) { return r.json(); }).then(function(v) {
+    if (v && v.version) {
+      var date = v.publishedAt ? v.publishedAt.slice(0, 10) : '';
+      icdVersionLabel = 'v' + v.version;
+      document.getElementById('icd-version').textContent = 'ICD v' + v.version + (date ? ' \u00b7 published ' + date : '');
+    }
+  }).catch(function(e) { console.warn('ICD version fetch failed:', e); });
+
+  // Load convergence taxonomy first — populates DOMAIN_META from server (#1904)
+  fetch('/api/convergence').then(function(r) { return r.json(); }).then(function(conv) {
+    if (conv && conv.domains) {
+      conv.domains.forEach(function(d) {
+        DOMAIN_META[d.id] = { product: d.product || 'gathering', step: d.step || 'practicing', fieldCount: d.fieldCount, providerCount: d.providerCount };
+      });
+    }
+    // Merge fallbacks for non-ICD domains
+    Object.keys(DOMAIN_META_FALLBACK).forEach(function(k) {
+      if (!DOMAIN_META[k]) DOMAIN_META[k] = DOMAIN_META_FALLBACK[k];
+    });
+  }).catch(function(e) {
+    console.warn('Convergence API failed, using fallback:', e);
+    DOMAIN_META = Object.assign({}, DOMAIN_META_FALLBACK);
+  }).then(function() {
+
+  // Load lint first, then domains — lint must be ready before renderDomain reads it
+  return fetch('/api/icd/lint').then(function(r) { return r.json(); }).then(function(lint) {
+    if (lint && lint.domains) {
+      lint.domains.forEach(function(d) {
+        lintByDomain[d.domain] = d;
+        // Also key by lowercase and first-word for fuzzy matching
+        lintByDomain[d.domain.toLowerCase()] = d;
+        var firstWord = d.domain.split(/\s/)[0].toLowerCase();
+        if (!lintByDomain[firstWord]) lintByDomain[firstWord] = d;
+      });
+    }
+  }).catch(function(e) { console.warn('ICD lint fetch failed:', e); }).then(function() {
+  // Load domains (main data) — runs after lint resolves (or fails)
+  return fetch('/api/icd/domains')
+    .then(function(r) {
+      if (!r.ok) throw new Error('API returned ' + r.status + ': ' + r.statusText);
+      return r;
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.domains || data.domains.length === 0) {
+        document.getElementById('domains-container').innerHTML = '<div class="loading">No ICD domains found in graph.</div>';
+        return;
+      }
+
+      // Fetch full domain + compliance for each — errors per domain don't kill the whole page
+      var container = document.getElementById('domains-container');
+      container.innerHTML = '';
+
+      document.getElementById('icd-filters').style.display = '';
+      // Build domain filter chips from full taxonomy — ICD domains bold, others dimmed
+      var domainChipContainer = document.getElementById('icd-domain-chips');
+      var icdDomainIds = {};
+      data.domains.forEach(function(d) { icdDomainIds[d.id] = d.name; });
+      var allDomainIds = Object.keys(DOMAIN_META);
+      allDomainIds.forEach(function(id) {
+        var hasIcd = icdDomainIds[id];
+        var label = hasIcd || id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, ' ');
+        var chip = document.createElement('span');
+        chip.className = 'icd-filter-chip';
+        chip.setAttribute('data-filter', 'domain');
+        chip.setAttribute('data-value', id);
+        var dimStyle = hasIcd ? '' : 'opacity:0.45;';
+        chip.setAttribute('style', 'display:inline-block;padding:0.2rem 0.6rem;font-size:0.75rem;border:1px solid var(--border-color);border-radius:12px;cursor:pointer;color:var(--text-muted);' + dimStyle);
+        chip.textContent = label;
+        domainChipContainer.appendChild(chip);
+      });
+      data.domains.forEach(function(d) {
+        var domainDiv = document.createElement('div');
+        domainDiv.id = 'loading-' + d.id;
+        var meta = DOMAIN_META[d.id] || { product: 'gathering', step: 'practicing' };
+        domainDiv.setAttribute('data-product', meta.product);
+        domainDiv.setAttribute('data-step', meta.step);
+        domainDiv.setAttribute('data-domain-id', d.id);
+        domainDiv.innerHTML = '<div class="loading" style="padding:0.5rem;font-size:0.8rem;">Loading ' + d.name + '...</div>';
+        container.appendChild(domainDiv);
+
+        Promise.all([
+          fetch('/api/icd/domains/' + d.id).then(function(r) { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); }),
+          fetch('/api/icd/domains/' + d.id + '/compliance').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+        ]).then(function(pair) {
+          var domain = pair[0];
+          var compliance = pair[1];
+          if (domain && !domain.error) {
+            domainDiv.innerHTML = renderDomain(domain, compliance);
+          } else {
+            domainDiv.innerHTML = '<div class="loading" style="color:var(--danger-color);">Failed: ' + d.name + ' — ' + (domain ? domain.error : 'no data') + '</div>';
+          }
+        }).catch(function(err) {
+          domainDiv.innerHTML = '<div class="loading" style="color:var(--danger-color);">Error loading ' + d.name + ': ' + err.message + '</div>';
+        });
+      });
+    })
+    .then(function() {
+      restoreIcdFilters();
+      applyIcdFilters();
+    }).catch(function(err) {
+      document.getElementById('domains-container').innerHTML = '<div class="loading" style="color:var(--danger-color);">Failed to load ICD: ' + err.message + '</div>';
+    });
+  }); // end lint .then → domains chain
+  }); // end convergence .then
+})();
+</script>
+
+<script nonce="" src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script nonce="">
+mermaid.initialize({startOnLoad: false, theme: 'neutral', securityLevel: 'loose'});
+// Render mermaid diagrams when they become visible
+document.getElementById('icd-root').addEventListener('click', function() {
+  setTimeout(function() {
+    document.querySelectorAll('.mermaid:not([data-processed])').forEach(function(el) {
+      if (el.offsetParent === null) return;
+      try {
+        var id = 'm' + Math.random().toString(36).slice(2, 8);
+        mermaid.render(id, el.textContent.trim()).then(function(result) {
+          el.innerHTML = result.svg;
+          el.setAttribute('data-processed', 'true');
+        });
+      } catch(e) { /* skip broken diagrams */ }
+    });
+  }, 100);
+});
+</script>
+
+</div><!-- /page-card -->
+</div><!-- /page-container -->
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Gathering</h3>
+      <p>Personal knowledge graph &middot; RDF/SPARQL &middot; Private by default</p>
+    </div>
+    <div class="footer-section">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/blog">Journal</a></li>
+        <li><a href="/chorus">Chorus</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <p>SOLID pods &middot; ACL visibility &middot; Everything graduates</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Jeff Bridwell &middot; Roslindale, MA &middot; Built with the Loom</p>
+  </div>
+</footer>
+
+
+
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+
+
+
+</body>
+</html>
+

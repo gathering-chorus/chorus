@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chorus — Model + Data | Jeff Bridwell</title>
+  <link rel="stylesheet" href="/css/gathering.css">
+  <style>
+    body {
+      background: #f8f9fa;
+      color: #1a1a2e;
+      font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif;
+    }
+
+    /* uses .page-container from gathering.css */
+    h1 { font-size: 24px; font-weight: 300; color: #1a1a2e; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #586069; margin-bottom: 32px; }
+    .subtitle span { color: #c084fc; }
+
+    .back-link { color: #6d28d9; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 16px; }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Ontology summary bar */
+    .meta-bar { display: flex; gap: 2rem; padding: 16px 20px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 32px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .meta-bar dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 2px; }
+    .meta-bar dd { font-weight: 500; font-size: 14px; color: #1a1a2e; }
+    .meta-bar dd code { color: #6d28d9; font-size: 11px; }
+
+    /* Value stream stage sections */
+    .vs-stage { margin-bottom: 40px; }
+    .vs-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
+    .vs-header h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #333; }
+    .vs-label { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+    .vs-label.capturing { background: #ede9fe; color: #6d28d9; }
+    .vs-label.shaping { background: #fef9c3; color: #854d0e; }
+    .vs-label.directing { background: #fef3c7; color: #92400e; }
+    .vs-label.designing { background: #e0e7ff; color: #3730a3; }
+    .vs-label.building { background: #d1fae5; color: #065f46; }
+    .vs-label.proving { background: #fce7f3; color: #9d174d; }
+    .vs-label.operating { background: #f3f4f6; color: #6b7280; }
+    .vs-desc { font-size: 12px; color: #586069; font-style: italic; margin-bottom: 16px; }
+
+    /* Stage content grid */
+    .stage-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .stage-col h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 10px; }
+    .stage-col ul { list-style: none; }
+    .stage-col li { padding: 6px 0; font-size: 13px; color: #444; border-bottom: 1px solid #e9ecef; }
+    .stage-col li:last-child { border-bottom: none; }
+    .concept { color: #6d28d9; font-family: 'SF Mono', monospace; font-size: 12px; }
+    .tool { color: #2563eb; font-family: 'SF Mono', monospace; font-size: 12px; }
+    .tool-status { font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+    .tool-status.live { background: #dcfce7; color: #166534; }
+    .tool-status.planned { background: #f1f3f5; color: #586069; }
+    .svc-type { font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+    .svc-type.protocol { background: #dbeafe; color: #1e40af; }
+    .svc-type.infra { background: #fce7f3; color: #9d174d; }
+    .svc-type.loom { background: #fef9c3; color: #854d0e; }
+    .svc-type.subproduct { background: #e0e7ff; color: #3730a3; }
+
+    /* Consumption edges */
+    .consumers { font-size: 11px; color: #888; margin-top: 4px; }
+    .consumers span { color: #6d28d9; }
+
+    /* Doc links */
+    .doc-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .doc-links a { font-size: 12px; color: #6d28d9; text-decoration: none; padding: 4px 10px; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; }
+    .doc-links a:hover { border-color: #6d28d9; text-decoration: underline; }
+
+    /* Foundation docs section */
+    .foundation { margin-top: 40px; }
+    .foundation h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #333; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
+    .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .doc-card { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .doc-card h3 { font-size: 14px; color: #1a1a2e; margin-bottom: 6px; }
+    .doc-card h3 a { color: #6d28d9; text-decoration: none; }
+    .doc-card h3 a:hover { text-decoration: underline; }
+    .doc-card p { font-size: 12px; color: #586069; line-height: 1.5; }
+
+    /* Lineage note */
+    .note { font-size: 13px; color: #586069; line-height: 1.6; margin-top: 12px; padding: 12px; background: #ffffff; border-radius: 8px; border-left: 3px solid #6d28d9; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  </style>
+</head>
+<body>
+  <div class="nav-bar">
+    <nav>
+    
+        
+            
+            
+            
+            
+
+            
+            <a href="/">Gathering</a>
+            
+
+            
+        
+
+        <a href="/logout" class="logout-link">Logout</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+  </div>
+
+  <div class="page-container">
+    <a href="/model-data-hub" class="back-link">&larr; Model + Data</a>
+
+    <h1>Chorus &mdash; Model + Data</h1>
+    <p class="subtitle">CMDB &mdash; domains, services, and ownership organized by <span>value stream step</span></p>
+
+    <div class="meta-bar">
+      <dl><dt>Ontology</dt><dd>chorus.ttl</dd></dl>
+      <dl><dt>Version</dt><dd>v0.3.0</dd></dl>
+      <dl><dt>Namespace</dt><dd><code>https://jeffbridwell.com/chorus#</code></dd></dl>
+      <dl><dt>Sub-Products</dt><dd>8</dd></dl>
+      <dl><dt>Domains</dt><dd>7</dd></dl>
+      <dl><dt>Shared Services</dt><dd>9</dd></dl>
+      <dl><dt>Edge Types</dt><dd>hasDomain &middot; consumes &middot; provides</dd></dl>
+      <dl><dt>Detail</dt><dd><a href="/ontology-views/chorus" style="color:#6d28d9;text-decoration:none;font-size:13px;">Full Ontology &rarr;</a></dd></dl>
+    </div>
+
+    <!-- CAPTURING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Capturing</h2>
+        <span class="vs-label capturing">Where work enters</span>
+      </div>
+      <p class="vs-desc">Ideas, observations, and signals become visible to the team.</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Concepts</h3>
+          <ul>
+            <li><span class="concept">chorus:Card</span> &mdash; kanban entry point</li>
+            <li><span class="concept">chorus:WorkItem</span> &mdash; trackable unit</li>
+            <li><span class="concept">chorus:Signal</span> &mdash; ephemeral notification</li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Tools</h3>
+          <ul>
+            <li><span class="tool">/look</span> <span class="tool-status live">live</span> &mdash; screen capture</li>
+            <li><span class="tool">/listen</span> <span class="tool-status live">live</span> &mdash; voice transcription</li>
+            <li><span class="tool">SMS capture</span> <span class="tool-status live">live</span> &mdash; Twilio webhook</li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Roles</h3>
+          <ul>
+            <li>Jeff &mdash; primary (ideas, direction, voice)</li>
+            <li>Wren &mdash; secondary (triage, card creation)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- SHAPING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Shaping</h2>
+        <span class="vs-label shaping">Where the operating model lives</span>
+      </div>
+      <p class="vs-desc">Principles, practices, decisions, and metrics that define how the team works. The DSL layer.</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Domains</h3>
+          <ul>
+            <li>Principles <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Jeff</span></div></li>
+            <li>Practices <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Jeff</span></div></li>
+            <li>Decisions <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Jeff</span></div></li>
+            <li>Roles <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Jeff</span></div></li>
+            <li>Metrics <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Wren</span></div></li>
+            <li>Analytics <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Wren</span></div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Shared Services</h3>
+          <ul>
+            <li>Skills <span class="svc-type protocol">Protocol</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; 36 skills, all roles</div></li>
+            <li>Spine <span class="svc-type protocol">Protocol</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; event bus, all layers</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Sub-Products</h3>
+          <ul>
+            <li>Loom <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Jeff</span> &middot; 7 domains</div></li>
+            <li>Operating Model <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span></div></li>
+          </ul>
+          <div class="doc-links">
+            <a href="/werk">Werk dashboard</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIRECTING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Directing</h2>
+        <span class="vs-label directing">Where work gets prioritized</span>
+      </div>
+      <p class="vs-desc">Raw ideas become cards with acceptance criteria, priority, and ownership.</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Shared Services</h3>
+          <ul>
+            <li>Cards <span class="svc-type protocol">Protocol</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; consumed by: Loom, Werk, Clearing</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Sub-Products</h3>
+          <ul>
+            <li>Cards <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; board-ts CLI, Vikunja API</div></li>
+            <li>Werk <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; workflow engine</div></li>
+            <li>The Clearing <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; multi-party alignment</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Roles</h3>
+          <ul>
+            <li>Jeff &mdash; gatekeeper</li>
+            <li>Wren &mdash; primary (AC, priority, sequencing)</li>
+          </ul>
+          <div class="doc-links">
+            <a href="/flow">Flow page</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DESIGNING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Designing</h2>
+        <span class="vs-label designing">Where work gets structured</span>
+      </div>
+      <p class="vs-desc">Cards become briefs, workflows, and architectural decisions.</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Sub-Products</h3>
+          <ul>
+            <li>Convergence <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; ICDs, harvesters, pipelines</div></li>
+            <li>Actor + BDD <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Wren</span> &middot; domain modeling framework</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Tools</h3>
+          <ul>
+            <li><span class="tool">/werk</span> <span class="tool-status live">live</span> &mdash; workflow engine</li>
+            <li><span class="tool">workflow.sh</span> <span class="tool-status live">live</span> &mdash; manifest ops</li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Roles</h3>
+          <ul>
+            <li>Silas &mdash; primary (architecture, infra design)</li>
+            <li>Wren &mdash; secondary (product briefs)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUILDING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Building</h2>
+        <span class="vs-label building">Where work gets built</span>
+      </div>
+      <p class="vs-desc">Briefs become code, commits, and deployed artifacts.</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Shared Services</h3>
+          <ul>
+            <li>Gates <span class="svc-type protocol">Protocol</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; Rust hooks, quality enforcement</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Tools</h3>
+          <ul>
+            <li><span class="tool">/chorus</span> <span class="tool-status live">live</span> &mdash; shared memory</li>
+            <li><span class="tool">git-queue.sh</span> <span class="tool-status live">live</span> &mdash; serialized commits</li>
+            <li><span class="tool">chorus-log.sh</span> <span class="tool-status live">live</span> &mdash; spine emitter</li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Roles</h3>
+          <ul>
+            <li>Kade &mdash; primary (app features, tests)</li>
+            <li>Silas &mdash; secondary (infra, deploy tooling)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROVING -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Proving</h2>
+        <span class="vs-label proving">Where work gets verified</span>
+      </div>
+      <p class="vs-desc">Deploy &rarr; Demo &rarr; Accept. No self-service Done for code changes (DEC-048).</p>
+      <div class="stage-grid">
+        <div class="stage-col">
+          <h3>Shared Services</h3>
+          <ul>
+            <li>Observability <span class="svc-type infra">Infrastructure</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; consumed by: all sub-products</div></li>
+            <li>Infrastructure <span class="svc-type infra">Infrastructure</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; runs on: Library + Bedroom</div></li>
+            <li>Logs <span class="svc-type infra">Infrastructure</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; Loki aggregation</div></li>
+            <li>Alerts <span class="svc-type infra">Infrastructure</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; Alertmanager + macOS</div></li>
+            <li>Deploys <span class="svc-type infra">Infrastructure</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; app-state.sh, containers</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Domains</h3>
+          <ul>
+            <li>RCAs <span class="svc-type loom">LoomDomain</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; post-incident learning</div></li>
+          </ul>
+          <h3 style="margin-top:16px;">Sub-Products</h3>
+          <ul>
+            <li>Observability <span class="svc-type subproduct">SubProduct</span>
+              <div class="consumers">owner: <span>Silas</span> &middot; dashboards, monitoring</div></li>
+          </ul>
+        </div>
+        <div class="stage-col">
+          <h3>Roles</h3>
+          <ul>
+            <li>Jeff &mdash; gatekeeper (accepts or bounces)</li>
+            <li>Wren &mdash; AC verification</li>
+            <li>Silas &mdash; infrastructure health</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONSUMPTION MAP -->
+    <div class="vs-stage">
+      <div class="vs-header">
+        <h2>Consumption Map</h2>
+        <span class="vs-label operating">Who depends on what</span>
+      </div>
+      <p class="vs-desc">Each sub-product declares which shared services it consumes. If a service breaks, every consumer is impaired.</p>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid #e0e0e0;text-align:left;">
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Sub-Product</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Cards</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Skills</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Gates</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Spine</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Obs</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Infra</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Logs</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Alerts</th>
+            <th style="padding:8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888;">Deploys</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #e9ecef;">
+            <td style="padding:8px 12px;font-weight:500;">Loom</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+          </tr>
+          <tr style="border-bottom:1px solid #e9ecef;">
+            <td style="padding:8px 12px;font-weight:500;">Werk</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+          </tr>
+          <tr style="border-bottom:1px solid #e9ecef;">
+            <td style="padding:8px 12px;font-weight:500;">The Clearing</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+          </tr>
+          <tr style="border-bottom:1px solid #e9ecef;">
+            <td style="padding:8px 12px;font-weight:500;">Cards</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+          </tr>
+          <tr style="border-bottom:1px solid #e9ecef;">
+            <td style="padding:8px 12px;font-weight:500;">Observability</td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;"></td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+            <td style="padding:8px 4px;text-align:center;color:#6d28d9;">&bull;</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e9ecef;background:#f8f9fa;">
+            <td style="padding:8px 12px;font-weight:500;color:#888;">Consumers</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">3</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">1</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">1</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">4</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">4</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">5</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">1</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">1</td>
+            <td style="padding:8px 4px;text-align:center;font-size:11px;color:#888;">1</td>
+          </tr>
+          <tr style="background:#f8f9fa;">
+            <td style="padding:8px 12px;font-weight:500;color:#888;">Tier</td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type protocol" style="margin:0;">P</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type protocol" style="margin:0;">P</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type protocol" style="margin:0;">P</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type protocol" style="margin:0;">P</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type infra" style="margin:0;">I</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type infra" style="margin:0;">I</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type infra" style="margin:0;">I</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type infra" style="margin:0;">I</span></td>
+            <td style="padding:8px 4px;text-align:center;"><span class="svc-type infra" style="margin:0;">I</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:11px;color:#888;margin-top:8px;"><strong>P</strong> = Protocol (breaks ability to work) &middot; <strong>I</strong> = Infrastructure (breaks visibility) &middot; Infra has 5 consumers &mdash; highest blast radius.</p>
+    </div>
+
+    <!-- FOUNDATIONAL DOCS -->
+    <div class="foundation">
+      <h2>Foundational Documents</h2>
+      <p style="font-size:13px;color:#888;margin-bottom:16px;">Design documents that define Chorus's architecture and value stream.</p>
+      <div class="doc-grid">
+        <div class="doc-card">
+          <h3><a href="/chorus-spine.html">Spine Architecture</a></h3>
+          <p>The three thirds of Chorus: Awareness (index + search), Coordination (briefs + workflows + board), Interaction (Clearing + senses + tools). How they connect through the spine.</p>
+        </div>
+        <div class="doc-card">
+          <h3><a href="/werk-process.html">Card Lifecycle (Werk Process)</a></h3>
+          <p>How a piece of work flows from Capturing through Proving. Gate quality criteria at each transition. The feedback loop from Proving back to Directing.</p>
+        </div>
+        <div class="doc-card">
+          <h3><a href="/ontology-views/chorus">Chorus Ontology Detail</a></h3>
+          <p>Full class tree, domain subtypes, service tiers, consumption edges. chorus.ttl v0.3.0.</p>
+        </div>
+        <div class="doc-card">
+          <h3><a href="/gathering-chorus.html">Gathering + Chorus</a></h3>
+          <p>How the two products relate. Gathering is the application (personal knowledge graph). Chorus is the operating system (team coordination). They share infrastructure.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:32px;">
+      <strong>Prior art:</strong> US Patent 9,552,400 B2 (Bridwell) &mdash; RDF/OWL + SPARQL + workflow gates for multi-hop flow comprehension. Chorus is the team-scale realization of the same principle: model the flow, gate the transitions, query the state.
+    </div>
+
+    <p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">Chorus Model + Data &middot; chorus.ttl v0.3.0 &middot; #1845 CMDB &middot; Ownership is initial &mdash; subject to Jeff's review</p>
+    <footer style="margin-top:2rem;padding:1rem 0;border-top:1px solid #e0e0e0;color:#888;font-size:0.85rem;">&copy; 2026 Jeff Bridwell</footer>
+  </div>
+</body>
+</html>

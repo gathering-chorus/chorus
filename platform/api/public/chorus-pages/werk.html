@@ -1,0 +1,2215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Werk | Jeff Bridwell</title>
+  <link rel="stylesheet" href="/css/gathering.css">
+
+    <script nonce="" src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script nonce="" src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+    <style>
+        .value-intro { color: var(--text-muted); margin-bottom: var(--space-lg); font-size: var(--font-size-base); line-height: 1.6; }
+
+        /* Tabs */
+        .value-tabs { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-color); }
+        .value-tab { padding: 0.6rem 1.2rem; cursor: pointer; font-weight: 600; font-size: 0.9rem; border: none; background: none;
+            color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+        .value-tab:hover { color: var(--primary-color); }
+        .value-tab.active { color: var(--primary-color); border-bottom-color: var(--accent-color); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Flow metrics styles */
+        .flow-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        .flow-controls label { color: var(--text-muted); font-size: 0.8rem; }
+        .flow-controls input, .flow-controls select { background: var(--card-bg); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; font-size: 0.85rem; }
+        .flow-controls select { cursor: pointer; }
+        .flow-controls button { background: var(--accent-color); color: white; border: none; border-radius: 4px;
+            padding: 6px 14px; font-size: 0.85rem; cursor: pointer; font-weight: 600; }
+        .flow-controls button:hover { opacity: 0.9; }
+
+        .metrics-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
+        .metric-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; text-align: center; }
+        .metric-val { font-size: 1.6rem; font-weight: 700; color: var(--accent-color); }
+        .metric-val.green { color: #10b981; }
+        .metric-val.purple { color: #8b5cf6; }
+        .metric-val.orange { color: #f59e0b; }
+        .metric-val.red { color: #ef4444; }
+        .metric-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+        .role-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+        .role-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; }
+        .role-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 8px; }
+        .role-name.wren { color: #10b981; }
+        .role-name.silas { color: #f59e0b; }
+        .role-name.kade { color: #3b82f6; }
+        .role-name.jeff { color: #8b5cf6; }
+        .role-stat { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 3px 0; border-bottom: 1px solid var(--border-color); }
+        .role-stat:last-child { border: none; }
+        .role-stat-label { color: var(--text-muted); }
+        .role-stat-value { font-weight: 600; }
+        .bottleneck { background: rgba(239,68,68,0.08); border-color: #ef4444; }
+        .bottleneck .role-name::after { content: ' \2190 bottleneck'; font-weight: 400; font-size: 0.75rem; color: #ef4444; }
+
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .chart-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; }
+        .chart-box canvas { width: 100% !important; }
+
+        .wf-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .wf-table th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 8px; border-bottom: 2px solid var(--border-color); }
+        .wf-table td { padding: 8px; border-bottom: 1px solid var(--border-color); }
+        .wf-id { color: var(--accent-color); font-weight: 600; }
+        .wf-done { color: #10b981; }
+        .wf-active { color: #f59e0b; }
+        .wf-time { font-family: monospace; color: var(--text-muted); font-size: 0.8rem; }
+
+        /* Spine section */
+        .spine-strip { display: flex; gap: 0; margin-bottom: 1.5rem; }
+        .vertebra { flex: 1; text-align: center; padding: 12px 8px; font-weight: 600; font-size: 0.85rem; position: relative; }
+        .vertebra::after { content: '\2192'; position: absolute; right: -8px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 1.2rem; }
+        .vertebra:last-child::after { display: none; }
+        .vertebra.capturing { background: #ede9fe; color: #6d28d9; border-radius: 8px 0 0 8px; }
+        .vertebra.directing { background: #fef3c7; color: #92400e; }
+        .vertebra.building { background: #d1fae5; color: #065f46; }
+        .vertebra.proving { background: #fce7f3; color: #9d174d; border-radius: 0 8px 8px 0; }
+        .vertebra-count { font-size: 1.4rem; display: block; margin-bottom: 2px; }
+
+        /* Card rows */
+        .card-row { margin-bottom: 0.75rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; }
+        .card-row-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .card-badge { background: #ede9fe; color: #6d28d9; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+        .card-badge.chorus { background: #dbeafe; color: #1e40af; }
+        .card-title { font-weight: 600; color: var(--primary-color); font-size: 0.9rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        a.card-link { text-decoration: none; color: inherit; }
+        a.card-link:hover { text-decoration: underline; }
+        .card-meta { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+        .card-owner { font-size: 0.75rem; color: var(--text-muted); background: #f3f4f6; padding: 1px 6px; border-radius: 4px; }
+        .card-priority { font-size: 0.7rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+        .card-priority.P1 { background: #fef2f2; color: #dc2626; }
+        .card-priority.P2 { background: #fef3c7; color: #d97706; }
+        .card-priority.P3 { background: #f0fdf4; color: #16a34a; }
+        .card-status { font-size: 0.75rem; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+        .card-status.now { background: #fef3c7; color: #92400e; }
+        .card-status.wip { background: #dbeafe; color: #1e40af; }
+        .card-status.next { background: #f0fdf4; color: #16a34a; }
+        .card-status.later { background: #f3f4f6; color: #6b7280; }
+        .card-status.blocked { background: #fef2f2; color: #dc2626; }
+        .time-badge { font-family: monospace; font-size: 0.75rem; padding: 1px 6px; border-radius: 4px; }
+        .time-badge.wait { background: #fef3c7; color: #92400e; }
+        .time-badge.cycle { background: #dbeafe; color: #1e40af; }
+        .time-badge.lead { background: #ede9fe; color: #6d28d9; }
+
+        /* Nested workflow bars */
+        .card-workflows { margin-top: 8px; }
+        .nested-wf { margin-top: 6px; }
+        .nested-wf-header { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 3px; }
+        .wf-steps { display: flex; gap: 4px; }
+        .wf-step { flex: 1; padding: 5px; border-radius: 4px; font-size: 0.7rem; text-align: center; }
+        .wf-step.completed { background: #d1fae5; color: #065f46; }
+        .wf-step.ready { background: #fef3c7; color: #92400e; }
+        .wf-step.pending { background: #f3f4f6; color: #6b7280; }
+
+        .section-header { font-size: 1rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 8px; }
+        .section-count { background: #f3f4f6; color: var(--text-muted); padding: 1px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; }
+        .card-row.completed-card { opacity: 0.7; }
+
+        /* Orphan workflows */
+        .orphan-wf { margin-bottom: 0.5rem; background: var(--card-bg); border: 1px dashed var(--border-color); border-radius: 8px; padding: 10px 14px; }
+        .orphan-wf-header { font-size: 0.8rem; color: var(--text-muted); }
+
+        /* Spine tab */
+        .spine-filters { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+        .spine-filters select, .spine-filters input { padding: 0.35rem 0.5rem; font-size: 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); }
+        .spine-filters input { width: 70px; }
+        .spine-filters input::placeholder { color: var(--text-muted); }
+        .spine-filters button { padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 600; border: none; border-radius: 6px; background: var(--accent-color); color: white; cursor: pointer; }
+        .spine-filters button:hover { opacity: 0.9; }
+        .spine-filters .filter-clear { background: none; color: var(--text-muted); font-weight: 400; text-decoration: underline; padding: 0.35rem 0.25rem; }
+
+        .spine-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+        .stat-badge { background: var(--card-bg); border-radius: 8px; padding: 0.75rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-badge .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--primary-color); }
+        .stat-badge .stat-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem; }
+        .stat-badge.stat-warn .stat-value { color: #d97706; }
+        .stat-badge.stat-stale .stat-value { color: #ca8a04; }
+        .stat-badge.stat-done .stat-value { color: #16a34a; }
+
+        .spine-feed { list-style: none; padding: 0; margin: 0; background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+        .spine-event { display: grid; grid-template-columns: 90px 1fr; gap: 0.5rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; align-items: baseline; }
+        .spine-event:last-child { border-bottom: none; }
+        .spine-event.event-warn { background: #fffbeb; border-left: 3px solid #d97706; }
+        .spine-event.event-stale { background: #fefce8; border-left: 3px solid #ca8a04; }
+        .spine-event .event-time { color: var(--text-muted); font-family: monospace; font-size: 0.72rem; white-space: nowrap; }
+        .spine-event .event-sentence { line-height: 1.4; }
+        .spine-event .event-sentence .ev-role { font-weight: 600; font-size: 0.8rem; }
+        .spine-event .event-sentence .ev-verb { font-weight: 600; font-size: 0.8rem; }
+        .spine-event .event-sentence .ev-role.role-wren { color: #16a34a; }
+        .spine-event .event-sentence .ev-role.role-silas { color: #d97706; }
+        .spine-event .event-sentence .ev-role.role-kade { color: #2563eb; }
+        .spine-event .event-sentence .ev-role.role-app { color: #8b5cf6; }
+        .spine-event .event-sentence .ev-ref { font-family: monospace; font-weight: 600; font-size: 0.8rem; }
+        .spine-event .event-sentence .ev-context { color: var(--text-muted); }
+        .spine-empty { padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+        .spine-loading { padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
+        /* Warm tier summary view */
+        .spine-view-toggle { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; margin-left: auto; }
+        .spine-view-toggle button { padding: 0.35rem 0.75rem; font-size: 0.75rem; font-weight: 600; border: none; background: var(--card-bg); color: var(--text-muted); cursor: pointer; }
+        .spine-view-toggle button.active { background: var(--accent-color); color: white; }
+        .spine-summary { list-style: none; padding: 0; margin: 0; }
+        .summary-group { background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 0.75rem; overflow: hidden; }
+        .summary-group-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem; cursor: pointer; user-select: none; }
+        .summary-group-header:hover { opacity: 0.85; }
+        .summary-group-header .sg-chevron { font-size: 0.7rem; color: var(--text-muted); transition: transform 0.2s; }
+        .summary-group.expanded .sg-chevron { transform: rotate(90deg); }
+        .summary-group-header.capturing { background: #ede9fe; color: #6d28d9; }
+        .summary-group-header.directing { background: #fef3c7; color: #92400e; }
+        .summary-group-header.building { background: #d1fae5; }
+        .summary-group-header.proving { background: #fce7f3; }
+        .summary-group-header.operations { background: #f3f4f6; }
+        .sg-name { font-weight: 700; font-size: 0.9rem; min-width: 90px; }
+        .sg-bar { flex: 1; height: 6px; background: rgba(0,0,0,0.08); border-radius: 3px; overflow: hidden; }
+        .sg-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .sg-bar-fill.capturing { background: #7c3aed; }
+        .sg-bar-fill.directing { background: #d97706; }
+        .sg-bar-fill.building { background: #059669; }
+        .sg-bar-fill.proving { background: #db2777; }
+        .sg-bar-fill.operations { background: #9ca3af; }
+        .sg-count { font-weight: 700; font-size: 0.9rem; min-width: 30px; text-align: right; }
+        .sg-headline { font-size: 0.8rem; color: var(--text-muted); flex: 2; }
+        .summary-group-detail { display: none; border-top: 1px solid var(--border-color); }
+        .summary-group.expanded .summary-group-detail { display: block; }
+
+        /* Scorecard */
+        .scorecard { margin-bottom: 1.25rem; }
+        .scorecard-stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 0.75rem; }
+        .sc-stage { border-radius: 8px; padding: 0.65rem 0.5rem; text-align: center; position: relative; }
+        .sc-stage.capturing { background: #ede9fe; }
+        .sc-stage.directing { background: #fef3c7; }
+        .sc-stage.building { background: #d1fae5; }
+        .sc-stage.proving { background: #fce7f3; }
+        .sc-stage.operations { background: #e0e7ff; }
+        .sc-stage .sc-stage-name { font-weight: 700; font-size: 0.8rem; margin-bottom: 0.35rem; }
+        .sc-stage .sc-events { font-size: 1.3rem; font-weight: 700; }
+        .sc-stage .sc-detail { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem; }
+        .sc-gate-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 4px; vertical-align: middle; }
+        .sc-gate-dot.green { background: #16a34a; }
+        .sc-gate-dot.amber { background: #d97706; }
+        .sc-gate-dot.dark { background: #d1d5db; }
+        .scorecard-derived { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; }
+        .sc-metric { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.6rem; text-align: center; }
+        .sc-metric .sc-val { font-size: 1.1rem; font-weight: 700; }
+        .sc-metric .sc-val.good { color: #16a34a; }
+        .sc-metric .sc-val.warn { color: #d97706; }
+        .sc-metric .sc-val.bad { color: #ef4444; }
+        .sc-metric .sc-lbl { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+        /* Contract tab */
+        .contract-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .contract-version { font-size: 0.85rem; color: var(--text-muted); }
+        .contract-version strong { color: var(--accent-color); }
+        .contract-filters { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+        .contract-filters select, .contract-filters input { padding: 0.35rem 0.5rem; font-size: 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg); color: var(--text-primary); }
+        .contract-filters input { width: 180px; }
+        .contract-envelope { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; }
+        .contract-envelope h3 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--primary-color); }
+        .envelope-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.4rem; }
+        .env-field { font-size: 0.8rem; padding: 0.3rem 0.5rem; background: #f3f4f6; border-radius: 4px; }
+        .env-field code { font-weight: 700; color: var(--accent-color); }
+        .vertebra-group { margin-bottom: 1.25rem; }
+        .vertebra-group-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-weight: 700; font-size: 0.9rem; }
+        .vertebra-group-header .vg-count { font-weight: 400; font-size: 0.8rem; opacity: 0.7; }
+        .vertebra-group-header.capturing { background: #ede9fe; color: #6d28d9; }
+        .vertebra-group-header.directing { background: #fef3c7; color: #92400e; }
+        .vertebra-group-header.building { background: #d1fae5; color: #065f46; }
+        .vertebra-group-header.proving { background: #fce7f3; color: #9d174d; }
+        .vertebra-group-header.operations { background: #f3f4f6; color: #6b7280; }
+        .event-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem; }
+        .event-card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+        .event-name { font-family: monospace; font-weight: 700; font-size: 0.85rem; color: var(--primary-color); }
+        .event-source { font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+        .event-source.chorus-events { background: #dbeafe; color: #1e40af; }
+        .event-source.board-client { background: #fef3c7; color: #92400e; }
+        .event-desc { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+        .event-fields { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+        .event-field { font-size: 0.72rem; padding: 1px 6px; border-radius: 3px; background: #f3f4f6; color: var(--text-muted); }
+        .event-field code { font-weight: 600; color: var(--text-primary); }
+        .contract-loading { padding: 2rem; text-align: center; color: var(--text-muted); }
+        .contract-error { padding: 1.5rem; text-align: center; color: #dc2626; }
+        .contract-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+        .cs-stat { text-align: center; padding: 0.6rem; border-radius: 8px; }
+        .cs-stat .cs-val { font-size: 1.3rem; font-weight: 700; }
+        .cs-stat .cs-lbl { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.1rem; }
+        .cs-stat.capturing { background: #ede9fe; }
+        .cs-stat.capturing .cs-val { color: #6d28d9; }
+        .cs-stat.directing { background: #fef3c7; }
+        .cs-stat.directing .cs-val { color: #92400e; }
+        .cs-stat.building { background: #d1fae5; }
+        .cs-stat.building .cs-val { color: #065f46; }
+        .cs-stat.proving { background: #fce7f3; }
+        .cs-stat.proving .cs-val { color: #9d174d; }
+        .cs-stat.operations { background: #f3f4f6; }
+        .cs-stat.operations .cs-val { color: #6b7280; }
+
+        /* Board iframe */
+        .board-frame { width: 100%; height: 700px; border: 1px solid var(--border-color); border-radius: 8px; }
+
+        /* Instruments tab */
+        .inst-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .inst-panel { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; }
+        .inst-panel h3 { margin: 0 0 12px; font-size: 0.9rem; color: var(--primary-color); }
+        .inst-panel .inst-empty { color: var(--text-muted); font-size: 0.85rem; font-style: italic; }
+
+        /* WIP Enforcement */
+        .wip-roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .wip-card { border: 2px solid var(--border-color); border-radius: 8px; padding: 12px; text-align: center; }
+        .wip-card.over { border-color: #ef4444; background: rgba(239,68,68,0.06); }
+        .wip-card .wip-role { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
+        .wip-card .wip-role.wren { color: #10b981; }
+        .wip-card .wip-role.silas { color: #f59e0b; }
+        .wip-card .wip-role.kade { color: #3b82f6; }
+        .wip-card .wip-count { font-size: 1.6rem; font-weight: 700; }
+        .wip-card .wip-count.over { color: #ef4444; }
+        .wip-card .wip-limit { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+        .wip-card .wip-items { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; text-align: left; }
+        .wip-card .wip-items div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Proving Gate */
+        .gate-card { border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+        .gate-card:last-child { margin-bottom: 0; }
+        .gate-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .gate-title { font-weight: 600; font-size: 0.85rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gate-dots { display: flex; gap: 6px; }
+        .gate-dot { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; color: white; }
+        .gate-dot.done { background: #16a34a; }
+        .gate-dot.pending { background: #d1d5db; color: #6b7280; }
+        .gate-dot.active { background: #f59e0b; }
+
+        /* Brief Latency */
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .brief-table th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 6px 8px; border-bottom: 2px solid var(--border-color); font-size: 0.75rem; }
+        .brief-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-color); }
+        .brief-table .brief-stale { background: rgba(239,68,68,0.06); }
+        .brief-latency { font-family: monospace; font-size: 0.75rem; }
+        .brief-latency.stale { color: #ef4444; font-weight: 700; }
+
+        /* Fitness Functions */
+        .fitness-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .fitness-card { border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; text-align: center; }
+        .fitness-val { font-size: 1.4rem; font-weight: 700; color: var(--accent-color); }
+        .fitness-val .trend { font-size: 0.8rem; margin-left: 4px; }
+        .fitness-val .trend.up { color: #16a34a; }
+        .fitness-val .trend.down { color: #ef4444; }
+        .fitness-val .trend.flat { color: var(--text-muted); }
+        .fitness-lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
+        @media (max-width: 900px) {
+            .charts-grid { grid-template-columns: 1fr; }
+            .role-grid { grid-template-columns: repeat(2, 1fr); }
+            .metrics-bar { grid-template-columns: repeat(3, 1fr); }
+            .spine-strip { flex-direction: column; }
+            .vertebra::after { display: none; }
+            .vertebra { border-radius: 4px !important; }
+            .inst-grid { grid-template-columns: 1fr; }
+            .wip-roles { grid-template-columns: 1fr; }
+            .fitness-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+    
+        <a href="/">Gathering</a>
+        <a href="/login">Login</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+    <div class="page-container wide">
+    <a href="/chorus" class="back-link">&larr; Chorus</a>
+    <div class="page-card">
+        <h1 class="page-title">Werk</h1>
+        <p class="value-intro">
+            The protocol. Cards flow through the value stream. Spine events track every action.
+            Wait &rarr; Cycle &rarr; Lead. The Werk makes work visible.
+        </p>
+
+        <div class="value-tabs">
+            <button class="value-tab active" data-tab="funnel">Funnel</button>
+            <button class="value-tab" data-tab="spine">Spine</button>
+            <button class="value-tab" data-tab="flow">Flow Metrics</button>
+            <button class="value-tab" data-tab="contract">Contract</button>
+            <button class="value-tab" data-tab="instruments">Instruments</button>
+        </div>
+
+        <!-- TAB 1: FUNNEL (Card-Centric) -->
+        <div id="tab-funnel" class="tab-content active">
+            <div class="spine-strip">
+                <div class="vertebra capturing"><span class="vertebra-count" id="cnt-capturing">0</span>Capturing</div>
+                <div class="vertebra directing"><span class="vertebra-count" id="cnt-directing">0</span>Directing</div>
+                <div class="vertebra building"><span class="vertebra-count" id="cnt-building">0</span>Building</div>
+                <div class="vertebra proving"><span class="vertebra-count" id="cnt-proving">0</span>Proving</div>
+            </div>
+
+            <div id="activeSection"></div>
+            <div id="queuedSection"></div>
+            <div id="completedSection"></div>
+            <div id="orphanSection"></div>
+        </div>
+
+        <!-- TAB 2: SPINE -->
+        <div id="tab-spine" class="tab-content">
+            <div class="spine-filters">
+                <select id="spine-role">
+                    <option value="">All roles</option>
+                    <option value="wren">Wren</option>
+                    <option value="silas">Silas</option>
+                    <option value="kade">Kade</option>
+                </select>
+                <select id="spine-event">
+                    <option value="">All events</option>
+                    <option value="quality_gate_warn">Quality warnings</option>
+                    <option value="card_moved">Card moves</option>
+                    <option value="stale_card_detected">Staleness</option>
+                    <option value="card_done">Completed</option>
+                    <option value="card_created">Created</option>
+                    <option value="card_commented">Comments</option>
+                    <option value="card_blocked|card_unblocked">Blocked/Unblocked</option>
+                    <option value="workflow_created|workflow_complete">Workflows</option>
+                    <option value="commit|commit_linked|git_push">Commits/Push</option>
+                    <option value="deploy_start|deploy_complete|deploy_phase|deploy_success|deploy_fail">Deploys</option>
+                    <option value="health_check">Health checks</option>
+                    <option value="verification_complete">Verification</option>
+                    <option value="tsc_compile|test_run">Build/Test</option>
+                    <option value="session_turn|session_tool|session_compact">Session activity</option>
+                    <option value="pre_commit_timed|pre_push_start|pre_push_timed">Pre-commit/Push</option>
+                    <option value="app_restart|app_start">App lifecycle</option>
+                </select>
+                <input type="text" id="spine-card" placeholder="Card #" title="Filter by card number">
+                <input type="text" id="spine-wf" placeholder="WF-" title="Filter by workflow ID">
+                <select id="spine-hours">
+                    <option value="24">24h</option>
+                    <option value="48">48h</option>
+                    <option value="168">7d</option>
+                </select>
+                <button id="spine-apply">Apply</button>
+                <button class="filter-clear" id="spine-clear">Clear</button>
+                <div class="spine-view-toggle">
+                    <button id="view-summary" class="active">Summary</button>
+                    <button id="view-detail">Detail</button>
+                </div>
+            </div>
+            <div class="spine-stats">
+                <div class="stat-badge"><div class="stat-value" id="stat-total">-</div><div class="stat-label">Events</div></div>
+                <div class="stat-badge stat-warn"><div class="stat-value" id="stat-warnings">-</div><div class="stat-label">Quality warnings</div></div>
+                <div class="stat-badge stat-stale"><div class="stat-value" id="stat-stale">-</div><div class="stat-label">Stale cards</div></div>
+                <div class="stat-badge stat-done"><div class="stat-value" id="stat-done">-</div><div class="stat-label">Completed</div></div>
+            </div>
+            <div class="scorecard" id="scorecard" style="display:none;">
+                <div class="scorecard-stages" id="sc-stages"></div>
+                <div class="scorecard-derived" id="sc-derived"></div>
+            </div>
+            <ul class="spine-feed" id="spine-feed">
+                <li class="spine-empty">Click Spine tab to load events</li>
+            </ul>
+        </div>
+
+        <!-- TAB 3: FLOW METRICS -->
+        <div id="tab-flow" class="tab-content">
+            <div class="flow-controls">
+                <div><label>From</label><br><input type="date" id="dateFrom"></div>
+                <div><label>To</label><br><input type="date" id="dateTo"></div>
+                <div><label>Role</label><br>
+                    <select id="roleFilter">
+                        <option value="">All roles</option>
+                        <option value="jeff">Jeff</option>
+                        <option value="wren">Wren</option>
+                        <option value="silas">Silas</option>
+                        <option value="kade">Kade</option>
+                    </select>
+                </div>
+                <div style="align-self: flex-end;"><button id="applyFlowBtn">Apply</button></div>
+            </div>
+            <div class="metrics-bar" id="metricsBar"></div>
+            <div class="role-grid" id="roleGrid"></div>
+            <div class="charts-grid">
+                <div class="chart-box"><canvas id="flowChart" height="400"></canvas></div>
+                <div class="chart-box"><canvas id="stepChart" height="400"></canvas></div>
+            </div>
+            <div class="charts-grid">
+                <div class="chart-box"><canvas id="cardFlowChart" height="400"></canvas></div>
+                <div class="chart-box"><canvas id="cardThroughputChart" height="400"></canvas></div>
+            </div>
+            <div id="cardTableSection"></div>
+        </div>
+
+        <!-- TAB 4: CONTRACT -->
+        <div id="tab-contract" class="tab-content">
+            <div class="contract-loading" id="contract-loading">Click Contract tab to load schema</div>
+            <div id="contract-content" style="display:none;"></div>
+        </div>
+
+        <!-- TAB 5: INSTRUMENTS -->
+        <div id="tab-instruments" class="tab-content">
+            <div class="inst-grid">
+                <div class="inst-panel" id="inst-wip">
+                    <h3>WIP Enforcement <span style="font-weight:400;font-size:0.75rem;color:var(--text-muted)">(DEC-051: limit 3)</span></h3>
+                    <div class="wip-roles" id="wip-roles"></div>
+                </div>
+                <div class="inst-panel" id="inst-gate">
+                    <h3>Proving Gate <span style="font-weight:400;font-size:0.75rem;color:var(--text-muted)">(DEC-048)</span></h3>
+                    <div id="gate-cards"><span class="inst-empty">Loading...</span></div>
+                </div>
+                <div class="inst-panel" id="inst-briefs">
+                    <h3>Brief Latency <span style="font-weight:400;font-size:0.75rem;color:var(--text-muted)">(7d window)</span></h3>
+                    <div id="brief-latency"><span class="inst-empty">Loading...</span></div>
+                </div>
+                <div class="inst-panel" id="inst-fitness">
+                    <h3>Fitness Functions</h3>
+                    <div class="fitness-grid" id="fitness-grid"><span class="inst-empty">Loading...</span></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    </div>
+
+    <script nonce="">
+    // Data injected from server
+    var ALL_WORKFLOWS = [];
+    var ALL_CARDS = [];
+    var CARD_COMPLETION_MAP = {};
+    var ORPHAN_WORKFLOWS = [];
+
+    // --- Shared helpers ---
+    function parseTS(s) { return s ? new Date(s) : null; }
+    function fmtDelta(ms) {
+        if (!ms || ms <= 0) return '\u2014';
+        var m = Math.round(ms / 60000);
+        if (m < 60) return m + 'm';
+        var h = Math.floor(m / 60);
+        if (h < 24) return h + 'h ' + (m % 60) + 'm';
+        var d = Math.floor(h / 24);
+        return d + 'd ' + (h % 24) + 'h';
+    }
+
+    function computeTimes(card) {
+        var created = parseTS(card.created);
+        var now = new Date();
+        var wfs = card.workflows || [];
+        var firstWfStart = null;
+        var lastStepDone = null;
+
+        wfs.forEach(function(wf) {
+            var wfCreated = parseTS(wf.created);
+            if (wfCreated && (!firstWfStart || wfCreated < firstWfStart)) firstWfStart = wfCreated;
+            (wf.steps || []).forEach(function(s) {
+                var ct = parseTS(s.completed_at);
+                if (ct && (!lastStepDone || ct > lastStepDone)) lastStepDone = ct;
+            });
+        });
+
+        // Done timestamp: last step completed, or card.updated as proxy
+        var doneTime = card.done ? (lastStepDone || parseTS(card.updated)) : null;
+
+        // Wait = created → first workflow start (or now if no workflows)
+        var waitMs = 0;
+        if (created) {
+            if (firstWfStart) {
+                waitMs = firstWfStart - created;
+            } else if (!card.done) {
+                waitMs = now - created;
+            } else {
+                waitMs = (doneTime || now) - created;
+            }
+        }
+
+        // Cycle = first workflow start → last step done (or now if active)
+        var cycleMs = 0;
+        if (firstWfStart) {
+            if (doneTime) {
+                cycleMs = doneTime - firstWfStart;
+            } else {
+                cycleMs = now - firstWfStart;
+            }
+        }
+
+        // Lead = created → done (or now if not done)
+        var leadMs = 0;
+        if (created) {
+            leadMs = (doneTime || now) - created;
+        }
+
+        return { waitMs: waitMs, cycleMs: cycleMs, leadMs: leadMs };
+    }
+
+    var VIKUNJA_BASE = 'http://localhost:3456';
+
+    function cardUrl(card) {
+        return VIKUNJA_BASE + '/tasks/' + card.id;
+    }
+
+    function cardBadgeHtml(card) {
+        var prefix = card.product === 'chorus' ? 'C#' : '#';
+        var cls = card.product === 'chorus' ? 'card-badge chorus' : 'card-badge';
+        return '<a class="card-link" href="' + cardUrl(card) + '" target="_blank"><span class="' + cls + '">' + prefix + card.index + '</span></a>';
+    }
+
+    function statusCls(status) {
+        var s = (status || '').toLowerCase();
+        if (s === 'now') return 'now';
+        if (s === 'wip') return 'wip';
+        if (s === 'next') return 'next';
+        if (s === 'later') return 'later';
+        if (s === 'blocked') return 'blocked';
+        return '';
+    }
+
+    function renderTimeBadges(times) {
+        var html = '';
+        if (times.waitMs > 0) html += '<span class="time-badge wait">W:' + fmtDelta(times.waitMs) + '</span>';
+        if (times.cycleMs > 0) html += '<span class="time-badge cycle">C:' + fmtDelta(times.cycleMs) + '</span>';
+        if (times.leadMs > 0) html += '<span class="time-badge lead">L:' + fmtDelta(times.leadMs) + '</span>';
+        return html;
+    }
+
+    function renderWfBars(workflows) {
+        if (!workflows || workflows.length === 0) return '';
+        var html = '<div class="card-workflows">';
+        workflows.forEach(function(wf) {
+            var steps = wf.steps || [];
+            var done = steps.filter(function(s) { return s.status === 'completed'; }).length;
+            html += '<div class="nested-wf">';
+            html += '<div class="nested-wf-header">' + wf.id + ' \u2014 ' + done + '/' + steps.length + ' steps</div>';
+            html += '<div class="wf-steps">';
+            steps.forEach(function(s) {
+                var cls = s.status === 'completed' ? 'completed' : (s.status === 'ready' || s.status === 'in_progress') ? 'ready' : 'pending';
+                html += '<div class="wf-step ' + cls + '">' + s.role + ': ' + (s.action || '').slice(0, 25) + '</div>';
+            });
+            html += '</div></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function renderCardRow(card, extraClass) {
+        var times = computeTimes(card);
+        var wfs = card.workflows || [];
+        var html = '<div class="card-row' + (extraClass ? ' ' + extraClass : '') + '">';
+        html += '<div class="card-row-header">';
+        html += cardBadgeHtml(card);
+        html += '<a class="card-link card-title" href="' + cardUrl(card) + '" target="_blank">' + card.title + '</a>';
+        html += '<div class="card-meta">';
+        if (card.owner) html += '<span class="card-owner">' + card.owner + '</span>';
+        if (card.priority) html += '<span class="card-priority ' + card.priority + '">' + card.priority + '</span>';
+        html += '<span class="card-status ' + statusCls(card.status) + '">' + card.status + '</span>';
+        if (wfs.length > 0) html += '<span style="font-size:0.75rem;color:var(--text-muted)">' + wfs.length + ' wf</span>';
+        html += '</div></div>';
+        html += '<div style="margin-top:4px;display:flex;gap:6px;align-items:center;">' + renderTimeBadges(times) + '</div>';
+        html += renderWfBars(wfs);
+        html += '</div>';
+        return html;
+    }
+
+    // --- Tab switching ---
+    function showTab(name, btn) {
+        document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelectorAll('.value-tab').forEach(function(t) { t.classList.remove('active'); });
+        document.getElementById('tab-' + name).classList.add('active');
+        btn.classList.add('active');
+        if (name === 'flow' && !flowInitialized) { initFlow(); flowInitialized = true; }
+        if (name === 'spine' && !spineLoaded) { spineLoaded = true; loadSpine(); }
+        if (name === 'contract') { loadContract(); }
+        if (name === 'instruments' && !instrumentsLoaded) { instrumentsLoaded = true; loadInstruments(); }
+    }
+
+    document.querySelectorAll('.value-tab[data-tab]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            showTab(btn.getAttribute('data-tab'), btn);
+            history.replaceState(null, '', '?tab=' + btn.getAttribute('data-tab'));
+        });
+    });
+
+    // Deep-link: ?tab=spine opens that tab directly
+    var urlTab = new URLSearchParams(window.location.search).get('tab');
+    if (urlTab) {
+        var tabBtn = document.querySelector('.value-tab[data-tab="' + urlTab + '"]');
+        if (tabBtn) showTab(urlTab, tabBtn);
+    }
+
+    var applyBtn = document.getElementById('applyFlowBtn');
+    if (applyBtn) { applyBtn.addEventListener('click', function() { refreshFlow(); }); }
+
+    // --- Spine tab ---
+    var spineLoaded = false;
+    var spineViewMode = 'summary'; // 'summary' or 'detail'
+    var lastSpineEntries = []; // cached for view toggle without re-fetch
+
+    document.getElementById('spine-apply').addEventListener('click', loadSpine);
+    document.getElementById('spine-clear').addEventListener('click', function() {
+        document.getElementById('spine-role').value = '';
+        document.getElementById('spine-event').value = '';
+        document.getElementById('spine-card').value = '';
+        document.getElementById('spine-wf').value = '';
+        document.getElementById('spine-hours').value = '24';
+        loadSpine();
+    });
+    ['spine-card', 'spine-wf'].forEach(function(id) {
+        document.getElementById(id).addEventListener('keydown', function(ev) { if (ev.key === 'Enter') loadSpine(); });
+    });
+
+    // View toggle
+    document.getElementById('view-summary').addEventListener('click', function() {
+        spineViewMode = 'summary';
+        document.getElementById('view-summary').classList.add('active');
+        document.getElementById('view-detail').classList.remove('active');
+        if (lastSpineEntries.length) renderSpine(lastSpineEntries);
+    });
+    document.getElementById('view-detail').addEventListener('click', function() {
+        spineViewMode = 'detail';
+        document.getElementById('view-detail').classList.add('active');
+        document.getElementById('view-summary').classList.remove('active');
+        if (lastSpineEntries.length) renderSpine(lastSpineEntries);
+    });
+
+    // Schema-driven event→vertebra lookup (loaded once, shared with Contract tab)
+    var spineSchemaMap = null; // { event_name: vertebra_name }
+
+    function ensureSchemaLoaded() {
+        if (spineSchemaMap) return Promise.resolve();
+        if (contractSchema) {
+            spineSchemaMap = buildSchemaMap(contractSchema);
+            return Promise.resolve();
+        }
+        return fetch('/api/werk/schema')
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(schema) {
+                contractSchema = schema;
+                contractLoaded = true;
+                spineSchemaMap = buildSchemaMap(schema);
+            });
+    }
+
+    var aliasMap = null; // { old_name: new_name } for normalizing historical events
+
+    function buildSchemaMap(schema) {
+        var map = {};
+        var events = schema.events || {};
+        Object.keys(events).forEach(function(name) {
+            map[name] = events[name].vertebra || 'operations';
+        });
+        // Also map old alias names to their vertebrae
+        var aliases = schema.aliases || {};
+        aliasMap = aliases;
+        Object.keys(aliases).forEach(function(oldName) {
+            var newName = aliases[oldName];
+            if (events[newName]) {
+                map[oldName] = events[newName].vertebra || 'operations';
+            }
+        });
+        return map;
+    }
+
+    function normalizeEvent(name) {
+        return (aliasMap && aliasMap[name]) ? aliasMap[name] : name;
+    }
+
+    function loadSpine() {
+        var role = document.getElementById('spine-role').value;
+        var event = document.getElementById('spine-event').value;
+        var hours = document.getElementById('spine-hours').value;
+        var cardFilter = document.getElementById('spine-card').value.replace(/[^0-9]/g, '');
+        var wfFilter = document.getElementById('spine-wf').value.trim().toUpperCase();
+        var feed = document.getElementById('spine-feed');
+        feed.innerHTML = '<li class="spine-loading">Loading spine events...</li>';
+        var params = new URLSearchParams();
+        if (role) params.set('role', role);
+        if (event) params.set('event', event);
+        params.set('hours', hours);
+        Promise.all([
+            fetch('/api/werk/activity?' + params.toString()).then(function(r) { return r.json(); }),
+            ensureSchemaLoaded()
+        ])
+            .then(function(results) {
+                var data = results[0];
+                var entries = data.entries || [];
+                if (cardFilter) entries = entries.filter(function(e) { return e.card_id === cardFilter; });
+                if (wfFilter) entries = entries.filter(function(e) { return (e.workflow_id || '').toUpperCase().indexOf(wfFilter) !== -1; });
+                renderSpine(entries, data.error);
+            })
+            .catch(function() { feed.innerHTML = '<li class="spine-empty">Failed to connect to spine</li>'; resetSpineStats(); });
+    }
+
+    function renderSpine(entries, error) {
+        lastSpineEntries = entries;
+        var feed = document.getElementById('spine-feed');
+        var warnings = 0, stale = 0, done = 0;
+        entries.forEach(function(e) {
+            if (e.event === 'quality_gate_warn') warnings++;
+            if (e.event === 'stale_card_detected') stale++;
+            if (e.event === 'card_done') done++;
+        });
+        document.getElementById('stat-total').textContent = entries.length;
+        document.getElementById('stat-warnings').textContent = warnings;
+        document.getElementById('stat-stale').textContent = stale;
+        document.getElementById('stat-done').textContent = done;
+        renderScorecard(entries);
+        if (entries.length === 0) {
+            feed.innerHTML = '<li class="spine-empty">' + (error ? 'Loki unavailable — ' + error : 'No spine events in this time range') + '</li>';
+            return;
+        }
+        if (spineViewMode === 'summary') {
+            renderSpineSummary(entries, feed);
+        } else {
+            renderSpineDetail(entries, feed);
+        }
+    }
+
+    function renderSpineDetail(entries, feed) {
+        var html = '';
+        entries.forEach(function(e) {
+            var cls = 'spine-event';
+            if (e.event === 'quality_gate_warn') cls += ' event-warn';
+            if (e.event === 'stale_card_detected') cls += ' event-stale';
+            html += '<li class="' + cls + '"><span class="event-time">' + fmtTime(e.timestamp) + '</span><span class="event-sentence">' + buildSentence(e) + '</span></li>';
+        });
+        feed.innerHTML = html;
+    }
+
+    function renderSpineSummary(entries, feed) {
+        // Classify events into vertebra groups
+        var groups = {
+            capturing: { label: 'Capturing', events: [], types: {} },
+            directing: { label: 'Directing', events: [], types: {} },
+            building:  { label: 'Building',  events: [], types: {} },
+            proving:   { label: 'Proving',   events: [], types: {} },
+            operations: { label: 'Operating', events: [], types: {} }
+        };
+        var groupOrder = ['capturing', 'directing', 'building', 'proving', 'operations'];
+        var maxCount = 0;
+
+        entries.forEach(function(e) {
+            var norm = normalizeEvent(e.event);
+            var vertebra = spineSchemaMap ? (spineSchemaMap[norm] || spineSchemaMap[e.event] || 'operations') : 'operations';
+            if (!groups[vertebra]) vertebra = 'operations';
+            groups[vertebra].events.push(e);
+            groups[vertebra].types[norm] = (groups[vertebra].types[norm] || 0) + 1;
+        });
+
+        groupOrder.forEach(function(k) { if (groups[k].events.length > maxCount) maxCount = groups[k].events.length; });
+
+        var html = '<div class="spine-summary">';
+        groupOrder.forEach(function(k) {
+            var g = groups[k];
+            if (g.events.length === 0) return;
+            var pct = maxCount > 0 ? Math.round((g.events.length / maxCount) * 100) : 0;
+
+            // Build headline: top 3 event types with counts
+            var sorted = Object.keys(g.types).sort(function(a, b) { return g.types[b] - g.types[a]; });
+            var headline = sorted.slice(0, 3).map(function(t) {
+                // card.item.moved → "card moved", build.queue.waiting → "queue waiting"
+                var parts = t.split('.');
+                var label = parts.length >= 3 ? parts[1] + ' ' + parts[2] : t.replace(/_/g, ' ');
+                return g.types[t] + ' ' + label;
+            }).join(', ');
+            if (sorted.length > 3) headline += ' +' + (sorted.length - 3) + ' more';
+
+            // Build detail events (raw list, same as detail view)
+            var detailHtml = '';
+            g.events.forEach(function(e) {
+                var cls = 'spine-event';
+                var normEv = normalizeEvent(e.event);
+                if (normEv === 'card.quality.warned') cls += ' event-warn';
+                if (normEv === 'card.stale.detected') cls += ' event-stale';
+                detailHtml += '<li class="' + cls + '"><span class="event-time">' + fmtTime(e.timestamp) + '</span><span class="event-sentence">' + buildSentence(e) + '</span></li>';
+            });
+
+            html += '<div class="summary-group" data-group="' + k + '">' +
+                '<div class="summary-group-header ' + k + '">' +
+                '<span class="sg-chevron">&#9654;</span>' +
+                '<span class="sg-name">' + g.label + '</span>' +
+                '<div class="sg-bar"><div class="sg-bar-fill ' + k + '" style="width:' + pct + '%"></div></div>' +
+                '<span class="sg-count">' + g.events.length + '</span>' +
+                '<span class="sg-headline">' + headline + '</span>' +
+                '</div>' +
+                '<div class="summary-group-detail"><ul class="spine-feed">' + detailHtml + '</ul></div>' +
+                '</div>';
+        });
+        html += '</div>';
+        feed.innerHTML = html;
+        // Wire expand/collapse via delegation (CSP blocks inline onclick)
+        feed.querySelectorAll('.summary-group-header').forEach(function(hdr) {
+            hdr.addEventListener('click', function() {
+                hdr.parentElement.classList.toggle('expanded');
+            });
+        });
+    }
+
+    function buildSentence(e) {
+        var role = escS(e.role || 'system');
+        var roleCls = e.role ? 'role-' + e.role.toLowerCase() : '';
+        var cardRef = e.card_id ? '<span class="ev-ref">#' + escS(e.card_id) + '</span>' +
+            (e.title ? ' <span class="ev-context">' + escS(truncS(e.title, 60)) + '</span>' : '') : '';
+        var wfRef = e.workflow_id ? ' <span class="ev-ref">' + escS(e.workflow_id) + '</span>' : '';
+        var R = '<span class="ev-role ' + roleCls + '">' + role + '</span> ';
+        var ev = normalizeEvent(e.event);
+        switch (ev) {
+            case 'card.item.created':
+                return R + '<span class="ev-verb verb-created">created</span> ' + cardRef +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 80)) + '</span>' : '') +
+                    (e.status ? ' <span class="ev-context">[' + escS(e.status) + ']</span>' : '');
+            case 'card.item.moved':
+                return R + '<span class="ev-verb verb-moved">moved</span> ' + cardRef +
+                    (e.to_status || e.to ? ' <span class="ev-context">to <b>' + escS(e.to_status || e.to) + '</b></span>' : '') +
+                    (e.from_status ? ' <span class="ev-context">from ' + escS(e.from_status) + '</span>' : '');
+            case 'card.item.completed':
+                return R + '<span class="ev-verb verb-done">completed</span> ' + cardRef +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 80)) + '</span>' : '');
+            case 'card.quality.warned':
+                return '<span class="ev-verb verb-warning">warning</span> ' + cardRef + ' <span class="ev-context">' +
+                    escS((e.gate || '').replace(/_/g, ' ')) + (e.stage ? ' at <b>' + escS(e.stage) + '</b>' : '') +
+                    '</span> <span class="ev-role ' + roleCls + '">(' + role + ')</span>';
+            case 'card.stale.detected':
+                return '<span class="ev-verb verb-stale">stale</span> ' + cardRef + ' <span class="ev-context">' +
+                    escS(e.message || 'card idle too long') + '</span> <span class="ev-role ' + roleCls + '">(' + role + ')</span>';
+            case 'card.item.commented':
+                return R + '<span class="ev-verb verb-commented">commented on</span> ' + cardRef +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 60)) + '</span>' : '');
+            case 'card.item.blocked':
+                return R + '<span class="ev-verb verb-blocked">blocked</span> ' + cardRef +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 60)) + '</span>' : '');
+            case 'card.item.unblocked':
+                return R + '<span class="ev-verb verb-unblocked">unblocked</span> ' + cardRef;
+            case 'card.item.updated':
+                return R + '<span class="ev-verb verb-updated">updated</span> ' + cardRef +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 80)) + '</span>' : '');
+            case 'card.swat.created':
+                return R + '<span class="ev-verb verb-created">SWAT</span> ' + cardRef +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 80)) + '</span>' : '');
+            case 'workflow.manifest.created':
+                return R + '<span class="ev-verb verb-workflow">started workflow</span>' + wfRef + ' for ' + cardRef;
+            case 'workflow.manifest.completed':
+                return R + '<span class="ev-verb verb-workflow">completed</span>' + wfRef +
+                    (e.step_count ? ' <span class="ev-context">(' + escS(e.step_count) + ' step' + (e.step_count === '1' ? '' : 's') +
+                    (e.total_duration_seconds ? ', ' + escS(Math.round(e.total_duration_seconds / 60)) + 'min' : '') + ')</span>' : '');
+            case 'workflow.step.completed':
+                return R + '<span class="ev-verb verb-workflow">completed step</span>' + wfRef +
+                    (e.step ? ' <span class="ev-context">step ' + escS(e.step) + '/' + escS(e.total_steps || '?') + '</span>' : '');
+            case 'build.commit.created':
+                return R + '<span class="ev-verb verb-commit">committed</span> ' +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span> ' : '') +
+                    (e.message ? '<span class="ev-context">— ' + escS(truncS(e.message, 80)) + '</span>' : '');
+            case 'build.commit.linked':
+                return R + '<span class="ev-verb verb-commit">committed</span> ' +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span> ' : '') + cardRef +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 80)) + '</span>' : '');
+            case 'build.push.completed':
+                return R + '<span class="ev-verb verb-commit">pushed</span> ' +
+                    (e.branch ? '<span class="ev-ref">' + escS(e.branch) + '</span> ' : '') +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span> ' : '') +
+                    (e.commit_count ? '<span class="ev-context">(' + escS(e.commit_count) + ' commit' + (e.commit_count === '1' ? '' : 's') + ')</span>' : '');
+            case 'brief.handoff.written':
+                return R + '<span class="ev-verb verb-workflow">sent brief</span> to ' +
+                    (e.recipient ? '<span class="ev-ref">' + escS(e.recipient) + '</span>' : 'unknown') +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 60)) + '</span>' : '');
+            case 'brief.handoff.read':
+                return R + '<span class="ev-verb verb-workflow">read brief</span> from ' +
+                    (e.author ? '<span class="ev-ref">' + escS(e.author) + '</span>' : 'unknown') +
+                    (e.title ? ' <span class="ev-context">— ' + escS(truncS(e.title, 60)) + '</span>' : '');
+            case 'decision.record.created':
+                return R + '<span class="ev-verb verb-created">recorded</span> ' +
+                    (e.id ? '<span class="ev-ref">' + escS(e.id) + '</span> ' : '') +
+                    (e.title ? '<span class="ev-context">— ' + escS(truncS(e.title, 60)) + '</span>' : '');
+            case 'build.memory.written':
+                return R + '<span class="ev-verb verb-updated">updated</span> ' +
+                    (e.file ? '<span class="ev-ref">' + escS(e.file) + '</span>' : 'state file');
+            case 'deploy.pipeline.started':
+                return R + '<span class="ev-verb verb-deploy">started ' + escS(e.action || 'deploy') + '</span> ' +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span> ' : '') +
+                    (e.trigger ? '<span class="ev-context">(' + escS(e.trigger) + ')</span>' : '');
+            case 'deploy.pipeline.completed':
+                return R + '<span class="ev-verb ' + (e.result === 'fail' ? 'verb-blocked' : 'verb-done') + '">' +
+                    escS(e.action || 'deploy') + ' ' + escS(e.result || 'complete') + '</span> ' +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's)</span> ' : '') +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span>' : '');
+            case 'deploy.phase.completed':
+                return '<span class="ev-verb verb-deploy">deploy ' + escS(e.phase || 'phase') + '</span> ' +
+                    (e.result ? '<span class="ev-context">' + escS(e.result) + '</span> ' : '') +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's)</span>' : '') +
+                    (e.sha ? ' <span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span>' : '');
+            case 'deploy.pipeline.succeeded':
+                return '<span class="ev-verb verb-done">deploy complete</span> ' +
+                    (e.sha ? '<span class="ev-ref">' + escS(e.sha.slice(0, 7)) + '</span> ' : '') +
+                    '<span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'deploy.pipeline.failed':
+                return '<span class="ev-verb verb-blocked">deploy failed</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'deploy.health.checked':
+                return R + '<span class="ev-verb ' + (e.status === 'fail' ? 'verb-blocked' : 'verb-done') + '">health check ' +
+                    escS(e.status || '?') + '</span> ' +
+                    (e.response_ms ? '<span class="ev-context">(' + escS(e.response_ms) + 'ms)</span> ' : '') +
+                    (e.endpoint ? '<span class="ev-ref">' + escS(e.endpoint) + '</span>' : '');
+            case 'deploy.freeze.activated':
+                return R + '<span class="ev-verb verb-blocked">deploy frozen</span>' +
+                    (e.message ? ' <span class="ev-context">' + escS(e.message) + '</span>' : '');
+            case 'deploy.freeze.deactivated':
+                return R + '<span class="ev-verb verb-done">deploy unfrozen</span>' +
+                    (e.message ? ' <span class="ev-context">' + escS(e.message) + '</span>' : '');
+            case 'deploy.verification.completed':
+                return R + '<span class="ev-verb verb-done">verified</span> ' + cardRef +
+                    (e.method ? ' <span class="ev-context">(' + escS(e.method) + ')</span>' : '');
+            case 'build.tsc.completed':
+                return R + '<span class="ev-verb verb-build">compiled TypeScript</span> ' +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's' +
+                    (e.error_count && e.error_count !== '0' ? ', ' + escS(e.error_count) + ' errors' : ', clean') + ')</span>' : '');
+            case 'build.test.completed':
+                return R + '<span class="ev-verb verb-test">ran tests</span> ' +
+                    '<span class="ev-context">— ' + escS(e.test_count || '?') + ' passed' +
+                    (e.failed_count && e.failed_count !== '0' ? ', <b>' + escS(e.failed_count) + ' failed</b>' : '') +
+                    (e.duration_seconds ? ' (' + escS(e.duration_seconds) + 's)' : '') + '</span>';
+            case 'build.prepush.started':
+                return R + '<span class="ev-verb verb-test">started pre-push</span> ' +
+                    (e.tier ? '<span class="ev-context">(' + escS(e.tier) + ' tier)</span>' : '');
+            case 'build.prepush.timed':
+                return R + '<span class="ev-verb verb-test">pre-push complete</span> ' +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's' +
+                    (e.unit_seconds ? ' — unit:' + escS(e.unit_seconds) + 's' : '') + ')</span>' : '');
+            case 'build.precommit.completed':
+                return R + '<span class="ev-verb verb-test">pre-commit checks</span> ' +
+                    (e.checks_run ? '<span class="ev-context">(' + escS(e.checks_run) + ' checks)</span>' : '');
+            case 'build.precommit.timed':
+                return R + '<span class="ev-verb verb-test">pre-commit checks</span> ' +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's)</span> ' : '') +
+                    (e.lint_warnings ? '<span class="ev-context">lint: ' + escS(e.lint_warnings) + '/' + escS(e.lint_threshold || '?') + ' warnings</span>' : '');
+            case 'build.queue.waiting':
+                return R + '<span class="ev-verb verb-warning">waiting for commit lock</span>' +
+                    (e.file_count ? ' <span class="ev-context">(' + escS(e.file_count) + ' files)</span>' : '') +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 60)) + '</span>' : '');
+            case 'build.queue.acquired':
+                return R + '<span class="ev-verb verb-done">acquired commit lock</span>' +
+                    (e.file_count ? ' <span class="ev-context">(' + escS(e.file_count) + ' files)</span>' : '');
+            case 'build.queue.released':
+                return R + '<span class="ev-verb ' + (e.exit_code === '0' ? 'verb-done' : 'verb-blocked') + '">commit ' +
+                    (e.exit_code === '0' ? 'complete' : 'failed') + '</span>' +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 60)) + '</span>' : '') +
+                    (e.file_count ? ' <span class="ev-context">(' + escS(e.file_count) + ' files)</span>' : '');
+            case 'build.queue.timedout':
+                return R + '<span class="ev-verb verb-blocked">commit lock timeout</span>' +
+                    (e.timeout ? ' <span class="ev-context">(' + escS(e.timeout) + ')</span>' : '');
+            case 'app.service.started': case 'app.service.restarted':
+                return '<span class="ev-verb verb-deploy">' + escS(ev.split('.')[2]) + '</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'app.service.stopped':
+                return '<span class="ev-verb verb-deploy">stopped</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'app.service.startfailed': case 'app.service.restartfailed':
+                return '<span class="ev-verb verb-blocked">start failed</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'app.service.rolledback':
+                return '<span class="ev-verb verb-blocked">rollback</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'app.service.rollbackfailed':
+                return '<span class="ev-verb verb-blocked">rollback failed</span> <span class="ev-context">' + escS(e.message || '') + '</span>';
+            case 'session.role.started':
+                return R + '<span class="ev-verb verb-workflow">started session</span>' +
+                    (e.auto_promoted ? ' <span class="ev-context">auto-promoted ' + escS(e.auto_promoted) + '</span>' : '');
+            case 'session.role.ended':
+                return R + '<span class="ev-verb verb-workflow">ended session</span>' +
+                    (e.cards_completed ? ' <span class="ev-context">' + escS(e.cards_completed) + ' cards done</span>' : '');
+            case 'session.turn.completed':
+                return R + '<span class="ev-verb verb-build">turn</span> ' +
+                    (e.duration_seconds && e.duration_seconds !== '0' ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's)</span> ' : '') +
+                    (e.message ? '<span class="ev-context">' + escS(truncS(e.message, 90)) + '</span>' : '');
+            case 'session.tool.used':
+                return R + '<span class="ev-verb verb-build">used</span> ' +
+                    (e.action ? '<span class="ev-ref">' + escS(e.action) + '</span> ' : '') +
+                    (e.message ? '<span class="ev-context">— ' + escS(truncS(e.message, 80)) + '</span>' : '');
+            case 'session.context.compacted':
+                return R + '<span class="ev-verb verb-warning">context compacted</span>';
+            case 'session.docscan.completed':
+                return R + '<span class="ev-verb verb-done">doc scan</span> ' +
+                    (e.checked ? '<span class="ev-context">checked ' + escS(e.checked) + ', updated ' + escS(e.updated || '0') + '</span>' : '');
+            case 'guard.rule.decided':
+                return '<span class="ev-verb ' + (e.decision === 'deny' ? 'verb-blocked' : 'verb-warning') + '">guardrail ' +
+                    escS(e.decision || '?') + '</span> <span class="ev-ref">' + escS(e.pattern || '') + '</span>' +
+                    (e.command ? ' <span class="ev-context">— ' + escS(truncS(e.command, 60)) + '</span>' : '');
+            case 'guard.scrub.blocked':
+                return '<span class="ev-verb ' + (e.decision === 'deny' ? 'verb-blocked' : 'verb-warning') + '">scrubber ' +
+                    escS(e.decision || '?') + '</span> <span class="ev-ref">' + escS(e.pattern || '') + '</span>' +
+                    (e.path ? ' <span class="ev-context">on ' + escS(truncS(e.path, 60)) + '</span>' : '');
+            case 'guard.classify.decided':
+                return '<span class="ev-verb ' + (e.decision === 'deny' ? 'verb-blocked' : 'verb-warning') + '">classified ' +
+                    escS(e.tier || '?') + '</span> ' +
+                    (e.decision ? '<span class="ev-ref">' + escS(e.decision) + '</span> ' : '') +
+                    (e.path ? '<span class="ev-context">' + escS(truncS(e.path, 60)) + '</span>' : '');
+            case 'ops.audit.checked':
+                return R + '<span class="ev-verb ' + (e.result === 'error' ? 'verb-blocked' : e.result === 'warn' ? 'verb-warning' : 'verb-done') +
+                    '">audit ' + escS(e.check || '') + '</span>' +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 80)) + '</span>' : '');
+            case 'ops.agent.completed':
+                return R + '<span class="ev-verb verb-done">ops agent</span> ' +
+                    (e.status ? '<span class="ev-context">' + escS(e.status) + '</span> ' : '') +
+                    (e.findings ? '<span class="ev-context">(' + escS(e.findings) + ' findings)</span>' : '');
+            case 'ops.defect.detected':
+                return '<span class="ev-verb verb-blocked">defect</span> ' + cardRef +
+                    (e.pattern ? ' <span class="ev-context">' + escS(truncS(e.pattern, 60)) + '</span>' : '');
+            case 'ops.alert.fired':
+                return '<span class="ev-verb verb-blocked">alert firing</span> ' +
+                    (e.alertname ? '<span class="ev-ref">' + escS(e.alertname) + '</span> ' : '') +
+                    (e.severity ? '<span class="ev-context">(' + escS(e.severity) + ')</span>' : '');
+            case 'ops.alert.resolved':
+                return '<span class="ev-verb verb-done">alert resolved</span> ' +
+                    (e.alertname ? '<span class="ev-ref">' + escS(e.alertname) + '</span>' : '');
+            case 'ops.disk.checked':
+                return R + '<span class="ev-verb ' + (e.status === 'critical' ? 'verb-blocked' : e.status === 'warning' ? 'verb-warning' : 'verb-done') +
+                    '">disk ' + escS(e.disk_pct || '?') + '%</span>';
+            case 'ops.container.changed':
+                return '<span class="ev-verb verb-deploy">' + escS(e.container || 'container') + '</span> ' +
+                    (e.from_state ? '<span class="ev-context">' + escS(e.from_state) + ' → ' + escS(e.to_state) + '</span>' : '');
+            case 'ops.system.started':
+                return R + '<span class="ev-verb verb-deploy">system started</span>';
+            case 'ops.system.stopped':
+                return R + '<span class="ev-verb verb-deploy">system stopped</span>';
+            case 'harvest.pipeline.started':
+                return R + '<span class="ev-verb verb-deploy">harvest started</span> ' +
+                    (e.collection ? '<span class="ev-ref">' + escS(e.collection) + '</span> ' : '') +
+                    (e.type ? '<span class="ev-context">(' + escS(e.type) + ')</span>' : '') +
+                    (e.domain ? '<span class="ev-context">(' + escS(e.domain) + ')</span>' : '');
+            case 'harvest.pipeline.completed':
+                return R + '<span class="ev-verb ' + (e.result === 'fail' ? 'verb-blocked' : 'verb-done') + '">harvest complete</span> ' +
+                    (e.collection ? '<span class="ev-ref">' + escS(e.collection) + '</span> ' : '') +
+                    (e.items || e.items_processed ? '<span class="ev-context">' + escS(e.items || e.items_processed) + ' items</span> ' : '') +
+                    (e.duration_seconds ? '<span class="ev-context">(' + escS(e.duration_seconds) + 's)</span>' : '');
+            case 'ops.cost.reported':
+                return R + '<span class="ev-verb verb-done">cost report</span> ' +
+                    (e.sessions ? '<span class="ev-context">' + escS(e.sessions) + ' sessions, ' + escS(e.messages || '0') + ' msgs</span> ' : '') +
+                    (e.tokens ? '<span class="ev-context">(' + escS(e.tokens) + ' tokens)</span> ' : '') +
+                    (e.sms_count && e.sms_count !== '0' ? '<span class="ev-context">+ ' + escS(e.sms_count) + ' SMS ($' + escS(e.sms_cost || '?') + ')</span>' : '');
+            case 'pair.session.started':
+                return R + '<span class="ev-verb verb-workflow">started pair</span> with ' +
+                    (e.partner ? '<span class="ev-role role-' + escS(e.partner).toLowerCase() + '">' + escS(e.partner) + '</span>' : 'partner') +
+                    (e.mode ? ' <span class="ev-context">(' + escS(e.mode) + ')</span>' : '') +
+                    (cardRef ? ' on ' + cardRef : '');
+            case 'pair.session.ended':
+                return R + '<span class="ev-verb verb-done">ended pair</span>' +
+                    (e.duration_minutes ? ' <span class="ev-context">(' + escS(e.duration_minutes) + 'min)</span>' : '') +
+                    (cardRef ? ' on ' + cardRef : '');
+            case 'pair.roles.swapped':
+                return R + '<span class="ev-verb verb-workflow">swapped roles</span>' +
+                    (e.new_driver ? ' <span class="ev-context">driver: ' + escS(e.new_driver) + '</span>' : '') +
+                    (cardRef ? ' on ' + cardRef : '');
+            case 'chat.session.started':
+                return R + '<span class="ev-verb verb-workflow">started chat</span> with ' +
+                    (e.partner ? '<span class="ev-role role-' + escS(e.partner).toLowerCase() + '">' + escS(e.partner) + '</span>' : 'partner') +
+                    (e.topic ? ' <span class="ev-context">— ' + escS(truncS(e.topic, 60)) + '</span>' : '');
+            case 'chat.session.ended':
+                return R + '<span class="ev-verb verb-done">ended chat</span>' +
+                    (e.messages ? ' <span class="ev-context">(' + escS(e.messages) + ' messages)</span>' : '');
+            case 'role.nudge.sent':
+                return R + '<span class="ev-verb verb-workflow">nudged</span> ' +
+                    (e.target ? '<span class="ev-role role-' + escS(e.target).toLowerCase() + '">' + escS(e.target) + '</span>' : 'role') +
+                    (e.content ? ' <span class="ev-context">— ' + escS(truncS(e.content, 60)) + '</span>' : '');
+            case 'card.pulled':
+                return R + '<span class="ev-verb verb-moved">pulled</span> ' + cardRef + ' to WIP';
+            case 'card.accepted':
+                return R + '<span class="ev-verb verb-done">accepted</span> ' + cardRef;
+            case 'card.demo.started':
+                return R + '<span class="ev-verb verb-workflow">started demo</span> ' + cardRef;
+            default:
+                return R + '<span class="ev-verb verb-updated">' + escS(e.event || 'event') + '</span> ' + cardRef +
+                    (e.message ? ' <span class="ev-context">— ' + escS(truncS(e.message, 80)) + '</span>' : '');
+        }
+    }
+
+    function renderScorecard(entries) {
+        var sc = document.getElementById('scorecard');
+        if (entries.length === 0) { sc.style.display = 'none'; return; }
+        sc.style.display = '';
+
+        // Classify events by stage using schema-driven vertebra map
+        var stages = {
+            capturing: { events: 0, gates: 0, gateNames: {} },
+            directing: { events: 0, gates: 0, gateNames: {} },
+            building:  { events: 0, gates: 0, gateNames: {} },
+            proving:   { events: 0, gates: 0, gateNames: {} },
+            operations: { events: 0, gates: 0, gateNames: {} }
+        };
+        var cardMoves = 0, totalHours = 0;
+
+        if (entries.length >= 2) {
+            var first = new Date(entries[entries.length - 1].timestamp);
+            var last = new Date(entries[0].timestamp);
+            totalHours = Math.max((last - first) / 3600000, 1);
+        } else { totalHours = 1; }
+
+        entries.forEach(function(e) {
+            var ev = e.event;
+            var evN = normalizeEvent(ev);
+            if (evN === 'card.item.moved') cardMoves++;
+            // Classify by stage — schema lookup, fall back to 'operations' (ignored)
+            if (evN === 'card.quality.warned') {
+                var stg = (e.stage || '').toLowerCase();
+                if (stages[stg]) { stages[stg].gates++; stages[stg].gateNames[e.gate || 'unknown'] = true; }
+            } else {
+                var vertebra = spineSchemaMap ? spineSchemaMap[ev] : 'operations';
+                if (vertebra && stages[vertebra]) { stages[vertebra].events++; }
+            }
+        });
+
+        // Stage cards
+        var stagesHtml = '';
+        ['capturing', 'directing', 'building', 'proving', 'operations'].forEach(function(name) {
+            var s = stages[name];
+            var gateCount = s.gates;
+            var gateList = Object.keys(s.gateNames);
+            var dotCls = gateList.length > 0 ? (gateCount > 5 ? 'amber' : 'green') : 'dark';
+            var label = name === 'operations' ? 'System' : name.charAt(0).toUpperCase() + name.slice(1);
+            var detail = name === 'operations'
+                ? (s.events > 0 ? s.events + ' ops event' + (s.events !== 1 ? 's' : '') : 'quiet')
+                : (gateCount > 0 ? gateCount + ' gate warning' + (gateCount !== 1 ? 's' : '') : 'no gate signals');
+            stagesHtml += '<div class="sc-stage ' + name + '">' +
+                '<div class="sc-stage-name">' + label + ' <span class="sc-gate-dot ' + dotCls + '" title="' + (gateList.length > 0 ? gateList.join(', ') : name === 'operations' ? 'ops health' : 'no gates firing') + '"></span></div>' +
+                '<div class="sc-events">' + s.events + '</div>' +
+                '<div class="sc-detail">' + detail + '</div>' +
+                '</div>';
+        });
+        document.getElementById('sc-stages').innerHTML = stagesHtml;
+
+        // Derived metrics
+        var totalWarnings = stages.capturing.gates + stages.directing.gates + stages.building.gates + stages.proving.gates;
+        var qualityRatio = cardMoves > 0 ? (totalWarnings / cardMoves).toFixed(2) : '—';
+        var qualityCls = qualityRatio === '—' ? '' : (parseFloat(qualityRatio) < 0.2 ? 'good' : parseFloat(qualityRatio) < 0.5 ? 'warn' : 'bad');
+        var flowRate = (entries.length / totalHours).toFixed(1);
+        var activeStages = ['capturing', 'directing', 'building', 'proving', 'operations'].filter(function(n) { return stages[n].events > 0 || stages[n].gates > 0; }).length;
+        var coveragePct = Math.round((activeStages / 5) * 100);
+        var coverageCls = coveragePct === 100 ? 'good' : coveragePct >= 50 ? 'warn' : 'bad';
+
+        document.getElementById('sc-derived').innerHTML =
+            '<div class="sc-metric"><div class="sc-val ' + qualityCls + '">' + qualityRatio + '</div><div class="sc-lbl">Warnings / card move</div></div>' +
+            '<div class="sc-metric"><div class="sc-val">' + flowRate + '</div><div class="sc-lbl">Events / hour</div></div>' +
+            '<div class="sc-metric"><div class="sc-val ' + coverageCls + '">' + coveragePct + '%</div><div class="sc-lbl">Stage coverage</div></div>' +
+            '<div class="sc-metric"><div class="sc-val">' + cardMoves + '</div><div class="sc-lbl">Card moves</div></div>';
+    }
+
+    function truncS(s, len) { return s.length > len ? s.slice(0, len) + '...' : s; }
+    function escS(s) { var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+    function resetSpineStats() { ['stat-total','stat-warnings','stat-stale','stat-done'].forEach(function(id) { document.getElementById(id).textContent = '-'; }); }
+    function fmtTime(ts) {
+        if (!ts) return '-';
+        try { var d = new Date(ts); return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); }
+        catch(ex) { return ts.slice(11, 16); }
+    }
+
+    // --- Funnel tab (Card-Centric) ---
+    function renderFunnel() {
+        var activeStatuses = { 'Now': true, 'WIP': true };
+        var queuedStatuses = { 'Next': true, 'Later': true, 'Blocked': true, 'Jeff Tickets': true, 'Tech Debt': true };
+
+        var active = ALL_CARDS.filter(function(c) { return !c.done && activeStatuses[c.status]; });
+        var queued = ALL_CARDS.filter(function(c) { return !c.done && queuedStatuses[c.status]; });
+        var completed = ALL_CARDS.filter(function(c) { return c.done || c.status === 'Done'; });
+
+        // Spine: count cards by position
+        var counts = { capturing: 0, directing: 0, building: 0, proving: 0 };
+
+        // Queued cards → Capturing
+        counts.capturing = queued.length;
+
+        // Active cards classified by workflow step
+        active.forEach(function(card) {
+            var wfs = card.workflows || [];
+            if (wfs.length === 0) {
+                counts.directing++;
+                return;
+            }
+            // Find current step across all workflows
+            var classified = false;
+            wfs.forEach(function(wf) {
+                if (classified) return;
+                var currentStep = (wf.steps || []).find(function(s) { return s.status === 'ready' || s.status === 'in_progress'; });
+                if (!currentStep) return;
+                var action = (currentStep.action || '').toLowerCase();
+                if (action.indexOf('validate') >= 0 || action.indexOf('verify') >= 0 || action.indexOf('test') >= 0 || action.indexOf('review') >= 0) {
+                    counts.proving++;
+                    classified = true;
+                } else if (action.indexOf('build') >= 0 || action.indexOf('implement') >= 0 || action.indexOf('migrate') >= 0) {
+                    counts.building++;
+                    classified = true;
+                }
+            });
+            if (!classified) counts.building++; // default active → building
+        });
+
+        document.getElementById('cnt-capturing').textContent = counts.capturing;
+        document.getElementById('cnt-directing').textContent = counts.directing;
+        document.getElementById('cnt-building').textContent = counts.building;
+        document.getElementById('cnt-proving').textContent = counts.proving;
+
+        // Render Active section
+        var activeHtml = '<h2 class="section-header">Active <span class="section-count">' + active.length + '</span></h2>';
+        if (active.length === 0) {
+            activeHtml += '<p style="color: var(--text-muted); font-size: 0.9rem;">No active cards.</p>';
+        } else {
+            active.forEach(function(card) { activeHtml += renderCardRow(card); });
+        }
+        document.getElementById('activeSection').innerHTML = activeHtml;
+
+        // Render Queued section (sorted by wait time descending)
+        queued.sort(function(a, b) {
+            var ta = parseTS(a.created), tb = parseTS(b.created);
+            if (!ta && !tb) return 0;
+            if (!ta) return 1;
+            if (!tb) return -1;
+            return ta - tb; // oldest first = longest wait at top
+        });
+        // Collect filter options from queued cards
+        var qOwners = {}, qProducts = {}, qStatuses = {};
+        queued.forEach(function(c) {
+            if (c.owner) qOwners[c.owner] = true;
+            qProducts[c.product || 'gathering'] = true;
+            if (c.status) qStatuses[c.status] = true;
+        });
+
+        var queuedHtml = '<h2 class="section-header">Queued <span class="section-count">' + queued.length + '</span></h2>';
+        if (queued.length > 0) {
+            queuedHtml += '<div class="spine-filters" style="margin-bottom:0.5rem;">';
+            queuedHtml += '<select id="q-owner"><option value="">All owners</option>';
+            Object.keys(qOwners).sort().forEach(function(o) { queuedHtml += '<option value="' + o + '">' + o + '</option>'; });
+            queuedHtml += '</select>';
+            queuedHtml += '<select id="q-product"><option value="">All products</option>';
+            Object.keys(qProducts).sort().forEach(function(p) { queuedHtml += '<option value="' + p + '">' + p + '</option>'; });
+            queuedHtml += '</select>';
+            queuedHtml += '<select id="q-status"><option value="">All statuses</option>';
+            Object.keys(qStatuses).sort().forEach(function(s) { queuedHtml += '<option value="' + s + '">' + s + '</option>'; });
+            queuedHtml += '</select>';
+            queuedHtml += '<select id="q-priority"><option value="">All priorities</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select>';
+            queuedHtml += '</div>';
+        }
+        queuedHtml += '<div id="queued-list"></div>';
+        document.getElementById('queuedSection').innerHTML = queuedHtml;
+
+        window._queuedCards = queued;
+        renderQueuedList(queued);
+
+        // Wire up filters
+        ['q-owner','q-product','q-status','q-priority'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', filterQueued);
+        });
+
+        function filterQueued() {
+            var owner = (document.getElementById('q-owner') || {}).value || '';
+            var product = (document.getElementById('q-product') || {}).value || '';
+            var status = (document.getElementById('q-status') || {}).value || '';
+            var priority = (document.getElementById('q-priority') || {}).value || '';
+            var filtered = window._queuedCards.filter(function(c) {
+                if (owner && c.owner !== owner) return false;
+                if (product && (c.product || 'gathering') !== product) return false;
+                if (status && c.status !== status) return false;
+                if (priority && c.priority !== priority) return false;
+                return true;
+            });
+            renderQueuedList(filtered);
+        }
+
+        function renderQueuedList(cards) {
+            var html = '';
+            if (cards.length === 0) {
+                html = '<p style="color: var(--text-muted); font-size: 0.9rem;">No matching cards.</p>';
+            } else {
+                cards.forEach(function(card) { html += renderCardRow(card); });
+            }
+            document.getElementById('queued-list').innerHTML = html;
+        }
+
+        // Render Completed section (last 20, newest first)
+        completed.sort(function(a, b) {
+            var ta = parseTS(a.updated), tb = parseTS(b.updated);
+            if (!ta && !tb) return 0;
+            if (!ta) return 1;
+            if (!tb) return -1;
+            return tb - ta;
+        });
+        var compHtml = '<h2 class="section-header">Recently Completed <span class="section-count">' + Math.min(completed.length, 20) + '/' + completed.length + '</span></h2>';
+        if (completed.length === 0) {
+            compHtml += '<p style="color: var(--text-muted); font-size: 0.9rem;">No completed cards yet.</p>';
+        } else {
+            completed.slice(0, 20).forEach(function(card) { compHtml += renderCardRow(card, 'completed-card'); });
+        }
+        document.getElementById('completedSection').innerHTML = compHtml;
+
+        // Render orphan workflows (no matching card)
+        var orphanHtml = '';
+        if (ORPHAN_WORKFLOWS.length > 0) {
+            ORPHAN_WORKFLOWS.sort(function(a, b) {
+                var ta = a.created ? new Date(a.created).getTime() : 0;
+                var tb = b.created ? new Date(b.created).getTime() : 0;
+                return tb - ta;
+            });
+            var recentOrphans = ORPHAN_WORKFLOWS.slice(0, 5);
+            orphanHtml = '<h2 class="section-header">Unlinked Workflows <span class="section-count">' + recentOrphans.length + '/' + ORPHAN_WORKFLOWS.length + '</span></h2>';
+            recentOrphans.forEach(function(wf) {
+                var steps = wf.steps || [];
+                var done = steps.filter(function(s) { return s.status === 'completed'; }).length;
+                var cardLink = wf.card ? ' <a class="card-link" href="' + VIKUNJA_BASE + '/tasks/' + wf.card + '" target="_blank"><span class="card-badge">#' + wf.card + '</span></a>' : '';
+                orphanHtml += '<div class="orphan-wf">';
+                orphanHtml += '<div class="orphan-wf-header">' + wf.id + cardLink + ' \u2014 ' + (wf.decision || '').slice(0, 60) + ' \u2014 ' + done + '/' + steps.length + ' steps</div>';
+                orphanHtml += '<div class="wf-steps">';
+                steps.forEach(function(s) {
+                    var cls = s.status === 'completed' ? 'completed' : (s.status === 'ready' || s.status === 'in_progress') ? 'ready' : 'pending';
+                    orphanHtml += '<div class="wf-step ' + cls + '">' + s.role + '</div>';
+                });
+                orphanHtml += '</div></div>';
+            });
+        }
+        document.getElementById('orphanSection').innerHTML = orphanHtml;
+    }
+
+    // --- Flow metrics tab ---
+    var flowChartInst = null, stepChartInst = null, cardFlowInst = null, cardThroughputInst = null, flowInitialized = false;
+
+    function initFlow() {
+        var dates = ALL_WORKFLOWS.map(function(wf) { return wf.created ? wf.created.slice(0,10) : null; }).filter(Boolean);
+        if (dates.length > 0) {
+            dates.sort();
+            document.getElementById('dateFrom').value = dates[0];
+            document.getElementById('dateTo').value = dates[dates.length - 1];
+        } else {
+            var today = new Date().toISOString().slice(0,10);
+            document.getElementById('dateFrom').value = today;
+            document.getElementById('dateTo').value = today;
+        }
+        refreshFlow();
+    }
+
+    function refreshFlow() {
+        var from = document.getElementById('dateFrom').value;
+        var to = document.getElementById('dateTo').value;
+        var role = document.getElementById('roleFilter').value;
+
+        var wfs = ALL_WORKFLOWS.filter(function(wf) {
+            if (!wf.created) return false;
+            var d = wf.created.slice(0,10);
+            return d >= from && d <= to;
+        });
+
+        var roleStats = {};
+        ['jeff','wren','silas','kade'].forEach(function(r) { roleStats[r] = { steps: 0, completed: 0, totalLead: 0, maxLead: 0, maxLeadAction: '' }; });
+
+        var arrivals = [], exits = [], stepExits = [];
+
+        wfs.forEach(function(wf) {
+            var created = parseTS(wf.created);
+            if (created) arrivals.push({ t: created, id: wf.id });
+
+            var steps = wf.steps || [];
+            var allDone = steps.every(function(s) { return s.status === 'completed' || s.status === 'resolved-skipped' || s.status === 'skipped'; });
+            if (allDone && steps.length > 0) {
+                var last = steps.reduce(function(mx, s) { var t = parseTS(s.completed_at); return t && (!mx || t > mx) ? t : mx; }, null);
+                if (last) exits.push({ t: last, id: wf.id });
+            }
+
+            var prevTime = created;
+            steps.forEach(function(s, i) {
+                var r2 = s.role;
+                if (!roleStats[r2]) roleStats[r2] = { steps: 0, completed: 0, totalLead: 0, maxLead: 0, maxLeadAction: '' };
+                if (!role || role === r2) {
+                    roleStats[r2].steps++;
+                    var ct = parseTS(s.completed_at);
+                    if (ct) {
+                        roleStats[r2].completed++;
+                        stepExits.push({ t: ct, id: wf.id + 's' + (i+1) });
+                        if (prevTime) {
+                            var lead = ct - prevTime;
+                            roleStats[r2].totalLead += lead;
+                            if (lead > roleStats[r2].maxLead) { roleStats[r2].maxLead = lead; roleStats[r2].maxLeadAction = s.action || ''; }
+                        }
+                    }
+                    if (ct) prevTime = ct;
+                }
+            });
+        });
+
+        // Bottleneck
+        var bottleneckRole = '', maxAvg = 0;
+        Object.entries(roleStats).forEach(function(entry) {
+            var r2 = entry[0], st = entry[1];
+            if (st.completed > 0) {
+                var avg = st.totalLead / st.completed;
+                if (avg > maxAvg) { maxAvg = avg; bottleneckRole = r2; }
+            }
+        });
+
+        var totalSteps = Object.values(roleStats).reduce(function(s, r2) { return s + r2.steps; }, 0);
+        var allLeads = Object.values(roleStats).filter(function(r2) { return r2.completed > 0; });
+        var avgLead = allLeads.length > 0 ? allLeads.reduce(function(s,r2) { return s + r2.totalLead/r2.completed; }, 0) / allLeads.length : 0;
+
+        document.getElementById('metricsBar').innerHTML =
+            '<div class="metric-card"><div class="metric-val">' + ALL_CARDS.length + '</div><div class="metric-lbl">Cards</div></div>' +
+            '<div class="metric-card"><div class="metric-val green">' + ALL_CARDS.filter(function(c) { return c.done || c.status === 'Done'; }).length + '</div><div class="metric-lbl">Completed</div></div>' +
+            '<div class="metric-card"><div class="metric-val purple">' + wfs.length + '</div><div class="metric-lbl">Workflows</div></div>' +
+            '<div class="metric-card"><div class="metric-val orange">' + fmtDelta(avgLead) + '</div><div class="metric-lbl">Avg Step Lead</div></div>' +
+            '<div class="metric-card"><div class="metric-val red">' + (bottleneckRole || '\u2014') + '</div><div class="metric-lbl">Bottleneck</div></div>';
+
+        // Role grid
+        var roleHtml = '';
+        ['jeff','wren','silas','kade'].forEach(function(r2) {
+            var st = roleStats[r2];
+            if (st.steps === 0 && role && role !== r2) return;
+            var avg = st.completed > 0 ? fmtDelta(st.totalLead / st.completed) : '\u2014';
+            var max = st.maxLead > 0 ? fmtDelta(st.maxLead) : '\u2014';
+            var isBn = r2 === bottleneckRole;
+            roleHtml += '<div class="role-card' + (isBn ? ' bottleneck' : '') + '">' +
+                '<div class="role-name ' + r2 + '">' + r2.charAt(0).toUpperCase() + r2.slice(1) + '</div>' +
+                '<div class="role-stat"><span class="role-stat-label">Steps</span><span class="role-stat-value">' + st.completed + '/' + st.steps + '</span></div>' +
+                '<div class="role-stat"><span class="role-stat-label">Avg lead</span><span class="role-stat-value">' + avg + '</span></div>' +
+                '<div class="role-stat"><span class="role-stat-label">Max lead</span><span class="role-stat-value">' + max + '</span></div>' +
+                '<div class="role-stat"><span class="role-stat-label">Slowest</span><span class="role-stat-value" style="font-size:0.7rem;">' + ((st.maxLeadAction || '').slice(0,30) || '\u2014') + '</span></div>' +
+                '</div>';
+        });
+        document.getElementById('roleGrid').innerHTML = roleHtml;
+
+        // Charts (workflow-based, unchanged)
+        arrivals.sort(function(a,b) { return a.t - b.t; });
+        exits.sort(function(a,b) { return a.t - b.t; });
+        stepExits.sort(function(a,b) { return a.t - b.t; });
+
+        var base = arrivals.length > 0 ? arrivals[0].t.getTime() : Date.now();
+        var toMin = function(t) { return t.getTime(); };
+
+        var cumA = 0; var arrPts = arrivals.map(function(a) { cumA++; return {x: toMin(a.t), y: cumA}; });
+        var cumE = 0; var exPts = exits.map(function(e) { cumE++; return {x: toMin(e.t), y: cumE}; });
+        var cumS = 0; var stPts = stepExits.map(function(s) { cumS++; return {x: toMin(s.t), y: cumS}; });
+
+        if (flowChartInst) flowChartInst.destroy();
+        if (stepChartInst) stepChartInst.destroy();
+
+        var chartColors = { grid: '#e5e7eb', text: '#6b7280', blue: '#3b82f6', green: '#10b981', purple: '#8b5cf6', muted: '#d1d5db' };
+
+        flowChartInst = new Chart(document.getElementById('flowChart'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'Arrived', data: arrPts, borderColor: chartColors.blue, backgroundColor: 'rgba(59,130,246,0.1)', fill: true, stepped: true, pointRadius: 4 },
+                    { label: 'Completed', data: exPts, borderColor: chartColors.green, backgroundColor: 'rgba(16,185,129,0.1)', fill: true, stepped: true, pointRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Cumulative Flow \u2014 Workflows', color: chartColors.text }, legend: { labels: { color: chartColors.text } } },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, title: { display: true, text: 'Date', color: chartColors.text }, ticks: { color: chartColors.text, maxTicksLimit: 12 }, grid: { color: chartColors.grid } },
+                    y: { ticks: { color: chartColors.text, stepSize: 1 }, grid: { color: chartColors.grid }, beginAtZero: true }
+                }
+            }
+        });
+
+        stepChartInst = new Chart(document.getElementById('stepChart'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'Steps Completed', data: stPts, borderColor: chartColors.purple, backgroundColor: 'rgba(139,92,246,0.1)', fill: true, pointRadius: 2 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Step Throughput', color: chartColors.text }, legend: { labels: { color: chartColors.text } } },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, title: { display: true, text: 'Date', color: chartColors.text }, ticks: { color: chartColors.text, maxTicksLimit: 12 }, grid: { color: chartColors.grid } },
+                    y: { ticks: { color: chartColors.text }, grid: { color: chartColors.grid }, beginAtZero: true }
+                }
+            }
+        });
+
+        // Card cumulative flow + throughput charts
+        var cardCreated = ALL_CARDS.filter(function(c) { return c.created; })
+            .map(function(c) { return { t: new Date(c.created), id: c.index }; })
+            .sort(function(a, b) { return a.t - b.t; });
+        var cardCompleted = ALL_CARDS.filter(function(c) {
+                return (c.done || c.status === 'Done') && (c.doneAt || CARD_COMPLETION_MAP[String(c.index)] || c.updated);
+            })
+            .map(function(c) {
+                var ts = c.doneAt || CARD_COMPLETION_MAP[String(c.index)] || c.updated;
+                return { t: new Date(ts), id: c.index };
+            })
+            .sort(function(a, b) { return a.t - b.t; });
+
+        var cumCC = 0; var cardCreatedPts = cardCreated.map(function(c) { cumCC++; return { x: c.t.getTime(), y: cumCC }; });
+        var cumCD = 0; var cardDonePts = cardCompleted.map(function(c) { cumCD++; return { x: c.t.getTime(), y: cumCD }; });
+
+        // Card throughput: completed cards per day
+        var cardsByDay = {};
+        cardCompleted.forEach(function(c) {
+            var day = c.t.toISOString().slice(0, 10);
+            cardsByDay[day] = (cardsByDay[day] || 0) + 1;
+        });
+        var dayKeys = Object.keys(cardsByDay).sort();
+        var cumDayTotal = 0;
+        var cardDayPts = dayKeys.map(function(d) { cumDayTotal += cardsByDay[d]; return { x: new Date(d).getTime(), y: cardsByDay[d] }; });
+
+        if (cardFlowInst) cardFlowInst.destroy();
+        cardFlowInst = new Chart(document.getElementById('cardFlowChart'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'Created', data: cardCreatedPts, borderColor: chartColors.blue, backgroundColor: 'rgba(59,130,246,0.1)', fill: true, stepped: true, pointRadius: 2 },
+                    { label: 'Completed', data: cardDonePts, borderColor: chartColors.green, backgroundColor: 'rgba(16,185,129,0.1)', fill: true, stepped: true, pointRadius: 2 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Cumulative Flow \u2014 Cards', color: chartColors.text }, legend: { labels: { color: chartColors.text } } },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, title: { display: true, text: 'Date', color: chartColors.text }, ticks: { color: chartColors.text, maxTicksLimit: 12 }, grid: { color: chartColors.grid } },
+                    y: { ticks: { color: chartColors.text }, grid: { color: chartColors.grid }, beginAtZero: true }
+                }
+            }
+        });
+
+        if (cardThroughputInst) cardThroughputInst.destroy();
+        cardThroughputInst = new Chart(document.getElementById('cardThroughputChart'), {
+            type: 'bar',
+            data: {
+                datasets: [
+                    { label: 'Cards Completed', data: cardDayPts, backgroundColor: 'rgba(139,92,246,0.6)', borderColor: chartColors.purple, borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { title: { display: true, text: 'Card Throughput \u2014 per Day', color: chartColors.text }, legend: { labels: { color: chartColors.text } } },
+                scales: {
+                    x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, title: { display: true, text: 'Date', color: chartColors.text }, ticks: { color: chartColors.text }, grid: { color: chartColors.grid } },
+                    y: { ticks: { color: chartColors.text, stepSize: 1 }, grid: { color: chartColors.grid }, beginAtZero: true }
+                }
+            }
+        });
+
+        // Card table (card-centric, replaces workflow table)
+        var cardTableCards = ALL_CARDS.slice().sort(function(a, b) {
+            var la = computeTimes(a).leadMs, lb = computeTimes(b).leadMs;
+            return lb - la;
+        });
+        var tbl = '<table class="wf-table"><thead><tr><th>Card</th><th>Title</th><th>Lead</th><th>Wait</th><th>Cycle</th><th>WFs</th><th>Status</th></tr></thead><tbody>';
+        cardTableCards.forEach(function(card) {
+            var times = computeTimes(card);
+            var isDone = card.done || card.status === 'Done';
+            var cls = isDone ? 'wf-done' : 'wf-active';
+            var wfCount = (card.workflows || []).length;
+            var prefix = card.product === 'chorus' ? 'C#' : '#';
+            tbl += '<tr>';
+            tbl += '<td class="wf-id"><a class="card-link" href="' + cardUrl(card) + '" target="_blank">' + prefix + card.index + '</a></td>';
+            tbl += '<td>' + card.title.slice(0, 50) + '</td>';
+            tbl += '<td class="wf-time">' + fmtDelta(times.leadMs) + '</td>';
+            tbl += '<td class="wf-time">' + fmtDelta(times.waitMs) + '</td>';
+            tbl += '<td class="wf-time">' + fmtDelta(times.cycleMs) + '</td>';
+            tbl += '<td>' + wfCount + '</td>';
+            tbl += '<td class="' + cls + '">' + card.status + '</td>';
+            tbl += '</tr>';
+        });
+        tbl += '</tbody></table>';
+        document.getElementById('cardTableSection').innerHTML = tbl;
+    }
+
+    // --- Contract tab ---
+    var contractLoaded = false;
+    var contractSchema = null;
+
+    function loadContract() {
+        if (contractLoaded) return;
+        contractLoaded = true;
+        document.getElementById('contract-loading').textContent = 'Loading schema...';
+        fetch('/api/werk/schema')
+            .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(function(schema) {
+                contractSchema = schema;
+                renderContract(schema);
+            })
+            .catch(function(err) {
+                document.getElementById('contract-loading').innerHTML = '<div class="contract-error">Failed to load schema: ' + err.message + '</div>';
+            });
+    }
+
+    function renderContract(schema) {
+        document.getElementById('contract-loading').style.display = 'none';
+        var el = document.getElementById('contract-content');
+        el.style.display = 'block';
+
+        var events = schema.events || {};
+        var vertebrae = schema.vertebrae || {};
+        var envelope = schema.envelope || {};
+        var eventNames = Object.keys(events).sort();
+
+        // Group by vertebra
+        var groups = {};
+        Object.keys(vertebrae).forEach(function(v) { groups[v] = []; });
+        eventNames.forEach(function(name) {
+            var v = events[name].vertebra || 'operations';
+            if (!groups[v]) groups[v] = [];
+            groups[v].push(name);
+        });
+
+        // Stats row
+        var statsHtml = '';
+        Object.keys(vertebrae).forEach(function(v) {
+            var count = (groups[v] || []).length;
+            statsHtml += '<div class="cs-stat ' + v + '"><div class="cs-val">' + count + '</div><div class="cs-lbl">' + v.charAt(0).toUpperCase() + v.slice(1) + '</div></div>';
+        });
+
+        // Header
+        var html = '<div class="contract-header"><div><strong>Spine Event Contract</strong> — ' + eventNames.length + ' event types</div>';
+        html += '<div class="contract-version">v<strong>' + (schema.version || '?') + '</strong></div></div>';
+
+        // Stats
+        html += '<div class="contract-stats">' + statsHtml + '</div>';
+
+        // Filters
+        html += '<div class="contract-filters">';
+        html += '<select id="contract-vertebra"><option value="">All vertebrae</option>';
+        Object.keys(vertebrae).forEach(function(v) {
+            html += '<option value="' + v + '">' + v.charAt(0).toUpperCase() + v.slice(1) + ' (' + (groups[v] || []).length + ')</option>';
+        });
+        html += '</select>';
+        html += '<select id="contract-source"><option value="">All sources</option><option value="chorus-events">chorus-events</option><option value="board-client">board-client</option></select>';
+        html += '<input type="text" id="contract-search" placeholder="Search events...">';
+        html += '</div>';
+
+        // Envelope
+        html += '<div class="contract-envelope"><h3>Envelope (required on every event)</h3><div class="envelope-fields">';
+        var envFields = envelope.fields || {};
+        Object.keys(envFields).forEach(function(f) {
+            var fd = envFields[f];
+            html += '<div class="env-field"><code>' + f + '</code> <span>' + (fd.type || '') + '</span></div>';
+        });
+        html += '</div></div>';
+
+        // Event groups
+        html += '<div id="contract-groups">';
+        Object.keys(vertebrae).forEach(function(v) {
+            var evts = groups[v] || [];
+            if (evts.length === 0) return;
+            html += '<div class="vertebra-group" data-vertebra="' + v + '">';
+            html += '<div class="vertebra-group-header ' + v + '">' + v.charAt(0).toUpperCase() + v.slice(1) + ' <span class="vg-count">(' + evts.length + ' events)</span></div>';
+            evts.forEach(function(name) {
+                var ev = events[name];
+                var sourceCls = (ev.source || '').replace(/\s/g, '-');
+                html += '<div class="event-card" data-event="' + name + '" data-source="' + (ev.source || '') + '">';
+                html += '<div class="event-card-header"><span class="event-name">' + name + '</span>';
+                html += '<span class="event-source ' + sourceCls + '">' + (ev.source || '') + '</span></div>';
+                html += '<div class="event-desc">' + (ev.description || '') + '</div>';
+                var fields = ev.fields || {};
+                var fieldKeys = Object.keys(fields);
+                if (fieldKeys.length > 0) {
+                    html += '<div class="event-fields">';
+                    fieldKeys.forEach(function(fk) {
+                        html += '<span class="event-field"><code>' + fk + '</code> ' + fields[fk] + '</span>';
+                    });
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+        });
+        html += '</div>';
+
+        el.innerHTML = html;
+
+        // Wire filters
+        var vertebraSelect = document.getElementById('contract-vertebra');
+        var sourceSelect = document.getElementById('contract-source');
+        var searchInput = document.getElementById('contract-search');
+
+        function applyContractFilters() {
+            var vFilter = vertebraSelect.value;
+            var sFilter = sourceSelect.value;
+            var qFilter = (searchInput.value || '').toLowerCase();
+            var groupEls = document.querySelectorAll('.vertebra-group');
+            groupEls.forEach(function(grp) {
+                var groupV = grp.getAttribute('data-vertebra');
+                if (vFilter && groupV !== vFilter) { grp.style.display = 'none'; return; }
+                grp.style.display = '';
+                var cards = grp.querySelectorAll('.event-card');
+                var visibleCount = 0;
+                cards.forEach(function(card) {
+                    var eName = card.getAttribute('data-event') || '';
+                    var eSource = card.getAttribute('data-source') || '';
+                    var text = card.textContent.toLowerCase();
+                    var show = true;
+                    if (sFilter && eSource !== sFilter) show = false;
+                    if (qFilter && text.indexOf(qFilter) === -1) show = false;
+                    card.style.display = show ? '' : 'none';
+                    if (show) visibleCount++;
+                });
+                if (visibleCount === 0 && (sFilter || qFilter)) grp.style.display = 'none';
+            });
+        }
+
+        vertebraSelect.addEventListener('change', applyContractFilters);
+        sourceSelect.addEventListener('change', applyContractFilters);
+        searchInput.addEventListener('input', applyContractFilters);
+    }
+
+    // --- Instruments tab ---
+    var instrumentsLoaded = false;
+
+    function loadInstruments() {
+        // WIP panel renders immediately from ALL_CARDS
+        renderWipPanel();
+
+        // Fetch activity + loom-metrics in parallel for the other 3 panels
+        var activityP = fetch('/api/werk/activity?hours=168')
+            .then(function(r) { return r.ok ? r.json() : { entries: [] }; })
+            .catch(function() { return { entries: [] }; });
+        var metricsP = fetch('/api/loom-metrics')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .catch(function() { return null; });
+
+        Promise.all([activityP, metricsP]).then(function(results) {
+            var activity = results[0];
+            var metrics = results[1];
+            renderGatePanel(activity.entries || []);
+            renderBriefPanel(activity.entries || []);
+            renderFitnessPanel(metrics);
+        });
+    }
+
+    function renderWipPanel() {
+        var wipCards = ALL_CARDS.filter(function(c) { return c.status === 'WIP' && !c.done; });
+        var byRole = { wren: [], silas: [], kade: [] };
+        wipCards.forEach(function(c) {
+            var owner = (c.owner || '').toLowerCase();
+            if (byRole[owner]) byRole[owner].push(c);
+        });
+
+        var WIP_LIMIT = 3; // DEC-051 total
+        var HEALTHY = 1;   // 1 per role is healthy
+        var html = '';
+        ['wren', 'silas', 'kade'].forEach(function(role) {
+            var cards = byRole[role];
+            var isOver = cards.length > HEALTHY;
+            html += '<div class="wip-card' + (isOver ? ' over' : '') + '">';
+            html += '<div class="wip-role ' + role + '">' + role.charAt(0).toUpperCase() + role.slice(1) + '</div>';
+            html += '<div class="wip-count' + (isOver ? ' over' : '') + '">' + cards.length + '</div>';
+            html += '<div class="wip-limit">' + (isOver ? 'over healthy (1)' : 'healthy') + '</div>';
+            if (cards.length > 0) {
+                html += '<div class="wip-items">';
+                cards.forEach(function(c) {
+                    var prefix = c.product === 'chorus' ? 'C#' : '#';
+                    html += '<div>' + prefix + c.index + ' ' + escS(truncS(c.title, 30)) + '</div>';
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+        });
+
+        var totalWip = wipCards.length;
+        var totalOver = totalWip > WIP_LIMIT;
+        document.getElementById('wip-roles').innerHTML = html;
+
+        // Add total WIP summary
+        var summaryEl = document.createElement('div');
+        summaryEl.style.cssText = 'margin-top:10px;text-align:center;font-size:0.8rem;color:' + (totalOver ? '#ef4444' : 'var(--text-muted)') + ';font-weight:600;';
+        summaryEl.textContent = 'Total WIP: ' + totalWip + '/' + WIP_LIMIT + (totalOver ? ' — OVER LIMIT' : '');
+        document.getElementById('wip-roles').parentNode.appendChild(summaryEl);
+    }
+
+    function renderGatePanel(entries) {
+        var wipCards = ALL_CARDS.filter(function(c) { return c.status === 'WIP' && !c.done; });
+        if (wipCards.length === 0) {
+            document.getElementById('gate-cards').innerHTML = '<span class="inst-empty">No WIP cards</span>';
+            return;
+        }
+
+        // Find deploy/demo/accept events per card
+        var cardEvents = {};
+        entries.forEach(function(e) {
+            if (!e.card_id) return;
+            if (!cardEvents[e.card_id]) cardEvents[e.card_id] = { deploy: false, demo: false, accept: false };
+            var ev = normalizeEvent(e.event);
+            if (ev === 'deploy.pipeline.completed' || ev === 'deploy.pipeline.succeeded') cardEvents[e.card_id].deploy = true;
+            if (ev === 'card.demo.started' || (ev === 'card.item.commented' && (e.message || '').toLowerCase().indexOf('demo') >= 0)) cardEvents[e.card_id].demo = true;
+            if (ev === 'card.item.completed' || ev === 'card.acceptance.completed') cardEvents[e.card_id].accept = true;
+        });
+
+        var html = '';
+        wipCards.forEach(function(c) {
+            var prefix = c.product === 'chorus' ? 'C#' : '#';
+            var ev = cardEvents[c.id] || { deploy: false, demo: false, accept: false };
+            html += '<div class="gate-card"><div class="gate-header">';
+            html += '<a class="card-link" href="' + cardUrl(c) + '" target="_blank"><span class="card-badge">' + prefix + c.index + '</span></a>';
+            html += '<span class="gate-title">' + escS(truncS(c.title, 50)) + '</span>';
+            html += '<div class="gate-dots">';
+            html += '<div class="gate-dot ' + (ev.deploy ? 'done' : 'pending') + '" title="Deploy">D</div>';
+            html += '<div class="gate-dot ' + (ev.demo ? 'done' : 'pending') + '" title="Demo">M</div>';
+            html += '<div class="gate-dot ' + (ev.accept ? 'done' : 'pending') + '" title="Accept">A</div>';
+            html += '</div></div></div>';
+        });
+        document.getElementById('gate-cards').innerHTML = html;
+    }
+
+    function renderBriefPanel(entries) {
+        var briefs = [];
+        var briefMap = {};
+
+        entries.forEach(function(e) {
+            var ev = normalizeEvent(e.event);
+            if (ev === 'brief.handoff.written') {
+                var key = (e.title || e.message || '').slice(0, 60);
+                if (!key) return;
+                briefMap[key] = briefMap[key] || {};
+                briefMap[key].title = key;
+                briefMap[key].from = e.role || '?';
+                briefMap[key].to = e.recipient || '?';
+                briefMap[key].written = e.timestamp;
+            }
+            if (ev === 'brief.handoff.read') {
+                var key2 = (e.title || e.message || '').slice(0, 60);
+                if (!key2) return;
+                if (briefMap[key2]) {
+                    briefMap[key2].read = e.timestamp;
+                }
+            }
+        });
+
+        var briefList = Object.values(briefMap).sort(function(a, b) {
+            return new Date(b.written || 0) - new Date(a.written || 0);
+        }).slice(0, 10);
+
+        if (briefList.length === 0) {
+            document.getElementById('brief-latency').innerHTML = '<span class="inst-empty">No brief events in 7d window</span>';
+            return;
+        }
+
+        var html = '<table class="brief-table"><thead><tr><th>Brief</th><th>From</th><th>To</th><th>Written</th><th>Latency</th></tr></thead><tbody>';
+        briefList.forEach(function(b) {
+            var latencyMs = b.read ? new Date(b.read) - new Date(b.written) : null;
+            var isStale = !b.read || (latencyMs && latencyMs > 4 * 3600000);
+            var latencyStr = b.read ? fmtDelta(latencyMs) : 'unread';
+            html += '<tr class="' + (isStale && !b.read ? 'brief-stale' : '') + '">';
+            html += '<td>' + escS(truncS(b.title, 35)) + '</td>';
+            html += '<td>' + escS(b.from) + '</td>';
+            html += '<td>' + escS(b.to) + '</td>';
+            html += '<td>' + fmtTime(b.written) + '</td>';
+            html += '<td class="brief-latency' + (isStale ? ' stale' : '') + '">' + latencyStr + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('brief-latency').innerHTML = html;
+    }
+
+    function renderFitnessPanel(metrics) {
+        if (!metrics) {
+            document.getElementById('fitness-grid').innerHTML = '<span class="inst-empty">Loom metrics unavailable</span>';
+            return;
+        }
+
+        // Parse weekly_throughput: { "MM/DD": count, ... } — last two weeks for trend
+        var wt = metrics.weekly_throughput || {};
+        var weeks = Object.keys(wt).sort();
+        var currentWeek = weeks.length > 0 ? wt[weeks[weeks.length - 1]] : 0;
+        var prevWeek = weeks.length > 1 ? wt[weeks[weeks.length - 2]] : 0;
+        var trendDir = currentWeek > prevWeek ? 'up' : currentWeek < prevWeek ? 'down' : 'flat';
+        var trendArrow = trendDir === 'up' ? '\u2191' : trendDir === 'down' ? '\u2193' : '\u2192';
+
+        var rs = metrics.reject_stats || {};
+        var rejectRate = rs.rate || 0;
+        var deployCount = rs.deploys || (metrics.operations || {}).deploys || 0;
+
+        var board = metrics.board || {};
+        var completionPct = board.total > 0 ? Math.round((board.done / board.total) * 100) : 0;
+
+        var html = '';
+        html += '<div class="fitness-card"><div class="fitness-val">' + currentWeek + '<span class="trend ' + trendDir + '">' + trendArrow + '</span></div><div class="fitness-lbl">Weekly throughput</div></div>';
+        html += '<div class="fitness-card"><div class="fitness-val">' + (typeof rejectRate === 'number' ? rejectRate.toFixed(1) : rejectRate) + '%</div><div class="fitness-lbl">Reject rate</div></div>';
+        html += '<div class="fitness-card"><div class="fitness-val">' + deployCount + '</div><div class="fitness-lbl">Deploys</div></div>';
+        html += '<div class="fitness-card"><div class="fitness-val">' + completionPct + '%</div><div class="fitness-lbl">Completion (' + (board.done || 0) + '/' + (board.total || 0) + ')</div></div>';
+        document.getElementById('fitness-grid').innerHTML = html;
+    }
+
+    // --- Init ---
+    renderFunnel();
+    </script>
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Gathering</h3>
+      <p>Personal knowledge graph &middot; RDF/SPARQL &middot; Private by default</p>
+    </div>
+    <div class="footer-section">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/blog">Journal</a></li>
+        <li><a href="/chorus">Chorus</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <p>SOLID pods &middot; ACL visibility &middot; Everything graduates</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Jeff Bridwell &middot; Roslindale, MA &middot; Built with the Loom</p>
+  </div>
+</footer>
+
+
+
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+
+
+
+</body>
+</html>
+
