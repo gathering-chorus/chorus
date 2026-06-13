@@ -90,6 +90,59 @@ app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles
 // building/products/convergence/nifi-chorus-integration-design). Served here so
 // the page lives in its ADR-041 home, not in gathering.
 app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { extensions: ['html'] }));
+
+// #3361 — server-rendered chorus pages moved home from gathering's app.ts.
+// EJS view layer + templates relocated into platform/api/views (was gathering).
+// Jeff's directive: move the code home now; service-backed data (loom/flow/
+// model-data) gets wired incrementally — these render the page shell and may be
+// data-broken until that work is prioritized. No chorus page lives in gathering.
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, '..', 'views'));
+// Relocated views + partials (navbar/session-recorder) read cspNonce unguarded;
+// gathering supplied it via res.locals. Mirror that with an empty default (these
+// are read dashboards; strict inline-script CSP nonce is a fix-later concern).
+app.use((_req: Request, res: Response, next: NextFunction) => { res.locals.cspNonce = ''; next(); });
+const renderChorusPage = (view: string, title: string) =>
+  (_req: Request, res: Response) => res.render(view, { title, cspNonce: '' });
+// Pure view renders (client-side data fetches may 404 until ported — broken-ok).
+app.get('/chorus', renderChorusPage('chorus-system', 'Chorus — System'));
+app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
+app.get('/chorus-model-data', renderChorusPage('chorus-model-data', 'Chorus Model Data'));
+app.get('/borg-assessment', renderChorusPage('borg-assessment', 'Borg Assessment'));
+app.get('/harvesting/icd', renderChorusPage('icd', 'Convergence Architecture — ICD'));
+app.get('/harvesting/convergence', renderChorusPage('icd', 'Convergence Architecture — ICD'));
+app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301, '/harvesting/icd'));
+// File-backed renders — best-effort read from the chorus tree; empty on miss.
+app.get('/werk', (_req: Request, res: Response) => {
+  const workflows: Array<Record<string, unknown>> = [];
+  for (const sub of ['active', 'archive']) {
+    const dir = path.join(chorusRepoRoot, 'platform', 'workflows', sub);
+    try {
+      if (fs.existsSync(dir)) {
+        for (const f of fs.readdirSync(dir).filter((n: string) => n.endsWith('.json'))) {
+          try { workflows.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'))); } catch { /* skip */ }
+        }
+      }
+    } catch { /* broken-ok */ }
+  }
+  res.render('werk', { workflows, cspNonce: '' });
+});
+app.get('/harvest-manifests', (req: Request, res: Response) => {
+  const manifestDir = path.join(chorusRepoRoot, 'platform', 'api', 'data', 'harvest', 'manifests');
+  const filter = req.query.domain as string | undefined;
+  const manifests: Record<string, unknown> = {};
+  try {
+    if (fs.existsSync(manifestDir)) {
+      for (const file of fs.readdirSync(manifestDir).sort()) {
+        if (!file.endsWith('.json')) continue;
+        const name = file.replace('.json', '');
+        if (filter && name !== filter) continue;
+        try { manifests[name] = JSON.parse(fs.readFileSync(path.join(manifestDir, file), 'utf8')); } catch { /* skip */ }
+      }
+    }
+  } catch { /* broken-ok */ }
+  res.render('harvest-manifests', { manifests, filter: filter || '', isFocused: !!filter });
+});
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));

@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <%- include('partials/head', { title: 'Loom', cspNonce: locals.cspNonce || '' }) %>
+    <style>
+        /* ═══ Role Tiles ═══ */
+        .role-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-md); margin-bottom: var(--space-xl); }
+        .role-tile { background: var(--card-bg); border-radius: var(--radius-lg); padding: 1rem 1.25rem; box-shadow: var(--shadow-sm); border-top: 3px solid var(--tile-color); position: relative; display: flex; flex-direction: column; }
+        .role-tile:hover { box-shadow: var(--shadow-md); }
+        .role-tile-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .role-tile-header h3 { margin: 0; font-size: 1rem; }
+        .role-tile-header h3 a { color: var(--text-color); text-decoration: none; }
+        .role-tile-header h3 a:hover { color: var(--accent-color); }
+        .role-badge-sm { padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); font-size: 0.65rem; font-weight: 700; color: white; }
+        .badge-jeff { background: #1e293b; }
+        .badge-wren { background: #16a34a; }
+        .badge-silas { background: #d97706; }
+        .badge-kade { background: #2563eb; }
+        .role-tile-stat { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
+        .role-tile-stat .stat { text-align: center; }
+        .role-tile-stat .stat-num { font-size: 1.25rem; font-weight: 700; color: var(--primary-color); }
+        .role-tile-stat .stat-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .role-tile-wip { font-size: 0.75rem; line-height: 1.5; }
+        .role-tile-wip .wip-card { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.15rem; }
+        .wip-card-id { color: var(--text-muted); font-weight: 600; min-width: 2.2rem; }
+        .wip-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .wip-card-age { font-weight: 600; min-width: 1.5rem; text-align: right; margin-left: auto; }
+        .role-tile-empty { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
+        .role-tile-excerpt { padding-top: 0.6rem; border-top: 1px solid var(--bg-muted, #e2e8f0); flex: 1; display: flex; flex-direction: column; }
+        .role-tile-excerpt p { font-size: 0.75rem; line-height: 1.5; color: var(--text-muted); margin: 0; flex: 1; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+        .role-tile-excerpt a { font-size: 0.7rem; color: var(--text-muted); text-decoration: none; margin-top: 0.4rem; }
+        .role-tile-excerpt a:hover { color: var(--accent-color); }
+
+        /* ═══ Metrics Sections ═══ */
+        .loom-section { margin-bottom: var(--space-xl); }
+        .loom-section h2 { font-size: var(--font-size-lg); margin: 0 0 0.75rem 0; color: var(--primary-color); display: flex; align-items: center; gap: var(--space-sm); }
+        .metric-card { background: var(--card-bg); border-radius: var(--radius-lg); padding: var(--space-md) 1.25rem; box-shadow: var(--shadow-sm); margin-bottom: var(--space-md); }
+        .metric-card h4 { margin-top: 0; font-size: var(--font-size-sm); color: var(--text-muted); }
+        .loom-pending { font-size: var(--font-size-sm); color: var(--text-muted); font-style: italic; padding: var(--space-md); background: var(--card-bg); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+
+        /* Section headers */
+        .section-header { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 var(--space-sm) 0; padding-left: 0.5rem; cursor: pointer; list-style: none; }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::before { content: '\25B8 '; font-size: 0.75em; }
+        details[open] > summary::before { content: '\25BE '; }
+
+        /* ═══ Voice Mic Button ═══ */
+        .voice-mic { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--text-muted); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-left: auto; transition: all 0.2s; flex-shrink: 0; }
+        .voice-mic:hover { border-color: var(--tile-color); background: rgba(0,0,0,0.04); }
+        .voice-mic.recording { border-color: #dc2626; background: rgba(220,38,38,0.1); animation: pulse-mic 1.2s infinite; }
+        .voice-mic svg { width: 14px; height: 14px; fill: var(--text-muted); }
+        .voice-mic.recording svg { fill: #dc2626; }
+        .voice-mic-status { font-size: 0.65rem; color: var(--text-muted); text-align: center; margin-top: 2px; min-height: 0.85rem; }
+        .voice-mic-status.transcribing { color: #d97706; }
+        .voice-mic-status.injected { color: #16a34a; }
+        .voice-mic-status.error { color: #dc2626; }
+        @keyframes pulse-mic { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.3); } 50% { box-shadow: 0 0 0 6px rgba(220,38,38,0); } }
+
+        /* ═══ Responsive ═══ */
+        @media (max-width: 900px) { .role-tiles { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 500px) { .role-tiles { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <%- include('partials/navbar', { isAuthenticated: true, userRole: 'admin', cspNonce: locals.cspNonce || '' }) %>
+    <div class="page-container">
+    <h1 class="page-title">Loom</h1>
+    <%- include('partials/content-actions', { title: 'Loom — Team Dashboard' }) %>
+
+    <%
+        // Extract first 2 sentences from reflection HTML as plain text excerpt
+        function excerpt(roleKey) {
+            const r = roles[roleKey];
+            if (!r || !r.reflection) return '';
+            const text = r.reflection.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+            return sentences.slice(0, 3).join('').trim();
+        }
+
+        // Build per-role WIP card lookup from metrics
+        const wipByRole = { jeff: [], wren: [], silas: [], kade: [] };
+        const wipCards = (locals.metrics && metrics.wip_age) || [];
+        wipCards.forEach(function(card) {
+            const labels = (card.labels || '').toLowerCase();
+            if (labels.includes('kade')) wipByRole.kade.push(card);
+            else if (labels.includes('silas')) wipByRole.silas.push(card);
+            else if (labels.includes('wren')) wipByRole.wren.push(card);
+            else wipByRole.jeff.push(card);
+        });
+        const byRole = (locals.metrics && metrics.board && metrics.board.by_role) || {};
+        function ageColor(days) {
+            return days <= 3 ? '#16a34a' : days <= 7 ? '#d97706' : '#dc2626';
+        }
+    %>
+
+    <!-- ═══ ROLE TILES ═══ -->
+    <div class="role-tiles">
+        <!-- Jeff -->
+        <div class="role-tile" style="--tile-color: #1e293b;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/jeff">Jeff</a></h3>
+                <span class="role-badge-sm badge-jeff">Direction</span>
+            </div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num"><%= wipByRole.jeff.length %></div>
+                    <div class="stat-label">WIP</div>
+                </div>
+            </div>
+            <% if (wipByRole.jeff.length > 0) { %>
+            <div class="role-tile-wip">
+                <% wipByRole.jeff.forEach(function(card) { %>
+                <div class="wip-card">
+                    <span class="wip-card-id">#<%= card.id %></span>
+                    <span class="wip-card-title"><%= card.title %></span>
+                    <span class="wip-card-age" style="color:<%= ageColor(card.age_days) %>;"><%= card.age_days %>d</span>
+                </div>
+                <% }); %>
+            </div>
+            <% } else { %>
+            <div class="role-tile-empty">No active WIP</div>
+            <% } %>
+            <div class="role-tile-excerpt">
+                <p><%= excerpt('jeff') %></p>
+                <a href="/loom/jeff">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Wren -->
+        <div class="role-tile" style="--tile-color: #16a34a;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/wren">Wren</a></h3>
+                <span class="role-badge-sm badge-wren">Product</span>
+                <button class="voice-mic" data-role="wren" title="Voice to Wren"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-wren"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num"><%= wipByRole.wren.length %></div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num"><%= byRole.wren || 0 %></div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            <% if (wipByRole.wren.length > 0) { %>
+            <div class="role-tile-wip">
+                <% wipByRole.wren.forEach(function(card) { %>
+                <div class="wip-card">
+                    <span class="wip-card-id">#<%= card.id %></span>
+                    <span class="wip-card-title"><%= card.title %></span>
+                    <span class="wip-card-age" style="color:<%= ageColor(card.age_days) %>;"><%= card.age_days %>d</span>
+                </div>
+                <% }); %>
+            </div>
+            <% } else { %>
+            <div class="role-tile-empty">No active WIP</div>
+            <% } %>
+            <div class="role-tile-excerpt">
+                <p><%= excerpt('wren') %></p>
+                <a href="/loom/wren">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Silas -->
+        <div class="role-tile" style="--tile-color: #d97706;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/silas">Silas</a></h3>
+                <span class="role-badge-sm badge-silas">Architecture</span>
+                <button class="voice-mic" data-role="silas" title="Voice to Silas"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-silas"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num"><%= wipByRole.silas.length %></div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num"><%= byRole.silas || 0 %></div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            <% if (wipByRole.silas.length > 0) { %>
+            <div class="role-tile-wip">
+                <% wipByRole.silas.forEach(function(card) { %>
+                <div class="wip-card">
+                    <span class="wip-card-id">#<%= card.id %></span>
+                    <span class="wip-card-title"><%= card.title %></span>
+                    <span class="wip-card-age" style="color:<%= ageColor(card.age_days) %>;"><%= card.age_days %>d</span>
+                </div>
+                <% }); %>
+            </div>
+            <% } else { %>
+            <div class="role-tile-empty">No active WIP</div>
+            <% } %>
+            <div class="role-tile-excerpt">
+                <p><%= excerpt('silas') %></p>
+                <a href="/loom/silas">Read more &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Kade -->
+        <div class="role-tile" style="--tile-color: #2563eb;">
+            <div class="role-tile-header">
+                <h3><a href="/loom/kade">Kade</a></h3>
+                <span class="role-badge-sm badge-kade">Engineering</span>
+                <button class="voice-mic" data-role="kade" title="Voice to Kade"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+            </div>
+            <div class="voice-mic-status" id="voice-status-kade"></div>
+            <div class="role-tile-stat">
+                <div class="stat">
+                    <div class="stat-num"><%= wipByRole.kade.length %></div>
+                    <div class="stat-label">WIP</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-num"><%= byRole.kade || 0 %></div>
+                    <div class="stat-label">Shipped</div>
+                </div>
+            </div>
+            <% if (wipByRole.kade.length > 0) { %>
+            <div class="role-tile-wip">
+                <% wipByRole.kade.forEach(function(card) { %>
+                <div class="wip-card">
+                    <span class="wip-card-id">#<%= card.id %></span>
+                    <span class="wip-card-title"><%= card.title %></span>
+                    <span class="wip-card-age" style="color:<%= ageColor(card.age_days) %>;"><%= card.age_days %>d</span>
+                </div>
+                <% }); %>
+            </div>
+            <% } else { %>
+            <div class="role-tile-empty">No active WIP</div>
+            <% } %>
+            <div class="role-tile-excerpt">
+                <p><%= excerpt('kade') %></p>
+                <a href="/loom/kade">Read more &rarr;</a>
+            </div>
+        </div>
+    </div>
+
+    <% if (locals.metrics) { %>
+    <!-- ═══ TEAM PULSE ═══ -->
+    <div class="loom-section" id="team-pulse">
+        <h2>Team Pulse</h2>
+        <div style="display:flex; align-items:center; gap:var(--space-sm); margin-bottom:var(--space-md); flex-wrap:wrap;">
+            <div style="display:flex; gap:4px;" id="range-buttons">
+                <button class="range-btn" data-days="7" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">7d</button>
+                <button class="range-btn active" data-days="30" style="padding:0.2rem 0.6rem; border:1px solid var(--primary-color); border-radius:var(--radius-sm); background:var(--primary-color); color:white; cursor:pointer; font-size:var(--font-size-xs);">30d</button>
+                <button class="range-btn" data-days="90" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">90d</button>
+                <button class="range-btn" data-days="0" style="padding:0.2rem 0.6rem; border:1px solid var(--text-muted); border-radius:var(--radius-sm); background:transparent; color:var(--text-color); cursor:pointer; font-size:var(--font-size-xs);">All</button>
+            </div>
+            <span id="range-label" style="font-size:var(--font-size-xs); color:var(--text-muted);"></span>
+            <span id="range-loading" style="font-size:var(--font-size-xs); color:var(--text-muted); display:none;">Loading...</span>
+        </div>
+        <% if (metrics.data_window && metrics.data_window.spine_since) { %>
+            <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-bottom:var(--space-md);">
+                Spine events since <%= metrics.data_window.spine_since %>. Board + git data covers full history.
+            </div>
+        <% } %>
+
+        <% const stages = (metrics.board || {}).werk_stages || {}; %>
+        <% const totalCards = (metrics.board || {}).total || 1; %>
+        <% const roleColors = { wren: '#16a34a', silas: '#d97706', kade: '#2563eb' }; %>
+        <% const maxCards = Math.max(...Object.values(byRole).filter(v => typeof v === 'number'), 1); %>
+
+        <!-- Flow -->
+        <details open style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:var(--text-muted); border-left:3px solid var(--text-muted);">Flow</summary>
+            <!-- Value Stream -->
+            <div class="metric-card" id="vs-card" style="margin-bottom:var(--space-md);">
+                <h4 title="Cards mapped to Werk value stream stages"><%= (metrics.board || {}).total || 0 %> cards</h4>
+                <div id="vs-bar" style="display:flex; height:2.5rem; border-radius:6px; overflow:hidden; margin-bottom:0.5rem;" title="Value stream distribution">
+                    <div style="width:<%= Math.round((stages.directing||0)/totalCards*100) %>%; background:#6366f1;" title="Directing: <%= stages.directing||0 %>"></div>
+                    <div style="width:<%= Math.round((stages.building||0)/totalCards*100) %>%; background:#d97706;" title="Building: <%= stages.building||0 %>"></div>
+                    <div style="width:<%= Math.round((stages.proving||0)/totalCards*100) %>%; background:#0891b2;" title="Proving: <%= stages.proving||0 %>"></div>
+                    <div style="width:<%= Math.round((stages.shipped||0)/totalCards*100) %>%; background:#16a34a;" title="Shipped: <%= stages.shipped||0 %>"></div>
+                    <% if (stages.wont_do) { %>
+                    <div style="width:<%= Math.round((stages.wont_do||0)/totalCards*100) %>%; background:#94a3b8;" title="Won't Do: <%= stages.wont_do||0 %>"></div>
+                    <% } %>
+                    <% if (stages.ideas) { %>
+                    <div style="width:<%= Math.round((stages.ideas||0)/totalCards*100) %>%; background:#a78bfa;" title="Ideas: <%= stages.ideas||0 %>"></div>
+                    <% } %>
+                    <% if (stages.ops) { %>
+                    <div style="width:<%= Math.round((stages.ops||0)/totalCards*100) %>%; background:#f97316;" title="Ops: <%= stages.ops||0 %>"></div>
+                    <% } %>
+                </div>
+                <div id="vs-stages" style="display:flex; gap:0.75rem; font-size:var(--font-size-sm); flex-wrap:wrap;">
+                    <div title="Now + Next + Later" style="cursor:help;"><span style="color:#6366f1; font-weight:700;" id="vs-directing"><%= stages.directing || 0 %></span><span style="color:var(--text-muted);"> directing</span></div>
+                    <div title="WIP + Harvesting" style="cursor:help;"><span style="color:#d97706; font-weight:700;" id="vs-building"><%= stages.building || 0 %></span><span style="color:var(--text-muted);"> building</span></div>
+                    <div title="Demo + accept gate" style="cursor:help;"><span style="color:#0891b2; font-weight:700;" id="vs-proving"><%= stages.proving || 0 %></span><span style="color:var(--text-muted);"> proving</span></div>
+                    <div title="Done — value delivered" style="cursor:help;"><span style="color:#16a34a; font-weight:700;" id="vs-shipped"><%= stages.shipped || 0 %></span><span style="color:var(--text-muted);"> shipped</span></div>
+                    <% if (stages.ideas) { %>
+                    <div title="Ideas pool" style="cursor:help;"><span style="color:#a78bfa; font-weight:700;" id="vs-ideas"><%= stages.ideas || 0 %></span><span style="color:var(--text-muted);"> ideas</span></div>
+                    <% } %>
+                    <% if (stages.wont_do) { %>
+                    <div title="Explicitly killed or superseded" style="cursor:help;"><span style="color:#94a3b8; font-weight:700;" id="vs-wontdo"><%= stages.wont_do || 0 %></span><span style="color:var(--text-muted);"> won't do</span></div>
+                    <% } %>
+                    <% if (stages.ops) { %>
+                    <div title="Ops + SWAT + system lanes" style="cursor:help;"><span style="color:#f97316; font-weight:700;" id="vs-ops"><%= stages.ops || 0 %></span><span style="color:var(--text-muted);"> ops</span></div>
+                    <% } %>
+                </div>
+                <div id="vs-throughput" style="display:flex; gap:1rem; margin-top:0.75rem; font-size:var(--font-size-sm);">
+                    <% Object.entries(metrics.weekly_throughput || {}).forEach(([week, count]) => { %>
+                        <div title="Cards shipped per week"><strong>W/<%= week %></strong> <%= count %></div>
+                    <% }); %>
+                </div>
+            </div>
+
+            <!-- Cards by Role -->
+            <div class="metric-card" id="role-card">
+                <h4 title="Cards marked Done, by owner: label">Cards Shipped by Role</h4>
+                <% ['silas', 'kade', 'wren'].forEach(role => { %>
+                    <% const count = byRole[role] || 0; %>
+                    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;" id="role-row-<%= role %>">
+                        <div style="width:3rem; font-size:var(--font-size-sm); font-weight:600; text-transform:capitalize;"><%= role %></div>
+                        <div style="flex:1; background:var(--bg-muted, #f1f5f9); border-radius:4px; height:1.2rem; overflow:hidden;">
+                            <div id="role-bar-<%= role %>" style="width:<%= maxCards > 0 ? Math.round(count/maxCards*100) : 0 %>%; height:100%; background:<%= roleColors[role] || '#666' %>; border-radius:4px; transition:width 0.3s;"></div>
+                        </div>
+                        <div id="role-count-<%= role %>" style="width:2.5rem; text-align:right; font-size:var(--font-size-sm); font-weight:600;"><%= count %></div>
+                    </div>
+                <% }); %>
+            </div>
+        </details>
+
+        <!-- Directing -->
+        <details style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:#6366f1; border-left:3px solid #6366f1;">Directing</summary>
+            <div class="metric-card" id="brief-card">
+                <h4 title="Briefs exchanged between role inboxes">Brief Flow</h4>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:0.5rem 2rem;">
+                    <% Object.entries(metrics.brief_flow || {}).forEach(([pair, count]) => { %>
+                        <% if (!pair.startsWith('_')) { %>
+                        <div style="display:flex; justify-content:space-between; font-size:var(--font-size-sm);">
+                            <span><%= pair %></span>
+                            <span style="font-weight:600;"><%= count %></span>
+                        </div>
+                        <% } %>
+                    <% }); %>
+                </div>
+                <% if ((metrics.brief_flow || {})._inbox_totals) { %>
+                <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem; border-top:1px solid var(--bg-muted, #e2e8f0); padding-top:0.35rem;">
+                    Inboxes: <% Object.entries(metrics.brief_flow._inbox_totals).forEach(([role, total]) => { %>
+                        <%= role %> <%= total %><%= role !== 'kade' ? ' \u00b7 ' : '' %>
+                    <% }); %>
+                </div>
+                <% } %>
+            </div>
+        </details>
+
+        <!-- Building -->
+        <details style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:#d97706; border-left:3px solid #d97706;">Building</summary>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                <!-- WIP Health -->
+                <div class="metric-card">
+                    <h4 title="Current WIP cards with age">WIP Health</h4>
+                    <% (metrics.wip_age || []).forEach(card => { %>
+                        <% const color = card.age_days <= 3 ? '#16a34a' : card.age_days <= 7 ? '#d97706' : '#dc2626'; %>
+                        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem; font-size:0.8rem;">
+                            <span style="color:<%= color %>; font-weight:700; min-width:2.5rem;">#<%= card.id %></span>
+                            <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><%= card.title %></span>
+                            <span style="color:<%= color %>; font-weight:600; min-width:2rem; text-align:right;"><%= card.age_days %>d</span>
+                        </div>
+                    <% }); %>
+                    <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem;">
+                        <span style="color:#16a34a;">&bull;</span> &lt;3d
+                        <span style="color:#d97706; margin-left:0.5rem;">&bull;</span> 3-7d
+                        <span style="color:#dc2626; margin-left:0.5rem;">&bull;</span> &gt;7d
+                    </div>
+                </div>
+
+                <!-- Proving Gate -->
+                <div class="metric-card" id="quality-card">
+                    <h4 title="Proving gate — cards accepted or rejected after demo">Proving Gate</h4>
+                    <div style="display:flex; gap:1.5rem;">
+                        <div>
+                            <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="q-accepted"><%= (metrics.reject_stats || {}).accepted || 0 %></div>
+                            <div style="font-size:var(--font-size-xs); color:var(--text-muted);">accepted</div>
+                        </div>
+                        <div>
+                            <div style="font-size:1.5rem; font-weight:700; color:<%= ((metrics.reject_stats || {}).rejected || 0) > 0 ? '#d97706' : 'var(--primary-color)' %>;" id="q-rejected"><%= (metrics.reject_stats || {}).rejected || 0 %></div>
+                            <div style="font-size:var(--font-size-xs); color:var(--text-muted);">rejected</div>
+                        </div>
+                    </div>
+                    <% if (((metrics.reject_stats || {}).accepted || 0) + ((metrics.reject_stats || {}).rejected || 0) > 0) { %>
+                    <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.35rem;">
+                        Reject rate: <%= (metrics.reject_stats || {}).rate || 0 %>%
+                    </div>
+                    <% } %>
+                </div>
+            </div>
+        </details>
+
+        <!-- Operations -->
+        <details style="margin-bottom:var(--space-md);">
+            <summary class="section-header" style="color:var(--text-muted); border-left:3px solid var(--text-muted);">Operations</summary>
+            <div class="metric-card" id="ops-card">
+                <div style="display:flex; gap:1.5rem;">
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-commits"><%= (metrics.operations || {}).commits || 0 %></div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">commits</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-sessions"><%= (metrics.operations || {}).sessions || 0 %></div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">sessions</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-builds"><%= (metrics.reject_stats || {}).builds || 0 %></div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">builds</div>
+                    </div>
+                    <div>
+                        <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);" id="ops-deploys"><%= (metrics.reject_stats || {}).deploys || 0 %></div>
+                        <div style="font-size:var(--font-size-xs); color:var(--text-muted);">deploys</div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </div>
+    <% } %>
+
+    </div>
+<script nonce="<%= locals.cspNonce %>">
+(function() {
+  var btns = document.querySelectorAll('.range-btn');
+  var label = document.getElementById('range-label');
+  var loading = document.getElementById('range-loading');
+  if (!btns.length) return;
+
+  btns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var days = parseInt(btn.dataset.days);
+      btns.forEach(function(b) {
+        b.style.background = 'transparent';
+        b.style.color = 'var(--text-color)';
+        b.style.borderColor = 'var(--text-muted)';
+      });
+      btn.style.background = 'var(--primary-color)';
+      btn.style.color = 'white';
+      btn.style.borderColor = 'var(--primary-color)';
+
+      var url = '/data/loom-metrics.json';
+      if (days > 0) {
+        url = '/data/loom-metrics-' + days + 'd.json';
+        label.textContent = 'Last ' + days + ' days';
+      } else {
+        label.textContent = '';
+      }
+
+      loading.style.display = 'inline';
+      fetch(url).then(function(r) { return r.json(); }).then(function(m) {
+        loading.style.display = 'none';
+        updateMetrics(m);
+      }).catch(function() {
+        loading.style.display = 'none';
+        label.textContent = 'Error loading metrics';
+      });
+    });
+  });
+
+  // Auto-load 30d on page init
+  label.textContent = 'Last 30 days';
+  loading.style.display = 'inline';
+  fetch('/data/loom-metrics-30d.json').then(function(r) { return r.json(); }).then(function(m) {
+    loading.style.display = 'none';
+    updateMetrics(m);
+  }).catch(function() { loading.style.display = 'none'; });
+
+  function $(id) { return document.getElementById(id); }
+
+  function updateMetrics(m) {
+    var b = m.board || {};
+    var stages = b.werk_stages || {};
+    var total = b.total || 1;
+
+    // Value Stream title
+    var vsCard = $('vs-card');
+    if (vsCard) { var h4 = vsCard.querySelector('h4'); if (h4) h4.textContent = (b.total || 0) + ' cards'; }
+
+    // Value stream stage counts
+    $('vs-directing').textContent = stages.directing || 0;
+    $('vs-building').textContent = stages.building || 0;
+    $('vs-proving').textContent = stages.proving || 0;
+    $('vs-shipped').textContent = stages.shipped || 0;
+    var wd = $('vs-wontdo');
+    if (wd) wd.textContent = stages.wont_do || 0;
+    var ideas = $('vs-ideas');
+    if (ideas) ideas.textContent = stages.ideas || 0;
+    var ops = $('vs-ops');
+    if (ops) ops.textContent = stages.ops || 0;
+
+    // Value stream bar
+    var bar = $('vs-bar');
+    if (bar) {
+      var segs = [
+        { pct: Math.round((stages.directing||0)/total*100), bg: '#6366f1', tip: 'Directing: '+(stages.directing||0) },
+        { pct: Math.round((stages.building||0)/total*100), bg: '#d97706', tip: 'Building: '+(stages.building||0) },
+        { pct: Math.round((stages.proving||0)/total*100), bg: '#0891b2', tip: 'Proving: '+(stages.proving||0) },
+        { pct: Math.round((stages.shipped||0)/total*100), bg: '#16a34a', tip: 'Shipped: '+(stages.shipped||0) },
+      ];
+      if (stages.wont_do) segs.push({ pct: Math.round((stages.wont_do||0)/total*100), bg: '#94a3b8', tip: "Won't Do: "+(stages.wont_do||0) });
+      if (stages.ideas) segs.push({ pct: Math.round((stages.ideas||0)/total*100), bg: '#a78bfa', tip: 'Ideas: '+(stages.ideas||0) });
+      if (stages.ops) segs.push({ pct: Math.round((stages.ops||0)/total*100), bg: '#f97316', tip: 'Ops: '+(stages.ops||0) });
+      bar.innerHTML = segs.map(function(s) {
+        return '<div style="width:'+s.pct+'%; background:'+s.bg+';" title="'+s.tip+'"></div>';
+      }).join('');
+    }
+
+    // Weekly throughput
+    var tp = $('vs-throughput');
+    if (tp) {
+      tp.innerHTML = '';
+      Object.entries(m.weekly_throughput || {}).forEach(function(pair) {
+        var d = document.createElement('div');
+        d.title = 'Cards shipped in commits referencing done/shipped';
+        d.innerHTML = '<strong>W/' + pair[0] + '</strong> ' + pair[1];
+        tp.appendChild(d);
+      });
+    }
+
+    // Cards by Role
+    var byRole = b.by_role || {};
+    var maxCards = Math.max.apply(null, Object.values(byRole).concat([1]));
+    ['silas', 'kade', 'wren'].forEach(function(role) {
+      var count = byRole[role] || 0;
+      var barEl = $('role-bar-' + role);
+      var numEl = $('role-count-' + role);
+      if (barEl) barEl.style.width = (maxCards > 0 ? Math.round(count/maxCards*100) : 0) + '%';
+      if (numEl) numEl.textContent = count;
+    });
+
+    // Brief Flow
+    var bc = $('brief-card');
+    if (bc) {
+      var h4 = bc.querySelector('h4');
+      bc.innerHTML = '';
+      bc.appendChild(h4);
+      Object.entries(m.brief_flow || {}).forEach(function(pair) {
+        if (pair[0].startsWith('_')) return;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex; justify-content:space-between; font-size:var(--font-size-sm); margin-bottom:0.25rem;';
+        row.innerHTML = '<span>' + pair[0] + '</span><span style="font-weight:600;">' + pair[1] + '</span>';
+        bc.appendChild(row);
+      });
+      if ((m.brief_flow || {})._inbox_totals) {
+        var totals = m.brief_flow._inbox_totals;
+        var tDiv = document.createElement('div');
+        tDiv.style.cssText = 'font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem; border-top:1px solid var(--bg-muted, #e2e8f0); padding-top:0.35rem;';
+        tDiv.textContent = 'Inboxes: ' + Object.entries(totals).map(function(e) { return e[0] + ' ' + e[1]; }).join(' \u00b7 ');
+        bc.appendChild(tDiv);
+      }
+    }
+
+    // Proving Gate
+    var rs = m.reject_stats || {};
+    $('q-accepted').textContent = rs.accepted || 0;
+    $('q-rejected').textContent = rs.rejected || 0;
+
+    // Operations
+    var opsData = m.operations || {};
+    $('ops-commits').textContent = opsData.commits || 0;
+    $('ops-sessions').textContent = opsData.sessions || 0;
+    $('ops-builds').textContent = rs.builds || 0;
+    $('ops-deploys').textContent = rs.deploys || 0;
+  }
+})();
+</script>
+<script>
+// Voice-to-session: record from browser mic, send to Chorus API, inject into role session
+(function() {
+  var CHORUS_API = 'http://localhost:3340';
+  var activeBtn = null;
+  var mediaRecorder = null;
+  var audioChunks = [];
+
+  document.querySelectorAll('.voice-mic').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var role = btn.dataset.role;
+
+      if (activeBtn === btn) {
+        stopRecording(btn, role);
+      } else {
+        if (activeBtn) stopRecording(activeBtn, activeBtn.dataset.role);
+        startRecording(btn, role);
+      }
+    });
+  });
+
+  function setStatus(role, text, cls) {
+    var el = document.getElementById('voice-status-' + role);
+    if (el) { el.textContent = text; el.className = 'voice-mic-status' + (cls ? ' ' + cls : ''); }
+  }
+
+  function startRecording(btn, role) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.start();
+      btn.classList.add('recording');
+      activeBtn = btn;
+      setStatus(role, 'Recording...', '');
+    }).catch(function(err) {
+      setStatus(role, 'Mic access denied', 'error');
+    });
+  }
+
+  function stopRecording(btn, role) {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    btn.classList.remove('recording');
+    activeBtn = null;
+    setStatus(role, 'Transcribing...', 'transcribing');
+
+    mediaRecorder.onstop = function() {
+      var blob = new Blob(audioChunks, { type: 'audio/webm' });
+      mediaRecorder.stream.getTracks().forEach(function(t) { t.stop(); });
+      sendAudio(blob, role);
+    };
+    mediaRecorder.stop();
+  }
+
+  function sendAudio(blob, role) {
+    // Convert webm to wav via AudioContext for whisper compatibility
+    var reader = new FileReader();
+    reader.onload = function() {
+      var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.decodeAudioData(reader.result).then(function(buffer) {
+        var wavBlob = audioBufferToWav(buffer);
+        fetch(CHORUS_API + '/api/chorus/voice/' + role, {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/wav' },
+          body: wavBlob
+        }).then(function(res) { return res.json(); }).then(function(data) {
+          if (data.error) {
+            setStatus(role, data.error, 'error');
+          } else {
+            setStatus(role, 'Sent (' + data.latency_ms + 'ms)', 'injected');
+            setTimeout(function() { setStatus(role, '', ''); }, 4000);
+          }
+        }).catch(function(err) {
+          setStatus(role, 'Send failed', 'error');
+        });
+      }).catch(function(err) {
+        setStatus(role, 'Audio decode failed', 'error');
+      });
+    };
+    reader.readAsArrayBuffer(blob);
+  }
+
+  // Minimal WAV encoder — 16-bit PCM mono 16kHz
+  function audioBufferToWav(buffer) {
+    var sampleRate = 16000;
+    var numChannels = 1;
+    // Resample to 16kHz mono
+    var offlineCtx = new OfflineAudioContext(numChannels, buffer.duration * sampleRate, sampleRate);
+    var source = offlineCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    // Can't do offline rendering synchronously — use simpler downsample
+    var data = buffer.getChannelData(0);
+    var ratio = buffer.sampleRate / sampleRate;
+    var newLength = Math.floor(data.length / ratio);
+    var result = new Float32Array(newLength);
+    for (var i = 0; i < newLength; i++) {
+      result[i] = data[Math.floor(i * ratio)];
+    }
+    // Encode WAV
+    var dataLength = result.length * 2;
+    var wavBuffer = new ArrayBuffer(44 + dataLength);
+    var view = new DataView(wavBuffer);
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numChannels * 2, true);
+    view.setUint16(32, numChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataLength, true);
+    for (var i = 0; i < result.length; i++) {
+      var s = Math.max(-1, Math.min(1, result[i]));
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return new Blob([wavBuffer], { type: 'audio/wav' });
+  }
+
+  function writeString(view, offset, string) {
+    for (var i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+})();
+</script>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

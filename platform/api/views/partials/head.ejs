@@ -1,0 +1,43 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= title %> | Jeff Bridwell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<meta name="description" content="Jeff Bridwell's personal website with blog, projects, and SOLID authentication">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/css/gathering.css">
+
+<!-- Ghost URL Fix Script -->
+<script nonce="<%= cspNonce %>">
+  // Fix for Ghost API URLs with duplicate 'ghost' paths
+  (function() {
+    // Monkey patch XMLHttpRequest to intercept and fix URLs
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+      // Check if this is a Ghost API URL with a duplicate 'ghost' path
+      if (typeof url === 'string' && url.includes('/ghost/ghost/')) {
+        // Fix the URL by removing the duplicate 'ghost'
+        url = url.replace('/ghost/ghost/', '/ghost/');
+        console.log('Ghost URL Fix: Fixed duplicate ghost path in URL:', url);
+      }
+      // Call the original open method with the fixed URL
+      return originalOpen.call(this, method, url, async, user, password);
+    };
+
+    // Monkey patch fetch to intercept and fix URLs
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+      if (typeof input === 'string' && input.includes('/ghost/ghost/')) {
+        // Fix the URL by removing the duplicate 'ghost'
+        input = input.replace('/ghost/ghost/', '/ghost/');
+        console.log('Ghost URL Fix: Fixed duplicate ghost path in fetch URL:', input);
+      }
+      // Call the original fetch with the fixed URL
+      return originalFetch.call(this, input, init);
+    };
+
+    console.log('Ghost URL Fix: URL interception initialized');
+  })();
+</script>
+<script src="/js/event-delegation.js" nonce="<%= cspNonce %>"></script>

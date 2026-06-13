@@ -1,0 +1,103 @@
+<div class="annotation-section" id="annotation-section">
+    <h3 class="annotation-heading">My Rating & Notes</h3>
+    <div class="star-rating" id="star-rating">
+        <% for (var i = 1; i <= 5; i++) { %>
+        <span class="star<%= (typeof rating !== 'undefined' && rating >= i) ? ' active' : '' %>" data-value="<%= i %>">&#9733;</span>
+        <% } %>
+        <span class="rating-label" id="rating-label"><%= (typeof rating !== 'undefined' && rating) ? rating + '/5' : 'Not rated' %></span>
+    </div>
+    <textarea class="annotation-notes" id="annotation-notes" placeholder="Add notes..." rows="3"><%= (typeof notes !== 'undefined' && notes) ? notes : '' %></textarea>
+    <div class="annotation-actions">
+        <button class="btn annotation-save" id="annotation-save">Save</button>
+        <span class="annotation-status" id="annotation-status"></span>
+    </div>
+</div>
+
+<style>
+    .annotation-section { margin-top: 2rem; padding: 1.5rem; background: var(--card-bg, #fff); border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
+    .annotation-heading { margin: 0 0 1rem; font-size: 1rem; color: var(--text-primary); }
+    .star-rating { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.75rem; }
+    .star { font-size: 1.5rem; color: var(--border-color, #cbd5e1); cursor: pointer; transition: color 0.15s; user-select: none; }
+    .star:hover, .star.active { color: #f59e0b; }
+    .rating-label { margin-left: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+    .annotation-notes { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; background: var(--bg-input, #fff); color: var(--text-primary); font-size: 0.9rem; font-family: inherit; resize: vertical; box-sizing: border-box; }
+    .annotation-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+    .annotation-save { padding: 0.4rem 1rem; background: var(--accent-color, #7c3aed); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    .annotation-save:hover { opacity: 0.9; }
+    .annotation-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .annotation-status { font-size: 0.8rem; color: var(--text-muted); }
+    .annotation-status.saved { color: #16a34a; }
+    .annotation-status.error { color: #dc2626; }
+</style>
+
+<script nonce="<%= cspNonce %>">
+(function() {
+    var currentRating = <%= (typeof rating !== 'undefined' && rating) ? rating : 0 %>;
+    var csrfToken = '<%= csrfToken %>';
+    var apiUrl = '/api/<%= resourceType %>/<%= resourceSlug %>';
+    var stars = document.querySelectorAll('#star-rating .star');
+    var ratingLabel = document.getElementById('rating-label');
+    var notesEl = document.getElementById('annotation-notes');
+    var saveBtn = document.getElementById('annotation-save');
+    var statusEl = document.getElementById('annotation-status');
+
+    function updateStars(val) {
+        stars.forEach(function(s) {
+            var v = parseInt(s.getAttribute('data-value'), 10);
+            if (v <= val) s.classList.add('active');
+            else s.classList.remove('active');
+        });
+        ratingLabel.textContent = val > 0 ? val + '/5' : 'Not rated';
+    }
+
+    stars.forEach(function(star) {
+        star.addEventListener('click', function() {
+            var val = parseInt(this.getAttribute('data-value'), 10);
+            currentRating = (currentRating === val) ? 0 : val;
+            updateStars(currentRating);
+        });
+        star.addEventListener('mouseenter', function() {
+            var val = parseInt(this.getAttribute('data-value'), 10);
+            stars.forEach(function(s) {
+                var v = parseInt(s.getAttribute('data-value'), 10);
+                if (v <= val) s.classList.add('active');
+                else s.classList.remove('active');
+            });
+        });
+        star.addEventListener('mouseleave', function() {
+            updateStars(currentRating);
+        });
+    });
+
+    saveBtn.addEventListener('click', function() {
+        saveBtn.disabled = true;
+        statusEl.textContent = 'Saving...';
+        statusEl.className = 'annotation-status';
+
+        var payload = { notes: notesEl.value };
+        if (currentRating > 0) payload.rating = currentRating;
+
+        fetch(apiUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body: JSON.stringify(payload)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                statusEl.textContent = 'Saved';
+                statusEl.className = 'annotation-status saved';
+            } else {
+                statusEl.textContent = data.error || 'Save failed';
+                statusEl.className = 'annotation-status error';
+            }
+            saveBtn.disabled = false;
+        })
+        .catch(function(err) {
+            statusEl.textContent = 'Error: ' + err.message;
+            statusEl.className = 'annotation-status error';
+            saveBtn.disabled = false;
+        });
+    });
+})();
+</script>

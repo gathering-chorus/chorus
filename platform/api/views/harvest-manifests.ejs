@@ -1,0 +1,554 @@
+<%- include('partials/page-head', { title: (filter ? filter + ' — ' : '') + 'Harvesting', bodyClass: '' }) %>
+<style>
+  /* light theme — inherits gathering.css defaults */
+  .pipeline-grid { display: flex; flex-direction: column; gap: 2rem; }
+
+  /* Domain filter nav */
+  .domain-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .domain-nav a { font-size: 0.75rem; padding: 4px 12px; border-radius: 12px; text-decoration: none; border: 1px solid #c7d2fe; color: #4f46e5; transition: all 0.15s; }
+  .domain-nav a:hover { background: #eef2ff; }
+  .domain-nav a.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+
+  /* Each domain */
+  .domain-pipeline { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.5rem; }
+  .domain-pipeline.focused { border-color: #6366f1; }
+  .domain-pipeline h2 { font-size: 1.1rem; margin: 0 0 0.25rem; color: #1a1a2e; text-transform: capitalize; }
+  .domain-pipeline .desc { font-size: 0.75rem; color: #9ca3af; margin-bottom: 1rem; }
+
+  /* Overview pipeline row */
+  .pipeline-row { display: grid; grid-template-columns: 200px 40px 1fr 40px 140px; gap: 0; align-items: center; min-height: 80px; }
+
+  /* Sources summary */
+  .sources-summary { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+  .source-pill { font-size: 0.6rem; padding: 3px 8px; border-radius: 4px; border: 2px solid #e5e7eb; display: flex; justify-content: space-between; gap: 8px; }
+  .source-pill .s-label { color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .source-pill .s-count { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .source-pill.done { background: #f0fdf4; border-color: #16a34a; }
+  .source-pill.done .s-count { color: #16a34a; }
+  .source-pill.partial { background: #fffbeb; border-color: #d97706; }
+  .source-pill.partial .s-count { color: #d97706; }
+  .source-pill.pending { background: #f9fafb; border-color: #e5e7eb; opacity: 0.6; }
+  .source-pill.pending .s-count { color: #9ca3af; }
+
+  /* Connectors */
+  .connector { display: flex; align-items: center; justify-content: center; }
+  .connector svg { width: 32px; height: 80px; }
+
+  /* Aggregate stage blocks */
+  .stages-agg { display: flex; align-items: center; gap: 0; flex: 1; }
+  .stage-agg { flex: 1; text-align: center; padding: 10px 6px; border-radius: 6px; background: #f9fafb; border: 1px solid #e5e7eb; }
+  .stage-agg .sa-name { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: #6b7280; margin-bottom: 4px; }
+  .stage-agg .sa-ratio { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stage-agg .sa-ratio .done { color: #16a34a; }
+  .stage-agg .sa-ratio .total { color: #d1d5db; }
+  .stage-agg .sa-pct { font-size: 0.65rem; color: #9ca3af; margin-top: 2px; }
+  .stage-arrow { display: flex; align-items: center; justify-content: center; width: 20px; flex-shrink: 0; color: #d1d5db; font-size: 0.9rem; }
+
+  /* Target */
+  .target { display: flex; align-items: center; justify-content: center; }
+  .target-box { background: #f0fdf4; border: 2px solid #86efac; border-radius: 8px; padding: 10px 14px; text-align: center; width: 100%; }
+  .target-box .target-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: #16a34a; font-weight: 700; margin-bottom: 4px; }
+  .target-box .target-count { font-size: 1rem; font-weight: 700; color: #1a1a2e; font-variant-numeric: tabular-nums; }
+  .target-box .target-unit { font-size: 0.6rem; color: #9ca3af; }
+
+  /* Per-source pipeline cards */
+  .source-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 1.25rem; }
+  .source-card { background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+  .source-card.all-done { background: #f0fdf4; border-color: #16a34a; }
+  .source-card.partial { background: #fffbeb; border-color: #d97706; }
+
+  .sc-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .sc-header .sc-name { font-size: 0.8rem; font-weight: 700; color: #1a1a2e; }
+  .sc-header .sc-meta { font-size: 0.65rem; color: #9ca3af; }
+
+  .sc-notes { font-size: 0.6rem; color: #9ca3af; margin-bottom: 8px; }
+
+  /* Per-source stage pills in a row */
+  .sc-stages { display: flex; gap: 6px; align-items: center; }
+  .sc-stage { flex: 1; text-align: center; padding: 8px 6px; border-radius: 6px; min-width: 0; }
+  .sc-stage:first-child { flex: 1.3; }
+  .sc-stage .sc-st-name { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 2px; }
+  .sc-stage .sc-st-count { font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sc-stage .sc-st-date { font-size: 0.5rem; color: #9ca3af; margin-top: 2px; }
+  .sc-stage .sc-st-note { font-size: 0.5rem; color: #9ca3af; margin-top: 2px; word-break: break-all; }
+
+  .sc-stage.complete { background: #dcfce7; border: 2px solid #16a34a; }
+  .sc-stage.complete .sc-st-name { color: #15803d; }
+  .sc-stage.complete .sc-st-count { color: #15803d; }
+  .sc-stage.in_progress { background: #fef3c7; border: 2px solid #d97706; }
+  .sc-stage.in_progress .sc-st-name { color: #b45309; }
+  .sc-stage.in_progress .sc-st-count { color: #b45309; }
+  .sc-stage.not_started { background: #f3f4f6; border: 2px solid #d1d5db; }
+  .sc-stage.not_started .sc-st-name { color: #9ca3af; }
+  .sc-stage.not_started .sc-st-count { color: #9ca3af; }
+
+  .sc-stage-arrow { color: #d1d5db; font-size: 0.7rem; flex-shrink: 0; }
+
+  /* Reconcile bar */
+  .reconcile-bar { margin-top: 8px; }
+  .reconcile-bar .rb-label { font-size: 0.6rem; color: #6b7280; margin-bottom: 3px; }
+  .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; }
+  .progress-fill.green { background: #16a34a; }
+  .progress-fill.amber { background: #d97706; }
+  .rb-detail { font-size: 0.55rem; color: #9ca3af; margin-top: 3px; }
+
+  /* Gaps */
+  .domain-gaps { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; }
+  .domain-gaps .gap { font-size: 0.6rem; color: #dc2626; padding: 2px 0; }
+  .domain-gaps .gap::before { content: "⚠ "; }
+
+  /* Tasks */
+  .domain-tasks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0.75rem; }
+  .task-chip { font-size: 0.6rem; padding: 3px 10px; border-radius: 10px; }
+  .task-chip.complete { background: #dcfce7; color: #16a34a; }
+  .task-chip.in_progress { background: #fef3c7; color: #d97706; }
+  .task-chip.not_started { background: #f3f4f6; color: #9ca3af; }
+
+  .board-link { font-size: 0.7rem; color: #6366f1; text-decoration: none; float: right; }
+  .board-link:hover { text-decoration: underline; }
+
+  /* Conceptual flow legend */
+  .flow-legend { display: flex; align-items: center; gap: 0; margin-bottom: 1.5rem; padding: 14px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; overflow: visible; }
+  .flow-step { text-align: center; flex-shrink: 0; padding: 8px 12px; border-radius: 6px; border: 1.5px solid transparent; cursor: pointer; position: relative; transition: all 0.15s; }
+  .flow-step:hover { background: #dcfce7; border-color: #86efac; }
+  .flow-step .fs-name { font-size: 0.65rem; font-weight: 700; color: #16a34a; text-transform: uppercase; letter-spacing: 0.03em; }
+  .flow-step .fs-desc { font-size: 0.5rem; color: #6b7280; margin-top: 2px; max-width: 110px; }
+  .flow-arrow { color: #86efac; font-size: 0.8rem; margin: 0 4px; flex-shrink: 0; font-weight: 700; }
+  /* Styled hover tooltip — above the step */
+  .flow-step .fs-tooltip { display: none; position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 280px; padding: 12px 14px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 100; text-align: left; }
+  .flow-step:hover .fs-tooltip { display: block; }
+  .fs-tooltip .fst-row { margin-bottom: 6px; }
+  .fs-tooltip .fst-row:last-child { margin-bottom: 0; }
+  .fs-tooltip .fst-label { font-size: 0.55rem; font-weight: 700; color: #16a34a; text-transform: uppercase; letter-spacing: 0.03em; }
+  .fs-tooltip .fst-text { font-size: 0.6rem; color: #374151; line-height: 1.4; }
+</style>
+
+<%
+  const allDomains = ['blog','facebook','linkedin','music','notes','photos','sexuality','stories'];
+  const isFocused = Object.keys(manifests).length === 1;
+%>
+
+<body>
+<%- include('partials/navbar') %>
+<div class="page-container">
+
+<h1>Harvesting<%= isFocused ? ' ' + Object.keys(manifests)[0].charAt(0).toUpperCase() + Object.keys(manifests)[0].slice(1) : '' %></h1>
+
+<div class="domain-nav">
+  <a href="/harvest-manifests" class="<%= !filter ? 'active' : '' %>">All</a>
+  <% for (const d of allDomains) { %>
+    <a href="/harvest-manifests?domain=<%= d %>" class="<%= filter === d ? 'active' : '' %>"><%= d %></a>
+  <% } %>
+</div>
+
+<div class="flow-legend">
+  <div class="flow-step">
+    <div class="fs-name">Sources</div><div class="fs-desc">Raw files on disk or network</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Original media libraries, backups, and exports scattered across machines and drives.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Inventory via SSH, mount checks, XML discovery.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Can't harvest what you can't find — this is the starting inventory of everything that exists.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Stage</div><div class="fs-desc">rsync to staging area</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Copy source files to a centralized staging area on Bedroom Mac.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">rsync over SMB/SSH to /Volumes/VideosNew/Gathering/Music/ToDo/.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Sources live on different machines and drives. Staging consolidates them so the pipeline operates on a single path without flaky mounts.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Extract</div><div class="fs-desc">Parse XML/files to tracks</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Parse source files (iTunes XML, file trees) into a flat list of track metadata.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">XML parser reads iTunes Library.xml → one JSONL record per track with artist, album, duration, play count, genre.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Raw sources are proprietary formats. Extract normalizes them into a common structure the pipeline can consume.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Transform</div><div class="fs-desc">Dedup, group into albums + TTL</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Deduplicate tracks, group into albums, and generate RDF (Turtle) files.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Hash-based dedup on artist+title+duration → album grouping → one .ttl per album with tracks, artists, genres, artwork.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Fuseki stores RDF. This converts flat track lists into linked data — albums connect to artists, genres, and artwork.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Reconcile</div><div class="fs-desc">Diff against canonical, import unique</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Diff secondary source tracks against the canonical Apple Music library. Import unique files.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Compare by artist+title+duration hash. Verify MP3s on disk. Stream-import unique tracks into Apple Music via osascript.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Multiple sources overlap. Reconcile identifies what's genuinely new and merges it into the canonical library so Navidrome serves everything from one place.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Load</div><div class="fs-desc">Sync TTL to Fuseki graphs</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Upload generated TTL files to Apache Fuseki as named graphs.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">HTTP PUT each .ttl to Fuseki /pods dataset. One named graph per album. Parallel uploads (2-8 workers).</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Fuseki is the SPARQL triplestore powering search, browse, and cross-domain queries. Loading makes data queryable.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Fuseki</div><div class="fs-desc">RDF knowledge graph</div>
+    <div class="fs-tooltip" style="left: auto; right: 0; transform: none; bottom: calc(100% + 10px);">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Apache Jena Fuseki — the RDF knowledge graph storing all harvested data.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">SPARQL queries serve album browse, artist search, cross-domain links. Named graphs = one per album/collection.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">RDF lets domains link — a song connects to an artist, a photo to a location, a story to a value. Fuseki is the single query layer across all of Jeff's data.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Deprecate</div><div class="fs-desc">Archive staging, reclaim disk</div>
+    <div class="fs-tooltip" style="left: auto; right: 0; transform: none; bottom: calc(100% + 10px);">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Archive or delete the staging copy in ToDo after Fuseki load is verified.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Verify Fuseki counts match expected. Move ToDo/&lt;source&gt; to Done folder or delete with explicit flag. Mark deprecated in manifest.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Staging data is a copy — once verified in Fuseki, keeping it wastes disk. Deprecation completes a source's lifecycle.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="pipeline-grid">
+<% for (const [domain, m] of Object.entries(manifests)) {
+  const data = m;
+  const sources = data.sources || [];
+
+  // Detect per-source stages vs legacy domain-level stages
+  const hasPerSourceStages = sources.length > 0 && sources[0].stages;
+
+  // Compute aggregate track counts for overview (normalized to tracks)
+  const stageList = ['extract', 'transform', 'load'];
+  const fullStageList = ['extract', 'transform', 'reconcile', 'load', 'deprecate'];
+  const aggCounts = {};
+  const hasStagedSources = sources.some(function(s) { return !!s.staged; });
+  if (hasStagedSources) {
+    aggCounts['stage'] = { tracks: 0, totalTracks: 0, done: 0, total: sources.length };
+    for (const src of sources) {
+      const srcTracks = src.count || 0;
+      aggCounts['stage'].totalTracks += srcTracks;
+      if (src.staged && src.staged.status !== 'not_started') {
+        aggCounts['stage'].tracks += srcTracks;
+        aggCounts['stage'].done++;
+      }
+    }
+  }
+  for (const sn of stageList) {
+    aggCounts[sn] = { tracks: 0, totalTracks: 0, done: 0, total: sources.length };
+    for (const src of sources) {
+      const srcTracks = src.count || 0;
+      aggCounts[sn].totalTracks += srcTracks;
+      if (hasPerSourceStages && src.stages && src.stages[sn] && src.stages[sn].status === 'complete') {
+        const st = src.stages[sn];
+        aggCounts[sn].tracks += st.track_count || st.output_count || srcTracks;
+        aggCounts[sn].done++;
+      }
+    }
+  }
+  // Reconcile: secondary sources merge unique tracks into canonical
+  const hasReconcile = sources.some(function(s) { return !!s.reconcile; });
+  if (hasReconcile) {
+    const secondarySources = sources.filter(function(s) { return !s.canonical; });
+    aggCounts['reconcile'] = { tracks: 0, totalTracks: 0, done: 0, total: secondarySources.length };
+    for (const src of secondarySources) {
+      if (src.reconcile) {
+        aggCounts['reconcile'].tracks += src.reconcile.imported || 0;
+        aggCounts['reconcile'].totalTracks += src.reconcile.unique_tracks || 0;
+        if (src.reconcile.status === 'complete' || src.reconcile.import_status === 'complete') {
+          aggCounts['reconcile'].done++;
+        }
+      }
+    }
+  }
+  // Deprecate: non-canonical sources with staging data archived after Fuseki verification
+  const nonCanonicalSources = sources.filter(function(s) { return !s.canonical; });
+  aggCounts['deprecate'] = { tracks: 0, totalTracks: 0, done: 0, total: nonCanonicalSources.length };
+  for (const src of nonCanonicalSources) {
+    const srcTracks = src.count || 0;
+    aggCounts['deprecate'].totalTracks += srcTracks;
+    if (src.stages && src.stages.deprecate && src.stages.deprecate.status === 'complete') {
+      aggCounts['deprecate'].tracks += srcTracks;
+      aggCounts['deprecate'].done++;
+    }
+  }
+  const overviewStages = hasStagedSources
+    ? ['stage', 'extract', 'transform', ...(hasReconcile ? ['reconcile'] : []), 'load', 'deprecate']
+    : ['extract', 'transform', ...(hasReconcile ? ['reconcile'] : []), 'load', 'deprecate'];
+
+  // Fallback for legacy manifests (domain-level stages)
+  const legacyStages = data.stages || {};
+  const legacyStageNames = Object.keys(legacyStages);
+
+  // Target — prefer track_count, fall back to fuseki_count
+  let targetCount = null;
+  let targetUnit = 'tracks';
+  let targetSecondary = null;
+  if (data.target) {
+    targetCount = data.target.track_count || data.target.fuseki_count;
+    targetUnit = data.target.track_count ? 'tracks' : (data.target.unit || 'graphs');
+    if (data.target.track_count && data.target.fuseki_count) {
+      targetSecondary = data.target.fuseki_count.toLocaleString() + ' graphs';
+    }
+  } else if (legacyStages.load && legacyStages.load.fuseki_count != null) {
+    targetCount = legacyStages.load.fuseki_count;
+    targetUnit = legacyStages.load.fuseki_unit || 'graphs';
+  } else {
+    for (let i = legacyStageNames.length - 1; i >= 0; i--) {
+      const s = legacyStages[legacyStageNames[i]];
+      if (s && s.fuseki_count != null) { targetCount = s.fuseki_count; targetUnit = s.fuseki_unit || 'graphs'; break; }
+      if (s && s.output_count != null) { targetCount = s.output_count; targetUnit = s.output_unit || 'items'; break; }
+    }
+  }
+
+  const gaps = data.gaps || [];
+  const tasks = data.tasks || [];
+  const board = data.board || {};
+  const connH = Math.max(80, sources.length * 20);
+%>
+  <div class="domain-pipeline <%= isFocused ? 'focused' : '' %>">
+    <% if (board.scope_card) { %><a class="board-link" href="/werk"><%= board.scope_card %> · <%= board.status || '' %></a><% } %>
+    <h2><%= domain %></h2>
+    <div class="desc">
+      <%= data.description || '' %>
+      <% if (data.updated) { %>
+        <span style="float: right; color: #9ca3af; font-size: 0.65rem;">updated <%= new Date(data.updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %> <%= new Date(data.updated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) %></span>
+      <% } %>
+    </div>
+
+    <div class="pipeline-row">
+      <!-- SOURCE PILLS -->
+      <div class="sources-summary">
+        <% for (const src of sources) {
+          // Determine pill status
+          let pillCls = 'pending';
+          if (hasPerSourceStages && src.stages) {
+            const allDone = stageList.every(function(sn) { return src.stages[sn] && src.stages[sn].status === 'complete'; });
+            const anyDone = stageList.some(function(sn) { return src.stages[sn] && src.stages[sn].status === 'complete'; });
+            if (allDone) pillCls = 'done';
+            else if (anyDone) pillCls = 'partial';
+          }
+        %>
+          <div class="source-pill <%= pillCls %>">
+            <span class="s-label" title="<%= src.label %>"><%= src.id %></span>
+            <span class="s-count"><%= src.count != null ? src.count.toLocaleString() : (src.size_gb ? src.size_gb + 'GB' : '?') %></span>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector">
+        <svg viewBox="0 0 32 <%= connH %>" preserveAspectRatio="none">
+          <% const mid = connH / 2; %>
+          <% if (sources.length <= 1) { %>
+            <line x1="0" y1="<%= mid %>" x2="28" y2="<%= mid %>" stroke="#c7d2fe" stroke-width="2"/>
+          <% } else { %>
+            <% const step = Math.max(1, (connH - 20) / (sources.length - 1)); %>
+            <% for (let si = 0; si < sources.length; si++) { %>
+              <line x1="0" y1="<%= 10 + si * step %>" x2="28" y2="<%= mid %>" stroke="#c7d2fe" stroke-width="1.5"/>
+            <% } %>
+          <% } %>
+          <polygon points="26,<%= mid-4 %> 32,<%= mid %> 26,<%= mid+4 %>" fill="#c7d2fe"/>
+        </svg>
+      </div>
+
+      <!-- AGGREGATE STAGES -->
+      <div class="stages-agg">
+        <% if (hasPerSourceStages) { %>
+          <% overviewStages.forEach(function(sn, idx) {
+            const agg = aggCounts[sn];
+            const pct = sn === 'reconcile'
+              ? (agg.totalTracks > 0 ? Math.round(agg.tracks / agg.totalTracks * 100) : 0)
+              : (agg.totalTracks > 0 ? Math.round(agg.tracks / agg.totalTracks * 100) : 0);
+          %>
+            <% if (idx > 0) { %><div class="stage-arrow">›</div><% } %>
+            <div class="stage-agg">
+              <div class="sa-name"><%= sn %></div>
+              <div class="sa-ratio"><span class="done"><%= agg.tracks > 0 ? agg.tracks.toLocaleString() : '—' %></span></div>
+              <div class="sa-pct"><%= sn === 'reconcile'
+                ? (agg.totalTracks > 0 ? agg.tracks.toLocaleString() + '/' + agg.totalTracks.toLocaleString() + ' imported' : agg.done + '/' + agg.total + ' sources')
+                : (agg.done + '/' + agg.total + ' sources · ' + pct + '%') %></div>
+            </div>
+          <% }); %>
+        <% } else { %>
+          <% legacyStageNames.forEach(function(name, idx) {
+            const s = legacyStages[name];
+            const status = s.status || 'not_started';
+            const count = s.output_count || s.fuseki_count;
+          %>
+            <% if (idx > 0) { %><div class="stage-arrow">›</div><% } %>
+            <div class="stage-agg" style="background: <%= status === 'complete' ? '#f0fdf4' : status === 'in_progress' ? '#fffbeb' : '#f3f4f6' %>; border-color: <%= status === 'complete' ? '#bbf7d0' : status === 'in_progress' ? '#fde68a' : '#e5e7eb' %>;">
+              <div class="sa-name" style="color: <%= status === 'complete' ? '#16a34a' : status === 'in_progress' ? '#d97706' : '#9ca3af' %>;"><%= name %></div>
+              <div class="sa-ratio" style="color: <%= status === 'complete' ? '#16a34a' : status === 'in_progress' ? '#d97706' : '#9ca3af' %>;"><%= count != null ? count.toLocaleString() : '—' %></div>
+            </div>
+          <% }); %>
+        <% } %>
+      </div>
+
+      <!-- CONNECTOR -->
+      <div class="connector">
+        <svg viewBox="0 0 32 80" preserveAspectRatio="none">
+          <line x1="4" y1="40" x2="28" y2="40" stroke="#86efac" stroke-width="2"/>
+          <polygon points="26,36 32,40 26,44" fill="#86efac"/>
+        </svg>
+      </div>
+
+      <!-- TARGET -->
+      <div class="target">
+        <div class="target-box">
+          <div class="target-label">Fuseki</div>
+          <% if (targetCount != null) { %>
+            <div class="target-count"><%= targetCount.toLocaleString() %></div>
+            <div class="target-unit"><%= targetUnit %></div>
+            <% if (targetSecondary) { %><div class="target-unit" style="color: #b0b0b0; font-size: 0.5rem;"><%= targetSecondary %></div><% } %>
+          <% } else { %>
+            <div class="target-count" style="color:#d1d5db">—</div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <%/* PER-SOURCE PIPELINE CARDS */ %>
+    <% if (hasPerSourceStages && isFocused) { %>
+      <div class="source-cards">
+        <% for (const src of sources) {
+          const allDone = stageList.every(function(sn) { return src.stages[sn] && src.stages[sn].status === 'complete'; });
+          const anyStarted = stageList.some(function(sn) { return src.stages[sn] && (src.stages[sn].status === 'complete' || src.stages[sn].status === 'in_progress'); });
+          const cardCls = allDone ? 'all-done' : anyStarted ? 'partial' : '';
+        %>
+          <div class="source-card <%= cardCls %>">
+            <div class="sc-header">
+              <span class="sc-name"><%= src.label %></span>
+              <span class="sc-meta">
+                <% if (src.count != null) { %><%= src.count.toLocaleString() %> tracks<% } %>
+                <% if (src.size_gb) { %> · <%= src.size_gb %>GB<% } %>
+              </span>
+            </div>
+            <% if (src.notes) { %><div class="sc-notes"><%= src.notes %></div><% } %>
+
+            <div class="sc-stages">
+              <% if (src.staged) {
+                const stageStatus = src.staged.status === 'not_started' ? 'not_started' : 'complete';
+                const fanIn = src.staged.fan_in || [];
+              %>
+                <div class="sc-stage <%= stageStatus %>" style="<%= fanIn.length > 0 ? 'min-width: 140px;' : '' %>">
+                  <div class="sc-st-name">Stage</div>
+                  <% if (fanIn.length > 0) { %>
+                    <div class="sc-st-count" style="font-size: 0.55rem; line-height: 1.2;"><%= fanIn.length %> sources → canonical</div>
+                    <div style="text-align: left; font-size: 0.5rem; color: #6b7280; margin-top: 4px; padding-left: 8px;">
+                      <% fanIn.forEach(function(id) {
+                        const s = sources.find(function(x) { return x.id === id; });
+                        const done = s && s.staged && s.staged.status !== 'not_started';
+                      %>
+                        <div style="color: <%= done ? '#16a34a' : '#9ca3af' %>;"><%= done ? '✓' : '○' %> <%= id %></div>
+                      <% }); %>
+                    </div>
+                  <% } else { %>
+                    <div class="sc-st-count" style="font-size: 0.55rem; line-height: 1.2;"><%= src.staged.method %></div>
+                    <% if (src.staged.verified) { %><div class="sc-st-date"><%= src.staged.verified %></div><% } %>
+                    <div class="sc-st-note" title="<%= src.staged.origin %>"><%= src.staged.origin %></div>
+                    <div class="sc-st-note" title="<%= src.staged.path %>" style="color: #6366f1;">→ <%= src.staged.path %></div>
+                  <% } %>
+                </div>
+                <span class="sc-stage-arrow">›</span>
+              <% } %>
+              <% fullStageList.forEach(function(sn, idx) {
+                if (sn === 'reconcile') {
+                  // Reconcile stage — reads from src.reconcile, not src.stages
+                  const r = src.reconcile;
+                  const isCanonical = src.canonical;
+                  if (isCanonical) return; // canonical source doesn't reconcile
+                  const rStatus = r ? (r.import_status || r.status || 'not_started') : 'not_started';
+                  const imported = r ? (r.imported || 0) : 0;
+                  const unique = r ? (r.unique_tracks || 0) : 0;
+                  const rPct = unique > 0 ? Math.round(imported / unique * 100) : 0;
+                %>
+                  <span class="sc-stage-arrow">›</span>
+                  <div class="sc-stage <%= rStatus %>">
+                    <div class="sc-st-name">reconcile</div>
+                    <% if (r) { %>
+                      <div class="sc-st-count"><%= imported > 0 ? imported.toLocaleString() : (r.import_total || r.files_verified || unique || 0).toLocaleString() %></div>
+                      <div class="sc-st-date" style="color: #9ca3af;"><%= imported > 0 ? 'imported' : (rStatus === 'in_progress' ? 'to import' : (unique > 0 ? 'unique' : '—')) %></div>
+                      <% if (unique > 0) { %><div class="sc-st-note" style="color: #b0b0b0; font-size: 0.45rem;"><%= unique.toLocaleString() %> unique · <%= rPct > 0 ? rPct + '%' : rStatus %></div><% } %>
+                      <% if (r.overlap_pct) { %><div class="sc-st-note" style="color: #b0b0b0; font-size: 0.45rem;"><%= r.overlap_pct %>% overlap · <%= r.files_missing || 0 %> missing</div><% } %>
+                    <% } else { %>
+                      <div class="sc-st-count">—</div>
+                    <% } %>
+                  </div>
+                <% } else if (sn === 'deprecate') {
+                  const isCanon = src.canonical;
+                  if (isCanon) return;
+                  const dep = src.stages.deprecate || {};
+                  const depStatus = dep.status || 'not_started';
+                  const loadDone = src.stages.load && src.stages.load.status === 'complete';
+                %>
+                  <span class="sc-stage-arrow">›</span>
+                  <div class="sc-stage <%= depStatus %>" <% if (loadDone && depStatus === 'not_started') { %>style="border-color: #d97706;"<% } %>>
+                    <div class="sc-st-name">deprecate</div>
+                    <% if (dep.status === 'complete') { %>
+                      <div class="sc-st-count"><%= dep.disk_reclaimed_gb ? dep.disk_reclaimed_gb + 'GB' : '✓' %></div>
+                      <div class="sc-st-date" style="color: #9ca3af;"><%= dep.action || 'archived' %></div>
+                    <% } else { %>
+                      <div class="sc-st-count">—</div>
+                      <% if (loadDone) { %><div class="sc-st-note" style="color: #d97706;">ready</div><% } %>
+                    <% } %>
+                    <% if (dep.last_run) { %><div class="sc-st-date"><%= new Date(dep.last_run).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %></div><% } %>
+                  </div>
+                <% } else {
+                  const st = src.stages[sn] || {};
+                  const status = st.status || 'not_started';
+                  // Primary: track_count (songs). Fallback: output_count for extract, source count otherwise
+                  const tracks = st.track_count || (sn === 'extract' ? st.output_count : null);
+                  // Secondary: albums (transform output_count) or graphs (load fuseki_count)
+                  const secondary = sn === 'transform' && st.output_count ? st.output_count.toLocaleString() + ' albums'
+                    : sn === 'load' && st.fuseki_count ? st.fuseki_count.toLocaleString() + ' graphs' : null;
+                  const lastRun = st.last_run ? new Date(st.last_run).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+                %>
+                  <% if (idx > 0) { %><span class="sc-stage-arrow">›</span><% } %>
+                  <div class="sc-stage <%= status %>">
+                    <div class="sc-st-name"><%= sn %></div>
+                    <% if (tracks != null) { %>
+                      <div class="sc-st-count"><%= tracks.toLocaleString() %></div>
+                      <div class="sc-st-date" style="color: #9ca3af;">tracks</div>
+                    <% } else { %>
+                      <div class="sc-st-count">—</div>
+                    <% } %>
+                    <% if (secondary) { %><div class="sc-st-note" style="color: #b0b0b0; font-size: 0.45rem;"><%= secondary %></div><% } %>
+                    <% if (lastRun) { %><div class="sc-st-date"><%= lastRun %></div><% } %>
+                    <% if (st.notes) { %><div class="sc-st-note" title="<%= st.notes %>"><%= st.notes %></div><% } %>
+                  </div>
+                <% } %>
+              <% }); %>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+
+    <% if (tasks.length > 0) { %>
+      <div class="domain-tasks">
+        <% for (const t of tasks) { %>
+          <span class="task-chip <%= t.status || 'not_started' %>" title="<%= t.notes || '' %>"><%= t.label %></span>
+        <% } %>
+      </div>
+    <% } %>
+
+    <% if (gaps.length > 0) { %>
+      <div class="domain-gaps">
+        <% for (const g of gaps) { %>
+          <div class="gap"><%= g %></div>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+<% } %>
+</div>
+
+</div><!-- .page-container -->
+<%- include('partials/page-close') %>

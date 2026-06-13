@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sexuality Domain — Ontology v1.1.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #6af; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+
+  /* Class hierarchy */
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-count { display: inline-block; background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 2px 10px; font-size: 13px; font-weight: 500; margin-left: 10px; font-variant-numeric: tabular-nums; }
+  .class-count.large { background: #2a1a2a; color: #d6d; border-color: #4a2a4a; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+
+  /* Properties */
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #8af; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-domain { color: #aaa; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .prop-usage { text-align: right; color: #6d6; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .prop-usage.high { color: #d6d; }
+
+  /* Data summary */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; font-variant-numeric: tabular-nums; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  /* Volume chart */
+  .volume-bar { display: flex; align-items: center; margin: 6px 0; }
+  .volume-label { width: 160px; font-size: 12px; color: #aaa; text-align: right; padding-right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .volume-fill { height: 20px; border-radius: 4px; min-width: 2px; transition: width 0.3s; }
+  .volume-count { font-size: 11px; color: #888; margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+  .full-width { grid-column: 1 / -1; }
+
+  /* Relationship arrows */
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.person { border-color: #6a8ad6; background: #1a1a3a; }
+  .rel-node.media { border-color: #d66a8a; background: #3a1a2a; }
+  .rel-node.source { border-color: #6ad68a; background: #1a3a2a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #8af; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=sexuality-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+<a href="/self" class="back-link">&larr; Self</a>
+
+<%- include('partials/content-actions', { title: 'Sexuality Domain' }) %>
+
+<h1>Sexuality Domain — Ontology Extension</h1>
+<p class="subtitle">jb-ontology.ttl <span>v1.1.0</span> · Cards #224 #375 #376 · 25 volumes harvested · 2026-02-25</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></div>
+    <div class="stat-label">Items Loaded</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">13.07M</div>
+    <div class="stat-label">Triples</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value"><%= stats.models ? stats.models.toLocaleString() : '—' %></div>
+    <div class="stat-label">Models</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">26</div>
+    <div class="stat-label">Volume Graphs</div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Class Hierarchy -->
+  <div class="section">
+    <h2>Classes (7)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">SexualityCollection</span>
+        <span class="class-parent">&#8834; Collection</span>
+        <span class="class-count">1</span>
+        <div class="class-desc">Top-level collection container</div>
+      </li>
+      <li>
+        <span class="class-name">MediaItem</span>
+        <span class="class-count">612</span>
+        <div class="class-desc">Base class — text/plain, json, html that didn't match video/image/archive</div>
+      </li>
+      <li>
+        <span class="class-name">MediaPhoto</span>
+        <span class="class-parent">&#8834; MediaItem</span>
+        <span class="class-count large"><%= stats.photos ? stats.photos.toLocaleString() : '—' %></span>
+        <div class="class-desc">image/jpeg + image/png + image/gif</div>
+      </li>
+      <li>
+        <span class="class-name">Video</span>
+        <span class="class-parent">&#8834; MediaItem</span>
+        <span class="class-count"><%= stats.videos ? stats.videos.toLocaleString() : '—' %></span>
+        <div class="class-desc">mp4 + wmv + avi + mpeg + quicktime</div>
+      </li>
+      <li>
+        <span class="class-name">MediaArchive</span>
+        <span class="class-parent">&#8834; MediaItem</span>
+        <span class="class-count"><%= stats.archives ? stats.archives.toLocaleString() : '—' %></span>
+        <div class="class-desc">ZIP files (scene bundles, photo sets)</div>
+      </li>
+      <li>
+        <span class="class-name">Model</span>
+        <span class="class-parent">&#8834; foaf:Person</span>
+        <span class="class-count"><%= stats.models ? stats.models.toLocaleString() : '—' %></span>
+        <div class="class-desc">Performers — from MongoDB models collection, SHA-256 deduped</div>
+      </li>
+      <li>
+        <span class="class-name">ContentSource</span>
+        <span class="class-count">~40</span>
+        <div class="class-desc">Origin studios/sites — parsed from filenames</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Relationship Diagram -->
+  <div class="section">
+    <h2>Relationships</h2>
+    <div class="rel-diagram">
+      <div class="rel-node person">Model</div>
+      <div class="rel-arrow">
+        <span class="label">featuresModel</span>
+        <span>&#8592;</span>
+      </div>
+      <div class="rel-node media">Video / Photo / Archive</div>
+      <div class="rel-arrow">
+        <span class="label">fromSource</span>
+        <span>&#8594;</span>
+      </div>
+      <div class="rel-node source">ContentSource</div>
+    </div>
+    <div class="rel-diagram" style="margin-top: 12px;">
+      <div class="rel-node person">Model</div>
+      <div class="rel-arrow">
+        <span class="label">hasProfileImage</span>
+        <span>&#8594;</span>
+      </div>
+      <div class="rel-node media">MediaPhoto</div>
+    </div>
+    <div class="rel-diagram" style="margin-top: 12px;">
+      <div class="rel-node" style="border-color:#d6a66a;background:#2a2a1a;">SexualityCollection</div>
+      <div class="rel-arrow">
+        <span class="label">hasContent</span>
+        <span>&#8594;</span>
+      </div>
+      <div class="rel-node media">MediaItem</div>
+    </div>
+
+    <h2 style="margin-top: 28px;">Object Properties (4)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain &#8594; Range</th></tr>
+      <tr><td class="prop-name">jb:hasContent</td><td class="prop-range">Collection &#8594; MediaItem</td></tr>
+      <tr><td class="prop-name">jb:featuresModel</td><td class="prop-range">MediaItem &#8594; Model</td></tr>
+      <tr><td class="prop-name">jb:fromSource</td><td class="prop-range">MediaItem &#8594; ContentSource</td></tr>
+      <tr><td class="prop-name">jb:hasProfileImage</td><td class="prop-range">Model &#8594; MediaPhoto</td></tr>
+    </table>
+  </div>
+
+  <!-- Datatype Properties -->
+  <div class="section">
+    <h2>Datatype Properties (13)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Range</th><th style="text-align:right">Coverage</th></tr>
+      <tr><td class="prop-name">jb:filePath</td><td class="prop-range">xsd:string</td><td class="prop-usage high"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">jb:photoFilename</td><td class="prop-range">xsd:string</td><td class="prop-usage high"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">dc:format</td><td class="prop-range">xsd:string</td><td class="prop-usage high"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">jb:fileSize</td><td class="prop-range">xsd:long</td><td class="prop-usage high"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">jb:sourceVolume</td><td class="prop-range">xsd:string</td><td class="prop-usage high"><%= stats.photos && stats.videos && stats.archives ? (stats.photos + stats.videos + stats.archives).toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">dc:created</td><td class="prop-range">xsd:dateTime</td><td class="prop-usage">~1.6M</td></tr>
+      <tr><td class="prop-name">jb:mediaUrl</td><td class="prop-range">xsd:anyURI</td><td class="prop-usage">0 <span style="color:#888;font-size:11px;">(v1.1.0, harvest pending)</span></td></tr>
+      <tr><td class="prop-name">jb:mediaKind</td><td class="prop-range">xsd:string</td><td class="prop-usage">—</td></tr>
+      <tr><td class="prop-name">jb:sceneType</td><td class="prop-range">xsd:string</td><td class="prop-usage">—</td></tr>
+      <tr><td class="prop-name">jb:contentQuality</td><td class="prop-range">xsd:string</td><td class="prop-usage">—</td></tr>
+      <tr><td class="prop-name">jb:finderLabel</td><td class="prop-range">xsd:integer</td><td class="prop-usage">—</td></tr>
+      <tr><td class="prop-name">jb:modelName</td><td class="prop-range">xsd:string</td><td class="prop-usage"><%= stats.models ? stats.models.toLocaleString() : '—' %></td></tr>
+      <tr><td class="prop-name">jb:modelChecksum</td><td class="prop-range">xsd:string</td><td class="prop-usage"><%= stats.models ? stats.models.toLocaleString() : '—' %></td></tr>
+    </table>
+    <p style="font-size:11px;color:#555;margin-top:12px;">Coverage = items with this property populated in Fuseki. Properties marked — are in the ontology but not yet harvested (require extended attribute extraction).</p>
+  </div>
+
+  <!-- Volume Distribution -->
+  <div class="section">
+    <h2>Data by Volume (25 content + 1 models)</h2>
+    <div id="volumes">
+      <div class="volume-bar"><span class="volume-label">VideosNew</span><div class="volume-fill" style="width:100%;background:linear-gradient(90deg,#d66a8a,#a64a6a);"></div><span class="volume-count">1,718,466</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosRilez-Ta</span><div class="volume-fill" style="width:0.78%;background:#6a8ad6;"></div><span class="volume-count">13,465</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosCoco-Eliza</span><div class="volume-fill" style="width:0.52%;background:#6a8ad6;"></div><span class="volume-count">8,994</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosJeff-Kata</span><div class="volume-fill" style="width:0.47%;background:#6a8ad6;"></div><span class="volume-count">8,161</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosNia-Rilex</span><div class="volume-fill" style="width:0.47%;background:#6a8ad6;"></div><span class="volume-count">8,151</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosBianka-Chan</span><div class="volume-fill" style="width:0.46%;background:#6a8ad6;"></div><span class="volume-count">7,834</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosLeb-Luci</span><div class="volume-fill" style="width:0.40%;background:#6a8ad6;"></div><span class="volume-count">6,793</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosAme-Aria</span><div class="volume-fill" style="width:0.40%;background:#6a8ad6;"></div><span class="volume-count">6,792</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosErica-Haley</span><div class="volume-fill" style="width:0.39%;background:#6a8ad6;"></div><span class="volume-count">6,685</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosAria-Bianca</span><div class="volume-fill" style="width:0.39%;background:#6a8ad6;"></div><span class="volume-count">6,682</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosHime-Jeff</span><div class="volume-fill" style="width:0.37%;background:#6a8ad6;"></div><span class="volume-count">6,273</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosMia-Nat</span><div class="volume-fill" style="width:0.35%;background:#6a8ad6;"></div><span class="volume-count">6,034</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosKey-Lea</span><div class="volume-fill" style="width:0.35%;background:#6a8ad6;"></div><span class="volume-count">5,983</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosUma-Zaa</span><div class="volume-fill" style="width:0.33%;background:#6a8ad6;"></div><span class="volume-count">5,694</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosAbella-Alexa</span><div class="volume-fill" style="width:0.31%;background:#6a8ad6;"></div><span class="volume-count">5,261</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosAlexa-Ame</span><div class="volume-fill" style="width:0.27%;background:#6a8ad6;"></div><span class="volume-count">4,722</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosChan-Coco</span><div class="volume-fill" style="width:0.26%;background:#6a8ad6;"></div><span class="volume-count">4,426</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosLucj-Maria</span><div class="volume-fill" style="width:0.20%;background:#6a8ad6;"></div><span class="volume-count">3,363</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosEliza-Erica</span><div class="volume-fill" style="width:0.19%;background:#6a8ad6;"></div><span class="volume-count">3,338</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosTb-Uma</span><div class="volume-fill" style="width:0.18%;background:#6a8ad6;"></div><span class="volume-count">3,161</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosMaria-Mega</span><div class="volume-fill" style="width:0.18%;background:#6a8ad6;"></div><span class="volume-count">3,101</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosHaley-Hime</span><div class="volume-fill" style="width:0.10%;background:#6a8ad6;"></div><span class="volume-count">1,785</span></div>
+      <div class="volume-bar"><span class="volume-label">VideosMega-Mia</span><div class="volume-fill" style="width:0.09%;background:#6a8ad6;"></div><span class="volume-count">1,503</span></div>
+      <div class="volume-bar"><span class="volume-label">jeffbridwell</span><div class="volume-fill" style="width:0.07%;background:#6a8ad6;"></div><span class="volume-count">1,213</span></div>
+      <div class="volume-bar"><span class="volume-label">PhotosNew</span><div class="volume-fill" style="width:0.01%;background:#6a8ad6;"></div><span class="volume-count">224</span></div>
+      <div class="volume-bar"><span class="volume-label" style="color:#6d6;">Models</span><div class="volume-fill" style="width:1.3%;background:linear-gradient(90deg,#6ad68a,#4a9a6a);"></div><span class="volume-count"><%= stats.models ? stats.models.toLocaleString() : '—' %></span></div>
+    </div>
+    <p style="font-size:11px;color:#555;margin-top:16px;">Graph pattern: <code style="color:#8af;">http://localhost:3000/pods/jeff/media/{Volume}</code></p>
+  </div>
+
+  <!-- Architecture Notes -->
+  <div class="section full-width">
+    <h2>Persistence Architecture</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:13px;">
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Storage Model</div>
+        <div style="color:#aaa;">Collection-graph sharding — one named graph per volume. 26 graphs vs 1.85M alternative (graph-per-entity). 121x faster writes, zero query degradation on existing queries.</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Fuseki Capacity</div>
+        <div style="color:#aaa;">13.3M triples / 4,488 graphs total. 1GB JVM heap. Bulk writes chunked at 100K items to prevent OOM. Music queries 231ms post-harvest (no degradation).</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Data Flow</div>
+        <div style="color:#aaa;">MongoDB (secondary Mac) &#8594; SSH + mongosh TTL export &#8594; HTTP PUT/POST (GSP) &#8594; Fuseki named graph. 22 min full harvest. Script: architect/scripts/harvest-media.sh</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">
+  jb-ontology.ttl v1.1.0 &#183; 241 declarations (70 classes, 54 object props, 117 datatype props) &#183; Cards #224 #375 #376
+</p>
+
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

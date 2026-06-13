@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chorus — Shared Awareness | Jeff Bridwell</title>
+    <link rel="stylesheet" href="/css/gathering.css">
+    <style>
+        :root {
+            --bg-color: #0a0a0f;
+            --text-color: #c9d1d9;
+            --card-bg: #1a1a2e;
+            --primary-color: #c084fc;
+            --accent-color: #c084fc;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0f !important;
+            background-color: #0a0a0f !important;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        .nav-bar {
+            position: relative;
+            z-index: 50;
+            padding: 0 2rem;
+            background: #0a0a0f;
+        }
+        .nav-bar nav a { color: rgba(255, 255, 255, 0.75); }
+        .nav-bar nav a:hover, .nav-bar nav a.active { color: white; }
+        .nav-bar nav .logout-link { color: #f87171; }
+        .nav-bar nav .logout-link:hover { color: #fca5a5; }
+        .nav-bar .dropdown-content {
+            background-color: rgba(20, 20, 30, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .nav-bar .dropdown-content a { color: rgba(255, 255, 255, 0.75); }
+        .nav-bar .dropdown-content a:hover { background-color: rgba(255, 255, 255, 0.1); color: white; }
+        .nav-bar .dropdown-content a.disabled-link { color: rgba(255, 255, 255, 0.3); }
+
+        .canvas-wrap {
+            width: 100%;
+            height: calc(100vh - 60px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: calc(100vh - 60px);
+        }
+
+        .glow-green { filter: drop-shadow(0 0 6px #4ade80) drop-shadow(0 0 12px #4ade8066); }
+        .glow-blue { filter: drop-shadow(0 0 6px #60a5fa) drop-shadow(0 0 12px #60a5fa66); }
+        .glow-orange { filter: drop-shadow(0 0 6px #fb923c) drop-shadow(0 0 12px #fb923c66); }
+        .glow-purple { filter: drop-shadow(0 0 6px #c084fc) drop-shadow(0 0 12px #c084fc66); }
+        .glow-gold { filter: drop-shadow(0 0 6px #fbbf24) drop-shadow(0 0 12px #fbbf2466); }
+        .glow-white { filter: drop-shadow(0 0 4px #e6edf3) drop-shadow(0 0 8px #e6edf366); }
+        .glow-red { filter: drop-shadow(0 0 6px #f87171) drop-shadow(0 0 12px #f8717166); }
+        .glow-cyan { filter: drop-shadow(0 0 6px #22d3ee) drop-shadow(0 0 12px #22d3ee66); }
+        .glow-emerald { filter: drop-shadow(0 0 6px #10b981) drop-shadow(0 0 12px #10b98166); }
+        .glow-teal { filter: drop-shadow(0 0 6px #2dd4bf) drop-shadow(0 0 12px #2dd4bf66); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        @keyframes drift {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+
+        .pulse { animation: pulse 2s ease-in-out infinite; }
+        .pulse-delay-1 { animation: pulse 2s ease-in-out infinite 0.5s; }
+        .pulse-delay-2 { animation: pulse 2s ease-in-out infinite 1s; }
+        .pulse-delay-3 { animation: pulse 2s ease-in-out infinite 1.5s; }
+
+        .title { font-size: 28px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; }
+        .subtitle { font-size: 13px; letter-spacing: 2px; opacity: 0.5; }
+        .label { font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; }
+        .label-small { font-size: 10px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
+        .label-tiny { font-size: 9px; letter-spacing: 0.8px; opacity: 0.5; }
+
+        .nerve { fill: none; stroke-width: 2; stroke-linecap: round; }
+
+        .draggable { cursor: grab; }
+        .draggable:active { cursor: grabbing; }
+        .draggable:hover circle:not([fill="transparent"]),
+        .draggable:hover rect:not([fill="url(#spineGrad)"]):not([fill="#0a0a0f"]):not([fill="#ffffff"]) { opacity: 1 !important; }
+
+        #toolbar {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 100;
+        }
+        #toolbar button {
+            background: #1a1a2e;
+            color: #c9d1d9;
+            border: 1px solid #333;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+        #toolbar button:hover { background: #2a2a4e; border-color: #555; }
+
+        /* Light / print mode */
+        body.light-mode {
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #1a1a2e;
+        }
+        body.light-mode .nav-bar { background: #ffffff; }
+        body.light-mode .nav-bar nav a { color: rgba(0, 0, 0, 0.6); }
+        body.light-mode .nav-bar nav a:hover,
+        body.light-mode .nav-bar nav a.active { color: #1a1a2e; }
+        body.light-mode .nav-bar .dropdown-content { background-color: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.1); }
+        body.light-mode .nav-bar .dropdown-content a { color: rgba(0,0,0,0.7); }
+        body.light-mode .canvas-wrap { background: #ffffff; }
+        body.light-mode #toolbar button { background: #f0f0f5; color: #1a1a2e; border-color: #ccc; }
+        body.light-mode #toolbar button:hover { background: #e0e0ea; }
+        body.light-mode svg text { filter: none; }
+        /* Kill glow filters in light mode — they muddy the print */
+        body.light-mode .glow-green,
+        body.light-mode .glow-blue,
+        body.light-mode .glow-orange,
+        body.light-mode .glow-purple,
+        body.light-mode .glow-gold,
+        body.light-mode .glow-white,
+        body.light-mode .glow-red,
+        body.light-mode .glow-cyan,
+        body.light-mode .glow-emerald,
+        body.light-mode .glow-teal { filter: none; }
+
+        /* Light mode: darken white/invisible elements to match other nodes' visual weight */
+        body.light-mode #node-clearing text { fill: #888; }
+        body.light-mode #node-clearing circle[stroke="#e6edf3"] { stroke: #bbb; }
+        body.light-mode #node-clearing circle[fill="#e6edf3"] { fill: #888; }
+
+        body.light-mode #node-jeff-tag text { fill: #888; }
+        body.light-mode #node-jeff-tag circle[stroke="#e6edf3"] { stroke: #bbb; }
+        body.light-mode #node-jeff-tag circle[fill="#e6edf3"] { fill: #888; }
+
+        body.light-mode #node-talk circle[stroke="#22d3ee"] { stroke: #22b8cf; }
+        body.light-mode #node-talk circle[fill="#22d3ee"] { fill: #22b8cf; }
+
+        /* /CLEARING leaf nodes (Sessions, History) */
+        body.light-mode g[data-node^="clearing-leaf"] text { fill: #888; }
+        body.light-mode g[data-node^="clearing-leaf"] circle[stroke="#e6edf3"] { stroke: #bbb; }
+        body.light-mode g[data-node^="clearing-leaf"] circle[fill="#e6edf3"] { fill: #888; }
+
+        /* Title + subtitle + legend */
+        body.light-mode .title { fill: #1a1a2e; }
+        body.light-mode .subtitle { fill: #6d28d9; }
+        body.light-mode .label-small { fill: #666; }
+        body.light-mode .label-tiny[fill="#e6edf3"] { fill: #999; }
+
+        @media print {
+            body { background: #ffffff !important; background-color: #ffffff !important; color: #1a1a2e; }
+            .nav-bar { display: none; }
+            #toolbar { display: none; }
+            #toast { display: none; }
+            .canvas-wrap { height: auto; }
+            .glow-green, .glow-blue, .glow-orange, .glow-purple,
+            .glow-gold, .glow-white, .glow-red, .glow-cyan,
+            .glow-emerald, .glow-teal { filter: none; }
+            svg { max-height: none; }
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 56px;
+            right: 16px;
+            background: #4ade80;
+            color: #0a0a0f;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+        #toast.show { opacity: 1; }
+
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <%- include('partials/navbar', { isAuthenticated: true, userRole: 'admin', cspNonce: cspNonce }) %>
+    </div>
+
+    <div id="toolbar">
+        <button onclick="toggleLightMode()">Light / Dark</button>
+        <button onclick="resetPositions()">Reset</button>
+        <button onclick="exportPositions()">Export Layout</button>
+    </div>
+    <div id="toast">Copied to clipboard</div>
+
+    <div class="canvas-wrap">
+    <svg id="canvas" viewBox="250 0 700 740" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="spineGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.9"/>
+                <stop offset="30%" stop-color="#f59e0b" stop-opacity="0.7"/>
+                <stop offset="70%" stop-color="#d97706" stop-opacity="0.5"/>
+                <stop offset="100%" stop-color="#92400e" stop-opacity="0.3"/>
+            </linearGradient>
+            <radialGradient id="brainGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#c084fc" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#c084fc" stop-opacity="0"/>
+            </radialGradient>
+            <radialGradient id="jeffGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#e6edf3" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#e6edf3" stop-opacity="0"/>
+            </radialGradient>
+        </defs>
+
+        <!-- Background grid -->
+        <g opacity="0.03">
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#fff" stroke-width="0.5"/>
+            </pattern>
+            <rect x="250" y="20" width="700" height="710" fill="url(#grid)"/>
+        </g>
+
+        <!-- Title -->
+        <text x="600" y="45" text-anchor="middle" class="title" fill="#e6edf3" opacity="0.9">Chorus</text>
+        <text x="600" y="63" text-anchor="middle" class="subtitle" fill="#c084fc">Shared Awareness</text>
+
+        <!-- NERVES (drawn first, behind nodes) -->
+        <g id="nerves"></g>
+
+        <!-- DRAGGABLE NODES -->
+
+        <!-- Senses Row -->
+        <g id="node-look" class="draggable" data-node="look">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#22d3ee" stroke-width="1.5" opacity="0.6"/>
+            <circle r="22" fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.4"/>
+            <circle r="5" fill="#22d3ee" opacity="0.8" class="glow-cyan"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#22d3ee" font-size="12">/look</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#22d3ee">eyes</text>
+        </g>
+
+        <g id="node-listen" class="draggable" data-node="listen">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#22d3ee" stroke-width="1.5" opacity="0.6"/>
+            <circle r="22" fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.4"/>
+            <ellipse rx="15" ry="10" fill="none" stroke="#22d3ee" stroke-width="0.7" opacity="0.2" class="pulse-delay-1"/>
+            <circle r="5" fill="#22d3ee" opacity="0.8" class="glow-cyan"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#22d3ee" font-size="12">/listen</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#22d3ee">ears</text>
+        </g>
+
+        <g id="node-talk" class="draggable" data-node="talk">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#22d3ee" stroke-width="1.5" opacity="0.5" stroke-dasharray="4 4"/>
+            <circle r="22" fill="none" stroke="#22d3ee" stroke-width="1" opacity="0.35" stroke-dasharray="4 4"/>
+            <circle r="5" fill="#22d3ee" opacity="0.7" class="glow-cyan"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#22d3ee" font-size="12">/talk</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#22d3ee">voice</text>
+        </g>
+
+        <!-- Interaction Row -->
+        <g id="node-clearing" class="draggable" data-node="clearing">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#e6edf3" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#e6edf3" stroke-width="1" opacity="0.35"/>
+            <circle cx="0" cy="-12" r="3" fill="#e6edf3" opacity="0.7"/>
+            <circle cx="11" cy="8" r="2.5" fill="#4ade80" opacity="0.7"/>
+            <circle cx="-11" cy="8" r="2.5" fill="#60a5fa" opacity="0.7"/>
+            <circle cx="0" cy="14" r="2.5" fill="#fb923c" opacity="0.7"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#e6edf3">/clearing</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#e6edf3">alignment</text>
+        </g>
+
+        <g id="node-chorus" class="draggable" data-node="chorus">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#c084fc" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#c084fc" stroke-width="1" opacity="0.35" class="pulse-delay-1"/>
+            <path d="M -10,-5 C -3,-11 3,-11 10,-5" fill="none" stroke="#c084fc" stroke-width="1" opacity="0.4"/>
+            <path d="M -7,1 C -1,-4 1,-4 7,1" fill="none" stroke="#c084fc" stroke-width="1" opacity="0.3"/>
+            <path d="M -10,7 C -3,2 3,2 10,7" fill="none" stroke="#c084fc" stroke-width="1" opacity="0.4"/>
+            <circle r="4" fill="#c084fc" opacity="0.7" class="glow-purple"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#c084fc">/chorus</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#c084fc">memory</text>
+        </g>
+
+        <!-- Flow (board) -->
+        <g id="node-flow" class="draggable" data-node="flow">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#10b981" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#10b981" stroke-width="1" opacity="0.35" class="pulse-delay-2"/>
+            <rect x="-8" y="-8" width="16" height="16" rx="3" fill="none" stroke="#10b981" stroke-width="1" opacity="0.4"/>
+            <line x1="-5" y1="-2" x2="5" y2="-2" stroke="#10b981" stroke-width="0.8" opacity="0.3"/>
+            <line x1="-5" y1="2" x2="5" y2="2" stroke="#10b981" stroke-width="0.8" opacity="0.3"/>
+            <circle r="4" fill="#10b981" opacity="0.7" class="glow-emerald"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#10b981">/flow</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#10b981">board</text>
+        </g>
+
+        <!-- Loom (team) -->
+        <g id="node-loom" class="draggable" data-node="loom">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#2dd4bf" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#2dd4bf" stroke-width="1" opacity="0.35" class="pulse-delay-3"/>
+            <line x1="-6" y1="-6" x2="-6" y2="6" stroke="#2dd4bf" stroke-width="0.8" opacity="0.4"/>
+            <line x1="0" y1="-6" x2="0" y2="6" stroke="#2dd4bf" stroke-width="0.8" opacity="0.4"/>
+            <line x1="6" y1="-6" x2="6" y2="6" stroke="#2dd4bf" stroke-width="0.8" opacity="0.4"/>
+            <line x1="-8" y1="-3" x2="8" y2="-3" stroke="#2dd4bf" stroke-width="0.6" opacity="0.3"/>
+            <line x1="-8" y1="3" x2="8" y2="3" stroke="#2dd4bf" stroke-width="0.6" opacity="0.3"/>
+            <circle r="4" fill="#2dd4bf" opacity="0.7" class="glow-teal"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#2dd4bf">/loom</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#2dd4bf">team</text>
+        </g>
+
+        <!-- Spine Container -->
+        <g id="node-spine" class="draggable" data-node="spine">
+            <rect x="-80" y="-45" width="160" height="340" rx="24" fill="#0a0a0f" opacity="0.01" style="cursor:grab"/>
+            <rect x="-80" y="-30" width="160" height="310" rx="24" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.2"/>
+            <rect x="-80" y="-30" width="160" height="310" rx="24" fill="url(#spineGrad)" opacity="0.04"/>
+            <text x="0" y="-40" text-anchor="middle" class="label" fill="#fbbf24" letter-spacing="3px">/Werk</text>
+            <text x="0" y="292" text-anchor="middle" class="label-tiny" fill="#fbbf24">the spine &middot; event bus</text>
+            <rect x="-55" y="-2" width="110" height="32" rx="16" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.7"/>
+            <text text-anchor="middle" y="19" class="label" fill="#fbbf24" font-size="11">Capturing</text>
+            <rect x="-55" y="58" width="110" height="32" rx="16" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.6"/>
+            <text text-anchor="middle" y="79" class="label" fill="#fbbf24" font-size="11">Directing</text>
+            <rect x="-55" y="118" width="110" height="32" rx="16" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.5"/>
+            <text text-anchor="middle" y="139" class="label" fill="#fbbf24" font-size="11">Designing</text>
+            <rect x="-55" y="178" width="110" height="32" rx="16" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.4"/>
+            <text text-anchor="middle" y="199" class="label" fill="#fbbf24" font-size="11">Building</text>
+            <rect x="-55" y="238" width="110" height="32" rx="16" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.35"/>
+            <text text-anchor="middle" y="259" class="label" fill="#fbbf24" font-size="11">Proving</text>
+            <line x1="0" y1="30" x2="0" y2="58" stroke="#fbbf24" stroke-width="1.5" opacity="0.3"/>
+            <line x1="0" y1="90" x2="0" y2="118" stroke="#fbbf24" stroke-width="1.5" opacity="0.3"/>
+            <line x1="0" y1="150" x2="0" y2="178" stroke="#fbbf24" stroke-width="1.5" opacity="0.3"/>
+            <line x1="0" y1="210" x2="0" y2="238" stroke="#fbbf24" stroke-width="1.5" opacity="0.3"/>
+            <circle r="4" fill="#fbbf24" class="glow-gold">
+                <animate attributeName="cy" values="-2;270;-2" dur="4s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.3;0.8;0.3" dur="4s" repeatCount="indefinite"/>
+            </circle>
+        </g>
+
+        <!-- Role tags -->
+        <g id="node-wren-tag" class="draggable" data-node="wren-tag">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#4ade80" stroke-width="1" opacity="0.3" class="pulse"/>
+            <circle r="5" fill="#4ade80" opacity="0.8" class="glow-green"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#4ade80" font-size="11">Wren</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#4ade80">product</text>
+        </g>
+
+        <g id="node-jeff-tag" class="draggable" data-node="jeff-tag">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#e6edf3" stroke-width="1.5" opacity="0.4"/>
+            <circle r="22" fill="none" stroke="#e6edf3" stroke-width="1" opacity="0.25"/>
+            <circle r="5" fill="#e6edf3" opacity="0.8" class="glow-white"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#e6edf3" font-size="11">Jeff</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#e6edf3">directs</text>
+        </g>
+
+        <g id="node-silas-tag" class="draggable" data-node="silas-tag">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#60a5fa" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#60a5fa" stroke-width="1" opacity="0.3" class="pulse-delay-1"/>
+            <circle r="5" fill="#60a5fa" opacity="0.8" class="glow-blue"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#60a5fa" font-size="11">Silas</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#60a5fa">architecture</text>
+        </g>
+
+        <g id="node-kade-tag" class="draggable" data-node="kade-tag">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#fb923c" stroke-width="1.5" opacity="0.5"/>
+            <circle r="22" fill="none" stroke="#fb923c" stroke-width="1" opacity="0.3" class="pulse-delay-2"/>
+            <circle r="5" fill="#fb923c" opacity="0.8" class="glow-orange"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#fb923c" font-size="11">Kade</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#fb923c">engineering</text>
+        </g>
+
+        <g id="node-borg-tag" class="draggable" data-node="borg-tag">
+            <circle r="50" fill="transparent" style="cursor:grab"/>
+            <circle r="34" fill="none" stroke="#f87171" stroke-width="1.5" opacity="0.3"/>
+            <circle r="22" fill="none" stroke="#f87171" stroke-width="1" opacity="0.2">
+                <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
+            </circle>
+            <circle r="12" fill="none" stroke="#f87171" stroke-width="0.8" opacity="0.25">
+                <animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="6s" repeatCount="indefinite"/>
+            </circle>
+            <circle r="3.5" fill="#f87171" opacity="0.6" class="glow-red"/>
+            <text y="-42" text-anchor="middle" class="label" fill="#f87171" font-size="10" opacity="0.7">Borg</text>
+            <text y="48" text-anchor="middle" class="label-tiny" fill="#f87171">decompose</text>
+        </g>
+
+        <!-- Legend -->
+        <g transform="translate(260, 715)">
+            <text class="label-small" fill="#e6edf3" opacity="0.4">Drag to reposition &middot; Click concept nodes to explore &middot; Positions persist</text>
+        </g>
+        <g transform="translate(940, 715)">
+            <text text-anchor="end" class="label-tiny" fill="#4ade80" opacity="0.4">INTERACTIVE</text>
+        </g>
+        <text x="600" y="725" text-anchor="middle" class="label-tiny" fill="#e6edf3" opacity="0.2">
+            Pattern: US9552400B2 &mdash; Ontology + Agents + Workflow Gates
+        </text>
+    </svg>
+    </div>
+
+    <script nonce="<%= cspNonce %>">
+    // ==================== NODE POSITIONS (v2) ====================
+    var STORAGE_KEY = 'gathering.chorus.system';
+    var STORAGE_VERSION = 2;
+
+    var defaultPositions = {
+        'look':        { x: 620, y: 192 },
+        'listen':      { x: 514, y: 192 },
+        'talk':        { x: 700, y: 263 },
+        'clearing':    { x: 420, y: 269 },
+        'chorus':      { x: 738, y: 371 },
+        'flow':        { x: 380, y: 381 },
+        'loom':        { x: 685, y: 480 },
+        'spine':       { x: 559, y: 302 },
+        'wren-tag':    { x: 350, y: 500 },
+        'jeff-tag':    { x: 350, y: 610 },
+        'silas-tag':   { x: 500, y: 650 },
+        'kade-tag':    { x: 650, y: 650 },
+        'borg-tag':    { x: 780, y: 496 }
+    };
+
+    // ==================== LEAF DEFINITIONS ====================
+    var leafDefs = {
+        'flow': [
+            { label: 'Chunks', href: '/flow' },
+            { label: 'Now/Next', href: '/flow' },
+            { label: 'Workflows', href: '/flow' }
+        ],
+        'loom': [
+            { label: 'Roles', href: '/loom' },
+            { label: 'Activity', href: '/loom' },
+            { label: 'Briefs', href: '/loom' }
+        ],
+        'clearing': [
+            { label: 'Sessions', href: '#' },
+            { label: 'History', href: '#' }
+        ],
+        'chorus': [
+            { label: 'Search', href: '/search' },
+            { label: 'Decisions', href: '#' },
+            { label: 'Stories', href: '#' }
+        ]
+    };
+
+    var leafColors = {
+        'flow': '#10b981',
+        'loom': '#2dd4bf',
+        'clearing': '#e6edf3',
+        'chorus': '#c084fc'
+    };
+
+    // Load saved state
+    var positions, expanded = {};
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+        try {
+            var parsed = JSON.parse(saved);
+            if (parsed.version === STORAGE_VERSION && parsed.positions && parsed.positions['flow'] && parsed.positions['loom']) {
+                positions = parsed.positions;
+                expanded = parsed.expanded || {};
+            }
+        } catch(e) { /* fall through to defaults */ }
+    }
+    // Also migrate from old key
+    if (!positions) {
+        var oldSaved = localStorage.getItem('gathering.chorus.nervous-system');
+        if (oldSaved) {
+            try {
+                var oldParsed = JSON.parse(oldSaved);
+                if (oldParsed && !oldParsed.version && oldParsed['spine']) {
+                    // v1 format — copy positions, add flow+loom defaults
+                    positions = JSON.parse(JSON.stringify(oldParsed));
+                    positions['flow'] = { x: defaultPositions['flow'].x, y: defaultPositions['flow'].y };
+                    positions['loom'] = { x: defaultPositions['loom'].x, y: defaultPositions['loom'].y };
+                    // Remap role tags if they exist with new defaults
+                    if (!positions['wren-tag']) positions['wren-tag'] = { x: defaultPositions['wren-tag'].x, y: defaultPositions['wren-tag'].y };
+                    if (!positions['jeff-tag']) positions['jeff-tag'] = { x: defaultPositions['jeff-tag'].x, y: defaultPositions['jeff-tag'].y };
+                }
+            } catch(e) { /* ignore */ }
+        }
+    }
+    if (!positions) {
+        positions = JSON.parse(JSON.stringify(defaultPositions));
+    }
+    // Ensure all default keys exist
+    for (var dk in defaultPositions) {
+        if (!positions[dk]) positions[dk] = { x: defaultPositions[dk].x, y: defaultPositions[dk].y };
+    }
+
+    // ==================== CONNECTIONS ====================
+    var connections = [
+        // Senses → Spine (inputs to the protocol)
+        { from: 'look', to: 'spine', color: '#22d3ee', opacity: 0.35 },
+        { from: 'listen', to: 'spine', color: '#22d3ee', opacity: 0.35 },
+        // Concepts → Spine (systems feed the protocol)
+        { from: 'clearing', to: 'spine', color: '#e6edf3', opacity: 0.15, dash: '4 4' },
+        { from: 'chorus', to: 'spine', color: '#c084fc', opacity: 0.3 },
+        { from: 'flow', to: 'spine', color: '#10b981', opacity: 0.35 },
+        { from: 'loom', to: 'spine', color: '#2dd4bf', opacity: 0.3 },
+        // Clearing ↔ Chorus (sessions become memory)
+        { from: 'clearing', to: 'chorus', color: '#c084fc', opacity: 0.3 },
+        // People → Loom (the team)
+        { from: 'jeff-tag', to: 'loom', color: '#e6edf3', opacity: 0.3 },
+        { from: 'wren-tag', to: 'loom', color: '#4ade80', opacity: 0.35 },
+        { from: 'silas-tag', to: 'loom', color: '#60a5fa', opacity: 0.35 },
+        { from: 'kade-tag', to: 'loom', color: '#fb923c', opacity: 0.35 },
+        // Jeff → Clearing (center of alignment)
+        { from: 'jeff-tag', to: 'clearing', color: '#e6edf3', opacity: 0.15, dash: '4 4' },
+        // Loom → Clearing (team convenes)
+        { from: 'loom', to: 'clearing', color: '#2dd4bf', opacity: 0.15, dash: '4 4' },
+        // Borg → Chorus (decomposition feeds memory)
+        { from: 'borg-tag', to: 'chorus', color: '#f87171', opacity: 0.2, dash: '4 4' }
+    ];
+
+    // ==================== RENDERING ====================
+    var svg = document.getElementById('canvas');
+    var nervesGroup = document.getElementById('nerves');
+    var leafGroup = null;
+
+    function applyPositions() {
+        for (var id in positions) {
+            var el = document.getElementById('node-' + id);
+            if (el) {
+                el.setAttribute('transform', 'translate(' + positions[id].x + ', ' + positions[id].y + ')');
+            }
+        }
+        drawNerves();
+        // Re-render any expanded leaves
+        for (var parent in expanded) {
+            if (expanded[parent]) renderLeaves(parent);
+        }
+    }
+
+    function drawNerves() {
+        nervesGroup.innerHTML = '';
+        // Draw leaf connections first (behind main nerves)
+        for (var parent in expanded) {
+            if (!expanded[parent]) continue;
+            var defs = leafDefs[parent];
+            if (!defs) continue;
+            var ppos = positions[parent];
+            if (!ppos) continue;
+            for (var li = 0; li < defs.length; li++) {
+                var leafKey = parent + '-leaf-' + li;
+                var lpos = positions[leafKey];
+                if (!lpos) continue;
+                var lconn = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                lconn.setAttribute('x1', ppos.x);
+                lconn.setAttribute('y1', ppos.y);
+                lconn.setAttribute('x2', lpos.x);
+                lconn.setAttribute('y2', lpos.y);
+                lconn.setAttribute('stroke', leafColors[parent] || '#888');
+                lconn.setAttribute('stroke-width', '1');
+                lconn.setAttribute('opacity', '0.25');
+                nervesGroup.appendChild(lconn);
+            }
+        }
+        for (var i = 0; i < connections.length; i++) {
+            var conn = connections[i];
+            var from = positions[conn.from];
+            var to = positions[conn.to];
+            if (!from || !to) continue;
+
+            var dx = to.x - from.x;
+            var dy = to.y - from.y;
+            var mx = (from.x + to.x) / 2;
+            var my = (from.y + to.y) / 2;
+            var cx1 = mx - dy * 0.1;
+            var cy1 = my + dx * 0.1;
+
+            var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M ' + from.x + ',' + from.y + ' Q ' + cx1 + ',' + cy1 + ' ' + to.x + ',' + to.y);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', conn.color);
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('opacity', conn.opacity);
+            if (conn.dash) path.setAttribute('stroke-dasharray', conn.dash);
+            nervesGroup.appendChild(path);
+
+            // Animated signal dot
+            var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('r', '3');
+            circle.setAttribute('fill', conn.color);
+            circle.setAttribute('opacity', '0');
+
+            var animMotion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+            var dur = (1.5 + Math.random() * 2) + 's';
+            animMotion.setAttribute('dur', dur);
+            animMotion.setAttribute('repeatCount', 'indefinite');
+            animMotion.setAttribute('path', 'M ' + from.x + ',' + from.y + ' Q ' + cx1 + ',' + cy1 + ' ' + to.x + ',' + to.y);
+
+            var animOpacity = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+            animOpacity.setAttribute('attributeName', 'opacity');
+            var maxOp = Math.min(conn.opacity * 2, 0.8);
+            animOpacity.setAttribute('values', '0;' + maxOp + ';' + maxOp + ';0');
+            animOpacity.setAttribute('dur', dur);
+            animOpacity.setAttribute('repeatCount', 'indefinite');
+
+            circle.appendChild(animMotion);
+            circle.appendChild(animOpacity);
+            nervesGroup.appendChild(circle);
+        }
+    }
+
+    // ==================== LEAVES ====================
+    function ensureLeafGroup() {
+        if (!leafGroup) {
+            leafGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            leafGroup.id = 'leaves';
+            svg.appendChild(leafGroup);
+        }
+        return leafGroup;
+    }
+
+    function renderLeaves(parentId) {
+        var defs = leafDefs[parentId];
+        if (!defs) return;
+        var color = leafColors[parentId] || '#888';
+        var ppos = positions[parentId];
+        if (!ppos) return;
+        var group = ensureLeafGroup();
+
+        // Remove existing leaves for this parent
+        removeLeafElements(parentId);
+
+        var angleStep = (2 * Math.PI) / Math.max(defs.length, 1);
+        var radius = 65;
+        // Offset so leaves don't pile on top of connections
+        var startAngle = -Math.PI / 2;
+
+        for (var i = 0; i < defs.length; i++) {
+            var leaf = defs[i];
+            var leafKey = parentId + '-leaf-' + i;
+            // Default position: fan out in a circle around parent
+            if (!positions[leafKey]) {
+                var angle = startAngle + angleStep * i;
+                positions[leafKey] = {
+                    x: Math.round(ppos.x + Math.cos(angle) * radius),
+                    y: Math.round(ppos.y + Math.sin(angle) * radius)
+                };
+            }
+
+            var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.id = 'node-' + leafKey;
+            g.classList.add('draggable');
+            g.dataset.node = leafKey;
+            g.dataset.leaf = 'true';
+            g.dataset.href = leaf.href;
+            g.setAttribute('transform', 'translate(' + positions[leafKey].x + ', ' + positions[leafKey].y + ')');
+
+            // Hit area
+            var hit = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            hit.setAttribute('r', '30');
+            hit.setAttribute('fill', 'transparent');
+            hit.style.cursor = 'pointer';
+            g.appendChild(hit);
+
+            // Outer ring
+            var outer = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            outer.setAttribute('r', '20');
+            outer.setAttribute('fill', 'none');
+            outer.setAttribute('stroke', color);
+            outer.setAttribute('stroke-width', '1');
+            outer.setAttribute('opacity', '0.5');
+            g.appendChild(outer);
+
+            // Center dot
+            var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            dot.setAttribute('r', '3');
+            dot.setAttribute('fill', color);
+            dot.setAttribute('opacity', '0.6');
+            g.appendChild(dot);
+
+            // Label
+            var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('y', '-26');
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('fill', color);
+            text.setAttribute('font-size', '9');
+            text.setAttribute('font-weight', '500');
+            text.setAttribute('letter-spacing', '0.8px');
+            text.setAttribute('opacity', '0.7');
+            text.textContent = leaf.label;
+            g.appendChild(text);
+
+            group.appendChild(g);
+        }
+    }
+
+    function removeLeafElements(parentId) {
+        var defs = leafDefs[parentId];
+        if (!defs) return;
+        for (var i = 0; i < defs.length; i++) {
+            var el = document.getElementById('node-' + parentId + '-leaf-' + i);
+            if (el) el.remove();
+        }
+    }
+
+    function removeLeafPositions(parentId) {
+        var defs = leafDefs[parentId];
+        if (!defs) return;
+        for (var i = 0; i < defs.length; i++) {
+            delete positions[parentId + '-leaf-' + i];
+        }
+    }
+
+    function toggleLeaves(parentId) {
+        if (expanded[parentId]) {
+            // Collapse
+            expanded[parentId] = false;
+            removeLeafElements(parentId);
+            removeLeafPositions(parentId);
+        } else {
+            // Expand
+            expanded[parentId] = true;
+            renderLeaves(parentId);
+        }
+        drawNerves();
+        saveState();
+    }
+
+    // ==================== DRAG + CLICK ====================
+    var dragTarget = null;
+    var dragOffset = { x: 0, y: 0 };
+    var dragStart = { x: 0, y: 0 };
+    var hasDragged = false;
+    var DRAG_THRESHOLD = 5;
+
+    function svgPoint(evt) {
+        var pt = svg.createSVGPoint();
+        pt.x = evt.clientX;
+        pt.y = evt.clientY;
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+    }
+
+    svg.addEventListener('mousedown', function(evt) {
+        var node = evt.target.closest('.draggable');
+        if (!node) return;
+        var id = node.dataset.node;
+        if (!id || !positions[id]) return;
+
+        dragTarget = id;
+        hasDragged = false;
+        var pt = svgPoint(evt);
+        dragStart.x = pt.x;
+        dragStart.y = pt.y;
+        dragOffset.x = pt.x - positions[id].x;
+        dragOffset.y = pt.y - positions[id].y;
+        evt.preventDefault();
+    });
+
+    svg.addEventListener('mousemove', function(evt) {
+        if (!dragTarget) return;
+        var pt = svgPoint(evt);
+
+        if (!hasDragged) {
+            var dx = pt.x - dragStart.x;
+            var dy = pt.y - dragStart.y;
+            if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
+            hasDragged = true;
+        }
+
+        positions[dragTarget].x = Math.round(pt.x - dragOffset.x);
+        positions[dragTarget].y = Math.round(pt.y - dragOffset.y);
+
+        var el = document.getElementById('node-' + dragTarget);
+        el.setAttribute('transform', 'translate(' + positions[dragTarget].x + ', ' + positions[dragTarget].y + ')');
+        drawNerves();
+    });
+
+    svg.addEventListener('mouseup', function() {
+        if (!dragTarget) return;
+        if (hasDragged) {
+            // Was a drag — save position
+            saveState();
+        } else {
+            // Was a click — handle click action
+            handleClick(dragTarget);
+        }
+        dragTarget = null;
+    });
+
+    svg.addEventListener('mouseleave', function() {
+        if (dragTarget) {
+            if (hasDragged) saveState();
+            dragTarget = null;
+        }
+    });
+
+    // Nodes that navigate directly on click (no leaf expand)
+    var directNav = {
+        'spine': '/werk'
+    };
+
+    function handleClick(nodeId) {
+        // Check if this is a leaf node
+        var el = document.getElementById('node-' + nodeId);
+        if (el && el.dataset.leaf) {
+            var href = el.dataset.href;
+            if (href && href !== '#') {
+                window.location.href = href;
+            }
+            return;
+        }
+        // Direct navigation nodes
+        if (directNav[nodeId]) {
+            window.location.href = directNav[nodeId];
+            return;
+        }
+        // Concept nodes with leaves
+        if (leafDefs[nodeId]) {
+            toggleLeaves(nodeId);
+        }
+    }
+
+    // ==================== PERSISTENCE ====================
+    function saveState() {
+        var state = {
+            version: STORAGE_VERSION,
+            positions: positions,
+            expanded: expanded
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    // ==================== TOOLBAR ====================
+    function resetPositions() {
+        // Collapse all leaves
+        for (var parent in expanded) {
+            if (expanded[parent]) {
+                removeLeafElements(parent);
+                removeLeafPositions(parent);
+            }
+        }
+        expanded = {};
+        // Reset node positions
+        positions = JSON.parse(JSON.stringify(defaultPositions));
+        localStorage.removeItem(STORAGE_KEY);
+        // Also clear old key
+        localStorage.removeItem('gathering.chorus.nervous-system');
+        applyPositions();
+    }
+
+    function exportPositions() {
+        var json = JSON.stringify({ version: STORAGE_VERSION, positions: positions, expanded: expanded }, null, 2);
+        navigator.clipboard.writeText(json).then(function() {
+            var toast = document.getElementById('toast');
+            toast.classList.add('show');
+            setTimeout(function() { toast.classList.remove('show'); }, 1500);
+        });
+    }
+
+    // ==================== LIGHT MODE ====================
+    function toggleLightMode() {
+        document.body.classList.toggle('light-mode');
+        var isLight = document.body.classList.contains('light-mode');
+        // Swap SVG background grid
+        var bgRect = document.querySelector('#canvas rect[fill="url(#grid)"]');
+        if (bgRect) bgRect.closest('g').style.display = isLight ? 'none' : '';
+        // Update spine container: hit-area bg + gradient fill
+        var spineHitRect = document.querySelector('#node-spine rect[fill="#0a0a0f"], #node-spine rect[fill="#ffffff"]');
+        if (spineHitRect) spineHitRect.setAttribute('fill', isLight ? '#ffffff' : '#0a0a0f');
+        var spineGradRect = document.querySelector('#node-spine rect[fill="url(#spineGrad)"]');
+        if (spineGradRect) spineGradRect.setAttribute('opacity', isLight ? '0.02' : '0.04');
+    }
+
+    if (location.search.indexOf('print') > -1) {
+        toggleLightMode();
+        // Auto-expand all leaf groups for print
+        for (var pk in leafDefs) {
+            if (!expanded[pk]) toggleLeaves(pk);
+        }
+    }
+
+    // ==================== INIT ====================
+    applyPositions();
+    </script>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

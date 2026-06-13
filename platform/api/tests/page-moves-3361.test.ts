@@ -21,11 +21,11 @@ import app from '../src/server';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
 
-async function hit(srv: Server, reqPath: string) {
+async function hit(srv: Server, reqPath: string, redirect: RequestRedirect = 'follow') {
   await new Promise<void>((r) => (srv.listening ? r() : srv.once('listening', () => r())));
   const port = (srv.address() as AddressInfo).port;
-  const res = await fetch(`http://127.0.0.1:${port}${reqPath}`);
-  return { status: res.status, body: await res.text() };
+  const res = await fetch(`http://127.0.0.1:${port}${reqPath}`, { redirect });
+  return { status: res.status, body: await res.text(), location: res.headers.get('location') };
 }
 const close = (srv: Server) => new Promise<void>((r) => srv.close(() => r()));
 
@@ -60,5 +60,82 @@ describe('#3361 — moved chorus pages serve from chorus at their building/ home
     } finally {
       await close(srv);
     }
+  });
+});
+
+describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS moved home)', () => {
+  // Move home now; client-side data may be broken until ported (Jeff 2026-06-13).
+  // These assert the page SHELL renders from chorus, not that live data is wired.
+  test('/chorus renders the chorus-system page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/chorus');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/chorus-model-data renders from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/chorus-model-data');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/borg-assessment renders from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/borg-assessment');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/harvesting/icd renders the ICD page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/harvesting/icd');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/harvesting/convergence renders the ICD page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/harvesting/convergence');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/werk renders from chorus-api with empty-workflow fallback', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/werk');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/harvest-manifests renders from chorus-api with empty fallback', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/harvest-manifests');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/chorus/system redirects to /chorus', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/chorus/system', 'manual');
+      expect(r.status).toBe(301);
+      expect(r.location).toBe('/chorus');
+    } finally { await close(srv); }
+  });
+  test('/harvesting/mapper redirects to /harvesting/icd', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/harvesting/mapper', 'manual');
+      expect(r.status).toBe(301);
+      expect(r.location).toBe('/harvesting/icd');
+    } finally { await close(srv); }
   });
 });

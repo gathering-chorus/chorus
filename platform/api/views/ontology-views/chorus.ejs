@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chorus Ontology — v0.2.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #c084fc; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-count { display: inline-block; background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 2px 10px; font-size: 13px; font-weight: 500; margin-left: 10px; }
+  .class-count.purple { background: #2a1a3a; color: #c084fc; border-color: #4a2a5a; }
+  .class-count.blue { background: #1a1a3a; color: #60a5fa; border-color: #2a2a5a; }
+  .class-count.amber { background: #2a2a1a; color: #fbbf24; border-color: #4a4a2a; }
+  .class-count.gray { background: #1a1a1a; color: #9ca3af; border-color: #3a3a3a; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #c084fc; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; max-width: 1100px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  .back-link { color: #c084fc; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+
+  /* Value stream spine */
+  .spine { display: flex; align-items: center; justify-content: center; gap: 0; margin: 16px 0 8px; flex-wrap: wrap; }
+  .spine-node { padding: 10px 16px; font-size: 13px; font-weight: 600; border-radius: 8px; text-align: center; min-width: 90px; }
+  .spine-arrow { color: #666; font-size: 16px; padding: 0 4px; }
+  .spine-node.capturing { background: #ede9fe; color: #6d28d9; }
+  .spine-node.directing { background: #fef3c7; color: #92400e; }
+  .spine-node.designing { background: #e0e7ff; color: #3730a3; }
+  .spine-node.building { background: #d1fae5; color: #065f46; }
+  .spine-node.proving { background: #fce7f3; color: #9d174d; }
+  .spine-feedback { display: flex; align-items: center; justify-content: center; margin: 6px 0 12px; font-size: 11px; color: #666; gap: 6px; }
+  .spine-feedback .arrow { color: #9d174d; }
+  .operating-bar { display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; border-radius: 6px; padding: 6px 20px; font-size: 12px; font-weight: 600; margin: 0 auto; max-width: 600px; }
+  .operating-label { font-size: 10px; color: #888; text-align: center; margin-top: 4px; }
+
+  /* Role cards */
+  .role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .role-card { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 12px; display: flex; align-items: center; gap: 10px; }
+  .role-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .role-info { flex: 1; }
+  .role-name { font-weight: 600; font-size: 14px; color: #fff; }
+  .role-type { font-size: 11px; color: #666; }
+  .role-domain { font-size: 11px; color: #888; font-style: italic; }
+
+  /* Tool cards */
+  .tool-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .tool-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 6px; }
+  .tool-cmd { font-family: 'SF Mono', monospace; font-size: 13px; color: #c084fc; font-weight: 600; min-width: 70px; }
+  .tool-desc { font-size: 12px; color: #999; flex: 1; }
+  .tool-type { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .tool-type.sense { background: #0e7490; color: #cffafe; }
+  .tool-type.interaction { background: #374151; color: #e5e7eb; }
+  .tool-type.memory { background: #6b21a8; color: #f3e8ff; }
+  .tool-type.orchestration { background: #92400e; color: #fef3c7; }
+  .tool-type.analysis { background: #991b1b; color: #fee2e2; }
+  .tool-status { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .tool-status.live { background: #1a2a1a; color: #6d6; }
+  .tool-status.planned { background: #2a2a1a; color: #a8a; }
+
+  /* Gate flow */
+  .gate-flow { display: flex; flex-direction: column; gap: 8px; }
+  .gate-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 10px; background: #1a1a24; border-radius: 6px; }
+  .gate-name { font-weight: 600; color: #fff; min-width: 110px; }
+  .gate-stages { color: #888; flex: 1; }
+  .gate-keeper { font-size: 11px; color: #c084fc; }
+
+  /* Rel diagram */
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.role { border-color: #6ad68a; background: #1a3a2a; }
+  .rel-node.vertebra { border-color: #d6a66a; background: #2a2a1a; }
+  .rel-node.tool { border-color: #c084fc; background: #2a1a3a; }
+  .rel-node.artifact { border-color: #6a8ad6; background: #1a1a3a; }
+  .rel-node.gate { border-color: #d66a8a; background: #3a1a2a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #c084fc; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<div class="page-container">
+
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=chorus-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Chorus Ontology' }) %>
+
+<h1>Chorus Ontology</h1>
+<p class="subtitle">chorus.ttl <span>v0.2.0</span> &middot; Shared awareness &mdash; human+AI team coordination</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value"><%= stats.classes || 23 %></div><div class="stat-label">Classes</div></div>
+  <div class="stat"><div class="stat-value"><%= stats.objProps || 29 %></div><div class="stat-label">Object Properties</div></div>
+  <div class="stat"><div class="stat-value"><%= stats.dtProps || 10 %></div><div class="stat-label">Datatype Properties</div></div>
+  <div class="stat"><div class="stat-value">50</div><div class="stat-label">Instances</div></div>
+</div>
+
+<div class="grid">
+
+  <!-- VALUE STREAM -->
+  <div class="section full-width">
+    <h2>Value Stream (The Spine)</h2>
+    <div class="spine">
+      <div class="spine-node capturing">Capturing</div>
+      <div class="spine-arrow">&rarr;</div>
+      <div class="spine-node directing">Directing</div>
+      <div class="spine-arrow">&rarr;</div>
+      <div class="spine-node designing">Designing</div>
+      <div class="spine-arrow">&rarr;</div>
+      <div class="spine-node building">Building</div>
+      <div class="spine-arrow">&rarr;</div>
+      <div class="spine-node proving">Proving</div>
+    </div>
+    <div class="spine-feedback">
+      <span class="arrow">&larr;</span> Proving feeds back into Directing <span class="arrow">&larr;</span>
+    </div>
+    <div class="operating-bar">Operating</div>
+    <div class="operating-label">crosscuts all vertebrae &mdash; infrastructure substrate</div>
+  </div>
+
+  <!-- ROLES -->
+  <div class="section">
+    <h2>Roles (4)</h2>
+    <div class="role-grid">
+      <div class="role-card">
+        <div class="role-dot" style="background: #e6edf3;"></div>
+        <div class="role-info">
+          <div class="role-name">Jeff</div>
+          <div class="role-type">Human Role</div>
+          <div class="role-domain">Directing, Capturing, Proving</div>
+        </div>
+      </div>
+      <div class="role-card">
+        <div class="role-dot" style="background: #4ade80;"></div>
+        <div class="role-info">
+          <div class="role-name">Wren</div>
+          <div class="role-type">Agent Role &middot; Product</div>
+          <div class="role-domain">Directing, Designing, Capturing</div>
+        </div>
+      </div>
+      <div class="role-card">
+        <div class="role-dot" style="background: #60a5fa;"></div>
+        <div class="role-info">
+          <div class="role-name">Silas</div>
+          <div class="role-type">Agent Role &middot; Architecture</div>
+          <div class="role-domain">Designing, Building, Proving</div>
+        </div>
+      </div>
+      <div class="role-card">
+        <div class="role-dot" style="background: #fb923c;"></div>
+        <div class="role-info">
+          <div class="role-name">Kade</div>
+          <div class="role-type">Agent Role &middot; Engineering</div>
+          <div class="role-domain">Building, Proving, Designing</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GATES -->
+  <div class="section">
+    <h2>Quality Gates (4)</h2>
+    <div class="gate-flow">
+      <div class="gate-row">
+        <span class="gate-name">Direction Gate</span>
+        <span class="gate-stages">Directing &rarr; Designing</span>
+        <span class="gate-keeper">Jeff</span>
+      </div>
+      <div class="gate-row">
+        <span class="gate-name">Design Gate</span>
+        <span class="gate-stages">Designing &rarr; Building</span>
+        <span class="gate-keeper">Silas</span>
+      </div>
+      <div class="gate-row">
+        <span class="gate-name">Build Gate</span>
+        <span class="gate-stages">Building &rarr; Proving</span>
+        <span class="gate-keeper">Kade</span>
+      </div>
+      <div class="gate-row">
+        <span class="gate-name">Proving Gate</span>
+        <span class="gate-stages">Proving &rarr; (feedback)</span>
+        <span class="gate-keeper">Jeff</span>
+      </div>
+    </div>
+    <p style="font-size: 11px; color: #666; margin-top: 12px;">Results: Pass | Fail | Override (tracked for trust metrics)</p>
+  </div>
+
+  <!-- TOOLS -->
+  <div class="section">
+    <h2>Tools (7)</h2>
+    <div class="tool-grid">
+      <div class="tool-row">
+        <span class="tool-cmd">/look</span>
+        <span class="tool-desc">Screen capture &mdash; Jeff shows, Chorus sees</span>
+        <span class="tool-type sense">Sense</span>
+        <span class="tool-status live">live</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">/listen</span>
+        <span class="tool-desc">Voice transcription via whisper.cpp</span>
+        <span class="tool-type sense">Sense</span>
+        <span class="tool-status live">live</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">/talk</span>
+        <span class="tool-desc">Voice output &mdash; text to speech</span>
+        <span class="tool-type sense">Sense</span>
+        <span class="tool-status planned">planned</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">/clearing</span>
+        <span class="tool-desc">Multi-party chat &mdash; real-time alignment</span>
+        <span class="tool-type interaction">Interaction</span>
+        <span class="tool-status live">live</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">/chorus</span>
+        <span class="tool-desc">Shared memory index &mdash; 34k+ messages</span>
+        <span class="tool-type memory">Memory</span>
+        <span class="tool-status live">live</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">/werk</span>
+        <span class="tool-desc">Workflow engine &mdash; IS the spine</span>
+        <span class="tool-type orchestration">Orchestration</span>
+        <span class="tool-status live">live</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-cmd">Borg</span>
+        <span class="tool-desc">Codebase decomposition &amp; assessment</span>
+        <span class="tool-type analysis">Analysis</span>
+        <span class="tool-status planned">planned</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARTIFACTS -->
+  <div class="section">
+    <h2>Artifact Types (7)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">Card</span>
+        <span class="class-count amber">Directing exit</span>
+        <div class="class-desc">Kanban board item &mdash; entry point for pipeline work</div>
+      </li>
+      <li>
+        <span class="class-name">Brief</span>
+        <span class="class-count amber">Designing exit</span>
+        <div class="class-desc">Structured document in recipient's briefs/ directory</div>
+      </li>
+      <li>
+        <span class="class-name">Commit</span>
+        <span class="class-count amber">Building exit</span>
+        <div class="class-desc">Git commit with card reference &mdash; (#N) or (C#N)</div>
+      </li>
+      <li>
+        <span class="class-name">Signal</span>
+        <span class="class-count amber">Proving exit</span>
+        <div class="class-desc">Notification &mdash; ephemeral</div>
+      </li>
+      <li>
+        <span class="class-name">ADR</span>
+        <span class="class-count gray">any stage</span>
+        <div class="class-desc">Architectural Decision Record &mdash; the why behind structural choices</div>
+      </li>
+      <li>
+        <span class="class-name">Decision</span>
+        <span class="class-count gray">any stage</span>
+        <div class="class-desc">DEC-NNN &mdash; constrains future behavior</div>
+      </li>
+      <li>
+        <span class="class-name">Screenshot</span>
+        <span class="class-count gray">Build Gate</span>
+        <div class="class-desc">Visual proof of shipped work</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- RELATIONSHIPS DIAGRAM -->
+  <div class="section full-width">
+    <h2>Core Relationships</h2>
+    <div class="rel-diagram">
+      <div class="rel-node role">Role</div>
+      <div class="rel-arrow"><span class="label">operatesAt</span><span>&rarr;</span></div>
+      <div class="rel-node vertebra">Vertebra</div>
+      <div class="rel-arrow"><span class="label">nextStage</span><span>&rarr;</span></div>
+      <div class="rel-node vertebra">Vertebra</div>
+    </div>
+    <div class="rel-diagram">
+      <div class="rel-node tool">Tool</div>
+      <div class="rel-arrow"><span class="label">feeds</span><span>&rarr;</span></div>
+      <div class="rel-node vertebra">Vertebra</div>
+      <div class="rel-arrow"><span class="label">exitArtifactType</span><span>&rarr;</span></div>
+      <div class="rel-node artifact">ArtifactType</div>
+    </div>
+    <div class="rel-diagram">
+      <div class="rel-node gate">Gate</div>
+      <div class="rel-arrow"><span class="label">fromStage / toStage</span><span>&rarr;</span></div>
+      <div class="rel-node vertebra">Vertebra</div>
+      <div class="rel-arrow"><span class="label">gatekeeper</span><span>&rarr;</span></div>
+      <div class="rel-node role">Role</div>
+    </div>
+    <div class="rel-diagram">
+      <div class="rel-node artifact">Handoff</div>
+      <div class="rel-arrow"><span class="label">from / to</span><span>&rarr;</span></div>
+      <div class="rel-node role">Role</div>
+      <div class="rel-arrow"><span class="label">status</span><span>&rarr;</span></div>
+      <div class="rel-node" style="border-color: #666;">Sent | Received | Stale</div>
+    </div>
+  </div>
+
+  <!-- OBJECT PROPERTIES -->
+  <div class="section full-width">
+    <h2>Object Properties (29)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain &rarr; Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">operatesAt</td><td class="prop-range">Role &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Primary/secondary affinity</td></tr>
+      <tr><td class="prop-name">feeds</td><td class="prop-range">Tool &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Tool provides input</td></tr>
+      <tr><td class="prop-name">indexes</td><td class="prop-range">Tool &rarr; *</td><td style="font-size:12px;color:#777;">/chorus indexes everything</td></tr>
+      <tr><td class="prop-name">orchestrates</td><td class="prop-range">Tool &rarr; Workflow</td><td style="font-size:12px;color:#777;">/werk orchestrates</td></tr>
+      <tr><td class="prop-name">outputOf</td><td class="prop-range">Product &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Product emerges from Building + Proving</td></tr>
+      <tr><td class="prop-name">inputTo</td><td class="prop-range">Product &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Feedback loop to Capturing</td></tr>
+      <tr><td class="prop-name">decomposes</td><td class="prop-range">Tool &rarr; Product</td><td style="font-size:12px;color:#777;">Borg analyzes codebases</td></tr>
+      <tr><td class="prop-name">nextStage</td><td class="prop-range">Vertebra &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Sequential flow</td></tr>
+      <tr><td class="prop-name">previousStage</td><td class="prop-range">Vertebra &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Back-reference</td></tr>
+      <tr><td class="prop-name">feedsInto</td><td class="prop-range">Vertebra &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Proving &rarr; Directing loop</td></tr>
+      <tr><td class="prop-name">exitArtifactType</td><td class="prop-range">Vertebra &rarr; ArtifactType</td><td style="font-size:12px;color:#777;">What leaves each stage</td></tr>
+      <tr><td class="prop-name">crosscuts</td><td class="prop-range">EventCategory &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Operating underpins all</td></tr>
+      <tr><td class="prop-name">fromStage / toStage</td><td class="prop-range">Gate &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Gate boundaries</td></tr>
+      <tr><td class="prop-name">gatekeeper</td><td class="prop-range">Gate &rarr; Role</td><td style="font-size:12px;color:#777;">Who evaluates</td></tr>
+      <tr><td class="prop-name">handoffFrom / To</td><td class="prop-range">Handoff &rarr; Role</td><td style="font-size:12px;color:#777;">Work exchange endpoints</td></tr>
+      <tr><td class="prop-name">handoffType</td><td class="prop-range">Handoff &rarr; HandoffType</td><td style="font-size:12px;color:#777;">Brief, Workflow, Decision</td></tr>
+      <tr><td class="prop-name">handoffStatus</td><td class="prop-range">Handoff &rarr; HandoffStatus</td><td style="font-size:12px;color:#777;">Sent, Received, Stale</td></tr>
+      <tr><td class="prop-name">sequences</td><td class="prop-range">Workflow &rarr; Step</td><td style="font-size:12px;color:#777;">Ordered step list</td></tr>
+      <tr><td class="prop-name">assignedTo</td><td class="prop-range">Step &rarr; Role</td><td style="font-size:12px;color:#777;">Step ownership</td></tr>
+      <tr><td class="prop-name">createdBy</td><td class="prop-range">Workflow &rarr; Decision</td><td style="font-size:12px;color:#777;">Decision triggers workflow</td></tr>
+      <tr><td class="prop-name">currentStage</td><td class="prop-range">WorkItem &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Where work is now</td></tr>
+      <tr><td class="prop-name">linkedCard</td><td class="prop-range">WorkItem &rarr; Card</td><td style="font-size:12px;color:#777;">Board card reference</td></tr>
+      <tr><td class="prop-name">evaluatedBy</td><td class="prop-range">StageTransition &rarr; Gate</td><td style="font-size:12px;color:#777;">Which gate checked</td></tr>
+      <tr><td class="prop-name">result</td><td class="prop-range">StageTransition &rarr; GateResult</td><td style="font-size:12px;color:#777;">Pass, Fail, Override</td></tr>
+      <tr><td class="prop-name">bouncedTo</td><td class="prop-range">BounceBack &rarr; Vertebra</td><td style="font-size:12px;color:#777;">Where bounced work returns</td></tr>
+      <tr><td class="prop-name">toolType</td><td class="prop-range">Tool &rarr; ToolType</td><td style="font-size:12px;color:#777;">Classification</td></tr>
+    </table>
+  </div>
+
+  <!-- DATATYPE PROPERTIES -->
+  <div class="section full-width">
+    <h2>Datatype Properties (10)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain</th><th>Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">stageOrder</td><td class="prop-range">Vertebra</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">0-based sequential position</td></tr>
+      <tr><td class="prop-name">domain</td><td class="prop-range">Role</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Role's domain label</td></tr>
+      <tr><td class="prop-name">color</td><td class="prop-range">*</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Hex color for viz</td></tr>
+      <tr><td class="prop-name">vizLabel</td><td class="prop-range">*</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Short label on viz node</td></tr>
+      <tr><td class="prop-name">status</td><td class="prop-range">*</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">live | designed | planned</td></tr>
+      <tr><td class="prop-name">channelName</td><td class="prop-range">Role</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Slack channel (deprecated)</td></tr>
+      <tr><td class="prop-name">cardId</td><td class="prop-range">*</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Board card reference</td></tr>
+      <tr><td class="prop-name">blastRadius</td><td class="prop-range">*</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Change impact scope</td></tr>
+      <tr><td class="prop-name">feedback</td><td class="prop-range">BounceBack</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Reason for bounce</td></tr>
+      <tr><td class="prop-name">transitionDate</td><td class="prop-range">StageTransition</td><td class="prop-range">xsd:dateTime</td><td style="font-size:12px;color:#777;">When work moved</td></tr>
+    </table>
+  </div>
+
+  <!-- PRIOR ART -->
+  <div class="section full-width">
+    <h2>Lineage</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:13px;">
+      <div>
+        <div style="color:#c084fc;font-weight:600;margin-bottom:8px;">Prior Art</div>
+        <div style="color:#aaa;">US Patent 9,552,400 B2 (Bridwell) &mdash; RDF/OWL + SPARQL + workflow gates. Direct conceptual ancestor.</div>
+      </div>
+      <div>
+        <div style="color:#c084fc;font-weight:600;margin-bottom:8px;">Namespace</div>
+        <div style="color:#aaa;"><code style="color:#c084fc;font-size:11px;">https://jeffbridwell.com/chorus#</code></div>
+        <div style="color:#666;font-size:11px;margin-top:4px;">Separate from jb: (Gathering ontology)</div>
+      </div>
+      <div>
+        <div style="color:#c084fc;font-weight:600;margin-bottom:8px;">Source</div>
+        <div style="color:#aaa;">architect/ontology/chorus.ttl &mdash; 11 sections, 656 lines. Merges former building.ttl + chorus v0.1.0.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">chorus.ttl v0.2.0 &middot; Shared Awareness Ontology &middot; C#40</p>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Photos Domain — Ontology v0.9.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #6af; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-count { display: inline-block; background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 2px 10px; font-size: 13px; font-weight: 500; margin-left: 10px; }
+  .class-count.large { background: #2a1a2a; color: #d6d; border-color: #4a2a4a; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #8af; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.collection { border-color: #d6a66a; background: #2a2a1a; }
+  .rel-node.entity { border-color: #6a8ad6; background: #1a1a3a; }
+  .rel-node.meta { border-color: #6ad68a; background: #1a3a2a; }
+  .rel-node.reified { border-color: #d66a8a; background: #3a1a2a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #8af; margin-bottom: 2px; }
+  .back-link { color: #6af; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=photos-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Photos Domain' }) %>
+
+<h1>Photos Domain</h1>
+<p class="subtitle">jb-ontology.ttl <span>v0.9.0</span> · Harvested from Apple Photos via osxphotos</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value"><%= stats.photos ? stats.photos.toLocaleString() : '—' %></div><div class="stat-label">Photos</div></div>
+  <div class="stat"><div class="stat-value"><%= stats.albums ? stats.albums.toLocaleString() : '—' %></div><div class="stat-label">Albums</div></div>
+  <div class="stat"><div class="stat-value">~50</div><div class="stat-label">People</div></div>
+  <div class="stat"><div class="stat-value">~1.7GB</div><div class="stat-label">TTL Size</div></div>
+</div>
+
+<div class="grid">
+
+  <div class="section">
+    <h2>Classes (5)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">ImageCollection</span>
+        <span class="class-parent">&#8834; Collection</span>
+        <span class="class-count">1</span>
+        <div class="class-desc">Top-level container for the photo library</div>
+      </li>
+      <li>
+        <span class="class-name">Photo</span>
+        <span class="class-count large"><%= stats.photos ? stats.photos.toLocaleString() : '—' %></span>
+        <div class="class-desc">A photograph with geolocation, date, and person/album relationships</div>
+      </li>
+      <li>
+        <span class="class-name">PhotoAlbum</span>
+        <span class="class-count"><%= stats.albums ? stats.albums.toLocaleString() : '—' %></span>
+        <div class="class-desc">Named album grouping — maps to Apple Photos album hierarchy</div>
+      </li>
+      <li>
+        <span class="class-name">PhotoLocation</span>
+        <span class="class-count">varies</span>
+        <div class="class-desc">Geographic location derived from GPS coordinates</div>
+      </li>
+      <li>
+        <span class="class-name">FaceDetection</span>
+        <span class="class-count">varies</span>
+        <div class="class-desc">Reified face — records position and size within the image</div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Relationships</h2>
+    <div class="rel-diagram">
+      <div class="rel-node collection">ImageCollection</div>
+      <div class="rel-arrow"><span class="label">hasPhoto</span><span>&rarr;</span></div>
+      <div class="rel-node entity">Photo</div>
+      <div class="rel-arrow"><span class="label">inPhotoAlbum</span><span>&rarr;</span></div>
+      <div class="rel-node entity">PhotoAlbum</div>
+    </div>
+    <div class="rel-diagram" style="margin-top: 12px;">
+      <div class="rel-node entity">Photo</div>
+      <div class="rel-arrow"><span class="label">atLocation</span><span>&rarr;</span></div>
+      <div class="rel-node meta">PhotoLocation</div>
+    </div>
+    <div class="rel-diagram" style="margin-top: 12px;">
+      <div class="rel-node entity">Photo</div>
+      <div class="rel-arrow"><span class="label">depictsPerson</span><span>&rarr;</span></div>
+      <div class="rel-node meta">foaf:Person</div>
+    </div>
+    <div class="rel-diagram" style="margin-top: 12px;">
+      <div class="rel-node reified">FaceDetection</div>
+      <div class="rel-arrow"><span class="label">inPhoto</span><span>&rarr;</span></div>
+      <div class="rel-node entity">Photo</div>
+      <div class="rel-arrow"><span class="label">ofPerson</span><span>&rarr;</span></div>
+      <div class="rel-node meta">foaf:Person</div>
+    </div>
+
+    <h2 style="margin-top: 28px;">Object Properties (6)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain &rarr; Range</th></tr>
+      <tr><td class="prop-name">jb:inPhotoAlbum</td><td class="prop-range">Photo &rarr; PhotoAlbum</td></tr>
+      <tr><td class="prop-name">jb:hasPhoto</td><td class="prop-range">PhotoAlbum &rarr; Photo</td></tr>
+      <tr><td class="prop-name">jb:atLocation</td><td class="prop-range">Photo &rarr; PhotoLocation</td></tr>
+      <tr><td class="prop-name">jb:depictsPerson</td><td class="prop-range">Photo &rarr; foaf:Person</td></tr>
+      <tr><td class="prop-name">jb:inPhoto</td><td class="prop-range">FaceDetection &rarr; Photo</td></tr>
+      <tr><td class="prop-name">jb:ofPerson</td><td class="prop-range">FaceDetection &rarr; foaf:Person</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>Datatype Properties (18)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain</th><th>Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">jb:photoFilename</td><td class="prop-range">Photo</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Original filename</td></tr>
+      <tr><td class="prop-name">jb:photoMediaType</td><td class="prop-range">Photo</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">MIME type (image, video)</td></tr>
+      <tr><td class="prop-name">jb:mediaSubtype</td><td class="prop-range">Photo</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">screenshot, live_photo, etc.</td></tr>
+      <tr><td class="prop-name">jb:dateTaken</td><td class="prop-range">Photo</td><td class="prop-range">xsd:dateTime</td><td style="font-size:12px;color:#777;">When photo was taken</td></tr>
+      <tr><td class="prop-name">jb:imageWidth</td><td class="prop-range">Photo</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">Pixels</td></tr>
+      <tr><td class="prop-name">jb:imageHeight</td><td class="prop-range">Photo</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">Pixels</td></tr>
+      <tr><td class="prop-name">jb:isFavorite</td><td class="prop-range">Photo</td><td class="prop-range">xsd:boolean</td><td style="font-size:12px;color:#777;">Apple Photos favorite flag</td></tr>
+      <tr><td class="prop-name">jb:latitude</td><td class="prop-range">Photo</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">GPS lat (6 decimal places)</td></tr>
+      <tr><td class="prop-name">jb:longitude</td><td class="prop-range">Photo</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">GPS lng (6 decimal places)</td></tr>
+      <tr><td class="prop-name">jb:thumbnailPath</td><td class="prop-range">Photo</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Path to generated thumbnail</td></tr>
+      <tr><td class="prop-name">jb:description</td><td class="prop-range">Photo</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">User or AI-generated caption</td></tr>
+      <tr><td class="prop-name">jb:photoCount</td><td class="prop-range">PhotoAlbum</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">Photos in album</td></tr>
+      <tr><td class="prop-name">jb:locationName</td><td class="prop-range">PhotoLocation</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Display name</td></tr>
+      <tr><td class="prop-name">jb:locationLatitude</td><td class="prop-range">PhotoLocation</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">Cluster center lat</td></tr>
+      <tr><td class="prop-name">jb:locationLongitude</td><td class="prop-range">PhotoLocation</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">Cluster center lng</td></tr>
+      <tr><td class="prop-name">jb:centerX</td><td class="prop-range">FaceDetection</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">Normalized face X (0.0-1.0)</td></tr>
+      <tr><td class="prop-name">jb:centerY</td><td class="prop-range">FaceDetection</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">Normalized face Y (0.0-1.0)</td></tr>
+      <tr><td class="prop-name">jb:faceSize</td><td class="prop-range">FaceDetection</td><td class="prop-range">xsd:decimal</td><td style="font-size:12px;color:#777;">Normalized size (0.0-1.0)</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>Harvest Pipeline</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:13px;">
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Source</div>
+        <div style="color:#aaa;">Apple Photos via <code style="color:#8af;font-size:11px;">osxphotos</code> Python library. Reads Photos.sqlite directly — no export needed.</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Storage</div>
+        <div style="color:#aaa;">Single graph. URI: <code style="color:#8af;font-size:11px;">http://localhost:3000/pods/jeff/photos</code>. ~1.7GB TTL.</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">In-App</div>
+        <div style="color:#aaa;">Harvester at <code style="color:#8af;font-size:11px;">/admin/harvest/photos</code>. CQRS read path from Apple Photos SQLite.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">jb-ontology.ttl v0.9.0 · Photos domain · Card #242</p>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<%# Universal content actions: PDF + Share + Reflect
+     Pass: title (string), url (string, optional — defaults to current page) %>
+<div class="content-actions" data-title="<%= typeof title !== 'undefined' ? title : '' %>" data-url="<%= typeof url !== 'undefined' && url ? url : '' %>">
+    <button class="action-btn" data-btn="print" title="Save as PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        PDF
+    </button>
+    <button class="action-btn" data-btn="share" title="Share this page">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+    </button>
+    <button class="action-btn" data-btn="reflect" title="Send to Reflect AI">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        Reflect
+    </button>
+    <span class="action-toast" id="action-toast"></span>
+</div>
+
+<style>
+    .content-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md, 6px);
+        background: var(--card-bg, #fff);
+        color: var(--text-muted, #718096);
+        font-size: 0.8rem;
+        cursor: pointer;
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+        font-family: inherit;
+    }
+    .action-btn:hover {
+        border-color: var(--accent-color, #6366F1);
+        color: var(--accent-color, #6366F1);
+    }
+    .action-btn svg { flex-shrink: 0; }
+    .action-toast {
+        font-size: 0.75rem;
+        color: var(--accent-color, #6366F1);
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .action-toast.visible { opacity: 1; }
+
+    @media print {
+        .content-actions, nav, .back-link, .annotation-section { display: none !important; }
+        body { max-width: 100% !important; padding: 0.5in !important; font-size: 11pt !important; }
+        .detail-container, .note-container { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        .detail-body, .note-body { font-size: 11pt !important; line-height: 1.5 !important; }
+    }
+</style>
+
+<script nonce="<%= locals.cspNonce %>">
+    var contentActions = {
+        print: function() {
+            window.print();
+        },
+        share: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            var pageUrl = document.querySelector('.content-actions')?.dataset.url || window.location.href;
+
+            if (navigator.share) {
+                navigator.share({ title: pageTitle, url: pageUrl }).catch(function() {});
+            } else {
+                navigator.clipboard.writeText(pageUrl).then(function() {
+                    var toast = document.getElementById('action-toast');
+                    toast.textContent = 'Link copied';
+                    toast.classList.add('visible');
+                    setTimeout(function() { toast.classList.remove('visible'); }, 2000);
+                });
+            }
+        },
+        reflect: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            // Extract main content text from the page
+            var contentEl = document.querySelector('.detail-body') ||
+                            document.querySelector('.note-body') ||
+                            document.querySelector('.prose') ||
+                            document.querySelector('.detail-container') ||
+                            document.querySelector('.note-container') ||
+                            document.querySelector('.page-card') ||
+                            document.querySelector('.loom-section') ||
+                            document.querySelector('.page-container');
+            var text = contentEl ? contentEl.innerText.substring(0, 6000) : '';
+            // Store in sessionStorage and navigate to /self
+            sessionStorage.setItem('reflect-context', JSON.stringify({
+                title: pageTitle,
+                text: text,
+                source: window.location.pathname
+            }));
+            window.location.href = '/self';
+        }
+    };
+
+    document.querySelectorAll('.action-btn[data-btn]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var action = this.getAttribute('data-btn');
+            if (contentActions[action]) contentActions[action]();
+        });
+    });
+</script>

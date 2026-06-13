@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gathering</title>
+<link rel="stylesheet" href="/css/gathering.css">
+<style nonce="<%= locals.cspNonce %>">
+  .md-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  .md-header { margin-bottom: 2rem; }
+  .md-header h1 { margin: 0 0 0.25rem; }
+  .md-header p { color: var(--text-muted); margin: 0; }
+  .md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+  .md-section h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+  .md-card { background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.25rem; display: flex; align-items: flex-start; gap: 1rem; text-decoration: none; color: inherit; transition: box-shadow 0.2s, transform 0.1s; }
+  .md-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-1px); }
+  .md-card .icon { font-size: 1.5rem; flex-shrink: 0; width: 2.5rem; height: 2.5rem; display: flex; align-items: center; justify-content: center; background: #F7FAFC; border-radius: 8px; }
+  .md-card .info { flex: 1; }
+  .md-card .info h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  .md-card .info p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+  .md-card .badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px; white-space: nowrap; }
+  .md-card .badge.tool { background: #E8EAF6; color: #283593; }
+  .md-card .badge.v { background: #E8F5E9; color: #2E7D32; }
+  .md-card .badge.count { background: #FFF3E0; color: #E65100; }
+  .md-card .badge.coming { background: #F3E5F5; color: #7B1FA2; }
+
+  .collection-card { position: relative; }
+  .collection-card .stats-row { display: flex; gap: 1rem; margin-top: 0.5rem; }
+  .collection-card .stat { font-size: 0.75rem; color: var(--text-muted); }
+  .collection-card .stat strong { color: var(--primary-color); }
+
+  .ontology-meta { display: flex; gap: 2rem; padding: 1rem 1.25rem; background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 2rem; flex-wrap: wrap; }
+  .ontology-meta dt { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.1rem; }
+  .ontology-meta dd { margin: 0; font-weight: 500; font-size: 0.9rem; }
+
+  .back-link { display: inline-block; margin-bottom: 1rem; color: var(--accent-color); text-decoration: none; font-size: 0.9rem; }
+  .back-link:hover { text-decoration: underline; }
+
+  .vs-stage { margin-bottom: 2.5rem; }
+  .vs-stage-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+  .vs-stage-header h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin: 0; }
+  .vs-stage-header .vs-label { font-size: 0.75rem; color: #7C3AED; background: #F3E8FF; padding: 0.1rem 0.5rem; border-radius: 10px; }
+  .vs-docs { display: flex; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+  .vs-docs a { font-size: 0.8rem; color: var(--accent-color); text-decoration: none; padding: 0.25rem 0.6rem; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border-color); }
+  .vs-docs a:hover { text-decoration: underline; border-color: var(--accent-color); }
+  .vs-note { font-size: 0.8rem; color: var(--text-muted); font-style: italic; margin-top: 0.5rem; }
+  .domain-group { display: flex; flex-direction: column; }
+  .domain-group > .md-card:first-child { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+  .domain-group > .md-card:first-child:only-child { border-radius: 8px; }
+  .domain-group .harvest-card { margin: 0; border-radius: 0 0 8px 8px; border-top: 1px dashed var(--border-color); padding: 0.75rem 1rem 0.75rem 1.25rem; font-size: 0.85rem; background: #FAFBFC; }
+  .domain-group .harvest-card .icon { font-size: 1rem; width: 1.75rem; height: 1.75rem; }
+  .domain-group .harvest-card h3 { font-size: 0.85rem; }
+  .domain-group .harvest-card p { font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/value-stream.html" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+<div class="md-container">
+
+  <a href="/self" class="back-link">&larr; Self</a>
+  <%- include('partials/content-actions', { title: 'Gathering Data Model' }) %>
+
+  <div class="md-header">
+    <h1>Gathering</h1>
+    <p>Your personal knowledge graph — domains, collections, and the connections between them.</p>
+  </div>
+
+  <!-- Ontology Summary -->
+  <div class="ontology-meta">
+    <dl><dt>Ontology</dt><dd>jb-ontology.ttl</dd></dl>
+    <dl><dt>Version</dt><dd>v1.1.0</dd></dl>
+    <dl><dt>Namespace</dt><dd><code style="font-size:0.8rem">https://jeffbridwell.com/ontology#</code></dd></dl>
+    <dl><dt>Classes</dt><dd><%= ontology.classes %></dd></dl>
+    <dl><dt>Object Properties</dt><dd><%= ontology.objProps %></dd></dl>
+    <dl><dt>Datatype Properties</dt><dd><%= ontology.dtProps %></dd></dl>
+    <dl><dt>Total Declarations</dt><dd><%= ontology.classes + ontology.objProps + ontology.dtProps %></dd></dl>
+  </div>
+
+  <!-- Value Stream Flow -->
+  <div class="vs-stage" style="margin-bottom:1.5rem;">
+    <div class="vs-stage-header">
+      <h2>Value Stream</h2>
+      <span class="vs-label">Flow</span>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:center; gap:0; padding:1.5rem 0; flex-wrap:wrap;">
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#F3E8FF; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#127793;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#7C3AED;">Sowing</div>
+        <div style="font-size:0.65rem; color:#888;">Spark + Capture</div>
+      </div>
+      <div style="font-size:1.25rem; color:#ccc; padding:0 0.25rem;">&rarr;</div>
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#FEF3C7; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#10024;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#92400E;">Growing</div>
+        <div style="font-size:0.65rem; color:#888;">Triage + Settle</div>
+      </div>
+      <div style="font-size:1.25rem; color:#ccc; padding:0 0.25rem;">&rarr;</div>
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#DBEAFE; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#128260;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#1E40AF;">Practicing</div>
+        <div style="font-size:0.65rem; color:#888;">Rhythm + Cadence</div>
+      </div>
+      <div style="font-size:1.25rem; color:#ccc; padding:0 0.25rem;">&rarr;</div>
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#D1FAE5; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#127807;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#065F46;">Harvesting</div>
+        <div style="font-size:0.65rem; color:#888;">Revisit + Transform</div>
+      </div>
+      <div style="font-size:1.25rem; color:#ccc; padding:0 0.25rem;">&rarr;</div>
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#EDE9FE; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#129309;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#6D28D9;">Gathering</div>
+        <div style="font-size:0.65rem; color:#888;">Connect</div>
+      </div>
+      <div style="font-size:1.25rem; color:#ccc; padding:0 0.25rem;">&rarr;</div>
+      <div style="text-align:center; padding:0.75rem 1.25rem; background:#FCE7F3; border-radius:8px; min-width:100px;">
+        <div style="font-size:1.25rem;">&#128140;</div>
+        <div style="font-size:0.8rem; font-weight:600; color:#9D174D;">Reflecting</div>
+        <div style="font-size:0.65rem; color:#888;">Reflect</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Domain × Value Stream Binding -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Domain × Value Stream</h2>
+      <span class="vs-label">Binding Map</span>
+    </div>
+    <p class="vs-note">Each domain binds to multiple value stream stages. The ontology classes are the stable rows — the stages describe what's happening to them.</p>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.8rem; margin-top:0.75rem;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border-color, #e2e8f0);">
+            <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted, #888); font-weight:600;">Domain</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Sowing</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Growing</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Practicing</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Harvesting</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Gathering</th>
+            <th style="text-align:center; padding:0.5rem 0.5rem; color:#7C3AED; font-weight:500;">Reflecting</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#127925; Music</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem;">ideas</td>
+            <td style="text-align:center; padding:0.5rem;">listening</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem;">Songs I Love</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128247; Photos</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128218; Books</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem;">reading list</td>
+            <td style="text-align:center; padding:0.5rem;">reading</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128221; Notes</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem;">triage</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#127968; Property</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem;">gardening</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128293; Sexuality</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128214; Stories</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem;">lifes-practice</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border-color, #e2e8f0);">
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128172; Social Posts</td>
+            <td style="text-align:center; padding:0.5rem;">capture</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+          </tr>
+          <tr>
+            <td style="padding:0.5rem 0.75rem; font-weight:500;">&#128221; Blog</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#ccc;">&mdash;</td>
+            <td style="text-align:center; padding:0.5rem; color:#7C3AED; font-weight:600;">ETL pipeline</td>
+            <td style="text-align:center; padding:0.5rem;">search</td>
+            <td style="text-align:center; padding:0.5rem;">lifes-practice</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Self — Convergent Center -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Self — Convergent Center</h2>
+      <span class="vs-label">All Stages</span>
+    </div>
+    <div class="md-grid">
+      <a href="/ontology-views/self" class="md-card collection-card">
+        <div class="icon">&#9775;</div>
+        <div class="info">
+          <h3>Self</h3>
+          <p>Hub node — the person from whom all domains radiate. Stories, values, practices, influences.</p>
+          <div class="stats-row">
+            <span class="stat"><strong><%= domainStats.self.stories %></strong> stories</span>
+            <span class="stat"><strong>10</strong> values</span>
+            <span class="stat"><strong>8</strong> domains</span>
+          </div>
+        </div>
+        <span class="badge v">v0.1.0</span>
+      </a>
+    </div>
+    <div class="vs-docs">
+      <a href="/self-ontology-sketch.html" target="_blank">Self Ontology Sketch</a>
+      <a href="/ontology-value-stream-research.html" target="_blank">Value Stream Binding + Public Ontologies</a>
+      <a href="/value-stream-render.html" target="_blank">Gathering Value Stream &amp; Domain Map</a>
+    </div>
+  </div>
+
+  <!-- Sowing — Spark + Capture -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Sowing</h2>
+      <span class="vs-label">Spark + Capture</span>
+    </div>
+    <p class="vs-note">Where content enters the system — raw sources from Apple ecosystem and external platforms.</p>
+    <div class="md-grid">
+      <a href="/seeds" class="md-card collection-card">
+        <div class="icon">&#127793;</div>
+        <div class="info">
+          <h3>Seeds</h3>
+          <p>SMS capture, text triage, raw inputs — the entry point for everything.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Growing — Triage + Settle -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Growing</h2>
+      <span class="vs-label">Triage + Settle</span>
+    </div>
+    <p class="vs-note">Where content gets shaped — narratives extracted, values identified, reading absorbed.</p>
+    <div class="md-grid">
+      <a href="/glimmers" class="md-card collection-card">
+        <div class="icon">&#10024;</div>
+        <div class="info">
+          <h3>Glimmers</h3>
+          <p>Moments of resonance — captured sparks that haven't settled yet.</p>
+        </div>
+      </a>
+      <a href="/ideas" class="md-card collection-card">
+        <div class="icon">&#128161;</div>
+        <div class="info">
+          <h3>Ideas &amp; Projects</h3>
+          <p>From ideation to commitment — spikes, discoveries, and active builds.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Practicing — Rhythm + Cadence -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Practicing</h2>
+      <span class="vs-label">Rhythm + Cadence</span>
+    </div>
+    <p class="vs-note">The things Jeff does regularly — daily, weekly, seasonal. The collection is the artifact trail of the practice.</p>
+    <div class="md-grid">
+      <a href="#" class="md-card collection-card" style="pointer-events:none; opacity:0.6;">
+        <div class="icon">&#129495;</div>
+        <div class="info">
+          <h3>Meditation</h3>
+          <p>Stillness practice — daily cadence.</p>
+        </div>
+        <span class="badge coming">Planned</span>
+      </a>
+      <a href="#" class="md-card collection-card" style="pointer-events:none; opacity:0.6;">
+        <div class="icon">&#128992;</div>
+        <div class="info">
+          <h3>Yoga</h3>
+          <p>Movement practice — daily cadence.</p>
+        </div>
+        <span class="badge coming">Planned</span>
+      </a>
+      <a href="/lightlife.html" class="md-card collection-card">
+        <div class="icon">&#127793;</div>
+        <div class="info">
+          <h3>Gardening</h3>
+          <p>Life Light Urban Gardens — seasonal cadence.</p>
+        </div>
+      </a>
+      <a href="/cooking" class="md-card collection-card">
+        <div class="icon">&#127859;</div>
+        <div class="info">
+          <h3>Cooking</h3>
+          <p>Recipes, meals, ingredients — daily cadence.</p>
+        </div>
+      </a>
+      <a href="/reading" class="md-card collection-card">
+        <div class="icon">&#128214;</div>
+        <div class="info">
+          <h3>Reading</h3>
+          <p>Books, articles, feeds — ongoing cadence.</p>
+        </div>
+      </a>
+      <a href="#" class="md-card collection-card" style="pointer-events:none; opacity:0.6;">
+        <div class="icon">&#127947;</div>
+        <div class="info">
+          <h3>Exercising</h3>
+          <p>Physical practice — daily cadence.</p>
+        </div>
+        <span class="badge coming">Planned</span>
+      </a>
+      <a href="/watching" class="md-card collection-card">
+        <div class="icon">&#127909;</div>
+        <div class="info">
+          <h3>Watching</h3>
+          <p>Film, TV, video — ongoing cadence.</p>
+        </div>
+      </a>
+      <a href="/todo" class="md-card collection-card">
+        <div class="icon">&#9745;</div>
+        <div class="info">
+          <h3>ToDo</h3>
+          <p>Actions and tasks — daily cadence.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Harvesting — Revisit + Transform -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Harvesting</h2>
+      <span class="vs-label">Revisit + Transform</span>
+    </div>
+    <p class="vs-note">Where content gets transformed into RDF — ETL pipelines, source reconciliation, graph loading.</p>
+    <div class="md-grid">
+      <div class="domain-group">
+        <a href="/ontology-views/music" class="md-card collection-card">
+          <div class="icon">&#127925;</div>
+          <div class="info">
+            <h3>Music</h3>
+            <p>5 classes, 6 object props, 8 datatype props — Apple Music via JXA</p>
+            <div class="stats-row">
+              <span class="stat"><strong><%= domainStats.music.albums ? domainStats.music.albums.toLocaleString() : '—' %></strong> albums</span>
+              <span class="stat"><strong><%= domainStats.music.tracks ? domainStats.music.tracks.toLocaleString() : '—' %></strong> tracks</span>
+              <span class="stat"><strong><%= domainStats.music.genres ? domainStats.music.genres.toLocaleString() : '—' %></strong> genres</span>
+            </div>
+          </div>
+          <span class="badge v">v0.7.0</span>
+        </a>
+        <a href="/admin/harvest/music" class="md-card harvest-card">
+          <div class="icon">&#9881;</div>
+          <div class="info">
+            <h3>Music Harvester</h3>
+            <p>Apple Music &rarr; TTL &rarr; Fuseki. JXA extraction, incremental sync.</p>
+          </div>
+          <span class="badge tool">In-app</span>
+        </a>
+      </div>
+      <div class="domain-group">
+        <a href="/ontology-views/photos" class="md-card collection-card">
+          <div class="icon">&#128247;</div>
+          <div class="info">
+            <h3>Photos</h3>
+            <p>5 classes, 6 object props, 18 datatype props — Apple Photos via osxphotos</p>
+            <div class="stats-row">
+              <span class="stat"><strong><%= domainStats.photos.photos ? domainStats.photos.photos.toLocaleString() : '—' %></strong> photos</span>
+              <span class="stat"><strong><%= domainStats.photos.albums ? domainStats.photos.albums.toLocaleString() : '—' %></strong> albums</span>
+            </div>
+          </div>
+          <span class="badge v">v0.9.0</span>
+        </a>
+        <a href="/admin/harvest/photos" class="md-card harvest-card">
+          <div class="icon">&#9881;</div>
+          <div class="info">
+            <h3>Photos Harvester</h3>
+            <p>Apple Photos SQLite &rarr; TTL &rarr; Fuseki. CQRS read path.</p>
+          </div>
+          <span class="badge tool">In-app</span>
+        </a>
+      </div>
+      <div class="domain-group">
+        <a href="/ontology-views/notes" class="md-card collection-card">
+          <div class="icon">&#128221;</div>
+          <div class="info">
+            <h3>Notes</h3>
+            <p>2 classes, 2 domain props + 5 shared — Apple Notes via JXA</p>
+            <div class="stats-row">
+              <span class="stat"><strong><%= domainStats.notes.notes ? domainStats.notes.notes.toLocaleString() : '—' %></strong> notes</span>
+              <span class="stat"><strong><%= domainStats.notes.folders ? domainStats.notes.folders.toLocaleString() : '—' %></strong> folders</span>
+            </div>
+          </div>
+          <span class="badge v">v0.9.0</span>
+        </a>
+        <a href="/admin/harvest/notes" class="md-card harvest-card">
+          <div class="icon">&#9881;</div>
+          <div class="info">
+            <h3>Notes Harvester</h3>
+            <p>Apple Notes &rarr; JXA or file-ingest &rarr; TTL &rarr; Fuseki.</p>
+          </div>
+          <span class="badge tool">In-app</span>
+        </a>
+      </div>
+      <div class="domain-group">
+        <a href="/ontology-views/books" class="md-card collection-card">
+          <div class="icon">&#128218;</div>
+          <div class="info">
+            <h3>Books</h3>
+            <p>5 classes, 5 object props, 14 datatype props — spatial hierarchy + reading status</p>
+            <div class="stats-row">
+              <span class="stat"><strong><%= domainStats.books.books ? domainStats.books.books.toLocaleString() : '—' %></strong> books</span>
+              <span class="stat"><strong>5</strong> spatial levels</span>
+            </div>
+          </div>
+          <span class="badge v">v0.9.0</span>
+        </a>
+      </div>
+      <div class="domain-group">
+        <a href="/ontology-views/property" class="md-card collection-card">
+          <div class="icon">&#127968;</div>
+          <div class="info">
+            <h3>Property</h3>
+            <p>8 classes, 7 object props, 13 datatype props — dwelling + garden hierarchies</p>
+            <div class="stats-row">
+              <span class="stat"><strong>4</strong> garden types</span>
+              <span class="stat"><strong>2</strong> containment chains</span>
+            </div>
+          </div>
+          <span class="badge v">v0.9.0</span>
+        </a>
+      </div>
+      <div class="domain-group">
+        <a href="/ontology-views/sexuality" class="md-card collection-card">
+          <div class="icon">&#128293;</div>
+          <div class="info">
+            <h3>Sexuality</h3>
+            <p>7 classes, 4 object props, 13 datatype props — 26 volume graphs</p>
+            <div class="stats-row">
+              <span class="stat"><strong><%= domainStats.sexuality.photos ? domainStats.sexuality.photos.toLocaleString() : '—' %></strong> photos</span>
+              <span class="stat"><strong><%= domainStats.sexuality.videos ? domainStats.sexuality.videos.toLocaleString() : '—' %></strong> videos</span>
+              <span class="stat"><strong><%= domainStats.sexuality.models ? domainStats.sexuality.models.toLocaleString() : '—' %></strong> models</span>
+            </div>
+          </div>
+          <span class="badge v">v1.1.0</span>
+        </a>
+        <div class="md-card harvest-card" style="cursor:default;">
+          <div class="icon">&#9881;</div>
+          <div class="info">
+            <h3>Media Harvester</h3>
+            <p>MongoDB (secondary Mac) &rarr; SSH export &rarr; TTL &rarr; Fuseki GSP PUT. 22 volumes, chunked.</p>
+          </div>
+          <span class="badge tool">CLI</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gathering — Connect -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Gathering</h2>
+      <span class="vs-label">Connect</span>
+    </div>
+    <p class="vs-note">Where domains connect through the knowledge graph — cross-domain queries, discovery.</p>
+    <div class="md-grid">
+      <a href="/search" class="md-card collection-card">
+        <div class="icon">&#128270;</div>
+        <div class="info">
+          <h3>Search All</h3>
+          <p>Cross-domain query across the knowledge graph — find and discover.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Reflecting — Reflect -->
+  <div class="vs-stage">
+    <div class="vs-stage-header">
+      <h2>Reflecting</h2>
+      <span class="vs-label">Reflect</span>
+    </div>
+    <p class="vs-note">Where meaning emerges — synthesis, public expression, understanding. The right side of the value stream.</p>
+    <div class="md-grid">
+      <a href="/stories" class="md-card collection-card">
+        <div class="icon">&#128214;</div>
+        <div class="info">
+          <h3>Stories</h3>
+          <p>Jeff's experiences and values — 38 TTL files harvested to SOLID pod.</p>
+          <div class="stats-row">
+            <span class="stat"><strong><%= domainStats.self.stories %></strong> stories</span>
+          </div>
+        </div>
+      </a>
+      <a href="http://localhost:8081" target="_blank" class="md-card collection-card">
+        <div class="icon">&#128221;</div>
+        <div class="info">
+          <h3>lifes-practice</h3>
+          <p>WordPress blog — reflection through writing. Flexibility, equanimity, mindfulness.</p>
+        </div>
+      </a>
+      <div class="md-card collection-card" style="cursor:default; opacity: 0.6;">
+        <div class="icon">&#128214;</div>
+        <div class="info">
+          <h3>Journal</h3>
+          <p>Private reflection — not yet built.</p>
+        </div>
+        <span class="badge coming">Planned</span>
+      </div>
+      <a href="https://jeffbridwell.blog" target="_blank" class="md-card collection-card">
+        <div class="icon">&#127925;</div>
+        <div class="info">
+          <h3>Songs I Love</h3>
+          <p>Public reflection through music. WordPress, not yet in ontology.</p>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Data Tooling -->
+  <div class="md-section">
+    <h2>Data Tooling</h2>
+  </div>
+  <div class="md-grid">
+    <a href="/dashboard" class="md-card">
+      <div class="icon">&#128269;</div>
+      <div class="info">
+        <h3>SPARQL Query (YASGUI)</h3>
+        <p>Interactive query editor with syntax highlighting, autocomplete, result visualization</p>
+      </div>
+      <span class="badge tool">Dashboard</span>
+    </a>
+    <a href="http://localhost:8089/" target="_blank" class="md-card">
+      <div class="icon">&#128312;</div>
+      <div class="info">
+        <h3>WebVOWL</h3>
+        <p>Interactive ontology visualization — class/property graph with force layout</p>
+      </div>
+      <span class="badge tool">:8089</span>
+    </a>
+    <a href="/dashboard" class="md-card">
+      <div class="icon">&#128193;</div>
+      <div class="info">
+        <h3>File Browser</h3>
+        <p>Pod filesystem — browse Turtle files, preview resources, check visibility</p>
+      </div>
+      <span class="badge tool">Dashboard</span>
+    </a>
+    <a href="http://localhost:3030" target="_blank" class="md-card">
+      <div class="icon">&#128450;</div>
+      <div class="info">
+        <h3>Fuseki Admin</h3>
+        <p>Dataset management, built-in query UI, server statistics, backup/compact</p>
+      </div>
+      <span class="badge tool">:3031</span>
+    </a>
+    <a href="/api-docs" target="_blank" class="md-card">
+      <div class="icon">&#128196;</div>
+      <div class="info">
+        <h3>API Documentation</h3>
+        <p>REST + SPARQL endpoint reference for all collection APIs</p>
+      </div>
+      <span class="badge tool">Swagger</span>
+    </a>
+  </div>
+
+
+</div>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>
