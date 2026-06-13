@@ -1967,6 +1967,7 @@ app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
 import { createDiscoverTests } from './discover-tests';
 import { scanLoomHtml } from './discover-pages-loom';
 import { scanAthenaHtml } from './discover-pages-athena';
+import { scanEjsViews, scanDocHtml, type PageEntry } from './discover-pages-gathering';
 import { parseChorusApiRoutes } from './discover-endpoints-chorus-api';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
@@ -2008,8 +2009,6 @@ app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
 });
 
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
-type PageEntry = { route: string; path: string; pageType: string; domainId: string };
-
 const DISCOVER_PAGES_GENERIC_BASES = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
 
 // #2627: domain IDs hoisted to consts (each was duplicated 5-33x; the
@@ -2051,80 +2050,14 @@ async function buildPageAliasMap(): Promise<Record<string, string>> {
   return { ...aliasToId, ...DISCOVER_PAGES_ALIAS_OVERRIDES };
 }
 
-// #2627: ejs-view classifier table — first matching prefix-pattern wins.
-type EjsRule = { re: RegExp; build: (m: RegExpMatchArray, name: string, domainId: string) => PageEntry };
-const EJS_RULES: EjsRule[] = [
-  { re: /^collection-(.+?)(-list)?$/, build: (m, _n, d) => ({ route: `/${m[1]}`, path: '', pageType: 'collection', domainId: d }) },
-  { re: /^(.+?)-(detail|album|artist|artists|create)$/, build: (m, _n, d) => ({ route: `/${m[1]}/:slug`, path: '', pageType: 'detail', domainId: d }) },
-  { re: /^admin-(?:harvest-)?(.+?)(?:-add)?$/, build: (_m, n, d) => ({ route: `/admin/${n.replace('admin-', '')}`, path: '', pageType: 'admin', domainId: d }) },
-];
-
-function classifyEjsView(name: string, aliasToId: Record<string, string>): PageEntry | null {
-  for (const rule of EJS_RULES) {
-    const m = name.match(rule.re);
-    const domainId = m ? aliasToId[m[1]] : undefined;
-    if (m && domainId) return rule.build(m, name, domainId);
-  }
-  const direct = aliasToId[name];
-  if (direct) return { route: `/${name}`, path: '', pageType: 'page', domainId: direct };
-  for (const [alias, did] of Object.entries(aliasToId)) {
-    if (name.startsWith(alias + '-') || name === alias) {
-      return { route: `/${name}`, path: '', pageType: 'page', domainId: did };
-    }
-  }
-  return null;
-}
-
-function scanEjsViews(viewsDir: string, aliasToId: Record<string, string>): PageEntry[] {
-  const entries: PageEntry[] = [];
-  if (!fs.existsSync(viewsDir)) return entries;
-  for (const file of fs.readdirSync(viewsDir).filter((f) => f.endsWith('.ejs'))) {
-    const classified = classifyEjsView(file.replace('.ejs', ''), aliasToId);
-    if (classified) entries.push({ ...classified, path: `gathering/views/${file}` });
-  }
-  const ontologyDir = path.join(viewsDir, 'ontology-views');
-  if (fs.existsSync(ontologyDir)) {
-    for (const file of fs.readdirSync(ontologyDir).filter((f) => f.endsWith('.ejs'))) {
-      const name = file.replace('.ejs', '');
-      const domainId = aliasToId[name];
-      if (domainId) {
-        entries.push({ route: `/ontology-views/${name}`, path: `gathering/views/ontology-views/${file}`, pageType: 'ontology', domainId });
-      }
-    }
-  }
-  return entries;
-}
-
-function classifyDocHtml(name: string, aliasToId: Record<string, string>): { domainId: string; pageType: string } | null {
-  const domainMatch = name.match(/^domain-(.+)$/);
-  if (domainMatch && aliasToId[domainMatch[1]]) return { domainId: aliasToId[domainMatch[1]], pageType: 'doc' };
-  const serviceMatch = name.match(/^(.+?)-service-design$/);
-  if (serviceMatch && aliasToId[serviceMatch[1]]) return { domainId: aliasToId[serviceMatch[1]], pageType: 'service-design' };
-  return null;
-}
-
-function scanDocHtml(docsDir: string, aliasToId: Record<string, string>): PageEntry[] {
-  const entries: PageEntry[] = [];
-  if (!fs.existsSync(docsDir)) return entries;
-  for (const file of fs.readdirSync(docsDir).filter((f) => f.endsWith('.html'))) {
-    const classified = classifyDocHtml(file.replace('.html', ''), aliasToId);
-    if (classified) {
-      entries.push({
-        route: `/gathering-docs/${file}`,
-        path: `gathering/public/gathering-docs/${file}`,
-        pageType: classified.pageType,
-        domainId: classified.domainId,
-      });
-    }
-  }
-  return entries;
-}
-
 app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
   const start = Date.now();
   try {
     const aliasToId = await buildPageAliasMap();
-    const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    // #3097 — env-driven, not a hardcoded sibling path: chorus-api must not break
+    // when gathering relocates or is absent (the readers below already guard
+    // existsSync, so an absent root yields empty entries, never a throw).
+    const GATHERING_ROOT = gatheringRepoRoot;
     // #2485 Move 6 — scan chorus/platform/api/public/loom/ for loom-* subdomain pages.
     const validSubdomainIds = new Set<string>(Object.values(aliasToId));
     const loomEntries = scanLoomHtml(path.join(REPO_ROOT, 'platform/api/public/loom'), validSubdomainIds);
@@ -2309,7 +2242,8 @@ app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) 
   const start = Date.now();
   try {
     const handlerToDomain = await buildHandlerToDomain();
-    const GATHERING_ROOT = path.resolve(__dirname, '../../../../jeff-bridwell-personal-site');
+    // #3097 — env-driven, not a hardcoded sibling path (existsSync-guarded below).
+    const GATHERING_ROOT = gatheringRepoRoot;
     const appTsPath = path.join(GATHERING_ROOT, 'src/app.ts');
     const gatheringEntries = fs.existsSync(appTsPath)
       ? parseAppRoutes(fs.readFileSync(appTsPath, 'utf-8'), handlerToDomain)
