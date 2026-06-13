@@ -109,6 +109,18 @@ Service   # design: overview·asIs·toBe·implementationPlan·pathToClose·gaps�
 # contains = CONTENT membership (records); hasChild = STRUCTURAL recursion (domain→domain). Never interchangeable.
 </code></pre>
 
+<h3>5.1 · Two enforcement postures, one substrate</h3>
+<p>The model is one RDF substrate with <strong>two tiers</strong>, each with its own enforcement posture — the rigor lands where predictability matters, the openness where new dimensions need to land cheaply:</p>
+<ul>
+  <li><strong>Relational core</strong> — Product, Domain, Service, Role, ValueStream, ValueStreamStep. Schema sits <em>around and above</em> the data: SHACL-enforced at write, closed-world, required attributes verified, type discipline a hard gate. Typed API endpoints (<code>/athena/product/:id</code>) need shapes clients can rely on.</li>
+  <li><strong>Graph overlays</strong> — authority, ownership-history, deploy-route, customer-happiness binding, annotations not yet imagined. Schema sits <em>below</em> the data, RDF-native: open extension, new predicates land without core-schema migration, queryable via <code>/athena/edges</code> + <code>/athena/sparql</code>.</li>
+</ul>
+<p>Same substrate; two postures, one per tier. The core stops sloppiness in the load-bearing places; the overlay keeps the graph's evolutionary openness where it's wanted.</p>
+
+<h3>5.2 · Invariant rendering — every stored attribute is required</h3>
+<div class="finding"><strong>The principle:</strong> a generated page renders the same sections every time, in the same order, regardless of which instance is viewed — which requires every stored attribute to <em>exist</em> on every instance. No conditional "show only if defined" branches. SHACL <code>minCount 1</code> on every stored attribute; multi-valued required attributes (<code>gaps</code>, <code>notInScope</code>) need ≥1 entry (a placeholder literal like <code>"none identified yet"</code> is allowed, but the triple must exist). Genuinely-optional attributes (<code>inParent</code> on a root, <code>consumes</code> with no external deps) are the named exceptions and stay optional with their semantics stated.</div>
+<p>The payoff is the AX=JX guarantee made structural: <em>if every write goes through the API (the only writer that honors SHACL), the graph is whole by construction</em> — every required attribute populated, every required edge present, every cardinality enforced at the write boundary, not by post-hoc audit. Because the graph cannot become un-whole through any sanctioned write, the generated surfaces render every section on every instance with no defensive branching. Storage direction follows the cascade (<code>hasChild</code>/<code>hasDomain</code>/<code>hosts</code>/<code>contains</code>/<code>atStep</code> on the subject side); inverse views (<code>parentOf</code>, <code>hostingDomain</code>) are computed at query time via <code>sh:inversePath</code>, never stored — one storage direction per edge, no double-keyed truth.</p>
+
 <h2>6 · How to instantiate (the recipe)</h2>
 <ol>
   <li><strong>Author the model</strong> — the value stream's steps + the product/domain/service classes for it, in OWL+SHACL (rigorously; the model is the source of record).</li>
