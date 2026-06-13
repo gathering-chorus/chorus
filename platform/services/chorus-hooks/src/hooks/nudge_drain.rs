@@ -92,11 +92,18 @@ fn unanswered_inbound(conn: &Connection, role: &str) -> Vec<PendingNudge> {
 
 fn unanswered_inbound_inner(conn: &Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
     let mut stmt = conn.prepare(
+        // PEER-ONLY (#3218 hotfix): only nudges from a real, repliable peer create
+        // an owes-response debt. system / chorus-mcp / pulse / alert senders have NO
+        // repliable target (the recipient enum is wren/silas/kade/jeff) — counting
+        // them traps the recipient with no way to clear it (Silas's live over-trap:
+        // werk-commit-fail + wedge alerts blocked every tool with no peer to answer).
+        // Only peer→peer respond-first; machine notifications never trap.
         r#"SELECT id, "from", content, trace_id
            FROM messages
            WHERE "to" = ?1
              AND type = 'nudge'
              AND "from" != ?1
+             AND "from" IN ('wren', 'silas', 'kade', 'jeff')
              AND created_at > COALESCE(
                    (SELECT MAX(created_at) FROM messages
                     WHERE "from" = ?1 AND type = 'nudge'), '')
@@ -284,6 +291,23 @@ mod tests {
         let conn = setup_db();
         insert(&conn, "nudge", "silas", "silas", "talking-to-myself", "2026-06-13 10:00:05");
         assert!(unanswered_inbound(&conn, "silas").is_empty(), "a self-sent nudge is not a peer debt");
+    }
+
+    #[test]
+    fn system_sender_does_not_owe() {
+        // The hotfix (Silas's live over-trap): a 'nudge' from system / chorus-mcp /
+        // pulse / alert has no repliable peer (recipient enum is wren/silas/kade/jeff),
+        // so it must NOT trap the recipient — there is no way to clear it.
+        let conn = setup_db();
+        insert(&conn, "nudge", "system", "silas", "werk-commit-fail alert", "2026-06-13 10:00:05");
+        insert(&conn, "nudge", "chorus-mcp", "silas", "wedge alert", "2026-06-13 10:00:06");
+        assert!(
+            unanswered_inbound(&conn, "silas").is_empty(),
+            "system/mcp nudges create no debt — no repliable peer to answer"
+        );
+        // a real peer nudge still owes
+        insert(&conn, "nudge", "wren", "silas", "real peer nudge", "2026-06-13 10:00:07");
+        assert_eq!(unanswered_inbound(&conn, "silas").len(), 1, "a real peer nudge still traps");
     }
 
     #[test]
