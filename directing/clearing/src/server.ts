@@ -1019,8 +1019,14 @@ export { app, server, io, tilePoller, messageRouter, clearingChat };
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
 if (require.main === module) {
+  // #3390 — :3470 INTENTIONALLY serves the LAN: #3366 made
+  // http://jeffs-mac-mini-m1-3.local:3470 the IP-proof phone-over-wifi URL
+  // (a direct LAN hit, not via the tunnel). Binding loopback would kill it.
+  // The real exposure here is that LAN access is UNAUTHENTICATED (isLocal()
+  // treats 192.168.86.x as local, no token) — that's an auth-model question,
+  // not a bind question, escalated to Jeff (LAN-exception in ADR-042 §8).
   server.listen(PORT, () => {
-    console.log(`The Clearing listening on http://localhost:${PORT}`);
+    console.log(`The Clearing listening on http://localhost:${PORT} (also LAN :${PORT})`);
   });
 
   // HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)

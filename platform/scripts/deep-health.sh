@@ -367,6 +367,22 @@ if [ "$TMP_LOGS" -gt 0 ]; then
   WARNINGS+=("shadow-logs: ${TMP_LOGS} log file(s) in /tmp/ — DEC-114 violation: ${TMP_LIST}")
 fi
 
+# --- 17. Bind-posture: internal services must not listen on 0.0.0.0 (#3390, ADR-012 intent) ---
+# A decision made in ADR-012 (bind localhost) was lost in the ADR-019 native
+# migration. This guard makes the regression visible + un-losable: internal
+# services that have NO cross-machine consumer must bind 127.0.0.1, never *.
+# LAN-EXCEPTION ports (documented, allowed on 0.0.0.0): 3340 chorus-api
+# (Bedroom→Library ops), 3102 loki (Bedroom promtail), 3471 clearing-HTTPS
+# (LAN mic #1782), 3000 caddy (tunnel front). Everything else internal = localhost.
+LOCALHOST_ONLY_PORTS="3344 3352 3475 3030 3306"  # mcp, messaging, fuseki, mysqld (NOT 3470: clearing serves LAN intentionally for the phone URL #3366 — its hole is unauth-LAN, an auth-model question, not bind)
+for port in $LOCALHOST_ONLY_PORTS; do
+  # match a listener bound to all-interfaces (*:port or 0.0.0.0:port), not 127.0.0.1
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | grep -qE "(\*|0\.0\.0\.0):${port}\b"; then
+    svc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2{print $1}')
+    WARNINGS+=("bind-posture: ${svc:-service} on :${port} listens on 0.0.0.0 — internal service should bind 127.0.0.1 (#3390/ADR-012). Set CHORUS_BIND=127.0.0.1.")
+  fi
+done
+
 # --- Report ---
 # Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
 if [ ${#FAILURES[@]} -gt 0 ]; then

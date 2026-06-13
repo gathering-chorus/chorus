@@ -30,6 +30,10 @@ function emitProcessError(kind: string, err: unknown): void {
 }
 
 const PORT = parseInt(process.env.CHORUS_MCP_PORT || '3341', 10);
+// #3390 — internal service, no cross-machine consumer: bind localhost, not
+// 0.0.0.0 (ADR-042 §8, ADR-012 intent restored). CHORUS_BIND override exists
+// for the rare LAN case; default is loopback.
+const BIND_HOST = process.env.CHORUS_BIND || '127.0.0.1';
 
 const app: Application = express();
 app.use(express.json({ limit: '10mb' }));
@@ -50,9 +54,9 @@ app.get('/api/chorus/health', (_req: Request, res: Response) => {
 // configs only need to change host:port, not the path.
 mountMcpEndpoint(app);
 
-app.listen(PORT, () => {
+app.listen(PORT, BIND_HOST, () => {
   // eslint-disable-next-line no-console
-  console.log(`[chorus-mcp] Listening on 0.0.0.0:${PORT}`);
+  console.log(`[chorus-mcp] Listening on ${BIND_HOST}:${PORT}`);
 });
 
 process.on('uncaughtException', (err) => {

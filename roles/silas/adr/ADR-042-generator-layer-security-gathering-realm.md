@@ -76,6 +76,14 @@ Gall's law applied to the *target* architecture too: don't build it until the wo
 
 The **scoping triage** (the inventory half of `#2444`): name the real exposure now — what binds beyond loopback, which surfaces mutate state (cards, DAL, deploy verbs, spine emit). Put interim teeth (realm tokens, §2) only on the long-lived mutation surfaces; everything else gets secured by being replaced (ADR-041 attrition). The threat model scopes the LAN/bind posture.
 
+### 8. Network binding — internal services bind localhost (ADR-012 intent, restored) — #3390
+
+ADR-012 decided non-app services bind `127.0.0.1`; ADR-019 (Docker→native LaunchAgent) superseded it and recorded that the binding was **never re-implemented** — services bind `0.0.0.0`, an unintended LAN exposure. This addendum restates the rule in a live home (ADR-012 is superseded; this is its current authority):
+
+- **Default: internal services bind `127.0.0.1`.** A service with no cross-machine consumer must not listen on all interfaces. The generated layer already does this by construction (owl-api binds loopback) — so the hole closes by **attrition** as the fan-out replaces hand-built surfaces (ADR-041); hand-built services bind localhost in the interim via `CHORUS_BIND=127.0.0.1`.
+- **Documented LAN exceptions** (legitimately reachable cross-machine / fronted, allowed on a non-loopback bind, each with a reason): `chorus-api :3340` (Bedroom→Library health/ops, ADR-016), `loki :3102` (Bedroom promtail→Library), `clearing-HTTP :3470` (intentional LAN-serve — #3366's IP-proof phone URL; its real exposure is UNAUTH LAN access, an auth-model decision escalated to Jeff, NOT a bind change), `clearing-HTTPS :3471` (LAN mic, getUserMedia secure-context, #1782), `caddy :3000` (tunnel front for the app). The cross-machine exception is preserved (ADR-012/016).
+- **Regression guard:** deep-health check 17 (#3390) warns on any internal service (mcp, messaging, fuseki, mysqld) listening on `0.0.0.0` — so the decision can't be silently lost again, the failure mode that produced this gap.
+
 ## Consequences
 
 - Security stops being a retrofit across N hand-built endpoints and becomes a property of the generator — it arrives free with every fan-out leg.
