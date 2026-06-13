@@ -14,7 +14,6 @@ import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import * as lancedb from '@lancedb/lancedb';
 // #3089: hoisted from the later import block so makeRequestOpMiddleware is
 // initialized before the `app.use(makeRequestOpMiddleware())` call below
 // (CJS compile evaluates imports in source order → TDZ if used before).
@@ -285,7 +284,7 @@ const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
 // (three api processes sharing index.db+lance was the day's wedge root; the
 // env-up isolation follow-on passes per-werk paths through these seams).
 const DB_PATH = process.env.CHORUS_DB_PATH || path.join(os.homedir(), '.chorus', 'index.db');
-const LANCE_DIR = process.env.CHORUS_LANCE_DIR || path.join(os.homedir(), '.chorus', 'lance');
+// #3382 — CHORUS_LANCE_DIR is now read by the search worker (off-process), not here.
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 // #3217 — split the embed host: SEARCH query-embed stays on OLLAMA_URL (localhost,
 // latency-critical, same box as chorus-api); BULK embed-delta uses OLLAMA_BULK_URL
@@ -293,7 +292,7 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 // dead Bedroom host took search down for hours (2026-06-04). Defaults to OLLAMA_URL
 // when unset (no behavior change without the env). Both set in the TRACKED
 // chorus-env-setup.sh so a plist regen can't revert them.
-const EMBED_MODEL = 'nomic-embed-text';
+// #3382 — EMBED_MODEL moved to the search worker (it owns query-embed now).
 // Prefer repo scripts (always present), fall back to ~/.chorus/scripts
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const REPO_SCRIPTS = path.resolve(__dirname, '../../scripts');
@@ -327,17 +326,38 @@ setInterval(() => {
   void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
 }, 60_000);
 
-// --- LanceDB semantic search (#2205 wave 11: init + search extracted) ---
+// --- LanceDB semantic search — OFF-PROCESS (#3382) ---
+// The lance handle + searchInTable moved out of chorus-api entirely. lance's
+// native CPU pool (lance-cpu) is process-global and does continuous background
+// work on the open handle; in-process it starved the event loop (the
+// 2026-06-12/13 wedge storm: 7,327 eventloop.blocked events, 24 kickstarts each
+// good for ~30min). The handle now lives in dist/search-worker.js — a forked
+// CHILD PROCESS, not a worker_thread (a thread shares the process, so it would
+// NOT isolate the native pool). chorus-api dispatches via the shared worker pool
+// and never opens or scans lance again. The worker inherits CHORUS_LANCE_DIR, so
+// a variant chorus-api (#3381) forks its own worker at its own dir.
+import { fork as forkChild } from 'child_process';
+import { createWorkerPool, type WorkerLike } from './worker-pool';
+import type { SearchRequest } from './search-worker-core';
 
-let lanceTable: lancedb.Table | null = null;
+const SEARCH_WORKER_SCRIPT = process.env.CHORUS_SEARCH_WORKER_SCRIPT
+  || path.join(__dirname, 'search-worker.js');
 
-import { createLanceInit, searchInTable } from './lance-store';
-const _lanceInit = createLanceInit({ fs, lancedb, lanceDir: LANCE_DIR });
-
-async function initLance(): Promise<void> {
-  const r = await _lanceInit();
-  lanceTable = r.table as lancedb.Table | null;
+function spawnSearchWorker(): WorkerLike {
+  const cp = forkChild(SEARCH_WORKER_SCRIPT, [], { env: process.env });
+  cp.on('error', (err) => console.error(`[chorus-api] search worker spawn error: ${err.message}`));
+  return {
+    postMessage: (m) => { cp.send(m as object); },
+    on: (event, cb) => { cp.on(event, cb as (...a: unknown[]) => void); },
+    terminate: () => cp.kill(),
+  };
 }
+
+const searchPool = createWorkerPool<{ query: string; limit: number; role?: string }, SearchRequest>({
+  spawn: spawnSearchWorker,
+  label: 'search',
+  buildRequest: (id, q) => ({ id, query: q.query, limit: q.limit, role: q.role }),
+});
 
 // --- Embed-at-ingest: embed new messages after indexing ---
 
@@ -368,9 +388,8 @@ function spawnDetachedWorker(script: string): void {
 // Embed query helper (extracted to src/embed-query.ts in #2205 wave 2).
 // Retry + LRU cache + TTL live there; server.ts wires the Ollama URL + model.
 
-import { createEmbedder } from './embed-query';
-
-const embedQuery = createEmbedder({ ollamaUrl: OLLAMA_URL, model: EMBED_MODEL });
+// #3382 — query-embed moved into the off-process search worker (it owns the
+// full embed→vector-search path now); chorus-api no longer embeds for search.
 // #3217's bulk embedder (Bedroom GPU) moved to embed-delta-deps.ts with the
 // pass itself (#3379) — OLLAMA_BULK_URL is read there from the same env.
 
@@ -385,7 +404,9 @@ interface SemanticResult {
 }
 
 async function semanticSearch(query: string, limit: number, role?: string): Promise<SemanticResult[]> {
-  return searchInTable(lanceTable as unknown as Parameters<typeof searchInTable>[0], embedQuery, query, limit, role);
+  // #3382 — dispatched to the off-process search worker; returns [] when lance
+  // is absent (the worker's null-table path), so callers no longer gate on it.
+  return (await searchPool.run({ query, limit, role })) as SemanticResult[];
 }
 // STALE_THRESHOLD_MS moved to src/search-meta.ts (#2205 wave 5).
 const FUSEKI_URL = process.env.FUSEKI_URL || 'http://localhost:3030/pods/query';
@@ -451,7 +472,7 @@ app.get('/api/chorus/search', async (req: Request, res: Response) => {
     const r = await fetchSearch(
       {
         db,
-        semanticSearch: lanceTable ? (semanticSearch as unknown as import('./handlers/chorus-search').SemanticSearchFn) : undefined,
+        semanticSearch: semanticSearch as unknown as import('./handlers/chorus-search').SemanticSearchFn, // #3382: always available; worker returns [] if lance absent
         sparqlSearch: sparqlSearch as unknown as import('./handlers/chorus-search').SparqlSearchFn,
         mergeUnified: mergeUnified as unknown as import('./handlers/chorus-search').MergeUnifiedFn,
         mergeRRF: mergeRRF as unknown as import('./handlers/chorus-search').MergeRRFFn,
@@ -1201,7 +1222,7 @@ app.get('/api/chorus/self', async (req: Request, res: Response) => {
     const r = await fetchSelf(
       {
         db,
-        semanticSearch: lanceTable ? (semanticSearch as unknown as import('./handlers/chorus-self').SemanticSearchFn) : undefined,
+        semanticSearch: semanticSearch as unknown as import('./handlers/chorus-self').SemanticSearchFn, // #3382: always available; worker returns [] if lance absent
         sparqlSearch: sparqlSearch as unknown as import('./handlers/chorus-self').SparqlSearchFn,
         mergeUnified: mergeUnified as unknown as import('./handlers/chorus-self').MergeUnifiedFn,
         emitSearchEvent,
@@ -1578,7 +1599,9 @@ import { createHealthCache } from './health-cache';
 const _healthCache = createHealthCache({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
-  getLanceTable: () => lanceTable as unknown as { countRows: () => Promise<number> } | null,
+  // #3382 — lance handle is off-process; vector count no longer read in-process
+  // (no alert keys on it). FOLLOW-UP: restore the count via a worker stat call.
+  getLanceTable: () => null,
   fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
   hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
 });
@@ -3343,8 +3366,8 @@ if (require.main === module) {
   app.listen(PORT, BIND_HOST, () => {
     console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
     console.log(`[chorus-api] Database: ${DB_PATH}`);
-    // Init LanceDB async (non-blocking)
-    initLance().catch(err => console.error(`[chorus-api] LanceDB init error: ${err}`));
+    // #3382 — LanceDB no longer initialized in-process; the search worker opens
+    // the handle in its own process, lazily, on the first semantic query.
 
     // Embed sync moved to standalone worker (chorus-embed-worker.sh) — #1978
     // The in-process timer was blocking the API with 100+ sequential Ollama calls per cycle.
