@@ -1,6 +1,6 @@
 # ADR-041: Repo Tree — Value Stream → Products → Domains
 
-**Status:** Proposed — 2026-06-13 (Silas, SA). Pending: Jeff (final). Kade + Wren converged on the inputs 2026-06-12.
+**Status:** Accepted — 2026-06-13 (Silas, SA). Landed via #3372 (Kade + Wren design-review converged; Jeff GO 2026-06-13).
 **Card:** #3372 (authors this + ADR-042 together — Jeff: "we need both, they can be in one card").
 **Inputs:** Kade's `chorus-project-structure.html` (the worked tree, DE-hat session 2026-06-12 ~08:53–09:25) · Wren's `#3371` (directing-branch redraw) + `athena-product-design.html` (10-section template + value-stream OWL) · the 3-role convergence threads.
 **Builds on:** ADR-040 (IRI-formation — the IRIs this tree mirrors) · DEC-1816 (top-level peers-not-nesting, superseded for the product layer by this ADR) · `#2640`/`#2913` (role-directory-IS-session-start, preserved here).

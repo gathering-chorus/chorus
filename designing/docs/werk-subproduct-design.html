@@ -324,7 +324,7 @@ chorus:werk-product
   <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling subproduct; Werk hands off here at the post-/acp release-trigger boundary.</li>
   <li><a href="/designing/docs/athena-product-design.html">athena-product-design.html</a> — Wren. The structural / SHACL substrate every subproduct uses; Werk conforms rather than redefines.</li>
   <li><a href="/designing/docs/loom-subproduct-design.html">loom-subproduct-design.html</a> — Wren. Sibling subproduct (principles / practices / decisions / policies).</li>
-  <li>ADR-033 — werk pipeline model (git ⊃ env ⊃ DSL on act; one env = production; gh = source-of-truth + per-card process-holder; one commit-status check per verb). <em>Ratified; file landing via Silas — not yet in roles/silas/adr/.</em></li>
+  <li>ADR-037 — atomic verb execution (the werk pipeline model: verbs-in-sequence, no orchestrator; one env = production; gh = source-of-truth + per-card process-holder; one commit-status per verb). With ADR-036 (one build/deploy path) + ADR-032 (verb contract), this is the live pipeline model. <em>Note (#3393): an earlier draft labeled this "ADR-033"; that number was never written for the pipeline and is now the crawler-decomposition ADR (#3069) — cite ADR-037 for the pipeline.</em></li>
   <li>ADR-032 — verb contract v1 (per-verb build contract: zero-dep, env contract, shared trace, all-or-nothing rollback).</li>
   <li>ADR-031 — resource/verb/grain convention (MCP + REST surface bindings).</li>
   <li>ADR-026 — CI architecture + lock-file policy.</li>
@@ -333,7 +333,7 @@ chorus:werk-product
   <li>#2720 — canonical model proposed pipelines-domain → ci-cd; <strong>superseded</strong> — pipelines is the domain (1..n instances), ci-cd is one instance Kade owns. (Cards backing each claim: see the Card-provenance appendix.)</li>
 </ul>
 
-<p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-033) + verb contract (ADR-032) + the v2 verb decomposition; <code>pipelines</code> kept as the domain (1..n instances, governed as a set by Kade — #2720's pipelines→ci-cd rename reversed per Jeff's model); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
+<p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-037, atomic verbs) + verb contract (ADR-032) + the v2 verb decomposition; <code>pipelines</code> kept as the domain (1..n instances, governed as a set by Kade — #2720's pipelines→ci-cd rename reversed per Jeff's model); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
 
 </body>
 </html>
