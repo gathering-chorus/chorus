@@ -1,0 +1,315 @@
+<%- include('partials/page-head', { title: 'Borg Assessment' }) %>
+</head>
+<body>
+    <%- include('partials/navbar') %>
+
+    <div class="page-container">
+    <a href="/chorus" class="back-link">&larr; Chorus</a>
+    <%- include('partials/content-actions', { title: 'Borg Assessment' }) %>
+
+    <div class="header">
+        <div>
+            <h1>Borg Assessment</h1>
+            <p class="subtitle">Model vs. reality &mdash; what exists, what's mapped, what needs work.</p>
+        </div>
+    </div>
+
+  <div style="display: flex; gap: 16px; margin-bottom: 24px;">
+    <div class="stat-box" id="stat-conforms" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #16a34a;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Conforms</div>
+    </div>
+    <div class="stat-box" id="stat-refactor" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #ca8a04;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Refactor</div>
+    </div>
+    <div class="stat-box" id="stat-build" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #6b7280;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Build needed</div>
+    </div>
+    <div class="stat-box" id="stat-rewrite" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #dc2626;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Rewrite</div>
+    </div>
+  </div>
+
+  <h2 style="margin-bottom: 12px;">Domain &times; Value Stream</h2>
+  <table id="assessment-grid" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+    <thead>
+      <tr style="background: var(--surface-bg, #f8f9fa);">
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Domain</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Value Stream</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Page</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Handler</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Harvest</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Graph</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Status</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Files</th>
+      </tr>
+    </thead>
+    <tbody id="grid-body">
+      <tr><td colspan="8" style="padding: 20px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top: 32px; margin-bottom: 12px;">Spoke Summary</h2>
+  <div id="spoke-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;"></div>
+
+  <!-- Git Churn Heat Map (#1357) -->
+  <div id="churn-section" style="margin-top: 32px;">
+    <h2 style="margin-bottom: 12px;">Git Churn Heat Map <span style="font-size:13px;font-weight:normal;color:var(--text-secondary);">(last 30 days)</span></h2>
+
+    <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-commits" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Commits</div>
+      </div>
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-files" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Files Changed</div>
+      </div>
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-cards" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Cards Referenced</div>
+      </div>
+    </div>
+
+    <div class="churn-body">
+      <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">Hottest Files</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 24px;">
+        <thead>
+          <tr style="background: var(--surface-bg, #f8f9fa);">
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">File</th>
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Domain</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Changes</th>
+            <th style="padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Commits</th>
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Cards</th>
+          </tr>
+        </thead>
+        <tbody id="churn-file-body">
+          <tr><td colspan="5" style="padding: 16px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">Card Activity</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <thead>
+          <tr style="background: var(--surface-bg, #f8f9fa);">
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Card</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Files</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Changes</th>
+            <th style="padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Commits</th>
+          </tr>
+        </thead>
+        <tbody id="churn-card-body">
+          <tr><td colspan="4" style="padding: 16px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+    </div>
+
+<script nonce="<%= cspNonce %>">
+const TAXONOMY = {
+  'Sowing': {
+    domains: ['seeds'],
+    pages: { seeds: '/capture-triage' }
+  },
+  'Growing': {
+    domains: ['glimmers', 'ideas', 'projects'],
+    pages: { glimmers: '/glimmers', ideas: '/ideas', projects: '/projects' }
+  },
+  'Practicing': {
+    domains: ['cooking', 'reading', 'watching', 'todo', 'intentions'],
+    pages: { cooking: '/cooking', reading: '/reading', watching: '/watching', todo: '/todo', intentions: '/intentions' }
+  },
+  'Harvesting': {
+    domains: ['music', 'photos', 'books', 'stories', 'notes', 'blog', 'social', 'documents', 'property', 'sexuality', 'people'],
+    pages: {
+      music: '/music', photos: '/photos', books: '/books', stories: '/stories',
+      notes: '/notes', blog: '/blog', social: '/social', documents: '/documents',
+      property: '/property', sexuality: '/sexuality', people: '/people'
+    }
+  },
+  'Reflecting': {
+    domains: ['values', 'practices', 'self'],
+    pages: { values: '/values', practices: '/practices', self: '/jeff' }
+  }
+};
+
+const HARVEST_STATUS = {
+  seeds: 'active', music: 'complete', photos: 'active', books: 'manual',
+  stories: 'stale', notes: 'stale', blog: 'stale', social: 'static',
+  documents: 'active', property: 'manual', sexuality: 'stale', people: 'partial',
+  glimmers: 'designed', ideas: 'built', projects: 'built',
+  cooking: 'manual', reading: 'manual', watching: 'manual', todo: 'manual',
+  intentions: 'manual', values: 'manual', practices: 'manual', self: 'ai-assisted'
+};
+
+const STATUS_BADGES = {
+  conforms: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#dcfce7;color:#16a34a;font-size:12px;font-weight:600;">Conforms</span>',
+  refactor: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#fef9c3;color:#ca8a04;font-size:12px;font-weight:600;">Refactor</span>',
+  build: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:12px;font-weight:600;">Build</span>',
+  rewrite: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626;font-size:12px;font-weight:600;">Rewrite</span>'
+};
+
+function dot(present) {
+  return present
+    ? '<span style="color:#16a34a;font-size:16px;">&#9679;</span>'
+    : '<span style="color:#d1d5db;font-size:16px;">&#9675;</span>';
+}
+
+async function loadAssessment() {
+  let topology = null;
+  try {
+    const resp = await fetch('/api/codebase/topology');
+    if (resp.ok) topology = await resp.json();
+  } catch(e) { /* API might be down */ }
+
+  const codebaseDomains = new Set();
+  if (topology && topology.spokes) {
+    Object.values(topology.spokes).forEach(function(spoke) {
+      (spoke.domains || []).forEach(function(d) { codebaseDomains.add(d); });
+    });
+  }
+
+  const rows = [];
+  const counts = { conforms: 0, refactor: 0, build: 0, rewrite: 0 };
+
+  Object.entries(TAXONOMY).forEach(function(entry) {
+    const stream = entry[0];
+    const def = entry[1];
+    def.domains.forEach(function(domain) {
+      const hasPage = !!def.pages[domain];
+      const inCodebase = codebaseDomains.has(domain);
+      const harvestStatus = HARVEST_STATUS[domain] || 'none';
+      const hasHarvest = ['none', 'designed'].indexOf(harvestStatus) === -1;
+      const hasGraph = inCodebase;
+
+      var status;
+      if (hasPage && inCodebase) {
+        status = 'conforms';
+      } else if (hasPage && !inCodebase) {
+        status = 'refactor';
+      } else if (!hasPage && inCodebase) {
+        status = 'refactor';
+      } else {
+        status = 'build';
+      }
+
+      counts[status]++;
+
+      var fileCount = '—';
+      if (topology && topology.spokes) {
+        fileCount = 0;
+        Object.values(topology.spokes).forEach(function(s) {
+          if ((s.domains || []).indexOf(domain) !== -1) fileCount += (s.count || 0);
+        });
+      }
+
+      rows.push({
+        domain: domain, stream: stream, hasPage: hasPage, inCodebase: inCodebase,
+        hasHarvest: hasHarvest, hasGraph: hasGraph, status: status, fileCount: fileCount,
+        pageUrl: def.pages[domain] || null, harvestStatus: harvestStatus
+      });
+    });
+  });
+
+  Object.entries(counts).forEach(function(entry) {
+    var box = document.getElementById('stat-' + entry[0]);
+    if (box) box.querySelector('div').textContent = entry[1];
+  });
+
+  var tbody = document.getElementById('grid-body');
+  tbody.innerHTML = rows.map(function(r) {
+    return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+      '<td style="padding: 8px 12px; font-weight: 500;">' +
+        (r.pageUrl ? '<a href="' + r.pageUrl + '" style="color:var(--link-color);">' + r.domain + '</a>' : r.domain) +
+      '</td>' +
+      '<td style="padding: 8px 12px; color: var(--text-secondary); font-size: 13px;">' + r.stream + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.hasPage) + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.inCodebase) + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;" title="' + r.harvestStatus + '">' +
+        dot(r.hasHarvest) +
+        '<span style="font-size:10px;color:var(--text-secondary);margin-left:2px;">' + (r.harvestStatus !== 'none' ? r.harvestStatus : '') + '</span>' +
+      '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.hasGraph) + '</td>' +
+      '<td style="padding: 8px 12px;">' + STATUS_BADGES[r.status] + '</td>' +
+      '<td style="padding: 8px 12px; color: var(--text-secondary); font-size: 13px;">' + r.fileCount + '</td>' +
+    '</tr>';
+  }).join('');
+
+  if (topology && topology.spokes) {
+    var container = document.getElementById('spoke-summary');
+    container.innerHTML = Object.entries(topology.spokes).map(function(entry) {
+      var name = entry[0];
+      var data = entry[1];
+      return '<div style="padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa); border: 1px solid var(--border-color, #e5e7eb);">' +
+        '<div style="font-weight: 600; margin-bottom: 4px;">' + name + '</div>' +
+        '<div style="font-size: 24px; font-weight: bold;">' + data.count + '</div>' +
+        '<div style="font-size: 12px; color: var(--text-secondary);">files across ' + (data.domains || []).length + ' domains</div>' +
+        '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">' + (data.domains || []).join(', ') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+}
+
+loadAssessment();
+
+// --- Git Churn Heat Map (#1357) ---
+async function loadChurn() {
+  var section = document.getElementById('churn-section');
+  if (!section) return;
+  try {
+    var resp = await fetch('/api/codebase/churn?days=30');
+    if (!resp.ok) { section.querySelector('.churn-body').innerHTML = '<p style="color:var(--text-secondary)">Churn data unavailable</p>'; return; }
+    var data = await resp.json();
+
+    // Stats
+    document.getElementById('churn-commits').textContent = data.totalCommits;
+    document.getElementById('churn-files').textContent = data.files.length;
+    document.getElementById('churn-cards').textContent = data.cards.length;
+
+    // File heat map — top 30
+    var maxChanges = data.files.length > 0 ? data.files[0].changes : 1;
+    var fileRows = data.files.slice(0, 30).map(function(f) {
+      var intensity = Math.min(f.changes / maxChanges, 1);
+      var hue = Math.round(120 - intensity * 120); // green→red
+      var bg = 'hsl(' + hue + ', 70%, 92%)';
+      var border = 'hsl(' + hue + ', 50%, 80%)';
+      var cardLinks = f.cards.map(function(c) { return '#' + c; }).join(' ');
+      return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+        '<td style="padding:6px 10px;font-size:13px;font-family:monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.path + '">' + f.basename + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:var(--text-secondary);">' + f.domain + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' +
+          '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:' + bg + ';border:1px solid ' + border + ';font-weight:600;min-width:40px;text-align:center;">' + f.changes + '</span>' +
+        '</td>' +
+        '<td style="padding:6px 10px;text-align:center;font-size:13px;">' + f.commits + '</td>' +
+        '<td style="padding:6px 10px;font-size:11px;color:var(--text-secondary);">' + cardLinks + '</td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('churn-file-body').innerHTML = fileRows || '<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--text-secondary);">No changes in window</td></tr>';
+
+    // Card activity — top 15
+    var cardRows = data.cards.slice(0, 15).map(function(c) {
+      return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+        '<td style="padding:6px 10px;font-size:13px;font-weight:600;">#' + c.id + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' + c.files + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' + c.changes + '</td>' +
+        '<td style="padding:6px 10px;text-align:center;font-size:13px;">' + c.commits + '</td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('churn-card-body').innerHTML = cardRows || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text-secondary);">No card references found</td></tr>';
+
+  } catch(e) {
+    section.querySelector('.churn-body').innerHTML = '<p style="color:var(--text-secondary)">Error loading churn data</p>';
+  }
+}
+
+loadChurn();
+</script>
+
+<%- include('partials/page-close') %>

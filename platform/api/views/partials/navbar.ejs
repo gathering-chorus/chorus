@@ -1,0 +1,75 @@
+<nav>
+    <% if (typeof isAuthenticated !== 'undefined' && isAuthenticated) { %>
+        <% if (typeof userRole !== 'undefined' && userRole === 'admin') { %>
+            <% var tree = (typeof navTree !== 'undefined' && navTree) ? navTree : { branches: [] }; %>
+            <%
+            // Recursive helper: renders a leaf, nesting children arbitrarily deep
+            function renderLeaf(leaf) {
+                if (leaf.dividerBefore) { %><hr class="dropdown-divider"><% }
+                if (leaf.children && leaf.children.length > 0) { %>
+                    <div class="dropdown-nested">
+                        <a href="<%= leaf.href %>"<%= leaf.external ? ' target="_blank"' : '' %>><%= leaf.icon %> <%= leaf.label %> &#9656;</a>
+                        <div class="dropdown-nested-content">
+                            <% leaf.children.forEach(function(child) { renderLeaf(child); }); %>
+                        </div>
+                    </div>
+            <%  } else if (leaf.disabled) { %>
+                    <a href="#" class="disabled-link"><%= leaf.icon %> <%= leaf.label %></a>
+            <%  } else { %>
+                    <a href="<%= leaf.href %>"<%= leaf.external ? ' target="_blank"' : '' %>><%= leaf.icon %> <%= leaf.label %></a>
+            <%  }
+            }
+            %>
+            <% var gatheringBranch = tree.branches.find(function(b) { return b.name === 'Gathering'; }); %>
+            <% var otherBranches = tree.branches.filter(function(b) { return b.name !== 'Gathering'; }); %>
+
+            <% if (gatheringBranch) { %>
+            <div class="dropdown">
+                <a href="/" class="site-title">Gathering &#9662;</a>
+                <div class="dropdown-content">
+                    <% gatheringBranch.leaves.forEach(function(leaf) { renderLeaf(leaf); }); %>
+                </div>
+            </div>
+            <% } else { %>
+            <a href="/">Gathering</a>
+            <% } %>
+
+            <% otherBranches.forEach(function(branch) { %>
+            <div class="dropdown">
+                <a href="#"><%= branch.name %> &#9662;</a>
+                <div class="dropdown-content">
+                    <% branch.leaves.forEach(function(leaf) { renderLeaf(leaf); }); %>
+                </div>
+            </div>
+            <% }); %>
+        <% } else { %>
+            <a href="/">Gathering</a>
+        <% } %>
+
+        <a href="/logout" class="logout-link">Logout</a>
+    <% } else { %>
+        <a href="/">Gathering</a>
+        <a href="/login">Login</a>
+    <% } %>
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="<%= cspNonce %>">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>

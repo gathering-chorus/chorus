@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <%- include('partials/head', { title: role.name + ' — Loom', cspNonce: locals.cspNonce || '' }) %>
+    <style>
+        .role-header { display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-lg); }
+        .role-badge-lg { padding: 0.3rem 0.75rem; border-radius: var(--radius-sm); font-size: var(--font-size-sm); font-weight: 700; color: white; }
+        .badge-wren { background: #16a34a; }
+        .badge-silas { background: #d97706; }
+        .badge-kade { background: #2563eb; }
+        .badge-jeff { background: #1e293b; }
+        .role-title { font-size: var(--font-size-sm); color: var(--text-muted); margin: 0; }
+        .role-reflection { max-width: 640px; line-height: 1.7; font-size: 0.92rem; color: var(--text-color); }
+        .role-reflection p { margin: 0 0 1rem 0; }
+        .role-section { margin-top: var(--space-xl); }
+        .role-section h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: var(--primary-color); }
+        .role-section ul { margin: 0; padding: 0 0 0 1.25rem; }
+        .role-section li { font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.3rem; }
+        .role-section .challenge { color: #92400e; }
+        .back-link { display: inline-block; margin-bottom: var(--space-md); font-size: var(--font-size-sm); color: var(--text-muted); text-decoration: none; }
+        .back-link:hover { color: var(--accent-color); }
+    </style>
+</head>
+<body>
+    <%- include('partials/navbar', { isAuthenticated: true, userRole: 'admin', cspNonce: locals.cspNonce || '' }) %>
+    <div class="page-container">
+
+    <a href="/loom" class="back-link">&larr; Loom</a>
+
+    <div class="role-header">
+        <h1 class="page-title" style="margin:0"><%= role.name %></h1>
+        <span class="role-badge-lg badge-<%= role.key %>"><%= role.title %></span>
+    </div>
+
+    <div class="role-reflection">
+        <%- role.reflection %>
+    </div>
+
+    <div class="role-section">
+        <h2>What I Own</h2>
+        <ul>
+            <% role.owns.forEach(function(item) { %>
+            <li><%= item %></li>
+            <% }); %>
+        </ul>
+    </div>
+
+    <div class="role-section">
+        <h2>What's Working</h2>
+        <ul>
+            <% role.working.forEach(function(item) { %>
+            <li><%= item %></li>
+            <% }); %>
+        </ul>
+    </div>
+
+    <div class="role-section">
+        <h2>What's Challenging</h2>
+        <ul>
+            <% role.challenges.forEach(function(item) { %>
+            <li class="challenge"><%= item %></li>
+            <% }); %>
+        </ul>
+    </div>
+
+    </div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

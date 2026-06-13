@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Property Domain — Ontology v0.9.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #6af; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #8af; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.collection { border-color: #d6a66a; background: #2a2a1a; }
+  .rel-node.spatial { border-color: #6ad6d6; background: #1a2a3a; }
+  .rel-node.garden { border-color: #6ad68a; background: #1a3a2a; }
+  .rel-node.meta { border-color: #d6d66a; background: #2a3a1a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #8af; margin-bottom: 2px; }
+  .back-link { color: #6af; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+  .enum-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .enum-val { background: #1a3a2a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=property-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Property Domain' }) %>
+
+<h1>Property Domain</h1>
+<p class="subtitle">jb-ontology.ttl <span>v0.9.0</span> · Houses, rooms, gardens, lands — spatial hierarchy</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value">8</div><div class="stat-label">Classes</div></div>
+  <div class="stat"><div class="stat-value">7</div><div class="stat-label">Object Props</div></div>
+  <div class="stat"><div class="stat-value">13</div><div class="stat-label">Data Props</div></div>
+</div>
+
+<div class="grid">
+
+  <div class="section">
+    <h2>Dwelling Classes (4)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">PropertyCollection</span>
+        <span class="class-parent">&#8834; Collection</span>
+        <div class="class-desc">Container for all properties, houses, and gardens</div>
+      </li>
+      <li>
+        <span class="class-name">Property</span>
+        <span class="class-parent">&#8834; schema:Place</span>
+        <div class="class-desc">A piece of land or real estate</div>
+      </li>
+      <li>
+        <span class="class-name">House</span>
+        <span class="class-parent">&#8834; schema:House</span>
+        <div class="class-desc">A dwelling on a property</div>
+      </li>
+      <li>
+        <span class="class-name">Room</span>
+        <div class="class-desc">A room in a house</div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Garden Classes (4)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">Garden</span>
+        <span class="class-parent">&#8834; schema:Place</span>
+        <div class="class-desc">A garden area on a property</div>
+      </li>
+      <li>
+        <span class="class-name">GardenBed</span>
+        <div class="class-desc">A bed or plot within a garden</div>
+      </li>
+      <li>
+        <span class="class-name">Plant</span>
+        <div class="class-desc">A plant growing in a garden bed</div>
+      </li>
+      <li>
+        <span class="class-name">GardenType</span>
+        <div class="class-desc">Classification by primary purpose</div>
+        <div class="enum-row">
+          <span class="enum-val">Vegetable</span>
+          <span class="enum-val">Flower</span>
+          <span class="enum-val">Herb</span>
+          <span class="enum-val">Mixed</span>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section full-width">
+    <h2>Containment Hierarchies</h2>
+    <div class="two-col">
+      <div>
+        <div style="color:#6ad6d6;font-weight:600;font-size:13px;margin-bottom:12px;">Dwelling Chain</div>
+        <div class="rel-diagram" style="justify-content:flex-start;">
+          <div class="rel-node spatial">Property</div>
+          <div class="rel-arrow"><span class="label">onProperty</span><span>&larr;</span></div>
+          <div class="rel-node spatial">House</div>
+          <div class="rel-arrow"><span class="label">inHouse</span><span>&larr;</span></div>
+          <div class="rel-node spatial">Room</div>
+        </div>
+      </div>
+      <div>
+        <div style="color:#6ad68a;font-weight:600;font-size:13px;margin-bottom:12px;">Garden Chain</div>
+        <div class="rel-diagram" style="justify-content:flex-start;">
+          <div class="rel-node spatial">Property</div>
+          <div class="rel-arrow"><span class="label">onProperty</span><span>&larr;</span></div>
+          <div class="rel-node garden">Garden</div>
+          <div class="rel-arrow"><span class="label">inGarden</span><span>&larr;</span></div>
+          <div class="rel-node garden">GardenBed</div>
+          <div class="rel-arrow"><span class="label">inGardenBed</span><span>&larr;</span></div>
+          <div class="rel-node garden">Plant</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Object Properties (7)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain &rarr; Range</th></tr>
+      <tr><td class="prop-name">jb:onProperty</td><td class="prop-range">House|Garden &rarr; Property</td></tr>
+      <tr><td class="prop-name">jb:inHouse</td><td class="prop-range">Room &rarr; House</td></tr>
+      <tr><td class="prop-name">jb:inRoom</td><td class="prop-range">Bookcase &rarr; Room</td></tr>
+      <tr><td class="prop-name">jb:inGarden</td><td class="prop-range">GardenBed &rarr; Garden</td></tr>
+      <tr><td class="prop-name">jb:inGardenBed</td><td class="prop-range">Plant &rarr; GardenBed</td></tr>
+      <tr><td class="prop-name">jb:hasGardenType</td><td class="prop-range">Garden &rarr; GardenType</td></tr>
+      <tr><td class="prop-name">jb:shelfPhoto</td><td class="prop-range">Shelf &rarr; schema:ImageObject</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Datatype Properties (13)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain</th><th>Range</th></tr>
+      <tr><td class="prop-name">jb:propertyName</td><td class="prop-range">Property</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:acreage</td><td class="prop-range">Property</td><td class="prop-range">xsd:decimal</td></tr>
+      <tr><td class="prop-name">jb:purchasedDate</td><td class="prop-range">Property</td><td class="prop-range">xsd:date</td></tr>
+      <tr><td class="prop-name">jb:yearBuilt</td><td class="prop-range">House</td><td class="prop-range">xsd:gYear</td></tr>
+      <tr><td class="prop-name">jb:bedDimensions</td><td class="prop-range">GardenBed</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:soilType</td><td class="prop-range">GardenBed</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:sunExposure</td><td class="prop-range">GardenBed</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:commonName</td><td class="prop-range">Plant</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:scientificName</td><td class="prop-range">Plant</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:variety</td><td class="prop-range">Plant</td><td class="prop-range">xsd:string</td></tr>
+      <tr><td class="prop-name">jb:plantedDate</td><td class="prop-range">Plant</td><td class="prop-range">xsd:date</td></tr>
+      <tr><td class="prop-name">jb:harvestDate</td><td class="prop-range">Plant</td><td class="prop-range">xsd:date</td></tr>
+      <tr><td class="prop-name">jb:isPerennial</td><td class="prop-range">Plant</td><td class="prop-range">xsd:boolean</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">jb-ontology.ttl v0.9.0 · Property domain · Card #242</p>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

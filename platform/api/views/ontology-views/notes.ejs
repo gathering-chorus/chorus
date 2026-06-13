@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Notes Domain — Ontology v0.9.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #6af; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-count { display: inline-block; background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 2px 10px; font-size: 13px; font-weight: 500; margin-left: 10px; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #8af; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.collection { border-color: #d6a66a; background: #2a2a1a; }
+  .rel-node.entity { border-color: #6a8ad6; background: #1a1a3a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #8af; margin-bottom: 2px; }
+  .back-link { color: #6af; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+  .note { font-size: 13px; color: #888; line-height: 1.6; margin-top: 12px; padding: 12px; background: #1a1a24; border-radius: 8px; border-left: 3px solid #6af; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=notes-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Notes Domain' }) %>
+
+<h1>Notes Domain</h1>
+<p class="subtitle">jb-ontology.ttl <span>v0.9.0</span> · Harvested from Apple Notes via JXA</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value"><%= stats.notes ? stats.notes.toLocaleString() : '—' %></div><div class="stat-label">Notes</div></div>
+  <div class="stat"><div class="stat-value"><%= stats.folders ? stats.folders.toLocaleString() : '—' %></div><div class="stat-label">Folders</div></div>
+  <div class="stat"><div class="stat-value">2</div><div class="stat-label">Harvest Modes</div></div>
+</div>
+
+<div class="grid">
+
+  <div class="section">
+    <h2>Classes (2)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">NoteCollection</span>
+        <span class="class-parent">&#8834; Collection</span>
+        <span class="class-count">1</span>
+        <div class="class-desc">Container for all harvested notes</div>
+      </li>
+      <li>
+        <span class="class-name">Note</span>
+        <span class="class-count"><%= stats.notes ? stats.notes.toLocaleString() : '—' %></span>
+        <div class="class-desc">Rich text note with folder organization from Apple Notes</div>
+      </li>
+    </ul>
+
+    <div class="note">
+      <strong>Lean domain.</strong> Notes uses mostly shared properties (dcterms:title, dcterms:created, dcterms:modified, jb:slug, jb:body). Only 2 domain-specific datatype properties needed.
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Relationships</h2>
+    <div class="rel-diagram">
+      <div class="rel-node collection">NoteCollection</div>
+      <div class="rel-arrow"><span class="label">contains</span><span>&rarr;</span></div>
+      <div class="rel-node entity">Note</div>
+    </div>
+
+    <h2 style="margin-top: 28px;">Domain-Specific Properties (2)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">jb:noteFolder</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Apple Notes folder at harvest time</td></tr>
+      <tr><td class="prop-name">jb:noteSource</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Source app (e.g., "apple-notes")</td></tr>
+    </table>
+
+    <h2 style="margin-top: 28px;">Shared Properties Used (5)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">dcterms:title</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Note title</td></tr>
+      <tr><td class="prop-name">dcterms:created</td><td class="prop-range">xsd:dateTime</td><td style="font-size:12px;color:#777;">Creation timestamp</td></tr>
+      <tr><td class="prop-name">dcterms:modified</td><td class="prop-range">xsd:dateTime</td><td style="font-size:12px;color:#777;">Last modified</td></tr>
+      <tr><td class="prop-name">jb:slug</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">URL-friendly identifier</td></tr>
+      <tr><td class="prop-name">jb:body</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Full note body text</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>Harvest Pipeline</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;font-size:13px;">
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Source</div>
+        <div style="color:#aaa;">Apple Notes via JXA (JavaScript for Automation). Extracts title, body, folder, and timestamps from all accounts.</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">Two Modes</div>
+        <div style="color:#aaa;"><strong style="color:#ccc;">Direct JXA</strong> — runs osascript locally. <strong style="color:#ccc;">File-ingest</strong> — reads <code style="color:#8af;font-size:11px;">pending-harvest.jsonl</code> from bind-mounted pods dir (Docker mode).</div>
+      </div>
+      <div>
+        <div style="color:#6af;font-weight:600;margin-bottom:8px;">In-App</div>
+        <div style="color:#aaa;">Harvester at <code style="color:#8af;font-size:11px;">/admin/harvest/notes</code>. Host script: <code style="color:#8af;font-size:11px;">scripts/harvest-notes-extract.sh</code>.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">jb-ontology.ttl v0.9.0 · Notes domain · Card #242</p>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

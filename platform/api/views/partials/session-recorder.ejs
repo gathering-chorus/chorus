@@ -1,0 +1,242 @@
+<%# Session recorder — floating record/stop button + rrweb capture.
+     Records multi-page flows under one session ID via sessionStorage.
+     Only shows for authenticated users. %>
+<% /* Record button shows on all pages — recording is opt-in via button click */ %>
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="<%= locals.cspNonce %>">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+<% /* end session-recorder */ %>

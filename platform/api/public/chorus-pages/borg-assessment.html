@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Borg Assessment | Jeff Bridwell</title>
+  <link rel="stylesheet" href="/css/gathering.css">
+
+</head>
+<body>
+    <nav>
+    
+        <a href="/">Gathering</a>
+        <a href="/login">Login</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+
+    <div class="page-container">
+    <a href="/chorus" class="back-link">&larr; Chorus</a>
+    
+<div class="content-actions" data-title="Borg Assessment" data-url="">
+    <button class="action-btn" data-btn="print" title="Save as PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        PDF
+    </button>
+    <button class="action-btn" data-btn="share" title="Share this page">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+    </button>
+    <button class="action-btn" data-btn="reflect" title="Send to Reflect AI">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        Reflect
+    </button>
+    <span class="action-toast" id="action-toast"></span>
+</div>
+
+<style>
+    .content-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md, 6px);
+        background: var(--card-bg, #fff);
+        color: var(--text-muted, #718096);
+        font-size: 0.8rem;
+        cursor: pointer;
+        text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+        font-family: inherit;
+    }
+    .action-btn:hover {
+        border-color: var(--accent-color, #6366F1);
+        color: var(--accent-color, #6366F1);
+    }
+    .action-btn svg { flex-shrink: 0; }
+    .action-toast {
+        font-size: 0.75rem;
+        color: var(--accent-color, #6366F1);
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .action-toast.visible { opacity: 1; }
+
+    @media print {
+        .content-actions, nav, .back-link, .annotation-section { display: none !important; }
+        body { max-width: 100% !important; padding: 0.5in !important; font-size: 11pt !important; }
+        .detail-container, .note-container { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        .detail-body, .note-body { font-size: 11pt !important; line-height: 1.5 !important; }
+    }
+</style>
+
+<script nonce="">
+    var contentActions = {
+        print: function() {
+            window.print();
+        },
+        share: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            var pageUrl = document.querySelector('.content-actions')?.dataset.url || window.location.href;
+
+            if (navigator.share) {
+                navigator.share({ title: pageTitle, url: pageUrl }).catch(function() {});
+            } else {
+                navigator.clipboard.writeText(pageUrl).then(function() {
+                    var toast = document.getElementById('action-toast');
+                    toast.textContent = 'Link copied';
+                    toast.classList.add('visible');
+                    setTimeout(function() { toast.classList.remove('visible'); }, 2000);
+                });
+            }
+        },
+        reflect: function() {
+            var pageTitle = document.querySelector('.content-actions')?.dataset.title || document.title;
+            // Extract main content text from the page
+            var contentEl = document.querySelector('.detail-body') ||
+                            document.querySelector('.note-body') ||
+                            document.querySelector('.prose') ||
+                            document.querySelector('.detail-container') ||
+                            document.querySelector('.note-container') ||
+                            document.querySelector('.page-card') ||
+                            document.querySelector('.loom-section') ||
+                            document.querySelector('.page-container');
+            var text = contentEl ? contentEl.innerText.substring(0, 6000) : '';
+            // Store in sessionStorage and navigate to /self
+            sessionStorage.setItem('reflect-context', JSON.stringify({
+                title: pageTitle,
+                text: text,
+                source: window.location.pathname
+            }));
+            window.location.href = '/self';
+        }
+    };
+
+    document.querySelectorAll('.action-btn[data-btn]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var action = this.getAttribute('data-btn');
+            if (contentActions[action]) contentActions[action]();
+        });
+    });
+</script>
+
+
+    <div class="header">
+        <div>
+            <h1>Borg Assessment</h1>
+            <p class="subtitle">Model vs. reality &mdash; what exists, what's mapped, what needs work.</p>
+        </div>
+    </div>
+
+  <div style="display: flex; gap: 16px; margin-bottom: 24px;">
+    <div class="stat-box" id="stat-conforms" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #16a34a;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Conforms</div>
+    </div>
+    <div class="stat-box" id="stat-refactor" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #ca8a04;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Refactor</div>
+    </div>
+    <div class="stat-box" id="stat-build" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #6b7280;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Build needed</div>
+    </div>
+    <div class="stat-box" id="stat-rewrite" style="flex:1; padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+      <div style="font-size: 28px; font-weight: bold; color: #dc2626;">&mdash;</div>
+      <div style="font-size: 13px; color: var(--text-secondary);">Rewrite</div>
+    </div>
+  </div>
+
+  <h2 style="margin-bottom: 12px;">Domain &times; Value Stream</h2>
+  <table id="assessment-grid" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+    <thead>
+      <tr style="background: var(--surface-bg, #f8f9fa);">
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Domain</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Value Stream</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Page</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Handler</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Harvest</th>
+        <th style="padding: 10px 12px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Graph</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Status</th>
+        <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Files</th>
+      </tr>
+    </thead>
+    <tbody id="grid-body">
+      <tr><td colspan="8" style="padding: 20px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top: 32px; margin-bottom: 12px;">Spoke Summary</h2>
+  <div id="spoke-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;"></div>
+
+  <!-- Git Churn Heat Map (#1357) -->
+  <div id="churn-section" style="margin-top: 32px;">
+    <h2 style="margin-bottom: 12px;">Git Churn Heat Map <span style="font-size:13px;font-weight:normal;color:var(--text-secondary);">(last 30 days)</span></h2>
+
+    <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-commits" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Commits</div>
+      </div>
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-files" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Files Changed</div>
+      </div>
+      <div style="flex:1; padding: 12px 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa);">
+        <div id="churn-cards" style="font-size: 24px; font-weight: bold;">—</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">Cards Referenced</div>
+      </div>
+    </div>
+
+    <div class="churn-body">
+      <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">Hottest Files</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 24px;">
+        <thead>
+          <tr style="background: var(--surface-bg, #f8f9fa);">
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">File</th>
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Domain</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Changes</th>
+            <th style="padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Commits</th>
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Cards</th>
+          </tr>
+        </thead>
+        <tbody id="churn-file-body">
+          <tr><td colspan="5" style="padding: 16px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-secondary);">Card Activity</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <thead>
+          <tr style="background: var(--surface-bg, #f8f9fa);">
+            <th style="padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border-color, #e5e7eb);">Card</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Files</th>
+            <th style="padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border-color, #e5e7eb);">Changes</th>
+            <th style="padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border-color, #e5e7eb);">Commits</th>
+          </tr>
+        </thead>
+        <tbody id="churn-card-body">
+          <tr><td colspan="4" style="padding: 16px; text-align: center; color: var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+    </div>
+
+<script nonce="">
+const TAXONOMY = {
+  'Sowing': {
+    domains: ['seeds'],
+    pages: { seeds: '/capture-triage' }
+  },
+  'Growing': {
+    domains: ['glimmers', 'ideas', 'projects'],
+    pages: { glimmers: '/glimmers', ideas: '/ideas', projects: '/projects' }
+  },
+  'Practicing': {
+    domains: ['cooking', 'reading', 'watching', 'todo', 'intentions'],
+    pages: { cooking: '/cooking', reading: '/reading', watching: '/watching', todo: '/todo', intentions: '/intentions' }
+  },
+  'Harvesting': {
+    domains: ['music', 'photos', 'books', 'stories', 'notes', 'blog', 'social', 'documents', 'property', 'sexuality', 'people'],
+    pages: {
+      music: '/music', photos: '/photos', books: '/books', stories: '/stories',
+      notes: '/notes', blog: '/blog', social: '/social', documents: '/documents',
+      property: '/property', sexuality: '/sexuality', people: '/people'
+    }
+  },
+  'Reflecting': {
+    domains: ['values', 'practices', 'self'],
+    pages: { values: '/values', practices: '/practices', self: '/jeff' }
+  }
+};
+
+const HARVEST_STATUS = {
+  seeds: 'active', music: 'complete', photos: 'active', books: 'manual',
+  stories: 'stale', notes: 'stale', blog: 'stale', social: 'static',
+  documents: 'active', property: 'manual', sexuality: 'stale', people: 'partial',
+  glimmers: 'designed', ideas: 'built', projects: 'built',
+  cooking: 'manual', reading: 'manual', watching: 'manual', todo: 'manual',
+  intentions: 'manual', values: 'manual', practices: 'manual', self: 'ai-assisted'
+};
+
+const STATUS_BADGES = {
+  conforms: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#dcfce7;color:#16a34a;font-size:12px;font-weight:600;">Conforms</span>',
+  refactor: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#fef9c3;color:#ca8a04;font-size:12px;font-weight:600;">Refactor</span>',
+  build: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:12px;font-weight:600;">Build</span>',
+  rewrite: '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#dc2626;font-size:12px;font-weight:600;">Rewrite</span>'
+};
+
+function dot(present) {
+  return present
+    ? '<span style="color:#16a34a;font-size:16px;">&#9679;</span>'
+    : '<span style="color:#d1d5db;font-size:16px;">&#9675;</span>';
+}
+
+async function loadAssessment() {
+  let topology = null;
+  try {
+    const resp = await fetch('/api/codebase/topology');
+    if (resp.ok) topology = await resp.json();
+  } catch(e) { /* API might be down */ }
+
+  const codebaseDomains = new Set();
+  if (topology && topology.spokes) {
+    Object.values(topology.spokes).forEach(function(spoke) {
+      (spoke.domains || []).forEach(function(d) { codebaseDomains.add(d); });
+    });
+  }
+
+  const rows = [];
+  const counts = { conforms: 0, refactor: 0, build: 0, rewrite: 0 };
+
+  Object.entries(TAXONOMY).forEach(function(entry) {
+    const stream = entry[0];
+    const def = entry[1];
+    def.domains.forEach(function(domain) {
+      const hasPage = !!def.pages[domain];
+      const inCodebase = codebaseDomains.has(domain);
+      const harvestStatus = HARVEST_STATUS[domain] || 'none';
+      const hasHarvest = ['none', 'designed'].indexOf(harvestStatus) === -1;
+      const hasGraph = inCodebase;
+
+      var status;
+      if (hasPage && inCodebase) {
+        status = 'conforms';
+      } else if (hasPage && !inCodebase) {
+        status = 'refactor';
+      } else if (!hasPage && inCodebase) {
+        status = 'refactor';
+      } else {
+        status = 'build';
+      }
+
+      counts[status]++;
+
+      var fileCount = '—';
+      if (topology && topology.spokes) {
+        fileCount = 0;
+        Object.values(topology.spokes).forEach(function(s) {
+          if ((s.domains || []).indexOf(domain) !== -1) fileCount += (s.count || 0);
+        });
+      }
+
+      rows.push({
+        domain: domain, stream: stream, hasPage: hasPage, inCodebase: inCodebase,
+        hasHarvest: hasHarvest, hasGraph: hasGraph, status: status, fileCount: fileCount,
+        pageUrl: def.pages[domain] || null, harvestStatus: harvestStatus
+      });
+    });
+  });
+
+  Object.entries(counts).forEach(function(entry) {
+    var box = document.getElementById('stat-' + entry[0]);
+    if (box) box.querySelector('div').textContent = entry[1];
+  });
+
+  var tbody = document.getElementById('grid-body');
+  tbody.innerHTML = rows.map(function(r) {
+    return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+      '<td style="padding: 8px 12px; font-weight: 500;">' +
+        (r.pageUrl ? '<a href="' + r.pageUrl + '" style="color:var(--link-color);">' + r.domain + '</a>' : r.domain) +
+      '</td>' +
+      '<td style="padding: 8px 12px; color: var(--text-secondary); font-size: 13px;">' + r.stream + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.hasPage) + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.inCodebase) + '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;" title="' + r.harvestStatus + '">' +
+        dot(r.hasHarvest) +
+        '<span style="font-size:10px;color:var(--text-secondary);margin-left:2px;">' + (r.harvestStatus !== 'none' ? r.harvestStatus : '') + '</span>' +
+      '</td>' +
+      '<td style="padding: 8px 12px; text-align: center;">' + dot(r.hasGraph) + '</td>' +
+      '<td style="padding: 8px 12px;">' + STATUS_BADGES[r.status] + '</td>' +
+      '<td style="padding: 8px 12px; color: var(--text-secondary); font-size: 13px;">' + r.fileCount + '</td>' +
+    '</tr>';
+  }).join('');
+
+  if (topology && topology.spokes) {
+    var container = document.getElementById('spoke-summary');
+    container.innerHTML = Object.entries(topology.spokes).map(function(entry) {
+      var name = entry[0];
+      var data = entry[1];
+      return '<div style="padding: 16px; border-radius: 8px; background: var(--surface-bg, #f8f9fa); border: 1px solid var(--border-color, #e5e7eb);">' +
+        '<div style="font-weight: 600; margin-bottom: 4px;">' + name + '</div>' +
+        '<div style="font-size: 24px; font-weight: bold;">' + data.count + '</div>' +
+        '<div style="font-size: 12px; color: var(--text-secondary);">files across ' + (data.domains || []).length + ' domains</div>' +
+        '<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">' + (data.domains || []).join(', ') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+}
+
+loadAssessment();
+
+// --- Git Churn Heat Map (#1357) ---
+async function loadChurn() {
+  var section = document.getElementById('churn-section');
+  if (!section) return;
+  try {
+    var resp = await fetch('/api/codebase/churn?days=30');
+    if (!resp.ok) { section.querySelector('.churn-body').innerHTML = '<p style="color:var(--text-secondary)">Churn data unavailable</p>'; return; }
+    var data = await resp.json();
+
+    // Stats
+    document.getElementById('churn-commits').textContent = data.totalCommits;
+    document.getElementById('churn-files').textContent = data.files.length;
+    document.getElementById('churn-cards').textContent = data.cards.length;
+
+    // File heat map — top 30
+    var maxChanges = data.files.length > 0 ? data.files[0].changes : 1;
+    var fileRows = data.files.slice(0, 30).map(function(f) {
+      var intensity = Math.min(f.changes / maxChanges, 1);
+      var hue = Math.round(120 - intensity * 120); // green→red
+      var bg = 'hsl(' + hue + ', 70%, 92%)';
+      var border = 'hsl(' + hue + ', 50%, 80%)';
+      var cardLinks = f.cards.map(function(c) { return '#' + c; }).join(' ');
+      return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+        '<td style="padding:6px 10px;font-size:13px;font-family:monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + f.path + '">' + f.basename + '</td>' +
+        '<td style="padding:6px 10px;font-size:12px;color:var(--text-secondary);">' + f.domain + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' +
+          '<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:' + bg + ';border:1px solid ' + border + ';font-weight:600;min-width:40px;text-align:center;">' + f.changes + '</span>' +
+        '</td>' +
+        '<td style="padding:6px 10px;text-align:center;font-size:13px;">' + f.commits + '</td>' +
+        '<td style="padding:6px 10px;font-size:11px;color:var(--text-secondary);">' + cardLinks + '</td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('churn-file-body').innerHTML = fileRows || '<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--text-secondary);">No changes in window</td></tr>';
+
+    // Card activity — top 15
+    var cardRows = data.cards.slice(0, 15).map(function(c) {
+      return '<tr style="border-bottom: 1px solid var(--border-color, #e5e7eb);">' +
+        '<td style="padding:6px 10px;font-size:13px;font-weight:600;">#' + c.id + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' + c.files + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-size:13px;">' + c.changes + '</td>' +
+        '<td style="padding:6px 10px;text-align:center;font-size:13px;">' + c.commits + '</td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('churn-card-body').innerHTML = cardRows || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text-secondary);">No card references found</td></tr>';
+
+  } catch(e) {
+    section.querySelector('.churn-body').innerHTML = '<p style="color:var(--text-secondary)">Error loading churn data</p>';
+  }
+}
+
+loadChurn();
+</script>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Gathering</h3>
+      <p>Personal knowledge graph &middot; RDF/SPARQL &middot; Private by default</p>
+    </div>
+    <div class="footer-section">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/blog">Journal</a></li>
+        <li><a href="/chorus">Chorus</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <p>SOLID pods &middot; ACL visibility &middot; Everything graduates</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Jeff Bridwell &middot; Roslindale, MA &middot; Built with the Loom</p>
+  </div>
+</footer>
+
+
+
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+
+
+
+</body>
+</html>
+

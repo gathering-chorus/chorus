@@ -85,6 +85,37 @@ app.use('/designing/schemas', express.static(path.join(chorusRepoRoot, 'designin
 app.use('/roles/silas/adr', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'adr'), { extensions: ['html', 'md'] }));
 app.use('/roles/silas/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'artifacts'), { extensions: ['html'] }));
 app.use('/roles/kade/artifacts', express.static(path.join(chorusRepoRoot, 'roles', 'kade', 'artifacts'), { extensions: ['html'] }));
+// #3361 — value-stream tree mount: chorus UI pages moved home from gathering
+// land under building/ (e.g. building/products/werk/werk-process,
+// building/products/convergence/nifi-chorus-integration-design). Served here so
+// the page lives in its ADR-041 home, not in gathering.
+app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { extensions: ['html'] }));
+
+// #3361 — chorus pages moved home from gathering. Served as PRE-RENDERED STATIC
+// HTML (rendered from the relocated EJS views by render-chorus-pages.cjs, output
+// to public/chorus-pages/). No runtime template engine: a new runtime npm dep
+// (ejs) does not survive the chorus-api deploy's node_modules lifecycle, so the
+// pages serve as committed static files — nothing for the pipeline to drop, and
+// the html lands in canon via git merge + the existing public/ static serving.
+// Live/dynamic data wiring is the prioritized follow-on (#3361); these are shells
+// or empty-data snapshots until then (Jeff: move home now, fix data later).
+const chorusPageDir = path.join(__dirname, '..', 'public', 'chorus-pages');
+const sendChorusPage = (file: string) =>
+  (_req: Request, res: Response) => res.sendFile(path.join(chorusPageDir, file));
+app.get('/chorus', sendChorusPage('chorus.html'));
+app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
+app.get('/chorus-model-data', sendChorusPage('chorus-model-data.html'));
+app.get('/borg-assessment', sendChorusPage('borg-assessment.html'));
+app.get('/harvesting/icd', sendChorusPage('icd.html'));
+app.get('/harvesting/convergence', sendChorusPage('icd.html'));
+app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301, '/harvesting/icd'));
+app.get('/werk', sendChorusPage('werk.html'));
+app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
+app.get('/loom', sendChorusPage('loom.html'));
+app.get('/loom/:role', sendChorusPage('loom.html'));
+app.get('/flow', sendChorusPage('flow.html'));
+app.get('/model-data', sendChorusPage('model-data.html'));
+app.get('/ontology-views/:domain', sendChorusPage('model-data.html'));
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));

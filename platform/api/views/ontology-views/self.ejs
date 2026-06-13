@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Self Domain — Ontology</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #c4b5fd; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .full-width { grid-column: 1 / -1; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #c4b5fd; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+
+  .ref-list { list-style: none; }
+  .ref-list li { padding: 12px 16px; border-bottom: 1px solid #1a1a2a; display: flex; align-items: flex-start; gap: 12px; }
+  .ref-list li:last-child { border-bottom: none; }
+  .ref-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+  .ref-title { font-weight: 600; font-size: 14px; color: #fff; }
+  .ref-title a { color: #c4b5fd; text-decoration: none; }
+  .ref-title a:hover { text-decoration: underline; }
+  .ref-desc { font-size: 12px; color: #777; margin-top: 3px; line-height: 1.5; }
+
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.self { border-color: #c4b5fd; background: #1a1a3a; }
+  .rel-node.domain { border-color: #6a8ad6; background: #1a1a2a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #c4b5fd; margin-bottom: 2px; }
+
+  .note { font-size: 13px; color: #888; line-height: 1.6; margin-top: 12px; padding: 12px; background: #1a1a24; border-radius: 8px; border-left: 3px solid #c4b5fd; }
+  .back-link { color: #6af; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=self-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Self Domain' }) %>
+
+<h1>Self Domain</h1>
+<p class="subtitle">The convergent center of the ontology &middot; <span>Card #74</span> &middot; Where all domains connect through</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value"><%= stats.stories %></div>
+    <div class="stat-label">Stories</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">10</div>
+    <div class="stat-label">Values</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">8</div>
+    <div class="stat-label">Domains Connected</div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <div class="section">
+    <h2>Classes (Proposed)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">jb:Self</span>
+        <p class="class-desc">The person at the center of the knowledge graph. Hub node connecting all domains.</p>
+      </li>
+      <li>
+        <span class="class-name">jb:Story</span> <span class="class-parent">rdfs:subClassOf jb:Self</span>
+        <p class="class-desc">A personal experience carrying values, context, and meaning. 38 harvested from sessions.</p>
+      </li>
+      <li>
+        <span class="class-name">jb:Value</span> <span class="class-parent">rdfs:subClassOf jb:Self</span>
+        <p class="class-desc">A held value or principle. Ten core values identified: Flexibility, Equanimity, Mindfulness, Presence, Reflection, Agency, Possibility, Learning, Balance, Heart.</p>
+      </li>
+      <li>
+        <span class="class-name">jb:Practice</span> <span class="class-parent">rdfs:subClassOf jb:Self</span>
+        <p class="class-desc">An ongoing practice (meditation, yoga, walking, gardening). The practice IS the product.</p>
+      </li>
+      <li>
+        <span class="class-name">jb:Influence</span> <span class="class-parent">rdfs:subClassOf jb:Self</span>
+        <p class="class-desc">A book, teacher, framework, or experience that shaped thinking. The intellectual lineage.</p>
+      </li>
+      <li>
+        <span class="class-name">jb:Memory</span> <span class="class-parent">rdfs:subClassOf jb:Self</span>
+        <p class="class-desc">A personal memory — distinct from Story in that memories are sensory/episodic, stories are narrative/reflective.</p>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Properties</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Range</th><th>Description</th></tr>
+      <tr><td class="prop-name">jb:narrative</td><td class="prop-range">xsd:string</td><td>The story text</td></tr>
+      <tr><td class="prop-name">jb:context</td><td class="prop-range">xsd:string</td><td>When/where/why it was shared</td></tr>
+      <tr><td class="prop-name">jb:keyInsights</td><td class="prop-range">xsd:string</td><td>What it tells us</td></tr>
+      <tr><td class="prop-name">jb:applicability</td><td class="prop-range">xsd:string</td><td>Where it applies to product decisions</td></tr>
+      <tr><td class="prop-name">jb:learnedValue</td><td class="prop-range">jb:Value</td><td>Links story to the value it expresses</td></tr>
+      <tr><td class="prop-name">jb:practiceType</td><td class="prop-range">xsd:string</td><td>Category of practice (contemplative, physical, creative)</td></tr>
+      <tr><td class="prop-name">jb:influenceType</td><td class="prop-range">xsd:string</td><td>Book, person, framework, experience</td></tr>
+      <tr><td class="prop-name">jb:connectsToDomain</td><td class="prop-range">jb:Collection</td><td>How Self connects outward to other domains</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>Convergence — How Self Connects to Every Domain</h2>
+    <div class="rel-diagram">
+      <div class="rel-node domain">Music</div>
+      <div class="rel-arrow"><span class="label">listensTo</span>&rarr;</div>
+      <div class="rel-node domain">Photos</div>
+      <div class="rel-arrow"><span class="label">capturedBy</span>&rarr;</div>
+      <div class="rel-node self">Self</div>
+      <div class="rel-arrow"><span class="label">reflectsOn</span>&larr;</div>
+      <div class="rel-node domain">Stories</div>
+      <div class="rel-arrow"><span class="label">practicesAt</span>&larr;</div>
+      <div class="rel-node domain">Property</div>
+    </div>
+    <div class="rel-diagram">
+      <div class="rel-node domain">Notes</div>
+      <div class="rel-arrow"><span class="label">writtenBy</span>&rarr;</div>
+      <div class="rel-node self">Self</div>
+      <div class="rel-arrow"><span class="label">readsFrom</span>&larr;</div>
+      <div class="rel-node domain">Books</div>
+      <div class="rel-arrow">&middot;&middot;&middot;</div>
+      <div class="rel-node domain">Blog</div>
+      <div class="rel-arrow"><span class="label">expressesThrough</span>&rarr;</div>
+      <div class="rel-node domain">Sexuality</div>
+    </div>
+    <div class="note">
+      Self is not a collection like the others. It's the hub node — the person from whom all domains radiate and to whom all domains return.
+      Without Self, the other domains are catalogs. With Self, they're a knowledge graph about a person.
+    </div>
+  </div>
+
+  <div class="section full-width">
+    <h2>Foundational Research</h2>
+    <p style="font-size: 13px; color: #888; margin-bottom: 16px;">Design documents that define the Self domain's philosophical and structural foundations.</p>
+    <ul class="ref-list">
+      <li>
+        <span class="ref-icon">&#x1f4d0;</span>
+        <div>
+          <div class="ref-title"><a href="/self-ontology-sketch.html">Self Domain Ontology Sketch</a></div>
+          <div class="ref-desc">Jeff's Spring 2024 sketch formalized. Life's Practice ontology: Flexibility/Equanimity &rarr; Mindfulness/Presence &rarr; Reflection/Agency/Possibility &rarr; Learning. Ten values, Buddhist mappings, the convergent center.</div>
+        </div>
+      </li>
+      <li>
+        <span class="ref-icon">&#x1f50d;</span>
+        <div>
+          <div class="ref-title"><a href="/ontology-value-stream-research.html">Value Stream Binding + Public Ontologies</a></div>
+          <div class="ref-desc">Survey of MFO (Mental Functioning Ontology), MFOEM (emotions), BDRC Buddhist Digital Resource Center. How Gathering's value stream (Sowing &rarr; Cultivating &rarr; Harvesting &rarr; Reflecting) binds to public ontology standards.</div>
+        </div>
+      </li>
+      <li>
+        <span class="ref-icon">&#x1f4ca;</span>
+        <div>
+          <div class="ref-title"><a href="/value-stream-render.html">Gathering Value Stream & Domain Map</a></div>
+          <div class="ref-desc">Visual flow from Sowing through Reflecting with domain nodes. The value stream as the spine of the ontology — every domain maps to a stage of gathering.</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Philosophical Stack</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">Heidegger</span>
+        <p class="class-desc">What it means to dwell. Gathering (Versammlung), Fourfold, the Werk.</p>
+      </li>
+      <li>
+        <span class="class-name">Buddhism</span>
+        <p class="class-desc">How to act wisely. Cetan&#257; (volition), sati (mindfulness), upekkhā (equanimity), the Middle Way.</p>
+      </li>
+      <li>
+        <span class="class-name">Sartre</span>
+        <p class="class-desc">The responsibility we can't escape. Radical freedom, bad faith, authenticity.</p>
+      </li>
+      <li>
+        <span class="class-name">Neuroscience</span>
+        <p class="class-desc">How memory works. Reconstruction not replay, consolidation, extended mind.</p>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Intellectual Lineage</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">Informix Manuals (1995)</span>
+        <p class="class-desc">The craft of technology writing.</p>
+      </li>
+      <li>
+        <span class="class-name">Erl &mdash; SOA</span>
+        <p class="class-desc">Services as contracts, boundaries, loose coupling.</p>
+      </li>
+      <li>
+        <span class="class-name">Lean &amp; Agile</span>
+        <p class="class-desc">Poppendieck, Agile Manifesto, Continuous Delivery, Agile Testing.</p>
+      </li>
+      <li>
+        <span class="class-name">Kersten &mdash; Project to Product</span>
+        <p class="class-desc">Value streams, flow metrics, products not projects.</p>
+      </li>
+      <li>
+        <span class="class-name">Skelton &amp; Pais &mdash; Team Topologies</span>
+        <p class="class-desc">Team shape determines delivery shape.</p>
+      </li>
+      <li>
+        <span class="class-name">Schmidt &mdash; Lean Integration</span>
+        <p class="class-desc">Factory model, flow-level management.</p>
+      </li>
+      <li>
+        <span class="class-name">US9552400B2 &mdash; Jeff's Patent</span>
+        <p class="class-desc">RDF/OWL + SPARQL workflow gates. Multi-hop flow comprehension.</p>
+      </li>
+    </ul>
+  </div>
+
+</div>
+
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

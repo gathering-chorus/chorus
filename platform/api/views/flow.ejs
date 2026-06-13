@@ -1,0 +1,738 @@
+<%- include('partials/page-head', { title: 'Product Flow' }) %>
+    <style>
+        body { background: var(--bg-primary, #f8f9fa); color: var(--text-primary); }
+        h1 { font-size: 22px; margin-bottom: 4px; }
+        .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
+
+        .view-toggle { display: flex; gap: 4px; margin-bottom: 20px; }
+        .view-toggle button {
+            background: var(--bg-input, #e8f0fe); border: 1px solid var(--border-color, #d0d7de);
+            color: var(--text-muted); padding: 5px 14px; border-radius: 5px; cursor: pointer;
+            font-size: 13px; font-weight: 500; transition: all 0.15s;
+        }
+        .view-toggle button.active {
+            background: var(--accent-color, #e94560); color: #fff; border-color: var(--accent-color, #e94560);
+        }
+        .view-toggle button:hover:not(.active) { border-color: var(--accent-color, #e94560); color: var(--accent-color, #e94560); }
+
+        .role-filter { display: flex; gap: 4px; margin-bottom: 20px; }
+        .role-filter button {
+            background: var(--bg-input, #e8f0fe); border: 1px solid var(--border-color, #d0d7de);
+            color: var(--text-muted); padding: 5px 14px; border-radius: 5px; cursor: pointer;
+            font-size: 13px; font-weight: 500; transition: all 0.15s;
+        }
+        .role-filter button.active {
+            background: #0f3460; color: #fff; border-color: #0f3460;
+        }
+        .role-filter button:hover:not(.active) { border-color: #0f3460; color: #0f3460; }
+
+        .tile-grid.hidden { display: none; }
+        .tile-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin: 0 auto 32px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .tile {
+            background: var(--bg-card, #fff);
+            border-radius: 10px;
+            padding: 18px;
+            border-left: 4px solid var(--border-color, #d0d7de);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .tile:hover { transform: translateY(-2px); }
+        .tile.has-wip { border-left-color: var(--accent-color, #e94560); }
+
+        .tile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .tile-name { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .tile-total { font-size: 13px; color: var(--text-muted); background: var(--bg-input, #e8f0fe); padding: 2px 8px; border-radius: 10px; }
+        .tile-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px; }
+
+        .status-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 10px; background: var(--border-color, #e0e0e0); }
+        .status-bar .bar-done { background: #1a9a4a; }
+        .status-bar .bar-wip { background: #d4880f; }
+        .status-bar .bar-next { background: #6366f1; }
+
+        .tile-stats { display: flex; gap: 12px; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+        .tile-stats .stat-done { color: #1a9a4a; }
+        .tile-stats .stat-wip { color: #d4880f; }
+        .tile-stats .stat-next { color: #6366f1; }
+        .velocity { font-size: 11px; color: var(--text-muted); }
+        .velocity strong { color: var(--text-primary); }
+
+        .wip-list { list-style: none; padding: 0; margin: 8px 0 0; }
+        .wip-list li { font-size: 12px; color: var(--text-muted); padding: 3px 0; border-top: 1px solid var(--border-color, #f0f0f0); }
+        .card-id { color: var(--accent-color, #e94560); font-weight: 600; margin-right: 4px; text-decoration: none; }
+        .card-id:hover { text-decoration: underline; }
+        .card-owner { color: #0f3460; background: var(--bg-input, #f0f0f0); padding: 1px 5px; border-radius: 3px; font-size: 11px; margin-left: 4px; }
+        .card-priority { font-size: 10px; margin-left: 4px; }
+        .card-priority.p1 { color: #e94560; }
+        .card-priority.p2 { color: #d4880f; }
+        .card-priority.p3 { color: var(--text-muted); }
+        .status-badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-right: 4px; font-weight: 600; }
+        .status-wip { background: #fff3e0; color: #d4880f; }
+        .status-next { background: #e8eaf6; color: #6366f1; }
+        .status-blocked { background: #fce4ec; color: #e53935; }
+        .status-now { background: #e8f5e9; color: #2e7d32; }
+        .status-later { background: #f3e5f5; color: #7b1fa2; }
+
+        .detail-panel {
+            background: var(--bg-card, #fff);
+            border-radius: 10px;
+            padding: 20px;
+            border-left: 4px solid var(--accent-color, #e94560);
+            display: none;
+            grid-column: 1 / -1;
+        }
+        .detail-panel.visible { display: block; }
+        .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .detail-header h2 { font-size: 18px; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
+        .detail-close { background: none; border: 1px solid var(--border-color, #d0d7de); color: var(--text-muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .detail-close:hover { border-color: var(--accent-color, #e94560); color: var(--accent-color, #e94560); }
+        .detail-cards { list-style: none; padding: 0; }
+        .detail-cards li { font-size: 13px; color: var(--text-muted); padding: 5px 0; border-bottom: 1px solid var(--border-color, #f0f0f0); }
+        .detail-cards li:last-child { border-bottom: none; }
+        .group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-top: 12px; margin-bottom: 4px; }
+
+        .untagged-section { margin-top: 24px; padding: 16px; background: var(--bg-card, #fff); border-radius: 8px; border-left: 4px solid #ccc; }
+        .untagged-section h3 { font-size: 14px; color: var(--text-muted); margin-bottom: 8px; }
+
+        /* Funnel layout for chunks */
+        .funnel-grid { flex-direction: column; }
+        .funnel-row { margin-bottom: 16px; }
+        .funnel-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 8px; padding-left: 4px; }
+        .funnel-tiles { display: flex; gap: 16px; flex-wrap: wrap; }
+        .funnel-wide .funnel-tiles { max-width: 100%; }
+        .funnel-wide .tile { flex: 1 1 45%; max-width: calc(50% - 8px); }
+        .funnel-full .funnel-tiles { max-width: 100%; }
+        .funnel-full .tile { flex: 1 1 100%; max-width: 100%; }
+        .funnel-narrow .funnel-tiles { max-width: 85%; margin: 0 auto; }
+        .funnel-narrow .tile { flex: 1 1 30%; max-width: calc(33% - 11px); min-width: 240px; }
+
+        /* Funnel view — domain circles in flow stages */
+        .funnel-view { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 20px 0; }
+        .funnel-view.hidden { display: none; }
+        .funnel-stage {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;
+            padding: 16px 0; position: relative;
+        }
+        .funnel-stage::before {
+            content: attr(data-label);
+            position: absolute; left: 0; top: 0;
+            font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+            color: var(--text-muted); opacity: 0.5;
+        }
+        .funnel-stage-later { width: 100%; }
+        .funnel-stage-next { width: 85%; }
+        .funnel-stage-now { width: 65%; }
+        .funnel-stage-wip { width: 50%; }
+        .funnel-stage-done { width: 40%; opacity: 0.5; }
+        .funnel-divider {
+            width: 100%; height: 1px;
+            background: linear-gradient(90deg, transparent 10%, var(--border-color, #d0d7de) 30%, var(--border-color, #d0d7de) 70%, transparent 90%);
+        }
+        .domain-circle {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border-radius: 50%; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+            background: var(--bg-card, #fff); border: 2px solid var(--border-color, #d0d7de);
+            text-align: center; position: relative;
+        }
+        .domain-circle:hover { transform: scale(1.08); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+        .domain-circle.has-wip { border-color: var(--accent-color, #e94560); }
+        .domain-circle.has-blocked { border-color: #e53935; border-style: dashed; }
+        .domain-circle .dc-name {
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+            color: var(--text-primary); line-height: 1.2;
+        }
+        .domain-circle .dc-count { font-size: 18px; font-weight: 800; color: var(--accent-color, #e94560); }
+        .domain-circle .dc-stage { font-size: 9px; color: var(--text-muted); }
+        .dc-size-sm { width: 90px; height: 90px; }
+        .dc-size-md { width: 110px; height: 110px; }
+        .dc-size-lg { width: 130px; height: 130px; }
+        .dc-size-xl { width: 150px; height: 150px; }
+
+        .domain-circle { position: relative; }
+        .dc-tooltip {
+            display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+            background: var(--bg-card, #fff); border: 1px solid var(--border-color, #d0d7de);
+            border-radius: 8px; padding: 8px 12px; min-width: 200px; max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; text-align: left;
+        }
+        .dc-tooltip::after {
+            content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+            border: 6px solid transparent; border-top-color: var(--border-color, #d0d7de);
+        }
+        .domain-circle:hover .dc-tooltip { display: block; }
+        .dc-tooltip-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; }
+        .dc-tooltip-card { font-size: 12px; color: var(--text-primary); padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dc-tooltip-card .card-id { font-size: 11px; }
+
+        /* Fold-down detail for cards and workflows */
+        .fold-row { cursor: pointer; transition: background 0.1s; }
+        .fold-row:hover { background: var(--bg-input, #f5f5f5); border-radius: 3px; }
+        .fold-detail {
+            display: none; padding: 6px 0 6px 16px; font-size: 12px; color: var(--text-muted);
+            border-left: 2px solid var(--accent-color, #e94560); margin: 2px 0 4px 8px;
+        }
+        .fold-detail.open { display: block; }
+        .fold-detail .fold-title { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; font-size: 13px; }
+        .fold-detail .fold-desc { white-space: pre-line; line-height: 1.5; }
+        .fold-detail .wf-steps { margin-top: 4px; }
+        .fold-detail .wf-steps li { padding: 2px 0; }
+
+        .funnel-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
+        .funnel-summary { text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 12px; }
+        .funnel-summary strong { color: var(--text-primary); }
+
+        .wf-section { margin-top: 32px; }
+        .wf-section h2 { font-size: 18px; margin-bottom: 16px; }
+        .wf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+        .wf-card { background: var(--bg-card, #fff); border-radius: 8px; padding: 14px; border-left: 3px solid #d4880f; }
+        .wf-card.completed { border-left-color: #1a9a4a; opacity: 0.7; }
+        .wf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .wf-id { font-weight: 600; color: #d4880f; font-size: 13px; }
+        .wf-card.completed .wf-id { color: #1a9a4a; }
+        .wf-decision { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+        .wf-steps { list-style: none; padding: 0; }
+        .wf-steps li { font-size: 12px; color: var(--text-muted); padding: 2px 0; display: flex; align-items: center; gap: 6px; }
+        .wf-step-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .wf-step-dot.completed { background: #1a9a4a; }
+        .wf-step-dot.ready { background: #d4880f; }
+        .wf-step-dot.pending { background: var(--text-muted); }
+        .wf-role { font-weight: 600; color: var(--text-primary); min-width: 40px; }
+    </style>
+</head>
+<body>
+    <%- include('partials/navbar') %>
+
+    <div class="page-container">
+    <a href="/chorus" class="back-link">&larr; Chorus</a>
+    <h1>Product Flow</h1>
+    <p class="subtitle">Live card counts, velocity, active work</p>
+
+    <div class="view-toggle">
+        <button class="active" data-view="domains">Domains</button>
+        <button data-view="funnel">Funnel</button>
+        <button data-view="chunks">Chunks</button>
+        <button data-view="sequences">Sequences</button>
+    </div>
+
+    <div class="role-filter" id="role-filter">
+        <button class="active" data-role="all">All</button>
+        <button data-role="Wren">Wren</button>
+        <button data-role="Silas">Silas</button>
+        <button data-role="Kade">Kade</button>
+        <button data-role="Jeff">Jeff</button>
+    </div>
+
+    <%
+      function renderTileGrid(tiles, viewName) {
+    %>
+    <div class="tile-grid hidden" id="grid-<%= viewName %>">
+        <% for (const tile of tiles) { %>
+            <% var tileOwnerSet = {}; tile.cards.forEach(function(c) { if (c.owner) tileOwnerSet[c.owner] = true; }); var tileOwners = Object.keys(tileOwnerSet).join(','); %>
+            <div class="tile <%= tile.counts.wip > 0 ? 'has-wip' : '' %>"
+                 data-tile="<%= viewName %>-<%= tile.name %>"
+                 data-owners="<%= tileOwners %>">
+                <div class="tile-header" style="display:flex;align-items:center;justify-content:space-between;overflow:visible;">
+                    <span class="tile-name"><%= tile.name %></span>
+                    <span style="display:flex;gap:0.3rem;flex-shrink:0;font-size:0.65rem;">
+                      <span style="background:#e0e7ff;color:#4338ca;padding:0.15rem 0.4rem;border-radius:3px;font-weight:600;white-space:nowrap;" title="Open cards"><%= tile.counts.activeCards %> open</span>
+                      <span style="background:#fef3c7;color:#92400e;padding:0.15rem 0.4rem;border-radius:3px;font-weight:600;white-space:nowrap;" title="Active workflows"><%= tile.counts.activeWorkflows %> wf</span>
+                      <span style="background:#d1fae5;color:#065f46;padding:0.15rem 0.4rem;border-radius:3px;font-weight:700;white-space:nowrap;" title="Total active"><%= tile.counts.activeTotal %> total</span>
+                    </span>
+                </div>
+                <% if (tile.description) { %>
+                <div class="tile-desc"><%= tile.description %></div>
+                <% } %>
+
+                <% if (tile.counts.total > 0) { %>
+                <div class="status-bar">
+                    <% var total = tile.counts.total || 1; %>
+                    <div class="bar-done" style="width:<%= Math.round(tile.counts.done / total * 100) %>%"></div>
+                    <div class="bar-wip" style="width:<%= Math.round(tile.counts.wip / total * 100) %>%"></div>
+                    <div class="bar-next" style="width:<%= Math.round(tile.counts.next / total * 100) %>%"></div>
+                </div>
+                <% } %>
+
+                <div class="tile-stats">
+                    <span class="stat-done"><%= tile.counts.done %> done</span>
+                    <span class="stat-wip"><%= tile.counts.wip %> wip</span>
+                    <span class="stat-next"><%= tile.counts.next %> next</span>
+                    <% if (tile.counts.blocked > 0) { %><span style="color:#e53935;"><%= tile.counts.blocked %> blocked</span><% } %>
+                </div>
+                <div class="velocity"><strong><%= tile.velocity7d %></strong> shipped last 7 days</div>
+
+                <%
+                  var allActive = [].concat(tile.blockedCards, tile.wipCards, tile.nextCards);
+                %>
+                <% if (allActive.length > 0) { %>
+                <ul class="wip-list">
+                    <% for (const card of allActive) { %>
+                    <li class="fold-row" data-fold="card-<%= viewName %>-<%= card.index %>">
+                        <% var badge = card.done ? 'done' : card.status === 'WIP' ? 'wip' : card.status === 'Now' ? 'now' : card.status === 'Blocked' ? 'blocked' : card.status === 'Later' ? 'later' : 'next'; %>
+                        <span class="status-badge status-<%= badge %>"><%= badge.toUpperCase() %></span>
+                        <a class="card-id" href="http://localhost:3456/tasks/<%= card.id %>" target="_blank">#<%= card.index %></a>
+                        <%= card.title.replace(/\s*\[.*?\]\s*/g, '').replace(/\s*—.*$/, '').substring(0, 50) %>
+                        <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                    </li>
+                    <div class="fold-detail" id="card-<%= viewName %>-<%= card.index %>">
+                        <div class="fold-title"><%= card.title.replace(/\s*\[.*?\]\s*/g, '') %></div>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 6px;">
+                            <% if (card.priority) { %><span class="card-priority <%= card.priority.toLowerCase() %>" style="font-size:11px;"><%= card.priority %></span><% } %>
+                            <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                            <% card.domains.forEach(function(d) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#e8f0fe;color:#1a73e8;"><%=d%></span><% }); %>
+                            <% card.chunks.forEach(function(c) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fce4ec;color:#c62828;"><%=c%></span><% }); %>
+                            <% card.sequences.forEach(function(s) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32;"><%=s%></span><% }); %>
+                            <% card.streams.forEach(function(s) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fff3e0;color:#e65100;"><%=s%></span><% }); %>
+                        </div>
+                        <% if (card.description) { %>
+                        <div class="fold-desc"><%= card.description %></div>
+                        <% } %>
+                    </div>
+                    <% } %>
+                </ul>
+                <% } %>
+                <% if (tile.workflows && tile.workflows.length > 0) { %>
+                <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border-color, #f0f0f0);">
+                    <% for (const wf of tile.workflows) { %>
+                    <div class="fold-row" data-fold="wf-<%= viewName %>-<%= wf.id %>" style="font-size:11px;color:var(--text-muted);padding:2px 0;">
+                        <span class="wf-id" style="font-size:11px;"><%= wf.id %></span>
+                        <% if (wf.card) { %><a class="card-id" href="http://localhost:3456/tasks/<%= wf.card %>" target="_blank" style="font-size:10px;">#<%= wf.card %></a><% } %>
+                        <%= wf.decision.substring(0, 40) %><%= wf.decision.length > 40 ? '…' : '' %>
+                        <% var doneSteps = wf.steps.filter(function(s){ return s.status === 'completed'; }).length; %>
+                        <span style="font-size:10px;opacity:0.7;"><%= doneSteps %>/<%= wf.steps.length %></span>
+                    </div>
+                    <div class="fold-detail" id="wf-<%= viewName %>-<%= wf.id %>">
+                        <div class="fold-title"><%= wf.decision %></div>
+                        <ul class="wf-steps">
+                            <% for (const step of wf.steps) { %>
+                            <li>
+                                <span class="wf-step-dot <%= step.status %>"></span>
+                                <span class="wf-role"><%= step.role %></span>
+                                <%= step.action.substring(0, 60) %><%= step.action.length > 60 ? '…' : '' %>
+                            </li>
+                            <% } %>
+                        </ul>
+                    </div>
+                    <% } %>
+                </div>
+                <% } %>
+            </div>
+            <div class="detail-panel" id="detail-<%= viewName %>-<%= tile.name %>">
+                <div class="detail-header">
+                    <h2><%= tile.name %></h2>
+                    <button class="detail-close" data-tile="<%= viewName %>-<%= tile.name %>">Close</button>
+                </div>
+                <% if (tile.cards.length === 0) { %>
+                    <p style="color:var(--text-muted);font-size:13px;">No cards tagged yet.</p>
+                <% } else { %>
+                    <%
+                        var groups = { 'WIP': [], 'Now': [], 'Next': [], 'Done': [] };
+                        tile.cards.forEach(function(c) {
+                            var g = c.done ? 'Done' : (c.status === 'WIP' ? 'WIP' : c.status === 'Now' ? 'Now' : c.status === 'Next' || c.status === 'Later' ? 'Next' : 'Done');
+                            if (groups[g]) groups[g].push(c);
+                        });
+                    %>
+                    <% ['WIP', 'Now', 'Next', 'Done'].forEach(function(g) { %>
+                        <% if (groups[g].length > 0) { %>
+                            <div class="group-label"><%= g %> (<%= groups[g].length %>)</div>
+                            <ul class="detail-cards">
+                                <% groups[g].forEach(function(card) { %>
+                                <li>
+                                    <a class="card-id" href="http://localhost:3456/tasks/<%= card.id %>" target="_blank">#<%= card.index %></a>
+                                    <%= card.title.replace(/\s*—.*$/, '').substring(0, 65) %>
+                                    <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                                    <% if (card.priority) { %><span class="card-priority <%= card.priority.toLowerCase() %>"><%= card.priority %></span><% } %>
+                                </li>
+                                <% }); %>
+                            </ul>
+                        <% } %>
+                    <% }); %>
+                <% } %>
+            </div>
+        <% } %>
+    </div>
+    <% } %>
+
+    <!-- Funnel view: domain circles in flow stages -->
+    <%
+      // Place each domain in EVERY stage where it has cards
+      // A domain flowing through multiple stages is the signal
+      var funnelStages = { later: [], next: [], now: [], wip: [], done: [] };
+      var domainList = domains || [];
+      domainList.forEach(function(d) {
+        if (d.cards.some(function(c) { return !c.done && c.status === 'Later'; })) funnelStages.later.push(d);
+        if (d.cards.some(function(c) { return !c.done && c.status === 'Next'; })) funnelStages.next.push(d);
+        if (d.cards.some(function(c) { return !c.done && c.status === 'Now'; })) funnelStages.now.push(d);
+        if (d.cards.some(function(c) { return !c.done && c.status === 'WIP'; })) funnelStages.wip.push(d);
+      });
+      function circleSize(count) {
+        if (count >= 20) return 'dc-size-xl';
+        if (count >= 10) return 'dc-size-lg';
+        if (count >= 5) return 'dc-size-md';
+        return 'dc-size-sm';
+      }
+    %>
+    <div class="funnel-view hidden" id="grid-funnel">
+        <% var stageOrder = [
+          { key: 'later', label: 'Later' },
+          { key: 'next', label: 'Next' },
+          { key: 'now', label: 'Now' },
+          { key: 'wip', label: 'WIP' }
+        ]; %>
+        <% for (var si = 0; si < stageOrder.length; si++) {
+          var stage = stageOrder[si];
+          var stageDomains = funnelStages[stage.key];
+        %>
+          <div class="funnel-stage funnel-stage-<%= stage.key %>" data-label="<%= stage.label %>">
+            <% if (stageDomains.length === 0) { %>
+              <span class="funnel-empty">—</span>
+            <% } else { %>
+              <% for (var di = 0; di < stageDomains.length; di++) {
+                var d = stageDomains[di];
+                // Show the count relevant to THIS stage
+                var stageCount;
+                if (stage.key === 'wip') stageCount = d.cards.filter(function(c){ return !c.done && c.status === 'WIP'; }).length;
+                else if (stage.key === 'now') stageCount = d.cards.filter(function(c){ return !c.done && c.status === 'Now'; }).length;
+                else if (stage.key === 'next') stageCount = d.cards.filter(function(c){ return !c.done && c.status === 'Next'; }).length;
+                else if (stage.key === 'later') stageCount = d.cards.filter(function(c){ return !c.done && c.status === 'Later'; }).length;
+                else stageCount = d.counts.done;
+                var activeCount = d.counts.total - d.counts.done;
+                var hasWip = d.counts.wip > 0;
+                var hasBlocked = d.counts.blocked > 0;
+              %>
+                <div class="domain-circle <%= circleSize(stageCount) %> <%= hasWip ? 'has-wip' : '' %> <%= hasBlocked ? 'has-blocked' : '' %>"
+                     title="<%= d.name %>: <%= stageCount %> in <%= stage.label %>, <%= activeCount %> active total"
+                     data-jump-domain="<%= d.name %>">
+                  <span class="dc-count"><%= stageCount %></span>
+                  <span class="dc-name"><%= d.name %></span>
+                  <div class="dc-tooltip">
+                    <div class="dc-tooltip-title"><%= d.name %> — <%= stage.label %></div>
+                    <% var stageCards = d.cards.filter(function(c) {
+                      if (stage.key === 'wip') return !c.done && c.status === 'WIP';
+                      if (stage.key === 'now') return !c.done && c.status === 'Now';
+                      if (stage.key === 'next') return !c.done && c.status === 'Next';
+                      if (stage.key === 'later') return !c.done && c.status === 'Later';
+                      return false;
+                    }); %>
+                    <% stageCards.slice(0, 5).forEach(function(c) { %>
+                      <div class="dc-tooltip-card">
+                        <span class="card-id">#<%= c.index %></span>
+                        <%= c.title.replace(/\s*—.*$/, '').substring(0, 45) %><%= c.title.length > 45 ? '…' : '' %>
+                      </div>
+                    <% }); %>
+                    <% if (stageCards.length > 5) { %>
+                      <div class="dc-tooltip-card" style="color:var(--text-muted);font-style:italic;">+ <%= stageCards.length - 5 %> more</div>
+                    <% } %>
+                    <% if (d.workflows && d.workflows.length > 0) { %>
+                      <div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border-color,#eee);">
+                      <% d.workflows.forEach(function(wf) { %>
+                        <div class="dc-tooltip-card" style="color:#d4880f;"><span class="wf-id" style="font-size:10px;"><%= wf.id %></span> <%= wf.decision.substring(0,35) %><%= wf.decision.length > 35 ? '…' : '' %></div>
+                      <% }); %>
+                      </div>
+                    <% } %>
+                  </div>
+                </div>
+              <% } %>
+            <% } %>
+          </div>
+          <% if (si < stageOrder.length - 1) { %><div class="funnel-divider"></div><% } %>
+        <% } %>
+        <div class="funnel-summary">
+          <strong><%= domainList.reduce(function(s,d){ return s + d.counts.wip; }, 0) %></strong> in WIP &middot;
+          <strong><%= domainList.reduce(function(s,d){ return s + d.counts.next; }, 0) %></strong> queued &middot;
+          <strong><%= domainList.reduce(function(s,d){ return s + d.counts.done; }, 0) %></strong> shipped
+        </div>
+    </div>
+
+    <% renderTileGrid(sequences, 'sequences'); %>
+
+    <!-- Chunks: flat tile grid -->
+    <div class="tile-grid hidden" id="grid-chunks">
+        <% for (const tile of chunks) { %>
+                    <% var chunkOwnerSet = {}; tile.cards.forEach(function(c) { if (c.owner) chunkOwnerSet[c.owner] = true; }); var chunkOwners = Object.keys(chunkOwnerSet).join(','); %>
+                    <div class="tile <%= tile.counts.wip > 0 ? 'has-wip' : '' %>"
+                         data-tile="chunks-<%= tile.name %>"
+                         data-owners="<%= chunkOwners %>">
+                        <div class="tile-header">
+                            <span class="tile-name"><%= tile.name %></span>
+                            <span class="tile-total"><%= tile.counts.total %> cards</span>
+                        </div>
+                        <% if (tile.description) { %>
+                        <div class="tile-desc"><%= tile.description %></div>
+                        <% } %>
+                        <% if (tile.counts.total > 0) { %>
+                        <div class="status-bar">
+                            <% var total = tile.counts.total || 1; %>
+                            <div class="bar-done" style="width:<%= Math.round(tile.counts.done / total * 100) %>%"></div>
+                            <div class="bar-wip" style="width:<%= Math.round(tile.counts.wip / total * 100) %>%"></div>
+                            <div class="bar-next" style="width:<%= Math.round(tile.counts.next / total * 100) %>%"></div>
+                        </div>
+                        <% } %>
+                        <div class="tile-stats">
+                            <span class="stat-done"><%= tile.counts.done %> done</span>
+                            <span class="stat-wip"><%= tile.counts.wip %> wip</span>
+                            <span class="stat-next"><%= tile.counts.next %> next</span>
+                        </div>
+                        <div class="velocity"><strong><%= tile.velocity7d %></strong> shipped last 7 days</div>
+                        <%
+                          var chunkAllActive = [].concat(tile.blockedCards, tile.wipCards, tile.nextCards);
+                        %>
+                        <% if (chunkAllActive.length > 0) { %>
+                        <ul class="wip-list">
+                            <% for (const card of chunkAllActive) { %>
+                            <li class="fold-row" data-fold="card-chunks-<%= card.index %>">
+                                <% var cbadge = card.done ? 'done' : card.status === 'WIP' ? 'wip' : card.status === 'Now' ? 'now' : card.status === 'Blocked' ? 'blocked' : card.status === 'Later' ? 'later' : 'next'; %>
+                                <span class="status-badge status-<%= cbadge %>"><%= cbadge.toUpperCase() %></span>
+                                <a class="card-id" href="http://localhost:3456/tasks/<%= card.id %>" target="_blank">#<%= card.index %></a>
+                                <%= card.title.replace(/\s*\[.*?\]\s*/g, '').replace(/\s*—.*$/, '').substring(0, 50) %>
+                                <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                            </li>
+                            <div class="fold-detail" id="card-chunks-<%= card.index %>">
+                                <div class="fold-title"><%= card.title.replace(/\s*\[.*?\]\s*/g, '') %></div>
+                                <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 6px;">
+                                    <% if (card.priority) { %><span class="card-priority <%= card.priority.toLowerCase() %>" style="font-size:11px;"><%= card.priority %></span><% } %>
+                                    <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                                    <% card.domains.forEach(function(d) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#e8f0fe;color:#1a73e8;"><%=d%></span><% }); %>
+                                    <% card.chunks.forEach(function(c) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fce4ec;color:#c62828;"><%=c%></span><% }); %>
+                                    <% card.sequences.forEach(function(s) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32;"><%=s%></span><% }); %>
+                                    <% card.streams.forEach(function(s) { %><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#fff3e0;color:#e65100;"><%=s%></span><% }); %>
+                                </div>
+                                <% if (card.description) { %>
+                                <div class="fold-desc"><%= card.description %></div>
+                                <% } %>
+                            </div>
+                            <% } %>
+                            <% if (tile.nextCards.length > 5) { %>
+                            <li style="color:var(--text-muted);font-style:italic;font-size:11px;">+ <%= tile.nextCards.length - 5 %> more in queue</li>
+                            <% } %>
+                        </ul>
+                        <% } %>
+                        <% if (tile.workflows && tile.workflows.length > 0) { %>
+                        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border-color, #f0f0f0);">
+                            <% for (const wf of tile.workflows) { %>
+                            <div class="fold-row" data-fold="wf-chunks-<%= wf.id %>" style="font-size:11px;color:var(--text-muted);padding:2px 0;">
+                                <span class="wf-id" style="font-size:11px;"><%= wf.id %></span>
+                                <% if (wf.card) { %><a class="card-id" href="http://localhost:3456/tasks/<%= wf.card %>" target="_blank" style="font-size:10px;">#<%= wf.card %></a><% } %>
+                                <%= wf.decision.substring(0, 40) %><%= wf.decision.length > 40 ? '…' : '' %>
+                                <% var doneSteps = wf.steps.filter(function(s){ return s.status === 'completed'; }).length; %>
+                                <span style="font-size:10px;opacity:0.7;"><%= doneSteps %>/<%= wf.steps.length %></span>
+                            </div>
+                            <div class="fold-detail" id="wf-chunks-<%= wf.id %>">
+                                <div class="fold-title"><%= wf.decision %></div>
+                                <ul class="wf-steps">
+                                    <% for (const step of wf.steps) { %>
+                                    <li>
+                                        <span class="wf-step-dot <%= step.status %>"></span>
+                                        <span class="wf-role"><%= step.role %></span>
+                                        <%= step.action.substring(0, 60) %><%= step.action.length > 60 ? '…' : '' %>
+                                    </li>
+                                    <% } %>
+                                </ul>
+                            </div>
+                            <% } %>
+                        </div>
+                        <% } %>
+                    </div>
+                    <div class="detail-panel" id="detail-chunks-<%= tile.name %>">
+                        <div class="detail-header">
+                            <h2><%= tile.name %></h2>
+                            <button class="detail-close" data-tile="chunks-<%= tile.name %>">Close</button>
+                        </div>
+                        <%
+                            var groups = { 'WIP': [], 'Now': [], 'Next': [], 'Done': [] };
+                            tile.cards.forEach(function(c) {
+                                var g = c.done ? 'Done' : (c.status === 'WIP' ? 'WIP' : c.status === 'Now' ? 'Now' : c.status === 'Next' || c.status === 'Later' ? 'Next' : 'Done');
+                                if (groups[g]) groups[g].push(c);
+                            });
+                        %>
+                        <% ['WIP', 'Now', 'Next', 'Done'].forEach(function(g) { %>
+                            <% if (groups[g].length > 0) { %>
+                                <div class="group-label"><%= g %> (<%= groups[g].length %>)</div>
+                                <ul class="detail-cards">
+                                    <% groups[g].forEach(function(card) { %>
+                                    <li>
+                                        <a class="card-id" href="http://localhost:3456/tasks/<%= card.id %>" target="_blank">#<%= card.index %></a>
+                                        <%= card.title.replace(/\s*—.*$/, '').substring(0, 65) %>
+                                        <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                                    </li>
+                                    <% }); %>
+                                </ul>
+                            <% } %>
+                        <% }); %>
+                    </div>
+        <% } %>
+    </div>
+
+    <% renderTileGrid(domains, 'domains'); %>
+
+    <% if (untaggedCards.length > 0) { %>
+    <div class="untagged-section">
+        <h3>Untagged Active Cards (<%= untaggedCards.length %>)</h3>
+        <ul class="detail-cards">
+            <% untaggedCards.slice(0, 15).forEach(function(card) { %>
+            <li>
+                <a class="card-id" href="http://localhost:3456/tasks/<%= card.id %>" target="_blank">#<%= card.index %></a>
+                <%= card.title.replace(/\s*—.*$/, '').substring(0, 65) %>
+                <% if (card.owner) { %><span class="card-owner"><%= card.owner %></span><% } %>
+                <span style="font-size:10px;color:var(--text-muted);margin-left:4px;"><%= card.status %></span>
+            </li>
+            <% }); %>
+            <% if (untaggedCards.length > 15) { %>
+            <li style="color:var(--text-muted);font-style:italic;">+ <%= untaggedCards.length - 15 %> more</li>
+            <% } %>
+        </ul>
+    </div>
+    <% } %>
+
+
+    <script nonce="<%= locals.cspNonce || '' %>">
+        // View toggle
+        document.querySelectorAll('.view-toggle button[data-view]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var view = this.dataset.view;
+                document.querySelectorAll('.view-toggle button[data-view]').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                document.querySelectorAll('.tile-grid, .funnel-view').forEach(function(g) { g.classList.add('hidden'); });
+                var target = document.getElementById('grid-' + view);
+                if (target) target.classList.remove('hidden');
+                // Close any open detail panels
+                document.querySelectorAll('.detail-panel').forEach(function(p) { p.classList.remove('visible'); });
+            });
+        });
+
+        // Default view: domains (unhide on load)
+        var defaultGrid = document.getElementById('grid-domains');
+        if (defaultGrid) defaultGrid.classList.remove('hidden');
+
+        // Tile click → detail panel
+        function toggleDetail(key) {
+            var el = document.getElementById('detail-' + key);
+            if (!el) return;
+            var grid = el.closest('.tile-grid');
+            var isVisible = el.classList.contains('visible');
+            // Close all panels in this grid
+            grid.querySelectorAll('.detail-panel').forEach(function(s) { s.classList.remove('visible'); s.style.order = ''; });
+            grid.querySelectorAll('.tile').forEach(function(t) { t.style.order = ''; });
+            if (!isVisible) {
+                var tiles = Array.from(grid.querySelectorAll('.tile'));
+                var clickedIdx = tiles.findIndex(function(t) { return t.dataset.tile === key; });
+                var gridWidth = grid.offsetWidth;
+                var tileWidth = tiles[0] ? tiles[0].offsetWidth + 16 : 400;
+                var perRow = Math.max(1, Math.floor((gridWidth + 16) / tileWidth));
+                var rowEnd = Math.ceil((clickedIdx + 1) / perRow) * perRow;
+                tiles.forEach(function(t, i) {
+                    t.style.order = i < rowEnd ? i : i + 1;
+                });
+                el.style.order = rowEnd;
+                el.classList.add('visible');
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+        document.querySelectorAll('.tile[data-tile]').forEach(function(tile) {
+            tile.addEventListener('click', function(e) {
+                if (e.target.closest('a')) return;
+                if (e.target.closest('.fold-row') || e.target.closest('.fold-detail')) return;
+                toggleDetail(this.dataset.tile);
+            });
+        });
+        // Fold-down: click card/workflow row to expand detail inline
+        document.querySelectorAll('.fold-row[data-fold]').forEach(function(row) {
+            row.addEventListener('click', function(e) {
+                e.stopPropagation(); // prevent tile detail panel from opening
+                if (e.target.closest('a')) return; // don't intercept link clicks
+                var id = this.dataset.fold;
+                var detail = document.getElementById(id);
+                if (!detail) return;
+                // Close other open folds in same tile
+                var tile = this.closest('.tile');
+                if (tile) {
+                    tile.querySelectorAll('.fold-detail.open').forEach(function(d) {
+                        if (d.id !== id) d.classList.remove('open');
+                    });
+                }
+                detail.classList.toggle('open');
+            });
+        });
+
+        // Funnel circle click → switch to domains view and open detail
+        document.querySelectorAll('.domain-circle[data-jump-domain]').forEach(function(circle) {
+            circle.addEventListener('click', function() {
+                var domain = this.dataset.jumpDomain;
+                // Switch to domains view
+                document.querySelectorAll('.view-toggle button').forEach(function(b) { b.classList.remove('active'); });
+                document.querySelector('.view-toggle button[data-view="domains"]').classList.add('active');
+                document.querySelectorAll('.tile-grid, .funnel-view').forEach(function(g) { g.classList.add('hidden'); });
+                document.getElementById('grid-domains').classList.remove('hidden');
+                // Open the domain's detail panel
+                setTimeout(function() { toggleDetail('domains-' + domain); }, 100);
+            });
+        });
+
+        document.querySelectorAll('.detail-close[data-tile]').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleDetail(this.dataset.tile);
+            });
+        });
+
+        // Role filter
+        var activeRole = 'all';
+        document.querySelectorAll('#role-filter button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('#role-filter button').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                activeRole = this.dataset.role;
+                applyRoleFilter();
+            });
+        });
+
+        function applyRoleFilter() {
+            // Filter card list items by owner (active cards + detail panel cards)
+            document.querySelectorAll('.wip-list li.fold-row, .detail-cards li, .untagged-section li').forEach(function(li) {
+                var ownerEl = li.querySelector('.card-owner');
+                var owner = ownerEl ? ownerEl.textContent.trim() : '';
+                if (activeRole === 'all' || owner.toLowerCase() === activeRole.toLowerCase()) {
+                    li.style.display = '';
+                    var foldId = li.dataset && li.dataset.fold;
+                    if (foldId) {
+                        var foldEl = document.getElementById(foldId);
+                        if (foldEl) foldEl.style.display = '';
+                    }
+                } else {
+                    li.style.display = 'none';
+                    var foldId2 = li.dataset && li.dataset.fold;
+                    if (foldId2) {
+                        var foldEl2 = document.getElementById(foldId2);
+                        if (foldEl2) { foldEl2.style.display = 'none'; foldEl2.classList.remove('open'); }
+                    }
+                }
+            });
+
+            // Hide tiles that have no cards for the selected role
+            document.querySelectorAll('.tile[data-tile]').forEach(function(tile) {
+                if (activeRole === 'all') {
+                    tile.style.display = '';
+                    return;
+                }
+                var owners = (tile.dataset.owners || '').toLowerCase().split(',');
+                tile.style.display = owners.includes(activeRole.toLowerCase()) ? '' : 'none';
+            });
+
+            // Filter funnel circles too
+            document.querySelectorAll('.domain-circle[data-jump-domain]').forEach(function(circle) {
+                if (activeRole === 'all') {
+                    circle.style.display = '';
+                } else {
+                    var tooltipCards = circle.querySelectorAll('.dc-tooltip-card');
+                    circle.style.display = tooltipCards.length > 0 ? '' : '';
+                }
+            });
+        }
+    </script>
+    </div>
+<%- include('partials/page-close') %>

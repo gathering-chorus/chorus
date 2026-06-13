@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Books Domain — Ontology v0.9.0</title>
+<style nonce="<%= locals.cspNonce %>">
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'SF Pro Text', -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e0e0e8; }
+  h1 { font-size: 24px; font-weight: 300; color: #fff; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 40px; }
+  .subtitle span { color: #6af; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1100px; }
+  .section { background: #13131a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+  .section h2 { font-size: 15px; font-weight: 600; color: #aab; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .class-tree { list-style: none; }
+  .class-tree li { position: relative; padding: 10px 0 10px 28px; border-left: 2px solid #2a2a3a; }
+  .class-tree li:last-child { border-left-color: transparent; }
+  .class-tree li::before { content: ''; position: absolute; left: -1px; top: 22px; width: 20px; height: 2px; background: #2a2a3a; }
+  .class-name { font-weight: 600; font-size: 15px; color: #fff; }
+  .class-parent { font-size: 12px; color: #666; margin-left: 8px; }
+  .class-count { display: inline-block; background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 2px 10px; font-size: 13px; font-weight: 500; margin-left: 10px; }
+  .class-desc { font-size: 12px; color: #777; margin-top: 3px; }
+  .prop-table { width: 100%; border-collapse: collapse; }
+  .prop-table th { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; padding: 6px 0; border-bottom: 1px solid #2a2a3a; }
+  .prop-table td { padding: 8px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+  .prop-name { color: #8af; font-family: 'SF Mono', monospace; font-size: 12px; }
+  .prop-range { color: #a8a; font-size: 12px; }
+  .prop-deprecated { color: #a86; font-size: 11px; font-style: italic; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: 300; color: #fff; }
+  .stat-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .full-width { grid-column: 1 / -1; }
+  .rel-diagram { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; flex-wrap: wrap; }
+  .rel-node { background: #1a1a2a; border: 2px solid #4a4a6a; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #fff; }
+  .rel-node.collection { border-color: #d6a66a; background: #2a2a1a; }
+  .rel-node.entity { border-color: #6a8ad6; background: #1a1a3a; }
+  .rel-node.spatial { border-color: #6ad6d6; background: #1a2a3a; }
+  .rel-node.meta { border-color: #6ad68a; background: #1a3a2a; }
+  .rel-arrow { color: #666; font-size: 12px; display: flex; flex-direction: column; align-items: center; }
+  .rel-arrow .label { font-size: 10px; color: #8af; margin-bottom: 2px; }
+  .back-link { color: #6af; text-decoration: none; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+  .enum-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .enum-val { background: #1a2a1a; color: #6d6; border: 1px solid #2a4a2a; border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page-container">
+<div style="background:#fef3c7;color:#92400e;padding:12px 20px;border-radius:8px;margin-bottom:20px;font-size:13px;border:1px solid #fcd34d;">
+  <strong>Deprecated:</strong> This view is being replaced by the Athena CMDB.
+  <a href="/gathering-docs/domain-detail.html?id=books-domain" style="color:#92400e;font-weight:600;">View in Athena &rarr;</a>
+</div>
+
+<a href="/self" class="back-link">&larr; Self</a>
+<%- include('partials/content-actions', { title: 'Books Domain' }) %>
+
+<h1>Books Domain</h1>
+<p class="subtitle">jb-ontology.ttl <span>v0.9.0</span> · Physical book inventory with spatial hierarchy</p>
+
+<div class="stats">
+  <div class="stat"><div class="stat-value"><%= stats.books ? stats.books.toLocaleString() : '—' %></div><div class="stat-label">Books</div></div>
+  <div class="stat"><div class="stat-value">4</div><div class="stat-label">Reading States</div></div>
+  <div class="stat"><div class="stat-value">5</div><div class="stat-label">Spatial Levels</div></div>
+  <div class="stat"><div class="stat-value">schema:Book</div><div class="stat-label">Base Class</div></div>
+</div>
+
+<div class="grid">
+
+  <div class="section">
+    <h2>Classes (5)</h2>
+    <ul class="class-tree">
+      <li>
+        <span class="class-name">BookCollection</span>
+        <span class="class-parent">&#8834; Collection</span>
+        <span class="class-count">1</span>
+        <div class="class-desc">Container for the book inventory</div>
+      </li>
+      <li>
+        <span class="class-name">Book</span>
+        <span class="class-parent">&#8834; schema:Book</span>
+        <span class="class-count"><%= stats.books ? stats.books.toLocaleString() : '—' %></span>
+        <div class="class-desc">Physical book with reading status and spatial location</div>
+      </li>
+      <li>
+        <span class="class-name">Bookcase</span>
+        <div class="class-desc">Furniture for storing books, located in a Room</div>
+      </li>
+      <li>
+        <span class="class-name">Shelf</span>
+        <div class="class-desc">A shelf within a Bookcase (numbered top-down)</div>
+      </li>
+      <li>
+        <span class="class-name">ReadingStatus</span>
+        <div class="class-desc">Lifecycle state for reading progress</div>
+        <div class="enum-row">
+          <span class="enum-val">ToRead</span>
+          <span class="enum-val">Reading</span>
+          <span class="enum-val">Read</span>
+          <span class="enum-val">Abandoned</span>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Spatial Hierarchy</h2>
+    <div class="rel-diagram">
+      <div class="rel-node spatial">House</div>
+      <div class="rel-arrow"><span class="label">inHouse</span><span>&larr;</span></div>
+      <div class="rel-node spatial">Room</div>
+      <div class="rel-arrow"><span class="label">inRoom</span><span>&larr;</span></div>
+      <div class="rel-node spatial">Bookcase</div>
+      <div class="rel-arrow"><span class="label">inBookcase</span><span>&larr;</span></div>
+      <div class="rel-node spatial">Shelf</div>
+      <div class="rel-arrow"><span class="label">onShelf</span><span>&larr;</span></div>
+      <div class="rel-node entity">Book</div>
+    </div>
+
+    <h2 style="margin-top: 28px;">Object Properties (5)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain &rarr; Range</th></tr>
+      <tr><td class="prop-name">jb:onShelf</td><td class="prop-range">Book &rarr; Shelf</td></tr>
+      <tr><td class="prop-name">jb:inBookcase</td><td class="prop-range">Shelf &rarr; Bookcase</td></tr>
+      <tr><td class="prop-name">jb:inRoom</td><td class="prop-range">Bookcase &rarr; Room</td></tr>
+      <tr><td class="prop-name">jb:hasReadingStatus</td><td class="prop-range">Book &rarr; ReadingStatus</td></tr>
+      <tr><td class="prop-name">jb:coverImage</td><td class="prop-range">Book &rarr; schema:ImageObject</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>Datatype Properties (14)</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Domain</th><th>Range</th><th>Notes</th></tr>
+      <tr><td class="prop-name">jb:isbn13</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">13-digit ISBN</td></tr>
+      <tr><td class="prop-name">jb:openLibraryKey</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Open Library path (e.g., /books/OL702873M)</td></tr>
+      <tr><td class="prop-name">jb:addedAt</td><td class="prop-range">Book</td><td class="prop-range">xsd:dateTime</td><td style="font-size:12px;color:#777;">When added to collection</td></tr>
+      <tr><td class="prop-name">jb:dateStartedReading</td><td class="prop-range">Book</td><td class="prop-range">xsd:date</td><td style="font-size:12px;color:#777;">When started reading</td></tr>
+      <tr><td class="prop-name">jb:dateFinishedReading</td><td class="prop-range">Book</td><td class="prop-range">xsd:date</td><td style="font-size:12px;color:#777;">When completed</td></tr>
+      <tr><td class="prop-name">jb:personalRating</td><td class="prop-range">Book</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">1-5 stars</td></tr>
+      <tr><td class="prop-name">jb:acquisitionDate</td><td class="prop-range">Book</td><td class="prop-range">xsd:date</td><td style="font-size:12px;color:#777;">When acquired</td></tr>
+      <tr><td class="prop-name">jb:acquisitionSource</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Gift, purchase, etc.</td></tr>
+      <tr><td class="prop-name">jb:shelfPosition</td><td class="prop-range">Book</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">Position on shelf (1 = leftmost)</td></tr>
+      <tr><td class="prop-name">jb:shelfNumber</td><td class="prop-range">Shelf</td><td class="prop-range">xsd:integer</td><td style="font-size:12px;color:#777;">Shelf number (1 = top)</td></tr>
+      <tr><td class="prop-name">jb:physicalLocation</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Free-text location override</td></tr>
+      <tr><td class="prop-name">jb:originalPhotoPath</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td style="font-size:12px;color:#777;">Original filename before rename</td></tr>
+      <tr><td class="prop-name" style="color:#a86;">jb:locationRoom</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td class="prop-deprecated">Deprecated — use Shelf/Bookcase/Room</td></tr>
+      <tr><td class="prop-name" style="color:#a86;">jb:locationBookcase</td><td class="prop-range">Book</td><td class="prop-range">xsd:string</td><td class="prop-deprecated">Deprecated — use Shelf/Bookcase/Room</td></tr>
+    </table>
+  </div>
+
+  <div class="section full-width">
+    <h2>schema.org Properties Used</h2>
+    <table class="prop-table">
+      <tr><th>Property</th><th>Notes</th></tr>
+      <tr><td class="prop-name">schema:name</td><td style="font-size:12px;color:#777;">Book title</td></tr>
+      <tr><td class="prop-name">schema:isbn</td><td style="font-size:12px;color:#777;">ISBN-10 or ISBN-13</td></tr>
+      <tr><td class="prop-name">schema:author</td><td style="font-size:12px;color:#777;">Person or Organization</td></tr>
+      <tr><td class="prop-name">schema:publisher</td><td style="font-size:12px;color:#777;">Organization</td></tr>
+      <tr><td class="prop-name">schema:datePublished</td><td style="font-size:12px;color:#777;">Publication date</td></tr>
+      <tr><td class="prop-name">schema:numberOfPages</td><td style="font-size:12px;color:#777;">Page count</td></tr>
+      <tr><td class="prop-name">schema:bookEdition</td><td style="font-size:12px;color:#777;">Edition text</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<p style="text-align:center;margin-top:40px;font-size:11px;color:#444;">jb-ontology.ttl v0.9.0 · Books domain · Card #242</p>
+</div>
+<%- include("partials/session-recorder") %>
+<%- include("partials/footer") %>
+</body>
+</html>

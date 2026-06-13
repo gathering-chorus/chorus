@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harvesting | Jeff Bridwell</title>
+  <link rel="stylesheet" href="/css/gathering.css">
+
+<style>
+  /* light theme — inherits gathering.css defaults */
+  .pipeline-grid { display: flex; flex-direction: column; gap: 2rem; }
+
+  /* Domain filter nav */
+  .domain-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .domain-nav a { font-size: 0.75rem; padding: 4px 12px; border-radius: 12px; text-decoration: none; border: 1px solid #c7d2fe; color: #4f46e5; transition: all 0.15s; }
+  .domain-nav a:hover { background: #eef2ff; }
+  .domain-nav a.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+
+  /* Each domain */
+  .domain-pipeline { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.5rem; }
+  .domain-pipeline.focused { border-color: #6366f1; }
+  .domain-pipeline h2 { font-size: 1.1rem; margin: 0 0 0.25rem; color: #1a1a2e; text-transform: capitalize; }
+  .domain-pipeline .desc { font-size: 0.75rem; color: #9ca3af; margin-bottom: 1rem; }
+
+  /* Overview pipeline row */
+  .pipeline-row { display: grid; grid-template-columns: 200px 40px 1fr 40px 140px; gap: 0; align-items: center; min-height: 80px; }
+
+  /* Sources summary */
+  .sources-summary { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+  .source-pill { font-size: 0.6rem; padding: 3px 8px; border-radius: 4px; border: 2px solid #e5e7eb; display: flex; justify-content: space-between; gap: 8px; }
+  .source-pill .s-label { color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .source-pill .s-count { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .source-pill.done { background: #f0fdf4; border-color: #16a34a; }
+  .source-pill.done .s-count { color: #16a34a; }
+  .source-pill.partial { background: #fffbeb; border-color: #d97706; }
+  .source-pill.partial .s-count { color: #d97706; }
+  .source-pill.pending { background: #f9fafb; border-color: #e5e7eb; opacity: 0.6; }
+  .source-pill.pending .s-count { color: #9ca3af; }
+
+  /* Connectors */
+  .connector { display: flex; align-items: center; justify-content: center; }
+  .connector svg { width: 32px; height: 80px; }
+
+  /* Aggregate stage blocks */
+  .stages-agg { display: flex; align-items: center; gap: 0; flex: 1; }
+  .stage-agg { flex: 1; text-align: center; padding: 10px 6px; border-radius: 6px; background: #f9fafb; border: 1px solid #e5e7eb; }
+  .stage-agg .sa-name { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: #6b7280; margin-bottom: 4px; }
+  .stage-agg .sa-ratio { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stage-agg .sa-ratio .done { color: #16a34a; }
+  .stage-agg .sa-ratio .total { color: #d1d5db; }
+  .stage-agg .sa-pct { font-size: 0.65rem; color: #9ca3af; margin-top: 2px; }
+  .stage-arrow { display: flex; align-items: center; justify-content: center; width: 20px; flex-shrink: 0; color: #d1d5db; font-size: 0.9rem; }
+
+  /* Target */
+  .target { display: flex; align-items: center; justify-content: center; }
+  .target-box { background: #f0fdf4; border: 2px solid #86efac; border-radius: 8px; padding: 10px 14px; text-align: center; width: 100%; }
+  .target-box .target-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: #16a34a; font-weight: 700; margin-bottom: 4px; }
+  .target-box .target-count { font-size: 1rem; font-weight: 700; color: #1a1a2e; font-variant-numeric: tabular-nums; }
+  .target-box .target-unit { font-size: 0.6rem; color: #9ca3af; }
+
+  /* Per-source pipeline cards */
+  .source-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 1.25rem; }
+  .source-card { background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
+  .source-card.all-done { background: #f0fdf4; border-color: #16a34a; }
+  .source-card.partial { background: #fffbeb; border-color: #d97706; }
+
+  .sc-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .sc-header .sc-name { font-size: 0.8rem; font-weight: 700; color: #1a1a2e; }
+  .sc-header .sc-meta { font-size: 0.65rem; color: #9ca3af; }
+
+  .sc-notes { font-size: 0.6rem; color: #9ca3af; margin-bottom: 8px; }
+
+  /* Per-source stage pills in a row */
+  .sc-stages { display: flex; gap: 6px; align-items: center; }
+  .sc-stage { flex: 1; text-align: center; padding: 8px 6px; border-radius: 6px; min-width: 0; }
+  .sc-stage:first-child { flex: 1.3; }
+  .sc-stage .sc-st-name { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 2px; }
+  .sc-stage .sc-st-count { font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sc-stage .sc-st-date { font-size: 0.5rem; color: #9ca3af; margin-top: 2px; }
+  .sc-stage .sc-st-note { font-size: 0.5rem; color: #9ca3af; margin-top: 2px; word-break: break-all; }
+
+  .sc-stage.complete { background: #dcfce7; border: 2px solid #16a34a; }
+  .sc-stage.complete .sc-st-name { color: #15803d; }
+  .sc-stage.complete .sc-st-count { color: #15803d; }
+  .sc-stage.in_progress { background: #fef3c7; border: 2px solid #d97706; }
+  .sc-stage.in_progress .sc-st-name { color: #b45309; }
+  .sc-stage.in_progress .sc-st-count { color: #b45309; }
+  .sc-stage.not_started { background: #f3f4f6; border: 2px solid #d1d5db; }
+  .sc-stage.not_started .sc-st-name { color: #9ca3af; }
+  .sc-stage.not_started .sc-st-count { color: #9ca3af; }
+
+  .sc-stage-arrow { color: #d1d5db; font-size: 0.7rem; flex-shrink: 0; }
+
+  /* Reconcile bar */
+  .reconcile-bar { margin-top: 8px; }
+  .reconcile-bar .rb-label { font-size: 0.6rem; color: #6b7280; margin-bottom: 3px; }
+  .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; }
+  .progress-fill.green { background: #16a34a; }
+  .progress-fill.amber { background: #d97706; }
+  .rb-detail { font-size: 0.55rem; color: #9ca3af; margin-top: 3px; }
+
+  /* Gaps */
+  .domain-gaps { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; }
+  .domain-gaps .gap { font-size: 0.6rem; color: #dc2626; padding: 2px 0; }
+  .domain-gaps .gap::before { content: "⚠ "; }
+
+  /* Tasks */
+  .domain-tasks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0.75rem; }
+  .task-chip { font-size: 0.6rem; padding: 3px 10px; border-radius: 10px; }
+  .task-chip.complete { background: #dcfce7; color: #16a34a; }
+  .task-chip.in_progress { background: #fef3c7; color: #d97706; }
+  .task-chip.not_started { background: #f3f4f6; color: #9ca3af; }
+
+  .board-link { font-size: 0.7rem; color: #6366f1; text-decoration: none; float: right; }
+  .board-link:hover { text-decoration: underline; }
+
+  /* Conceptual flow legend */
+  .flow-legend { display: flex; align-items: center; gap: 0; margin-bottom: 1.5rem; padding: 14px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; overflow: visible; }
+  .flow-step { text-align: center; flex-shrink: 0; padding: 8px 12px; border-radius: 6px; border: 1.5px solid transparent; cursor: pointer; position: relative; transition: all 0.15s; }
+  .flow-step:hover { background: #dcfce7; border-color: #86efac; }
+  .flow-step .fs-name { font-size: 0.65rem; font-weight: 700; color: #16a34a; text-transform: uppercase; letter-spacing: 0.03em; }
+  .flow-step .fs-desc { font-size: 0.5rem; color: #6b7280; margin-top: 2px; max-width: 110px; }
+  .flow-arrow { color: #86efac; font-size: 0.8rem; margin: 0 4px; flex-shrink: 0; font-weight: 700; }
+  /* Styled hover tooltip — above the step */
+  .flow-step .fs-tooltip { display: none; position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 280px; padding: 12px 14px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 100; text-align: left; }
+  .flow-step:hover .fs-tooltip { display: block; }
+  .fs-tooltip .fst-row { margin-bottom: 6px; }
+  .fs-tooltip .fst-row:last-child { margin-bottom: 0; }
+  .fs-tooltip .fst-label { font-size: 0.55rem; font-weight: 700; color: #16a34a; text-transform: uppercase; letter-spacing: 0.03em; }
+  .fs-tooltip .fst-text { font-size: 0.6rem; color: #374151; line-height: 1.4; }
+</style>
+
+
+
+<body>
+<nav>
+    
+        <a href="/">Gathering</a>
+        <a href="/login">Login</a>
+    
+</nav>
+<!-- Nav styles in gathering.css -->
+<script nonce="">
+    // Highlight active nav item
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('nav a');
+
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            // Don't try to highlight external links based on current path
+            if (href.startsWith('http')) {
+                return;
+            }
+
+            if (href === currentPath ||
+                (href === '/blog' && currentPath.startsWith('/blog'))) {
+                link.classList.add('active');
+            }
+        });
+    });
+</script>
+
+<div class="page-container">
+
+<h1>Harvesting</h1>
+
+<div class="domain-nav">
+  <a href="/harvest-manifests" class="active">All</a>
+  
+    <a href="/harvest-manifests?domain=blog" class="">blog</a>
+  
+    <a href="/harvest-manifests?domain=facebook" class="">facebook</a>
+  
+    <a href="/harvest-manifests?domain=linkedin" class="">linkedin</a>
+  
+    <a href="/harvest-manifests?domain=music" class="">music</a>
+  
+    <a href="/harvest-manifests?domain=notes" class="">notes</a>
+  
+    <a href="/harvest-manifests?domain=photos" class="">photos</a>
+  
+    <a href="/harvest-manifests?domain=sexuality" class="">sexuality</a>
+  
+    <a href="/harvest-manifests?domain=stories" class="">stories</a>
+  
+</div>
+
+<div class="flow-legend">
+  <div class="flow-step">
+    <div class="fs-name">Sources</div><div class="fs-desc">Raw files on disk or network</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Original media libraries, backups, and exports scattered across machines and drives.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Inventory via SSH, mount checks, XML discovery.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Can't harvest what you can't find — this is the starting inventory of everything that exists.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Stage</div><div class="fs-desc">rsync to staging area</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Copy source files to a centralized staging area on Bedroom Mac.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">rsync over SMB/SSH to /Volumes/VideosNew/Gathering/Music/ToDo/.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Sources live on different machines and drives. Staging consolidates them so the pipeline operates on a single path without flaky mounts.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Extract</div><div class="fs-desc">Parse XML/files to tracks</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Parse source files (iTunes XML, file trees) into a flat list of track metadata.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">XML parser reads iTunes Library.xml → one JSONL record per track with artist, album, duration, play count, genre.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Raw sources are proprietary formats. Extract normalizes them into a common structure the pipeline can consume.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Transform</div><div class="fs-desc">Dedup, group into albums + TTL</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Deduplicate tracks, group into albums, and generate RDF (Turtle) files.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Hash-based dedup on artist+title+duration → album grouping → one .ttl per album with tracks, artists, genres, artwork.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Fuseki stores RDF. This converts flat track lists into linked data — albums connect to artists, genres, and artwork.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Reconcile</div><div class="fs-desc">Diff against canonical, import unique</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Diff secondary source tracks against the canonical Apple Music library. Import unique files.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Compare by artist+title+duration hash. Verify MP3s on disk. Stream-import unique tracks into Apple Music via osascript.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Multiple sources overlap. Reconcile identifies what's genuinely new and merges it into the canonical library so Navidrome serves everything from one place.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Load</div><div class="fs-desc">Sync TTL to Fuseki graphs</div>
+    <div class="fs-tooltip">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Upload generated TTL files to Apache Fuseki as named graphs.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">HTTP PUT each .ttl to Fuseki /pods dataset. One named graph per album. Parallel uploads (2-8 workers).</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Fuseki is the SPARQL triplestore powering search, browse, and cross-domain queries. Loading makes data queryable.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Fuseki</div><div class="fs-desc">RDF knowledge graph</div>
+    <div class="fs-tooltip" style="left: auto; right: 0; transform: none; bottom: calc(100% + 10px);">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Apache Jena Fuseki — the RDF knowledge graph storing all harvested data.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">SPARQL queries serve album browse, artist search, cross-domain links. Named graphs = one per album/collection.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">RDF lets domains link — a song connects to an artist, a photo to a location, a story to a value. Fuseki is the single query layer across all of Jeff's data.</div></div>
+    </div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="fs-name">Deprecate</div><div class="fs-desc">Archive staging, reclaim disk</div>
+    <div class="fs-tooltip" style="left: auto; right: 0; transform: none; bottom: calc(100% + 10px);">
+      <div class="fst-row"><div class="fst-label">What</div><div class="fst-text">Archive or delete the staging copy in ToDo after Fuseki load is verified.</div></div>
+      <div class="fst-row"><div class="fst-label">How</div><div class="fst-text">Verify Fuseki counts match expected. Move ToDo/&lt;source&gt; to Done folder or delete with explicit flag. Mark deprecated in manifest.</div></div>
+      <div class="fst-row"><div class="fst-label">Why</div><div class="fst-text">Staging data is a copy — once verified in Fuseki, keeping it wastes disk. Deprecation completes a source's lifecycle.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="pipeline-grid">
+
+</div>
+
+</div><!-- .page-container -->
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h3>Gathering</h3>
+      <p>Personal knowledge graph &middot; RDF/SPARQL &middot; Private by default</p>
+    </div>
+    <div class="footer-section">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/blog">Journal</a></li>
+        <li><a href="/chorus">Chorus</a></li>
+      </ul>
+    </div>
+    <div class="footer-section">
+      <p>SOLID pods &middot; ACL visibility &middot; Everything graduates</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>&copy; 2026 Jeff Bridwell &middot; Roslindale, MA &middot; Built with the Loom</p>
+  </div>
+</footer>
+
+
+
+<script src="/js/vendor/rrweb-record.min.js"></script>
+<style>
+  .rec-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99999;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(40,40,50,0.8);
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 0;
+  }
+  .rec-toggle:hover { background: rgba(60,60,70,0.9); color: #ccc; }
+  .rec-toggle.active {
+    background: rgba(200,30,30,0.9);
+    border-color: rgba(255,80,80,0.4);
+    color: #fff;
+    animation: rec-pulse 1.5s ease-in-out infinite;
+  }
+  .rec-toggle.active:hover { background: rgba(220,40,40,0.95); }
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(200,30,30,0.3); }
+    50% { box-shadow: 0 2px 16px rgba(200,30,30,0.6); }
+  }
+  .rec-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: all 0.15s;
+  }
+  .rec-toggle.active .rec-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: #fff;
+  }
+</style>
+<a href="/admin/replay/latest" class="rec-toggle no-record" id="rec-toggle" title="Record session flow — right-click to copy link to latest replay">
+  <span class="rec-icon"></span>
+</a>
+<script nonce="">
+(function() {
+  var btn = document.getElementById('rec-toggle');
+  var events = [];
+  var stopFn = null;
+  var timer = null;
+  var BATCH = 5;
+  var INTERVAL = 2000;
+
+  function sid()  { return sessionStorage.getItem('rrweb_sid'); }
+  function on()   { return sessionStorage.getItem('rrweb_on') === '1'; }
+
+  function send(batch, sync) {
+    var id = sid();
+    if (!id || !batch.length) return;
+    var payload = JSON.stringify({
+      sessionId: id,
+      events: batch,
+      page: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/events', false); // sync — guarantees delivery before navigation
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function sendActions(sync) {
+    if (!actionLog.length) return;
+    var id = sid();
+    if (!id) return;
+    var payload = JSON.stringify({ sessionId: id, actions: actionLog.splice(0) });
+    if (!sync && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sessions/actions', new Blob([payload], { type: 'application/json' }));
+    } else {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/sessions/actions', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(payload);
+    }
+  }
+
+  function flush() {
+    if (events.length === 0) return;
+    send(events.splice(0), false);
+  }
+
+  // --- Text action log (parallel to rrweb) ---
+  var actionLog = [];
+  var scrollTimer = null;
+  var actionListenersAttached = false;
+
+  function logAction(type, detail) {
+    actionLog.push(new Date().toISOString() + '\t' + type + '\t' + (detail || ''));
+  }
+
+  function describeEl(el) {
+    if (!el) return '';
+    var text = el.innerText || el.textContent || '';
+    text = text.trim().substring(0, 80).replace(/[\t\n\r]+/g, ' ');
+    var href = el.getAttribute('href') || '';
+    var label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    var tag = el.tagName.toLowerCase();
+    var parts = [tag];
+    if (text) parts.push('"' + text + '"');
+    if (href && href !== '#') parts.push('→ ' + href);
+    if (label) parts.push('[' + label + ']');
+    return parts.join(' ');
+  }
+
+  function onActionClick(e) {
+    var target = e.target.closest('a,button,[role=button],input[type=submit]');
+    if (target) logAction('CLICK', describeEl(target));
+  }
+
+  function onActionScroll() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function() {
+      var pct = Math.round(100 * window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight));
+      logAction('SCROLL', pct + '% of ' + window.location.pathname);
+    }, 500);
+  }
+
+  function attachActionListeners() {
+    if (actionListenersAttached) return;
+    actionListenersAttached = true;
+    logAction('PAGE', window.location.pathname + window.location.search);
+    document.addEventListener('click', onActionClick, true);
+    window.addEventListener('scroll', onActionScroll, { passive: true });
+    // Catch pushState/replaceState for SPA nav
+    var origPush = history.pushState;
+    history.pushState = function() {
+      origPush.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    var origReplace = history.replaceState;
+    history.replaceState = function() {
+      origReplace.apply(this, arguments);
+      logAction('NAV', window.location.pathname);
+    };
+    window.addEventListener('popstate', function() {
+      logAction('NAV', window.location.pathname);
+    });
+  }
+
+  function detachActionListeners() {
+    document.removeEventListener('click', onActionClick, true);
+    window.removeEventListener('scroll', onActionScroll);
+    actionListenersAttached = false;
+  }
+
+  function flushActionLog() { sendActions(false); }
+
+  function start() {
+    if (typeof rrwebRecord === 'undefined') {
+      console.warn('[rec] rrweb not loaded');
+      return;
+    }
+    stopFn = rrwebRecord({
+      emit: function(ev) {
+        events.push(ev);
+        // Flush small batches frequently — multi-page apps lose events on navigation
+        if (events.length >= 5) flush();
+      },
+      maskAllInputs: true,
+      maskInputOptions: { password: true, email: true },
+      blockSelector: '.no-record',
+      sampling: { mousemove: 50, mouseInteraction: true, scroll: 150, input: 'last' }
+    });
+    attachActionListeners();
+    timer = setInterval(function() { flush(); flushActionLog(); }, INTERVAL);
+    btn.classList.add('active');
+    btn.title = 'Stop recording';
+    window.__SESSION_ID = sid();
+    console.log('[rec] recording', sid(), window.location.pathname);
+  }
+
+  function stop() {
+    if (stopFn) { stopFn(); stopFn = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    console.log('[rec] stopped', sid(), events.length, 'events pending');
+    logAction('STOP', 'recording ended');
+    // Sync flush — guarantees data is saved before page navigates to replay
+    if (events.length > 0) send(events.splice(0), true);
+    sendActions(true);
+    detachActionListeners();
+    sessionStorage.removeItem('rrweb_on');
+    sessionStorage.removeItem('rrweb_sid');
+    btn.classList.remove('active');
+    btn.title = 'Record session flow';
+    events = [];
+    actionLog = [];
+  }
+
+  // Resume recording if navigated mid-flow
+  if (on()) {
+    console.log('[rec] resuming on', window.location.pathname);
+    start();
+  }
+
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    if (on()) {
+      var replayId = sid();
+      stop();
+      // Update href so right-click → copy link gets the replay URL
+      btn.href = '/admin/replay?s=' + replayId;
+      btn.title = 'Right-click to copy replay link';
+    } else {
+      var id = 'ses_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      sessionStorage.setItem('rrweb_sid', id);
+      sessionStorage.setItem('rrweb_on', '1');
+      start();
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    // sendBeacon is the only reliable method during unload (sync XHR blocked by Chrome)
+    if (on() && events.length > 0) send(events.splice(0), false);
+    if (on()) sendActions(false);
+  });
+})();
+</script>
+
+
+
+</body>
+</html>
+
