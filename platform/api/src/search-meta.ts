@@ -10,6 +10,7 @@
 
 import type { Response } from 'express';
 import type Database from 'better-sqlite3';
+import { setCurrentOp } from './eventloop-alert';
 
 export const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -57,8 +58,19 @@ interface SearchMetaResult {
 }
 
 function aggregateWatermarks(db: Database.Database): Map<string, string> {
-  const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source')
-    .all() as Array<{ source: string; last_indexed: string }>;
+  // #3400 (PROVE-FIRST) — tag this synchronous full-table scan so an event-loop
+  // block landing inside it is attributed op="search-meta.watermarks" instead of
+  // op="unknown". It runs on the search-serve path, which context.inject fans out
+  // 2-3x per prompt per role — the suspected block driver. The next block alert
+  // names this op (confirm) or stays unknown (refute); no fix lands before that.
+  setCurrentOp('search-meta.watermarks');
+  let watermarks: Array<{ source: string; last_indexed: string }>;
+  try {
+    watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source')
+      .all() as Array<{ source: string; last_indexed: string }>;
+  } finally {
+    setCurrentOp(null);
+  }
   const aggregated = new Map<string, string>();
   for (const w of watermarks) {
     const parts = w.source.split(':');
