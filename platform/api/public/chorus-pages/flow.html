@@ -1,1 +1,64 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Flow — Chorus</title></head><body style="font-family:system-ui;max-width:42rem;margin:4rem auto;line-height:1.5"><h1>Flow</h1><p>Served from Chorus. Live data wiring is the prioritized follow-on (#3361).</p></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow — Chorus</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0f1115; color: #e6e8eb; line-height: 1.5; }
+    header { padding: 24px 32px 8px; }
+    h1 { margin: 0 0 4px; font-size: 1.5rem; }
+    .sub { color: #8a909a; font-size: 0.85rem; }
+    .lanes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 16px 32px 32px; }
+    @media (max-width: 760px) { .lanes { grid-template-columns: 1fr; } }
+    .lane { background: #161a20; border: 1px solid #232833; border-radius: 10px; padding: 14px; }
+    .lane h2 { margin: 0 0 2px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .06em; color: #9aa2ad; }
+    .count { font-size: 2rem; font-weight: 700; margin-bottom: 10px; }
+    .next .count { color: #6ea8fe; } .wip .count { color: #f5c451; } .done .count { color: #5fd08a; }
+    .card { background: #1d222b; border-radius: 7px; padding: 8px 10px; margin-bottom: 6px; font-size: 0.85rem; }
+    .card .owner { color: #8a909a; font-size: 0.72rem; text-transform: uppercase; }
+    .empty { color: #5a616c; font-style: italic; font-size: 0.85rem; }
+    footer { color: #5a616c; font-size: 0.75rem; padding: 0 32px 24px; }
+    a { color: #6ea8fe; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Flow</h1>
+    <div class="sub">Work moving through the board · live from chorus-api · <span id="ts">loading…</span></div>
+  </header>
+  <div class="lanes">
+    <div class="lane next"><h2>Next</h2><div class="count" id="next-count">–</div><div id="next-cards"></div></div>
+    <div class="lane wip"><h2>WIP</h2><div class="count" id="wip-count">–</div><div id="wip-cards"></div></div>
+    <div class="lane done"><h2>Done (recent)</h2><div class="count" id="done-count">–</div><div id="done-cards"></div></div>
+  </div>
+  <footer>Chorus · <a href="/chorus">system</a> · <a href="/werk">werk</a> · <a href="/loom">loom</a></footer>
+  <script>
+    function esc(s) { return String(s || '').replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
+    function card(c) {
+      return '<div class="card"><div class="owner">' + esc(c.owner || '—') + '</div>#' + esc(c.id || c.card_id || '') + ' ' + esc((c.title || '').slice(0, 60)) + '</div>';
+    }
+    function fill(lane, cards) {
+      document.getElementById(lane + '-count').textContent = cards.length;
+      document.getElementById(lane + '-cards').innerHTML = cards.length
+        ? cards.slice(0, 12).map(card).join('')
+        : '<div class="empty">none</div>';
+    }
+    function load() {
+      Promise.all([
+        fetch('/api/chorus/context/board/next').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+        fetch('/api/chorus/context/board/wip').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+        fetch('/api/werk/activity?hours=168&event=card.accepted').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      ]).then(function (res) {
+        fill('next', ((res[0] || {}).data || {}).cards || []);
+        fill('wip', ((res[1] || {}).data || {}).cards || []);
+        var done = ((res[2] || {}).entries || []).map(function (e) { return { id: e.card_id, owner: e.role, title: e.title }; });
+        fill('done', done);
+        document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+      });
+    }
+    load();
+    setInterval(load, 30000);
+  </script>
+</body>
+</html>
