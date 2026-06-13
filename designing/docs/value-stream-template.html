@@ -122,7 +122,7 @@ Service   # design: overview·asIs·toBe·implementationPlan·pathToClose·gaps�
 <h2>7 · Instances</h2>
 <ul>
   <li><strong>Athena</strong> (Designing step) — engine <code>athena-forge</code>; cycle <code>shape → forge → seed → validate</code>. The first full instance; see <code>athena-value-stream-design.html</code>.</li>
-  <li><strong>werk</strong> (Building step) — cycle <code>pull → commit → push → build → test → deploy → demo → merge → accept</code>. The build instance.</li>
+  <li><strong>werk</strong> (Building step) — cycle <code>pull → commit → push → build → test → deploy → demo → merge → accept</code>. The build instance — <em>and</em> the reusable chassis the other steps' child streams run on: the recursion is werk-shaped all the way down (athena-* and the rest reuse this pull→…→accept chassis), not Building-only.</li>
   <li>Future product streams instantiate the same template.</li>
 </ul>
 
