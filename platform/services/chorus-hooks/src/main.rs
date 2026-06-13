@@ -462,6 +462,20 @@ async fn pre_tool_use_inner(
         _ => {}
     }
 
+    // #3218 — FIFO nudge drain on the allow path. A role never runs a tool call
+    // blind to a pending peer nudge: drain messages.db oldest-first, mark
+    // delivered (drain-once), inject as additionalContext (exit 0, never blocks).
+    // Drain-on-allow ONLY — a guard above returns early and leaves the nudge
+    // pending for the next allowed tool call, so a deny never silently consumes
+    // it. Always-on, incl. mid-Jeff-conversation (do not narrow to skip turns).
+    if let Some(block) =
+        hooks::nudge_drain::drain_block_from_db(role.as_str(), &shared::state_paths::messages_db())
+    {
+        let json = hooks::nudge_drain::additional_context_json(&block, "PreToolUse");
+        trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow + nudge drain");
+        return ("nudge_drain".into(), HookResponse::allow_with_message(&json));
+    }
+
     trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow (no guard triggered)");
     ("none".into(), HookResponse::allow())
 }
@@ -890,6 +904,31 @@ async fn stop_hook(
     }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let response = hooks::autonomy_guard::check(&input, &state).await;
+
+    // #3218 — Stop-hook drain backstop: a role cannot end a turn / go idle with a
+    // pending peer nudge (the turn-boundary half; PreToolUse is the finer drain).
+    // Only when autonomy_guard already ALLOWED the stop (clean exit 0, no stdout)
+    // do we drain — never override an autonomy block. If peer nudges are pending,
+    // block the stop with them as the reason so the agent addresses them before
+    // idling. Drain-once (mark-delivered) bounds this: the next Stop drain is
+    // empty, so the agent stops after one continuation — never a trap.
+    if response.exit_code == 0 && response.stdout.is_none() {
+        let role = format!("{:?}", input.role()).to_lowercase();
+        if let Some(block) =
+            hooks::nudge_drain::drain_block_from_db(&role, &shared::state_paths::messages_db())
+        {
+            // Name the senders (the block lists from/trace/content) and state the
+            // bound — an opaque Stop-block reads as a trap even when it isn't
+            // (Silas review #3218). Drain-once means addressing them clears it.
+            let resp = HookResponse::block_with_stderr(&format!(
+                "Pending peer nudge(s) — address before going idle (Attention Contract). \
+                 Bounded: drain-once means ONE continuation clears this block (not a loop).\n{block}"
+            ));
+            emit_hook_decision("stop_hook", &input, "nudge_drain", &resp, start).await;
+            return Json(resp);
+        }
+    }
+
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)
