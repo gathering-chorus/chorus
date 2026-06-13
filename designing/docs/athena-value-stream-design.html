@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athena — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .wren { background: #ffedd5; color: #9a3412; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .silas { background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Athena — Value-Stream Design <span>#3389 · the Designing-step child stream that generates Athena</span></h1>
+<div class="date">Wren · designed with Jeff 2026-06-13 · sits above <code>athena-product-design.html</code> (this generates that) · Designing step</div>
+
+<div class="frame">
+<strong>The one idea.</strong> A value stream is not placed <em>after</em> products — it is the <strong>generative root</strong>. Design the stream first and it generates the products, which generate the domains, which generate the services. Athena is the product the <strong>Designing</strong> step produces; the <strong>athena-forge cycle</strong> is the value stream that produces it. This doc designs that stream. The build legs (domains-first, then product/service) derive from here — they do not define it.
+</div>
+
+<h2>1 · What it is</h2>
+<p>Every value-stream <em>step</em> can encapsulate a <em>child value stream</em> (<code>hasValueStream</code>) — exactly as the <strong>Building</strong> step encapsulates the <strong>werk</strong> stream (steps = the verb sequence <code>pull→commit→…→accept</code>). The <strong>Designing</strong> step encapsulates the <strong>Athena</strong> stream: the cycle that takes a model class from OWL to a live, materialized surface.</p>
+<p>werk is the value stream that supports Building. <strong>The athena-forge cycle is the value stream that supports Athena.</strong> Same shape, one altitude up.</p>
+
+<h2>2 · The generative cascade (top-down)</h2>
+<p>The order is generative, not bottom-up. The stream is the spine; everything hangs off it. Every <code>Product</code>/<code>Domain</code>/<code>Service</code> shape already <em>mandates</em> <code>atStep</code> → the value-stream/step model is the thing every other class points at.</p>
+<pre class="mermaid">
+flowchart TD
+  VS["ValueStream (root) — design FIRST"] --> ST["ValueStreamStep<br/>(+ its child stream)"]
+  ST -->|realized by| P["Product (atStep)"]
+  P -->|hasDomain| D["Domain"]
+  D -->|hosts| SV["Service"]
+  ST -.hasValueStream.-> CYC["child stream<br/>(athena cycle, werk cycle)"]
+</pre>
+<div class="caption">Designing → Athena (atStep); Building → Werk. The value stream generates the structure beneath it.</div>
+
+<h2>3 · The athena-* cycle</h2>
+<p>werk-* takes a <em>card</em> from intent → landed code. athena-* takes a <em>model class</em> from OWL → live materialized surface. <code>forge</code> is the heart, the way build/deploy are werk's heart. The cycle spans roles, exactly as werk spans roles.</p>
+<table>
+<tr><th>Step</th><th>What it does</th><th>Owner</th></tr>
+<tr><td><span class="verb">athena-shape</span></td><td>Author / validate the OWL+SHACL for a class (ADR-040 conformance) — the model is right before anything is forged</td><td><span class="silas">Silas — OWL-DBA</span></td></tr>
+<tr><td><span class="verb">athena-forge</span> ⭐</td><td>Generate the surfaces from the OWL: routes + MCP tool + skill + page. The heart-verb, the high-leverage engine</td><td><span class="wren">Wren — generator</span></td></tr>
+<tr><td><span class="verb">athena-seed</span></td><td>Populate instances through the DAL (write-door, read-only-by-construction holds on the forged APIs)</td><td><span class="silas">Silas — DAL #3257</span></td></tr>
+<tr><td><span class="verb">athena-validate</span></td><td>Tree-vs-graph conformance — every forged class has its home; output matches the graph (ADR-041 §6)</td><td><span class="silas">Silas — CI</span></td></tr>
+<tr><td>demo</td><td>Jeff walks the forged page (JX) <em>while</em> a role calls the forged tool (AX) — same data, one source</td><td>Jeff — proving</td></tr>
+<tr><td>live</td><td>The surface is in service + accepted; the class is materialized in Athena</td><td>—</td></tr>
+</table>
+<p>Likely orchestrated by a <code>chorus_athena</code> trigger (the <code>chorus_werk</code> analog), with the steps as leaf verbs.</p>
+
+<h2>4 · athena-forge — the engine</h2>
+<p><code>athena-forge</code> is <code>owl-api</code> renamed and re-homed as Athena's core engine. <strong>Why "forge" not "cast":</strong> a cast is poured once and set; a forge is <em>worked, and re-worked</em>. The generator re-runs every time the OWL changes — it re-forges the surfaces as the model evolves. Iterative craft, not a one-shot pour.</p>
+<ul>
+  <li><strong>What it is:</strong> a zero-dep Rust CLI binary (ADR-032 §1: std-only HTTP on <code>TcpListener</code>, SPARQL via <code>curl</code>), deployed signed like the other <code>chorus-*</code> binaries.</li>
+  <li><strong>Today:</strong> verbs <code>generate</code> (graph → <code>routes.json</code>, deterministic) and <code>serve</code> (routes → HTTP off the Node loop). Live on :3360 (Domain class). Built by Silas (#3350), the ilities added in #3354/#3364.</li>
+  <li><strong>The extension (this design's build target):</strong> <code>generate</code> grows from "routes.json" to <strong>routes + MCP defs + skill + page</strong> — one OWL, every surface. Plus static-HTML serving (a new capability — the JX page, not just JSON).</li>
+  <li><strong>Why it's the highest-leverage thing we have:</strong> a generator drops the marginal cost of a new domain/product/service surface to ~zero. Author the OWL+SHACL once; the engine forges the surface. Build the engine right, materialize every class. The canonical-model n²→2n payoff in one binary.</li>
+</ul>
+
+<h2>5 · AX = JX, one source</h2>
+<p>The generated API is the single spine. <strong>AX</strong> (Agent experience) and <strong>JX</strong> (Jeff's experience) are both surfaces over it — never separate data paths.</p>
+<ul>
+  <li><strong>AX</strong> — three surfaces that simplify foundational actions for agents: the <strong>MCP tool</strong> (call it), the <strong>API</strong> (read it), <strong>implemented skills</strong> (foundational verbs built on it).</li>
+  <li><strong>JX</strong> — the <strong>UI renders from that same API</strong>, so JX matches AX <em>on data by construction</em>: one source, not two. The page cannot drift from what the agent sees, because it reads the agent's API.</li>
+</ul>
+<div class="frame">forge emits both AX and JX from one OWL. The demo proves it: Jeff walks the page while a role calls the tool — same data. Today these are two hand-wired paths (the page vs <code>chorus_tree_get</code>) that <em>can</em> drift; forging collapses them onto one generated API.</div>
+
+<h2>6 · HIP — the force layer</h2>
+<p>A surface the agent <em>can</em> use is not a surface the agent <em>does</em> use. <strong>HIP (Harness Integration Pattern, #3204)</strong> is the force layer: a block at a choke point the flow must cross, not an ignorable "MANDATORY" ask — "put the guarantee in the channel, not the endpoint's goodwill" (the EIP move for agents; Versammlung not Gestell).</p>
+<ul>
+  <li><strong>The generated seam IS the HIP choke point.</strong> Every forged route passes one seam — where security/authz/logging are born pre-wrapped as a <em>generator layer</em> (ADR-042 §1), not begged per-endpoint. #3382's CORS-at-the-seam was the first instance.</li>
+  <li><strong>Surface + force.</strong> forge emits the AX surface; a HIP force (DEC-074-style) makes the agent <em>heed</em> the model-grounded surface instead of grepping ad-hoc. Available + heeded.</li>
+</ul>
+
+<h2>7 · The OWL / SHACL model <span style="color:#ca8a04">— the greenfield spine to land first</span></h2>
+<div class="caveat"><strong>Greenfield = cheap + first.</strong> <code>ValueStream</code> and <code>ValueStreamStep</code> are bare <code>owl:Class</code> today — referenced by every <code>atStep</code> but implemented nowhere. The root of the model is the unbuilt part. There is no code to rip out: author the spine, land it, it generates downward. Jeff's 2026-05-15 sequence ("OWL+SHACL with rigor → API → seed") applied at the value-stream level.</div>
+<pre><code># ── Classes (exist as bare owl:Class today; shape them) ──
+chorus:ValueStream      a owl:Class .
+chorus:ValueStreamStep  a owl:Class .
+
+# ── Two distinct edges, never conflated ──
+chorus:inStream        a owl:ObjectProperty ;   # EXISTS — membership, child-side
+    rdfs:domain chorus:ValueStreamStep ; rdfs:range chorus:ValueStream .   # step → its ONE parent stream
+chorus:hasValueStream  a owl:ObjectProperty ;   # NEW — encapsulation (Jeff 2026-06-12)
+    rdfs:domain chorus:ValueStreamStep ; rdfs:range chorus:ValueStream .   # step → the child stream it CONTAINS
+chorus:stepOrder       a owl:DatatypeProperty ;  # NEW — steps are ordered
+    rdfs:domain chorus:ValueStreamStep ; rdfs:range xsd:integer .
+
+# ── Shapes (athena-forge's input) ──
+chorus:ValueStreamShape a sh:NodeShape ; sh:targetClass chorus:ValueStream ;
+    sh:property [ sh:path chorus:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:inStream ] ; sh:minCount 1 ] .   # ≥1 step
+chorus:ValueStreamStepShape a sh:NodeShape ; sh:targetClass chorus:ValueStreamStep ;
+    sh:property [ sh:path chorus:label     ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:stepOrder ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path chorus:inStream  ; sh:minCount 1 ; sh:maxCount 1 ] ;     # one parent
+    sh:property [ sh:path chorus:hasValueStream ; sh:maxCount 1 ] .                # 0..1 child stream
+
+# ── Instances (the spine) ──
+chorus:value-stream-chorus a chorus:ValueStream ; chorus:label "Chorus" .
+chorus:value-stream-step-designing a chorus:ValueStreamStep ;
+    chorus:label "Designing" ; chorus:stepOrder 2 ;
+    chorus:inStream chorus:value-stream-chorus ;
+    chorus:hasValueStream chorus:value-stream-athena .     # ← the recursion
+chorus:value-stream-athena a chorus:ValueStream ;
+    chorus:label "Athena (forge cycle)" .
+# athena's steps: shape/forge/seed/validate, each inStream value-stream-athena, stepOrder 1..n
+</code></pre>
+
+<h2>8 · Ownership boundary</h2>
+<p>The foundation has two halves; keeping them clean prevents cross-role drift.</p>
+<table>
+<tr><th>Wren — the engine</th><th>Silas — the model</th></tr>
+<tr><td>athena-forge (the crate, its verbs, what it emits — routes/MCP/skill/page), the AX/JX surfaces, the pages. <em>How much we invest in the generator.</em></td><td>The OWL+SHACL model itself, ADR-040 IRI conventions, the DAL write-door (#3257), constraints, governance. <em>The model's coherence.</em></td></tr>
+</table>
+<p>They meet where the generator <strong>reads</strong> what the DBA governs and the DAL writes — same geometry as the fan-out lanes ("my APIs read what your DAL writes"). Athena = the two together.</p>
+
+<h2>9 · Altitude context — where this sits in the stack</h2>
+<p>Each value-stream step operates on value streams at a different altitude, and each has its own verb cycle (fired by an <em>artifact</em> or a <em>cadence</em>):</p>
+<table>
+<tr><th>Step</th><th>Operates on value streams by…</th><th>Verb cycle</th><th>Fired by</th></tr>
+<tr><td>Shaping</td><td>deciding which streams exist, their priority, adding new ones</td><td>shape-value · shape-quarter · shape-year</td><td>cadence (calendar) + value lens</td></tr>
+<tr><td><strong>Designing</strong></td><td><strong>generating product → domain → service within a stream</strong></td><td><strong>athena-* (shape→forge→seed→validate)</strong></td><td>a model class</td></tr>
+<tr><td>Directing</td><td>priorities / capacity / plans for the work within a stream</td><td>directing-* (priorities→capacity→plans)</td><td>the work queue</td></tr>
+<tr><td>Building</td><td>executing a unit of work</td><td>werk-* (pull→…→accept)</td><td>a card</td></tr>
+<tr><td>Proving</td><td>verifying</td><td>borg-*</td><td>a land / a cadence</td></tr>
+</table>
+<p>Shaping's cycle is uniquely <em>cadence</em>-scoped — yearly strategy (<code>shape-year</code>), quarterly portfolio priorities (<code>shape-quarter</code>), continuous value-first (<code>shape-value</code>) — the "when" layer (Athena = who → Priorities = what → Cadence = when). "owl-api is the team's #1" (2026-06-13) was a <strong>Shaping</strong> decision; everything in this doc is <strong>Designing</strong> within the stream Shaping elevated.</p>
+
+<h2>10 · Sequencing — spine first, build derives</h2>
+<ol>
+  <li><strong>Land the value-stream spine</strong> (the OWL/SHACL above + the Chorus stream + the Designing→athena and Building→werk child-stream instances). Greenfield, rigorous, cheap.</li>
+  <li><strong>Extend athena-forge</strong> to emit AX+JX from a class (routes + MCP + skill + page; static-HTML serving).</li>
+  <li><strong>Build legs derive (downstream):</strong> <span class="verb">domains-first</span> — materialize the <code>domains</code> class into the spine (page + MCP + the-set + hasChild recursion clickable), demoed agent-and-Jeff-same-data; then product / service legs repeat the pattern. The repetition <em>is</em> the rest of Athena.</li>
+</ol>
+<div class="finding"><strong>The self-reference, stated once:</strong> Athena models the value stream that builds Athena. The forge cycle is a modeled value stream <em>inside the step that owns Athena</em> — the model describing its own construction. "The process is the product," literal in the graph.</div>
+
+<h2>11 · References</h2>
+<ul>
+  <li><code>athena-product-design.html</code> — the product this stream generates (Pages &amp; Flow, the 10-section template, the value-stream OWL section).</li>
+  <li><code>FORCING_PATTERN_HIP.html</code> (#3204) — HIP-001, the force layer.</li>
+  <li>ADR-041 — repo tree (page-serving = generated-API-owns-its-page; tree-vs-graph CI §6). ADR-042 — generator-layer security (the seam, born-pre-wrapped).</li>
+  <li>#3382 — search off-process (first CORS-at-the-seam instance; the process-isolation lineage). #3350/#3354/#3364 — owl-api v0 + ilities. #3257 — the DAL write-door.</li>
+  <li>Jeff, 2026-05-15: "build the OWL and SHACL with rigor, then build the API, then seed the data." Werk-* as the mental model for an athena cycle (2026-06-13).</li>
+</ul>
+
+<div class="footer">#3389 · domain:chorus subproduct:athena step:designing · ingests as a chorus:Document on Silas's doc-ingest leg · build legs derive from this design</div>
+</body>
+</html>
