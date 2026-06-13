@@ -178,6 +178,25 @@ describe('cycleStats (#3269) — overall cycle as leading indicator', () => {
     expect(r.cycleStats.p90S).toBe(6000);
     expect(aggregateFlow([]).cycleStats).toEqual({ landedCards: 0, medianS: null, avgS: null, p90S: null });
   });
+
+  test('#3397: a poison-clocked landed card does not blow cycleStats (the 55-year-median bug)', () => {
+    const events: FlowEvent[] = [
+      ev(401, 'pull.completed', 0), ev(401, 'card.accepted', 10), // 600s
+      ev(402, 'pull.completed', 0), ev(402, 'card.accepted', 20), // 1200s
+      // a LANDED card carrying a ~1970 poison event that, unguarded, would make
+      // its cycleS ~55 years and drag the median to the "55-year" page bug:
+      ev(403, 'pull.completed', 0),
+      { ts: 17811076913, event: 'werk.land.failed', card_id: 403, role: 'silas', detail: 'bsd-3N' },
+      ev(403, 'werk.landed', 30), ev(403, 'card.accepted', 30), // real cycle 1800s
+    ];
+    const r = aggregateFlow(events);
+    const c403 = r.cards.find((c) => c.card === 403);
+    expect(c403?.cycleS).toBe(30 * 60); // bounded to its real span, not 55 years
+    expect(c403?.landed).toBe(true);
+    // median over the real cycles [600,1200,1800] = 1200 — NOT a billion-second value
+    expect(r.cycleStats.medianS).toBe(1200);
+    expect(r.cycleStats.p90S).toBeLessThan(10_000); // sane, never a 55-year p90
+  });
 });
 
 describe('normalizeLine (#3269) — both Loki source shapes', () => {
