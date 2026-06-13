@@ -1769,8 +1769,18 @@
     var instrumentsLoaded = false;
 
     function loadInstruments() {
-        // WIP panel renders immediately from ALL_CARDS
-        renderWipPanel();
+        // #3408 — populate ALL_CARDS live from chorus-api's board before rendering
+        // the WIP panel (the static snapshot left ALL_CARDS empty). Then render.
+        fetch('/api/chorus/context/board/wip')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                var cards = (d && d.data && d.data.cards) || [];
+                ALL_CARDS = cards.map(function(c) {
+                    return { status: 'WIP', done: false, owner: (c.owner || ''), index: c.id, title: (c.title || ''), product: (c.domain || 'chorus') };
+                });
+                renderWipPanel();
+            })
+            .catch(function() { renderWipPanel(); });
 
         // Fetch activity + loom-metrics in parallel for the other 3 panels
         var activityP = fetch('/api/werk/activity?hours=168')
