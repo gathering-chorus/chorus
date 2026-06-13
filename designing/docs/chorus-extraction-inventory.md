@@ -10,8 +10,9 @@
 
 | Class | Files | ~LoC | Move effort |
 |---|---|---|---|
-| **REGENERATED** (rip in place, fan-out leg) | 18 | ~9.0K | zero — deleted when the generated successor lands |
+| **REGENERATED** (rip in place, fan-out leg) | ~22 | ~9.9K | zero — deleted when the generated successor lands |
 | **RESIDUE** (real move) | ~11 + 14 TTLs | ~4.5K code + 10.3K TTL | the actual move-cards |
+| **AMBIGUOUS** (owner ruling first) | ~4 | ~0.5K | quality-scanner (cross-repo), cost (consumer) |
 
 ## REGENERATED — dies in place, no move (owl-api fan-out replaces)
 
@@ -33,7 +34,11 @@ Each is a domain read surface whose generated Domain/Service API + page supersed
 | `src/handlers/decisions.handler.ts` | handler | 139 | generated decisions (loom) API |
 | `views/werk.ejs` | view | 1914 | generated werk dashboard |
 | `views/chorus.ejs` | view | 958 | generated /chorus page |
+| `src/handlers/hooks.handler.ts` + `views/hooks.ejs` | handler+view | 455 | generated gates/hooks telemetry page (proving/borg gates domain) — reads chorus.log |
+| `src/handlers/fitness-functions.handler.ts` + `views/fitness-functions.ejs` | handler+view | 444 | generated fitness/properties telemetry page (proving/borg properties domain) — reads chorus.log |
 | `tests/chorus-explorer-filters.test.js` | test | 716 | regenerated with the explorer |
+
+**Rip-out precondition (icd-validation.ts):** it's imported by gathering's OWN domain handlers (stories/photos/social). Its REGENERATED rip must NOT fire until the DAL SHACL successor is live for those callers, or they break — name this as the rip-out guard on the ICD generation leg (sequencing dependency, not a free delete).
 
 ## RESIDUE — real moves, with ADR-041 destinations
 
@@ -67,7 +72,14 @@ No domain API equivalent; reference visualizations.
 | `views/chorus-model-data.ejs` | 484 | athena/domains/domains (model explorer) |
 | `views/ontology-views/chorus.ejs` | 411 | athena/domains/domains (ontology view) |
 | `public/gathering-chorus.html` | 355 | athena artifacts (integration reference) |
-| ADR-006-bridge-scope-guardrail (in gathering/data/about) | — | **#2298** → athena/domains/decisions |
+| ADR-006-bridge-scope-guardrail | — | **#2298 IS STALE — ALREADY HOME.** Verified 2026-06-13: ADR-006 already lives at `chorus/roles/silas/adr/ADR-006-bridge-scope-guardrail.md`; no copy in the gathering repo. So #2298 ("migrate ADR-006 from gathering") is a no-op — it was already extracted. Future move target per ADR-041 = `shaping/products/loom/domains/decisions` (decisions is a loom domain, NOT athena), which #2298's title's "chorus/designing/decisions" predates. Recommend: close #2298 as already-done or repoint it to the attrition-relocation of chorus's existing ADRs into the loom tree. |
+
+## AMBIGUOUS — needs an owner ruling before classification (cold-eyes catch)
+
+| Source | LoC | Why ambiguous |
+|---|---|---|
+| `src/handlers/quality.handler.ts` + `src/services/quality-scanner.service.ts` + `views/quality-service.ejs` | ~480 | Scans BOTH gathering-root AND chorus-root — cross-repo. Borg/proving artifact (proving/borg) or a gathering dev-tool that stays? Owner ruling needed (Silas/Jeff). |
+| `src/handlers/cost.handler.ts` | ~varies | Reads chorus `clearing/transcripts` to compute Clearing cost — a chorus-data CONSUMER, not chorus code. Lean: LEAVE in gathering (consumes chorus output like a metrics scrape); one inventory line "consumes-chorus, does-not-move". |
 
 ## Coupling surface (what any move must shim or cut)
 
@@ -93,4 +105,6 @@ The residue pieces couple to almost nothing: nifi.service (zero gathering import
 
 ## Completeness
 
-29 files enumerated (8 handlers, 7 services, 9 views, 2 utils, 1 test) + 14 TTLs, ~31.5K LoC + 10.3K TTL. Grep targets (nudge/spine/clearing/pulse/role-state/icd/convergence/nifi/cards/loom/werk) all accounted. Auditable; re-run the scan against this list to verify zero new strays before #2299's final gate.
+~33 files enumerated (10 handlers, 8 services, 11 views, 2 utils, 1 test) + 14 TTLs, ~32.4K LoC + 10.3K TTL. Grep targets (nudge/spine/clearing/pulse/role-state/icd/convergence/nifi/cards/loom/werk/hooks/fitness) accounted.
+
+**Revision (cold-eyes, 2026-06-13):** the first pass MISSED the hooks/fitness/quality dashboard cluster (~1.4K LoC reading chorus.log) and misrouted ADR-006 to athena (it's loom). Both added/corrected above. Negative discrimination verified sound — `gathering-graph.ejs` (0 chorus refs) correctly EXCLUDED vs the near-namesake `gathering-chorus-system-graph.ejs` (chorus, included). This is a living document: re-run the scan against this list before #2299's final gate to catch any remaining stray — do NOT treat "complete" as proven until that gate is green.
