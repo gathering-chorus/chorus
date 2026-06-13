@@ -143,6 +143,28 @@ app.get('/harvest-manifests', (req: Request, res: Response) => {
   } catch { /* broken-ok */ }
   res.render('harvest-manifests', { manifests, filter: filter || '', isFocused: !!filter });
 });
+// Service-backed pages (loom/flow/model-data) — views are home in chorus; their
+// live data (TeamService/SparqlService) is the prioritized follow-on. Render the
+// real view with best-effort empty data; if it throws on absent data, fall back
+// to a valid shell so the page always serves (Jeff: move home now, fix data later).
+const renderOrShell = (res: Response, view: string, title: string, locals: Record<string, unknown>) => {
+  res.render(view, { title, cspNonce: '', ...locals }, (err: Error | null, html?: string) => {
+    if (err || !html) {
+      res.status(200).type('html').send(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title} — Chorus</title></head>` +
+        `<body style="font-family:system-ui;max-width:42rem;margin:4rem auto;line-height:1.5">` +
+        `<h1>${title}</h1><p>This page is now served from Chorus. Live data wiring is the prioritized follow-on (#3361).</p></body></html>`
+      );
+      return;
+    }
+    res.type('html').send(html);
+  });
+};
+app.get('/loom', (_req: Request, res: Response) => renderOrShell(res, 'team', 'Loom — Team', { roles: [], metrics: {}, cards: [] }));
+app.get('/loom/:role', (req: Request, res: Response) => renderOrShell(res, 'loom-role', `Loom — ${req.params.role}`, { role: { id: req.params.role, name: req.params.role } }));
+app.get('/flow', (_req: Request, res: Response) => renderOrShell(res, 'flow', 'Flow', { cards: [], data: {} }));
+app.get('/model-data', (_req: Request, res: Response) => renderOrShell(res, 'ontology-views/model-data', 'Model Data', { domainStats: {}, ontology: {} }));
+app.get('/ontology-views/:domain', (req: Request, res: Response) => renderOrShell(res, `ontology-views/${req.params.domain}`, `Model — ${req.params.domain}`, { stats: {} }));
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));

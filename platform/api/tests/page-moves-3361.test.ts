@@ -139,3 +139,49 @@ describe('#3361 — server-rendered chorus pages serve from chorus-api (EJS move
     } finally { await close(srv); }
   });
 });
+
+describe('#3361 — service-backed chorus pages serve a shell from chorus-api (data wiring follow-on)', () => {
+  // loom/flow/model-data are home in chorus; their live data (TeamService/
+  // SparqlService) is the prioritized follow-on. The route must always serve a
+  // valid page (real view if it renders, shell fallback otherwise) — never 500.
+  test('/loom serves a page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/loom');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/loom/:role serves a page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/loom/kade');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/flow serves a page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/flow');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/model-data serves a page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/model-data');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+  test('/ontology-views/:domain serves a page from chorus-api', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await hit(srv, '/ontology-views/photos');
+      expect(r.status).toBe(200);
+      expect(r.body.toLowerCase()).toContain('<html');
+    } finally { await close(srv); }
+  });
+});
