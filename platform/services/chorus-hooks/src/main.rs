@@ -270,32 +270,28 @@ async fn pre_tool_use_inner(
     });
 
     // #3218 RESPOND-FIRST gate (Jeff: "respond to them first — not later, not
-    // never"). A pending peer nudge BLOCKS the agent's card work until it
-    // responds. The earlier inject-and-proceed was the bug — it surfaced the
-    // nudge but handed the agent permission to defer. PEEK (no consume) so the
-    // block persists across tool calls until the agent actually replies; the
-    // ONLY tool allowed through while a nudge is pending is the response itself
-    // (chorus_nudge_message), and sending it clears the queue (marks delivered).
-    // Headless = no-op (peek returns None).
+    // never"). If the agent OWES a peer a response — its newest inbound nudge is
+    // newer than its newest reply — every tool call is BLOCKED except the reply
+    // itself (chorus_nudge_message). The agent clears the block by replying; the
+    // reply advances its newest-outbound past the inbound, so no marking/drain is
+    // needed. The signal is created_at, NOT delivery_status — osascript flips a
+    // nudge to 'delivered' in ~1s, so a pending-based gate never caught a real
+    // peer (proven on Silas). Headless = no-op (owes_response_block returns None).
     if let Some(block) =
-        hooks::nudge_drain::peek_pending_block(role.as_str(), &shared::state_paths::messages_db())
+        hooks::nudge_drain::owes_response_block(role.as_str(), &shared::state_paths::messages_db())
     {
-        if tool == "mcp__chorus-api__chorus_nudge_message" {
-            // The agent is responding — clear the pending and let the reply through.
-            let _ = hooks::nudge_drain::drain_block_from_db(
-                role.as_str(),
-                &shared::state_paths::messages_db(),
-            );
-        } else {
+        if tool != "mcp__chorus-api__chorus_nudge_message" {
             return (
                 "nudge_drain".into(),
                 HookResponse::block_with_stderr(&format!(
-                    "RESPOND FIRST (#3218): you have pending peer nudge(s). Answer them via \
+                    "RESPOND FIRST (#3218): you have unanswered peer nudge(s). Reply via \
                      chorus_nudge_message BEFORE continuing your card — not later, not at turn \
-                     end. This tool is blocked until you reply.\n{block}"
+                     end. A quick ack (\"got it, looking\") is enough to clear this and resume; \
+                     then investigate and answer substantively. This tool is blocked until you reply.\n{block}"
                 )),
             );
         }
+        // else: this IS the reply — allow it through; sending it clears the debt.
     }
 
     match tool.as_str() {
@@ -920,24 +916,21 @@ async fn stop_hook(
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let response = hooks::autonomy_guard::check(&input, &state).await;
 
-    // #3218 — Stop-hook drain backstop: a role cannot end a turn / go idle with a
-    // pending peer nudge (the turn-boundary half; PreToolUse is the finer drain).
-    // Only when autonomy_guard already ALLOWED the stop (clean exit 0, no stdout)
-    // do we drain — never override an autonomy block. If peer nudges are pending,
-    // block the stop with them as the reason so the agent addresses them before
-    // idling. Drain-once (mark-delivered) bounds this: the next Stop drain is
-    // empty, so the agent stops after one continuation — never a trap.
+    // #3218 — Stop-hook backstop: a role cannot end a turn / go idle while it
+    // OWES a peer a response (the turn-boundary half; PreToolUse is the finer
+    // one). Only when autonomy_guard already ALLOWED the stop (clean exit 0, no
+    // stdout) do we check — never override an autonomy block. If a response is
+    // owed, block the stop so the agent replies before idling. Bounded: replying
+    // advances the agent's newest-outbound, so the next Stop owes nothing — one
+    // continuation clears it, never a trap.
     if response.exit_code == 0 && response.stdout.is_none() {
         let role = format!("{:?}", input.role()).to_lowercase();
         if let Some(block) =
-            hooks::nudge_drain::drain_block_from_db(&role, &shared::state_paths::messages_db())
+            hooks::nudge_drain::owes_response_block(&role, &shared::state_paths::messages_db())
         {
-            // Name the senders (the block lists from/trace/content) and state the
-            // bound — an opaque Stop-block reads as a trap even when it isn't
-            // (Silas review #3218). Drain-once means addressing them clears it.
             let resp = HookResponse::block_with_stderr(&format!(
-                "Pending peer nudge(s) — address before going idle (Attention Contract). \
-                 Bounded: drain-once means ONE continuation clears this block (not a loop).\n{block}"
+                "Unanswered peer nudge(s) — reply before going idle (Attention Contract). \
+                 Bounded: replying clears it in ONE continuation (not a loop).\n{block}"
             ));
             emit_hook_decision("stop_hook", &input, "nudge_drain", &resp, start).await;
             return Json(resp);
