@@ -107,7 +107,18 @@ jobs:
           post pending
           echo "-- test (hermetic, ADVISORY until werk-test #3190) in $WERK --"
           rc=0
-          ( cd "$WERK" && cargo test --lib --bins --test 'hermetic_*' ) 2>&1 | tail -25 || rc=1
+          BASE=$(git -C "$WERK" merge-base origin/main HEAD 2>/dev/null || echo HEAD~1)
+          CHANGED=$(git -C "$WERK" diff --name-only "$BASE"..HEAD)
+          # #3397 — cargo runs PER CHANGED CRATE. There is NO workspace Cargo.toml, so the
+          # old `cargo test` from the werk ROOT always failed ("could not find Cargo.toml")
+          # — the other half of the false tests:fail. Each crate is platform/services/<name>.
+          # Compile only the crates THIS card changed (compiling all ~20 was the real tax);
+          # a TS-only card runs no cargo at all.
+          for crate in $(echo "$CHANGED" | grep -oE '^platform/services/[^/]+' | sort -u); do
+            [ -f "$WERK/$crate/Cargo.toml" ] || continue
+            echo "-- cargo: $crate --"
+            ( cd "$WERK/$crate" && cargo test --lib --bins ) 2>&1 | tail -15 || rc=1
+          done
           # #3397 — jest runs PER-PACKAGE. There is no root jest config and the werk has
           # no node_modules, so the old `npx jest` from the werk ROOT could never run: npx
           # had to fetch jest@X (the ENOTEMPTY race) and even then had no config to find
