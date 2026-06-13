@@ -41,5 +41,6 @@ pub mod e2e_responder;
 pub mod interaction_pattern;
 pub mod chrome_tab_gate;
 pub mod nudge_poll;
+pub mod nudge_drain; // #3218 — reliable FIFO drain off messages.db (PreToolUse + Stop)
 pub mod canonical_write_guard;
 pub mod card_add_probe;

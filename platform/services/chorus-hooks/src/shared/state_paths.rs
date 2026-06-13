@@ -49,6 +49,14 @@ pub fn chorus_log_script() -> String {
     format!("{}/platform/scripts/chorus-log", chorus_root())
 }
 
+/// Messages DB — the chorus-messaging SQLite store (DEC-107 persist path).
+/// The #3218 nudge drain is a THIRD LOCAL reader of this (PreToolUse + Stop);
+/// chorus-messaging owns writes. NEVER reach it via the :3475 API per tool call
+/// (it wedges under load) — local rusqlite only.
+pub fn messages_db() -> String {
+    format!("{}/platform/pulse/messages.db", chorus_root())
+}
+
 /// Hook server socket
 pub const HOOK_SOCKET: &str = "/tmp/chorus-hooks.sock";
 
