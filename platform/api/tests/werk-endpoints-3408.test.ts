@@ -42,4 +42,27 @@ describe('#3408 — /werk cockpit data endpoints serve from chorus-api', () => {
       expect(Object.keys(json).length).toBeGreaterThan(0);
     } finally { await close(srv); }
   });
+
+  test('/api/werk/activity returns {entries:[]} contract shape (the cockpit feed)', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await get(srv, '/api/werk/activity?hours=168');
+      expect(r.status).toBe(200);
+      const json = JSON.parse(r.text);
+      expect(Array.isArray(json.entries)).toBe(true);
+    } finally { await close(srv); }
+  });
+
+  test('/api/loom-metrics returns the fitness-panel shape (board/weekly_throughput/reject_stats/operations)', async () => {
+    const srv = app.listen(0);
+    try {
+      const r = await get(srv, '/api/loom-metrics');
+      expect(r.status).toBe(200);
+      const m = JSON.parse(r.text);
+      expect(typeof m.board).toBe('object');
+      expect(typeof m.weekly_throughput).toBe('object');
+      expect(typeof m.reject_stats).toBe('object');
+      expect(typeof m.operations.deploys).toBe('number');
+    } finally { await close(srv); }
+  });
 });

@@ -126,6 +126,78 @@ app.get('/api/werk/schema', (_req: Request, res: Response) => {
     res.type('json').send(raw);
   });
 });
+// #3408 — /werk activity feed: the live spine event stream (the cockpit's heart).
+// Reads the chorus.log tail (same bounded source as /context/spine — #3406) and
+// returns {entries:[...]} filtered by role/event/hours, the shape werk.html's JS
+// consumes. No new data dependency; the spine IS chorus-api's own event log.
+app.get('/api/werk/activity', (req: Request, res: Response) => {
+  const hours = Math.max(1, parseInt(String(req.query.hours ?? '168'), 10) || 168);
+  const roleF = typeof req.query.role === 'string' && req.query.role ? req.query.role : null;
+  const eventF = typeof req.query.event === 'string' && req.query.event ? String(req.query.event).split('|') : null;
+  const cutoffMs = Date.now() - hours * 3600 * 1000;
+  const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
+  if (raw == null) { res.json({ entries: [], error: 'spine log unavailable' }); return; }
+  const entries: Array<Record<string, string>> = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let p: Record<string, unknown>;
+    try { p = JSON.parse(line); } catch { continue; }
+    const ts = Date.parse(String(p.timestamp ?? ''));
+    if (!Number.isNaN(ts) && ts < cutoffMs) continue;
+    if (roleF && p.role !== roleF) continue;
+    if (eventF && !eventF.includes(String(p.event ?? ''))) continue;
+    entries.push({
+      timestamp: String(p.timestamp ?? ''),
+      event: String(p.event ?? ''),
+      role: String(p.role ?? ''),
+      card_id: String(p.card_id ?? p.cardId ?? ''),
+      workflow_id: String(p.workflow_id ?? p.workflowId ?? ''),
+      gate: String(p.gate ?? ''),
+      stage: String(p.stage ?? ''),
+      board: String(p.board ?? ''),
+      title: String(p.title ?? ''),
+    });
+  }
+  res.json({ entries });
+});
+// #3408 — /werk fitness panel metrics, computed live from the spine tail (no new
+// data store): weekly throughput (cards accepted per ISO-week), reject rate
+// (no-go demos / total demos), deploys, and done/pulled completion. Shapes match
+// werk.html renderFitnessPanel (board / weekly_throughput / reject_stats / operations).
+app.get('/api/loom-metrics', (_req: Request, res: Response) => {
+  const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
+  const done = new Set<string>();
+  const pulled = new Set<string>();
+  const weekly: Record<string, number> = {};
+  let deploys = 0, demoTotal = 0, demoNoGo = 0;
+  if (raw != null) {
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      let p: Record<string, unknown>;
+      try { p = JSON.parse(line); } catch { continue; }
+      const ev = String(p.event ?? '');
+      const cid = String(p.card_id ?? p.cardId ?? '');
+      if (ev === 'card.accepted' || ev === 'card_done' || ev === 'card.done') {
+        if (cid) done.add(cid);
+        const d = new Date(String(p.timestamp ?? ''));
+        if (!Number.isNaN(d.getTime())) {
+          const wk = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+          weekly[wk] = (weekly[wk] ?? 0) + 1;
+        }
+      }
+      if (ev === 'card.pulled' && cid) pulled.add(cid);
+      if (ev.includes('deploy') || ev === 'binary.deployed') deploys++;
+      if (ev === 'demo.verdict') { demoTotal++; if (String(p.verdict ?? p.result ?? '') === 'fail' || p.pass === false) demoNoGo++; }
+    }
+  }
+  const total = new Set([...done, ...pulled]).size;
+  res.json({
+    board: { done: done.size, total },
+    weekly_throughput: weekly,
+    reject_stats: { rate: demoTotal > 0 ? Math.round((demoNoGo / demoTotal) * 1000) / 10 : 0, deploys },
+    operations: { deploys },
+  });
+});
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
 app.use('/roles/silas/docs', express.static(path.join(chorusRepoRoot, 'roles', 'silas', 'docs'), { extensions: ['html', 'md'] }));
