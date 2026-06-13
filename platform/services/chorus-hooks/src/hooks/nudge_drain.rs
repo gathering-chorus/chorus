@@ -413,13 +413,21 @@ mod tests {
 
     #[test]
     fn headless_act_context_is_noop() {
-        // #3218 (Kade, #3318 lesson): inside act/werk.yml the drain must hard
-        // no-op or it stalls the pipeline. Guard fires before any DB open, so the
-        // db_path is irrelevant.
+        // #3218 (Kade, #3318 lesson): inside act/werk.yml BOTH the drain AND the
+        // respond-first PEEK must hard no-op. The peek guard is the load-bearing
+        // one — if it ever returned Some in a headless runner, the gate would
+        // block every tool call in a context that can NEVER reply, freezing the
+        // pipeline team-wide. So this is verified, not asserted. The guard fires
+        // before any DB open, so db_path is irrelevant.
         std::env::set_var("ACT", "true");
-        let out = drain_block_from_db("silas", "/nonexistent/messages.db");
+        let drained = drain_block_from_db("silas", "/nonexistent/messages.db");
+        let peeked = peek_pending_block("silas", "/nonexistent/messages.db");
         std::env::remove_var("ACT");
-        assert!(out.is_none(), "headless (ACT) drain is a hard no-op");
+        assert!(drained.is_none(), "headless (ACT): drain is a hard no-op");
+        assert!(
+            peeked.is_none(),
+            "headless (ACT): peek_pending_block must no-op — the single guard against a frozen pipeline"
+        );
     }
 
     #[test]
