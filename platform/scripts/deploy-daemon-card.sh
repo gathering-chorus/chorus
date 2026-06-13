@@ -108,10 +108,17 @@ deploy_chorus_api() {
   if [ -d "$canon_dist" ] && [ ! -d "${canon_dist}.prev" ]; then
     cp -a "$canon_dist" "${canon_dist}.prev" || return 1
   fi
+  # #3361 — deploy is build+restart; node_modules is NOT rsynced, so a NEW
+  # runtime dep (package.json change) never reaches canon and the service 500s
+  # on require. Mirror app-state.sh's "package.json change → npm install" protocol
+  # by installing deps in BOTH the werk (build + variant runtime) and canon (prod
+  # runtime) from the committed lockfile. Idempotent/fast when nothing changed.
+  ( cd "$werk/platform/api" && npm install --no-audit --no-fund ) || return 1
   ( cd "$werk/platform/api" && npm run build ) || return 1
   rsync -a --delete "$werk/platform/api/dist/" "$canon_dist/" || return 1
+  ( cd "$CHORUS_ROOT_DEFAULT/platform/api" && npm install --no-audit --no-fund ) || return 1
   launchctl kickstart -k "gui/$UID/com.chorus.api" 2>&1 || true
-  info "chorus-api: deployed (werk/dist -> canonical/dist + kickstart)"
+  info "chorus-api: deployed (werk/dist -> canonical/dist + deps installed + kickstart)"
 }
 rollback_chorus_api() {
   local canon_dist="$CHORUS_ROOT_DEFAULT/platform/api/dist"
