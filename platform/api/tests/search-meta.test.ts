@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { buildSearchMeta, addStaleHeader, SOURCE_CADENCE, STALE_THRESHOLD_MS } from '../src/search-meta';
+import * as ela from '../src/eventloop-alert';
 
 function freshDb() {
   const db = new Database(':memory:');
@@ -129,5 +130,28 @@ describe('buildSearchMeta', () => {
     };
     const meta = buildSearchMeta([], brokenDb as any);
     expect(meta.domain_coverage).toBe(1);
+  });
+});
+
+// #3400 AC1 (PROVE-FIRST) — the watermarks full-table scan runs synchronously on
+// the search-serve path during response formatting, untagged, which is exactly why
+// eventloop.blocked alerts log op="unknown". Tagging it makes the NEXT block alert
+// name op="search-meta.watermarks" (CONFIRMED root) or stay "unknown" (REFUTED).
+// This test asserts the instrumentation is wired; the live verdict is the Loki meter.
+describe('#3400 AC1 — watermarks op instrumentation', () => {
+  it('tags the watermarks full-table scan as search-meta.watermarks, then resets the op', () => {
+    const spy = jest.spyOn(ela, 'setCurrentOp');
+    const db = freshDb();
+    db.prepare('INSERT INTO watermarks (source, last_indexed) VALUES (?, ?)')
+      .run('claude', new Date().toISOString());
+    try {
+      buildSearchMeta([], db as any);
+      expect(spy).toHaveBeenCalledWith('search-meta.watermarks');
+      // op is reset so it never leaks past the query (no stale attribution)
+      expect(spy).toHaveBeenLastCalledWith(null);
+    } finally {
+      spy.mockRestore();
+      db.close();
+    }
   });
 });
