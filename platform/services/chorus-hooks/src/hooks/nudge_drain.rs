@@ -190,16 +190,52 @@ pub fn drain_block_from_db(role: &str, db_path: &str) -> Option<String> {
     format_drain_block(role, &drained)
 }
 
-/// Wrap a drain block as a PreToolUse `additionalContext` payload (exit 0, never
-/// blocks). `hook_event` is the Claude Code hookEventName ("PreToolUse").
-pub fn additional_context_json(block: &str, hook_event: &str) -> String {
-    serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": hook_event,
-            "additionalContext": block
-        }
-    })
-    .to_string()
+/// PEEK the pending nudges for `role` WITHOUT marking them delivered — returns
+/// the formatted block if any are pending. This backs the #3218 respond-first
+/// gate: the gate must keep blocking the agent's tool calls until it actually
+/// RESPONDS, so the read must NOT consume (consuming would clear the block after
+/// one tool call and re-enable defer). The queue is cleared separately, only
+/// when the agent sends its reply (via `drain_block_from_db` on the reply path).
+/// Headless = no-op, same guard as the drain.
+pub fn peek_pending_block(role: &str, db_path: &str) -> Option<String> {
+    if std::env::var("GITHUB_ACTIONS").is_ok()
+        || std::env::var("ACT").is_ok()
+        || std::env::var("CHORUS_HEADLESS").is_ok()
+    {
+        return None;
+    }
+    let conn_lock = cached_conn(db_path)?;
+    let conn = conn_lock.lock().ok()?;
+    let pending = peek_pending(&conn, role);
+    format_drain_block(role, &pending)
+}
+
+/// Read the pending nudges for `role` without marking them delivered (the
+/// non-consuming counterpart to `drain_pending`). Same scope + cap + FIFO order.
+fn peek_pending(conn: &Connection, role: &str) -> Vec<PendingNudge> {
+    peek_pending_inner(conn, role).unwrap_or_default()
+}
+
+fn peek_pending_inner(conn: &Connection, role: &str) -> rusqlite::Result<Vec<PendingNudge>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT id, "from", content, trace_id
+           FROM messages
+           WHERE "to" = ?1
+             AND type = 'nudge'
+             AND delivery_status = 'pending'
+             AND "from" != "to"
+           ORDER BY created_at ASC, id ASC
+           LIMIT ?2"#,
+    )?;
+    let rows = stmt.query_map(rusqlite::params![role, DRAIN_CAP as i64], |r| {
+        Ok(PendingNudge {
+            id: r.get(0)?,
+            from: r.get(1)?,
+            content: r.get(2)?,
+            trace_id: r.get(3)?,
+        })
+    })?;
+    rows.collect()
 }
 
 #[cfg(test)]
@@ -260,6 +296,20 @@ mod tests {
         assert_eq!(first.len(), 1, "first drain returns the pending nudge");
         let second = drain_pending(&mut conn, "silas");
         assert!(second.is_empty(), "drain-once: second call is empty (marked delivered)");
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        // The respond-first gate depends on this: peeking must NOT mark delivered,
+        // or the block would clear after one tool call and re-enable defer (#3218).
+        let mut conn = setup_db();
+        insert(&conn, "nudge", "wren", "silas", "still-here", "2026-06-13 10:00:01");
+
+        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek sees the pending nudge");
+        assert_eq!(peek_pending(&conn, "silas").len(), 1, "peek again — still there, peek must not consume");
+        // Only a real drain (the reply path) clears it.
+        assert_eq!(drain_pending(&mut conn, "silas").len(), 1, "drain consumes it");
+        assert!(peek_pending(&conn, "silas").is_empty(), "after the reply-path drain, the block clears");
     }
 
     #[test]
