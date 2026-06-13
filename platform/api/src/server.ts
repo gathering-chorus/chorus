@@ -3167,6 +3167,8 @@ app.get('/api/chorus/catalog/curated', async (_req: Request, res: Response) => {
 // Audit feed for a single doc — reads chorus.log directly (Loki ingestion
 // of catalog.* events is unreliable today; file is source-of-truth).
 const CHORUS_LOG_FILE = path.join(os.homedir(), '.chorus', 'chorus.log');
+// #3406 — bound the catalog-audit read of the 535MB chorus.log to a tail.
+const CATALOG_AUDIT_TAIL_BYTES = 16 * 1024 * 1024;
 
 // #2627: extracted from inline arrow function (was cog=21 inside route).
 type CatalogAuditEvent = { timestamp: string; event: string; role: string; fields: Record<string, string> };
@@ -3199,8 +3201,11 @@ function parseCatalogLine(line: string, wantedHref: string): CatalogAuditEvent |
 
 async function readCatalogAuditEvents(href: string, n: number): Promise<CatalogAuditEvent[]> {
   const events: CatalogAuditEvent[] = [];
-  if (!fs.existsSync(CHORUS_LOG_FILE)) return events;
-  const data = await fs.promises.readFile(CHORUS_LOG_FILE, 'utf8');
+  // #3406 — was `fs.promises.readFile` of the whole 535MB chorus.log (async stat→read =
+  // the AfterStat/ReadFileUtf8 OOM-crash stack the demo cold-eyes caught). We only scan
+  // from the end for n href-matching events, so a bounded tail read is equivalent + safe.
+  const data = readFileTail(CHORUS_LOG_FILE, CATALOG_AUDIT_TAIL_BYTES);
+  if (data === null) return events;
   const lines = data.split('\n');
   for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
     const ev = parseCatalogLine(lines[i], href);
