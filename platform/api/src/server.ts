@@ -158,7 +158,11 @@ app.get('/api/werk/activity', (req: Request, res: Response) => {
       title: String(p.title ?? ''),
     });
   }
-  res.json({ entries });
+  // #3408 — bound the RESPONSE too (Silas's #3406-forward flag): a polling cockpit
+  // doesn't need the whole 4MB-tail's worth; return the most-recent N (default 500)
+  // so the payload stays small as the spine grows. ?limit overrides (cap 2000).
+  const limit = Math.min(2000, Math.max(1, parseInt(String(req.query.limit ?? '500'), 10) || 500));
+  res.json({ entries: entries.slice(-limit) });
 });
 // #3408 — /werk fitness panel metrics, computed live from the spine tail (no new
 // data store): weekly throughput (cards accepted per ISO-week), reject rate
