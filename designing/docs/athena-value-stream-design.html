@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athena — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .wren { background: #ffedd5; color: #9a3412; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .silas { background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Athena — Value-Stream Design <span>— the Designing-step instance of the api-driven value-stream template</span></h1>
+<div class="date">Wren · 2026-06-13 · INSTANCE of <code>value-stream-template.html</code> (read that for the generic pattern) · generates <code>athena-product-design.html</code> · Designing step</div>
+
+<div class="frame">
+<strong>Scope.</strong> This is Athena's value stream — <em>one instance</em> of the <a href="value-stream-template.html">api-driven value-stream template</a>. The generic structure (ordered steps, generative cascade, the forge mechanism, AX=JX, the structural shapes) lives in the template; this doc is <strong>athena-specific only</strong> — its cycle, its engine, the domains it supports, who owns what, and how it lands first.
+</div>
+
+<h2>1 · The athena-* cycle</h2>
+<p>Athena's steps (the template's step structure, named for Athena). The cycle takes a model class from OWL to a live, materialized surface. <code>forge</code> is the heart, the way build/deploy are werk's heart; the cycle spans roles as werk does.</p>
+<table>
+<tr><th>Step</th><th>What it does</th><th>Owner</th></tr>
+<tr><td><span class="verb">athena-shape</span></td><td>Author / validate the OWL+SHACL for a class (ADR-040 conformance)</td><td><span class="silas">Silas — OWL-DBA</span></td></tr>
+<tr><td><span class="verb">athena-forge</span> ⭐</td><td>Generate the surfaces from the OWL: routes + MCP + skill + page</td><td><span class="wren">Wren — generator</span></td></tr>
+<tr><td><span class="verb">athena-seed</span></td><td>Populate instances through the DAL write-door</td><td><span class="silas">Silas — DAL #3257</span></td></tr>
+<tr><td><span class="verb">athena-validate</span></td><td>Tree-vs-graph conformance — output matches the model (ADR-041 §6)</td><td><span class="silas">Silas — CI</span></td></tr>
+<tr><td>demo</td><td>Jeff walks the forged page (JX) while a role calls the forged tool (AX) — same data</td><td>Jeff</td></tr>
+<tr><td>live</td><td>The class is materialized in Athena</td><td>—</td></tr>
+</table>
+<p>Designing <code>hasValueStream</code> this cycle (the template's fractal recursion). Likely orchestrated by <code>chorus_athena</code> (the <code>chorus_werk</code> analog).</p>
+
+<h2>2 · athena-forge — the engine</h2>
+<p><code>athena-forge</code> is <code>owl-api</code> renamed and re-homed as Athena's core engine. <strong>forge not cast:</strong> a cast is poured once and set; a forge is re-worked — the generator re-runs every time the OWL changes, re-forging the surfaces. Iterative craft.</p>
+<ul>
+  <li>Zero-dep Rust CLI binary (ADR-032 §1: std-only HTTP, SPARQL via <code>curl</code>); deployed signed like the other <code>chorus-*</code> binaries; live on :3360.</li>
+  <li><strong>Today:</strong> <code>generate</code> (graph → routes.json) + <code>serve</code> (off the Node loop). Built #3350, ilities #3354/#3364.</li>
+  <li><strong>The extension (the build target):</strong> <code>generate</code> grows from "routes.json" to <strong>routes + MCP + skill + page</strong> (the template's forge mechanism), plus static-HTML serving (the JX page).</li>
+  <li><strong>Wren-owned</strong> (Jeff: "this is urs bc it is the core of athena"). Becomes the <code>athena-*</code> verb family + <code>chorus_athena</code> orchestrator.</li>
+</ul>
+
+<h2>3 · Athena's model &amp; the domains it supports</h2>
+<div class="frame">The generic structural classes (Product/Domain/Service/ValueStream shapes) are in the <a href="value-stream-template.html">template §5</a>. This section is the <em>Athena-specific instances</em> — the value-stream spine and the domains Athena's stream supports. Source of record: <code>chorus-v2.ttl</code> + <code>chorus-v2-shapes.ttl</code>; Silas's OWL-DBA lane governs it.</div>
+<pre><code># The spine instance + the athena cycle as ValueStreamSteps (greenfield: bare owl:Class today)
+chorus:value-stream-chorus a chorus:ValueStream ; chorus:label "Chorus" .
+chorus:value-stream-step-designing a chorus:ValueStreamStep ;
+    chorus:label "Designing" ; chorus:stepOrder 2 ;
+    chorus:inStream chorus:value-stream-chorus ;
+    chorus:hasValueStream chorus:value-stream-athena .       # ← the recursion
+chorus:value-stream-athena a chorus:ValueStream ; chorus:label "Athena (forge cycle)" .
+#   its steps: shape/forge/seed/validate — each inStream value-stream-athena, stepOrder 1..4
+# The domains Athena's stream supports (atStep designing): domains · services · knowledge · domain-context …
+</code></pre>
+<div class="caveat"><strong>Greenfield = land first.</strong> ValueStream/ValueStreamStep are bare <code>owl:Class</code> today — referenced by every <code>atStep</code>, implemented nowhere. No rip-out: author the spine, land it, it generates downward (the template's spine-first rule, applied to the Chorus stream + the Designing→athena recursion).</div>
+
+<h2>4 · Ownership boundary (Athena)</h2>
+<table>
+<tr><th>Wren — the engine</th><th>Silas — the model</th></tr>
+<tr><td>athena-forge (crate, verbs, what it emits — routes/MCP/skill/page), the AX/JX surfaces, the pages.</td><td>The OWL+SHACL model, ADR-040 IRIs, the DAL write-door (#3257), constraints, governance.</td></tr>
+</table>
+<p>The generator <strong>reads</strong> what the DBA governs and the DAL writes. Athena = the two together. (The template states this boundary generically; this is its Athena binding.)</p>
+
+<h2>5 · Sequencing — spine first, legs derive</h2>
+<ol>
+  <li><strong>Land the value-stream spine</strong> (the OWL above: Chorus stream + Designing→athena recursion). Greenfield, cheap.</li>
+  <li><strong>Extend athena-forge</strong> to emit AX+JX from a class (routes + MCP + skill + page; static-HTML).</li>
+  <li><strong>Build legs derive (downstream):</strong> <span class="verb">domains-first</span> — materialize the <code>domains</code> class (page + MCP + the-set + hasChild recursion clickable), demoed agent-and-Jeff-same-data; then product / service legs repeat the template. The repetition <em>is</em> the rest of Athena.</li>
+</ol>
+<div class="finding"><strong>The self-reference:</strong> Athena models the value stream that builds Athena — the forge cycle is a modeled value stream inside the step that owns Athena. "The process is the product," literal in the graph.</div>
+
+<h2>6 · References</h2>
+<ul>
+  <li><a href="value-stream-template.html">value-stream-template.html</a> — the generic pattern this instantiates (step structure, cascade, forge mechanism, AX=JX, shapes, prior-art lineage).</li>
+  <li><code>athena-product-design.html</code> — the product this stream generates (references the model here).</li>
+  <li>The Harness Integration Pattern docs — the force layer (FORCING_PATTERN_HIP / HIP-001 + the generated-seam HIP).</li>
+  <li>#3350/#3354/#3364 — owl-api v0 + ilities (now athena-forge). #3257 — the DAL write-door. ADR-041/042.</li>
+</ul>
+
+<div class="footer">domain:chorus subproduct:athena step:designing · INSTANCE of value-stream-template.html · build legs derive from this · ingests as a chorus:Document</div>
+</body>
+</html>
