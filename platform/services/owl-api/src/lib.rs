@@ -176,6 +176,7 @@ pub struct RouteTable {
     pub class: String,           // chorus:Domain
     pub fields: Vec<String>,     // direct-path shape properties (label, comment, ...)
     pub routes: Vec<String>,     // human-readable route list (the artifact)
+    pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
 }
 
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
@@ -213,6 +214,19 @@ pub fn adr040_check(class_local: &str, fields: &[String]) -> Result<(), String> 
     Ok(())
 }
 
+/// #3414 — PURE projection of the secured-set from the model's auth annotation.
+/// `annotated` = the class's shape carries `chorus:requiresAuth true`. Annotated →
+/// the class's schema surface is guarded; otherwise NOTHING (mixed-state: an
+/// undeclared surface stays open, AC3). Pure so the projection is unit-tested without
+/// a live graph — the SPARQL read in generate() is integration-proven separately.
+pub fn project_secured(class_local: &str, annotated: bool) -> Vec<String> {
+    if annotated {
+        vec![format!("/schema/{}", class_local.to_lowercase())]
+    } else {
+        Vec::new()
+    }
+}
+
 /// GENERATE — read the shape's direct-path properties for `class` from the
 /// ontology graph and derive the route table.
 pub fn generate(class_local: &str) -> R<RouteTable> {
@@ -238,7 +252,18 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         format!("GET /{}/:name/contains", plural),
         format!("GET /schema/{}", class_local.to_lowercase()),
     ];
-    Ok(RouteTable { class, fields, routes })
+    // #3414 — MODEL-DRIVEN secured-set: query whether THIS class's shape carries the
+    // auth annotation (`chorus:requiresAuth true`) and PROJECT the guard from it —
+    // replacing #3402's hardcoded `is_secured` constant. No annotation = open (AC3:
+    // undeclared surfaces stay open; mixed-state by construction). Term PROVISIONAL
+    // pending Silas's OWL-DBA blessing (a one-line constant + the shape annotation).
+    let aq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:requiresAuth ?ra . FILTER(?ra) BIND('secured' AS ?v) }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let annotated = !select_v(&sparql_json(&aq)?).is_empty();
+    let secured = project_secured(class_local, annotated);
+    Ok(RouteTable { class, fields, routes, secured })
 }
 
 /// dashboards.json — the observability config as a GENERATED artifact
@@ -364,9 +389,10 @@ pub fn effective_trace(header_value: &str, ts_ms: u128, counter: u64) -> String 
 pub fn routes_json(t: &RouteTable) -> String {
     let fields = t.fields.iter().map(|f| format!("\"{}\"", f)).collect::<Vec<_>>().join(", ");
     let routes = t.routes.iter().map(|r| format!("\"{}\"", r)).collect::<Vec<_>>().join(", ");
+    let secured = t.secured.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
     format!(
-        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}]\n}}\n",
-        t.class, ONTOLOGY_GRAPH, fields, routes
+        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}],\n  \"secured\": [{}]\n}}\n",
+        t.class, ONTOLOGY_GRAPH, fields, routes, secured
     )
 }
 
@@ -444,7 +470,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone() };
         return (200, routes_json(&t));
     }
     // GET /domains
@@ -567,7 +593,7 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let ((code, body), meta) = match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs) {
+        let ((code, body), meta) = match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
             Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
             None => handle_meta(&path, table),
         };
@@ -627,11 +653,24 @@ mod tests {
     }
 
     #[test]
+    fn project_secured_is_model_driven() {
+        // #3414: the secured-set comes from the model's annotation, not a hardcoded route.
+        assert_eq!(project_secured("Domain", true), vec!["/schema/domain".to_string()],
+            "annotated class → its schema surface guarded");
+        assert_eq!(project_secured("Domain", false), Vec::<String>::new(),
+            "no annotation → open (AC3 mixed-state: undeclared stays open)");
+        // follows the CLASS, not hardcoded to domain — proof a DIFFERENT surface is securable (AC4 'beyond /schema/domain')
+        assert_eq!(project_secured("Product", true), vec!["/schema/product".to_string()],
+            "the secured surface is whatever class the model annotates — beyond /schema/domain");
+    }
+
+    #[test]
     fn routes_json_is_deterministic() {
         let t = RouteTable {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
+            secured: vec!["/schema/domain".into()],
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -639,7 +678,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()] };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![] };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));

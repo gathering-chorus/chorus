@@ -22,6 +22,7 @@ fn table() -> RouteTable {
             "GET /domains/:name/contains".into(),
             "GET /schema/domain".into(),
         ],
+        secured: vec!["/schema/domain".into()],  // #3414 — model-projected secured-set
     }
 }
 

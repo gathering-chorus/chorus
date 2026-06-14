@@ -183,12 +183,17 @@ fn json_number(json: &str, key: &str) -> Option<u64> {
 /// `/schema/domain` is served from the route table with NO SPARQL call, so it proves
 /// end-to-end without a live graph. Growth = add the next exact path here (or a
 /// prefix) — the seam is structural; the check stays in one place.
-pub fn is_secured(path: &str) -> bool {
+pub fn is_secured(path: &str, secured: &[String]) -> bool {
     // Normalize FIRST: strip query + fragment. handle_inner serves `/schema/domain?x`
     // (it matches on the path prefix), so the gate must match the same request — else
-    // appending `?anything` bypasses auth (gate cold-eyes #3402). Match the path only.
-    let p = path.split(['?', '#']).next().unwrap_or(path);
-    p == "/schema/domain" || p == "/schema/domain/"
+    // appending `?anything` bypasses auth (gate cold-eyes #3402). Path only, trailing-slash tolerant.
+    // #3414 — MODEL-DRIVEN: `secured` is the generator's projection of the OWL auth
+    // annotation (RouteTable.secured, serialized in routes.json), NOT a hardcoded constant.
+    // Mark a surface secured in the model → regenerate → it lands in this set → enforced here.
+    // Empty set = model declares nothing secured = nothing gated (mixed-state by construction).
+    let norm = |s: &str| s.split(['?', '#']).next().unwrap_or(s).trim_end_matches('/').to_string();
+    let p = norm(path);
+    secured.iter().any(|s| norm(s) == p)
 }
 
 /// Phase-1 static chorus-agent web-id set (NO graph call = non-blocking at the seam,
@@ -212,8 +217,9 @@ pub fn seam_auth(
     secret: &[u8],
     allowed_webids: &[String],
     now_secs: u64,
+    secured: &[String],
 ) -> Option<(u16, String)> {
-    if !is_secured(path) {
+    if !is_secured(path, secured) {
         return None;
     }
     let token = authorization
@@ -321,16 +327,38 @@ mod tests {
 
     // --- seam gate (the end-to-end 200/401/403 + mixed-state proof) ---
 
+    // #3414 — the model-driven secured-set the generator PROJECTS from the OWL
+    // (RouteTable.secured → routes.json). Tests pass it explicitly; here it's the
+    // #3402 surface, but MEMBERSHIP — not a hardcoded constant — is what gates.
+    fn secured() -> Vec<String> { vec!["/schema/domain".to_string()] }
+
+    #[test]
+    fn model_driven_secured_set_gates_by_membership() {
+        // #3414: is_secured is no longer a constant — a path is secured IFF it's in the
+        // projected set. In-set → secured; out-of-set → open; query/fragment + trailing
+        // slash normalized; empty set → nothing gated.
+        let set = secured();
+        assert!(is_secured("/schema/domain", &set), "in-set path is secured");
+        assert!(is_secured("/schema/domain/", &set), "trailing slash still secured");
+        assert!(is_secured("/schema/domain?x=1", &set), "query string still secured");
+        assert!(!is_secured("/schema/domain", &[]), "empty set → model declares nothing secured");
+        assert!(!is_secured("/domains", &set), "out-of-set path is open");
+        // a DIFFERENT projection secures a DIFFERENT surface — proof it follows the data, not a constant
+        let other = vec!["/schema/product".to_string()];
+        assert!(is_secured("/schema/product", &other) && !is_secured("/schema/domain", &other),
+            "the secured surface follows the projected set, not a hardcoded route");
+    }
+
     #[test]
     fn secured_surface_with_valid_token_proceeds() {
         let t = mint(SECRET, &payload("chorus", &wren_webid(), 9999999999));
         let bearer = format!("Bearer {}", t);
-        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000), None);
+        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000, &secured()), None);
     }
 
     #[test]
     fn secured_surface_without_token_is_401() {
-        let r = seam_auth("/schema/domain", "", SECRET, &allowed(), 1000);
+        let r = seam_auth("/schema/domain", "", SECRET, &allowed(), 1000, &secured());
         assert_eq!(r.map(|(c, _)| c), Some(401));
     }
 
@@ -338,7 +366,7 @@ mod tests {
     fn secured_surface_with_forged_token_is_401() {
         let t = mint(b"attacker", &payload("chorus", &wren_webid(), 9999999999));
         let bearer = format!("Bearer {}", t);
-        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000).map(|(c, _)| c), Some(401));
+        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000, &secured()).map(|(c, _)| c), Some(401));
     }
 
     #[test]
@@ -346,15 +374,15 @@ mod tests {
         let stranger = "http://localhost:3000/pods/chorus/_agents/stranger/profile/card.ttl#me";
         let t = mint(SECRET, &payload("chorus", stranger, 9999999999));
         let bearer = format!("Bearer {}", t);
-        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000).map(|(c, _)| c), Some(403));
+        assert_eq!(seam_auth("/schema/domain", &bearer, SECRET, &allowed(), 1000, &secured()).map(|(c, _)| c), Some(403));
     }
 
     #[test]
     fn unsecured_surface_passes_without_any_token() {
-        // mixed-state: /domains is not yet grown into the secured set → untouched.
-        assert_eq!(seam_auth("/domains", "", SECRET, &allowed(), 1000), None);
-        assert_eq!(seam_auth("/domains/chorus", "garbage", SECRET, &allowed(), 1000), None);
-        assert_eq!(seam_auth("/health", "", SECRET, &allowed(), 1000), None);
+        // mixed-state: /domains is not in the projected secured set → untouched.
+        assert_eq!(seam_auth("/domains", "", SECRET, &allowed(), 1000, &secured()), None);
+        assert_eq!(seam_auth("/domains/chorus", "garbage", SECRET, &allowed(), 1000, &secured()), None);
+        assert_eq!(seam_auth("/health", "", SECRET, &allowed(), 1000, &secured()), None);
     }
 
     #[test]
@@ -379,7 +407,7 @@ mod tests {
         let t = mint(b"", &payload("chorus", &wren_webid(), 9999999999));
         let bearer = format!("Bearer {}", t);
         assert_eq!(
-            seam_auth("/schema/domain", &bearer, b"", &allowed(), 1000).map(|(c, _)| c),
+            seam_auth("/schema/domain", &bearer, b"", &allowed(), 1000, &secured()).map(|(c, _)| c),
             Some(401)
         );
     }
@@ -389,12 +417,12 @@ mod tests {
         // handle_inner serves /schema/domain?x, so the gate must catch it too — a
         // missing token on the query-string form is still 401 (no bypass).
         assert_eq!(
-            seam_auth("/schema/domain?bypass=true", "", SECRET, &allowed(), 1000).map(|(c, _)| c),
+            seam_auth("/schema/domain?bypass=true", "", SECRET, &allowed(), 1000, &secured()).map(|(c, _)| c),
             Some(401)
         );
         // and a valid token on the query-string form still proceeds
         let t = mint(SECRET, &payload("chorus", &wren_webid(), 9999999999));
         let bearer = format!("Bearer {}", t);
-        assert_eq!(seam_auth("/schema/domain?x=1", &bearer, SECRET, &allowed(), 1000), None);
+        assert_eq!(seam_auth("/schema/domain?x=1", &bearer, SECRET, &allowed(), 1000, &secured()), None);
     }
 }
