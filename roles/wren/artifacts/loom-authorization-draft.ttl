@@ -745,7 +745,6 @@ chorus:policy-quality-gate a chorus:Policy ;
 #    that's sub-spike 2 (practice authorization). Most are obvious:
 #    skill-pull → practice-pull-card (already in chorus.ttl)
 #    skill-demo → practice-demo
-#    skill-acp → practice-acp
 #    skill-close → practice-close-out
 #    etc. Look-skills (/lw, /ls, /lk, /lc, /lm, /look) may be orphan practices
 #    (observation-as-practice isn't in chorus.ttl yet).

@@ -1824,13 +1824,13 @@ chorus:policy-tdd-gate a chorus:Policy ;
 
 chorus:policy-demo-gate a chorus:Policy ;
     rdfs:label "No accept without demo" ;
-    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and /acp skill." ;
+    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the GO step of chorus_werk)." ;
     chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
                        chorus:principle-no-dark-work .
 
 chorus:policy-accept-gate a chorus:Policy ;
     rdfs:label "Accept = Done + spine + commit + push" ;
-    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by /acp skill steps 1-4." ;
+    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
     chorus:derivedFrom chorus:principle-artifacts,
                        chorus:principle-no-dark-work .
 
@@ -2703,8 +2703,11 @@ chorus:practice-demo a chorus:Practice ;
     chorus:ceremonyRisk false .
 
 chorus:practice-acp a chorus:Practice ;
-    rdfs:label "Accept + commit + push (/acp)" ;
-    rdfs:comment "Full acceptance flow in one command after gates pass. Ownership transfer recorded in spine + git. Skill: /acp." ;
+    rdfs:label "Accept + commit + push (werk-accept — the GO step of chorus_werk, GO=accept #3311)" ;
+    rdfs:comment "Full acceptance flow after gates pass. Ownership transfer recorded in spine + git. Implemented by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
+    # hasSkill edge pending (#3422): the accept verb (werk-accept) is not yet a modeled
+    # node — no verb-* nodes exist, and skill-werk is retired by #3423. Silas to add the
+    # accept-verb node + re-point practice-acp in the governed practice-accept follow-on.
     chorus:expresses chorus:principle-artifacts,
                      chorus:principle-no-dark-work ;
     chorus:operationalizes chorus:policy-accept-gate ;
