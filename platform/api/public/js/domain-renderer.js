@@ -30,16 +30,29 @@
       var v2 = names.indexOf(id) !== -1 ? id : (names.indexOf(stripped) !== -1 ? stripped : null);
       if (!v2) return;
       return get(OWL + '/domains/' + encodeURIComponent(v2)).then(function (g) {
-        if (!g) return;
-        if (g.comment) d.comment = g.comment;
-        if (g.ownedBy && g.ownedBy.label) d.owner = g.ownedBy.label;
-        if (g.atStep && g.atStep.label) d.step = g.atStep.label;
-        var sb = $('stats-bar'); if (sb) sb.setAttribute('data-identity-source', 'generated-api');
+        if (g) {
+          if (g.comment) d.comment = g.comment;
+          if (g.ownedBy && g.ownedBy.label) d.owner = g.ownedBy.label;
+          if (g.atStep && g.atStep.label) d.step = g.atStep.label;
+          var sb = $('stats-bar'); if (sb) sb.setAttribute('data-identity-source', 'generated-api');
+        }
+        // AC2 upward direction — render the parent Product/SubProduct from the model (non-fatal).
+        return get(OWL + '/domains/' + encodeURIComponent(v2) + '/partof').then(renderPartOf);
       });
     });
   }
 
-  function statCard(value, label) { return '<div class="card"><div class="stat"><div class="stat-value">' + value + '</div><div class="stat-label">' + label + '</div></div></div>'; }
+  // value is trusted markup (a badge/role span built here); label is escaped (defensive — the fn is exported).
+  function statCard(value, label) { return '<div class="card"><div class="stat"><div class="stat-value">' + value + '</div><div class="stat-label">' + esc(label) + '</div></div></div>'; }
+
+  // ---- upward decomposition (#3420 AC2) — parent Product/SubProduct, from owl-api /partof ----
+  // pure builder (exported, unit-tested); names come back already-local from the /partof route.
+  function partOfHtml(parents) {
+    if (!parents || !parents.length) return '';
+    var chips = parents.map(function (n) { return '<a class="badge" href="?id=' + encodeURIComponent(n) + '">' + esc(n) + '</a>'; }).join(' ');
+    return '<div class="card"><span class="stat-label" style="margin-right:.5rem">Part of (upward)</span>' + chips + '</div>';
+  }
+  function renderPartOf(p) { var el = $('partof-block'); if (el) el.innerHTML = partOfHtml((p && p.partof) || []); }
 
   function renderIdentity(d, consumers, cards) {
     document.title = (d.label || id) + ' — Athena';
@@ -75,7 +88,7 @@
 
   var FACETS = [
     { key: 'dependencies', title: 'Dependencies', src: 'derived', def: 'Typed graph edges — what this domain consumes and is consumed by.',
-      fetch: function () { return get(DOMAIN_API + '/' + id + '/dependencies'); },
+      fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/dependencies'); },
       count: function (b) { var d = (b && b.data) || {}; var dir = d.direct || { consumes: [], consumedBy: [] }; return (dir.consumes || []).length + (dir.consumedBy || []).length + (d.shared || []).length; },
       render: function (b) {
         var d = (b && b.data) || {}, dir = d.direct || { consumes: [], consumedBy: [] }, shared = d.shared || [], h = '';
@@ -86,7 +99,7 @@
         return h;
       } },
     { key: 'actors', title: 'Actors', src: 'authored', def: 'Who interacts with this domain — roles, services, humans.',
-      fetch: function () { return get(ATHENA + '/subdomains/' + id + '/actors'); },
+      fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/actors'); },
       count: function (b) { return unwrap(b, 'actors').length; },
       render: function (b, ctx) {
         var items = unwrap(b, 'actors');
@@ -95,7 +108,7 @@
         return '<div class="mermaid">' + chart + '</div>';
       } },
     { key: 'scenarios', title: 'Scenarios', src: 'authored', def: 'BDD given/when/then describing how this domain behaves.',
-      fetch: function () { return get(ATHENA + '/subdomains/' + id + '/scenarios'); },
+      fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/scenarios'); },
       count: function (b) { return unwrap(b, 'scenarios').length; },
       render: function (b) {
         return unwrap(b, 'scenarios').map(function (s) {
@@ -106,21 +119,21 @@
           return x + '</div>';
         }).join('');
       } },
-    { key: 'pages', title: 'UI Pages', src: 'derived', def: 'HTML pages presenting this domain.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/pages'); }, cols: ['route', 'path', 'pageType'], listKey: 'pages' },
-    { key: 'integrations', title: 'Integration', src: 'hybrid', def: 'Wire protocols — how this domain talks to others.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/integrations'); }, cols: ['label', 'source', 'path', 'status'], listKey: 'integrations' },
-    { key: 'endpoints', title: 'API Contract', src: 'derived', def: 'HTTP routes this domain exposes.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/services'); }, cols: ['method', 'path', 'handler'], listKey: 'endpoints', altKey: 'services' },
-    { key: 'code', title: 'Code', src: 'derived', def: 'Source files implementing this domain.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/code'); }, cols: ['path', 'type'], listKey: 'files' },
-    { key: 'tests', title: 'Tests', src: 'derived', def: 'Test files exercising this domain.', fetch: function () { return get(DOMAIN_API + '/' + id + '/tests'); }, cols: ['path', 'type'], listKey: 'tests' },
-    { key: 'persistence', title: 'Persistence', src: 'derived', def: 'Data stores this domain reads/writes.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/persistence'); }, cols: ['label', 'namespace', 'records', 'status'], listKey: 'stores', altKey: 'persistence' },
-    { key: 'pipeline', title: 'Pipeline', src: 'authored', def: 'Build/deploy/CI stages.', fetch: function () { return get(DOMAIN_API + '/' + id + '/pipeline'); }, cols: ['name', 'status', 'evidence', 'summary'], listKey: 'stages' },
-    { key: 'releases', title: 'Release History', src: 'derived', def: 'Shipped versions (git/acp).', fetch: function () { return get(DOMAIN_API + '/' + id + '/releases'); }, cols: ['timestamp', 'cardId', 'title', 'role', 'commit'], listKey: 'releases' },
-    { key: 'infra', title: 'Infrastructure', src: 'derived', def: 'Runtime environment — processes, hosts.', fetch: function () { return get(DOMAIN_API + '/' + id + '/infra'); }, cols: ['name', 'port', 'engine', 'host'], listKey: 'environments' },
-    { key: 'priorArt', title: 'Prior Art', src: 'authored', def: 'References, predecessors, related ADRs.', fetch: function () { return get(ATHENA + '/subdomains/' + id + '/prior-art'); }, cols: ['label', 'path', 'description'], listKey: 'items' },
-    { key: 'decisions', title: 'Decisions', src: 'derived', def: 'DEC/ADR recorded for this domain.', fetch: function () { return get(DOMAIN_API + '/' + id + '/decisions'); }, cols: ['id', 'title', 'type', 'enforcement', 'date'], listKey: 'decisions' },
-    { key: 'logs', title: 'Logs', src: 'derived', def: 'Log streams emitted by this domain.', fetch: function () { return get(DOMAIN_API + '/' + id + '/logs'); }, cols: ['label', 'location', 'retention', 'status'], listKey: 'logs' },
-    { key: 'alerts', title: 'Alerts', src: 'derived', def: "Alert rules monitoring this domain's health.", fetch: function () { return get(DOMAIN_API + '/' + id + '/alerts'); }, cols: ['name', 'description', 'severity'], listKey: 'alerts' },
+    { key: 'pages', title: 'UI Pages', src: 'derived', def: 'HTML pages presenting this domain.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/pages'); }, cols: ['route', 'path', 'pageType'], listKey: 'pages' },
+    { key: 'integrations', title: 'Integration', src: 'hybrid', def: 'Wire protocols — how this domain talks to others.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/integrations'); }, cols: ['label', 'source', 'path', 'status'], listKey: 'integrations' },
+    { key: 'endpoints', title: 'API Contract', src: 'derived', def: 'HTTP routes this domain exposes.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/services'); }, cols: ['method', 'path', 'handler'], listKey: 'endpoints', altKey: 'services' },
+    { key: 'code', title: 'Code', src: 'derived', def: 'Source files implementing this domain.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/code'); }, cols: ['path', 'type'], listKey: 'files' },
+    { key: 'tests', title: 'Tests', src: 'derived', def: 'Test files exercising this domain.', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/tests'); }, cols: ['path', 'type'], listKey: 'tests' },
+    { key: 'persistence', title: 'Persistence', src: 'derived', def: 'Data stores this domain reads/writes.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/persistence'); }, cols: ['label', 'namespace', 'records', 'status'], listKey: 'stores', altKey: 'persistence' },
+    { key: 'pipeline', title: 'Pipeline', src: 'authored', def: 'Build/deploy/CI stages.', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/pipeline'); }, cols: ['name', 'status', 'evidence', 'summary'], listKey: 'stages' },
+    { key: 'releases', title: 'Release History', src: 'derived', def: 'Shipped versions (git/acp).', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/releases'); }, cols: ['timestamp', 'cardId', 'title', 'role', 'commit'], listKey: 'releases' },
+    { key: 'infra', title: 'Infrastructure', src: 'derived', def: 'Runtime environment — processes, hosts.', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/infra'); }, cols: ['name', 'port', 'engine', 'host'], listKey: 'environments' },
+    { key: 'priorArt', title: 'Prior Art', src: 'authored', def: 'References, predecessors, related ADRs.', fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/prior-art'); }, cols: ['label', 'path', 'description'], listKey: 'items' },
+    { key: 'decisions', title: 'Decisions', src: 'derived', def: 'DEC/ADR recorded for this domain.', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/decisions'); }, cols: ['id', 'title', 'type', 'enforcement', 'date'], listKey: 'decisions' },
+    { key: 'logs', title: 'Logs', src: 'derived', def: 'Log streams emitted by this domain.', fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/logs'); }, cols: ['label', 'location', 'retention', 'status'], listKey: 'logs' },
+    { key: 'alerts', title: 'Alerts', src: 'derived', def: "Alert rules monitoring this domain's health.", fetch: function () { return get(DOMAIN_API + '/' + encodeURIComponent(id) + '/alerts'); }, cols: ['name', 'description', 'severity'], listKey: 'alerts' },
     { key: 'gaps', title: 'Gaps & Status', src: 'derived', def: 'Known gaps or incomplete implementation.',
-      fetch: function () { return get(ATHENA + '/subdomains/' + id + '/gaps'); }, count: function (b) { return unwrap(b, 'gaps').length; },
+      fetch: function () { return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/gaps'); }, count: function (b) { return unwrap(b, 'gaps').length; },
       render: function (b) { return unwrap(b, 'gaps').map(function (g) { var resolved = g.type === 'resolved'; return '<div class="callout ' + (resolved ? '' : 'callout--gap') + '"><strong>' + (resolved ? 'RESOLVED' : 'GAP') + ':</strong> ' + esc(g.description || g.label || '') + (g.severity ? ' (' + esc(g.severity) + ')' : '') + '</div>'; }).join(''); } },
   ];
 
@@ -162,9 +175,9 @@
       var d = body.data || {};
       Promise.resolve(overlayIdentity(d)).then(function () {
         return Promise.all([
-          get(ATHENA + '/subdomains/' + id + '/blast-radius'),
-          get(ATHENA + '/subdomains/' + id + '/cards'),
-          get(ATHENA + '/subdomains/' + id + '/completeness'),
+          get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/blast-radius'),
+          get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/cards'),
+          get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/completeness'),
         ]).then(function (res) {
           var consumers = (d.consumedBy && d.consumedBy.length) || (res[0] && res[0].data && res[0].data.consumers && res[0].data.consumers.length) || 0;
           var cards = (res[1] && res[1].data && (res[1].data.cards || res[1].data) && (res[1].data.cards || res[1].data).length) || 0;
@@ -186,6 +199,6 @@
   // browser: wire on load. node/test: skip (no document) + export the pure builders.
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
+    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
   }
 })();

@@ -25,13 +25,16 @@ describe('#3420 generated domain page — smoke', () => {
     expect(html).toContain('class="theme-light"');
     expect(html).toContain('class="wrap"');
 
-    // the mount-point anatomy the renderer fills (breadcrumb -> identity -> stats -> promise -> completeness -> facets)
+    // the mount-point anatomy the renderer fills (breadcrumb -> identity -> stats -> part-of -> promise -> completeness -> facets)
     for (const id of [
       'bc-step', 'bc-domain', 'domain-title', 'domain-subtitle',
-      'stats-bar', 'promise-block', 'completeness-block', 'content-sections',
+      'stats-bar', 'partof-block', 'promise-block', 'completeness-block', 'content-sections',
     ]) {
       expect(html).toContain(`id="${id}"`);
     }
+
+    // the data-route security decision is RECORDED in the artifact (AC4), not just in conversation
+    expect(html).toContain('DATA-ROUTE SECURITY DECISION');
 
     // the renderer is wired + the owl-api port is injected (not hardcoded in the JS)
     expect(html).toContain('window.OWL_PORT = 3360');
@@ -44,6 +47,7 @@ describe('#3420 generated domain page — smoke', () => {
     const js = await res.text();
     expect(js).toContain('domain-renderer.js');
     expect(js).toContain('FACETS');
+    expect(js).toContain('partOfHtml');   // AC2 upward builder is shipped
   });
 
   test('the system.css design system loads from the same origin', async () => {

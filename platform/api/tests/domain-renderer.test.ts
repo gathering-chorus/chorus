@@ -13,6 +13,7 @@ describe('#3420 domain-renderer — pure builders', () => {
   test('exports the builders + the 17-facet config', () => {
     expect(typeof R.renderFacet).toBe('function');
     expect(typeof R.tableFor).toBe('function');
+    expect(typeof R.partOfHtml).toBe('function');
     expect(Array.isArray(R.FACETS)).toBe(true);
     expect(R.FACETS.length).toBe(17);
     // every facet declares a key + title + a fetch
@@ -74,12 +75,27 @@ describe('#3420 domain-renderer — pure builders', () => {
     expect(h).toContain('?id=cards-service');   // cross-entity nav link
   });
 
+  test('partOfHtml renders the upward parent chain as nav chips (AC2)', () => {
+    const h = R.partOfHtml(['build-product', 'athena']);
+    expect(h).toContain('Part of (upward)');
+    expect(h).toContain('class="badge"');
+    expect(h).toContain('?id=build-product');   // navigable upward
+    expect(h).toContain('athena');
+  });
+
+  test('partOfHtml is honestly empty when there is no parent', () => {
+    // a top-level entity has no upward edge — render nothing, not an empty box
+    expect(R.partOfHtml([])).toBe('');
+    expect(R.partOfHtml(undefined)).toBe('');
+  });
+
   test('builders emit system.css vocabulary, never hardcoded colors', () => {
     const code = R.FACETS.find((f: any) => f.key === 'code');
     const h =
       R.renderFacet(code, { data: { files: [{ path: 'a.ts', type: 'unit' }] } }, {}) +
       R.tableFor([{ path: 'a.ts', type: 'unit' }], ['path', 'type']) +
-      R.statCard('x', 'Owner');
+      R.statCard('x', 'Owner') +
+      R.partOfHtml(['athena']);
     // uses the #3415 classes
     expect(h).toMatch(/class="(card|table|badge|stat|muted)/);
     // and emits no raw hex colors (those would be off-token / bespoke)
