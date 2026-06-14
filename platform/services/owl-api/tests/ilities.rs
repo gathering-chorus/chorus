@@ -20,6 +20,7 @@ fn table() -> RouteTable {
             "GET /domains".into(),
             "GET /domains/:name".into(),
             "GET /domains/:name/contains".into(),
+            "GET /domains/:name/partof".into(),
             "GET /schema/domain".into(),
         ],
         secured: vec!["/schema/domain".into()],  // #3414 — model-projected secured-set
@@ -62,6 +63,7 @@ fn openapi_is_valid_json_with_paths_and_typed_properties() {
     assert!(spec.contains("\"/domains\""));
     assert!(spec.contains("\"/domains/{name}\""));
     assert!(spec.contains("\"/domains/{name}/contains\""));
+    assert!(spec.contains("\"/domains/{name}/partof\""), "#3420 — the upward inverse-edge route is in the contract");
     assert!(spec.contains("\"/schema/domain\""));
     // datatype fields map to JSON types; edges map to the name+label object
     assert!(spec.contains("\"comment\": { \"type\": \"string\" }"));
