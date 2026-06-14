@@ -76,7 +76,7 @@ MOCK_CHORUS_ROOT="$TMPGATE/chorus"
 mkdir -p "$MOCK_CHORUS_ROOT/platform/scripts" "$MOCK_CHORUS_ROOT/roles/wren/briefs"
 ln -sf "$MOCK_CARDS" "$MOCK_CHORUS_ROOT/platform/scripts/cards"
 # #2806: prefer the in-tree done-gate.sh under skills/demo/gates/ — that's
-# the source of truth that lands in canonical via /acp. ~/.claude/skills/
+# the source of truth that lands in canonical via the werk flow. ~/.claude/skills/
 # is a deployed copy whose sync-from-canonical step is operator action;
 # testing against the in-tree copy verifies the contract pre-deploy.
 # Falls back to ~/.claude/skills if the in-tree copy is missing.
