@@ -240,9 +240,15 @@ jobs:
 
     steps:
       - name: shared-trace
-        # Mint ONE trace for the land run; record the go as the proving verdict (the GO IS
-        # the verdict — Jeff's authority, DEC-048 — now that the demo presents-and-exits and
-        # no longer records demo.verdict itself). The accept-side verdict gate reads this.
+        # Mint ONE trace for the land run. #3410 — the land job NO LONGER synthesizes a
+        # demo.verdict from inputs.go. That fabricated record ("verdict:pass, prover:jeff",
+        # written purely because go=true was passed) was the self-accept hole: it let an
+        # agent calling chorus_werk{go:true,accepter:jeff} stamp "jeff proved it" with zero
+        # human involvement. The land path's real proof is now (a) werk-merge's #3365
+        # round-gate (refuses without a demo.presented for THIS card at THIS HEAD) and (b)
+        # werk-accept's presented-gate, both reading the REAL demo.presented werk-demo emits
+        # at present time. The forge-proof "Jeff DECIDED this round" (vs "a demo ran") is the
+        # asymmetric signed go-token end-state — ADR-042 family, the same lock as #3402.
         run: |
           trace="$(date +%s%N)-$$"
           echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
@@ -252,10 +258,6 @@ jobs:
           printf '{"ts":%s,"event":"werk.land.started","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s"}\n' \
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
-          # The GO recorded as the demo verdict — the human decision IS the proof.
-          printf '{"ts":%s,"event":"demo.verdict","card_id":%s,"role":"%s","trace_id":"%s","verdict":"pass","prover":"%s","decision":"go"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "$trace" "${ACCEPTER}" \
-            >> "${CHORUS_HOME}/ops/logs/werk-demo.jsonl" 2>/dev/null || true
 
       # ═══ land to prod — prod is a build of MAIN ═══
       - name: merge

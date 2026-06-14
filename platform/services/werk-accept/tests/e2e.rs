@@ -107,14 +107,15 @@ fn signal_then_finalize_one_exit_verb() {
     assert!(!after_signal.contains("werk-deploy env-down"), "signal must NOT tear down variants");
     assert!(!after_signal.contains("pr merge"), "signal never merges");
 
-    // (3) finalize VERDICT GATE: no demo.verdict=pass yet (the go wrote a decision, not a
-    //     verdict — werk-demo writes the verdict on go) => Err, NO finalize.
-    assert!(finalize(9001, "kade", &home).is_err(), "finalize refuses without demo.verdict=pass");
+    // (3) finalize PRESENTED GATE (#3410): no demo.presented yet (the go wrote a decision,
+    //     not proof a demo ran) => Err, NO finalize. The gate now reads the REAL demo.presented
+    //     werk-demo emits at present time, not a verdict synthesized from inputs.go.
+    assert!(finalize(9001, "kade", &home).is_err(), "finalize refuses without demo.presented");
     assert!(!fs::read_to_string(&log).unwrap_or_default().contains("cards done 9001"),
-        "verdict-gate refusal must NOT finalize");
-    // record the verdict werk-demo would have written on go.
+        "presented-gate refusal must NOT finalize");
+    // record the demo.presented werk-demo emits when the demo actually runs.
     fs::write(&demo_witness, format!(
-        "{}{{\"ts\":1,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        "{}{{\"ts\":1,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"round\":\"r1\"}}\n",
         fs::read_to_string(&demo_witness).unwrap()
     )).unwrap();
 
@@ -146,10 +147,10 @@ fn signal_then_finalize_one_exit_verb() {
     git(&werk2, &["push", "-q", "origin", "kade/9003"]);
     std::env::set_var("CARDS_OWNER", "kade");
     std::env::set_var("CARDS_STATUS", "WIP");
-    // werk-demo writes the verdict on go; the pipeline's shared-trace records it before
-    // the accept step. Pre-seed it so finalize's verdict-gate is satisfied (as in step 3).
+    // werk-demo emits demo.presented when the demo runs at present time. Pre-seed it so
+    // finalize's presented-gate is satisfied (as in step 3, #3410).
     fs::write(&demo_witness, format!(
-        "{}{{\"ts\":2,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9003,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        "{}{{\"ts\":2,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9003,\"trace_id\":\"t\",\"round\":\"r2\"}}\n",
         fs::read_to_string(&demo_witness).unwrap_or_default()
     )).unwrap();
 
@@ -205,7 +206,7 @@ fn signal_then_finalize_one_exit_verb() {
         "#!/bin/sh\nif [ \"$1\" = \"env-down\" ] && [ \"$WERKDEPLOY_ENVDOWN_FAIL\" = \"1\" ]; then echo \"werk-deploy $@ FAIL\" >> \"$SHIM_LOG\"; exit 1; fi\necho \"werk-deploy $@\" >> \"$SHIM_LOG\"\n");
     std::env::set_var("CARDS_OWNER", "kade");
     fs::write(&demo_witness, format!(
-        "{}{{\"ts\":3,\"event\":\"demo.verdict\",\"role\":\"kade\",\"card_id\":9006,\"trace_id\":\"t\",\"verdict\":\"pass\"}}\n",
+        "{}{{\"ts\":3,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9006,\"trace_id\":\"t\",\"round\":\"r3\"}}\n",
         fs::read_to_string(&demo_witness).unwrap_or_default()
     )).unwrap();
     std::env::set_var("WERKDEPLOY_ENVDOWN_FAIL", "1");

@@ -94,21 +94,27 @@ pub fn json_str_field(json: &str, key: &str) -> Option<String> {
     Some(val[..q2].to_string())
 }
 
-/// #3116 — true iff the proving ceremony recorded a passing verdict for this
-/// card: a `demo.verdict` event with `"verdict":"pass"` in the werk-demo witness
-/// (ops/logs/werk-demo.jsonl, written by the demo binary). accept() gates on the
-/// demo's OWN record, replacing the demo:preflight-pass comment + the retired
-/// 4-event demo.*.completed chain. Missing witness = no demo ran = false. The
-/// card_id match is comma-terminated so #3116 can't collide with #31160.
-pub fn demo_verdict_pass(home: &Path, card: u64) -> bool {
+/// #3410 — true iff a REAL demo was PRESENTED for this card: a `demo.presented`
+/// event in the werk-demo witness (ops/logs/werk-demo.jsonl), emitted by the demo
+/// binary AT PRESENT TIME. This replaces the #3116 `demo.verdict` gate, which read a
+/// record the land job SYNTHESIZED from `inputs.go` ("verdict:pass, prover:jeff") —
+/// the self-accept hole (#3410): an agent calling `chorus_werk{go:true,accepter:jeff}`
+/// made the pipeline fabricate a "jeff proved it" verdict with zero human involvement.
+/// A synthesized `demo.verdict` no longer satisfies this gate; only a demo that
+/// actually ran does. The ROUND-bound enforcement (demo.presented for THIS card at
+/// THIS HEAD) is werk-merge's #3365 gate — the authoritative pre-merge check in the
+/// land path, run before this; this card-bound check is the standalone-accept backstop.
+/// Missing witness = no demo ran = false. card_id comma-terminated so #3410 can't
+/// collide with #34100. (The forge-proof "Jeff DECIDED this round" — vs merely "a demo
+/// ran" — is the asymmetric signed go-token end-state, ADR-042 family, shared with #3402.)
+pub fn demo_presented(home: &Path, card: u64) -> bool {
     let witness = home.join("ops/logs/werk-demo.jsonl");
     match std::fs::read_to_string(&witness) {
         Ok(text) => {
             let card_key = format!("\"card_id\":{},", card);
             text.lines().any(|l| {
-                l.contains("\"event\":\"demo.verdict\"")
+                l.contains("\"event\":\"demo.presented\"")
                     && l.contains(&card_key)
-                    && l.contains("\"verdict\":\"pass\"")
             })
         }
         Err(_) => false,
@@ -334,8 +340,8 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
 
 
 /// werk-finalize (#3237) — the MECHANICAL post-deploy finalize. NO authority gate (the
-/// authority was the go); act runs this after merge+deploy-prod succeed. Gated only on
-/// the demo recording verdict=pass (the go path). Idempotent: board Done, card.accepted,
+/// authority was the go); act runs this after merge+deploy-prod succeed. Gated on a REAL
+/// demo.presented for the card (#3410, was the synthesized demo.verdict). Idempotent: board Done, card.accepted,
 /// teardown (env-down then chorus-werk remove), and chorus/accept on origin/main HEAD.
 /// The HEAD sha is read from CANONICAL home (always present), NOT the werk, which this
 /// verb removes — so the gh status posts regardless of teardown order.
@@ -344,10 +350,13 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     let home_s = path(home)?.to_string();
     jsonl(home, role, card, &trace, "finalize.started", "");
 
-    if !demo_verdict_pass(home, card) {
-        jsonl(home, role, card, &trace, "finalize.refused", ",\"reason\":\"no-demo-verdict\"");
+    if !demo_presented(home, card) {
+        jsonl(home, role, card, &trace, "finalize.refused", ",\"reason\":\"no-demo-presented\"");
         return Err(format!(
-            "#{}: no demo.verdict=pass on record — werk-demo records it on go (#3116)", card
+            "#{}: no demo.presented on record — a REAL demo must run before accept (werk-demo \
+             emits it at present time). #3410 closed the inputs.go-synthesis hole: a fabricated \
+             verdict no longer satisfies this gate. Round-bound enforcement is werk-merge's #3365.",
+            card
         ));
     }
 

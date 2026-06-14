@@ -191,7 +191,9 @@ app.get('/api/loom-metrics', (_req: Request, res: Response) => {
       }
       if (ev === 'card.pulled' && cid) pulled.add(cid);
       if (ev.includes('deploy') || ev === 'binary.deployed') deploys++;
-      if (ev === 'demo.verdict') { demoTotal++; if (String(p.verdict ?? p.result ?? '') === 'fail' || p.pass === false) demoNoGo++; }
+      // #3410 — demo.verdict synthesis retired (was always-pass, fabricated from inputs.go).
+      // demoTotal now counts REAL demos presented; no-go isn't carried on demo.presented.
+      if (ev === 'demo.presented') { demoTotal++; }
     }
   }
   const total = new Set([...done, ...pulled]).size;

@@ -59,7 +59,7 @@ const CHECKPOINTS: Array<{ step: keyof CardFlow['steps']; events: string[] }> = 
   { step: 'pushS', events: ['push.completed'] },
   { step: 'buildS', events: ['build.completed'] },
   { step: 'deployS', events: ['deploy.completed'] },
-  { step: 'demoS', events: ['werk.presented', 'demo.verdict'] },
+  { step: 'demoS', events: ['werk.presented', 'demo.presented'] },  // #3410: demo.verdict synthesis retired; demoS tracks the real demo.presented
   { step: 'mergeS', events: ['werk.landed', 'merge.completed'] },
   { step: 'finalS', events: ['card.accepted', 'finalize.completed'] },
 ];
