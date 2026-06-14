@@ -8,7 +8,6 @@ Ontology triples: `roles/silas/ontology/framework.ttl` (fw:Skill class, fw:owned
 | Skill | Description |
 |-------|-------------|
 | /ab | Analyze board |
-| /acp | Accept commit push |
 | /board-sweep | Board coherence sweep |
 | /chat | Two-role chat |
 | /chorus | Query shared index |

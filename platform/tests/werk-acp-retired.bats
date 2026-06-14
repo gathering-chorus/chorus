@@ -48,3 +48,46 @@ SERVER="$CHORUS_ROOT/platform/mcp-server/src/server.ts"
     false
   fi
 }
+
+# ── #3422 (werk-simplify #1): the SKILL layer ──────────────────────────────
+# #3219 retired the verb/crate/MCP. #3422 retires the user-facing /acp + /acp-v2
+# SKILLS (Jeff 2026-06-14: "we dont want or need acp anymore"), since werk (the
+# chorus_werk pipeline; GO=accept) is the one accept path. acp-v2 was the
+# "both live until cutover" sibling — cutover is now. Skill dirs + catalog +
+# command advice are guarded here; the ~/.claude/skills symlinks and the
+# ~/.chorus/bin/werk-acp-bin orphan are runtime (deploy) artifacts, out of
+# scope for a repo gate (same boundary #3219 drew for event-name history).
+
+@test "acp skill directories are deleted (skills + platform/skills)" {
+  for d in skills/acp skills/acp-v2 platform/skills/acp; do
+    if [ -e "$CHORUS_ROOT/$d" ]; then
+      echo "acp skill dir still present: $d — retired #3422"
+      false
+    fi
+  done
+}
+
+@test "no SKILL.md declares an acp skill (name: acp / acp-v2)" {
+  matches=$(grep -rlE '^name:[[:space:]]*acp(-v2)?[[:space:]]*$' \
+    "$CHORUS_ROOT/skills" "$CHORUS_ROOT/platform/skills" 2>/dev/null || true)
+  if [ -n "$matches" ]; then
+    echo "a SKILL.md still declares an acp skill:"; echo "$matches"; false
+  fi
+}
+
+@test "no platform script advertises /acp as a runnable command" {
+  # Concept/history mentions (chorus_acp git trailers, "survives acp") are NOT
+  # matched — only the user-facing 'use/run/invoke/via /acp' command form.
+  matches=$(grep -rnE '(use|run|invoke|via)[[:space:]]+/acp\b' \
+    "$CHORUS_ROOT/platform/scripts" 2>/dev/null || true)
+  if [ -n "$matches" ]; then
+    echo "a script still advertises /acp as a runnable command:"; echo "$matches"
+    echo "the accept path is the werk flow (cw <card> go) — GO=accept"; false
+  fi
+}
+
+@test "SKILLS.md catalog has no /acp entry" {
+  if grep -qE '^\|[[:space:]]*/acp\b' "$CHORUS_ROOT/skills/SKILLS.md" 2>/dev/null; then
+    echo "skills/SKILLS.md still lists /acp — retired #3422"; false
+  fi
+}
