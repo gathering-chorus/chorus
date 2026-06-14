@@ -9,8 +9,15 @@ edition = "2021"
 # `serve` loads routes.json and serves it over HTTP — its own process, OFF the
 # chorus-api Node event loop (the ADR-034 lesson), read-only (writes go
 # through chorus-model, the DAL — never through this API).
-# Zero dependencies (ADR-032 §1): std TcpListener HTTP; Fuseki via curl.
+# Near-zero dependencies (ADR-032 §1): std TcpListener HTTP; Fuseki via curl.
+# #3402 EXCEPTION (ADR-042 security supersedes ADR-032 §1 for ONE purpose): the
+# seam auth verifies an HS256 service-token JWT locally, which needs the HMAC-SHA256
+# primitive. Hand-rolling crypto is a security anti-pattern, so we take the two
+# vetted RustCrypto crates for the primitive ONLY — base64url + claim parsing stay
+# zero-dep in src/auth.rs (owl-api's parsing ethos). No other deps; no async runtime.
 [dependencies]
+hmac = "0.12"
+sha2 = "0.10"
 
 [[bin]]
 name = "owl-api"

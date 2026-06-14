@@ -16,6 +16,9 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
 
+/// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
+pub mod auth;
+
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
@@ -536,6 +539,13 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     eprintln!("owl-api: serving generated {} API on :{} (read-only; writes go through chorus-model)", table.class, port);
     let mut req_counter: u64 = 0;
+    // #3402 — seam auth config, loaded ONCE (no per-request env read, no graph call).
+    let secret = std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().into_bytes();
+    let allowed_webids = auth::chorus_agent_webids();
+    if secret.is_empty() {
+        // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
+        eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
+    }
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
         let started = std::time::Instant::now();
@@ -550,9 +560,25 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
                 .unwrap_or_default()
         };
         let upstream_started = std::time::Instant::now();
-        let ((code, body), meta) = handle_meta(&path, table);
+        // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured
+        // surface with a missing/invalid credential short-circuits to 401/403; every
+        // other surface falls through untouched (mixed-state). Local verify only.
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let ((code, body), meta) = match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs) {
+            Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
+            None => handle_meta(&path, table),
+        };
         let upstream_ms = upstream_started.elapsed().as_millis();
-        let status = match code { 200 => "200 OK", 404 => "404 Not Found", _ => "502 Bad Gateway" };
+        let status = match code {
+            200 => "200 OK",
+            401 => "401 Unauthorized",
+            403 => "403 Forbidden",
+            404 => "404 Not Found",
+            _ => "502 Bad Gateway",
+        };
         let resp = http_response(status, &body);
         let _ = stream.write_all(resp.as_bytes());
         // THE SEAM: every request passes here once — telemetry now; auth,
