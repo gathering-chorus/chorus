@@ -284,9 +284,18 @@ CARDS_OUT=$("$CARDS_BIN" list --limit 1 2>&1) || CARDS_EXIT=$?
 # Anchor on the API's auth-error shape, not bare "401|403" — card titles,
 # latencies (6.401ms), and ids substring-matched and fired false alarms (#3369).
 if echo "$CARDS_OUT" | grep -qE "status[= ]40[13]|code=40[13]|HTTP[/ ]?[0-9.]* ?40[13]|Unauthorized|Forbidden|invalid token"; then
+  # REAL auth failure — the API answered with 401/403. This is the token alarm.
   FAILURES+=("vikunja-auth: cards CLI auth failure — check VIKUNJA_API_TOKEN (env unset, token expired, or wrapper edited)")
+elif [ "$CARDS_EXIT" -eq 127 ]; then
+  # 127 = command-not-found: the cards CLI (or one of its deps) isn't on THIS
+  # run's PATH — the cron-context probe-misconfig (#3405). That is a PROBE
+  # problem, not a Vikunja outage; vikunja-http (check 11) owns reachability.
+  # Distinguishing probe-misconfig from service-down is ADR-043's contract.
+  WARNINGS+=("vikunja-auth-probe: cards CLI not runnable here (exit 127 — PATH/dep) — probe-misconfig, NOT a Vikunja failure")
 elif [ "$CARDS_EXIT" -ne 0 ]; then
-  FAILURES+=("vikunja-auth: cards CLI non-zero exit (${CARDS_EXIT}) — Vikunja may be down or token invalid")
+  # Other nonzero with no auth-error shape: inconclusive. Warn, never blanket-
+  # claim 'Vikunja down' (vikunja-http already covers a real outage).
+  WARNINGS+=("vikunja-auth-probe: cards CLI exit ${CARDS_EXIT} with no auth-error in output — probe inconclusive")
 fi
 
 for entry in "${HEALTH_ENDPOINTS[@]}"; do
@@ -306,9 +315,15 @@ if [ -f "$DELIVERY_LOG" ]; then
   if [ "$delivery_mtime" -lt "$STALE_8D" ]; then
     delivery_age_d=$(( (now - delivery_mtime) / 86400 ))
     FAILURES+=("alert-delivery: last run ${delivery_age_d}d ago — weekly cron may be dead. Fix: bash platform/scripts/alert-delivery-test.sh")
-  elif ! tail -5 "$DELIVERY_LOG" | grep -q "all passed" 2>/dev/null; then
-    last_fail=$(grep "FAIL" "$DELIVERY_LOG" | tail -1)
-    FAILURES+=("alert-delivery: last run had failures — $last_fail")
+  else
+    # Read the LATEST run's verdict, not a whole-file FAIL scan. The old check
+    # grepped the entire log for FAIL and took the last match — which surfaced
+    # the OLDEST-surviving FAIL (a 2026-05-12 entry) while today's run passed
+    # (#3405). The test writes one `RESULT:` line per run; the last is current.
+    last_result=$(grep "RESULT:" "$DELIVERY_LOG" | tail -1)
+    if [ -n "$last_result" ] && ! echo "$last_result" | grep -q "all passed"; then
+      FAILURES+=("alert-delivery: latest run did not pass — ${last_result}")
+    fi
   fi
 else
   FAILURES+=("alert-delivery: test never run — run platform/scripts/alert-delivery-test.sh to baseline")
@@ -327,17 +342,23 @@ if [ -f "$DASH_HEALTH_LOG" ]; then
   fi
 fi
 
-# --- 15. Standards surface freshness (#2268) ---
+# --- 15. Standards surface freshness (#2268; #3405 re-home) ---
+# The chorus-standards.html surface was retired off gathering-docs by the
+# chorus-out-of-gathering migration (#2969/#3361). The generator is a transform
+# whose seed moved; the artifact has no current home until it re-lands in the
+# chorus-api tree with #3361. Until then a missing/stale surface is a tracked
+# WARNING (a known migration gap), NOT a service-down FAILURE that nudges
+# nightly. The probe target follows the artifact once #3361 re-homes it.
 STANDARDS_HTML="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-standards.html"
 STALE_48H=$((now - 172800))
 if [ -f "$STANDARDS_HTML" ]; then
   standards_mtime=$(stat -f %m "$STANDARDS_HTML" 2>/dev/null || echo 0)
   if [ "$standards_mtime" -lt "$STALE_48H" ]; then
     standards_age_h=$(( (now - standards_mtime) / 3600 ))
-    FAILURES+=("standards-surface: chorus-standards.html is ${standards_age_h}h stale — cron may be dead. Fix: bash platform/scripts/standards-surface-cron.sh --force")
+    WARNINGS+=("standards-surface: chorus-standards.html is ${standards_age_h}h stale (#3361 re-home pending) — regenerate, or migrate the probe target to the chorus-api home.")
   fi
 else
-  FAILURES+=("standards-surface: chorus-standards.html not found — run generate-standards-surface.sh first")
+  WARNINGS+=("standards-surface: chorus-standards.html absent at the gathering path — retired by the chorus-out-of-gathering migration (#3361), not yet re-homed. Probe target follows the artifact once it lands in chorus-api.")
 fi
 
 # --- 15b. Borg page data-present probes (#2124) ---
