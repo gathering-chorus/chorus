@@ -515,6 +515,15 @@ pub fn handle_meta(path: &str, table: &RouteTable) -> ((u16, String), ReqMeta) {
     (resp, meta)
 }
 
+/// A safe entity local-name: non-empty, bounded, and only the characters that
+/// appear in a minted IRI local part (ADR-040 ids are kebab/alnum). Anything else
+/// could break or inject the SPARQL IRI it gets interpolated into. (#3420 code gate)
+pub fn is_safe_local(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, String) {
     let plural = format!("/{}s", table.class.rsplit('#').next().unwrap_or("domain").to_lowercase());
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
@@ -558,6 +567,13 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /domains/:name and /domains/:name/contains
     if format!("/{}", parts.first().unwrap_or(&"")) == plural && (parts.len() == 2 || parts.len() == 3) {
         let name = parts[1];
+        // The name is interpolated into a SPARQL IRI (<{ns}{name}>) by every entity
+        // branch below (detail, /contains, /partof). A name carrying SPARQL/IRI
+        // metacharacters would break or inject the query, so refuse anything that is
+        // not a bare local name. One guard covers all three folds. (#3420 code gate)
+        if !is_safe_local(name) {
+            return (400, "{ \"error\": \"invalid entity name\" }".to_string());
+        }
         meta.entity = name.to_string();
         meta.route = if parts.len() == 3 { "fold".into() } else { "detail".into() };
         if parts.len() == 3 { meta.fold = parts[2].to_string(); }
@@ -779,6 +795,18 @@ mod tests {
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
+    }
+
+    #[test]
+    fn rejects_unsafe_entity_names_to_block_sparql_injection() {
+        // #3420 code gate — name is interpolated into a SPARQL IRI; only bare local names allowed.
+        for ok in ["cards-service", "build_domain", "Athena", "x"] {
+            assert!(is_safe_local(ok), "{} should be a safe local name", ok);
+        }
+        // SPARQL/IRI metacharacters, whitespace, dots, slashes, empty → refused
+        for bad in ["cards>service", "a b", "x\"y", "}", "a/b", "", "name#frag", "a.b"] {
+            assert!(!is_safe_local(bad), "{} must be rejected (SPARQL-injection guard)", bad);
+        }
     }
 
     #[test]
