@@ -80,6 +80,8 @@ We already run **Prometheus** (scrape/store gauges — saturation), **Alertmanag
 - **Monitor/alert become two domains in the ontology**, and the per-service signal contracts + per-alert rules become **generated from the model**, not hand-maintained (coherent-model program).
 - **Meta-monitoring is automatic** — the alert domain watches that every expected signal arrives; a dark monitor is an absence alert.
 - **Scheduled jobs (≈39) need the freshness contract**, distinct from the daemon heartbeat — same alerting spine, different emit.
+- **Any monitor/alert UI surface renders from the model/config and conforms to the #3415 design system (system.css) — never a bespoke one-off page** (Kade's conformance constraint). The alert cockpit, the monitor-state views, and the #3410 go-token cockpit project alert/monitor state *from* the typed contracts + ownership model; they do not hand-roll a new page each time. This is the same anti-sprawl / no-competing-implementations principle the chorus-out-of-gathering extraction (#3361) is currently unwinding — a monitoring UI that spawns bespoke pages would re-create exactly that debt. **UI-conformance dependency: #3415 (design system).**
+- **The standards-surface re-home (#3361 residue) is a clean first consumer of the freshness/truthful-probe contract** — when the artifact lands in its chorus-api home, its probe target follows the artifact (the #3405 lesson made structural), demonstrating the "probe declares its target, target moves with the artifact" contract.
 
 ## Follow-on cards (priority order)
 
