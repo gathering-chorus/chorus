@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chorus UI Architecture — Design System</title>
+  <!-- dogfood: this doc is the first page built ON the system it describes -->
+  <link rel="stylesheet" href="/css/system.css">
+</head>
+<body class="theme-light">
+<div class="wrap">
+
+<h1>Chorus UI Architecture <span class="muted">— the design-system + presentation layer (#3415)</span></h1>
+<p class="muted">Kade · 2026-06-14 · Designing-step artifact · instance of the product-design template · governs #3413 (werk pages), #3412 (/flow) and every future page</p>
+
+<div class="content-actions" data-title="Chorus UI Architecture" data-url="/chorus-docs/chorus-ui-architecture">
+  <button class="action-btn" data-btn="print" title="Save as PDF">⤓ PDF</button>
+  <button class="action-btn" data-btn="share" title="Share this page">↗ Share</button>
+  <button class="action-btn" data-btn="reflect" title="Send to Reflect AI">✦ Reflect</button>
+</div>
+
+<div class="callout">
+<strong>Thesis.</strong> A page is <code>model + view</code>. Today both are hand-fused per page, so 60 pages are <em>one structure drawn 60 divergent ways</em>. Split them: <strong>structure comes from the model</strong> (owl-api), <strong>visual comes from ONE design system</strong> every page renders into. Same model → same renderer → consistent pages, by construction. This is the generate-from-model bet — already made on the backend — applied to presentation.
+</div>
+
+<h2>1 · Identity</h2>
+<ul>
+  <li><strong>Name:</strong> Chorus UI Architecture / Design System</li>
+  <li><strong>Owner:</strong> Kade (presentation layer); shared with Wren on the owl-api/forge generation path</li>
+  <li><strong>Value-stream step:</strong> Designing — it is the presentation-layer instance of the api-driven value-stream template, the way Athena is the structural instance</li>
+  <li><strong>Status:</strong> building — token base + specimen live (<code>system.css</code> + <code>ui-system.html</code>); generation path + component library are the open legs</li>
+</ul>
+
+<h2>2 · Promise</h2>
+<p>One legible, consistent, printable presentation surface across all of Chorus — and a capability any system Chorus builds inherits. Stop authoring pages; start generating them from the model into a shared design system. A page looks right because it <em>can't</em> look wrong: it has no private styles, only system tokens and components.</p>
+
+<h2>3 · The problem (from the de-facto audit)</h2>
+<p>An audit of ~60 served pages found:</p>
+<ul>
+  <li><strong>Two internally-consistent themes</strong> — editorial-light (Georgia, <code>#1a1a1a</code> on white, blue accent — design docs) and operational-dark (system-ui, <code>#e6e8eb</code> on <code>#0f1115</code>, saturated accents — cockpits). The split is intentional and correct.</li>
+  <li><strong>Zero shared CSS</strong> — every page is 100% inline <code>&lt;style&gt;</code>; the same component (card, badge, table) is re-styled 10+ times.</li>
+  <li><strong>~25 near-duplicate color values</strong> — five ways to write white, three grays.</li>
+  <li><strong>Real semantic token systems already in use</strong> — value-stream stage colors and role colors, re-declared per page instead of named once.</li>
+</ul>
+<div class="callout callout--gap"><strong>Diagnosis.</strong> Strong thematic discipline, zero infrastructure discipline. The visual intent is clear; the implementation is fragmented. We don't need 60 designs — we need one system, two themes.</div>
+
+<h2>4 · Atomic Design mapping (Brad Frost), with the chorus twist</h2>
+<p>Standard atomic design hand-builds all five tiers. In Chorus the <strong>Pages tier is generated from the model</strong>, not authored — so the split is: <em>atoms→templates = the design system (hand-crafted once); pages = model × template (forged).</em></p>
+<table class="table">
+<tr><th>Tier</th><th>In Chorus</th><th>Status</th></tr>
+<tr><td><strong>Atoms</strong></td><td>Tokens: color, type scale, spacing (8px base), radius — CSS custom properties in <code>system.css</code></td><td>built (v1)</td></tr>
+<tr><td><strong>Molecules</strong></td><td>stat (value+label), badge, breadcrumb item, card-chip (owner·id·title), role chip, tag</td><td>built (core)</td></tr>
+<tr><td><strong>Organisms</strong></td><td>card, lane/column, navbar, table, callout (frame/caveat/gap), <strong>content-actions</strong> (PDF/Share/Reflect), the anatomy blocks (identity/promise/stat-strip/folds/provenance/edges-as-links)</td><td>building</td></tr>
+<tr><td><strong>Templates</strong></td><td>~5 page archetypes: decomposition-tree · dashboard/cockpit · entity-detail (product/domain/service) · design-doc · value-stream-step</td><td>open</td></tr>
+<tr><td><strong>Pages</strong></td><td>generated per model node by owl-api/forge — template + model data</td><td>open (the generation leg)</td></tr>
+</table>
+
+<h2>5 · Two themes, one token base</h2>
+<p>One set of semantic tokens; two themes set their values. Pages opt in with <code>&lt;body class="theme-light"&gt;</code> or <code>theme-dark</code>. Editorial-light is the default and the print target; operational-dark is the live-cockpit mood. No page re-declares a palette.</p>
+
+<h2>6 · Print is first-class</h2>
+<p>Jeff prints; the <code>/share</code> skill renders Chrome-headless PDFs whose quality <em>depends</em> on page print CSS. So: <code>@media print</code> is baked into <code>system.css</code> (forces the ink-friendly light palette, hides nav + action bar, avoids mid-component page breaks), and the <strong>content-actions</strong> organism (Save-as-PDF / Share / Reflect) is standard page chrome on every page.</p>
+
+<h2>7 · Generation path — AX=JX</h2>
+<p>owl-api/forge already lists "page" as an output alongside routes + MCP + skill. The page is <code>model × template</code>, rendered into the design system. The same model data a role gets via MCP is what the page shows — <strong>AX (agent experience) = JX (Jeff experience)</strong>, same source, no divergent fallback. Static output only — no runtime template engine (the #3361 deploy lesson: a runtime dep doesn't survive chorus-api's node_modules churn; the design system is static CSS + build/forge-time composition).</p>
+
+<h2>8 · Inherited capability</h2>
+<div class="callout">
+Chorus is a system that builds systems. This design system is part of what the factory imparts to <em>anything</em> it builds. Per the factory/product runtime-independence invariant, it is inherited <strong>generatively at build time</strong> — the CSS + templates + generator are forged/copied INTO the built system, which then runs standalone — <strong>never a runtime dependency back on Chorus</strong>. That is why <code>system.css</code> carries zero chorus-specific hardcoding: it drops into Gathering or any future product as-is.
+</div>
+
+<h2>9 · As-Is / To-Be / Path to close</h2>
+<ul>
+  <li><strong>As-is:</strong> 60 hand-authored pages, inline styles, no reuse, two ad-hoc themes.</li>
+  <li><strong>To-be:</strong> one <code>system.css</code> (atoms→organisms) + ~5 templates; pages generated from the model into it; print + content-actions standard; inheritable into built systems.</li>
+  <li><strong>Path to close:</strong> (1) tokens — <em>done v1</em>; (2) component library to organisms; (3) the ~5 templates; (4) forge emits pages into the templates; (5) migrate existing pages to link <code>system.css</code> (cheapest immediate win); (6) re-home strays (e.g. chorus-standards.html, #3405).</li>
+</ul>
+
+<h2>10 · References</h2>
+<ul>
+  <li><code>system.css</code> · <code>ui-system.html</code> (the specimen)</li>
+  <li><code>value-stream-template.html</code> · <code>athena-value-stream-design.html</code> · <code>athena-product-design.html</code> (the structural-instance precedent)</li>
+  <li>Consumers: #3413 (werk pages) · #3412 (/flow) · #3410 (go-token cockpit) · ADR-043 alert cockpits — all instance from this</li>
+</ul>
+
+<p class="muted" style="margin-top:var(--space-5)">This doc is itself built on <code>system.css</code> (theme-light) — the first page that eats its own dogfood. Cmd-P to print it.</p>
+
+</div>
+</body>
+</html>
