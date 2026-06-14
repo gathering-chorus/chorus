@@ -437,7 +437,10 @@ pub fn page_html(t: &RouteTable) -> String {
   <div id="deps"></div>
 </div>
 <script>
-const API = "http://localhost:3360";
+// #3420 — owl-api base: derive the HOST from the serving page (portable — works off
+// localhost, in gathering, any host) and keep owl-api's port. The page is inherited
+// generatively into any product (#3415 portability doctrine), so NO hardcoded host.
+const API = location.protocol + "//" + location.hostname + ":3360";
 const name = new URLSearchParams(location.search).get("name");
 const titleEl = document.getElementById("title");
 const detailEl = document.getElementById("detail");
@@ -790,6 +793,9 @@ mod tests {
         assert!(h.contains("/partof") && h.contains("/contains"), "fetches both up + down edges");
         assert!(h.contains("Dependencies"), "renders the dependency view");
         assert!(h.contains("?name="), "deps are cross-entity nav links");
+        // portability (#3415 doctrine) — no hardcoded host; owl-api host derives from the serving page
+        assert!(!h.contains("\"http://localhost:3360\""), "no hardcoded localhost API base");
+        assert!(h.contains("location.hostname"), "owl-api host derives from the serving origin");
         // class projected from the table, not hardcoded
         assert!(h.contains("Domain"), "titled by the class from the table");
         // deterministic — same table in, same page out (idempotent projection)
