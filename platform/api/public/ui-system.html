@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chorus Design System — Specimen</title>
+  <link rel="stylesheet" href="/css/system.css">
+  <style>
+    /* specimen-only layout (not part of the system) */
+    .spec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-2); }
+    .swatch { border-radius: var(--r-sm); border: 1px solid var(--border); overflow: hidden; font-size: var(--fs-xs); }
+    .swatch .chip { height: 44px; }
+    .swatch .name { padding: var(--space-1) var(--space-2); background: var(--surface); }
+    .theme-pane { padding: var(--space-4); border-radius: var(--r-lg); margin: var(--space-3) 0; background: var(--bg); border: 1px solid var(--border); }
+    .row { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; margin: var(--space-2) 0; }
+  </style>
+</head>
+<body class="theme-light">
+<div class="wrap">
+
+  <h1>Chorus Design System <span class="muted">— Specimen (#3415)</span></h1>
+  <p class="muted">One token base · two themes (editorial-light · operational-dark) · print-first. Cmd-P to see the print rendering. Built from the de-facto style audit; portable — inheritable into any chorus-built system.</p>
+
+  <div class="content-actions" data-title="Chorus Design System" data-url="/ui-system.html">
+    <button class="action-btn" data-btn="print" title="Save as PDF">⤓ PDF</button>
+    <button class="action-btn" data-btn="share" title="Share this page">↗ Share</button>
+    <button class="action-btn" data-btn="reflect" title="Send to Reflect AI">✦ Reflect</button>
+  </div>
+
+  <h2>Stage &amp; role tokens</h2>
+  <div class="row">
+    <span class="badge" style="background:color-mix(in srgb,var(--stage-capturing) 16%,transparent);color:var(--stage-capturing)">Capturing</span>
+    <span class="badge" style="background:color-mix(in srgb,var(--stage-directing) 16%,transparent);color:var(--stage-directing)">Directing</span>
+    <span class="badge" style="background:color-mix(in srgb,var(--stage-building) 16%,transparent);color:var(--stage-building)">Building</span>
+    <span class="badge" style="background:color-mix(in srgb,var(--stage-proving) 16%,transparent);color:var(--stage-proving)">Proving</span>
+    <span class="badge" style="background:color-mix(in srgb,var(--stage-operating) 16%,transparent);color:var(--stage-operating)">Operating</span>
+  </div>
+  <div class="row">
+    <span class="role role--wren">Wren</span><span class="role role--silas">Silas</span>
+    <span class="role role--kade">Kade</span><span class="role role--borg">Borg</span>
+  </div>
+
+  <!-- ============ EDITORIAL LIGHT ============ -->
+  <h2>Theme — editorial light</h2>
+  <div class="theme-pane theme-light">
+    <div class="spec-grid" style="margin-bottom:var(--space-3)">
+      <div class="swatch"><div class="chip" style="background:var(--bg)"></div><div class="name">--bg</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--surface-2)"></div><div class="name">--surface-2</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--text)"></div><div class="name">--text</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--accent)"></div><div class="name">--accent</div></div>
+    </div>
+    <div class="lanes">
+      <div class="card"><div class="stat"><span class="stat-value">32</span><span class="stat-label">Next</span></div></div>
+      <div class="card"><div class="stat"><span class="stat-value">4</span><span class="stat-label">WIP</span></div></div>
+      <div class="card">card · <span class="badge badge--success">pass</span> <span class="badge badge--warn">warn</span></div>
+    </div>
+    <div class="callout">callout · a frame</div>
+    <div class="callout callout--gap">callout · gap</div>
+    <div class="row"><button class="btn btn--primary">Primary</button><button class="btn">Default</button></div>
+  </div>
+
+  <!-- ============ OPERATIONAL DARK ============ -->
+  <h2>Theme — operational dark</h2>
+  <div class="theme-pane theme-dark">
+    <div class="spec-grid" style="margin-bottom:var(--space-3)">
+      <div class="swatch"><div class="chip" style="background:var(--bg)"></div><div class="name">--bg</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--surface-2)"></div><div class="name">--surface-2</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--text)"></div><div class="name">--text</div></div>
+      <div class="swatch"><div class="chip" style="background:var(--accent)"></div><div class="name">--accent</div></div>
+    </div>
+    <div class="lanes">
+      <div class="card"><div class="stat"><span class="stat-value">32</span><span class="stat-label">Next</span></div></div>
+      <div class="card"><div class="stat"><span class="stat-value">4</span><span class="stat-label">WIP</span></div></div>
+      <div class="card">card · <span class="badge badge--success">pass</span> <span class="badge badge--warn">warn</span></div>
+    </div>
+    <div class="callout">callout · a frame</div>
+    <div class="row"><button class="btn btn--primary">Primary</button><button class="btn">Default</button></div>
+  </div>
+
+</div>
+<script src="/js/content-actions.js" defer></script>
+</body>
+</html>

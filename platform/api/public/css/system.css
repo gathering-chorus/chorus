@@ -1,0 +1,187 @@
+/* ===========================================================================
+ * Chorus Design System — system.css  (#3415)
+ *
+ * A PORTABLE, INHERITABLE capability. Chorus is a system that builds systems;
+ * this design system is part of what the factory imparts to anything it builds.
+ * Per the factory/product runtime-independence invariant, it is inherited
+ * GENERATIVELY at build time (forged/copied INTO the built system, which then
+ * runs standalone) — never a runtime dependency back on chorus. So: zero
+ * chorus-specific hardcoding here; pure portable tokens + components.
+ *
+ * ONE shared token base; TWO themes (.theme-light editorial · .theme-dark
+ * operational) as variants over the same custom properties. Atoms (tokens) +
+ * the highest-reuse molecules/organisms extracted from the de-facto audit so
+ * the ~60 hand-rolled pages stop re-declaring the same things 10x.
+ *
+ * Static CSS only — no runtime template engine (the #3361 deploy lesson:
+ * runtime deps don't survive chorus-api's node_modules churn). Pages link this
+ * sheet; eventually owl-api/forge emits pages INTO these classes.
+ *
+ * Usage: <link rel="stylesheet" href="/css/system.css">
+ *        <body class="theme-light">   (or theme-dark)
+ * ======================================================================== */
+
+/* ---- ATOMS · shared tokens (theme-agnostic) ---------------------------- */
+:root {
+  /* spacing — 8px base */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 16px;
+  --space-4: 24px; --space-5: 32px; --space-6: 48px;
+
+  /* radius */
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px; --r-pill: 999px;
+
+  /* type scale (rem) */
+  --fs-xs: 0.72rem; --fs-sm: 0.82rem; --fs-md: 0.9rem;
+  --fs-lg: 1.1rem;  --fs-xl: 1.4rem;  --fs-2xl: 1.8rem; --fs-3xl: 2.2rem;
+  --fw-regular: 400; --fw-semibold: 600; --fw-bold: 700;
+  --lh: 1.55;
+
+  /* font families */
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* SEMANTIC status (shared across themes) */
+  --status-success: #16a34a; --status-error: #dc2626; --status-warn: #d97706;
+
+  /* DOMAIN tokens — value-stream stage (named once; was per-page inline) */
+  --stage-capturing: #6d28d9; --stage-directing: #b45309;
+  --stage-building:  #047857;  --stage-proving:  #9d174d; --stage-operating: #6b7280;
+
+  /* DOMAIN tokens — role identity */
+  --role-wren: #10b981; --role-silas: #60a5fa; --role-kade: #fb923c;
+  --role-jeff: #334155;  --role-borg: #ef4444;
+}
+
+/* ---- THEME · editorial light (design docs, narrative, PRINT-FIRST) ----- */
+.theme-light {
+  --bg:        #ffffff;
+  --bg-subtle: #fafafa;
+  --surface:   #ffffff;
+  --surface-2: #f4f4f5;
+  --border:    #e5e7eb;
+  --text:      #1a1a1a;
+  --text-muted:#64748b;
+  --text-dim:  #94a3b8;
+  --accent:    #2563eb;
+  --accent-2:  #6366f1;
+  --font-body: var(--font-serif);
+  color-scheme: light;
+}
+
+/* ---- THEME · operational dark (cockpits, live state) ------------------- */
+.theme-dark {
+  --bg:        #0f1115;
+  --bg-subtle: #0c0e12;
+  --surface:   #161a20;
+  --surface-2: #1d222b;
+  --border:    #232833;
+  --text:      #e6e8eb;
+  --text-muted:#8a909a;
+  --text-dim:  #5a616c;
+  --accent:    #c084fc;
+  --accent-2:  #22d3ee;
+  --font-body: var(--font-sans);
+  color-scheme: dark;
+}
+
+/* ---- BASE ------------------------------------------------------------- */
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font-body); line-height: var(--lh);
+  font-size: var(--fs-md);
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-5) var(--space-4); }
+a { color: var(--accent); }
+h1 { font-size: var(--fs-3xl); margin: 0 0 var(--space-2); }
+h2 { font-size: var(--fs-xl); margin: var(--space-5) 0 var(--space-2); }
+h3 { font-size: var(--fs-lg); margin: var(--space-4) 0 var(--space-1); }
+code, pre { font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+/* ---- MOLECULES / ORGANISMS (the recurring components) ----------------- */
+
+/* card */
+.card { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: var(--space-3); }
+
+/* stat block (value + label) */
+.stat { display: flex; flex-direction: column; gap: var(--space-1); }
+.stat .stat-value { font-size: var(--fs-2xl); font-weight: var(--fw-bold); }
+.stat .stat-label { font-size: var(--fs-xs); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .06em; }
+
+/* badge / pill */
+.badge { display: inline-block; padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
+.badge--success { background: color-mix(in srgb, var(--status-success) 18%, transparent); color: var(--status-success); }
+.badge--error   { background: color-mix(in srgb, var(--status-error) 18%, transparent);   color: var(--status-error); }
+.badge--warn    { background: color-mix(in srgb, var(--status-warn) 20%, transparent);    color: var(--status-warn); }
+
+/* role chip */
+.role { font-weight: var(--fw-semibold); }
+.role--wren { color: var(--role-wren); } .role--silas { color: var(--role-silas); }
+.role--kade { color: var(--role-kade); } .role--borg  { color: var(--role-borg); }
+
+/* lane / column (board flow, werk panels) */
+.lanes { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+@media (max-width: 760px) { .lanes { grid-template-columns: 1fr; } }
+.lane { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: var(--space-3); }
+.lane > h2 { margin: 0 0 var(--space-2); font-size: var(--fs-sm);
+  text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+
+/* callout (design-doc frames: frame/finding/caveat/gap) */
+.callout { padding: var(--space-2) var(--space-3); margin: var(--space-2) 0;
+  border-radius: var(--r-sm); border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg)); font-size: var(--fs-sm); }
+.callout--caveat { border-left-color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 10%, var(--bg)); }
+.callout--gap { border-left-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 8%, var(--bg)); }
+
+/* navbar */
+.navbar { display: flex; gap: var(--space-3); padding: var(--space-2) var(--space-4);
+  background: var(--surface); border-bottom: 1px solid var(--border); align-items: center; }
+.navbar a { color: var(--text-muted); text-decoration: none; font-size: var(--fs-sm); }
+.navbar a:hover, .navbar a.active { color: var(--text); }
+
+/* table */
+.table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.table th { text-align: left; padding: var(--space-2) var(--space-3);
+  background: var(--surface-2); color: var(--text-muted);
+  font-size: var(--fs-xs); text-transform: uppercase; }
+.table td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border);
+  vertical-align: top; }
+
+/* button */
+.btn { font: inherit; padding: var(--space-1) var(--space-3); border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  cursor: pointer; }
+.btn:hover { background: var(--surface); }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* content-actions — the per-page PDF / Share / Reflect bar (Jeff's print bar) */
+.content-actions { display: flex; gap: var(--space-2); align-items: center;
+  margin: var(--space-3) 0; }
+.content-actions .action-btn { font: inherit; font-size: var(--fs-sm);
+  padding: var(--space-1) var(--space-3); border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted);
+  cursor: pointer; }
+.content-actions .action-btn:hover { color: var(--text); }
+.muted { color: var(--text-muted); }
+
+/* ---- PRINT — first-class (Jeff prints; /share PDF quality needs this) -- */
+@media print {
+  :root, .theme-dark, .theme-light {
+    /* force the editorial-light, ink-friendly palette for print */
+    --bg: #fff; --bg-subtle: #fff; --surface: #fff; --surface-2: #fff;
+    --text: #000; --text-muted: #444; --border: #ccc;
+    --font-body: var(--font-serif);
+  }
+  body { font-size: 11pt; }
+  .wrap { max-width: none; margin: 0; padding: 0; }
+  .navbar, .content-actions, .no-print { display: none !important; }
+  .card, .lane, .callout { break-inside: avoid; border-color: #ccc; }
+  h1, h2, h3 { break-after: avoid; }
+  a { color: #000; text-decoration: underline; }
+}
