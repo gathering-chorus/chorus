@@ -542,6 +542,10 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
     // #3402 — seam auth config, loaded ONCE (no per-request env read, no graph call).
     let secret = std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().into_bytes();
     let allowed_webids = auth::chorus_agent_webids();
+    if secret.is_empty() {
+        // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
+        eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
+    }
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
         let started = std::time::Instant::now();

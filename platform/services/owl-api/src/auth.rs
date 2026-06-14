@@ -45,6 +45,12 @@ pub fn verify_token(
     allowed_webids: &[String],
     now_secs: u64,
 ) -> Result<Claims, AuthError> {
+    // FAIL CLOSED: an empty/unset secret must never authenticate anything. Without
+    // this, HMAC with a zero-length key would "verify" a token an attacker signed
+    // with the same empty key (gate-ops/cold-eyes #3402). No secret → no access.
+    if secret.is_empty() {
+        return Err(AuthError::BadSignature);
+    }
     let token = token.trim();
     if token.is_empty() {
         return Err(AuthError::Missing);
@@ -173,11 +179,16 @@ fn json_number(json: &str, key: &str) -> Option<u64> {
 
 // --- the seam gate (#3402: ONE secured surface, Gall's Law) -----------------
 
-/// The single secured surface for this slice. `/schema/domain` is served from the
-/// route table with NO SPARQL call, so it proves end-to-end without a live graph —
-/// and growth is just adding the next path here (the seam is structural).
+/// The single secured surface for this slice (Gall's Law: exactly ONE, per the AC).
+/// `/schema/domain` is served from the route table with NO SPARQL call, so it proves
+/// end-to-end without a live graph. Growth = add the next exact path here (or a
+/// prefix) — the seam is structural; the check stays in one place.
 pub fn is_secured(path: &str) -> bool {
-    path == "/schema/domain" || path.starts_with("/schema/")
+    // Normalize FIRST: strip query + fragment. handle_inner serves `/schema/domain?x`
+    // (it matches on the path prefix), so the gate must match the same request — else
+    // appending `?anything` bypasses auth (gate cold-eyes #3402). Match the path only.
+    let p = path.split(['?', '#']).next().unwrap_or(path);
+    p == "/schema/domain" || p == "/schema/domain/"
 }
 
 /// Phase-1 static chorus-agent web-id set (NO graph call = non-blocking at the seam,
@@ -352,5 +363,38 @@ mod tests {
         assert!(set.iter().any(|w| w.contains("/wren/")));
         assert!(set.iter().any(|w| w.contains("/silas/")));
         assert!(set.iter().any(|w| w.contains("/kade/")));
+    }
+
+    #[test]
+    fn empty_secret_fails_closed() {
+        // A token "signed" with the empty key must NOT verify under an empty secret.
+        // No secret configured = no access — never fail open (gate-ops/cold-eyes #3402).
+        let t = mint(b"", &payload("chorus", &wren_webid(), 9999999999));
+        assert_eq!(verify_token(&t, b"", &allowed(), 1000), Err(AuthError::BadSignature));
+    }
+
+    #[test]
+    fn empty_secret_secured_surface_is_401() {
+        // at the seam, an unset secret rejects the secured surface (fail closed)
+        let t = mint(b"", &payload("chorus", &wren_webid(), 9999999999));
+        let bearer = format!("Bearer {}", t);
+        assert_eq!(
+            seam_auth("/schema/domain", &bearer, b"", &allowed(), 1000).map(|(c, _)| c),
+            Some(401)
+        );
+    }
+
+    #[test]
+    fn query_string_does_not_bypass_the_gate() {
+        // handle_inner serves /schema/domain?x, so the gate must catch it too — a
+        // missing token on the query-string form is still 401 (no bypass).
+        assert_eq!(
+            seam_auth("/schema/domain?bypass=true", "", SECRET, &allowed(), 1000).map(|(c, _)| c),
+            Some(401)
+        );
+        // and a valid token on the query-string form still proceeds
+        let t = mint(SECRET, &payload("chorus", &wren_webid(), 9999999999));
+        let bearer = format!("Bearer {}", t);
+        assert_eq!(seam_auth("/schema/domain?x=1", &bearer, SECRET, &allowed(), 1000), None);
     }
 }
