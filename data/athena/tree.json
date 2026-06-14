@@ -804,17 +804,6 @@
       "ownedBy": "chorus:role-kade"
     },
     {
-      "iri": "chorus:skill-acp",
-      "label": "acp",
-      "instanceType": "skill",
-      "inDomain": "chorus:skills",
-      "ownedBy": "chorus:role-wren",
-      "status": "retiring",
-      "deprecated": true,
-      "supersededBy": "chorus:verb-chorus-werk",
-      "comment": "Deprecated in favor of the chorus-werk pipeline (chorus_werk / chorus_werk_land). #3275."
-    },
-    {
       "iri": "chorus:hook-accept-gate",
       "label": "accept_gate",
       "instanceType": "hook",

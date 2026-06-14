@@ -307,7 +307,6 @@ fw:api-cards a fw:API ;
 
 # --- Wren-owned: coordination, product, board ops ---
 fw:skill-ab        a fw:Skill ; rdfs:label "/ab — Analyze board"              ; fw:ownedBy chorus:wren .
-fw:skill-acp       a fw:Skill ; rdfs:label "/acp — Accept commit push"        ; fw:ownedBy chorus:wren .
 fw:skill-board-sweep a fw:Skill ; rdfs:label "/board-sweep — Board coherence"  ; fw:ownedBy chorus:wren .
 fw:skill-chat      a fw:Skill ; rdfs:label "/chat — Two-role chat"            ; fw:ownedBy chorus:wren .
 fw:skill-chorus    a fw:Skill ; rdfs:label "/chorus — Query shared index"     ; fw:ownedBy chorus:wren .

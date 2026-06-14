@@ -81,11 +81,6 @@ chorus:skill-demo a chorus:Skill ;
     rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
     chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
 
-chorus:skill-acp a chorus:Skill ;
-    rdfs:label "/acp" ;
-    rdfs:comment "Accept + commit + push — full acceptance flow in one command." ;
-    chorus:implementedIn "~/.claude/skills/acp/SKILL.md" .
-
 chorus:skill-close a chorus:Skill ;
     rdfs:label "/close" ;
     rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
@@ -340,7 +335,6 @@ chorus:gate-chorus-search-first a chorus:Gate ;
 chorus:wren chorus:hasSkill
     chorus:skill-pull,
     chorus:skill-demo,
-    chorus:skill-acp,
     chorus:skill-close,
     chorus:skill-reboot,
     chorus:skill-jdi,
@@ -374,7 +368,6 @@ chorus:wren chorus:hasSkill
 chorus:silas chorus:hasSkill
     chorus:skill-pull,
     chorus:skill-demo,
-    chorus:skill-acp,
     chorus:skill-close,
     chorus:skill-reboot,
     chorus:skill-jdi,
@@ -397,7 +390,6 @@ chorus:silas chorus:hasSkill
 chorus:kade chorus:hasSkill
     chorus:skill-pull,
     chorus:skill-demo,
-    chorus:skill-acp,
     chorus:skill-close,
     chorus:skill-reboot,
     chorus:skill-jdi,
@@ -451,9 +443,7 @@ chorus:practice-demo
     chorus:hasSkill chorus:skill-demo ;
     chorus:hasGate chorus:gate-demo, chorus:gate-product .
 
-chorus:practice-acp
-    chorus:hasSkill chorus:skill-acp .
-    # policy-no-self-acp enforces the builder/accepter separation —
+# policy-no-self-acp enforces the builder/accepter separation —
     # enforcement is social/procedural, not a named Gate instance yet.
     # Sub-spike 3 candidate: materialize gate-no-self-acp in chorus-hooks.
 
@@ -755,7 +745,6 @@ chorus:policy-quality-gate a chorus:Policy ;
 #    that's sub-spike 2 (practice authorization). Most are obvious:
 #    skill-pull → practice-pull-card (already in chorus.ttl)
 #    skill-demo → practice-demo
-#    skill-acp → practice-acp
 #    skill-close → practice-close-out
 #    etc. Look-skills (/lw, /ls, /lk, /lc, /lm, /look) may be orphan practices
 #    (observation-as-practice isn't in chorus.ttl yet).

@@ -305,7 +305,7 @@ main() {
     err "no deploy units matched — zero-match refusal (AC5)"
     err "  --units was empty; diff-introspect found no known unit paths"
     err "  patterns checked: chorus-api='^platform/api/', chorus-hooks='^platform/services/chorus-hooks/', cards-sdk='^directing/products/cards/'"
-    err "  if the card legitimately has no deploy surface, use /acp directly (not this wrapper)"
+    err "  if the card legitimately has no deploy surface, accept via the normal werk flow (cw <card> go), not this wrapper"
     exit 7
   fi
 

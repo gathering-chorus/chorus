@@ -174,10 +174,13 @@ describe('MessageRouter — classify: accept-request', () => {
     expect(r.getRecent(10)[0].type).toBe('accept-request');
   });
 
-  test('jeff saying /acp is accept-request', () => {
+  test('jeff saying /acp is NOT accept-request (acp retired #3422)', () => {
+    // acp is retired (#3422) — werk (cw <card> go; GO=accept) is the accept path.
+    // The clearing no longer treats a bare /acp as an accept signal; the
+    // accept-request TYPE and the "Accepted #N" confirmation still route.
     const r = new MessageRouter();
     r.ingest(mk('jeff', '/acp 42'));
-    expect(r.getRecent(10)[0].type).toBe('accept-request');
+    expect(r.getRecent(10)[0].type).not.toBe('accept-request');
   });
 
   test('role saying "Accepted #X" is NOT accept-request (skill output)', () => {

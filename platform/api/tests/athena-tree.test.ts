@@ -42,18 +42,19 @@ describe('loadTree — fixture round-trip against TreeSchema (#2928 Silas gate:a
   test('#3275: skill/hook/verb instances loaded + ownership resolves to validated owners', () => {
     process.env.CHORUS_ROOT = REPO_ROOT;
     const tree = loadTree();
-    // C: the instance layer is populated (95 skills+hooks+verbs)
-    expect(tree.instances.length).toBeGreaterThanOrEqual(95);
+    // C: the instance layer is populated (94 skills+hooks+verbs — was 95 before
+    // the acp skill was retired, #3422)
+    expect(tree.instances.length).toBeGreaterThanOrEqual(94);
     // AC3: ownership_lookup answers at the leaf, with Jeff's validated owners
     expect(lookupOwnership(tree, 'chorus:skill-demo')?.owner).toBe('chorus:role-wren');
     expect(lookupOwnership(tree, 'chorus:verb-werk-commit')?.owner).toBe('chorus:role-kade');
     expect(lookupOwnership(tree, 'chorus:verb-werk-demo')?.owner).toBe('chorus:role-wren'); // proving verb → wren
     expect(lookupOwnership(tree, 'chorus:hook-icd-write-gate')?.owner).toBe('chorus:role-kade'); // convergence, not silas
     expect(lookupOwnership(tree, 'chorus:hook-search-hierarchy')?.owner).toBe('chorus:role-wren');
-    // acp deprecated + supersededBy edge to chorus-werk
+    // acp fully retired (#3422) — the skill-acp node is removed from the tree
+    // (it was deprecated/supersededBy chorus-werk; the skill is now gone entirely)
     const acp = tree.instances.find((i) => i.iri === 'chorus:skill-acp');
-    expect(acp?.deprecated).toBe(true);
-    expect(acp?.supersededBy).toBe('chorus:verb-chorus-werk');
+    expect(acp).toBeUndefined();
     // AC1: top rooted — chorus parent has the children, no name collision
     const root = tree.products.find((p) => p.iri === 'chorus:chorus');
     expect(root?.hasChild).toContain('chorus:chorus-chorus');
