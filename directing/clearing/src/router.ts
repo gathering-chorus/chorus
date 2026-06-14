@@ -98,7 +98,7 @@ const classificationRules: ClassificationRule[] = [
   // Accept request / acceptance — Jeff or accept-request type (#2049)
   (r) => {
     const fromJeff = r.from === 'jeff' || r.from.toLowerCase().startsWith('jeff');
-    const isAccept = r.type === 'accept-request' || (fromJeff && (r.text.includes('/acp') || /^Accepted #\d+/.test(r.text)));
+    const isAccept = r.type === 'accept-request' || (fromJeff && /^Accepted #\d+/.test(r.text));
     if (!isAccept) return null;
     return { type: 'accept-request', visible: true, text: fromJeff ? stripSpineMetadata(r.text) : r.text };
   },

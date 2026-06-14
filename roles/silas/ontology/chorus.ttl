@@ -2994,11 +2994,6 @@ chorus:skill-demo a chorus:Skill ;
     rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
     chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
 
-chorus:skill-acp a chorus:Skill ;
-    rdfs:label "/acp" ;
-    rdfs:comment "Accept + commit + push — full acceptance flow in one command." ;
-    chorus:implementedIn "~/.claude/skills/acp/SKILL.md" .
-
 chorus:skill-close a chorus:Skill ;
     rdfs:label "/close" ;
     rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
@@ -3253,7 +3248,7 @@ chorus:gate-design-wip-ready a chorus:Gate ;
 # --- Role authorization edges ---
 
 chorus:wren chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
     chorus:skill-reboot, chorus:skill-jdi,
     chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
     chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
@@ -3268,7 +3263,7 @@ chorus:wren chorus:hasSkill
     chorus:hasGate chorus:gate-product .
 
 chorus:silas chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
     chorus:skill-reboot, chorus:skill-jdi,
     chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
     chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
@@ -3281,7 +3276,7 @@ chorus:silas chorus:hasSkill
     chorus:hasGate chorus:gate-arch, chorus:gate-ops .
 
 chorus:kade chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-acp, chorus:skill-close,
+    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
     chorus:skill-reboot, chorus:skill-jdi,
     chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
     chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
@@ -3306,9 +3301,6 @@ chorus:practice-pull-card
 chorus:practice-demo
     chorus:hasSkill chorus:skill-demo ;
     chorus:hasGate chorus:gate-demo, chorus:gate-product .
-
-chorus:practice-acp
-    chorus:hasSkill chorus:skill-acp .
 
 chorus:practice-reboot
     chorus:hasSkill chorus:skill-reboot .
