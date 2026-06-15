@@ -1781,8 +1781,15 @@ chorus:propertyValueType a owl:DatatypeProperty ;
     rdfs:domain chorus:Property ;
     rdfs:range xsd:string .
 
-# scope (global | machine[Library/Bedroom] | role | instance), source, and
-# ownedBy are REUSED from the existing model — a Property carries all three.
+chorus:propertyScope a owl:DatatypeProperty ;
+    rdfs:label "property scope" ;
+    rdfs:comment "Resolution specificity of this config datum: 'global' | 'machine' | 'role' | 'instance'. The cascade resolves nearest-wins (Service > Domain > Product > ValueStream/Step). Property-OWN scope — distinct from chorus:scope, which is credential-rotation scope (a different concept on a different class). #3433." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+# ownedBy (the role responsible) MAY cross-cut onto a Property; it is not required
+# by PropertyShape. chorus:scope and chorus:source are NOT reused — they are
+# credential-specific (domain chorus:Credential); a Property uses propertyScope.
 
 chorus:PropertyShape a sh:NodeShape ;
     sh:targetClass chorus:Property ;
@@ -1797,7 +1804,7 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:datatype xsd:string ;
     ] ;
     sh:property [
-        sh:path chorus:scope ;
+        sh:path chorus:propertyScope ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
     ] .

@@ -20,11 +20,11 @@ PREFIX = "@prefix chorus: <https://jeffbridwell.com/chorus#> .\n"
 VALID = PREFIX + '''chorus:p_valid a chorus:Property ;
     chorus:propertyKey "alert.threshold" ;
     chorus:propertyValue "0.9" ;
-    chorus:scope "global" .
+    chorus:propertyScope "global" .
 '''
 NO_VALUE = PREFIX + '''chorus:p_noval a chorus:Property ;
     chorus:propertyKey "alert.threshold" ;
-    chorus:scope "global" .
+    chorus:propertyScope "global" .
 '''
 NO_SCOPE = PREFIX + '''chorus:p_noscope a chorus:Property ;
     chorus:propertyKey "alert.threshold" ;
@@ -32,7 +32,7 @@ NO_SCOPE = PREFIX + '''chorus:p_noscope a chorus:Property ;
 '''
 NO_KEY = PREFIX + '''chorus:p_nokey a chorus:Property ;
     chorus:propertyValue "0.9" ;
-    chorus:scope "global" .
+    chorus:propertyScope "global" .
 '''
 
 fails = []
