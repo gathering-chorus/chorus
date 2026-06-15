@@ -1745,6 +1745,63 @@ chorus:AuthBoundaryShape a sh:NodeShape ;
         sh:datatype xsd:string ;
     ] .
 
+# --- Properties domain — config-as-data (#3433) ---
+# A Property is a single config datum (key/value) attached to ANY structural
+# node via chorus:hasProperty, read by generic engines so a config change is a
+# MODEL WRITE, not a code change. Only VARYING config is a Property; invariant
+# logic stays code. Effective config resolves by specificity (Service > Domain
+# > Product > ValueStream/Step), nearest override wins. owl-api generate("Property")
+# mints the read/write surface via the same generic generator as Domain.
+
+chorus:Property a owl:Class ;
+    rdfs:label "Property" ;
+    rdfs:comment "A single configuration datum (key/value) attached to a structural node. Config-as-data: changing behavior is a model write, not a code change. #3433." .
+
+chorus:hasProperty a owl:ObjectProperty ;
+    rdfs:label "has property" ;
+    rdfs:comment "Attaches a config Property to any structural node it configures — uniform across the model. Effective value resolves by specificity (Service > Domain > Product > ValueStream/Step), nearest override wins. #3433." ;
+    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:SubDomain chorus:Service ) ] ;
+    rdfs:range chorus:Property .
+
+chorus:propertyKey a owl:DatatypeProperty ;
+    rdfs:label "key" ;
+    rdfs:comment "Dotted config key, e.g. 'alert.threshold', 'deploy.units'. #3433." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+chorus:propertyValue a owl:DatatypeProperty ;
+    rdfs:label "value" ;
+    rdfs:comment "String-encoded value; propertyValueType says how to read it. #3433." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+chorus:propertyValueType a owl:DatatypeProperty ;
+    rdfs:label "value type" ;
+    rdfs:comment "How to interpret value: string | int | bool | json | list. #3433." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+# scope (global | machine[Library/Bedroom] | role | instance), source, and
+# ownedBy are REUSED from the existing model — a Property carries all three.
+
+chorus:PropertyShape a sh:NodeShape ;
+    sh:targetClass chorus:Property ;
+    sh:property [
+        sh:path chorus:propertyKey ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:propertyValue ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:scope ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] .
+
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;
     rdfs:comment "A practice or policy traces back to the principle(s) that motivate it." ;
