@@ -1,4 +1,4 @@
-/* eslint-disable security/detect-object-injection, @typescript-eslint/no-unnecessary-condition --
+/* eslint-disable @typescript-eslint/no-unnecessary-condition --
  * Maps keyed by Athena product/subproduct/subdomain IDs from a validated
  * shape (server composes from Athena queries; tests pass fixture). Not
  * user input. Defensive existence checks intentional over dynamic data.

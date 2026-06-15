@@ -9,7 +9,7 @@
  */
 import express, { Request, Response, NextFunction } from 'express';
 import Database from 'better-sqlite3';
-import { execFile, exec, spawn } from 'child_process';
+import { execFile, exec, spawn, fork as forkChild } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
@@ -126,12 +126,64 @@ app.get('/api/werk/schema', (_req: Request, res: Response) => {
     res.type('json').send(raw);
   });
 });
+// #3429 — safe stringify for spine-log fields (parsed as Record<string,unknown>):
+// primitives render directly, objects as JSON (not "[object Object]"), null/undefined as "".
+function str(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v); // objects/arrays as JSON, not "[object Object]"
+}
+// #3429 — one spine line → an activity entry (or null to skip). Extracted so the
+// /api/werk/activity handler stays under the complexity threshold.
+function activityEntry(line: string, cutoffMs: number, roleF: string | null, eventF: string[] | null): Record<string, string> | null {
+  if (!line.trim()) return null;
+  let p: Record<string, unknown>;
+  try { p = JSON.parse(line); } catch { return null; }
+  const ts = Date.parse(str(p.timestamp));
+  if (!Number.isNaN(ts) && ts < cutoffMs) return null;
+  if (roleF && p.role !== roleF) return null;
+  if (eventF && !eventF.includes(str(p.event))) return null;
+  return {
+    timestamp: str(p.timestamp),
+    event: str(p.event),
+    role: str(p.role),
+    card_id: str(p.card_id ?? p.cardId),
+    workflow_id: str(p.workflow_id ?? p.workflowId),
+    gate: str(p.gate),
+    stage: str(p.stage),
+    board: str(p.board),
+    title: str(p.title),
+  };
+}
+// #3429 — loom-metrics accumulator + one-line tally, extracted so the
+// /api/loom-metrics handler stays under the complexity threshold.
+interface LoomAcc { done: Set<string>; pulled: Set<string>; weekly: Record<string, number>; deploys: number; demoTotal: number; }
+function loomTally(acc: LoomAcc, line: string): void {
+  if (!line.trim()) return;
+  let p: Record<string, unknown>;
+  try { p = JSON.parse(line); } catch { return; }
+  const ev = str(p.event);
+  const cid = str(p.card_id ?? p.cardId);
+  if (ev === 'card.accepted' || ev === 'card_done' || ev === 'card.done') {
+    if (cid) acc.done.add(cid);
+    const d = new Date(str(p.timestamp));
+    if (!Number.isNaN(d.getTime())) {
+      const wk = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+      acc.weekly[wk] = (acc.weekly[wk] ?? 0) + 1;
+    }
+  }
+  if (ev === 'card.pulled' && cid) acc.pulled.add(cid);
+  if (ev.includes('deploy') || ev === 'binary.deployed') acc.deploys++;
+  // #3410 — demo.verdict synthesis retired; demoTotal counts REAL demos presented.
+  if (ev === 'demo.presented') acc.demoTotal++;
+}
 // #3408 — /werk activity feed: the live spine event stream (the cockpit's heart).
 // Reads the chorus.log tail (same bounded source as /context/spine — #3406) and
 // returns {entries:[...]} filtered by role/event/hours, the shape werk.html's JS
 // consumes. No new data dependency; the spine IS chorus-api's own event log.
 app.get('/api/werk/activity', (req: Request, res: Response) => {
-  const hours = Math.max(1, parseInt(String(req.query.hours ?? '168'), 10) || 168);
+  const hours = Math.max(1, parseInt(str(req.query.hours) || '168', 10) || 168);
   const roleF = typeof req.query.role === 'string' && req.query.role ? req.query.role : null;
   const eventF = typeof req.query.event === 'string' && req.query.event ? String(req.query.event).split('|') : null;
   const cutoffMs = Date.now() - hours * 3600 * 1000;
@@ -139,29 +191,13 @@ app.get('/api/werk/activity', (req: Request, res: Response) => {
   if (raw == null) { res.json({ entries: [], error: 'spine log unavailable' }); return; }
   const entries: Array<Record<string, string>> = [];
   for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    let p: Record<string, unknown>;
-    try { p = JSON.parse(line); } catch { continue; }
-    const ts = Date.parse(String(p.timestamp ?? ''));
-    if (!Number.isNaN(ts) && ts < cutoffMs) continue;
-    if (roleF && p.role !== roleF) continue;
-    if (eventF && !eventF.includes(String(p.event ?? ''))) continue;
-    entries.push({
-      timestamp: String(p.timestamp ?? ''),
-      event: String(p.event ?? ''),
-      role: String(p.role ?? ''),
-      card_id: String(p.card_id ?? p.cardId ?? ''),
-      workflow_id: String(p.workflow_id ?? p.workflowId ?? ''),
-      gate: String(p.gate ?? ''),
-      stage: String(p.stage ?? ''),
-      board: String(p.board ?? ''),
-      title: String(p.title ?? ''),
-    });
+    const e = activityEntry(line, cutoffMs, roleF, eventF);
+    if (e) entries.push(e);
   }
   // #3408 — bound the RESPONSE too (Silas's #3406-forward flag): a polling cockpit
   // doesn't need the whole 4MB-tail's worth; return the most-recent N (default 500)
   // so the payload stays small as the spine grows. ?limit overrides (cap 2000).
-  const limit = Math.min(2000, Math.max(1, parseInt(String(req.query.limit ?? '500'), 10) || 500));
+  const limit = Math.min(2000, Math.max(1, parseInt(str(req.query.limit) || '500', 10) || 500));
   res.json({ entries: entries.slice(-limit) });
 });
 // #3408 — /werk fitness panel metrics, computed live from the spine tail (no new
@@ -170,38 +206,17 @@ app.get('/api/werk/activity', (req: Request, res: Response) => {
 // werk.html renderFitnessPanel (board / weekly_throughput / reject_stats / operations).
 app.get('/api/loom-metrics', (_req: Request, res: Response) => {
   const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
-  const done = new Set<string>();
-  const pulled = new Set<string>();
-  const weekly: Record<string, number> = {};
-  let deploys = 0, demoTotal = 0, demoNoGo = 0;
+  const acc: LoomAcc = { done: new Set<string>(), pulled: new Set<string>(), weekly: {}, deploys: 0, demoTotal: 0 };
   if (raw != null) {
-    for (const line of raw.split('\n')) {
-      if (!line.trim()) continue;
-      let p: Record<string, unknown>;
-      try { p = JSON.parse(line); } catch { continue; }
-      const ev = String(p.event ?? '');
-      const cid = String(p.card_id ?? p.cardId ?? '');
-      if (ev === 'card.accepted' || ev === 'card_done' || ev === 'card.done') {
-        if (cid) done.add(cid);
-        const d = new Date(String(p.timestamp ?? ''));
-        if (!Number.isNaN(d.getTime())) {
-          const wk = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-          weekly[wk] = (weekly[wk] ?? 0) + 1;
-        }
-      }
-      if (ev === 'card.pulled' && cid) pulled.add(cid);
-      if (ev.includes('deploy') || ev === 'binary.deployed') deploys++;
-      // #3410 — demo.verdict synthesis retired (was always-pass, fabricated from inputs.go).
-      // demoTotal now counts REAL demos presented; no-go isn't carried on demo.presented.
-      if (ev === 'demo.presented') { demoTotal++; }
-    }
+    for (const line of raw.split('\n')) loomTally(acc, line);
   }
-  const total = new Set([...done, ...pulled]).size;
+  const demoNoGo = 0; // #3410 — no-go isn't carried on demo.presented; stays 0 until a real no-go signal exists
+  const total = new Set([...acc.done, ...acc.pulled]).size;
   res.json({
-    board: { done: done.size, total },
-    weekly_throughput: weekly,
-    reject_stats: { rate: demoTotal > 0 ? Math.round((demoNoGo / demoTotal) * 1000) / 10 : 0, deploys },
-    operations: { deploys },
+    board: { done: acc.done.size, total },
+    weekly_throughput: acc.weekly,
+    reject_stats: { rate: acc.demoTotal > 0 ? Math.round((demoNoGo / acc.demoTotal) * 1000) / 10 : 0, deploys: acc.deploys },
+    operations: { deploys: acc.deploys },
   });
 });
 // #2994 — additional role mounts. doc-catalog registered these paths but
@@ -460,7 +475,7 @@ setInterval(() => {
 // NOT isolate the native pool). chorus-api dispatches via the shared worker pool
 // and never opens or scans lance again. The worker inherits CHORUS_LANCE_DIR, so
 // a variant chorus-api (#3381) forks its own worker at its own dir.
-import { fork as forkChild } from 'child_process';
+// (fork imported as `forkChild` in the consolidated child_process import at top — #3429)
 import { createWorkerPool, type WorkerLike } from './worker-pool';
 import type { SearchRequest } from './search-worker-core';
 
@@ -3287,19 +3302,21 @@ function parseCatalogLine(line: string, wantedHref: string): CatalogAuditEvent |
   }
 }
 
-async function readCatalogAuditEvents(href: string, n: number): Promise<CatalogAuditEvent[]> {
+function readCatalogAuditEvents(href: string, n: number): Promise<CatalogAuditEvent[]> {
+  // #3429 — sync body, but keep the Promise<> contract (the readEvents callback type
+  // in readCatalogAudit expects it); return Promise.resolve rather than `async` (no await).
   const events: CatalogAuditEvent[] = [];
   // #3406 — was `fs.promises.readFile` of the whole 535MB chorus.log (async stat→read =
   // the AfterStat/ReadFileUtf8 OOM-crash stack the demo cold-eyes caught). We only scan
   // from the end for n href-matching events, so a bounded tail read is equivalent + safe.
   const data = readFileTail(CHORUS_LOG_FILE, CATALOG_AUDIT_TAIL_BYTES);
-  if (data === null) return events;
+  if (data === null) return Promise.resolve(events);
   const lines = data.split('\n');
   for (let i = lines.length - 1; i >= 0 && events.length < n; i--) {
     const ev = parseCatalogLine(lines[i], href);
     if (ev) events.push(ev);
   }
-  return events;
+  return Promise.resolve(events);
 }
 
 app.get('/api/chorus/catalog/audit/:hrefb64', async (req: Request, res: Response) => {
@@ -3417,11 +3434,11 @@ if (require.main === module) {
   // Health cache refresh — runs every 30s under the live server only.
   setTimeout(() => {
     setCurrentOp('healthCache');
-    try { refreshHealthCache(); } finally { setCurrentOp(null); }
+    try { void refreshHealthCache(); } finally { setCurrentOp(null); }
   }, 2000);
   setInterval(() => {
     setCurrentOp('healthCache');
-    try { refreshHealthCache(); } finally { setCurrentOp(null); }
+    try { void refreshHealthCache(); } finally { setCurrentOp(null); }
   }, 30_000);
 
   // Scheduled reindex runs in the standalone worker (chorus-reindex-worker.sh) — #3085.

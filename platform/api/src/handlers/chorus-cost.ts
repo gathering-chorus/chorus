@@ -37,8 +37,8 @@ export async function fetchCost(
   period: string,
   { execFile = defaultExecFile, scriptPath = defaultScriptPath() }: CostDeps = {},
 ): Promise<CostResult> {
-  let stdout = '';
-  let stderr = '';
+  let stdout: string;
+  let stderr: string;
   let execErr: Error | null = null;
   try {
     const r = await execFile('bash', [scriptPath, period], {

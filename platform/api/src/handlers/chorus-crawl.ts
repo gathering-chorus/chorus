@@ -235,6 +235,17 @@ const MENTION_SCAN_CAP = 300;
 // line-filters card.* server-side so we parse only the tiny result, and its retention
 // (~24h) matches the old tail's span — verified equivalent (9==9, #3088). Eliminates the
 // block AND the waste of re-parsing 24h of log per crawl, rather than just off-loading it.
+// #3429 — one Loki line → a card SpineEntry (or null). Extracted to flatten the
+// nested loop (max-depth) + drop collectSpine's cognitive complexity.
+function parseSpineLine(line: string, cardIds: Set<number>): SpineEntry | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed.event || !parsed.event.startsWith('card.')) return null;
+    const cardId = parseInt(parsed.card || '0', 10);
+    if (!cardIds.has(cardId)) return null;
+    return { timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId };
+  } catch { return null; /* skip malformed */ }
+}
 export async function collectSpine(
   fetchFn: FetchFn,
   lokiBaseUrl: string,
@@ -270,13 +281,8 @@ export async function collectSpine(
     const collected: SpineEntry[] = [];
     for (const stream of data.data?.result || []) {
       for (const [, line] of stream.values || []) {
-        try {
-          const parsed = JSON.parse(line);
-          if (!parsed.event || !parsed.event.startsWith('card.')) continue;
-          const cardId = parseInt(parsed.card || '0', 10);
-          if (!cardIds.has(cardId)) continue;
-          collected.push({ timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId });
-        } catch { /* skip malformed */ }
+        const e = parseSpineLine(line, cardIds);
+        if (e) collected.push(e);
       }
     }
     // Chronological asc — matches the old append-only-tail order so downstream is unchanged.
@@ -573,8 +579,9 @@ function alertMatchesDomain(content: string, file: string, domain: string, stem:
 // #2627: per-file extraction split out of the loop body.
 function extractAlertsFromContent(content: string, file: string): AlertEntry[] {
   const promMatches = [...content.matchAll(/^\s*-?\s*alert:\s*(.+)$/gm)];
+  // eslint-disable-next-line security/detect-unsafe-regex -- runs on internal alert-config file content (controlled), bounded single-line match (#3429)
   const grafTitleMatches = [...content.matchAll(/^\s*-\s*(?:uid:.*\n\s*)?title:\s*(.+)$/gm)];
-  const sevDefault = (content.match(/severity:\s*(.+)/) || [, 'unknown'])[1]?.trim() || 'unknown';
+  const sevDefault = (content.match(/severity:\s*(.+)/) ?? [undefined, 'unknown'])[1].trim() || 'unknown';
   const found = promMatches.length > 0 ? promMatches : grafTitleMatches;
   if (found.length === 0) {
     return [{ name: file.replace(/\.ya?ml$/, ''), severity: sevDefault, file }];

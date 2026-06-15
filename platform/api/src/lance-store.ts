@@ -96,6 +96,7 @@ export async function maintainTable(
   table: MaintainableTable,
   opts: { retentionMs?: number; vectorColumn?: string; now?: () => number } = {},
 ): Promise<{ optimize: unknown; reindexed: boolean }> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive vs the external lance binding (typed but surface varies by version)
   if (typeof table?.optimize !== 'function') {
     throw new Error('maintainTable: table has no optimize() — lance binding too old or wrong surface');
   }
@@ -105,6 +106,7 @@ export async function maintainTable(
 
   let reindexed = false;
   if (typeof table.listIndices === 'function' && typeof table.createIndex === 'function') {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- listIndices() comes from the external lance binding; result may be null
     const indices = (await table.listIndices()) ?? [];
     const hasVectorIndex = indices.some((i) => (i.columns ?? []).includes(vectorColumn));
     if (!hasVectorIndex) {

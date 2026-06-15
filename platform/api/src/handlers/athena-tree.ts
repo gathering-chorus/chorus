@@ -120,7 +120,7 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
       service: iri,
     };
   }
-  const instance = (tree.instances ?? []).find((i) => i.iri === iri);
+  const instance = (tree.instances).find((i) => i.iri === iri);
   if (instance) {
     const owningProduct = tree.products.find((p) =>
       p.hasDomain.includes(instance.inDomain),
@@ -148,6 +148,7 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
  * never silently attributed). The result shape is 1:N + source from day one so
  * phase 2 drops in with no migration (the forward-compat lock).
  */
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- cohesive longest-prefix file→domain/instance attribution; the branches are one decision, splitting obscures it (#3429)
 export function attributeFile(tree: Tree, filePath: string): FileAttribution {
   const norm = filePath.replace(/^\.?\//, '');
   const underPrefix = (p: string): boolean => {
@@ -157,12 +158,12 @@ export function attributeFile(tree: Tree, filePath: string): FileAttribution {
 
   // file→instance: longest mapsTo prefix wins (exactly one answer).
   let bestInst: { iri: string; len: number } | null = null;
-  for (const i of tree.instances ?? []) {
+  for (const i of tree.instances) {
     if (!i.mapsTo || !underPrefix(i.mapsTo)) continue;
     const len = i.mapsTo.replace(/^\.?\//, '').length;
     if (!bestInst || len > bestInst.len) bestInst = { iri: i.iri, len };
   }
-  const inst = bestInst ? (tree.instances ?? []).find((i) => i.iri === bestInst!.iri) : undefined;
+  const inst = bestInst ? (tree.instances).find((i) => i.iri === bestInst!.iri) : undefined;
 
   // file→domain: prefix-source edges (phase 1). Longest matching prefix = primary;
   // additional matches stay as (non-primary) edges — 1:N, never collapsed to 1:1.

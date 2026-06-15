@@ -77,9 +77,12 @@ describe('loadTree — fixture round-trip against TreeSchema (#2928 Silas gate:a
     // atStep is optional on the root Product per canonical chorus-product-tree.html
     // (root contains the steps; not at one). Subproducts/domains/services may also
     // be unplaced in Move-0 partial data. Check only when present.
-    for (const p of tree.products) if (p.atStep) expect(stepIris.has(p.atStep)).toBe(true);
-    for (const d of tree.domains) if (d.atStep) expect(stepIris.has(d.atStep)).toBe(true);
-    for (const s of tree.services) if (s.atStep) expect(stepIris.has(s.atStep)).toBe(true);
+    const unresolved = [
+      ...tree.products.filter((p) => p.atStep && !stepIris.has(p.atStep)).map((p) => p.iri),
+      ...tree.domains.filter((d) => d.atStep && !stepIris.has(d.atStep)).map((d) => d.iri),
+      ...tree.services.filter((s) => s.atStep && !stepIris.has(s.atStep)).map((s) => s.iri),
+    ];
+    expect(unresolved).toEqual([]);
   });
 
   test('every Domain in Product.hasDomain is present in tree.domains', () => {

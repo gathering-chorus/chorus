@@ -22,6 +22,7 @@ export type FtsReply = { id: number; rows: unknown[] } | { id: number; error: st
  * (the pool still guards process-level crash + timeout separately).
  */
 export function handleFtsMessage(db: Database.Database, msg: FtsRequest): FtsReply {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- msg arrives via worker IPC; typed but may be malformed, keep the guard
   const id = msg && typeof msg.id === 'number' ? msg.id : -1;
   try {
     const rows = runFtsQueryOnDb(db, msg.q, msg.fetchLimit, msg.role, msg.mode);

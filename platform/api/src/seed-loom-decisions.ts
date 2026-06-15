@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal seeder: reads a decisions file from a controlled repo path, never untrusted input (#3429) */
 /**
  * #2485 Move 1 — populate `urn:chorus:instances` with chorus:Decision instances.
  *

@@ -93,7 +93,7 @@ export function formatBlockAlert(durationMs: number, ts: string, op: string): Bl
     message:
       `chorus-api event loop blocked ${durationMs}ms at ${display}. ` +
       opNote +
-      ` No cause inferred; this is the measured block only.`,
+      ' No cause inferred; this is the measured block only.',
   };
 }
 
@@ -118,7 +118,7 @@ export function startEventloopAlert(deps: EventloopAlertDeps): void {
   const bootDelayMs = deps.bootDelayMs ?? 10_000;
   const throttleMs = deps.throttleMs ?? 300_000;
   const now = deps.now ?? Date.now;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const blockedFn = deps.blockedFn ?? require('blocked');
   let lastNudge = 0;
 

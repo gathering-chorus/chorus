@@ -283,6 +283,26 @@ function indexDocsFrom(ctx: IndexCtx, docs: Array<{ href: string; title?: string
 // File-read — the graph's chorus:Domain count is 0, the tree IS the source. Answers
 // "what is athena v2 / which domains exist / who owns X" — none of which the index
 // could answer before.
+// #3429 — safe stringify for unknown tree-node fields (no "[object Object]").
+function str(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+// #3429 — one tree node → its searchable content blob (extracted to keep
+// indexDomains under the complexity threshold).
+function nodeContent(node: Record<string, unknown>, kind: string, iri: string): string {
+  const gaps = Array.isArray(node.gaps) ? (node.gaps as string[]).join('; ') : '';
+  return [
+    `${str(node.label) || iri} (${kind.replace(/s$/, '')})`,
+    str(node.comment),
+    node.ownedBy ? `owner: ${str(node.ownedBy)}` : '',
+    node.atStep ? `step: ${str(node.atStep)}` : '',
+    node.status ? `status: ${str(node.status)}` : '',
+    gaps ? `gaps: ${gaps}` : '',
+  ].filter(Boolean).join('\n');
+}
 function indexDomains(ctx: IndexCtx): string {
   const treePath = ctx.path.join(ctx.repoRoot, 'data/athena/tree.json');
   if (!ctx.fs.existsSync(treePath)) return '0 domains indexed (no tree)';
@@ -291,18 +311,9 @@ function indexDomains(ctx: IndexCtx): string {
   for (const kind of ['products', 'domains', 'services']) {
     const arr = (tree[kind] as Array<Record<string, unknown>> | undefined) ?? [];
     for (const node of arr) {
-      const iri = String(node.iri ?? '');
+      const iri = str(node.iri);
       if (!iri) continue;
-      const gaps = Array.isArray(node.gaps) ? (node.gaps as string[]).join('; ') : '';
-      const content = [
-        `${node.label ?? iri} (${kind.replace(/s$/, '')})`,
-        node.comment ?? '',
-        node.ownedBy ? `owner: ${String(node.ownedBy)}` : '',
-        node.atStep ? `step: ${String(node.atStep)}` : '',
-        node.status ? `status: ${String(node.status)}` : '',
-        gaps ? `gaps: ${gaps}` : '',
-      ].filter(Boolean).join('\n');
-      ctx.insert.run!('domain', `domain:${iri}`, 'athena-tree', 'system', 'system', content, ctx.now);
+      ctx.insert.run!('domain', `domain:${iri}`, 'athena-tree', 'system', 'system', nodeContent(node, kind, iri), ctx.now);
       indexed++;
     }
   }
@@ -339,7 +350,7 @@ function coverageCheck(results: Record<string, string>, expected: string[]): str
   }
   if (missing.length) {
     const msg = `WARN coverage — knowledge source(s) empty: ${missing.join(', ')}`;
-    // eslint-disable-next-line no-console -- coverage miss must surface; worker stderr → Loki.
+     
     console.warn(`[index-all-sources] ${msg}`);
     return msg;
   }
@@ -356,7 +367,7 @@ function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): voi
 
 export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<{ indexed: Record<string, string>; elapsed_ms: number }> {
   const nowFn = deps.now ?? (() => new Date().toISOString());
-  // eslint-disable-next-line @typescript-eslint/require-await -- signature preserved as Promise for async-swap later if any source goes async
+   
   return async function indexAllSources() {
     const db = new deps.DatabaseCtor(deps.dbPath);
     db.pragma('journal_mode = WAL');

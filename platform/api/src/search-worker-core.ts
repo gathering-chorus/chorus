@@ -28,6 +28,7 @@ export interface SearchDeps {
  * process-level crash + timeout separately).
  */
 export async function handleSearchMessage(deps: SearchDeps, msg: SearchRequest): Promise<SearchReply> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- msg arrives via worker IPC; typed but may be malformed, keep the guard
   const id = msg && typeof msg.id === 'number' ? msg.id : -1;
   try {
     const rows = await searchInTable(deps.table, deps.embed, msg.query, msg.limit, msg.role);

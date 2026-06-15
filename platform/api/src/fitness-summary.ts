@@ -1,4 +1,4 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+/* eslint-disable security/detect-object-injection --
  * Server-controlled paths from env constants; indexing on validated typed keys.
  */
 /**

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model async injectors (async documents the contract even without await); repeated fixture literals are intentional for per-case readability (#3429) */
 /**
  * service.test.ts — REST contract for pulse messaging service (#2237)
  *

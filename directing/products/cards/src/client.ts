@@ -479,7 +479,8 @@ export class BoardClient {
           }
         } catch { /* best effort */ }
         throw new Error(
-          `${bucketName} column is full${limitInfo}. Move something to Done first.`
+          `${bucketName} column is full${limitInfo}. Move something to Done first.`,
+          { cause: err }
         );
       }
       throw err;

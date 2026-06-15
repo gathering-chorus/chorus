@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- MCP tool dispatch is keyed by tool name from a controlled, in-process tool registry (not untrusted input); the indexed access is over our own definition tables (#3429) */
 /**
  * #2472 — MCP server for chorus-api.
  *
@@ -246,6 +247,7 @@ const PrinciplesGetInput = z.object({
 const DecisionsGetInput = z.object({
   id: z.string().min(1).describe('Decision id (e.g., dec-2090, adr-026)'),
 });
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool, intentionally retained for future wiring (see ~L2560) (#3429)
 const SubdomainsGetInput = z.object({
   id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
 });
@@ -333,6 +335,7 @@ const DECISIONS_GET_TOOL_DEF = {
   },
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
 const SUBDOMAINS_LIST_TOOL_DEF = {
   name: 'chorus_subdomains_list',
   description:
@@ -344,6 +347,7 @@ const SUBDOMAINS_LIST_TOOL_DEF = {
   },
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
 const SUBDOMAINS_GET_TOOL_DEF = {
   name: 'chorus_subdomains_get',
   description:
@@ -786,15 +790,15 @@ async function executePrioritiesReadout(
     '(SELECT group_concat(l.title) FROM label_tasks lt JOIN labels l ON l.id = lt.label_id WHERE lt.task_id = t.id) AS labels ' +
     'FROM tasks t ' +
     'JOIN task_buckets tb ON tb.task_id = t.id ' +
-    "JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 " +
+    'JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 ' +
     "WHERE b.title NOT IN ('Done', 'Won''t Do') " +
     'ORDER BY t."index"';
-  let rows: ReadoutRow[] = [];
+  let rows: ReadoutRow[]; // assigned in try; catch throws before any read
   try {
     const { stdout } = await execFileAsync('sqlite3', ['-json', db, sql], { timeout: 10_000 });
     rows = stdout.trim() ? (JSON.parse(stdout) as ReadoutRow[]) : [];
   } catch (err) {
-    throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`);
+    throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`, { cause: err });
   }
   const readout = groupPrioritiesReadout(rows);
   // #3268 — role filter (PRIMARY mode): just that role's chunks + its own proving
@@ -1122,8 +1126,6 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
   },
 } as const;
 
-const CARD_ACCEPTED = 'card.accepted';
-
 // #2840 — typed agent surface for log + error investigation. Earns its keep
 // on top of #2857's trace_id + card_id propagation: agents query by id and
 // the substrate returns the full flow as structured rows, not blobs.
@@ -1337,14 +1339,6 @@ const BLAST_RADIUS_TOOL_DEF = {
   },
 } as const;
 
-const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
-const CARD_UNPULLED = 'card.unpulled';
-const ALREADY_MERGED = 'already-merged';
-// Step-name constants — extracted to satisfy sonarjs/no-duplicate-string (threshold 5).
-const STEP_WERK_CLOSE = 'werk-close';
-const STEP_WERK_PREFLIGHT = 'werk-preflight';
-const STEP_CARDS_MOVE = 'cards-move';
-const STEP_ROLE_STATE = 'role-state';
 // Script / directory name used in path.join across pull, acp, and unpull flows.
 const CHORUS_WERK = 'chorus-werk';
 // Spine event emitted by all three athena query tools.
@@ -1358,9 +1352,6 @@ const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 // (ast-grep across the repo: no calls; only the dead test files #3324 already
 // deleted referenced them).
 
-function extractStderr(err: unknown): string {
-  return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-}
 
 // #2913 — ephemeral-worktree resolver. Replaces the #2750 CHORUS_WERK_ENABLE
 // flag-router. Under the ephemeral model (chorus-werk/<role>-<card>/) there is
@@ -1382,15 +1373,15 @@ function extractStderr(err: unknown): string {
 // semantically (ast-grep: no calls anywhere).
 
 export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const fs = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const path = require('node:path') as typeof import('node:path');
 
   return (role: 'kade' | 'wren' | 'silas'): string => {
     // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
     const werkBase = path.join(path.dirname(canonicalRoot), CHORUS_WERK);
-    let matches: string[] = [];
+    let matches: string[]; // assigned in try; catch returns before any read
     try {
       matches = fs.readdirSync(werkBase, { withFileTypes: true })
         // #3038: card werks only — `<role>-<digits>`. The per-role binary slot
@@ -1689,6 +1680,7 @@ async function fetchSubdomainsList(fetchImpl: FetchImpl, apiBase: string): Promi
   return body.data ?? [];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
 async function executeSubdomainsList(
   fetchImpl: FetchImpl,
   apiBase: string,
@@ -1707,6 +1699,7 @@ async function executeSubdomainsList(
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
 async function executeSubdomainsGet(
   args: { id: string },
   fetchImpl: FetchImpl,
@@ -1792,12 +1785,21 @@ export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic:
   return true;
 }
 
+// #3429 — safe stringify for unknown field values (no [object Object] from
+// String() coercion; satisfies @typescript-eslint/no-base-to-string).
+function fieldStr(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
 async function notifySilasOfMcpError(event: string, fields: Record<string, unknown>): Promise<void> {
-  const tool = String(fields['tool'] ?? '');
-  const errorType = String(fields['error_type'] ?? fields['kind'] ?? '');
-  const errorMessage = String(fields['error_message'] ?? '');
-  const traceId = String(fields['trace_id'] ?? '');
-  const cardId = String(fields['card_id'] ?? fields['card'] ?? '');
+  const tool = fieldStr(fields['tool']);
+  const errorType = fieldStr(fields['error_type'] ?? fields['kind']);
+  const errorMessage = fieldStr(fields['error_message']);
+  const traceId = fieldStr(fields['trace_id']);
+  const cardId = fieldStr(fields['card_id'] ?? fields['card']);
   // #3022 + #3335: only unexpected/systemic failures notify ops. Caller-side validation/
   // refusals (their own bad call, already returned to them) AND synthetic/test traffic
   // (CHORUS_SYNTHETIC=1 or a synthetic card-id) are suppressed from the NUDGE — the spine
@@ -1845,8 +1847,8 @@ async function executeServiceLifecycle(
   const pathMod = require('path') as typeof import('path');
   const scriptPath = pathMod.join(repoRoot, 'platform', 'scripts', 'agent-state.sh');
   const execFileP = promisify(execFile);
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileP('bash', [scriptPath, verb, service], {
@@ -1888,8 +1890,8 @@ async function executeWerkVerb(
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const binPath = pathMod.join(binDir, verb);
   const execFileP = promisify(execFile);
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileP(binPath, args, {
@@ -1981,6 +1983,7 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // cannot happen — we removed the long hold, we did not paper over it with a detach (which
 // cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
 // his GO re-invokes chorus_werk with go:true, resuming past the demo stop (#3311).
+// eslint-disable-next-line complexity -- cohesive werk-pipeline dispatch (verb routing + arg marshalling + result shaping in one place); splitting fragments the one trace (#3429)
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   execFileAsync: ExecFileAsync,
@@ -2001,8 +2004,8 @@ async function executeChorusWerk(
     '--input', `role=${args.role}`,
     '--input', `accepter=${accepter}`,
   ];
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileAsync(actBin, actArgs, {
@@ -2068,8 +2071,8 @@ async function executeChorusWerkLand(
     '--input', `accepter=${accepter}`,
     '--input', 'go=true', // #3193 — selects the go-gated `land` job in the ONE werk.yml
   ];
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileAsync(actBin, actArgs, {
@@ -2155,7 +2158,7 @@ async function executeNudge(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logEvent('error', 'mcp.nudge.failed', { from, to, trace_id: traceId, error: errMsg });
-    throw new Error(`nudge delivery failed: ${errMsg}`);
+    throw new Error(`nudge delivery failed: ${errMsg}`, { cause: err });
   }
 }
 
@@ -2205,7 +2208,7 @@ async function execCardsCli(
       ? `cards ${verb} timed out and was killed (exec timeout) — API slow/blocked? (#3347)${outTail ? ` | output tail: ${outTail}` : ''}`
       : `${err instanceof Error ? err.message : String(err)}${outTail ? ` | output tail: ${outTail}` : ''}`;
     logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg.slice(0, 500) });
-    throw new Error(`${toolName} failed: ${errMsg}`);
+    throw new Error(`${toolName} failed: ${errMsg}`, { cause: err });
   }
 }
 
@@ -2368,7 +2371,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // git-queue.sh path string. This decouples the MCP layer from git-queue.sh
   // entirely (its last MCP reference; the inline executeAcp caller was retired by
   // #3176). git-queue.sh itself stays for now (session-close.sh, #1623/Phase 2).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const pathRepo = require('path') as typeof import('path');
   const canonicalRepoRoot =
     process.env.CHORUS_ROOT ?? process.env.CHORUS_HOME ?? pathRepo.resolve(__dirname, '..', '..', '..');
@@ -2378,9 +2381,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // flag — the ephemeral model is the model, not an opt-in.
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const _fs = require('fs') as typeof import('fs');
-  const fsExists: (p: string) => boolean = deps.fsExists ?? ((p: string) => _fs.existsSync(p));
+   
   const server = new Server(
     {
       name: 'chorus-api',
@@ -2508,7 +2509,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return { content: [{ type: 'text' as const, text: stdout }] };
         } catch (err) {
           const e = err as { message?: string; stderr?: string };
-          throw new Error(`flow-report-fail — ${e.stderr || e.message || 'unknown'}`);
+          throw new Error(`flow-report-fail — ${e.stderr || e.message || 'unknown'}`, { cause: err });
         }
       }
       case 'chorus_werk': {
@@ -2722,7 +2723,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        try {
+        {
+          // executeDesignRefresh emits design.refresh.failed itself on typed
+          // refusal; errors propagate so the MCP surface returns an error response.
           const fs = require('fs') as typeof import('fs');
           const path = require('path') as typeof import('path');
           const repoRoot = resolveWorkingTree(parsed.data.role);
@@ -2737,10 +2740,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           };
-        } catch (err) {
-          // executeDesignRefresh emits design.refresh.failed itself on typed
-          // refusal; rethrow so the MCP surface returns an error response.
-          throw err;
         }
       }
       case 'chorus_doc_catalog_add': {
@@ -2923,7 +2922,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       // envelope (isError: true) without throwing. Treat the same as a throw
       // for spine-emit purposes.
       const r = result as { isError?: boolean; content?: Array<{ type: string; text: string }> };
-      if (r && r.isError === true) {
+      if (r.isError === true) {
         const msg = r.content?.[0]?.text ?? 'isError response without content';
         await appendChorusLog('mcp.tool.error', from, {
           tool: errorToolName,

@@ -157,10 +157,9 @@ describe('chorus_logs_for_branch (#3023)', () => {
     };
     const r = await logsForBranch({ branch: 'kade/3023' }, deps);
     expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.events[0].branch).toBe('kade/3023'); // AC3: actual branch recorded + parsed
-      expect(r.events[0].card_id).toBe(3023);        // AC5: chain key still present
-    }
+    if (!r.ok) throw new Error('expected ok result'); // narrow; unreachable past the assert above
+    expect(r.events[0].branch).toBe('kade/3023'); // AC3: actual branch recorded + parsed
+    expect(r.events[0].card_id).toBe(3023);        // AC5: chain key still present
   });
 });
 

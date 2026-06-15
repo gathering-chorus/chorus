@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection -- internal spine writer: path is the fixed chorus.log, object keys from a known event shape, never untrusted input (#3429) */
 // Spine-event write handler (extracted from server.ts for #2205 wave 21).
 // POST /api/chorus/spine-event:
 // - Validates event field.

@@ -55,7 +55,7 @@ app.get('/api/chorus/health', (_req: Request, res: Response) => {
 mountMcpEndpoint(app);
 
 app.listen(PORT, BIND_HOST, () => {
-  // eslint-disable-next-line no-console
+   
   console.log(`[chorus-mcp] Listening on ${BIND_HOST}:${PORT}`);
 });
 
@@ -63,7 +63,7 @@ process.on('uncaughtException', (err) => {
   // #3000 — emit to spine before logging + exit so the crash is observable
   // to chorus-health rather than silent.
   emitProcessError('uncaughtException', err);
-  // eslint-disable-next-line no-console
+   
   console.error('[chorus-mcp] FATAL uncaughtException:', err.message);
   console.error(err);
   process.exit(1);
@@ -71,7 +71,7 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason) => {
   emitProcessError('unhandledRejection', reason);
-  // eslint-disable-next-line no-console
+   
   console.error('[chorus-mcp] FATAL unhandledRejection:', reason);
   process.exit(1);
 });

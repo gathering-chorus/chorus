@@ -170,6 +170,7 @@ function slugify(s: string): string {
 // predicates under any of these without hand-rolling prefix declarations.
 // #2157 surfaced the gap when createPrincipleSpec used skos:broader without
 // the skos: prefix being declared.
+const RDFS_LABEL = 'rdfs:label'; // #3429 — shared to avoid the duplicate-string across entity configs
 const SPARQL_PREFIXES =
   'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
   'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
@@ -558,7 +559,7 @@ export const servicesSpec: EntitySpec = {
   hasPredicate: 'chorus:hasService',
   entityVar: 'svc',
   optionalFields: [
-    { sparqlVar: 'rdfs:label', outputKey: 'label' },
+    { sparqlVar: RDFS_LABEL, outputKey: 'label' },
     { sparqlVar: 'chorus:serviceType', outputKey: 'type' },
     { sparqlVar: 'chorus:serviceHost', outputKey: 'host' },
     { sparqlVar: 'chorus:serviceStatus', outputKey: 'status' },
@@ -577,7 +578,7 @@ export const pipelineSpec: EntitySpec = {
   hasPredicate: 'chorus:hasPipeline',
   entityVar: 'pipe',
   optionalFields: [
-    { sparqlVar: 'rdfs:label', outputKey: 'label' },
+    { sparqlVar: RDFS_LABEL, outputKey: 'label' },
     { sparqlVar: 'chorus:pipelineSource', outputKey: 'source' },
     { sparqlVar: 'chorus:pipelineHarvester', outputKey: 'harvester' },
     { sparqlVar: 'chorus:pipelineICD', outputKey: 'icd' },
@@ -597,7 +598,7 @@ export const logsSpec: EntitySpec = {
   hasPredicate: 'chorus:hasLogSource',
   entityVar: 'log',
   optionalFields: [
-    { sparqlVar: 'rdfs:label', outputKey: 'label' },
+    { sparqlVar: RDFS_LABEL, outputKey: 'label' },
     { sparqlVar: 'chorus:logSourceLocation', outputKey: 'location' },
     { sparqlVar: 'chorus:logSourceRetention', outputKey: 'retention' },
     { sparqlVar: 'chorus:logSourceStatus', outputKey: 'status' },
@@ -615,7 +616,7 @@ export const gapsSpec: EntitySpec = {
   hasPredicate: 'chorus:hasGap',
   entityVar: 'gap',
   optionalFields: [
-    { sparqlVar: 'rdfs:label', outputKey: 'label' },
+    { sparqlVar: RDFS_LABEL, outputKey: 'label' },
     { sparqlVar: 'chorus:gapType', outputKey: 'type' },
     { sparqlVar: 'chorus:gapDescription', outputKey: 'description' },
     { sparqlVar: 'chorus:gapSeverity', outputKey: 'severity' },
@@ -707,7 +708,7 @@ export const createPrincipleSpec: CreateEntitySpec = {
   typeClass: 'chorus:Principle',
   hasPredicate: 'chorus:contains',
   propertyMap: {
-    label:        { predicate: 'rdfs:label' },
+    label:        { predicate: RDFS_LABEL },
     comment:      { predicate: 'rdfs:comment' },
     techReading:  { predicate: 'chorus:techReading' },
     jeffReading:  { predicate: 'chorus:jeffReading' },

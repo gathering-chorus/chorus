@@ -64,11 +64,17 @@ jobs:
   lint-ratchet:
     name: ESLint per-rule ratchet
     runs-on: ubuntu-latest
-    # DEC-2525: non-required, signal-only post-disconnect (#2526).
-    # Wave 3: schedule-only — runs nightly, not on every PR/push, to cut
-    # Actions-minute burn (we hit 90% of monthly quota at #2526 wave 2 land).
+    # #3429: ENFORCED on the nightly — mirrors clippy-ratchet (below). The
+    # per-rule baseline reached green 2026-06-15 (was +134 over baseline, the
+    # accretion that the signal-only mode let slide). To keep it green, a
+    # regression now turns this job RED on the nightly drift run, which fires
+    # ci-main-red → Silas for triage — same enforcement tier as clippy-ratchet.
+    # NO continue-on-error (job or step). Schedule-only is retained per the
+    # cost-stop (per-PR CI is disconnected, see `on:` above); this is "required"
+    # in the only form the cost-stop allows. Promoting to a branch-protection
+    # required check (blocks PR merge) needs per-PR CI revived + a DEC-2525
+    # update per the policy clause above — a separate, costed decision.
     if: github.event_name == 'schedule'
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
@@ -86,12 +92,8 @@ jobs:
             (cd "$pkg" && npm ci --no-audit --no-fund)
           done
       - name: Run lint ratchet
-        # Step-level continue-on-error so the JOB conclusion is success
-        # even if the ratchet exits non-zero. Job-level continue-on-error
-        # keeps the WORKFLOW green but does not change the check status
-        # GitHub branch-protection sees — only step-level does. Wave 2
-        # bootstrap fix (#2526). Output still surfaces in the run log.
-        continue-on-error: true
+        # #3429: no continue-on-error — a non-zero exit now fails the job
+        # (red nightly → ci-main-red alert), matching clippy-ratchet.
         run: npm run lint:ratchet
 
   type-check:

@@ -36,9 +36,19 @@ import { randomUUID } from 'crypto';
 // #3001 — also push notify to silas via pulse so ops sees errors in real
 // time. POST is fire-and-forget; pulse failure logs but doesn't cascade.
 const execFileAsync = promisify(execFile);
+
+// #3429 — safe stringify for unknown field values (no [object Object] from
+// template/String coercion; satisfies @typescript-eslint/no-base-to-string).
+function str(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
 async function emitTransportError(fields: Record<string, unknown>): Promise<void> {
   try {
-    const args = ['mcp.transport.error', String(fields['from'] ?? 'unknown')];
+    const args = ['mcp.transport.error', str(fields['from'] ?? 'unknown')];
     for (const [k, v] of Object.entries(fields)) {
       if (k === 'from') continue;
       args.push(`${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
@@ -54,10 +64,10 @@ async function emitTransportError(fields: Record<string, unknown>): Promise<void
 async function notifyTransportError(fields: Record<string, unknown>): Promise<void> {
   const summary = [
     '[mcp.error] mcp.transport.error',
-    fields['method'] && `${fields['method']} ${fields['path']}`,
-    fields['status'] && `status=${fields['status']}`,
-    fields['kind'] && `kind=${fields['kind']}`,
-    fields['error_message'] && `msg=${String(fields['error_message']).slice(0, 200)}`,
+    fields['method'] && `${str(fields['method'])} ${str(fields['path'])}`,
+    fields['status'] && `status=${str(fields['status'])}`,
+    fields['kind'] && `kind=${str(fields['kind'])}`,
+    fields['error_message'] && `msg=${str(fields['error_message']).slice(0, 200)}`,
   ].filter(Boolean).join(' ');
   const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
   try {
@@ -72,7 +82,7 @@ async function notifyTransportError(fields: Record<string, unknown>): Promise<vo
     clearTimeout(timeoutId);
     if (!resp.ok) {
       // log via stderr (chorus-log spawn already attempted above)
-      // eslint-disable-next-line no-console
+       
       console.error('[chorus-mcp] mcp.notification.failed', { reason: `pulse-${resp.status}` });
     }
   } catch {

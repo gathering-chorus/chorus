@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal indexer: reads source files from controlled repo paths, never untrusted input (#3429) */
 // Shared dependency wiring for createIndexAllSources (#3085).
 //
 // Both the chorus-api server and the standalone reindex worker
@@ -44,6 +45,7 @@ function lines(...parts: Array<string | undefined | false>): string {
   return parts.filter((p): p is string => Boolean(p)).join('\n');
 }
 
+// eslint-disable-next-line complexity -- cohesive multi-source SPARQL load (principles/policies/practices each loaded + mapped in one place); splitting scatters the wiring (#3429)
 async function fetchGraphKnowledge(repoRoot: string): Promise<GraphRow[]> {
   const athena = createAthenaSparqlClient({ sparqlUrl: FUSEKI_SPARQL, updateUrl: FUSEKI_UPDATE });
   const loadQuery = createSparqlLoader({ fs, sparqlDir: path.join(repoRoot, 'platform/api/src/sparql') });

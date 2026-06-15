@@ -110,9 +110,10 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
 // off the blocked loop). Launched by chorus-eventloop-probe-worker.sh as a persistent
 // KeepAlive process (LaunchAgent registration routes through Silas, ADR-012).
 if (require.main === module) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
+  // eslint-disable-next-line security/detect-child-process -- internal probe spawns a fixed known binary, no untrusted input (#3429)
   const { execFile } = require('node:child_process') as typeof import('node:child_process');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const path = require('node:path') as typeof import('node:path');
   const os = require('node:os') as typeof import('node:os');
 

@@ -4,7 +4,6 @@
  * PURE builders for node. We assert they produce the right #3415 system.css structure from
  * mock endpoint data, with honest empty states and NO bespoke styling.
  */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const R = require('../public/js/domain-renderer.js');
 
 describe('#3420 domain-renderer — pure builders', () => {

@@ -67,6 +67,10 @@ describe('createFtsPool (#3086)', () => {
     const pool = createFtsPool({ spawn: () => fake, timeoutMs: 50 });
     const p = pool.runFtsAsync({ q: 'x', fetchLimit: 10, mode: 'fts' });
     expect(fake.sent.length).toBe(1);
+    // assertion promise created BEFORE advancing timers (so the rejection is
+    // armed), timers advanced to fire the timeout, THEN awaited. Do NOT await
+    // on this line — that would block before advanceTimersByTime and hang.
+    // eslint-disable-next-line jest/valid-expect -- fake-timers: the rejects assertion is armed here and awaited at `await assertion` below, after timers advance; awaiting inline deadlocks the test
     const assertion = expect(p).rejects.toThrow('timeout');
     jest.advanceTimersByTime(60);
     await assertion;

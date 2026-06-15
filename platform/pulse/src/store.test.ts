@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- test reads dynamic sqlite row shapes; `any[]` casts keep the assertions terse (#3429) */
 /**
  * Messaging Store Tests (#1755, migrated to jest in #2154)
  * Nudge, chat, dead-letter delivery paths.

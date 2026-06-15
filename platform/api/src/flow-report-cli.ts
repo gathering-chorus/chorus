@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- indexes by a fixed known key list, never untrusted input (#3429) */
 /**
  * flow-report-cli — Loki → aggregateFlow → JSON stdout (#3269).
  *
@@ -20,6 +21,7 @@ const LOKI = process.env.CHORUS_LOKI_URL || 'http://localhost:3102';
 const PAGE_LIMIT = 5000;
 
 /** Normalize one raw log line (either source) into a FlowEvent, or null. */
+// eslint-disable-next-line sonarjs/cognitive-complexity -- cohesive line-shape parser: sequential field-extraction branches for two log formats; splitting fragments it (#3429)
 export function normalizeLine(line: string): FlowEvent | null {
   const t = line.trim();
   if (!t.startsWith('{')) return null;
@@ -56,6 +58,7 @@ export function normalizeLine(line: string): FlowEvent | null {
 
 const MAX_PAGES = 8; // 40k lines per source — beyond this, flag truncated (no silent caps)
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- cohesive paginated Loki fetch loop (page cursor + truncation guard); splitting obscures the pagination (#3429)
 async function fetchJob(query: string, startNs: string, endNs: string): Promise<{ lines: string[]; truncated: boolean }> {
   const lines: string[] = [];
   let end = endNs;
@@ -90,6 +93,7 @@ export function esc(s: string): string {
  *  columns + a time filter over the loaded window. DOM-built (textContent), so
  *  log-sourced strings can't inject markup; the embedded JSON escapes `<` to
  *  block </script> breakout (the gate-quality concern, held in the rewrite). */
+// eslint-disable-next-line max-lines-per-function -- single cohesive HTML-document template literal; extracting fragments would not improve clarity (#3429)
 export function buildHtml(report: FlowReport & { generatedAt: string; windowHours: number; truncated: boolean; walkAway?: WalkAway }): string {
   const data = JSON.stringify(report).replace(/</g, '\\u003c');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Card Cycle Report</title>

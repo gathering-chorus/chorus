@@ -1,3 +1,6 @@
+/* eslint-disable security/detect-object-injection -- indexes parsed-log objects by known field keys, never untrusted input (#3429) */
+// #3429 — safe stringify for unknown parsed-log fields (no "[object Object]").
+// (declared at top so the parse helpers below can share it.)
 // #2840 — typed agent surface for log + error investigation. Wraps Loki HTTP
 // API at localhost:3102 with structured input + structured output + a typed
 // refusal taxonomy. Earns its keep on top of #2857's trace_id + card_id
@@ -277,9 +280,15 @@ export function lineMatchesPainFilter(line: string): boolean {
 
 // One-line "Sample detail" for a failure (ported from logform.py detail()):
 // reason, first line of detail, error, then a few high-signal fields.
+function str(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
 function sampleDetail(o: Record<string, unknown>): string {
   const bits: string[] = [];
-  const s = (k: string): string => { const v = o[k]; return v === undefined || v === null ? '' : String(v); };
+  const s = (k: string): string => str(o[k]);
   if (s('reason')) bits.push(s('reason'));
   if (s('detail')) bits.push(s('detail').trim().split('\n')[0].slice(0, 220));
   if (s('error')) bits.push('err: ' + s('error').slice(0, 160));
@@ -348,13 +357,12 @@ type PainFields = { o: Record<string, unknown>; cardId: string; role: string; ev
 function parsePainLine(line: string, roleFilter: string | undefined): PainFields | null {
   let o: Record<string, unknown>;
   try { o = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
-  const cardId = o.card_id !== undefined && o.card_id !== null ? String(o.card_id)
-    : (o.card !== undefined && o.card !== null ? String(o.card) : '');
+  const cardId = str(o.card_id) || str(o.card);
   if (cardId && SYNTHETIC_CARD_IDS.has(cardId)) return null; // exclude synthetic test cards
-  const role = String(o.role ?? '?');
+  const role = str(o.role) || '?';
   if (roleFilter && role !== roleFilter) return null;
-  const event = String(o.event ?? '');
-  const reason = String(o.reason ?? o.error ?? '').slice(0, 60);
+  const event = str(o.event);
+  const reason = str(o.reason ?? o.error).slice(0, 60);
   return { o, cardId, role, event, reason, product: productOf(event) };
 }
 
@@ -371,7 +379,7 @@ function accumulatePainLine(
   let acc = roll.get(key);
   if (!acc) { acc = { role: f.role, event: f.event, reason: f.reason, count: 0, latestNs: '0', detail: '', cards: new Set(), product: f.product }; roll.set(key, acc); }
   acc.count++;
-  // eslint-disable-next-line security/detect-object-injection -- product is productOf()'s closed return set {Gathering,Chorus}
+   
   byProduct[f.product] = (byProduct[f.product] ?? 0) + 1;
   if (tsNs > acc.latestNs) { acc.latestNs = tsNs; acc.detail = sampleDetail(f.o); }
   if (f.cardId) acc.cards.add(f.cardId);
