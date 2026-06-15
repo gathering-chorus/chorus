@@ -1,7 +1,7 @@
 {
   "schemaVersion": "athena-move-0/2026-05-16",
   "namespace": "https://jeffbridwell.com/chorus#",
-  "comment": "Move 0 hand-authored tree — canonical product/domain/service model. 7 Products, 33 Domains. Per chorus-product-tree.md (Jeff+Wren 2026-05-14). All fields populated: ownedBy, atStep, status, comment, gaps on every product and domain.",
+  "comment": "Move 0 hand-authored tree \u2014 canonical product/domain/service model. 7 Products, 33 Domains. Per chorus-product-tree.md (Jeff+Wren 2026-05-14). All fields populated: ownedBy, atStep, status, comment, gaps on every product and domain.",
   "valueStreamSteps": [
     {
       "iri": "chorus:value-stream-step-shaping",
@@ -50,7 +50,7 @@
     {
       "iri": "chorus:chorus",
       "label": "Chorus",
-      "comment": "The whole system — parent product. Contains the sub-products (Loom, Athena, Convergence, Chorus Service, The Clearing, Werk, Borg) via hasChild. Added #3275 to root the top-level model (product-recursion) and resolve the parent vs chorus-service name collision. Jeff heads the whole; ownedBy is the model steward (wren).",
+      "comment": "The whole system \u2014 parent product. Contains the sub-products (Loom, Athena, Convergence, Chorus Service, The Clearing, Werk, Borg) via hasChild. Added #3275 to root the top-level model (product-recursion) and resolve the parent vs chorus-service name collision. Jeff heads the whole; ownedBy is the model steward (wren).",
       "ownedBy": "chorus:role-wren",
       "status": "operating",
       "hasChild": [
@@ -67,11 +67,13 @@
     {
       "iri": "chorus:loom",
       "label": "Loom",
-      "comment": "Team knowledge layer — the values, roles, principles, policies, practices, and skills that define how the team operates.",
+      "comment": "Team knowledge layer \u2014 the values, roles, principles, policies, practices, and skills that define how the team operates.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "context_inject reads crawler messages + spine + LanceDB on EVERY prompt for grounding (policies domain). Per-prompt grounding degrades if crawler processing stops (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
@@ -87,7 +89,7 @@
     {
       "iri": "chorus:athena",
       "label": "Athena",
-      "comment": "Structural model — the canonical product/domain/service ontology. Gates, SessionStart envelopes, and blast-radius routing all read from here.",
+      "comment": "Structural model \u2014 the canonical product/domain/service ontology. Gates, SessionStart envelopes, and blast-radius routing all read from here.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-designing",
       "status": "building",
@@ -100,7 +102,7 @@
     {
       "iri": "chorus:convergence",
       "label": "Convergence",
-      "comment": "Integration layer — connections to external systems, NiFi pipelines, and cross-product data flows.",
+      "comment": "Integration layer \u2014 connections to external systems, NiFi pipelines, and cross-product data flows.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-designing",
       "status": "exploring",
@@ -112,12 +114,14 @@
     {
       "iri": "chorus:chorus-chorus",
       "label": "Chorus Service",
-      "comment": "The running chorus service (chorus-api / chorus-mcp) — shared memory and knowledge for the team: indexed sessions, Slack history, and semantic search across all team artifacts. Child product of the chorus parent; renamed from chorus:chorus to resolve the parent/sub-product name collision (#3275).",
+      "comment": "The running chorus service (chorus-api / chorus-mcp) \u2014 shared memory and knowledge for the team: indexed sessions, Slack history, and semantic search across all team artifacts. Child product of the chorus parent; renamed from chorus:chorus to resolve the parent/sub-product name collision (#3275).",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "consumes": ["chorus:service-crawler"],
-      "consumesNote": "DEEPEST product dependency on crawler processing — search FTS+semantic over crawler messages, Fuseki RDF (collectRdf), LanceDB vectors, indexSpine re-index. #3077 off-loop refactor must preserve these inputs (#3071 product rollup).",
+      "consumes": [
+        "chorus:service-crawler"
+      ],
+      "consumesNote": "DEEPEST product dependency on crawler processing \u2014 search FTS+semantic over crawler messages, Fuseki RDF (collectRdf), LanceDB vectors, indexSpine re-index. #3077 off-loop refactor must preserve these inputs (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
         "chorus:memory",
@@ -128,7 +132,7 @@
     {
       "iri": "chorus:clearing",
       "label": "The Clearing",
-      "comment": "Interaction layer — messages, streams, the spine event log, and the kanban board. How the team talks and tracks work.",
+      "comment": "Interaction layer \u2014 messages, streams, the spine event log, and the kanban board. How the team talks and tracks work.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
@@ -143,7 +147,7 @@
     {
       "iri": "chorus:werk",
       "label": "Werk",
-      "comment": "Execution substrate — pipelines, version control, code quality, and test infrastructure. How cards become shipped software.",
+      "comment": "Execution substrate \u2014 pipelines, version control, code quality, and test infrastructure. How cards become shipped software.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
@@ -158,11 +162,13 @@
     {
       "iri": "chorus:borg",
       "label": "Borg",
-      "comment": "Observability and operations — builds, deploys, logs, alerts, properties, security, and infrastructure health.",
+      "comment": "Observability and operations \u2014 builds, deploys, logs, alerts, properties, security, and infrastructure health.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "4 crawler alerts + pain rollup read crawler spine + /tmp status (alerts-monitors/analytics). Alerts mis-fire / pain board loses attribution if crawler processing changes (#3071 product rollup).",
       "gaps": [],
       "hasDomain": [
@@ -189,7 +195,13 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "roles",
+        "designing/claudemd",
+        "platform/api/src/handlers/context-roles.ts",
+        "platform/api/src/derive-role-state.ts"
+      ]
     },
     {
       "iri": "chorus:principles",
@@ -198,23 +210,32 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/loom-principles.ts"
+      ]
     },
     {
       "iri": "chorus:policies",
       "label": "policies",
-      "comment": "Rules that enforce principles in practice — hooks, guards, gates.",
+      "comment": "Rules that enforce principles in practice \u2014 hooks, guards, gates.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "context_inject reads crawler messages + spine + LanceDB on EVERY prompt; degraded grounding for all roles if it stops (#3071)",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/loom-policies.ts",
+        "platform/services/chorus-hooks/src/hooks"
+      ]
     },
     {
       "iri": "chorus:practices",
       "label": "practices",
-      "comment": "Repeatable patterns the team uses — how we work, not just what we value.",
+      "comment": "Repeatable patterns the team uses \u2014 how we work, not just what we value.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
@@ -223,11 +244,19 @@
     {
       "iri": "chorus:skills",
       "label": "skills",
-      "comment": "Invokable capabilities — /skill-name commands that automate team workflows.",
+      "comment": "Invokable capabilities \u2014 /skill-name commands that automate team workflows.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "skills",
+        "platform/skills",
+        "roles/wren/.claude/skills",
+        "roles/silas/.claude/skills",
+        "roles/kade/.claude/skills",
+        "building/skill"
+      ]
     },
     {
       "iri": "chorus:decisions",
@@ -236,25 +265,52 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "designing/decisions",
+        "roles/wren/decisions",
+        "roles/silas/adr",
+        "platform/api/src/handlers/loom-decisions.ts",
+        "platform/api/src/seed-loom-decisions.ts"
+      ]
     },
     {
       "iri": "chorus:rcas",
       "label": "rcas",
-      "comment": "Root cause analyses — what broke, why, and what changed as a result.",
+      "comment": "Root cause analyses \u2014 what broke, why, and what changed as a result.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-shaping",
       "status": "building",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/chorus-rcas.ts"
+      ]
     },
     {
       "iri": "chorus:domains",
       "label": "domains",
-      "comment": "The canonical product/domain/service structural model — this tree.",
+      "comment": "The canonical product/domain/service structural model \u2014 this tree.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-designing",
       "status": "building",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "designing/domains",
+        "designing/ontology",
+        "designing/schemas",
+        "data/athena",
+        "roles/silas/ontology",
+        "platform/api/src/handlers/athena-tree.ts",
+        "platform/api/src/handlers/athena-tree-schemas.ts",
+        "platform/api/src/handlers/athena-subdomains.ts",
+        "platform/api/src/handlers/athena-products.ts",
+        "platform/api/src/handlers/athena-subproducts.ts",
+        "platform/api/src/handlers/domain-identity.ts",
+        "platform/api/src/handlers/domain-facets.ts",
+        "platform/api/public/athena",
+        "platform/services/owl-api",
+        "platform/services/chorus-model"
+      ]
     },
     {
       "iri": "chorus:services",
@@ -263,27 +319,48 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-designing",
       "status": "building",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/chorus-services.ts",
+        "platform/api/src/handlers/athena-owners.ts",
+        "platform/api/src/handlers/athena-owner-write.ts"
+      ]
     },
     {
       "iri": "chorus:integrations",
       "label": "integrations",
-      "comment": "Connections to external systems — NiFi, APIs, cross-product data flows.",
+      "comment": "Connections to external systems \u2014 NiFi, APIs, cross-product data flows.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-designing",
       "status": "exploring",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "building/products/convergence",
+        "platform/api/src/handlers/chorus-harvest.ts"
+      ]
     },
     {
       "iri": "chorus:memory",
       "label": "memory",
-      "comment": "Persistent context across sessions — indexed sessions and artifacts.",
+      "comment": "Persistent context across sessions \u2014 indexed sessions and artifacts.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "indexSpine re-indexes crawler.* spine events into the index (#3071)",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "roles/silas/chorus",
+        "roles/wren/chunks",
+        "platform/api/src/index-worker.ts",
+        "platform/api/src/index-all-sources.ts",
+        "platform/api/src/index-all-sources-deps.ts",
+        "platform/api/src/session-replay.ts",
+        "platform/api/src/handlers/sessions.ts",
+        "platform/tests/features/memory"
+      ]
     },
     {
       "iri": "chorus:knowledge",
@@ -292,9 +369,22 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "dependsOn": ["chorus:service-crawler"],
+      "dependsOn": [
+        "chorus:service-crawler"
+      ],
       "dependsOnNote": "crawler-hydrate-graph.sh writes chorus:File RDF triples; /crawl collectRdf reads them. Graph RDF bucket empties + stale-flag detection stops if it stops (#3071)",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "designing",
+        "knowledge",
+        "docs",
+        "platform/api/public/book",
+        "platform/api/src/handlers/doc-catalog.ts",
+        "platform/api/src/handlers/doc-catalog-tree.ts",
+        "platform/api/src/handlers/doc-tagger.ts",
+        "platform/api/src/handlers/doc-tag-drift.ts",
+        "platform/api/src/handlers/catalog-curation.ts"
+      ]
     },
     {
       "iri": "chorus:search",
@@ -303,18 +393,50 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "FTS/hybrid reads crawler messages; semantic reads crawler LanceDB vectors. Loses domain layer + domain vectors if it stops (#3071)",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/chorus-search.ts",
+        "platform/api/src/search-worker.ts",
+        "platform/api/src/search-worker-core.ts",
+        "platform/api/src/search-rrf.ts",
+        "platform/api/src/search-meta.ts",
+        "platform/api/src/search-fusion.ts",
+        "platform/api/src/fts-worker.ts",
+        "platform/api/src/fts-worker-pool.ts",
+        "platform/api/src/fts-worker-core.ts",
+        "platform/api/src/embed-query.ts",
+        "platform/api/src/embed-delta.ts",
+        "platform/api/src/embed-delta-worker.ts",
+        "platform/api/src/embed-delta-deps.ts",
+        "platform/api/src/embed-floor.ts",
+        "platform/api/src/lance-store.ts",
+        "platform/api/src/lance-maintain-worker.ts"
+      ]
     },
     {
       "iri": "chorus:messages",
       "label": "messages",
-      "comment": "Direct role-to-role communications — nudges and the bridge messaging API.",
+      "comment": "Direct role-to-role communications \u2014 nudges and the bridge messaging API.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "roles/silas/briefs",
+        "roles/silas/briefs-archive",
+        "roles/wren/briefs",
+        "roles/wren/briefs-archive",
+        "roles/kade/briefs",
+        "roles/kade/briefs-archive",
+        "roles/architect/briefs",
+        "roles/product-manager/briefs",
+        "product-manager/briefs",
+        "platform/api/src/handlers/chorus-conversation.ts"
+      ]
     },
     {
       "iri": "chorus:streams",
@@ -323,46 +445,80 @@
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "directing/clearing/src/tailer.ts",
+        "directing/clearing/src/session-tailer.ts",
+        "directing/clearing/src/transcript.ts"
+      ]
     },
     {
       "iri": "chorus:spine",
       "label": "spine",
-      "comment": "The audit trail — structured log of all team activity and state changes.",
+      "comment": "The audit trail \u2014 structured log of all team activity and state changes.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/context-spine.ts",
+        "platform/api/src/spine-event-write.ts",
+        "platform/api/src/handlers/chorus-trace.ts",
+        "designing/schemas/spine-events.json",
+        "roles/silas/spine-architecture.md",
+        "roles/silas/spine-emitter-inventory.md"
+      ]
     },
     {
       "iri": "chorus:cards",
       "label": "cards",
-      "comment": "Kanban board and card lifecycle — the unit of work tracking for the team.",
+      "comment": "Kanban board and card lifecycle \u2014 the unit of work tracking for the team.",
       "ownedBy": "chorus:role-wren",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "directing/products/cards",
+        "platform/api/src/handlers/athena-card-detail.ts",
+        "platform/api/src/handlers/athena-subdomain-cards.ts",
+        "platform/api/src/handlers/context-board-next.ts",
+        "platform/api/src/handlers/context-board-wip.ts",
+        "platform/api/src/handlers/context-board-swat.ts",
+        "platform/api/src/board-cache.ts",
+        "platform/api/src/cards-path.ts",
+        "platform/api/src/handlers/chorus-card-story.ts"
+      ]
     },
     {
       "iri": "chorus:pipelines",
       "label": "pipelines",
-      "comment": "CI/CD and build orchestration — how code moves from commit to production. Parent of the cicd child domain (#3275).",
+      "comment": "CI/CD and build orchestration \u2014 how code moves from commit to production. Parent of the cicd child domain (#3275).",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
       "gaps": [],
       "hasChild": [
         "chorus:cicd"
+      ],
+      "hasMapsTo": [
+        "proving/workflows",
+        "platform/workflows",
+        "platform/workflow-engine"
       ]
     },
     {
       "iri": "chorus:cicd",
       "label": "cicd",
-      "comment": "The CI/CD orchestrator — the act + werk.yml pipeline (commit→build→deploy→test→rollback) that runs werk's Building value stream. Child domain of pipelines; service-warranting (a stateful orchestrator, not a leaf). Real/live status. #3275.",
+      "comment": "The CI/CD orchestrator \u2014 the act + werk.yml pipeline (commit\u2192build\u2192deploy\u2192test\u2192rollback) that runs werk's Building value stream. Child domain of pipelines; service-warranting (a stateful orchestrator, not a leaf). Real/live status. #3275.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "designing/claudemd/pipeline-runs",
+        ".github/workflows",
+        "platform/scripts/gate-spine-vikunja-bridge.sh"
+      ]
     },
     {
       "iri": "chorus:version-control",
@@ -371,25 +527,54 @@
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/services/werk-commit",
+        "platform/services/werk-push",
+        "platform/services/werk-pull",
+        "platform/services/werk-merge",
+        "platform/services/werk-sync",
+        "platform/services/werk-unpull",
+        "platform/services/werk-review",
+        "platform/services/werk-build",
+        "platform/services/werk-accept",
+        "platform/services/werk-demo",
+        "platform/services/werk-deploy",
+        "platform/hooks"
+      ]
     },
     {
       "iri": "chorus:code",
       "label": "code",
-      "comment": "Source code quality — linting, type-checking, and static analysis.",
+      "comment": "Source code quality \u2014 linting, type-checking, and static analysis.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/chorus-domain-code.ts",
+        "platform/api/src/discover-code.ts",
+        "platform/api/src/handlers/codebase-topology.ts",
+        "platform/scripts/mcp-tool-description-lint.js",
+        "eslint.config.js"
+      ]
     },
     {
       "iri": "chorus:tests",
       "label": "tests",
-      "comment": "Automated test suites — jest, bats, cargo test, and integration tests.",
+      "comment": "Automated test suites \u2014 jest, bats, cargo test, and integration tests.",
       "ownedBy": "chorus:role-kade",
       "atStep": "chorus:value-stream-step-building",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/tests",
+        "platform/api/tests",
+        "directing/clearing/tests",
+        "proving/scripts/tests",
+        "platform/api/src/handlers/chorus-tests.ts",
+        "platform/api/src/discover-tests.ts"
+      ]
     },
     {
       "iri": "chorus:builds",
@@ -412,11 +597,16 @@
     {
       "iri": "chorus:logs",
       "label": "logs",
-      "comment": "Log aggregation and querying via Loki — structured observability.",
+      "comment": "Log aggregation and querying via Loki \u2014 structured observability.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/logs-query.ts",
+        "platform/logs",
+        "roles/silas/logging-strategy.html"
+      ]
     },
     {
       "iri": "chorus:properties",
@@ -425,7 +615,10 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/config"
+      ]
     },
     {
       "iri": "chorus:alerts-monitors",
@@ -434,9 +627,19 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "dependsOn": ["chorus:service-crawler"],
-      "dependsOnNote": "crawler-stale/error/domain-failure/hydration-divergence read crawler spine + /tmp status. crawler-stale's 5-min threshold will FALSE-FIRE under the #3068 30-min cadence — align threshold (#3071)",
-      "gaps": []
+      "dependsOn": [
+        "chorus:service-crawler"
+      ],
+      "dependsOnNote": "crawler-stale/error/domain-failure/hydration-divergence read crawler spine + /tmp status. crawler-stale's 5-min threshold will FALSE-FIRE under the #3068 30-min cadence \u2014 align threshold (#3071)",
+      "gaps": [],
+      "hasMapsTo": [
+        "proving/domains/alerts",
+        "dashboards",
+        "platform/api/public/borg",
+        "platform/api/src/handlers/context-alerts.ts",
+        "platform/api/src/handlers/athena-subdomain-alerts.ts",
+        "platform/api/src/eventloop-alert.ts"
+      ]
     },
     {
       "iri": "chorus:security-trust",
@@ -445,7 +648,12 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/services/chorus-hooks/src/hooks/write_scrubber.rs",
+        "platform/services/chorus-hooks/src/hooks/sensitive_paths.rs",
+        "roles/wren/security-trust-model.md"
+      ]
     },
     {
       "iri": "chorus:time",
@@ -454,21 +662,33 @@
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "config/launchagents",
+        "platform/launchagents",
+        "platform/launchd",
+        "proving/config/launchagents",
+        "platform/scripts/launchagents-canonical",
+        "platform/scripts/launchagents-secondary",
+        "platform/services/pair-heartbeat"
+      ]
     },
     {
       "iri": "chorus:heralds",
       "label": "heralds",
-      "comment": "Notification delivery — nudge routing, chorus-inject, and push delivery.",
+      "comment": "Notification delivery \u2014 nudge routing, chorus-inject, and push delivery.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/services/chorus-inject"
+      ]
     },
     {
       "iri": "chorus:toolchain",
       "label": "toolchain",
-      "comment": "Development tools and their configuration — Claude Code, Node, Rust, git.",
+      "comment": "Development tools and their configuration \u2014 Claude Code, Node, Rust, git.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
@@ -477,66 +697,167 @@
     {
       "iri": "chorus:infrastructure",
       "label": "infrastructure",
-      "comment": "Host machines, Docker, LaunchAgents — the physical substrate the team runs on.",
+      "comment": "Host machines, Docker, LaunchAgents \u2014 the physical substrate the team runs on.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "operating",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/apps",
+        "roles/silas/infrastructure-constraints.md"
+      ]
     },
     {
       "iri": "chorus:analytics",
       "label": "analytics",
-      "comment": "Usage analytics and behavioral signals — attention, interaction patterns.",
+      "comment": "Usage analytics and behavioral signals \u2014 attention, interaction patterns.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "exploring",
-      "consumes": ["chorus:service-crawler"],
+      "consumes": [
+        "chorus:service-crawler"
+      ],
       "consumesNote": "pain rollup reads crawler.* spine events for failure attribution (#3071)",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/handlers/chorus-attention-analytics.ts",
+        "platform/api/src/handlers/chorus-voice-analytics.ts",
+        "platform/api/src/handlers/chorus-reprompt-analytics.ts"
+      ]
     },
     {
       "iri": "chorus:metrics",
       "label": "metrics",
-      "comment": "Quantitative measurements of system health — latency, cost, throughput.",
+      "comment": "Quantitative measurements of system health \u2014 latency, cost, throughput.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-proving",
       "status": "exploring",
-      "gaps": []
+      "gaps": [],
+      "hasMapsTo": [
+        "platform/api/src/metrics.ts",
+        "platform/api/src/handlers/chorus-perf.ts",
+        "platform/api/src/handlers/chorus-cost.ts",
+        "designing/schemas/metrics-manifest.json"
+      ]
     }
   ],
   "services": [
     {
       "iri": "chorus:service-crawler",
       "label": "crawler",
-      "comment": "Monolithic snapshot crawler — index-crawler-snapshots.sh (11 collectors x 27 domains) + crawler-hydrate-graph.sh (RDF). VERIFIED dependency map via subagent traces against the running system (#3071), not inference. One monolith, four owners; pending decomposition into per-collector instances (#3069/ADR-033). Full map: designing/docs/crawler-dependency-map.html.",
+      "comment": "Monolithic snapshot crawler \u2014 index-crawler-snapshots.sh (11 collectors x 27 domains) + crawler-hydrate-graph.sh (RDF). VERIFIED dependency map via subagent traces against the running system (#3071), not inference. One monolith, four owners; pending decomposition into per-collector instances (#3069/ADR-033). Full map: designing/docs/crawler-dependency-map.html.",
       "ownedBy": "chorus:role-silas",
       "atStep": "chorus:value-stream-step-directing",
       "status": "operating",
       "produces": [
-        { "output": "messages source=crawler", "store": "sqlite:messages", "writer": "index-crawler-snapshots.sh", "domain": "chorus:messages", "verdict": "load-bearing" },
-        { "output": "spine events crawler.*", "store": "spine:chorus.log", "writer": "index-crawler-snapshots.sh", "domain": "chorus:spine", "verdict": "load-bearing" },
-        { "output": "chorus:File RDF triples", "store": "fuseki:urn:chorus:instances", "writer": "crawler-hydrate-graph.sh", "domain": "chorus:knowledge", "verdict": "load-bearing" },
-        { "output": "LanceDB vectors", "store": "lancedb", "writer": "embedDelta", "domain": "chorus:search", "verdict": "load-bearing" },
-        { "output": "/tmp/crawler-domain-status.json", "store": "tmpfile", "writer": "index-crawler-snapshots.sh", "domain": "chorus:alerts-monitors", "verdict": "load-bearing" },
-        { "output": "traces", "store": "sqlite:traces", "writer": "trace_hop", "domain": "chorus:spine", "verdict": "waste", "note": "108 rows/min, 144K of 301K total, NO load-bearing consumer found — cut/sample candidate, verify first" },
-        { "output": "chorus_files", "store": "sqlite:chorus_files", "writer": "crawler-hydrate-graph.sh", "domain": "chorus:code", "verdict": "low", "note": "internal reconciliation; no external load-bearing reader found" }
+        {
+          "output": "messages source=crawler",
+          "store": "sqlite:messages",
+          "writer": "index-crawler-snapshots.sh",
+          "domain": "chorus:messages",
+          "verdict": "load-bearing"
+        },
+        {
+          "output": "spine events crawler.*",
+          "store": "spine:chorus.log",
+          "writer": "index-crawler-snapshots.sh",
+          "domain": "chorus:spine",
+          "verdict": "load-bearing"
+        },
+        {
+          "output": "chorus:File RDF triples",
+          "store": "fuseki:urn:chorus:instances",
+          "writer": "crawler-hydrate-graph.sh",
+          "domain": "chorus:knowledge",
+          "verdict": "load-bearing"
+        },
+        {
+          "output": "LanceDB vectors",
+          "store": "lancedb",
+          "writer": "embedDelta",
+          "domain": "chorus:search",
+          "verdict": "load-bearing"
+        },
+        {
+          "output": "/tmp/crawler-domain-status.json",
+          "store": "tmpfile",
+          "writer": "index-crawler-snapshots.sh",
+          "domain": "chorus:alerts-monitors",
+          "verdict": "load-bearing"
+        },
+        {
+          "output": "traces",
+          "store": "sqlite:traces",
+          "writer": "trace_hop",
+          "domain": "chorus:spine",
+          "verdict": "waste",
+          "note": "108 rows/min, 144K of 301K total, NO load-bearing consumer found \u2014 cut/sample candidate, verify first"
+        },
+        {
+          "output": "chorus_files",
+          "store": "sqlite:chorus_files",
+          "writer": "crawler-hydrate-graph.sh",
+          "domain": "chorus:code",
+          "verdict": "low",
+          "note": "internal reconciliation; no external load-bearing reader found"
+        }
       ],
       "consumedBy": [
-        { "consumer": "context_inject (EVERY prompt)", "domain": "chorus:policies", "reads": ["messages source=crawler", "spine events crawler.*", "LanceDB vectors"] },
-        { "consumer": "/api/chorus/search FTS+hybrid", "domain": "chorus:search", "reads": ["messages source=crawler", "LanceDB vectors"] },
-        { "consumer": "crawler-stale.yml / hydration-divergence.yml / crawler-error.yml / crawler-domain-failure.yml", "domain": "chorus:alerts-monitors", "reads": ["spine events crawler.*", "/tmp/crawler-domain-status.json"] },
-        { "consumer": "pain rollup", "domain": "chorus:analytics", "reads": ["spine events crawler.*"] },
-        { "consumer": "indexSpine (re-index)", "domain": "chorus:memory", "reads": ["spine events crawler.*"] },
-        { "consumer": "/crawl collectRdf + collectOwl", "domain": "chorus:knowledge", "reads": ["chorus:File RDF triples"] }
+        {
+          "consumer": "context_inject (EVERY prompt)",
+          "domain": "chorus:policies",
+          "reads": [
+            "messages source=crawler",
+            "spine events crawler.*",
+            "LanceDB vectors"
+          ]
+        },
+        {
+          "consumer": "/api/chorus/search FTS+hybrid",
+          "domain": "chorus:search",
+          "reads": [
+            "messages source=crawler",
+            "LanceDB vectors"
+          ]
+        },
+        {
+          "consumer": "crawler-stale.yml / hydration-divergence.yml / crawler-error.yml / crawler-domain-failure.yml",
+          "domain": "chorus:alerts-monitors",
+          "reads": [
+            "spine events crawler.*",
+            "/tmp/crawler-domain-status.json"
+          ]
+        },
+        {
+          "consumer": "pain rollup",
+          "domain": "chorus:analytics",
+          "reads": [
+            "spine events crawler.*"
+          ]
+        },
+        {
+          "consumer": "indexSpine (re-index)",
+          "domain": "chorus:memory",
+          "reads": [
+            "spine events crawler.*"
+          ]
+        },
+        {
+          "consumer": "/crawl collectRdf + collectOwl",
+          "domain": "chorus:knowledge",
+          "reads": [
+            "chorus:File RDF triples"
+          ]
+        }
       ],
       "gaps": [
-        "traces table has no load-bearing consumer — first to cut/sample (#3069)",
+        "traces table has no load-bearing consumer \u2014 first to cut/sample (#3069)",
         "circular: collectMentions reads messages_fts then writes back a crawler row, re-indexed, read again (#2323)",
-        "monolith spans 4 owners — ownership violation pending decomposition #3069/ADR-033"
+        "monolith spans 4 owners \u2014 ownership violation pending decomposition #3069/ADR-033"
       ]
     }
   ],
-  "instances":   [
+  "instances": [
     {
       "iri": "chorus:skill-ab",
       "label": "ab",
