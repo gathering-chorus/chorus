@@ -88,7 +88,9 @@ def attribute(files, rules):
         if not matches:
             results.append((f, None, []))
             continue
-        matches.sort(key=lambda m: len(m[0]), reverse=True)
+        # longest-prefix-wins; ties broken deterministically by domain IRI so the
+        # crawl is reproducible regardless of tree.json ordering (#3426, Kade)
+        matches.sort(key=lambda m: (-len(m[0]), m[1]))
         primary = matches[0][1]
         nonprimary, seen = [], {primary}
         for _, diri in matches[1:]:
@@ -134,16 +136,33 @@ def build_update(chunk):
 
 
 def post_edges(results, batch=150):
-    edges = edges_from(results)
+    # Batch by FILE, never by raw edge count: ALL of a file's edges land in ONE
+    # build_update (one atomic SPARQL UPDATE). Otherwise a multi-domain file whose
+    # edges straddle a batch boundary loses edges — the next batch's per-file scoped
+    # DELETE wipes what the prior batch inserted for that file (the straddle Kade
+    # flagged, #3426). A reader never sees a file's `contains` transiently drop.
+    groups = []
+    for f, primary, nonprimary in results:
+        if primary is None:
+            continue
+        firi = file_iri(f)
+        groups.append([(d, firi) for d in [primary] + nonprimary])
+    batches, chunk = [], []
+    for group in groups:
+        if chunk and len(chunk) + len(group) > batch:
+            batches.append(chunk)
+            chunk = []
+        chunk.extend(group)   # a file's edges are never split across batches
+    if chunk:
+        batches.append(chunk)
     posted, failed = 0, 0
-    for i in range(0, len(edges), batch):
-        chunk = edges[i:i + batch]
+    for bn, chunk in enumerate(batches):
         try:
             sparql_update(build_update(chunk))
             posted += len(chunk)
         except RuntimeError as e:
             failed += len(chunk)
-            print(f"  batch {i // batch} FAILED: {e}")
+            print(f"  batch {bn} FAILED: {e}")
     if failed:
         print(f"WARN: {failed} edges failed to post (continued past the failures)")
     return posted
