@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Borg — Product Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #16a34a; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .promise { background: #dcfce7; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #16a34a; font-size: 0.95em; font-style: italic; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #dcfce7; color: #166534; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Borg — Product Design <span>— the self-judgment product, spanning Proving + Reflecting</span></h1>
+<div class="date">Silas · 2026-06-14 · driven by <a href="borg-value-stream-design.html">borg-value-stream-design.html</a> · mirrors <a href="athena-product-design.html">athena-product-design.html</a> · spans Proving + Reflecting · DRAFT (HTML, reworkable)</div>
+
+<div class="frame">
+<strong>Reads after the value-stream.</strong> The <a href="borg-value-stream-design.html">value-stream-design</a> is the spine (the reflect cycle + the domains); this product-design instances it — what Borg promises, who it serves, its structure, and the JX of its pages. <strong>Borg spans two steps</strong> — <em>same eye, two focal lengths</em>: <strong>Proving</strong> (prove one change, per-card, terminates) and <strong>Reflecting</strong> (watch the running system, continuous, loops back to Shaping). One self-judgment product at two cadences.
+</div>
+
+<div class="caveat" style="background:#fef9c3;border-left:4px solid #ca8a04;padding:10px 16px;margin:10px 0;border-radius:4px;font-size:0.85em;"><strong>⚠ As-is vs to-be.</strong> A DESIGN doc — the <strong>to-be</strong>. The model-of-record (<code>tree.json</code>) <strong>today</strong> = 5 steps (Borg <code>atStep</code> Proving), a <strong>flat 12-domain</strong> set, <code>alerts-monitors</code> unsplit, no obs/ops/infra grouping. Deltas this design lands (to-be, not current): the <strong>Reflecting</strong> step + the span; ADR-043's <strong>monitor/alert</strong> split → 13; the <strong>3-layer</strong> grouping; <code>heralds</code>→xray. Read "spans" / "13 in 3 layers" / "model of record" below as the to-be.</div>
+
+<h2>1 · Identity</h2>
+<ul>
+  <li><strong>Name:</strong> Borg</li>
+  <li><strong>Owner:</strong> Silas (SA + all four hats — PM / domain-architect / engineering-lead / operations-lead)</li>
+  <li><strong>Value-stream step:</strong> spans <strong>Proving + Reflecting</strong> — the last two steps (<em>to-be</em>; today <code>atStep</code> Proving — the Reflecting step is a delta this design lands)</li>
+  <li><strong>Domains:</strong> 13 <em>(to-be; today flat 12, alerts-monitors unsplit)</em> — <code>heralds</code> (the Silver Surfer/xray, incl. crawlers), <code>monitor</code>, <code>alert</code> (monitor+alert = ADR-043 split), logs, metrics, analytics, builds, deploys, properties, infrastructure, toolchain, time, security-trust</li>
+  <li><strong>Status:</strong> not greenfield — a running observability stack + ADR-043 landed; this design names the cycle over it</li>
+</ul>
+
+<h2>2 · Promise</h2>
+<div class="promise">The system sees itself — so no human has to be the eyes. Borg reflects on everything it can reach (its services, health, alerts, the gap between how it's drawn and how it runs) and surfaces the one thing that needs a person, calmly, to the person who owns it.</div>
+<p>Borg's product isn't dashboards — it's <strong>your attention back</strong>. Every night Jeff is the first to notice a stall is a night Borg failed at its job (<code>feedback_jeff_is_not_the_monitor</code>). The freeze that hid for weeks (#3406) is the anti-promise made concrete.</p>
+
+<h2>3 · Value &amp; audience</h2>
+<ul>
+  <li><strong>The roles</strong> — consume Borg to self-coordinate: notice a peer dark, a service flapping, a drift, <em>before</em> Jeff does. Borg is how the team becomes its own monitoring system.</li>
+  <li><strong>Jeff</strong> — consumes <em>outcomes only</em>: a calm board, or the single thing that needs him. Never the 29-warning wall; never the role of monitor.</li>
+</ul>
+
+<h2>4 · Structure</h2>
+<pre class="mermaid">
+flowchart TD
+  PR["Proving<br/><i>per-card · terminates</i>"] --- B["product: Borg"]
+  RE["Reflecting<br/><i>continuous · loops</i>"] --- B
+  B --> OBS["domain: observability"]
+  B --> OPS["domain: operations"]
+  B --> INF["domain: infrastructure"]
+  OBS --> o1["heralds · monitor · alert<br/>logs · metrics · analytics"]
+  OPS --> p1["deploys · builds · time · security-trust"]
+  INF --> i1["infra hosts · properties · toolchain"]
+  RE -.->|"hasValueStream"| CY["reflect cycle:<br/>plant→tend→read→surface→prune→feed"]
+  PR -.->|"hasValueStream"| DC["proving ceremony:<br/>present→gather→verdict→accept"]
+</pre>
+<div class="caption">Borg spans Proving + Reflecting (same eye, two focal lengths). Three domain layers — observability / operations / infrastructure — over the 13 domains. Each step has its own value stream. Full model: <a href="chorus-product-domain-hierarchy.html">chorus-product-domain-hierarchy.html</a>.</div>
+
+<h2>5 · The model (OWL + SHACL)</h2>
+<p>The monitor/alert domains, the six monitor types as <code>Monitor</code> subclasses, and the <code>Service/Signal/Alert/SLO</code> classes are defined in <a href="../../roles/silas/adr/ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> and seated in the value-stream spine (<a href="borg-value-stream-design.html">value-stream-design §3</a>). Source of record, not re-asserted here. The <strong>coherence delta</strong> (declared model vs observed behavior) is itself a first-class modeled thing — it's what most Borg pages render.</p>
+
+<h2>6 · Pages &amp; Flow — the UX of the model</h2>
+<div class="frame">Every Borg page is a <strong>generated page — the #3351 domain-page pattern, not a bespoke dashboard</strong>: a static shell projected by owl-api, the client fetching the <strong>generated HTTP routes</strong> (owl-api :3360 / chorus-api same-origin) and conforming to the <strong>#3415 design system</strong> (system.css; never a one-off page). <strong>AX=JX means the agent and the human read the same model</strong> — the agent via the borg MCP tools, the page via that model's generated HTTP surface — <em>not</em> that the browser fetches MCP (MCP is the agent tool-protocol; a browser can't speak it). Explicitly <strong>generated, not hand-built</strong> — the scattered hand-built dashboards are exactly the problem §8 names. Entry is through the system drawing, not a standalone dashboard.</div>
+
+<h3>Entry — the map to the mirror</h3>
+<p>You enter at <code>/chorus</code> — the "Shared Awareness" system drawing (the <em>map</em>: how the system is meant to cohere). The <strong>Spine node → Borg/Proving</strong> click-through opens the <em>mirror</em>: how it actually runs. The gap between map and mirror is the signal.</p>
+<pre class="mermaid">
+flowchart LR
+  C["/chorus drawing (the map)"] -->|"Spine to Proving"| L["Borg landing (the verdict)"]
+  L --> SW["the seasonal wheel:<br/>plant, tend, read, surface, prune, feed"]
+  L --> D["drill: monitor / alert / health,<br/>logs / metrics / fitness"]
+  D --> X["each page = generated shell +<br/>client-fetch of its class's HTTP route"]
+</pre>
+
+<h3>The landing — a verdict, not a readout</h3>
+<p>Borg opens with a <strong>judgment</strong>, not gauges: <em>"is anything wrong that needs you — and if not, is the system doing its work?"</em> Two states. Either <strong>calm</strong> ("all coherent, nothing needs you — go") or <strong>the one thing</strong> that does, alone, with nothing competing for the eye. You walk into a room and know instantly if it's calm or on fire; if calm, you leave — you don't stand reading gauges. The gauges are one drill down, not the front door. This is the antidote to the 29-warning wall.</p>
+<p><strong>The verdict is computed, not curated.</strong> <code>verdict = f(open alerts by severity, SLO burn-rate, liveness/freshness gaps)</code> → <em>calm</em> when no critical alert is open, no SLO is burning fast, and no monitored thing is silent past its freshness window; otherwise <em>the one thing</em> = the highest-severity unresolved signal. A single generated route computes and serves it (<code>/borg/verdict</code> — the reduction over the monitor/alert/SLO classes), so the front door has one defined data source, not an aggregation improvised in the page.</p>
+
+<h3>The cycle, as a seasonal wheel</h3>
+<p>Not a progress bar (that's Werk's line) — a <strong>wheel</strong>. The borg-reflect cycle (plant→tend→read→surface→prune→feed) renders as the recurring shape it is; the page shows where attention is in the season, what's been surfaced, what's been pruned, what got composted back. The cadence is visible <em>as</em> cadence.</p>
+
+<h3>The drill pages</h3>
+<ul>
+  <li><strong>Monitor</strong> — the live signal: which services are alive (liveness), which jobs ran (freshness), saturation gauges, latency SLIs, error/crash-loop, synthetic flows. Each renders the ADR-043 contract.</li>
+  <li><strong>Alert</strong> — what's firing / fired, severity, who it routed to (ownership), dedup state. Config-driven; reroute is a data change.</li>
+  <li><strong>Health / Metrics / Fitness</strong> — the aggregate health verdict, the SLO burn, the flow-report (card cycle/step/error fitness) — composed from the generated HTTP routes (the same model the flow-report MCP reads) + the imported-home observation pages.</li>
+</ul>
+
+<h2>7 · API surface</h2>
+<p>The to-be routes are <strong>generated by owl-api from the monitor/alert/SLO classes</strong>, named after the model the way owl-api names <code>/domains/:name/has-child</code> — concrete route shapes the pages bind to, not prose:</p>
+<table>
+<tr><th>Surface</th><th>Today</th><th>To-be (generated route)</th></tr>
+<tr><td>verdict (the landing)</td><td>— (improvised in page)</td><td><code>GET /borg/verdict</code> → {state: calm|one-thing, signal}</td></tr>
+<tr><td>health / deep-health</td><td>deep-health.sh cron + /api/chorus/context/health</td><td><code>GET /services/:name/monitors</code> · typed monitor contract, model-driven</td></tr>
+<tr><td>alerts</td><td>Alertmanager + alert-runner shell rules + /context/alerts</td><td><code>GET /alerts?owner=&amp;severity=</code> · config/ownership-routed evaluator over the spine</td></tr>
+<tr><td>metrics / saturation</td><td>Prometheus :9090 + exporters</td><td><code>GET /slo/:name/burn</code> · SLI/SLO surfaces; agent reads the same model via MCP</td></tr>
+<tr><td>fitness / flow</td><td>chorus_flow_report MCP</td><td><code>GET /borg/flow</code> · standing, page-rendered (MCP and route share the model)</td></tr>
+<tr><td>liveness</td><td>— (the gap)</td><td><code>service.alive</code> emit + absence-detector → <code>GET /services/:name/liveness</code> (ADR-043 first build)</td></tr>
+</table>
+
+<h2>8 · As-Is / To-Be / Path to close</h2>
+<p><strong>As-is:</strong> a deployed stack (Prometheus/Grafana/Loki/Alertmanager/exporters/deep-health), ADR-043 landed (the domain model), #3405 landed (probe truthfulness — the cry-wolf killed). But: probes were bespoke + lied; no liveness/crash-loop signal (why #3406 hid); alerts hand-routed; no model-driven contract; no Borg page (the observation surfaces are scattered).</p>
+<p><strong>To-be:</strong> the borg-reflect cycle, model-driven; monitor/alert as ontology domains whose contracts generate; the verdict-first Borg page; absence/silence first-class.</p>
+<p><strong>Path to close (ordered):</strong> value-stream spine → liveness leg (the #3406 gap) → freshness/errors/saturation/latency/synthetic legs → config-driven alert routing → the Borg pages render it.</p>
+
+<h2>9 · Not in scope</h2>
+<ul>
+  <li><strong>The demo ceremony <em>tooling</em></strong> (<code>werk-demo</code> orchestration, <code>present→gather→verdict→accept</code>) — that <em>mechanism</em> is Werk's. But the per-card <strong>proving judgment is in scope</strong>: it's the Proving half of Borg's span, carried by Borg's <code>gate-arch</code>/<code>gate-ops</code> lenses. Borg proves; Werk runs the ceremony.</li>
+  <li><strong>Remediation / acting</strong> — in the <em>Reflecting</em> (observability) half Borg surfaces and the owning role prunes (observe-only). Note: Borg's <em>operations</em> layer <strong>does act</strong> (deploy/rollback/restart) — reflect-not-act is an observability property, not the whole product's.</li>
+  <li><strong>Assimilate / mitose</strong> — the <em>other two Borg modes</em> (<a href="BORG_ASSIMILATION_PATTERN.html">ICD legacy extraction</a>, <a href="borg-mitosis.html">reproducing across products</a>) are out of scope <em>for this product-design</em>, but <strong>not separate capabilities</strong> — they share this product's herald/xray as their first step (OBSERVE). Modeled in their own docs; named here so the boundary is "this doc covers reflect," not "Borg only reflects."</li>
+  <li><strong>/flow</strong> — Directing, not Proving.</li>
+</ul>
+
+<h2>10 · Mitosis &amp; the commercial bet</h2>
+<p>Borg is built to <strong>travel</strong>. Chorus is a factory; the systems it builds must run with <strong>chorus OFF</strong> — so Borg's capability ships <strong>generatively</strong>, never as a runtime dependency: the model generates the client system's own scrape configs, alert rules, SLO defs, dashboards, liveness emitters, deploy/rollback scripts — plus a standalone OSS stack it carries (<strong>Prometheus / Grafana / Loki / Alertmanager</strong>, the same ones we run natively). The factory generates; the artifact runs alone. The gate is a literal test: <em>turn chorus off — does the client system still observe / alert / deploy itself?</em> Any callback to chorus = a leaked dependency to cut.</p>
+<div class="frame" style="border-left-color:#16a34a;background:#dcfce7;">
+<strong>Borg is the proof of the commercial bet.</strong> The hypothesis: <em>if we can model value streams + steps + domains, we can quickly build almost anything.</em> True in its strongest form — the model generates the <strong>commodity substrate</strong> (the ~80% every team rebuilds: structure + the ilities), and human craft goes to the differentiated behavior (the ~20% that <em>is</em> the product). Borg's ops/observability model is the <em>generic, reusable</em> part — every client system needs it and it generates uniformly. So <strong>finishing Borg's value-stream + domain model cleanly is the dogfood that proves the bet</strong>: if we can't make our own ops product a finished, coherent, queryable model, "model anything → build anything" is unproven. Borg = the exemplar; gathering = client #0, the first system the matured factory regenerates (the bootstrap: gathering births Chorus → Chorus rewrites Chorus → Chorus rewrites gathering — compiler self-hosting).
+</div>
+<p><strong>Adjacent future (parked):</strong> the observability data is the system's own-data corpus → an <strong>ML/training substrate</strong> (seeded by the <code>analytics</code> domain), plugged into the cycle's <code>read</code>/<code>feed</code> steps — once the telemetry is modeled, flowing, and trustworthy. Not before.</p>
+
+<h2>11 · References</h2>
+<ul>
+  <li><a href="borg-value-stream-design.html">borg-value-stream-design.html</a> — the spine that drives this</li>
+  <li><a href="athena-product-design.html">athena-product-design.html</a> — the mirror-this instance</li>
+  <li><a href="../../roles/silas/adr/ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> · <a href="borg-service-design.md">observability/borg service designs</a></li>
+  <li>card #3418 (conversation capture: cycle, garden, MAPE-K+permaculture, map↔mirror, verdict-not-readout) · #3415 (design system) · #3361 (chorus-pages re-home incl. standards-surface)</li>
+</ul>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · IRI <code>chorus:doc-borg-product-design</code> · atStep Proving + Reflecting (to-be; today Proving) · owner Silas · 13 domains in 3 layers (to-be; today flat 12) · driven by <code>borg-value-stream-design.html</code>. DRAFT — HTML, reworkable.
+</div>
+
+</body>
+</html>
