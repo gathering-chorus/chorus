@@ -94,6 +94,9 @@ function main() {
   const baseline = readBaseline();
   if (!baseline) {
     process.stderr.write('lint-ratchet: no baseline found. Run `npm run lint:baseline` to create one.\n');
+    // #3428 — final stdout line in the nightly's `N pass, N fail` shape so the
+    // suite parser reports a real status instead of masking it as DID NOT RUN.
+    process.stdout.write('lint-ratchet summary: 0 pass, 1 fail (no baseline)\n');
     process.exit(1);
   }
 
@@ -119,6 +122,10 @@ function main() {
     for (const v of violations) {
       process.stderr.write(`  ${v.rule}: ${v.count} (baseline ${v.limit}, +${v.delta})\n`);
     }
+    const over = violations.reduce((a, v) => a + v.delta, 0);
+    // #3428 — parseable summary LAST (stdout), so `tail -1` in the nightly
+    // sees a real `N pass, N fail` and reports the honest red, not DID NOT RUN.
+    process.stdout.write(`lint-ratchet summary: 0 pass, ${violations.length} fail (${violations.length} rules over baseline, +${over} violations)\n`);
     process.exit(1);
   }
 
@@ -128,6 +135,8 @@ function main() {
       process.stderr.write(`  ${n.rule}: ${n.count}\n`);
     }
     process.stderr.write('Run `npm run lint:baseline` after review to adopt new rules.\n');
+    // #3428 — parseable summary LAST (stdout) for the nightly suite parser.
+    process.stdout.write(`lint-ratchet summary: 0 pass, ${newRules.length} fail (${newRules.length} new rules not in baseline)\n`);
     process.exit(2);
   }
 
@@ -139,6 +148,8 @@ function main() {
     }
     process.stdout.write('Run `npm run lint:baseline` to lock the drops.\n');
   }
+  // #3428 — parseable summary LAST (stdout) so the nightly reports a real PASS.
+  process.stdout.write(`lint-ratchet summary: 1 pass, 0 fail (${totalCurrent} violations, ${Object.keys(current).length} rules, at/under baseline)\n`);
 }
 
 main();
