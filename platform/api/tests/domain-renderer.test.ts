@@ -1,8 +1,7 @@
 /**
  * #3420/#3351 — page-level unit coverage for the GENERATED Athena domain page's renderer
- * (public/js/domain-renderer.js). The renderer is the bulk of the page's logic
- * (facet rendering, tables, empty states, up/down decomposition). It exports its PURE
- * builders for node; we assert they produce the right #3415 system.css structure from
+ * (public/js/domain-renderer.js). The renderer fills the generated shell; it exports its
+ * PURE builders for node. We assert they produce the right #3415 system.css structure from
  * mock endpoint data, with honest empty states and NO bespoke styling.
  */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -13,8 +12,8 @@ describe('#3420 domain-renderer — pure builders', () => {
     expect(typeof R.renderFacet).toBe('function');
     expect(typeof R.tableFor).toBe('function');
     expect(typeof R.partOfHtml).toBe('function');
-    expect(typeof R.hasChildHtml).toBe('function');
-    expect(typeof R.catalogHtml).toBe('function');
+    expect(typeof R.childTreeHtml).toBe('function');
+    expect(typeof R.resolveV2).toBe('function');
     expect(Array.isArray(R.FACETS)).toBe(true);
     expect(R.FACETS.length).toBe(17);
     R.FACETS.forEach((f: any) => {
@@ -88,30 +87,29 @@ describe('#3420 domain-renderer — pure builders', () => {
     expect(R.partOfHtml(undefined)).toBe('');
   });
 
-  test('hasChildHtml renders the downward structural child chain as nav chips (3351)', () => {
-    const h = R.hasChildHtml(['heralds']);
-    expect(h).toContain('Children (structural)');
-    expect(h).toContain('class="badge"');
-    expect(h).toContain('?id=heralds');
+  test('childTreeHtml renders a recursive nested tree d1>d2>d3 (3351)', () => {
+    const tree = { name: 'd1', children: [{ name: 'd2', children: [{ name: 'd3', children: [] }] }] };
+    const h = R.childTreeHtml(tree);
+    expect(h).toContain('?id=d1-domain');
+    expect(h).toContain('?id=d2-domain');
+    expect(h).toContain('?id=d3-domain');
+    // the recursion shows as nesting: d2 inside d1, d3 inside d2 -> at least 2 nested lists
+    expect((h.match(/<ul/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 
-  test('hasChildHtml is honestly empty when there is no child', () => {
-    expect(R.hasChildHtml([])).toBe('');
-    expect(R.hasChildHtml(undefined)).toBe('');
+  test('childTreeHtml leaf renders no nested list', () => {
+    const h = R.childTreeHtml({ name: 'leaf', children: [] });
+    expect(h).toContain('?id=leaf-domain');
+    expect(h).not.toContain('<ul');
   });
 
-  test('catalogHtml renders the SET as a clickable table with step/owner/status (3351)', () => {
-    const h = R.catalogHtml([{ name: 'cards-service', label: 'Cards', step: 'Building', owner: 'wren', status: 'live' }]);
-    expect(h).toContain('Domains (1)');
-    expect(h).toContain('<table class="table">');
-    expect(h).toContain('?id=cards-service');
-    expect(h).toContain('Building');
-    expect(h).toContain('role--wren');
-    expect(h).toContain('live');
-  });
-
-  test('catalogHtml is honest when the model has no domains', () => {
-    expect(R.catalogHtml([])).toContain('No domains');
+  test('resolveV2 maps v1 ids onto v2 homes, null for v1-only (3373)', () => {
+    const V2 = ['cards', 'code', 'version-control'];
+    expect(R.resolveV2('cards', V2)).toBe('cards');
+    expect(R.resolveV2('code-domain', V2)).toBe('code');
+    expect(R.resolveV2('cards-service', V2)).toBe('cards');
+    expect(R.resolveV2('gates-service', V2)).toBeNull();
+    expect(R.resolveV2('version-control-domain', V2)).toBe('version-control');
   });
 
   test('builders emit system.css vocabulary, never hardcoded colors', () => {
@@ -121,8 +119,7 @@ describe('#3420 domain-renderer — pure builders', () => {
       R.tableFor([{ path: 'a.ts', type: 'unit' }], ['path', 'type']) +
       R.statCard('x', 'Owner') +
       R.partOfHtml(['athena']) +
-      R.hasChildHtml(['heralds']) +
-      R.catalogHtml([{ name: 'x', label: 'X', step: 'Building', owner: 'wren', status: 'live' }]);
+      R.childTreeHtml({ name: 'heralds', children: [] });
     expect(h).toMatch(/class="(card|table|badge|stat|muted)/);
     expect(h).not.toMatch(/#[0-9a-fA-F]{6}/);
   });

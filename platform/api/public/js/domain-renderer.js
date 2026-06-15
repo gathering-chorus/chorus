@@ -45,10 +45,10 @@
           var sb = $('stats-bar'); if (sb) sb.setAttribute('data-identity-source', 'generated-api');
         }
         // AC2 upward direction — render the parent Product/SubProduct from the model (non-fatal).
-        // #3351 downward structural recursion — render child domains via hasChild (non-fatal).
+        // #3351 downward recursion — walk hasChild to any depth and render the composition tree (non-fatal).
         return Promise.all([
           get(OWL + '/domains/' + encodeURIComponent(v2) + '/partof').then(renderPartOf),
-          get(OWL + '/domains/' + encodeURIComponent(v2) + '/has-child').then(renderHasChild),
+          buildChildTree(v2, new Set(), 0).then(renderChildTree),
         ]);
       });
     });
@@ -66,44 +66,35 @@
   }
   function renderPartOf(p) { var el = $('partof-block'); if (el) el.innerHTML = partOfHtml((p && p.partof) || []); }
 
-  // ---- downward STRUCTURAL recursion (#3351) — child domains via owl-api /has-child ----
-  // hasChild = structure (domain→domain), NOT contains=content (ADR-041). The clickable
-  // parent→child walk: each child links to its own page, where its own children render.
-  function hasChildHtml(children) {
-    if (!children || !children.length) return '';
-    var chips = children.map(function (n) { return '<a class="badge" href="?id=' + encodeURIComponent(n) + '">' + esc(n) + '</a>'; }).join(' ');
-    return '<div class="card"><span class="stat-label" style="margin-right:.5rem">Children (structural)</span>' + chips + '</div>';
+  // ---- recursive composition TREE (#3351) — hasChild walked to ANY depth (ADR-041) ----
+  // hasChild = structure (domain→domain), NOT contains=content. A node is { name, children:[node...] }.
+  // childTreeHtml is pure + recursive: d1→d2→d3 renders as a nested tree, every node a link to its
+  // own page. The depth is whatever the model holds; the recursion is built once.
+  function childTreeHtml(node) {
+    var link = '<a href="?id=' + encodeURIComponent(node.name) + '-domain">' + esc(node.name) + '</a>';
+    var kids = (node.children && node.children.length)
+      ? '<ul style="list-style:none;margin:.25rem 0 .25rem 1.1rem;padding-left:.6rem;border-left:1px solid var(--surface-2)">' +
+          node.children.map(childTreeHtml).join('') + '</ul>'
+      : '';
+    return '<li style="margin:.15rem 0">' + link + kids + '</li>';
   }
-  function renderHasChild(p) { var el = $('haschild-block'); if (el) el.innerHTML = hasChildHtml((p && p.hasChild) || []); }
-
-  // ---- the SET / catalog (#3351) — the `domains` meta-domain renders all 34 as a page ----
-  // Clickable rows → each domain's own page. Step/owner/status from the enriched GET /domains list.
-  function catalogHtml(items) {
-    if (!items || !items.length) return '<p class="muted">No domains in the model.</p>';
-    var rows = items.map(function (d) {
-      // owner/step come back as IRI local names (role-silas, value-stream-step-proving) — clean for display.
-      var owner = (d.owner || '').replace(/^role-/, '');
-      var step = (d.step || '').replace(/^value-stream-step-/, '');
-      var rc = ROLE_CLASS[owner.toLowerCase()] || '';
-      return '<tr>' +
-        '<td><a href="?id=' + encodeURIComponent(d.name) + '">' + esc(d.label || d.name) + '</a></td>' +
-        '<td>' + (step ? '<span class="badge">' + esc(step) + '</span>' : '<span class="muted">—</span>') + '</td>' +
-        '<td>' + (owner ? '<span class="role ' + rc + '">' + esc(owner) + '</span>' : '<span class="muted">—</span>') + '</td>' +
-        '<td>' + (d.status ? esc(d.status) : '<span class="muted">—</span>') + '</td>' +
-      '</tr>';
-    }).join('');
-    return '<div class="card"><h2 style="margin-top:0">Domains (' + items.length + ')</h2>' +
-      '<table class="table"><thead><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr></thead><tbody>' +
-      rows + '</tbody></table></div>';
+  function countTree(node) { return (node.children || []).reduce(function (n, c) { return n + 1 + countTree(c); }, 0); }
+  // async walk: fetch hasChild per node, recurse, cycle-guarded + depth-capped → the node tree.
+  function buildChildTree(name, seen, depth) {
+    if (depth > 8 || seen.has(name)) return Promise.resolve({ name: name, children: [] });
+    seen.add(name);
+    return get(OWL + '/domains/' + encodeURIComponent(name) + '/has-child').then(function (p) {
+      var kids = (p && p.hasChild) || [];
+      return Promise.all(kids.map(function (k) { return buildChildTree(k, seen, depth + 1); }))
+        .then(function (nodes) { return { name: name, children: nodes }; });
+    });
   }
-  function renderCatalog(body) { var el = $('content-sections'); if (el) el.innerHTML = catalogHtml((body && body.items) || []); }
-  // the `domains` meta-domain page: title + the live set, straight from the generated API.
-  function renderCatalogPage() {
-    document.title = 'Domains — Athena';
-    var t = $('domain-title'); if (t) t.textContent = 'Domains';
-    var st = $('domain-subtitle'); if (st) st.textContent = 'The set — every domain in the model';
-    var bc = $('bc-domain'); if (bc) bc.textContent = 'Domains';
-    get(OWL + '/domains').then(renderCatalog);
+  function renderChildTree(root) {
+    var el = $('haschild-block'); if (!el) return;
+    var kids = (root && root.children) || [];
+    if (!kids.length) { el.innerHTML = ''; return; }   // honest: a leaf domain renders no tree
+    el.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Composed of (' + countTree(root) + ')</summary>' +
+      '<ul style="list-style:none;padding-left:0;margin:.5rem 0">' + kids.map(childTreeHtml).join('') + '</ul></details></div>';
   }
 
   function renderIdentity(d, consumers, cards) {
@@ -222,8 +213,6 @@
     id = params.get('id') || params.get('name');
     OWL = location.protocol + '//' + location.hostname + ':' + (window.OWL_PORT || 3360); // model identity (non-fatal)
     if (!id) { $('content-sections').innerHTML = '<div class="callout callout--gap">Add <code>?id=&lt;domain&gt;</code> to the URL.</div>'; return; }
-    // #3351 — the `domains` meta-domain renders THE SET (catalog), not a single domain's facets.
-    if (id === 'domains') { renderCatalogPage(); return; }
     get(ATHENA + '/subdomains/' + encodeURIComponent(id)).then(function (body) {
       if (!body) { $('content-sections').innerHTML = '<div class="callout callout--gap">Could not load <code>' + esc(id) + '</code> from Athena.</div>'; return; }
       var d = body.data || {};
@@ -253,6 +242,6 @@
   // browser: wire on load. node/test: skip (no document) + export the pure builders.
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, hasChildHtml: hasChildHtml, catalogHtml: catalogHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
+    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, childTreeHtml: childTreeHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
   }
 })();

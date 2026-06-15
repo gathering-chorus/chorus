@@ -539,29 +539,22 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /domains
     if format!("/{}", parts.first().unwrap_or(&"")) == plural && parts.len() == 1 {
         meta.route = "list".into();
-        // #3351 — the catalog (set of all 34) needs step/owner/status per row, not just label.
-        // owner/step are edges to role/step nodes; take their local name (STR + rsplit #).
         let q = format!(
-            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }} OPTIONAL {{ ?s <{ns}ownedBy> ?owner }} OPTIONAL {{ ?s <{ns}atStep> ?step }} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\"), \"|\", COALESCE(STR(?owner), \"\"), \"|\", COALESCE(STR(?step), \"\")) AS ?v) }} }} ORDER BY ?v",
+            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\")) AS ?v) }} }} ORDER BY ?v",
             g = INSTANCES_GRAPH, c = table.class, ns = NS
         );
         return match sparql_json(&q) {
             Ok(body) => {
-                let local = |s: &str| s.rsplit(['#', '/']).next().unwrap_or(s).to_string();
                 let items: Vec<String> = select_v(&body)
                     .into_iter()
                     .map(|rowv| {
-                        let cols: Vec<&str> = rowv.splitn(5, '|').collect();
+                        let cols: Vec<&str> = rowv.splitn(3, '|').collect();
                         let name = cols.first().map(|s| s.rsplit('#').next().unwrap_or(s)).unwrap_or("");
-                        let owner = cols.get(3).map(|s| local(s)).unwrap_or_default();
-                        let step = cols.get(4).map(|s| local(s)).unwrap_or_default();
                         format!(
-                            "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\", \"owner\": \"{}\", \"step\": \"{}\" }}",
+                            "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\" }}",
                             json_escape(name),
                             json_escape(cols.get(1).unwrap_or(&"")),
-                            json_escape(cols.get(2).unwrap_or(&"")),
-                            json_escape(&owner),
-                            json_escape(&step)
+                            json_escape(cols.get(2).unwrap_or(&""))
                         )
                     })
                     .collect();
