@@ -230,6 +230,19 @@ for entry in "${CRITICAL_SERVICES[@]}"; do
   fi
 done
 
+# --- 10b. Completeness: every chorus agent on disk MUST be loaded (#3444) ---
+# No hardcoded allowlist to drift: the plist's EXISTENCE is the declaration
+# "should run". Retiring an agent = DELETE its plist, so on-disk-but-not-loaded
+# is always an anomaly. Catches the silent deaths (embed-worker, watchdog, ...)
+# that the curated CRITICAL_SERVICES list (#10) structurally cannot see.
+for plist in "$HOME"/Library/LaunchAgents/com.chorus.*.plist; do
+  [ -f "$plist" ] || continue
+  label=$(basename "$plist" .plist)
+  if ! launchctl list "$label" >/dev/null 2>&1; then
+    FAILURES+=("$label: plist on disk but NOT loaded — silent death (load it, or delete the plist if retired)")
+  fi
+done
+
 # --- 11. HTTP health endpoints ---
 # Format: url|name|desc (pipe-delimited to avoid colon collision with URLs)
 HEALTH_ENDPOINTS=(
