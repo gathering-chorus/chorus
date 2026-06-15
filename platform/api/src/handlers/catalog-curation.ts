@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- indexes by a fixed known field list, never untrusted input (#3429) */
 /**
  * catalog-curation — write API for doc-catalog 5-field tags + lineage edges (#2549).
  *

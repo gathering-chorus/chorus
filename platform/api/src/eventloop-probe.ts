@@ -111,6 +111,7 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
 // KeepAlive process (LaunchAgent registration routes through Silas, ADR-012).
 if (require.main === module) {
    
+  // eslint-disable-next-line security/detect-child-process -- internal probe spawns a fixed known binary, no untrusted input (#3429)
   const { execFile } = require('node:child_process') as typeof import('node:child_process');
    
   const path = require('node:path') as typeof import('node:path');

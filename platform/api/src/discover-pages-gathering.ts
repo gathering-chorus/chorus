@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection -- internal page scanner: paths from the gathering repo root, object keys from a fixed known set, never untrusted input (#3429) */
 /**
  * Gathering page scanners — extracted from server.ts (#3097).
  *

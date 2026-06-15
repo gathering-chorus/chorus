@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal scanner: paths from the repo public/loom dir, never untrusted input (#3429) */
 /**
  * #2485 Move 6 — scanner for chorus/platform/api/public/loom/*.html.
  *

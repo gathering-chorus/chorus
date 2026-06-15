@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal scanner: paths from the repo public/athena dir, never untrusted input (#3429) */
 /**
  * #2041 — scanner for chorus/platform/api/public/athena/*.html.
  *

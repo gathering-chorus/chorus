@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- aggregation keys are role names + classify() output from a known set, never untrusted input (#3429) */
 /**
  * GET /api/chorus/hooks/friction — ranked hook-friction view (#3280).
  *

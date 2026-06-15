@@ -573,8 +573,9 @@ function alertMatchesDomain(content: string, file: string, domain: string, stem:
 // #2627: per-file extraction split out of the loop body.
 function extractAlertsFromContent(content: string, file: string): AlertEntry[] {
   const promMatches = [...content.matchAll(/^\s*-?\s*alert:\s*(.+)$/gm)];
+  // eslint-disable-next-line security/detect-unsafe-regex -- runs on internal alert-config file content (controlled), bounded single-line match (#3429)
   const grafTitleMatches = [...content.matchAll(/^\s*-\s*(?:uid:.*\n\s*)?title:\s*(.+)$/gm)];
-  const sevDefault = (content.match(/severity:\s*(.+)/) || [, 'unknown'])[1]?.trim() || 'unknown';
+  const sevDefault = (content.match(/severity:\s*(.+)/) ?? [undefined, 'unknown'])[1]?.trim() || 'unknown';
   const found = promMatches.length > 0 ? promMatches : grafTitleMatches;
   if (found.length === 0) {
     return [{ name: file.replace(/\.ya?ml$/, ''), severity: sevDefault, file }];

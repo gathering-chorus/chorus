@@ -68,6 +68,7 @@ export const WATERMARKS_SLOW_MS = 50;
 function emitWatermarksSlow(durationMs: number, rows: number): void {
   try {
      
+    // eslint-disable-next-line security/detect-child-process -- internal: spawns a fixed known binary, no untrusted input (#3429)
     const { execFile } = require('node:child_process') as typeof import('node:child_process');
      
     const nodePath = require('node:path') as typeof import('node:path');

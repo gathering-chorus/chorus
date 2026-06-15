@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- indexes by a fixed known key list, never untrusted input (#3429) */
 /**
  * flow-report-cli — Loki → aggregateFlow → JSON stdout (#3269).
  *

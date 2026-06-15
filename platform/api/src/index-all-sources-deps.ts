@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal indexer: reads source files from controlled repo paths, never untrusted input (#3429) */
 // Shared dependency wiring for createIndexAllSources (#3085).
 //
 // Both the chorus-api server and the standalone reindex worker

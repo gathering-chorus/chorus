@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- internal tooling: reads log files from controlled CHORUS_HOME/repo paths, never untrusted input (#3429) */
 /**
  * Shared log-reader for chorus-api summary handlers (#2126).
  *
