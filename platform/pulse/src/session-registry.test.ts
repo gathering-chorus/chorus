@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-duplicate-string -- repeated fixture literals (session ids/paths) are intentional for per-case readability (#3429) */
 /**
  * #3125 — session registry resolver tests.
  *

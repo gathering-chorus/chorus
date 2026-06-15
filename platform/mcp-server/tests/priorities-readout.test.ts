@@ -72,10 +72,10 @@ test('renderPrioritiesReadout: chunked-only report (chunk → - #id - title); no
   assert.ok(out.indexOf('1 KADE') < out.indexOf('2 SILAS'));
   assert.ok(out.indexOf('2 SILAS') < out.indexOf('3 WREN'));
   // chunk heading + fixed card line: "   - #id - title"
-  assert.match(out, /werk-demo\n   - #100 - werk demo fix/);
-  assert.match(out, /model\n   - #101 - model adr/);
+  assert.match(out, /werk-demo\n {3}- #100 - werk demo fix/);
+  assert.match(out, /model\n {3}- #101 - model adr/);
   // proving (chunk:proving) is included — it's a real chunk
-  assert.match(out, /proving\n   - #104 - proving loop/);
+  assert.match(out, /proving\n {3}- #104 - proving loop/);
   // NO untagged: the unchunked card #102 and the word "untagged" never appear
   assert.ok(!out.includes('#102'), 'untagged card must not appear');
   assert.ok(!out.includes('untagged'), 'no untagged section');

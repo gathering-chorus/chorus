@@ -1,4 +1,4 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+/* eslint-disable security/detect-non-literal-fs-filename --
  * fs paths from server-controlled SCAN_DIR/PULSE_FILE env constants; reads on
  * `${SCAN_DIR}/${role}-declared.json` where role is a member of the 4-element
  * ROLES tuple. Object indexing keyed by validated role names from the same tuple.

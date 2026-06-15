@@ -72,7 +72,7 @@ async function notifyTransportError(fields: Record<string, unknown>): Promise<vo
     clearTimeout(timeoutId);
     if (!resp.ok) {
       // log via stderr (chorus-log spawn already attempted above)
-      // eslint-disable-next-line no-console
+       
       console.error('[chorus-mcp] mcp.notification.failed', { reason: `pulse-${resp.status}` });
     }
   } catch {

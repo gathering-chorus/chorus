@@ -132,7 +132,7 @@ export async function recentErrors(
   deps: LogsQueryDeps,
 ): Promise<LogsQueryResult> {
   const window = args.time_window ?? '1h';
-  let query = `{job=~".+"} |= "\\"level\\":\\"error\\""`;
+  let query = '{job=~".+"} |= "\\"level\\":\\"error\\""';
   if (args.role) query += ` |= "\\"role\\":\\"${args.role}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
   if ('error' in range) return { ok: false, reason: 'time-range-invalid', detail: range.error };

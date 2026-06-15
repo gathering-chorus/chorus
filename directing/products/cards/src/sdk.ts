@@ -999,9 +999,9 @@ APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards 
     // attempt is still queued, and exit non-zero so the retry counts as a
     // refusal (not a silent success).
     if (err instanceof PendingRetryTooSoonError) {
-      console.error(`---`);
+      console.error('---');
       console.error(`REFUSED: retry-too-soon. Same role+title was queued ${Math.round(err.ageMs / 1000)}s ago at ${err.existingPath}.`);
-      console.error(`The bouncer has NOT written a duplicate. The original pending payload is still active and will be processed when Jeff approves.`);
+      console.error('The bouncer has NOT written a duplicate. The original pending payload is still active and will be processed when Jeff approves.');
       console.error(`If you're trying to reshape the card, wait at least ${Math.ceil((PENDING_RETRY_REFUSAL_MS - err.ageMs) / 1000)}s and try again.`);
       process.exit(1);
     }

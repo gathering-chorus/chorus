@@ -92,7 +92,7 @@ export class MessageStore {
     // DROP TABLE IF EXISTS is idempotent for fresh DBs (table never
     // created) and existing DBs alike. Safe to no-op after first run.
     try {
-      this.db.exec(`DROP TABLE IF EXISTS role_state`);
+      this.db.exec('DROP TABLE IF EXISTS role_state');
     } catch {
       // tolerate any DB-level oddity — retirement is best-effort
     }
@@ -100,23 +100,23 @@ export class MessageStore {
     // #2727 AC1: add delivery columns. Idempotent via PRAGMA table_info
     // guard. Existing rows backfill to 'delivered' (they predate the
     // worker and have already been surfaced via the retired path).
-    const cols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    const cols = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
     const colNames = cols.map(c => c.name);
     if (!colNames.includes('delivery_status')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK(delivery_status IN ('pending','delivered','failed'))`);
-      this.db.exec(`UPDATE messages SET delivery_status = 'delivered' WHERE id > 0`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT \'pending\' CHECK(delivery_status IN (\'pending\',\'delivered\',\'failed\'))');
+      this.db.exec('UPDATE messages SET delivery_status = \'delivered\' WHERE id > 0');
     }
     if (!colNames.includes('delivered_at')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN delivered_at TEXT`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN delivered_at TEXT');
     }
     if (!colNames.includes('last_delivery_error')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN last_delivery_error TEXT`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN last_delivery_error TEXT');
     }
     // #2765 AC2: trace_id correlation column. UUIDv7 minted at sender,
     // propagated via X-Chorus-Trace-Id header → row → every spine event.
     // Indexed for efficient join from chorus.log → messages.db row.
     if (!colNames.includes('trace_id')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN trace_id TEXT`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN trace_id TEXT');
     }
 
     // #3343 migration: existing DBs carry the old type CHECK (no 'jeff-input').
@@ -124,7 +124,7 @@ export class MessageStore {
     // (guarded by inspecting the live DDL in sqlite_master). Explicit column
     // lists on both sides so the copy is order-independent; runs AFTER the
     // column migrations above so all delivery columns exist to copy.
-    const ddl = this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'`).get() as { sql: string } | undefined;
+    const ddl = this.db.prepare('SELECT sql FROM sqlite_master WHERE type=\'table\' AND name=\'messages\'').get() as { sql: string } | undefined;
     if (ddl && !ddl.sql.includes('jeff-input')) {
       this.db.exec(`
         BEGIN;
@@ -153,9 +153,9 @@ export class MessageStore {
         COMMIT;
       `);
       // Indexes dropped with the old table — recreate the full set.
-      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_to ON messages("to", acknowledged)`);
-      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id) WHERE chat_id IS NOT NULL`);
-      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at)`);
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_to ON messages("to", acknowledged)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id) WHERE chat_id IS NOT NULL');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type, created_at)');
     }
 
     // #3403: nudge envelope — class (r2r/a2r) + expects (none|reply|decision|action).
@@ -164,18 +164,18 @@ export class MessageStore {
     // survive it. Existing rows: class defaults to r2r, then non-peer senders
     // (system/chorus-mcp/pulse/...) backfill to a2r; expects defaults to 'none', so
     // nothing historical can trap — the gate only traps r2r + expects != none.
-    const envCols = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    const envCols = this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
     const envColNames = envCols.map(c => c.name);
     if (!envColNames.includes('nudge_class')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN nudge_class TEXT CHECK(nudge_class IN ('r2r','a2r')) DEFAULT 'r2r'`);
-      this.db.exec(`UPDATE messages SET nudge_class = 'a2r' WHERE "from" NOT IN ('wren','silas','kade','jeff')`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN nudge_class TEXT CHECK(nudge_class IN (\'r2r\',\'a2r\')) DEFAULT \'r2r\'');
+      this.db.exec('UPDATE messages SET nudge_class = \'a2r\' WHERE "from" NOT IN (\'wren\',\'silas\',\'kade\',\'jeff\')');
     }
     if (!envColNames.includes('nudge_expects')) {
-      this.db.exec(`ALTER TABLE messages ADD COLUMN nudge_expects TEXT CHECK(nudge_expects IN ('none','reply','decision','action')) DEFAULT 'none'`);
+      this.db.exec('ALTER TABLE messages ADD COLUMN nudge_expects TEXT CHECK(nudge_expects IN (\'none\',\'reply\',\'decision\',\'action\')) DEFAULT \'none\'');
     }
 
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL`);
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
   }
 
   // --- Nudges ---
@@ -221,13 +221,13 @@ export class MessageStore {
 
   markDelivered(id: number): void {
     this.db.prepare(
-      `UPDATE messages SET delivery_status = 'delivered', delivered_at = datetime('now') WHERE id = ?`
+      'UPDATE messages SET delivery_status = \'delivered\', delivered_at = datetime(\'now\') WHERE id = ?'
     ).run(id);
   }
 
   markFailed(id: number, reason: string): void {
     this.db.prepare(
-      `UPDATE messages SET delivery_status = 'failed', last_delivery_error = ? WHERE id = ?`
+      'UPDATE messages SET delivery_status = \'failed\', last_delivery_error = ? WHERE id = ?'
     ).run(reason, id);
   }
 
@@ -235,13 +235,13 @@ export class MessageStore {
   // which spine-event family to emit (jeff.input.* vs nudge.*).
   getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }> {
     return this.db.prepare(
-      `SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind FROM messages WHERE delivery_status = 'pending' AND type IN ('nudge', 'jeff-input') ORDER BY id ASC`
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
     ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }>;
   }
 
   getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null } {
     const row = this.db.prepare(
-      `SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id FROM messages WHERE id = ?`
+      'SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id FROM messages WHERE id = ?'
     ).get(id);
     if (!row) {
       throw new Error(`getDeliveryRecord: no row for id=${id}`);

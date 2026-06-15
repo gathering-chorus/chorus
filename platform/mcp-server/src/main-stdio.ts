@@ -99,7 +99,7 @@ if (process.argv[1] && process.argv[1].includes('main-stdio')) {
   main().catch((err) => {
     const msg = err instanceof Error ? err.message : String(err);
     emitSpine('mcp.stdio.error', [`error_message=${msg.slice(0, 300)}`]);
-    // eslint-disable-next-line no-console
+     
     console.error('[chorus-mcp-stdio] fatal', msg);
     process.exit(1);
   });

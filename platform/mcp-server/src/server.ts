@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- MCP tool dispatch is keyed by tool name from a controlled, in-process tool registry (not untrusted input); the indexed access is over our own definition tables (#3429) */
 /**
  * #2472 — MCP server for chorus-api.
  *
@@ -786,7 +787,7 @@ async function executePrioritiesReadout(
     '(SELECT group_concat(l.title) FROM label_tasks lt JOIN labels l ON l.id = lt.label_id WHERE lt.task_id = t.id) AS labels ' +
     'FROM tasks t ' +
     'JOIN task_buckets tb ON tb.task_id = t.id ' +
-    "JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 " +
+    'JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 ' +
     "WHERE b.title NOT IN ('Done', 'Won''t Do') " +
     'ORDER BY t."index"';
   let rows: ReadoutRow[] = [];
@@ -1382,9 +1383,9 @@ function extractStderr(err: unknown): string {
 // semantically (ast-grep: no calls anywhere).
 
 export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const fs = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const path = require('node:path') as typeof import('node:path');
 
   return (role: 'kade' | 'wren' | 'silas'): string => {
@@ -1845,8 +1846,8 @@ async function executeServiceLifecycle(
   const pathMod = require('path') as typeof import('path');
   const scriptPath = pathMod.join(repoRoot, 'platform', 'scripts', 'agent-state.sh');
   const execFileP = promisify(execFile);
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileP('bash', [scriptPath, verb, service], {
@@ -1888,8 +1889,8 @@ async function executeWerkVerb(
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const binPath = pathMod.join(binDir, verb);
   const execFileP = promisify(execFile);
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileP(binPath, args, {
@@ -1981,6 +1982,7 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // cannot happen — we removed the long hold, we did not paper over it with a detach (which
 // cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
 // his GO re-invokes chorus_werk with go:true, resuming past the demo stop (#3311).
+// eslint-disable-next-line complexity -- cohesive werk-pipeline dispatch (verb routing + arg marshalling + result shaping in one place); splitting fragments the one trace (#3429)
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   execFileAsync: ExecFileAsync,
@@ -2001,8 +2003,8 @@ async function executeChorusWerk(
     '--input', `role=${args.role}`,
     '--input', `accepter=${accepter}`,
   ];
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileAsync(actBin, actArgs, {
@@ -2068,8 +2070,8 @@ async function executeChorusWerkLand(
     '--input', `accepter=${accepter}`,
     '--input', 'go=true', // #3193 — selects the go-gated `land` job in the ONE werk.yml
   ];
-  let stdout = '';
-  let stderr = '';
+  let stdout: string; // assigned in both try and catch before first read
+  let stderr: string;
   let exitCode = 0;
   try {
     const result = await execFileAsync(actBin, actArgs, {
@@ -2368,7 +2370,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // git-queue.sh path string. This decouples the MCP layer from git-queue.sh
   // entirely (its last MCP reference; the inline executeAcp caller was retired by
   // #3176). git-queue.sh itself stays for now (session-close.sh, #1623/Phase 2).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const pathRepo = require('path') as typeof import('path');
   const canonicalRepoRoot =
     process.env.CHORUS_ROOT ?? process.env.CHORUS_HOME ?? pathRepo.resolve(__dirname, '..', '..', '..');
@@ -2378,7 +2380,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // flag — the ephemeral model is the model, not an opt-in.
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const _fs = require('fs') as typeof import('fs');
   const fsExists: (p: string) => boolean = deps.fsExists ?? ((p: string) => _fs.existsSync(p));
   const server = new Server(

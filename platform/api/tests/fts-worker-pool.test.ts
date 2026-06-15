@@ -67,7 +67,7 @@ describe('createFtsPool (#3086)', () => {
     const pool = createFtsPool({ spawn: () => fake, timeoutMs: 50 });
     const p = pool.runFtsAsync({ q: 'x', fetchLimit: 10, mode: 'fts' });
     expect(fake.sent.length).toBe(1);
-    const assertion = expect(p).rejects.toThrow('timeout');
+    const assertion = await expect(p).rejects.toThrow('timeout');
     jest.advanceTimersByTime(60);
     await assertion;
     jest.useRealTimers();
