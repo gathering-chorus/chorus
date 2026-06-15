@@ -4,7 +4,6 @@
  * board-reachable Cards section (cardRowsHtml). Pure builders, node-required.
  * Cold-eyes (#3351 gate run) flagged these as untested — this closes that.
  */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const R = require('../public/js/domain-renderer.js');
 
 describe('#3351 domain-page new builders', () => {

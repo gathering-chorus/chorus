@@ -12,7 +12,6 @@
 // #3373 moved into the GENERATED renderer (#3351 retired the hand-built domain-detail.js).
 // The function lives in the shared renderer now; load it from its exports.
 function loadResolve(): (id: string, names: string[]) => string | null {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const R = require('../public/js/domain-renderer.js');
   return R.resolveV2;
 }
