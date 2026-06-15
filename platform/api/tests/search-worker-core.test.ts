@@ -22,11 +22,10 @@ describe('handleSearchMessage (#3382)', () => {
     const reply = await handleSearchMessage({ table, embed: fakeEmbed }, msg);
     expect(reply.id).toBe(5);
     expect('rows' in reply).toBe(true);
-    if ('rows' in reply) {
-      expect(reply.rows.length).toBe(1);
-      expect((reply.rows[0] as { msg_id: number }).msg_id).toBe(7);
-      expect((reply.rows[0] as { score: number }).score).toBe(1); // 1/(1+0)
-    }
+    if (!('rows' in reply)) throw new Error('expected rows'); // narrow; unreachable past the assert
+    expect(reply.rows.length).toBe(1);
+    expect((reply.rows[0] as { msg_id: number }).msg_id).toBe(7);
+    expect((reply.rows[0] as { score: number }).score).toBe(1); // 1/(1+0)
   });
 
   it('filters by role when role is given', async () => {
@@ -38,12 +37,9 @@ describe('handleSearchMessage (#3382)', () => {
       { table, embed: fakeEmbed },
       { id: 9, query: 'q', limit: 10, role: 'silas' },
     );
-    if ('rows' in reply) {
-      expect(reply.rows.length).toBe(1);
-      expect((reply.rows[0] as { msg_id: number }).msg_id).toBe(2);
-    } else {
-      throw new Error('expected rows');
-    }
+    if (!('rows' in reply)) throw new Error('expected rows');
+    expect(reply.rows.length).toBe(1);
+    expect((reply.rows[0] as { msg_id: number }).msg_id).toBe(2);
   });
 
   it('a null table returns empty rows, never throws', async () => {
