@@ -80,10 +80,10 @@ flowchart TD
 <div class="caption">Borg spans Proving + Reflecting (same eye, two focal lengths). Three domain layers — observability / operations / infrastructure — over the 13 domains. Each step has its own value stream. Full model: <a href="chorus-product-domain-hierarchy.html">chorus-product-domain-hierarchy.html</a>.</div>
 
 <h2>5 · The model (OWL + SHACL)</h2>
-<p>The monitor/alert domains, the six monitor types as <code>Monitor</code> subclasses, and the <code>Service/Signal/Alert/SLO</code> classes are defined in <a href="ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> and seated in the value-stream spine (<a href="borg-value-stream-design.html">value-stream-design §3</a>). Source of record, not re-asserted here. The <strong>coherence delta</strong> (declared model vs observed behavior) is itself a first-class modeled thing — it's what most Borg pages render.</p>
+<p>The monitor/alert domains, the six monitor types as <code>Monitor</code> subclasses, and the <code>Service/Signal/Alert/SLO</code> classes are defined in <a href="../../roles/silas/adr/ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> and seated in the value-stream spine (<a href="borg-value-stream-design.html">value-stream-design §3</a>). Source of record, not re-asserted here. The <strong>coherence delta</strong> (declared model vs observed behavior) is itself a first-class modeled thing — it's what most Borg pages render.</p>
 
 <h2>6 · Pages &amp; Flow — the UX of the model</h2>
-<div class="frame">Every Borg page <strong>renders data from MCP the same way a role does (AX=JX)</strong> — no bespoke fetches — and conforms to the <strong>#3415 design system</strong> (system.css; never a one-off page). Entry is through the system drawing, not a standalone dashboard.</div>
+<div class="frame">Every Borg page is a <strong>generated page — the #3351 domain-page pattern, not a bespoke dashboard</strong>: a static shell projected by owl-api, the client fetching the <strong>generated HTTP routes</strong> (owl-api :3360 / chorus-api same-origin) and conforming to the <strong>#3415 design system</strong> (system.css; never a one-off page). <strong>AX=JX means the agent and the human read the same model</strong> — the agent via the borg MCP tools, the page via that model's generated HTTP surface — <em>not</em> that the browser fetches MCP (MCP is the agent tool-protocol; a browser can't speak it). Explicitly <strong>generated, not hand-built</strong> — the scattered hand-built dashboards are exactly the problem §8 names. Entry is through the system drawing, not a standalone dashboard.</div>
 
 <h3>Entry — the map to the mirror</h3>
 <p>You enter at <code>/chorus</code> — the "Shared Awareness" system drawing (the <em>map</em>: how the system is meant to cohere). The <strong>Spine node → Borg/Proving</strong> click-through opens the <em>mirror</em>: how it actually runs. The gap between map and mirror is the signal.</p>
@@ -92,11 +92,12 @@ flowchart LR
   C["/chorus drawing (the map)"] -->|"Spine to Proving"| L["Borg landing (the verdict)"]
   L --> SW["the seasonal wheel:<br/>plant, tend, read, surface, prune, feed"]
   L --> D["drill: monitor / alert / health,<br/>logs / metrics / fitness"]
-  D --> X["each page renders its class's<br/>data via borg MCP"]
+  D --> X["each page = generated shell +<br/>client-fetch of its class's HTTP route"]
 </pre>
 
 <h3>The landing — a verdict, not a readout</h3>
 <p>Borg opens with a <strong>judgment</strong>, not gauges: <em>"is anything wrong that needs you — and if not, is the system doing its work?"</em> Two states. Either <strong>calm</strong> ("all coherent, nothing needs you — go") or <strong>the one thing</strong> that does, alone, with nothing competing for the eye. You walk into a room and know instantly if it's calm or on fire; if calm, you leave — you don't stand reading gauges. The gauges are one drill down, not the front door. This is the antidote to the 29-warning wall.</p>
+<p><strong>The verdict is computed, not curated.</strong> <code>verdict = f(open alerts by severity, SLO burn-rate, liveness/freshness gaps)</code> → <em>calm</em> when no critical alert is open, no SLO is burning fast, and no monitored thing is silent past its freshness window; otherwise <em>the one thing</em> = the highest-severity unresolved signal. A single generated route computes and serves it (<code>/borg/verdict</code> — the reduction over the monitor/alert/SLO classes), so the front door has one defined data source, not an aggregation improvised in the page.</p>
 
 <h3>The cycle, as a seasonal wheel</h3>
 <p>Not a progress bar (that's Werk's line) — a <strong>wheel</strong>. The borg-reflect cycle (plant→tend→read→surface→prune→feed) renders as the recurring shape it is; the page shows where attention is in the season, what's been surfaced, what's been pruned, what got composted back. The cadence is visible <em>as</em> cadence.</p>
@@ -105,17 +106,19 @@ flowchart LR
 <ul>
   <li><strong>Monitor</strong> — the live signal: which services are alive (liveness), which jobs ran (freshness), saturation gauges, latency SLIs, error/crash-loop, synthetic flows. Each renders the ADR-043 contract.</li>
   <li><strong>Alert</strong> — what's firing / fired, severity, who it routed to (ownership), dedup state. Config-driven; reroute is a data change.</li>
-  <li><strong>Health / Metrics / Fitness</strong> — the aggregate health verdict, the SLO burn, the flow-report (card cycle/step/error fitness) — composed from MCP + the imported-home observation pages.</li>
+  <li><strong>Health / Metrics / Fitness</strong> — the aggregate health verdict, the SLO burn, the flow-report (card cycle/step/error fitness) — composed from the generated HTTP routes (the same model the flow-report MCP reads) + the imported-home observation pages.</li>
 </ul>
 
 <h2>7 · API surface</h2>
+<p>The to-be routes are <strong>generated by owl-api from the monitor/alert/SLO classes</strong>, named after the model the way owl-api names <code>/domains/:name/has-child</code> — concrete route shapes the pages bind to, not prose:</p>
 <table>
-<tr><th>Surface</th><th>Today</th><th>To-be</th></tr>
-<tr><td>health / deep-health</td><td>deep-health.sh cron + /api/chorus/context/health</td><td>typed monitor contract, model-driven</td></tr>
-<tr><td>alerts</td><td>Alertmanager + alert-runner shell rules + /context/alerts</td><td>config/ownership-routed evaluator over the spine</td></tr>
-<tr><td>metrics / saturation</td><td>Prometheus :9090 + exporters</td><td>SLI/SLO surfaces rendered AX=JX</td></tr>
-<tr><td>fitness / flow</td><td>chorus_flow_report MCP</td><td>standing, page-rendered</td></tr>
-<tr><td>liveness</td><td>— (the gap)</td><td><code>service.alive</code> emit + absence-detector (ADR-043 first build)</td></tr>
+<tr><th>Surface</th><th>Today</th><th>To-be (generated route)</th></tr>
+<tr><td>verdict (the landing)</td><td>— (improvised in page)</td><td><code>GET /borg/verdict</code> → {state: calm|one-thing, signal}</td></tr>
+<tr><td>health / deep-health</td><td>deep-health.sh cron + /api/chorus/context/health</td><td><code>GET /services/:name/monitors</code> · typed monitor contract, model-driven</td></tr>
+<tr><td>alerts</td><td>Alertmanager + alert-runner shell rules + /context/alerts</td><td><code>GET /alerts?owner=&amp;severity=</code> · config/ownership-routed evaluator over the spine</td></tr>
+<tr><td>metrics / saturation</td><td>Prometheus :9090 + exporters</td><td><code>GET /slo/:name/burn</code> · SLI/SLO surfaces; agent reads the same model via MCP</td></tr>
+<tr><td>fitness / flow</td><td>chorus_flow_report MCP</td><td><code>GET /borg/flow</code> · standing, page-rendered (MCP and route share the model)</td></tr>
+<tr><td>liveness</td><td>— (the gap)</td><td><code>service.alive</code> emit + absence-detector → <code>GET /services/:name/liveness</code> (ADR-043 first build)</td></tr>
 </table>
 
 <h2>8 · As-Is / To-Be / Path to close</h2>
@@ -142,7 +145,7 @@ flowchart LR
 <ul>
   <li><a href="borg-value-stream-design.html">borg-value-stream-design.html</a> — the spine that drives this</li>
   <li><a href="athena-product-design.html">athena-product-design.html</a> — the mirror-this instance</li>
-  <li><a href="ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> · <a href="borg-service-design.html">observability/borg service designs</a></li>
+  <li><a href="../../roles/silas/adr/ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> · <a href="borg-service-design.md">observability/borg service designs</a></li>
   <li>card #3418 (conversation capture: cycle, garden, MAPE-K+permaculture, map↔mirror, verdict-not-readout) · #3415 (design system) · #3361 (chorus-pages re-home incl. standards-surface)</li>
 </ul>
 
