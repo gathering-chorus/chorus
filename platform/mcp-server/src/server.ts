@@ -793,12 +793,12 @@ async function executePrioritiesReadout(
     'JOIN buckets b ON b.id = tb.bucket_id AND b.project_view_id = 8 ' +
     "WHERE b.title NOT IN ('Done', 'Won''t Do') " +
     'ORDER BY t."index"';
-  let rows: ReadoutRow[] = [];
+  let rows: ReadoutRow[]; // assigned in try; catch throws before any read
   try {
     const { stdout } = await execFileAsync('sqlite3', ['-json', db, sql], { timeout: 10_000 });
     rows = stdout.trim() ? (JSON.parse(stdout) as ReadoutRow[]) : [];
   } catch (err) {
-    throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`);
+    throw new Error(`priorities-readout: board read failed — ${(err as Error).message}`, { cause: err });
   }
   const readout = groupPrioritiesReadout(rows);
   // #3268 — role filter (PRIMARY mode): just that role's chunks + its own proving
@@ -1381,7 +1381,7 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
   return (role: 'kade' | 'wren' | 'silas'): string => {
     // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
     const werkBase = path.join(path.dirname(canonicalRoot), CHORUS_WERK);
-    let matches: string[] = [];
+    let matches: string[]; // assigned in try; catch returns before any read
     try {
       matches = fs.readdirSync(werkBase, { withFileTypes: true })
         // #3038: card werks only — `<role>-<digits>`. The per-role binary slot
@@ -1785,12 +1785,21 @@ export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic:
   return true;
 }
 
+// #3429 — safe stringify for unknown field values (no [object Object] from
+// String() coercion; satisfies @typescript-eslint/no-base-to-string).
+function fieldStr(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return JSON.stringify(v);
+}
+
 async function notifySilasOfMcpError(event: string, fields: Record<string, unknown>): Promise<void> {
-  const tool = String(fields['tool'] ?? '');
-  const errorType = String(fields['error_type'] ?? fields['kind'] ?? '');
-  const errorMessage = String(fields['error_message'] ?? '');
-  const traceId = String(fields['trace_id'] ?? '');
-  const cardId = String(fields['card_id'] ?? fields['card'] ?? '');
+  const tool = fieldStr(fields['tool']);
+  const errorType = fieldStr(fields['error_type'] ?? fields['kind']);
+  const errorMessage = fieldStr(fields['error_message']);
+  const traceId = fieldStr(fields['trace_id']);
+  const cardId = fieldStr(fields['card_id'] ?? fields['card']);
   // #3022 + #3335: only unexpected/systemic failures notify ops. Caller-side validation/
   // refusals (their own bad call, already returned to them) AND synthetic/test traffic
   // (CHORUS_SYNTHETIC=1 or a synthetic card-id) are suppressed from the NUDGE — the spine
@@ -2149,7 +2158,7 @@ async function executeNudge(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logEvent('error', 'mcp.nudge.failed', { from, to, trace_id: traceId, error: errMsg });
-    throw new Error(`nudge delivery failed: ${errMsg}`);
+    throw new Error(`nudge delivery failed: ${errMsg}`, { cause: err });
   }
 }
 
@@ -2199,7 +2208,7 @@ async function execCardsCli(
       ? `cards ${verb} timed out and was killed (exec timeout) — API slow/blocked? (#3347)${outTail ? ` | output tail: ${outTail}` : ''}`
       : `${err instanceof Error ? err.message : String(err)}${outTail ? ` | output tail: ${outTail}` : ''}`;
     logEvent('error', `mcp.cards.${verb}.failed`, { from, error: errMsg.slice(0, 500) });
-    throw new Error(`${toolName} failed: ${errMsg}`);
+    throw new Error(`${toolName} failed: ${errMsg}`, { cause: err });
   }
 }
 
@@ -2500,7 +2509,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return { content: [{ type: 'text' as const, text: stdout }] };
         } catch (err) {
           const e = err as { message?: string; stderr?: string };
-          throw new Error(`flow-report-fail — ${e.stderr || e.message || 'unknown'}`);
+          throw new Error(`flow-report-fail — ${e.stderr || e.message || 'unknown'}`, { cause: err });
         }
       }
       case 'chorus_werk': {
@@ -2714,7 +2723,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
-        try {
+        {
+          // executeDesignRefresh emits design.refresh.failed itself on typed
+          // refusal; errors propagate so the MCP surface returns an error response.
           const fs = require('fs') as typeof import('fs');
           const path = require('path') as typeof import('path');
           const repoRoot = resolveWorkingTree(parsed.data.role);
@@ -2729,10 +2740,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],
           };
-        } catch (err) {
-          // executeDesignRefresh emits design.refresh.failed itself on typed
-          // refusal; rethrow so the MCP surface returns an error response.
-          throw err;
         }
       }
       case 'chorus_doc_catalog_add': {
@@ -2915,7 +2922,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       // envelope (isError: true) without throwing. Treat the same as a throw
       // for spine-emit purposes.
       const r = result as { isError?: boolean; content?: Array<{ type: string; text: string }> };
-      if (r && r.isError === true) {
+      if (r.isError === true) {
         const msg = r.content?.[0]?.text ?? 'isError response without content';
         await appendChorusLog('mcp.tool.error', from, {
           tool: errorToolName,

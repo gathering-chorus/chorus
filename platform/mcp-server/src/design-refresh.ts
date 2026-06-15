@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-unsafe-regex, security/detect-non-literal-regexp -- #3429: regexes built from internal, fixed design-doc patterns (not untrusted input); security flags are false positives on this internal tooling */
 // #2900 — chorus_design_refresh MCP execute function.
 //
 // Reads a service-design HTML, validates it against the canonical template

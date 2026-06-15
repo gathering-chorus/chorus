@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- #3429: reads session-registry files from a fixed internal dir (CHORUS_HOME/.sessions), filenames enumerated by readdir of that dir — not untrusted input */
 /**
  * #3125 — session registry (read/resolve side).
  *

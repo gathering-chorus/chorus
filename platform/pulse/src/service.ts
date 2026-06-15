@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- #3429: appendFile target is a fixed internal log path derived from CHORUS_HOME, not untrusted input */
 /**
  * Messaging Tier Service — REST API for persistent messaging (#1755)
  *

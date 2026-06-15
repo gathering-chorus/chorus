@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- #3429: object indexing is over internally-derived keys (Loki field names from typed config), not untrusted input */
 // #2840 — typed agent surface for log + error investigation. Wraps Loki HTTP
 // API at localhost:3102 with structured input + structured output + a typed
 // refusal taxonomy. Earns its keep on top of #2857's trace_id + card_id

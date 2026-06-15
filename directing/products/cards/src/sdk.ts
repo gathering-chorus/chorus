@@ -1,4 +1,7 @@
-/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection, security/detect-unsafe-regex, security/detect-non-literal-regexp --
+ * #3429: the regexes here are built from internally-derived patterns (validation
+ * rules over typed enum values), never untrusted input — the unsafe-regex /
+ * non-literal-regexp flags are false positives on this local CLI library.
  * fs paths in this CLI SDK are constructed from server-controlled defaults
  * (DEFAULT_SNAPSHOT_DIR, DEFAULT_WORKFLOWS_*, DEFAULT_BRIEF_DIRS) with optional
  * test-only overrides via __setTestPaths. Object indexing is on internally-derived
@@ -568,7 +571,7 @@ async function fetchSubdomainSet(): Promise<Set<string>> {
   } catch (err) {
     // If Athena is unreachable at validation time, fail closed: refuse-at-source
     // means we'd rather block the add than let an unvalidated subdomain land.
-    throw new Error(`subdomain validation requires Athena (localhost:3340/api/athena/subdomains): ${err instanceof Error ? err.message : err}`);
+    throw new Error(`subdomain validation requires Athena (localhost:3340/api/athena/subdomains): ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
 }
 
