@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Borg — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  .fork { background: #fee2e2; padding: 12px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #dc2626; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #dcfce7; color: #166534; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .silas { background: #dbeafe; color: #1e40af; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .role { background: #f3e8ff; color: #6b21a8; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Borg — Value-Stream Design <span>— the Reflecting-step instance (Borg spans Proving + Reflecting)</span></h1>
+<div class="date">Silas · 2026-06-14 · INSTANCE of <code>value-stream-template.html</code> (read that for the generic pattern) · generates <code>borg-product-design.html</code> · Reflecting step (Borg spans Proving too) · DRAFT (HTML, reworkable)</div>
+
+<div class="frame">
+<strong>Scope.</strong> This is Borg's value stream — <em>one instance</em> of the <a href="value-stream-template.html">api-driven value-stream template</a>, the sibling of <a href="athena-value-stream-design.html">athena-value-stream-design</a> and the werk instance (#3413). The generic structure (ordered steps, generative cascade, AX=JX, the structural shapes) lives in the template; this doc is <strong>borg-specific only</strong> — its cycle, its engine, the domains it supports, who owns what, how it lands first. Domain model of record: Athena <code>tree.json</code> (Borg's full 12-domain set); <a href="ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> refines one of those domains (<code>alerts-monitors</code> → <code>monitor</code> + <code>alert</code>, the six monitor types, the push/pull contract).
+</div>
+
+<div class="fork">
+<strong>Resolved — what was a fork is now two steps, and Borg spans both.</strong> The top-level Chorus stream gained a sixth step: <strong>Proving</strong> (per-<strong>card</strong> proof — <code>present → gather → verdict → accept</code>, synchronous, <em>terminates at accept</em>) and <strong>Reflecting</strong> (the system's <strong>continuous self-reflection</strong> — health, alerts, logs, metrics, security — which never terminates and <strong>loops back to Shaping</strong>, closing the line into a cycle). <strong>Borg spans both</strong> — <em>same eye, two focal lengths</em>: it proves each change AND reflects on the running system. <strong>This doc models Reflecting</strong> — Borg's continuous stream (plant→…→feed). The per-card Proving ceremony is Werk's <code>werk-demo</code> tooling carrying Borg's <code>gate-arch</code>/<code>gate-ops</code> judgment; <a href="borg-product-design.html">the product-design</a> covers the spanning whole.
+</div>
+
+<div class="caveat"><strong>⚠ As-is vs to-be.</strong> This is a DESIGN doc — it describes the <strong>to-be</strong> Borg model. The model-of-record (Athena <code>tree.json</code>) <strong>today</strong> carries: 5 value-stream steps (Borg <code>atStep</code> <strong>Proving</strong> only), a <strong>flat 12-domain</strong> set, <code>alerts-monitors</code> unsplit, <code>heralds</code> = "notification delivery." The deltas this design lands — asserted below as to-be, NOT current — are: (1) the <strong>Reflecting</strong> step + Borg spans Proving+Reflecting; (2) ADR-043's <strong>monitor/alert split</strong> → 13; (3) the <strong>observability/operations/infrastructure</strong> layer grouping; (4) <code>heralds</code> broadened to <strong>the xray</strong> + crawler-as-service. Where the text below says "model of record" / "spans" / "13 in 3 layers," read it as the to-be these deltas produce.</div>
+
+<h2>1 · The borg-* cycle</h2>
+<p>Werk is a <strong>line</strong>: <code>commit→…→accept</code>, and it ends. Borg is a <strong>loop</strong>: it tends a living system that never graduates. The steps are the gardener's, not the builder's — you don't <em>build</em> the plant (that's Werk/sowing), you <em>watch and tend</em> it, and the system's own feedback tells you what's wrong. The skeleton is <strong>MAPE-K</strong> (the canonical autonomic self-managing loop); the soul is <strong>permaculture</strong> (tending a living system, the homeostasis/Ashby lineage) — which is why Borg <em>reflects</em>, it does not assimilate-itself.</p>
+<table>
+<tr><th>Step</th><th>What it does</th><th>Tech / principle anchor</th><th>Owner</th></tr>
+<tr><td><span class="verb">plant</span></td><td>Declare what to watch — a monitor, a probe, an SLO — on a service/surface (from the model, not hand-wired)</td><td>MAPE-K <em>Monitor</em> · PC "observe &amp; interact"</td><td><span class="silas">Silas</span></td></tr>
+<tr><td><span class="verb">tend</span></td><td>The steady watch — the alive-emit, the scrape, the spine ingest. The standing care, always on.</td><td>the emit/pull substrate</td><td><span class="silas">Silas</span></td></tr>
+<tr><td><span class="verb">read</span></td><td>Interpret signal against the model — the coherence delta between the map (declared) and the mirror (running)</td><td>MAPE-K <em>Analyze</em></td><td><span class="silas">Silas</span></td></tr>
+<tr><td><span class="verb">surface</span> ⭐</td><td>Route the <em>verdict</em> to the owner — reflect, don't act. Calm, or the one thing that needs a human.</td><td>MAPE-K <em>Plan</em> → owner acts</td><td><span class="silas">Silas → owner</span></td></tr>
+<tr><td><span class="verb">prune</span></td><td>The owner cuts what's diverging — fixes/retunes/retires. <strong>The role prunes; Borg does not.</strong></td><td>the reflect-not-act boundary</td><td><span class="role">owning role</span></td></tr>
+<tr><td><span class="verb">feed</span></td><td>Compost the learning back into the knowledge base — next cycle starts richer (postmortem → model)</td><td>MAPE-K <em>Knowledge</em> · PC "produce no waste"</td><td><span class="silas">Silas</span></td></tr>
+</table>
+<p>…and around again, by season. <strong>The cadence is the product</strong>, not a finish line. The <strong>Reflecting</strong> step <code>hasValueStream</code> this cycle (name matches the step; the template's fractal recursion); orchestrated by a <code>chorus_borg</code> reflection loop (the <code>chorus_werk</code> / <code>chorus_athena</code> analog). The sibling <strong>Proving</strong> step <code>hasValueStream</code> the per-card ceremony (present→gather→verdict→accept); Borg spans both.</p>
+<div class="caveat"><strong>Three modes, one root — one shared first step.</strong> The borg corpus names three: <em>reflect</em> (observe <a href="GOOD_BORG.html">itself</a> — this doc), <em>assimilate</em> (extract a legacy system's knowledge to ICD and regenerate — <a href="BORG_ASSIMILATION_PATTERN.html">the assimilation pattern</a>), <em>mitose</em> (reproduce the team across products — <a href="borg-mitosis.html">borg-mitosis</a>). They are <strong>not disjoint</strong>: each begins with the <strong>herald / xray</strong> (assimilation's Phase 1 OBSERVE <em>is</em> the Silver Surfer) — a system is seen <em>into the graph</em> first; only then does the mode diverge (reflect Surfaces, assimilate Regenerates, mitose reproduces). This doc models <em>reflect</em>, but the herald it shares is the front door to all three. Self-reflection stays observe-only (Surface; the role Prunes); assimilation is where Borg acts on the outside.</div>
+
+<h2>2 · borg-reflect — the engine</h2>
+<p><code>borg-reflect</code> is the heart, the way <code>build/deploy</code> are werk's and <code>forge</code> is athena's. It is the continuous monitor→alert loop run <em>over the model</em>: every service/surface declared in the model is reflectable through the same contract, so adding a thing to watch is a <em>model</em> act, not a new bespoke probe (the #3405 lesson — a probe that lies is a probe hand-wired apart from the model). It runs on the substrate that already exists.</p>
+<pre class="mermaid">
+flowchart LR
+  M["plant — monitor / SLO, declared in model"] --> T["tend — emit / scrape"]
+  T --> S["spine + Prometheus (the signal substrate)"]
+  S --> R["read — evaluate vs model (map vs mirror delta)"]
+  R --> U["surface — route verdict to owner by ownership"]
+  U --> P["owner prunes"]
+  P --> F["feed — learning into knowledge"]
+  F -.->|"next season"| M
+</pre>
+<div class="caption">borg-reflect — the autonomic loop, model-driven, reflect-not-act. The owner (not Borg) prunes; the loop closes by feeding the learning back.</div>
+<ul>
+  <li><strong>Substrate, not new tools:</strong> the spine (events: liveness/freshness/latency/errors) + Prometheus (gauges: saturation) + Alertmanager (evaluation/routing) + Loki (logs) already run. Borg-reflect uses them <em>correctly</em> and retires the bespoke probe-and-nudge scripts.</li>
+  <li><strong>Bounded by construction:</strong> the engine's own reads are bounded (the #3406 lesson — the watcher must not be the disease). Borg is the most boring, most reliable code in the system precisely because everything trusts it.</li>
+  <li><strong>Symptom/SLO, not cause-noise:</strong> page on what impacts a role/Jeff; everything else is a surface, not a page (Majors). Silence ≠ healthy — a monitor that stops emitting is itself an absence alert (meta-monitoring; the #3406/#3405 lesson, first-class in the contract).</li>
+</ul>
+
+<h2>3 · Borg's model &amp; the domains it supports</h2>
+<div class="frame">The generic structural classes (Product/Domain/Service/ValueStream shapes) are in the <a href="value-stream-template.html">template §5</a>. This section is the <em>Borg-specific instances</em> — the <strong>full domain set Borg owns</strong> (model of record: Athena <code>tree.json</code>), the <code>monitor</code>/<code>alert</code> refinement (<a href="ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a>), and the observation surface already running. Borg is <strong>not greenfield</strong>: the cycle is described <em>over</em> a running stack.</div>
+
+<p><strong>The full domain set (Athena model of record).</strong> Borg owns <strong>12 domains</strong> today; ADR-043 splits one (<code>alerts-monitors</code>) into two → <strong>13</strong>. An earlier draft named only monitor + alert — that was the active build front, not the model. The whole set, grouped for reading (the model is flat):</p>
+
+<table>
+<tr><th>Domain</th><th>What it reflects</th><th>Face</th></tr>
+<tr><td><code>heralds</code> ⭐</td><td><strong>The xray.</strong> Crosses the boundary between Borg and a system: <em>inbound</em> it discovers structure and feeds the graph (crawlers, <code>discover-*</code>); <em>outbound</em> it announces the verdict (nudge/inject). How Borg <em>sees</em> a thing — and the <strong>first step in applying Borg to a system not yet in the model</strong>.</td><td>sense</td></tr>
+<tr><td><code>monitor</code> <span style="color:#16a34a">(ADR-043)</span></td><td>Watch the <em>health</em> of <em>declared</em> things — liveness / freshness / saturation / latency / errors / synthetic. Known-unknowns (vs heralds' unknown-unknowns).</td><td>sense</td></tr>
+<tr><td><code>logs</code></td><td>Loki aggregation / query — the system's narrated trace.</td><td>sense</td></tr>
+<tr><td><code>metrics</code></td><td>Quantitative health — latency, cost, throughput <span style="color:#999">(exploring)</span>.</td><td>sense</td></tr>
+<tr><td><code>analytics</code></td><td>Behavioral signal — attention, interaction patterns <span style="color:#999">(exploring)</span>.</td><td>sense</td></tr>
+<tr><td><code>alert</code> <span style="color:#16a34a">(ADR-043)</span></td><td>Evaluate signal → severity → route to owner (ownership lookup) → dedup → deliver. Policy in config, not code.</td><td>judge</td></tr>
+<tr><td><code>builds</code></td><td>Artifacts, Rust signing, cdhash provenance.</td><td>substrate</td></tr>
+<tr><td><code>deploys</code></td><td>Deploy records, rollback paths, chorus-deploy.</td><td>substrate</td></tr>
+<tr><td><code>properties</code></td><td>Service config + runtime properties across Library / Bedroom.</td><td>substrate</td></tr>
+<tr><td><code>infrastructure</code></td><td>Hosts, Docker, LaunchAgents — the physical substrate.</td><td>substrate</td></tr>
+<tr><td><code>toolchain</code></td><td>Dev tools + config — Claude Code, Node, Rust, git.</td><td>substrate</td></tr>
+<tr><td><code>time</code></td><td>Scheduling, cron, time-based triggers.</td><td>substrate</td></tr>
+<tr><td><code>security-trust</code></td><td>Authn / authz, secrets, TCC permissions.</td><td>substrate</td></tr>
+</table>
+<div class="caption">12 owned today; <code>monitor</code>+<code>alert</code> are ADR-043's split of <code>alerts-monitors</code> → 13. Grouping (sense / judge / substrate) is for reading only.</div>
+
+<div class="frame" style="border-left-color:#16a34a;background:#dcfce7;">
+<strong>Crawlers ARE heralds — the Silver Surfer (Jeff; team metaphor of record).</strong> The name is deliberate: <em>"heralds, a la Silver Surfer and Galactus."</em> <strong>Galactus = the graph</strong> — it assimilates everything the heralds find into one unified structure (to <em>borg</em> a system = Galactus consuming a world). <strong>The Silver Surfer = the herald</strong> — the crawler / <code>discover-*</code> that flies ahead, scans the terrain of an existing system, and reports back what's there. So the crawler is <em>not</em> a separate Directing-step service outside Borg; it's the <strong>inbound face of <code>heralds</code></strong>, the xray. To bring any system under Borg you first <strong>send the Surfer</strong>: discover its structure, feed Galactus — <em>only then</em> can you <code>plant</code> a monitor on what you found. That makes the xray the <strong>first step in applying Borg to an existing system</strong>, and it's read-only discovery (reads structure, never mutates the target) — so assimilation isn't a mode <em>outside</em> reflect-not-act, it's how a system <em>enters</em> the reflection cycle. Permaculture principle 1, <em>observe &amp; interact</em>, at onboarding depth: survey the site before you garden it.
+<br><br><em>Model actions:</em> (1) re-seat <code>chorus:service-crawler</code> under <code>chorus:domain-heralds</code>; (2) broaden the heralds definition from the tree's narrow "notification delivery" to <strong>"boundary-crossing sense + announce — the xray."</strong>
+</div>
+
+<pre><code># The spine instance + the borg cycle as ValueStreamSteps (greenfield: bare owl:Class today)
+chorus:value-stream-borg a chorus:ValueStream ; chorus:label "Borg (reflection cycle)" .
+#   steps: plant/tend/read/surface/prune/feed — each inStream value-stream-borg, stepOrder 1..6
+#   on-ramp for an existing system: xray (heralds) FIRST — discover into the model — THEN plant.
+# 13 domains partOf product-borg: heralds, monitor, alert, logs, metrics, analytics,
+#   builds, deploys, properties, infrastructure, toolchain, time, security-trust.
+#   (monitor + alert = ADR-043 split of alerts-monitors; service-crawler re-seats under heralds.)
+# Core classes (ADR-043): Service, Monitor, Signal, Alert, SLO + 6 monitor types as Monitor subclasses.
+# The coherence-delta (declared model vs observed behavior) is itself first-class — Borg models the gap.
+</code></pre>
+<div class="caveat"><strong>Greenfield = land first.</strong> ValueStream/ValueStreamStep + the monitor/alert domain instances are bare <code>owl:Class</code> today — referenced, implemented nowhere. No rip-out: author the spine, land it, the legs derive (the template's spine-first rule, applied to the Chorus stream + the Proving→borg recursion). The <em>deployed</em> stack (Prometheus/Grafana/Loki/Alertmanager/exporters/deep-health) is the as-is the model gets fitted to.</div>
+
+<h2>4 · Ownership boundary (Borg)</h2>
+<table>
+<tr><th>Silas — the reflection</th><th>The owning role — the pruning</th></tr>
+<tr><td>The monitor/alert model + contracts (ADR-043), the borg-reflect engine, the signal substrate (spine/Prometheus/Loki/Alertmanager), the SLO/symptom thresholds (config, authored by the domain owner), the observation pages. Borg's own reliability bar (monitor of monitors).</td><td>Acts on the surfaced verdict — fixes the service, retunes, retires. Borg surfaces by <em>ownership lookup</em> (#3407): the alert routes to whoever owns the thing, who then prunes. Borg never prunes for them.</td></tr>
+</table>
+<p>SA seat over both: <a href="borg-product-design.html">borg-product-design</a> (the JX/pages) and the live monitoring (ADR-043 → the liveness build) are <em>the same product</em>, two faces — the pages must render the same model the alerts evaluate. One Borg.</p>
+
+<h2>5 · Sequencing — spine first, legs derive</h2>
+<ol>
+  <li><strong>Author the value-stream spine</strong> — <code>value-stream-borg</code> + the six cycle steps as <code>ValueStreamStep</code>s, and the <code>monitor</code>/<code>alert</code> domains, in the model. Land it (greenfield, no rip-out).</li>
+  <li><strong>borg-reflect leg one = liveness</strong> (ADR-043's first build, Jeff's "alive every N" directive): every persistent daemon emits <code>service.alive</code>; one absence-detector pages the owner after X misses. This is <em>plant→tend→read→surface</em> for one monitor type, proven end-to-end, and it closes the #3406-class gap.</li>
+  <li><strong>Then the legs repeat the contract:</strong> freshness (scheduled jobs) → errors/crash-loop → saturation → latency-SLI → synthetic. Each is one monitor type instanced through the same model→emit→evaluate→route path. The repetition <em>is</em> the rest of Borg.</li>
+  <li><strong>Alert domain as config-driven routing</strong> (#3407 generalized) — recipient = ownership lookup, no code change to reroute.</li>
+  <li><strong>Probe truthfulness</strong> (#3405, landed) folds in — bespoke probes retire as their signals move to the typed contracts.</li>
+</ol>
+
+<h2>6 · Operating-model frames &amp; the two self-observations</h2>
+<p>Borg's cycle isn't invented — it instances three well-trodden frames, each the same loop from a different angle. Borrow their <em>questions</em>, recalibrate their benchmarks to our scale (our constraint is attention/coherence, not deploy frequency):</p>
+<ul>
+  <li><strong>SRE</strong> — <em>how it operates.</em> SLOs + error budgets, alert on symptoms not causes, blameless postmortems, toil reduction = <code>plant→tend→read→surface→prune→feed</code>, one-to-one.</li>
+  <li><strong>DORA</strong> — <em>how we measure it.</em> the four keys (deploy freq, lead time, change-fail rate, restore time) are computable from our own spine/cards/deploy data — fitness on our own telemetry.</li>
+  <li><strong>Team Topologies</strong> — <em>what Borg is.</em> a platform-team product delivered X-as-a-Service to the stream-aligned roles (= AX=JX); Thinnest Viable Platform (reduce cognitive load, never add it); reliability is the contract.</li>
+</ul>
+<div class="caveat"><strong>Two kinds of self-observation — don't conflate them.</strong> <strong>Runtime health</strong> (monitor/alert/logs/metrics) asks <em>is it running well?</em> <strong>Structural coherence</strong> (the <strong>crawler</strong> / heralds — the xray) asks <em>is it structured clearly; does the map match the territory?</em> The crawler is the deeper one for a system-for-building-systems: coherence has two halves — the model is well-<em>formed</em> (SHACL/gates) AND <em>true</em> to the system; the crawler is the <em>true</em> half, and without it a well-formed model is a beautiful lie. Because mitosis copies the model forward into every system Chorus builds, <strong>model coherence is germ-line integrity</strong> — a drifted core breeds drifted offspring.</div>
+
+<h2>7 · References</h2>
+<ul>
+  <li><a href="value-stream-template.html">value-stream-template.html</a> — the generic api-driven pattern (the shape this instances)</li>
+  <li><a href="athena-value-stream-design.html">athena-value-stream-design.html</a> + werk instance (#3413) — sibling instances</li>
+  <li><a href="ADR-043-monitoring-and-alerting-two-domains.md">ADR-043</a> — monitor + alert, two domains, six monitor types, push/pull contract (the domain model of record)</li>
+  <li><a href="borg-service-design.md">borg-service-design.md</a> · <a href="cybernetic-systems-chorus.html">cybernetic-systems-chorus.html</a> · <a href="observability-service-design.html">observability-service-design.html</a> — Borg identity, the cybernetic/Ashby grounding, the as-is observability stack</li>
+  <li><strong>The borg corpus — three modes, one root:</strong> <a href="GOOD_BORG.html">GOOD_BORG.html</a> (reflect — convergence/instrumentation/self-awareness, the seven practices) · <a href="BORG_ASSIMILATION_PATTERN.html">BORG_ASSIMILATION_PATTERN.html</a> (assimilate — OBSERVE→ASSIMILATE→ADAPT→REGENERATE; Phase 1 OBSERVE = the herald/Silver Surfer/xray) · <a href="borg-mitosis.html">borg-mitosis.html</a> (mitose — Chorus reproduces across products)</li>
+  <li>Metaphor of record: <em>"heralds, a la Silver Surfer and Galactus"</em> (Jeff) — Galactus = the graph that assimilates; the Silver Surfer = the herald/crawler/<code>discover-*</code> that finds worlds and reports back</li>
+  <li>Conversation capture: card #3418 (the plant/tend/prune/feed framing, MAPE-K skeleton + permaculture soul, map↔mirror, verdict-not-readout, the herald=crawler=xray synthesis)</li>
+</ul>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · IRI <code>chorus:doc-borg-value-stream-design</code> · atStep Proving + Reflecting (to-be; today atStep Proving) · owner Silas · 13 domains (to-be; model-of-record today = flat 12, alerts-monitors unsplit) ·
+generates <code>borg-product-design.html</code>. DRAFT — HTML, reworkable. Fork RESOLVED: Proving (per-card) + Reflecting (continuous loop-back) are two steps; Borg spans both.
+</div>
+
+</body>
+</html>

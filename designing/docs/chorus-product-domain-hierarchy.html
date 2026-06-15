@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Borg — Product Model (instanced through Athena's 4 primitives)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #d97706; font-weight: normal; font-size: 0.58em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; color: #555; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  ul { margin: 8px 0 12px 22px; font-size: 0.86em; }
+  li { margin-bottom: 4px; }
+  .frame { background: #fef3c7; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.9em; }
+  .athena { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .open { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.86em; }
+  pre.mermaid { background: #fff; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  pre.mermaid foreignObject div, pre.mermaid foreignObject span, pre.mermaid foreignObject p,
+  pre.mermaid text, pre.mermaid text tspan, pre.mermaid .nodeLabel, pre.mermaid .label { color: #000 !important; fill: #000 !important; font-family: Georgia, serif !important; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #fef3c7; color: #92400e; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { nodeSpacing: 22, rankSpacing: 40 } });
+</script>
+</head>
+<body>
+
+<h1>Borg <span>— Product Model, instanced through Athena's four primitives</span></h1>
+<p class="date">Silas · 2026-06-14 · Borg-level and below · the <strong>to-be</strong> model (Athena's 4 primitives applied; deltas vs today's <code>tree.json</code> in §5) · drives <a href="borg-product-design.html">borg-product-design</a> + <a href="borg-value-stream-design.html">borg-value-stream-design</a> · #3418</p>
+
+<div class="frame">
+<strong>Scope.</strong> Athena holds the <em>modeling layer</em>; Borg is one product modeled <em>with</em> it. This doc stays at <strong>Borg-level and below</strong> and shows Borg reflecting <strong>every</strong> relationship the model supports: sub-product, domain, sub-domain, service, and value-stream.
+</div>
+
+<div class="open"><strong>⚠ As-is vs to-be.</strong> The diagrams below show the <strong>to-be</strong> Borg model — spanning Proving+Reflecting, the 3-layer (observability/operations/infrastructure) grouping, <code>heralds hasService crawler</code>. The model-of-record (<code>tree.json</code>) <strong>today</strong> is flatter: 5 steps (Borg <code>atStep</code> Proving), a flat 12-domain set, <code>alerts-monitors</code> unsplit, no intermediate layers. The gap is the explicit <strong>deltas-to-land</strong> in §5 — read the structure here as the target, not the current graph.</div>
+
+<h2>1 · The lens — Athena's four core domains</h2>
+<div class="athena">
+The four primitives that model the whole system are <strong>Athena's</strong> core domains (Wren's lane): <strong>Product · Domain · Service · ValueStream</strong>. Three of the containment edges are <em>recursive self-edges</em> (a Product holds Products, a Domain holds Domains, a ValueStream holds Steps). Borg uses these — it does not define them.
+</div>
+<pre class="mermaid">
+classDiagram
+  direction LR
+  class Product { name; ownedBy; atStep; status }
+  class Domain { name; ownedBy; atStep; status }
+  class Service { name; ownedBy; status }
+  class ValueStream { label }
+  class ValueStreamStep { label; order }
+  Product "1" o-- "0..*" Product : sub-products
+  Product "1" o-- "0..*" Domain : domains
+  Domain  "1" o-- "0..*" Domain : sub-domains
+  Product "1" o-- "0..*" Service : services
+  Domain  "1" o-- "0..*" Service : services
+  Product "1" --> "1" ValueStream : hasValueStream
+  ValueStream "1" o-- "1..*" ValueStreamStep : steps
+  ValueStreamStep "1" --> "0..1" ValueStream : encapsulates child (name = step)
+  Product ..&gt; ValueStreamStep : atStep
+  Service ..&gt; Product : consumed by (cross-cut)
+</pre>
+
+<h2>2 · Where Borg sits (orientation)</h2>
+<p>The top-level Chorus value stream is <strong>six steps</strong> — and <strong>Reflecting closes it into a cycle</strong> (the continuous loop back to Shaping). Borg is the <strong>self-judgment product spanning the last two</strong>: it proves each change (Proving) and reflects on the running system (Reflecting) — same eye, two focal lengths.</p>
+<pre class="mermaid">
+flowchart LR
+  SH["Shaping"] --> DE["Designing"] --> DI["Directing"] --> BU["Building"] --> PR["Proving"] --> RE["Reflecting"]
+  RE -.->|"continuous · feeds new seeds"| SH
+  PR --- BORGSPAN(["Borg — the self-judgment product"])
+  RE --- BORGSPAN
+  classDef step fill:#eef2ff,stroke:#6366f1,color:#000;
+  classDef silas fill:#fef3c7,stroke:#d97706,color:#000;
+  class SH,DE,DI,BU step;
+  class PR,RE,BORGSPAN silas;
+</pre>
+<p>Borg is a <strong>sub-product of Chorus</strong>; siblings collapsed here — the full tree is the graph of record.</p>
+<pre class="mermaid">
+flowchart LR
+  C["Chorus<br/><i>parent product</i>"]
+  C --> sib["Loom · Athena · Convergence<br/>Chorus Service · The Clearing · Werk<br/><i>(sibling sub-products)</i>"]
+  C --> BORG["Borg<br/><i>Proving + Reflecting · Silas</i>"]
+  classDef root fill:#e2e8f0,stroke:#475569,color:#000;
+  classDef dim fill:#f1f5f9,stroke:#94a3b8,color:#000;
+  classDef silas fill:#fef3c7,stroke:#d97706,color:#000;
+  class C root; class sib dim; class BORG silas;
+</pre>
+
+<h2>3 · Borg as a Product — all relationships</h2>
+<p>Borg spans <strong>two steps, and each step is a half of Borg</strong> — <strong>Proving</strong> (the <em>acting</em> half) and <strong>Reflecting</strong> (the <em>watching</em> half). Each step owns <strong>both</strong> its child value-stream <em>and</em> the domains that serve it (via the domain's <code>atStep</code>). The domains are <strong>not peers of the steps</strong>: <code>observability</code> is what Reflecting watches <em>with</em>; <code>operations</code> + <code>infrastructure</code> are how Proving <em>acts</em>.</p>
+<pre class="mermaid">
+flowchart TD
+  BORG["Borg<br/><i>Product · atStep Proving + Reflecting</i>"]
+
+  BORG --> PR["Proving<br/><i>step · the ACTING half · per-card · terminates</i>"]
+  BORG --> RE["Reflecting<br/><i>step · the WATCHING half · continuous · loops</i>"]
+
+  %% ---- Proving = act: its child stream + the domains that act ----
+  PR -->|"hasValueStream"| VSP["present → gather → verdict → accept"]
+  PR -->|"hasDomain · atStep Proving"| OPS["operations<br/><i>Domain</i>"]
+  PR -->|"hasDomain · atStep Proving"| INF["infrastructure<br/><i>Domain</i>"]
+  OPS --> b_dep["deploys"]
+  OPS --> b_bld["builds"]
+  OPS --> b_tim["time"]
+  OPS --> b_sec["security-trust"]
+  INF --> b_inf["infra hosts"]
+  INF --> b_pro["properties"]
+  INF --> b_too["toolchain"]
+
+  %% ---- Reflecting = watch: its child stream + the domain that watches ----
+  RE -->|"hasValueStream"| VSR["plant → tend → read → surface → prune → feed ↺"]
+  RE -->|"hasDomain · atStep Reflecting"| OBS["observability<br/><i>Domain</i>"]
+  OBS --> b_her["heralds<br/><i>the xray</i>"]
+  OBS --> b_mon["monitor"]
+  OBS --> b_alt["alert"]
+  OBS --> b_log["logs"]
+  OBS --> b_met["metrics"]
+  OBS --> b_ana["analytics"]
+
+  %% ---- a Domain has a Service, consumed cross-product ----
+  b_her -->|"hasService"| CRAWL["crawler<br/><i>Service</i>"]
+  CRAWL -.->|"consumed by"| EXT["Loom · Chorus Service<br/><i>(other products)</i>"]
+
+  classDef silas fill:#fef3c7,stroke:#d97706,color:#000;
+  classDef step fill:#c7d2fe,stroke:#4338ca,color:#000;
+  classDef vs fill:#dcfce7,stroke:#16a34a,color:#000;
+  classDef layer fill:#fde68a,stroke:#b45309,color:#000;
+  classDef svc fill:#fae8ff,stroke:#a21caf,color:#000;
+  classDef dom fill:#f8fafc,stroke:#94a3b8,color:#000;
+  classDef ext fill:#eef2ff,stroke:#6366f1,color:#000;
+
+  class BORG silas;
+  class PR,RE step;
+  class VSP,VSR vs;
+  class OBS,OPS,INF layer;
+  class CRAWL svc;
+  class EXT ext;
+  class b_her,b_mon,b_alt,b_log,b_met,b_ana,b_dep,b_bld,b_tim,b_sec,b_inf,b_pro,b_too dom;
+</pre>
+
+<h3>The relationships, named</h3>
+<table>
+<tr><th>Athena primitive</th><th>Borg instantiation</th></tr>
+<tr><td>Product → sub-product</td><td>Chorus ⊃ <strong>Borg</strong> (Borg has no sub-products today — it's a leaf product)</td></tr>
+<tr><td>Product → ValueStream (<code>hasValueStream</code>)</td><td>Borg spans <strong>two</strong> — <strong>Proving</strong> (present→gather→verdict→accept, per-card, terminates) and <strong>Reflecting</strong> (plant→tend→read→surface→prune→feed, continuous, loops). Same eye, two focal lengths. Each stream's name matches its step.</td></tr>
+<tr><td>Product → atStep (ValueStreamStep)</td><td>Borg <code>atStep</code> <strong>Proving + Reflecting</strong> — the self-judgment product spans the last two steps of the top-level stream</td></tr>
+<tr><td>Product → Domain (<code>hasDomain</code>)</td><td>Borg ⊃ <strong>observability · operations · infrastructure</strong></td></tr>
+<tr><td>Domain → sub-domain (<code>hasChild</code>)</td><td>observability ⊃ heralds/monitor/alert/logs/metrics/analytics · operations ⊃ deploys/builds/time/security-trust · infrastructure ⊃ hosts/properties/toolchain</td></tr>
+<tr><td>Domain → Service (<code>hasService</code>)</td><td>heralds ⊃ <strong>crawler</strong> (the xray's inbound engine)</td></tr>
+<tr><td>Service → consumed by (cross-cut)</td><td>crawler consumed by <strong>Loom + Chorus Service</strong> — containment ≠ dependency</td></tr>
+</table>
+
+<h2>4 · The org reading — agents are ARTs, domains are teams</h2>
+<div class="frame">
+The same recursive tree, read as an <strong>organization</strong>: the level-stack is <strong>harness → agents (ARTs) → domains (stream-aligned teams) → sub-domains/services</strong>. Chorus <em>is</em> the harness, productized — the platform every agent runs on and builds with. Each agent is an <strong>Agile Release Train</strong> (a team-of-teams); its <strong>domains are the stream-aligned teams</strong> riding it (Silas's train runs Borg — observability/operations/infrastructure are three teams). And each agent is also a <strong>platform</strong>: it serves its product <strong>X-as-a-Service</strong> to the others (Borg = obs/ops/infra-aaS, Athena = model-aaS, Werk = pipeline-aaS, Clearing = messaging-aaS). Every agent is stream-aligned to its own value <em>and</em> a platform to the rest.
+</div>
+<div class="frame" style="border-left-color:#d97706;background:#fef3c7;">
+<strong>Borg is the asymmetric one.</strong> The other agents are <em>forward</em> ARTs (Shaping→Building — they produce). Borg is the <strong>reflecting loop</strong> — it doesn't run parallel to them, it <strong>wraps</strong> them: it observes the whole system (every other ART's product, the built systems, and itself — monitor-of-monitors) and feeds back. It's the cybernetic governor over the System-1 operational trains; its "service" isn't a capability, it's the org's <strong>self-awareness</strong>. This is why <strong>reflect-not-act is load-bearing for Borg specifically</strong>: a loop that watches everyone must <em>inform, not command</em>, or it becomes a gatekeeper over the autonomous ARTs. Surface; the owning ART prunes.
+</div>
+<p>So Team Topologies (interaction), SAFe-ART (coordination), and SRE/DORA (ops) all apply as <strong>executable structure, not borrowed metaphor</strong> — because the agents <em>are</em> the teams. The TT interaction modes (X-as-a-Service / collaboration / facilitating) are the boundaries we already enforce (domain ownership, nudge-to-cross-domain, gates) — worth making first-class and <strong>versioned</strong>.</p>
+
+<h2>5 · Model deltas to land</h2>
+<div class="open">
+Vs the current flat <code>tree.json</code>: (1) <strong>Athena's domains</strong> become the four primitives <code>Product/Domain/Service/ValueStream</code> — Wren's call (Athena owner). (2) <strong>Borg</strong>: introduce <code>observability/operations/infrastructure</code> as intermediate domains and re-parent the 12 leaves; add <code>monitor</code>+<code>alert</code> (ADR-043, replacing <code>alerts-monitors</code>); add <code>hasService</code> so <code>crawler</code> seats under <code>heralds</code> while staying consumed cross-product; assert <code>Borg hasValueStream borg-reflect</code> with its six steps. These are the SHACL/IRI edits — my lane, reconciled with Wren on the Athena primitives.
+</div>
+
+<p class="footer">Borg product model (the <strong>to-be</strong>: graph-derived from <code>data/athena/tree.json</code> + the §5 deltas applied — not yet all in the graph) · Silas · 2026-06-14 · #3418 · supersedes the whole-tree framing of the 2026-05-14 <code>chorus-product-tree.html</code></p>
+
+</body>
+</html>
