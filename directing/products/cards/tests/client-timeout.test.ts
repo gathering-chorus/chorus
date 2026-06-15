@@ -18,7 +18,7 @@ describe('#3347 client timeout — slow API = fast typed failure', () => {
   let port: number;
   const sockets = new Set<net.Socket>();
 
-  beforeAll((done) => {
+  beforeAll(() => new Promise<void>((resolve) => {
     // Accepts TCP connections and never writes a byte — the worst case that
     // hung the real CLI (connection established, response never comes).
     stallServer = net.createServer((sock) => {
@@ -27,14 +27,14 @@ describe('#3347 client timeout — slow API = fast typed failure', () => {
     });
     stallServer.listen(0, '127.0.0.1', () => {
       port = (stallServer.address() as net.AddressInfo).port;
-      done();
+      resolve();
     });
-  });
+  }));
 
-  afterAll((done) => {
+  afterAll(() => new Promise<void>((resolve) => {
     for (const s of sockets) s.destroy(); // close() waits on live conns otherwise
-    stallServer.close(() => done());
-  });
+    stallServer.close(() => resolve());
+  }));
 
   test('api call against a stalling server rejects within the timeout, not never', async () => {
     process.env.CARDS_API_TIMEOUT_MS = '500';

@@ -247,6 +247,7 @@ const PrinciplesGetInput = z.object({
 const DecisionsGetInput = z.object({
   id: z.string().min(1).describe('Decision id (e.g., dec-2090, adr-026)'),
 });
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool, intentionally retained for future wiring (see ~L2560) (#3429)
 const SubdomainsGetInput = z.object({
   id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
 });
@@ -334,6 +335,7 @@ const DECISIONS_GET_TOOL_DEF = {
   },
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
 const SUBDOMAINS_LIST_TOOL_DEF = {
   name: 'chorus_subdomains_list',
   description:
@@ -345,6 +347,7 @@ const SUBDOMAINS_LIST_TOOL_DEF = {
   },
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
 const SUBDOMAINS_GET_TOOL_DEF = {
   name: 'chorus_subdomains_get',
   description:
@@ -1123,8 +1126,6 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
   },
 } as const;
 
-const CARD_ACCEPTED = 'card.accepted';
-
 // #2840 — typed agent surface for log + error investigation. Earns its keep
 // on top of #2857's trace_id + card_id propagation: agents query by id and
 // the substrate returns the full flow as structured rows, not blobs.
@@ -1338,14 +1339,6 @@ const BLAST_RADIUS_TOOL_DEF = {
   },
 } as const;
 
-const CHORUS_UNPULL_CARD_REFUSED = 'chorus_unpull_card.refused';
-const CARD_UNPULLED = 'card.unpulled';
-const ALREADY_MERGED = 'already-merged';
-// Step-name constants — extracted to satisfy sonarjs/no-duplicate-string (threshold 5).
-const STEP_WERK_CLOSE = 'werk-close';
-const STEP_WERK_PREFLIGHT = 'werk-preflight';
-const STEP_CARDS_MOVE = 'cards-move';
-const STEP_ROLE_STATE = 'role-state';
 // Script / directory name used in path.join across pull, acp, and unpull flows.
 const CHORUS_WERK = 'chorus-werk';
 // Spine event emitted by all three athena query tools.
@@ -1359,9 +1352,6 @@ const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 // (ast-grep across the repo: no calls; only the dead test files #3324 already
 // deleted referenced them).
 
-function extractStderr(err: unknown): string {
-  return (err as { stderr?: string }).stderr ?? (err instanceof Error ? err.message : String(err));
-}
 
 // #2913 — ephemeral-worktree resolver. Replaces the #2750 CHORUS_WERK_ENABLE
 // flag-router. Under the ephemeral model (chorus-werk/<role>-<card>/) there is
@@ -1690,6 +1680,7 @@ async function fetchSubdomainsList(fetchImpl: FetchImpl, apiBase: string): Promi
   return body.data ?? [];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
 async function executeSubdomainsList(
   fetchImpl: FetchImpl,
   apiBase: string,
@@ -1708,6 +1699,7 @@ async function executeSubdomainsList(
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
 async function executeSubdomainsGet(
   args: { id: string },
   fetchImpl: FetchImpl,
@@ -2381,8 +2373,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
    
-  const _fs = require('fs') as typeof import('fs');
-  const fsExists: (p: string) => boolean = deps.fsExists ?? ((p: string) => _fs.existsSync(p));
   const server = new Server(
     {
       name: 'chorus-api',
