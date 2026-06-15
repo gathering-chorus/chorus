@@ -273,7 +273,7 @@ interface SparqlResults { results: { bindings: SparqlRow[] } }
 
 function readBinding(row: SparqlRow, key: string): string {
   // SPARQL SELECT projection names are static (from our own queries), not user input.
-  // eslint-disable-next-line security/detect-object-injection
+  // (object-injection disabled file-wide at top — #3429)
   const v = row[key];
   return v ? v.value : '';
 }

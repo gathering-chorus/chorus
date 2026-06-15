@@ -91,6 +91,7 @@ function plausibleTs(ts: number): boolean {
   return Number.isFinite(ts) && ts >= TS_PLAUSIBLE_MIN && ts <= TS_PLAUSIBLE_MAX;
 }
 
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity, max-lines-per-function -- cohesive single-pass per-card flow aggregation (step timings + verdicts in one walk); genuine decomposition is its own card, not a metric-chase (#3429)
 export function aggregateFlow(events: FlowEvent[]): FlowReport {
   const byCard = new Map<number, FlowEvent[]>();
   for (const e of events) {

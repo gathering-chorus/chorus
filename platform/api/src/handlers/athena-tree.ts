@@ -148,6 +148,7 @@ export function lookupOwnership(tree: Tree, iri: string): OwnershipResult | null
  * never silently attributed). The result shape is 1:N + source from day one so
  * phase 2 drops in with no migration (the forward-compat lock).
  */
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- cohesive longest-prefix file→domain/instance attribution; the branches are one decision, splitting obscures it (#3429)
 export function attributeFile(tree: Tree, filePath: string): FileAttribution {
   const norm = filePath.replace(/^\.?\//, '');
   const underPrefix = (p: string): boolean => {

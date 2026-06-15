@@ -82,6 +82,7 @@ function parseJsonLine(line: string): { module: string; role: string; decision: 
   }
 }
 
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- cohesive single-pass friction tally (per-line role/class/total accumulation); decomposition is its own card, not a metric-chase (#3429)
 export function fetchHookFriction(deps: HookFrictionDeps): FetchResult {
   const now = deps.now ?? Date.now;
   const windowHours = deps.windowHours ?? 12;
