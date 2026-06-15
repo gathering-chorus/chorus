@@ -1,5 +1,5 @@
 // domain-renderer.js — #3420. The shared renderer for the GENERATED Athena domain page
-// (owl-api page_html emits the shell; this fills it). Restyled from domain-detail.js onto
+// (owl-api page_html emits the shell; this fills it). Replaces the retired hand-built domain-detail.js (#3351), onto
 // the #3415 system.css vocabulary. Portable, dependency-free, no chorus runtime dep
 // (sibling of content-actions.js). Data from the EXISTING Athena/chorus-domain endpoints
 // (same-origin) + the owl-api model identity overlay (owner/step/comment).
@@ -21,13 +21,21 @@
   function get(url) { return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
   function unwrap(b, key, alt) { var d = (b && b.data) || b || {}; var v = d[key] || (alt ? d[alt] : null) || []; return Array.isArray(v) ? v : []; }
 
+  // v1-id → v2-name resolution (#3373; pure + exported). Exact match wins; else strip a
+  // -domain/-service suffix onto its v2 home; v1-only ids stay null (never a wrong match).
+  function resolveV2(id, names) {
+    if (!id || !names) return null;
+    if (names.indexOf(id) !== -1) return id;
+    var stripped = id.replace(/-(domain|service)$/, '');
+    return names.indexOf(stripped) !== -1 ? stripped : null;
+  }
+
   // ---- identity overlay (#3373, non-fatal) ----
   function overlayIdentity(d) {
     return get(OWL + '/domains').then(function (list) {
       if (!list) return;
       var names = (list.items || []).map(function (x) { return x.name; });
-      var stripped = id.replace(/-(domain|service)$/, '');
-      var v2 = names.indexOf(id) !== -1 ? id : (names.indexOf(stripped) !== -1 ? stripped : null);
+      var v2 = resolveV2(id, names);
       if (!v2) return;
       return get(OWL + '/domains/' + encodeURIComponent(v2)).then(function (g) {
         if (g) {
@@ -37,7 +45,11 @@
           var sb = $('stats-bar'); if (sb) sb.setAttribute('data-identity-source', 'generated-api');
         }
         // AC2 upward direction — render the parent Product/SubProduct from the model (non-fatal).
-        return get(OWL + '/domains/' + encodeURIComponent(v2) + '/partof').then(renderPartOf);
+        // #3351 downward structural recursion — render child domains via hasChild (non-fatal).
+        return Promise.all([
+          get(OWL + '/domains/' + encodeURIComponent(v2) + '/partof').then(renderPartOf),
+          get(OWL + '/domains/' + encodeURIComponent(v2) + '/has-child').then(renderHasChild),
+        ]);
       });
     });
   }
@@ -53,6 +65,46 @@
     return '<div class="card"><span class="stat-label" style="margin-right:.5rem">Part of (upward)</span>' + chips + '</div>';
   }
   function renderPartOf(p) { var el = $('partof-block'); if (el) el.innerHTML = partOfHtml((p && p.partof) || []); }
+
+  // ---- downward STRUCTURAL recursion (#3351) — child domains via owl-api /has-child ----
+  // hasChild = structure (domain→domain), NOT contains=content (ADR-041). The clickable
+  // parent→child walk: each child links to its own page, where its own children render.
+  function hasChildHtml(children) {
+    if (!children || !children.length) return '';
+    var chips = children.map(function (n) { return '<a class="badge" href="?id=' + encodeURIComponent(n) + '">' + esc(n) + '</a>'; }).join(' ');
+    return '<div class="card"><span class="stat-label" style="margin-right:.5rem">Children (structural)</span>' + chips + '</div>';
+  }
+  function renderHasChild(p) { var el = $('haschild-block'); if (el) el.innerHTML = hasChildHtml((p && p.hasChild) || []); }
+
+  // ---- the SET / catalog (#3351) — the `domains` meta-domain renders all 34 as a page ----
+  // Clickable rows → each domain's own page. Step/owner/status from the enriched GET /domains list.
+  function catalogHtml(items) {
+    if (!items || !items.length) return '<p class="muted">No domains in the model.</p>';
+    var rows = items.map(function (d) {
+      // owner/step come back as IRI local names (role-silas, value-stream-step-proving) — clean for display.
+      var owner = (d.owner || '').replace(/^role-/, '');
+      var step = (d.step || '').replace(/^value-stream-step-/, '');
+      var rc = ROLE_CLASS[owner.toLowerCase()] || '';
+      return '<tr>' +
+        '<td><a href="?id=' + encodeURIComponent(d.name) + '">' + esc(d.label || d.name) + '</a></td>' +
+        '<td>' + (step ? '<span class="badge">' + esc(step) + '</span>' : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (owner ? '<span class="role ' + rc + '">' + esc(owner) + '</span>' : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (d.status ? esc(d.status) : '<span class="muted">—</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+    return '<div class="card"><h2 style="margin-top:0">Domains (' + items.length + ')</h2>' +
+      '<table class="table"><thead><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>';
+  }
+  function renderCatalog(body) { var el = $('content-sections'); if (el) el.innerHTML = catalogHtml((body && body.items) || []); }
+  // the `domains` meta-domain page: title + the live set, straight from the generated API.
+  function renderCatalogPage() {
+    document.title = 'Domains — Athena';
+    var t = $('domain-title'); if (t) t.textContent = 'Domains';
+    var st = $('domain-subtitle'); if (st) st.textContent = 'The set — every domain in the model';
+    var bc = $('bc-domain'); if (bc) bc.textContent = 'Domains';
+    get(OWL + '/domains').then(renderCatalog);
+  }
 
   function renderIdentity(d, consumers, cards) {
     document.title = (d.label || id) + ' — Athena';
@@ -170,6 +222,8 @@
     id = params.get('id') || params.get('name');
     OWL = location.protocol + '//' + location.hostname + ':' + (window.OWL_PORT || 3360); // model identity (non-fatal)
     if (!id) { $('content-sections').innerHTML = '<div class="callout callout--gap">Add <code>?id=&lt;domain&gt;</code> to the URL.</div>'; return; }
+    // #3351 — the `domains` meta-domain renders THE SET (catalog), not a single domain's facets.
+    if (id === 'domains') { renderCatalogPage(); return; }
     get(ATHENA + '/subdomains/' + encodeURIComponent(id)).then(function (body) {
       if (!body) { $('content-sections').innerHTML = '<div class="callout callout--gap">Could not load <code>' + esc(id) + '</code> from Athena.</div>'; return; }
       var d = body.data || {};
@@ -199,6 +253,6 @@
   // browser: wire on load. node/test: skip (no document) + export the pure builders.
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
+    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, hasChildHtml: hasChildHtml, catalogHtml: catalogHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
   }
 })();

@@ -1,10 +1,9 @@
 /**
- * #3420 — page-level unit coverage for the GENERATED Athena domain page's renderer
+ * #3420/#3351 — page-level unit coverage for the GENERATED Athena domain page's renderer
  * (public/js/domain-renderer.js). The renderer is the bulk of the page's logic
- * (facet rendering, tables, empty states) — it previously had no unit coverage
- * (Jeff caught the gap). The renderer exports its PURE builders for node; we assert
- * they produce the right #3415 system.css structure from mock endpoint data, with
- * honest empty states and NO bespoke styling.
+ * (facet rendering, tables, empty states, up/down decomposition). It exports its PURE
+ * builders for node; we assert they produce the right #3415 system.css structure from
+ * mock endpoint data, with honest empty states and NO bespoke styling.
  */
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const R = require('../public/js/domain-renderer.js');
@@ -14,9 +13,10 @@ describe('#3420 domain-renderer — pure builders', () => {
     expect(typeof R.renderFacet).toBe('function');
     expect(typeof R.tableFor).toBe('function');
     expect(typeof R.partOfHtml).toBe('function');
+    expect(typeof R.hasChildHtml).toBe('function');
+    expect(typeof R.catalogHtml).toBe('function');
     expect(Array.isArray(R.FACETS)).toBe(true);
     expect(R.FACETS.length).toBe(17);
-    // every facet declares a key + title + a fetch
     R.FACETS.forEach((f: any) => {
       expect(typeof f.key).toBe('string');
       expect(typeof f.title).toBe('string');
@@ -46,7 +46,7 @@ describe('#3420 domain-renderer — pure builders', () => {
     const h = R.renderFacet(code, { data: { files: [{ path: 'a.ts', type: 'unit' }] } }, {});
     expect(h).toContain('class="card"');
     expect(h).toContain('Code (1)');
-    expect(h).toContain('derived');          // the source label
+    expect(h).toContain('derived');
     expect(h).toContain('<table class="table">');
     expect(h).toContain('a.ts');
   });
@@ -72,21 +72,46 @@ describe('#3420 domain-renderer — pure builders', () => {
     const h = R.renderFacet(deps, { data: { direct: { consumes: [{ id: 'cards-service', label: 'Cards' }], consumedBy: [] }, shared: [] } }, {});
     expect(h).toContain('depends on');
     expect(h).toContain('consumed by');
-    expect(h).toContain('?id=cards-service');   // cross-entity nav link
+    expect(h).toContain('?id=cards-service');
   });
 
   test('partOfHtml renders the upward parent chain as nav chips (AC2)', () => {
     const h = R.partOfHtml(['build-product', 'athena']);
     expect(h).toContain('Part of (upward)');
     expect(h).toContain('class="badge"');
-    expect(h).toContain('?id=build-product');   // navigable upward
+    expect(h).toContain('?id=build-product');
     expect(h).toContain('athena');
   });
 
   test('partOfHtml is honestly empty when there is no parent', () => {
-    // a top-level entity has no upward edge — render nothing, not an empty box
     expect(R.partOfHtml([])).toBe('');
     expect(R.partOfHtml(undefined)).toBe('');
+  });
+
+  test('hasChildHtml renders the downward structural child chain as nav chips (3351)', () => {
+    const h = R.hasChildHtml(['heralds']);
+    expect(h).toContain('Children (structural)');
+    expect(h).toContain('class="badge"');
+    expect(h).toContain('?id=heralds');
+  });
+
+  test('hasChildHtml is honestly empty when there is no child', () => {
+    expect(R.hasChildHtml([])).toBe('');
+    expect(R.hasChildHtml(undefined)).toBe('');
+  });
+
+  test('catalogHtml renders the SET as a clickable table with step/owner/status (3351)', () => {
+    const h = R.catalogHtml([{ name: 'cards-service', label: 'Cards', step: 'Building', owner: 'wren', status: 'live' }]);
+    expect(h).toContain('Domains (1)');
+    expect(h).toContain('<table class="table">');
+    expect(h).toContain('?id=cards-service');
+    expect(h).toContain('Building');
+    expect(h).toContain('role--wren');
+    expect(h).toContain('live');
+  });
+
+  test('catalogHtml is honest when the model has no domains', () => {
+    expect(R.catalogHtml([])).toContain('No domains');
   });
 
   test('builders emit system.css vocabulary, never hardcoded colors', () => {
@@ -95,10 +120,10 @@ describe('#3420 domain-renderer — pure builders', () => {
       R.renderFacet(code, { data: { files: [{ path: 'a.ts', type: 'unit' }] } }, {}) +
       R.tableFor([{ path: 'a.ts', type: 'unit' }], ['path', 'type']) +
       R.statCard('x', 'Owner') +
-      R.partOfHtml(['athena']);
-    // uses the #3415 classes
+      R.partOfHtml(['athena']) +
+      R.hasChildHtml(['heralds']) +
+      R.catalogHtml([{ name: 'x', label: 'X', step: 'Building', owner: 'wren', status: 'live' }]);
     expect(h).toMatch(/class="(card|table|badge|stat|muted)/);
-    // and emits no raw hex colors (those would be off-token / bespoke)
     expect(h).not.toMatch(/#[0-9a-fA-F]{6}/);
   });
 });

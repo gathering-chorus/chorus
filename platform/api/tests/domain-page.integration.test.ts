@@ -13,7 +13,7 @@ afterAll(async () => { await harness.close(); });
 
 describe('#3420 generated domain page — smoke', () => {
   test('GET /domain.html serves the generated shell with the full anatomy', async () => {
-    const res = await fetch(`${harness.baseUrl}/domain.html`);
+    const res = await fetch(`${harness.baseUrl}/athena/domain-detail.html`);
     expect(res.status).toBe(200);
     const html = await res.text();
 
@@ -28,7 +28,7 @@ describe('#3420 generated domain page — smoke', () => {
     // the mount-point anatomy the renderer fills (breadcrumb -> identity -> stats -> part-of -> promise -> completeness -> facets)
     for (const id of [
       'bc-step', 'bc-domain', 'domain-title', 'domain-subtitle',
-      'stats-bar', 'partof-block', 'promise-block', 'completeness-block', 'content-sections',
+      'stats-bar', 'partof-block', 'haschild-block', 'promise-block', 'completeness-block', 'content-sections',
     ]) {
       expect(html).toContain(`id="${id}"`);
     }
@@ -48,10 +48,21 @@ describe('#3420 generated domain page — smoke', () => {
     expect(js).toContain('domain-renderer.js');
     expect(js).toContain('FACETS');
     expect(js).toContain('partOfHtml');   // AC2 upward builder is shipped
+    expect(js).toContain('hasChildHtml');  // #3351 downward structural builder is shipped
   });
 
   test('the system.css design system loads from the same origin', async () => {
     const res = await fetch(`${harness.baseUrl}/css/system.css`);
     expect(res.status).toBe(200);
+  });
+
+  test('#3351 retirement gate — the old hand-built renderer is gone', async () => {
+    // the canonical page now loads the shared generated renderer, not the 76KB hand-built one
+    const page = await (await fetch(`${harness.baseUrl}/athena/domain-detail.html`)).text();
+    expect(page).toContain('/js/domain-renderer.js');
+    expect(page).not.toContain('domain-detail.js');
+    // and the old renderer asset is retired (404), not still served
+    const old = await fetch(`${harness.baseUrl}/athena/domain-detail.js`);
+    expect(old.status).toBe(404);
   });
 });
