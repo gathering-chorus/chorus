@@ -89,6 +89,94 @@ fn find_claude(start_pid: u32) -> Option<(u32, String)> {
     None
 }
 
+/// A parsed peer registration — filename + identity — for the eviction pass (#3439).
+pub struct RegRow {
+    pub file: String,
+    pub role: String,
+    pub pid: u32,
+    pub tty: String,
+}
+
+/// Extract role/pid/tty from a registration JSON line (the `registration_json`
+/// shape). None if any field is missing — a malformed file is skipped, never
+/// evicted blindly. Pure (no fs), so the parse is unit-tested directly.
+pub fn parse_reg(file: &str, json: &str) -> Option<RegRow> {
+    let str_field = |key: &str| -> Option<String> {
+        let pat = format!("\"{}\":\"", key);
+        let start = json.find(&pat)? + pat.len();
+        let rest = &json[start..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_string())
+    };
+    let role = str_field("role")?;
+    let tty = str_field("tty")?;
+    let pidpat = "\"pid\":";
+    let pstart = json.find(pidpat)? + pidpat.len();
+    let prest = &json[pstart..];
+    let pend = prest.find(|c: char| !c.is_ascii_digit()).unwrap_or(prest.len());
+    let pid: u32 = prest[..pend].parse().ok()?;
+    Some(RegRow { file: file.to_string(), role, pid, tty })
+}
+
+/// #3439 AC1 — which existing registrations to evict when (me_role, me_pid, me_tty)
+/// registers: (a) DEAD-pid files — GC of sessions that ended/rebooted without
+/// deregistering; (b) live files on the SAME tty that aren't my own slot — a tty
+/// has exactly one live occupant, so this kills the cross-role collision (one
+/// pid/tty registered under two roles, the 2026-06-15 silas-on-kade's-tty bug).
+/// Pure: liveness is injected so the rule is unit-tested without real pids.
+pub fn evictable<F: Fn(u32) -> bool>(
+    rows: &[RegRow],
+    me_role: &str,
+    me_pid: u32,
+    me_tty: &str,
+    is_alive: F,
+) -> Vec<String> {
+    rows.iter()
+        .filter(|r| !(r.role == me_role && r.pid == me_pid)) // never evict my own slot
+        .filter(|r| !is_alive(r.pid) || r.tty == me_tty) // dead, or claims my tty
+        .map(|r| r.file.clone())
+        .collect()
+}
+
+/// Liveness probe (macOS): a pid is alive if `ps -p <pid>` finds it. Probe
+/// failure → assume alive (never evict on uncertainty — losing a live peer's
+/// registration is worse than leaving a stale one).
+fn pid_alive(pid: u32) -> bool {
+    Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "pid="])
+        .output()
+        .map(|o| !String::from_utf8_lossy(&o.stdout).trim().is_empty())
+        .unwrap_or(true)
+}
+
+/// Prune stale + same-tty-colliding registrations before writing ours (#3439 AC1).
+/// Best-effort: a read/parse failure on any file just skips it.
+fn prune_registry(dir: &std::path::Path, me_role: &str, me_pid: u32, me_tty: &str) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let mut rows = Vec::new();
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let fname = match p.file_name().and_then(|f| f.to_str()) {
+            Some(f) => f.to_string(),
+            None => continue,
+        };
+        if let Ok(json) = std::fs::read_to_string(&p) {
+            if let Some(row) = parse_reg(&fname, &json) {
+                rows.push(row);
+            }
+        }
+    }
+    for file in evictable(&rows, me_role, me_pid, me_tty, pid_alive) {
+        let _ = std::fs::remove_file(dir.join(file));
+    }
+}
+
 /// Capture + write the session registration. Best-effort: any failure returns
 /// silently (registration is an optimization; name-match remains the fallback).
 /// Writes NOTHING to stdout — the SessionStart envelope JSON must stay clean.
@@ -106,6 +194,10 @@ pub fn register(role: &str) {
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
+    // #3439 AC1: GC dead-pid files + evict any sibling on this tty BEFORE writing
+    // ours, so a reused tty / un-deregistered session can't leave a cross-role
+    // collision behind (the 2026-06-15 routing bug).
+    prune_registry(&dir, role, pid, &tty);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -162,5 +254,47 @@ mod tests {
         assert!(j.contains(r#""tty":"/dev/ttys001""#));
         assert!(j.contains(r#""host":"terminal""#));
         assert!(j.contains(r#""registered_at":"1716985200""#));
+    }
+
+    #[test]
+    fn parse_reg_extracts_identity_from_a_registration_line() {
+        let j = registration_json("silas", 62021, "/dev/ttys001", "terminal", 1716985200);
+        let r = parse_reg("silas-62021.json", &j).unwrap();
+        assert_eq!(r.role, "silas");
+        assert_eq!(r.pid, 62021);
+        assert_eq!(r.tty, "/dev/ttys001");
+        assert_eq!(r.file, "silas-62021.json");
+        // malformed → skipped, not panicked
+        assert!(parse_reg("x.json", "{not json}").is_none());
+    }
+
+    #[test]
+    fn evictable_gcs_dead_and_claims_the_tty() {
+        // The exact 2026-06-15 live state: pid 62021/ttys001 registered as BOTH
+        // kade and silas, plus a dead-pid file, plus a healthy peer on another tty.
+        let rows = vec![
+            RegRow { file: "kade-8547.json".into(), role: "kade".into(), pid: 8547, tty: "/dev/ttys001".into() },
+            RegRow { file: "silas-62021.json".into(), role: "silas".into(), pid: 62021, tty: "/dev/ttys001".into() },
+            RegRow { file: "kade-62021.json".into(), role: "kade".into(), pid: 62021, tty: "/dev/ttys001".into() },
+            RegRow { file: "wren-37391.json".into(), role: "wren".into(), pid: 37391, tty: "/dev/ttys006".into() },
+        ];
+        let alive = |pid: u32| pid != 8547; // 8547 dead, rest alive
+        // kade/62021 registers (re-anchoring its own ttys001 slot)
+        let evict = evictable(&rows, "kade", 62021, "/dev/ttys001", alive);
+        assert!(evict.contains(&"kade-8547.json".to_string()), "dead pid is GC'd");
+        assert!(evict.contains(&"silas-62021.json".to_string()), "same-tty cross-role collision is evicted");
+        assert!(!evict.contains(&"kade-62021.json".to_string()), "own slot is never evicted");
+        assert!(!evict.contains(&"wren-37391.json".to_string()), "a live peer on another tty is kept");
+        assert_eq!(evict.len(), 2);
+    }
+
+    #[test]
+    fn evictable_keeps_everything_under_probe_uncertainty() {
+        let rows = vec![
+            RegRow { file: "wren-100.json".into(), role: "wren".into(), pid: 100, tty: "/dev/ttys000".into() },
+        ];
+        // alive=true for all, different tty, not me → nothing to evict
+        let evict = evictable(&rows, "silas", 999, "/dev/ttys009", |_| true);
+        assert!(evict.is_empty());
     }
 }
