@@ -27,7 +27,7 @@ urn:chorus:file:*) are never touched. Low-blast: runs alongside the monolith.
 
 Default DRY-RUN (prints honest coverage). Pass --post to write to Fuseki.
 """
-import json, os, subprocess, hashlib, sys, urllib.request, urllib.parse
+import json, os, subprocess, hashlib, sys, urllib.request, urllib.parse, urllib.error
 from collections import Counter
 
 CHORUS_ROOT = os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus")
@@ -53,7 +53,8 @@ def domain_iri(tree_iri):
 
 def load_rules(tree_path):
     """[(normalized_prefix, domain_iri, domain_label), ...] from hasMapsTo."""
-    d = json.load(open(tree_path))
+    with open(tree_path) as fh:
+        d = json.load(fh)
     rules = []
     for dom in d.get("domains", []):
         diri = domain_iri(dom.get("iri", ""))
@@ -64,7 +65,11 @@ def load_rules(tree_path):
 
 
 def git_files():
-    out = subprocess.check_output(["git", "-C", CHORUS_ROOT, "ls-files"], text=True)
+    try:
+        out = subprocess.check_output(["git", "-C", CHORUS_ROOT, "ls-files"],
+                                      text=True, timeout=60, stderr=subprocess.PIPE)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        raise RuntimeError(f"git ls-files failed in {CHORUS_ROOT}: {e}") from e
     files = []
     for line in out.splitlines():
         f = line.strip()
@@ -97,11 +102,15 @@ def sparql_update(update):
     data = urllib.parse.urlencode({"update": update}).encode()
     req = urllib.request.Request(FUSEKI_UPDATE, data=data,
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.status
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"Fuseki update failed ({FUSEKI_UPDATE}): {e}") from e
 
 
-def post_edges(results, batch=150):
+def edges_from(results):
+    """Flatten attribution results into (domain_iri, file_iri) edges — primary + non-primary."""
     edges = []
     for f, primary, nonprimary in results:
         if primary is None:
@@ -109,16 +118,34 @@ def post_edges(results, batch=150):
         firi = file_iri(f)
         for diri in [primary] + nonprimary:
             edges.append((diri, firi))
-    posted = 0
+    return edges
+
+
+def build_update(chunk):
+    """SPARQL UPDATE for one batch. Idempotent + scoped: a per-file-IRI DELETE
+    (object-scoped, so product->domain `contains` edges — object = chorus:<domain>,
+    never urn:chorus:file:* — are NEVER touched), then INSERT the computed edges."""
+    file_iris = sorted({fi for _, fi in chunk})
+    dels = " ".join(
+        f"DELETE WHERE {{ GRAPH <{GRAPH}> {{ ?d <{NS}contains> <{fi}> }} }};"
+        for fi in file_iris)
+    triples = " ".join(f"<{d}> <{NS}contains> <{f}> ." for d, f in chunk)
+    return f"{dels} INSERT DATA {{ GRAPH <{GRAPH}> {{ {triples} }} }}"
+
+
+def post_edges(results, batch=150):
+    edges = edges_from(results)
+    posted, failed = 0, 0
     for i in range(0, len(edges), batch):
         chunk = edges[i:i + batch]
-        file_iris = sorted({fi for _, fi in chunk})
-        dels = " ".join(
-            f"DELETE WHERE {{ GRAPH <{GRAPH}> {{ ?d <{NS}contains> <{fi}> }} }};"
-            for fi in file_iris)
-        triples = " ".join(f"<{d}> <{NS}contains> <{f}> ." for d, f in chunk)
-        sparql_update(f"{dels} INSERT DATA {{ GRAPH <{GRAPH}> {{ {triples} }} }}")
-        posted += len(chunk)
+        try:
+            sparql_update(build_update(chunk))
+            posted += len(chunk)
+        except RuntimeError as e:
+            failed += len(chunk)
+            print(f"  batch {i // batch} FAILED: {e}")
+    if failed:
+        print(f"WARN: {failed} edges failed to post (continued past the failures)")
     return posted
 
 

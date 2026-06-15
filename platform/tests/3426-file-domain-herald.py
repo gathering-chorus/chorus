@@ -52,5 +52,37 @@ check("only-match wins: platform/foo.ts primary = code",
 res2 = m.attribute(["random/unmapped/thing.txt"], rules)
 check("unmatched file is uncovered (primary None)", res2[0][1] is None)
 
+# 5. build_update — the idempotent + SCOPED write (the runtime phantom-node / clobber risk).
+chunk = [(m.domain_iri("chorus:cards"), "urn:chorus:file:abc123"),
+         (m.domain_iri("chorus:code"),  "urn:chorus:file:abc123")]
+upd = m.build_update(chunk)
+check("build_update DELETE is scoped to the file IRI as OBJECT",
+      "DELETE WHERE" in upd
+      and "?d <https://jeffbridwell.com/chorus#contains> <urn:chorus:file:abc123>" in upd)
+check("build_update never deletes by a domain object (won't clobber product->domain edges)",
+      "#contains> <https://jeffbridwell.com/chorus#" not in upd.split("INSERT DATA")[0])
+check("build_update INSERTs both domain->file edges",
+      "<https://jeffbridwell.com/chorus#cards> <https://jeffbridwell.com/chorus#contains> <urn:chorus:file:abc123>" in upd
+      and "<https://jeffbridwell.com/chorus#code> <https://jeffbridwell.com/chorus#contains> <urn:chorus:file:abc123>" in upd)
+check("build_update DELETE precedes INSERT (re-run is idempotent)",
+      upd.index("DELETE") < upd.index("INSERT DATA"))
+
+# 6. edges_from — primary + non-primary both emitted; uncovered skipped.
+e = m.edges_from([("platform/api/src/handlers/cards.ts",
+                   m.domain_iri("chorus:cards"), [m.domain_iri("chorus:code")])])
+diris = {d for d, _ in e}
+check("edges_from emits primary + non-primary",
+      m.domain_iri("chorus:cards") in diris and m.domain_iri("chorus:code") in diris and len(e) == 2)
+check("edges_from skips uncovered (primary None)", m.edges_from([("x", None, [])]) == [])
+
+# 7. load_rules normalizes prefixes to a trailing slash (from a temp tree).
+import tempfile, json as _json
+_tf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+_json.dump({"domains": [{"iri": "chorus:tests", "label": "tests",
+                         "hasMapsTo": ["platform/tests", "x/y/"]}]}, _tf); _tf.close()
+_pref = {p for p, _, _ in m.load_rules(_tf.name)}
+check("load_rules normalizes prefixes to trailing-slash",
+      "platform/tests/" in _pref and "x/y/" in _pref)
+
 print(f"\n{'ALL GREEN' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

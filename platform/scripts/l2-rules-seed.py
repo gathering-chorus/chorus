@@ -103,7 +103,8 @@ RULES = {
 }
 
 def main():
-    d = json.load(open(TREE))
+    with open(TREE) as fh:
+        d = json.load(fh)
     by_label = {dom.get("label"): dom for dom in d.get("domains", [])}
     applied = 0
     missing = []
@@ -113,7 +114,8 @@ def main():
             missing.append(label); continue
         dom["hasMapsTo"] = prefixes
         applied += len(prefixes)
-    json.dump(d, open(TREE, "w"), indent=2)
+    with open(TREE, "w") as fh:
+        json.dump(d, fh, indent=2)
     print(f"seeded hasMapsTo: {len(RULES)} domains, {applied} prefixes -> {TREE}")
     if missing: print(f"WARN: labels not found in tree: {missing}")
 
