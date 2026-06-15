@@ -9,7 +9,7 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
-import { planDelivery, resolveRoleTarget } from './session-registry';
+import { planDelivery, resolveRoleTarget, describeTarget } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
@@ -136,7 +136,12 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     if (worker) {
       worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
     }
-    res.json({ ok: true, id, traceId });
+    // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
+    // name-match fallback) so the caller/MCP can surface the real destination
+    // instead of a blind "sent". Deterministic registry read; delivery stays async.
+    const resolved = describeTarget(to, resolveRoleTarget(to));
+    log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
+    res.json({ ok: true, id, traceId, resolved });
   });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
   // the spine fold (nudge.emitted minus nudge.surfaced) via

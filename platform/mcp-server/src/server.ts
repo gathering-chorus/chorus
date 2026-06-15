@@ -2153,8 +2153,16 @@ async function executeNudge(
       const errText = resp.text ? await resp.text().catch(() => '') : '';
       throw new Error(`pulse POST returned ${resp.status}: ${errText.slice(0, 200)}`);
     }
-    logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId });
-    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${to} (trace=${traceId})` }] };
+    // #3439 AC3: surface the RESOLVED destination pulse computed (which live
+    // session/tty the nudge targets, or name-match fallback) so "sent" is no
+    // longer blind. Best-effort parse — fall back to the bare role on any miss.
+    let dest = `${to}`;
+    try {
+      const body = (resp.json ? await resp.json() : null) as { resolved?: string } | null;
+      if (body && typeof body.resolved === 'string') dest = body.resolved;
+    } catch { /* keep bare role */ }
+    logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId, resolved: dest });
+    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${dest} (trace=${traceId})` }] };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logEvent('error', 'mcp.nudge.failed', { from, to, trace_id: traceId, error: errMsg });

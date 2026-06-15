@@ -11,7 +11,7 @@ use std::process::Output;
 #[test]
 fn vscode_script_targets_code_app_not_terminal() {
     let s = build_inject_vscode_script("hello");
-    assert!(s.contains(r#"application "Code""#), "must target the Code app");
+    assert!(s.contains(r#"process "Code""#), "must target the Code process");
     assert!(
         !s.contains(r#"application "Terminal""#),
         "must NOT target Terminal.app — that's the no-window-found bug"
@@ -26,10 +26,17 @@ fn vscode_script_keystrokes_and_submits() {
 }
 
 #[test]
-fn vscode_script_activates_code() {
-    // Keystroke lands in the frontmost app, so we must make Code frontmost.
+fn vscode_script_guards_on_frontmost_and_never_steals_focus() {
+    // #3439: the VS Code path must NOT activate (no focus theft) and must refuse
+    // to keystroke unless Code is already frontmost — else a mis-routed nudge
+    // sprays into whatever window Jeff is in (the 2026-06-15 editor-close bug).
     let s = build_inject_vscode_script("hi");
-    assert!(s.contains("activate"), "must activate Code so the keystroke lands in it");
+    assert!(!s.contains("activate"), "must NOT activate — never steal focus (#3439)");
+    assert!(s.contains("frontmost"), "must guard on frontmost-app");
+    assert!(
+        s.contains("deferred:not-frontmost"),
+        "must defer (deliver nothing) when Code isn't frontmost"
+    );
 }
 
 struct FakeRunner;

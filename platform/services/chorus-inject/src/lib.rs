@@ -172,22 +172,30 @@ return "no claude window found for tty {tty}""#,
 /// terminal. VS Code is an Electron app ("Code"), NOT Terminal.app: it exposes
 /// no tabs/tty to AppleScript, so the Terminal `--tty` match (build_inject_by_tty_script)
 /// returns "no claude window found" for a VS Code pseudo-tty — the no-window-found
-/// failure. The only osascript delivery is: activate the Code app and keystroke
-/// into its FOCUSED window.
+/// failure.
 ///
-/// KNOWN LIMITATION (by AppleScript constraint, not laziness): Electron exposes
-/// no per-pane/tty handle, so this lands in whichever Code window/pane is focused
-/// — it cannot select a specific terminal pane by pseudo-tty. Acceptable for the
-/// Chorus model because Jeff lives in the Code window (he IS the focused presence);
-/// a role per Code window means the focused pane is the intended target. If that
-/// assumption breaks (multiple Claude panes in one Code window, editor focused),
-/// the keystroke lands in the focused surface — the cost of Electron having no
-/// addressable terminal API.
+/// #3439 — VS Code FOCUS-GUARD (supersedes the prior activate-and-keystroke).
+/// The old script ran `tell application "Code" to activate` and then keystroked
+/// into the focused window. When Code was NOT the right target — a mis-routed
+/// nudge, or Jeff typing in another app — that `activate` STOLE focus and the
+/// keystroke sprayed into whatever window Jeff was in, cascading windows and once
+/// closing his editor (2026-06-15). The guard fixes that at the source:
+///   - NEVER `activate` — the script never steals focus.
+///   - Only keystroke if Code is ALREADY frontmost; otherwise return
+///     `deferred:not-frontmost` and deliver nothing.
+/// A nudge that defers cleanly beats one that hijacks Jeff's keystrokes; the
+/// message still persists via the API path (DEC-107), so nothing is lost.
+///
+/// Why only the VS Code path guards: the Terminal by-tty path keeps #3128
+/// always-wake because it can write into a specific matched tab WITHOUT focus
+/// theft. Electron exposes no addressable terminal pane, so the only safe move
+/// here is "deliver when focused, else defer" rather than activate-and-spray.
 pub fn build_inject_vscode_script(escaped_text: &str) -> String {
     format!(
-        r#"tell application "Code" to activate
-delay 0.15
-tell application "System Events"
+        r#"tell application "System Events"
+    if (name of first process whose frontmost is true) is not "Code" then
+        return "deferred:not-frontmost"
+    end if
     tell process "Code"
         keystroke "{text}"
         delay 0.3
