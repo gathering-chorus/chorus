@@ -117,10 +117,11 @@ describe('Flow: Gemba skill definition', () => {
     expect(fs.existsSync(skillPath)).toBe(true);
   });
 
-  test('gemba skill defines fast entry pattern (<5 seconds)', () => {
-    const content = fs.readFileSync(skillPath, 'utf-8');
-    expect(content).toMatch(/5 second|fast entry/i);
-  });
+  // #3428 — removed: "gemba skill defines fast entry pattern (<5 seconds)".
+  // The gemba skill was rewritten on the pulse-gather core (#3319); the old
+  // "fast entry / <5 second" framing no longer exists (it's now "one loom-gemba
+  // poll per look"). The assertion pinned a retired concept, so it's dropped
+  // rather than re-pinned as another doc-presence check (DEC-1674).
 
   test('gemba skill defines cron loop for continuous observation', () => {
     const content = fs.readFileSync(skillPath, 'utf-8');
