@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Properties — Domain Design (config-as-data, Athena-modeled)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #d97706; font-weight: normal; font-size: 0.6em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; color: #555; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  ul { margin: 8px 0 12px 22px; font-size: 0.87em; } li { margin-bottom: 5px; }
+  .frame { background: #fef3c7; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #d97706; font-size: 0.9em; }
+  .key { background: #dcfce7; padding: 12px 16px; margin: 14px 0; border-radius: 4px; border-left: 4px solid #16a34a; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #fef3c7; color: #92400e; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  pre.mermaid { background: #fff; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  pre.mermaid text, pre.mermaid .nodeLabel, pre.mermaid .label { fill: #000 !important; color: #000 !important; font-family: Georgia, serif !important; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Properties — Domain Design <span>— config-as-data, modeled in Athena</span></h1>
+<div class="date">Silas · 2026-06-15 · Borg domain (Proving/Reflecting) · DRAFT (HTML, reworkable) · the config-driven substrate</div>
+
+<div class="frame">
+<strong>The promise.</strong> Changing how Chorus behaves stops being a code change. Today config is <em>registered in code</em> — a threshold, a route, an allowlist, an ownership rule — so every change is commit→build→test→deploy→restart, on a flaky deploy. After: config is <strong>data in the model</strong>, read by generic engines; a change is a <strong>model write</strong>, live, no deploy. This is what makes Chorus configuration-driven — and it's the prerequisite for "model anything → build anything" (a client tunes via data, not your source).
+</div>
+
+<h2>1 · As-is — why "barely touched"</h2>
+<p>The <code>properties</code> domain holds <strong>1 file</strong> (the #3426 crawl). It's essentially un-built — which is exactly why Chorus is "woefully not config-driven." The config that <em>should</em> live here is scattered, hardcoded: the deploy unit allowlist, nudge routing, the <code>hasMapsTo</code> rules, <code>requiresAuth</code>, the <code>boston()</code> boundary, ports/hosts in launchagents. <strong>Each is a property-on-a-node, written as code.</strong> Greenfield, not a painful migration — the work is to model it right and stop re-accreting config into code.</p>
+
+<h2>2 · The model — one uniform attachment</h2>
+<div class="key"><strong>Config isn't a subsystem — it's modeled structure in Athena.</strong> A <code>Property</code> class, attached to <em>any</em> structural node via one uniform edge <code>hasProperty</code>. Same primitives, same machinery as the rest of the model — no bespoke config system (no-competing-implementations).</div>
+<pre class="mermaid">
+classDiagram
+  class Property {
+    +key
+    +value
+    +valueType
+    +scope
+    +source
+    +owner
+  }
+  class ValueStream
+  class Product
+  class Domain
+  class Service
+  ValueStream "1" o-- "0..*" Property : hasProperty
+  Product     "1" o-- "0..*" Property : hasProperty
+  Domain      "1" o-- "0..*" Property : hasProperty
+  Service     "1" o-- "0..*" Property : hasProperty
+</pre>
+<p><strong>All four Athena primitives bear properties</strong> — config attaches to whatever it configures, scoped by where it hangs:</p>
+<table>
+<tr><th>Attached to</th><th>Example properties</th></tr>
+<tr><td><strong>ValueStream / Step</strong></td><td>demo-window length · required gate set · proving timeout · cycle cadence</td></tr>
+<tr><td><strong>Product</strong></td><td>SLO / reliability bar · default routing · feature flags</td></tr>
+<tr><td><strong>Domain</strong></td><td>alert thresholds · ownership-routing · <strong>the rule sets (<code>hasMapsTo</code>)</strong></td></tr>
+<tr><td><strong>Service</strong></td><td>port · host · <strong>machine (Library / Bedroom)</strong> · launch type · runtime knobs</td></tr>
+</table>
+
+<div class="key"><strong>This generalizes what we already do ad-hoc.</strong> <code>hasMapsTo</code> (the L2 domain rules, #3426) is a Property on a Domain. The <strong>L1 type rules</strong> (code/test/doc/data/config/workspace — see below) are a Property too. <code>requiresAuth</code> (#3414) is a Property on a shape. Deploy units, nudge routes, the render boundary — all properties-on-nodes, smeared across code. The model doesn't <em>invent</em> config; it <strong>names and unifies</strong> it under one edge.</div>
+
+<h3>Worked example — the crawler's own classification rules ARE properties</h3>
+<p>The cleanest proof (and the reason the "make L1 clear" discussion belongs here): the L1 (type) and L2 (domain) tag rules are <strong>both properties</strong>, not code.</p>
+<ul>
+  <li><strong>L2 — domain rules</strong> = <code>hasMapsTo</code>, a Property on <em>each Domain</em> (path-prefix → that domain). Already built (#3426).</li>
+  <li><strong>L1 — type rules</strong> = a Property at <em>system scope</em>: the strata taxonomy {code · test · config · doc · data · workspace} + the extension/path → type rules (path overrides extension). Read by the type-herald.</li>
+</ul>
+<p>The crawler engine reads <em>both</em> from the model and applies them — every file gets <strong>{type (L1), domain (L2)}</strong>, both from <em>declared properties</em>, <strong>zero hardcoded classifiers</strong>. That <strong>retires the scattered <code>discover-code</code> / <code>discover-tests</code></strong> (the config-in-code anti-pattern) into one property-driven engine. So "make L1 clear" needs no separate L1 system — <strong>L1 is just another property the same engine reads.</strong></p>
+
+<h2>3 · Resolution — the config cascade</h2>
+<p>Because the model is a hierarchy (product ⊃ domain ⊃ service; step ⊃ child stream), properties <strong>resolve by specificity</strong>: a node asks "what's my effective <code>X</code>?" and it resolves <strong>service → domain → product → value-stream</strong> — nearest wins, inherit otherwise. The same recursive tree we modeled, now carrying config that cascades down it.</p>
+<pre class="mermaid">
+flowchart LR
+  VS["value-stream<br/>(broadest default)"] --> P["product"] --> D["domain"] --> S["service<br/>(most specific — wins)"]
+  S -.->|"effective config resolves UP the chain,<br/>nearest override wins"| VS
+</pre>
+
+<h2>4 · How it rides the machinery (no new substrate)</h2>
+<ul>
+  <li><strong>owl-api generates the config API</strong> (read + write) from the <code>Property</code> model — exactly as it generates the domain API. Reads are open; writes secured model-driven (#3414).</li>
+  <li><strong>The DAL reads it on-demand</strong> → a config change is a model write, <strong>live, no restart</strong> (the prize: read-on-demand, not loaded-once). Startup-load only where churn is rare.</li>
+  <li><strong>A config/infra herald hydrates</strong> the existing hardcodes (launchagents, ports, code constants) <em>into</em> the model — turning today's implicit config explicit-and-modeled. (Same herald family as the crawler facets; doubles as the toolchain/infra discovery.)</li>
+</ul>
+
+<h2>5 · Discipline</h2>
+<ul>
+  <li><strong>Discriminate</strong> — only <em>varying</em> config (by domain/instance/machine/client) becomes a Property; invariant logic stays code. Avoid the inner-platform trap (config so flexible it's a worse language).</li>
+  <li><strong>Scope is intrinsic</strong> — the <code>scope</code> dimension (global / machine=Library·Bedroom / role / instance) is first-class; the properties domain's own definition already names "across Library and Bedroom."</li>
+  <li><strong>Coherence-first</strong> — the model must be the trustworthy config source before we lean on it (clean IRIs #3430, the 2-axis tag). Otherwise we've moved the mess from code into an incoherent graph.</li>
+  <li><strong>No re-accretion</strong> — a grep-gate blocks new hardcoded config landing in code (the ADR-041 attrition pattern); existing hardcodes lift on-touch.</li>
+</ul>
+
+<h2>6 · Precedent (the pattern is proven)</h2>
+<ul>
+  <li><strong>#3317</strong> — deploy allowlist → <em>structural discovery</em> (a hardcoded registry replaced by model/structure-driven). Config-driven, shipped.</li>
+  <li><strong>#3426</strong> — file→domain rules in <code>tree.json</code> + a generic engine (= properties-on-domains, special case).</li>
+  <li><strong>#3414</strong> — auth derived from a model annotation; no code change to re-secure.</li>
+  <li>The program = generalize that one move: <strong>every hardcoded registry → a Property the engine reads.</strong></li>
+</ul>
+
+<h2>7 · Sequencing</h2>
+<ol>
+  <li>Model <code>Property</code> + <code>hasProperty</code> in Athena (the four attachment points + scope + the cascade resolver).</li>
+  <li>owl-api generates the read/write surface; DAL reads on-demand.</li>
+  <li>Hydrate the first real properties (start with the ones that bite: deploy units, nudge routes, alert thresholds) — herald-discovered or authored.</li>
+  <li>Migrate config-in-code → properties by attrition; grep-gate blocks new accretion.</li>
+</ol>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · owner Silas · Borg/properties domain · the config-as-data substrate that makes Chorus configuration-driven. DRAFT — HTML, reworkable. Relates: #3426 (rules-on-domain), #3317 (allowlist→discovery), #3414 (auth-from-model), #3430 (IRI scheme).
+</div>
+
+</body>
+</html>

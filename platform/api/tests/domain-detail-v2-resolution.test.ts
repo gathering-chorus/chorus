@@ -8,21 +8,13 @@
  * The page is plain browser JS (no modules), so the function under test is
  * extracted by evaluating the script's source in a vm sandbox.
  */
-import { readFileSync } from 'fs';
-import { runInNewContext } from 'vm';
-import path from 'path';
 
+// #3373 moved into the GENERATED renderer (#3351 retired the hand-built domain-detail.js).
+// The function lives in the shared renderer now; load it from its exports.
 function loadResolve(): (id: string, names: string[]) => string | null {
-  const src = readFileSync(
-    path.join(__dirname, '..', 'public', 'athena', 'domain-detail.js'),
-    'utf-8',
-  );
-  const fnSrc = src.match(/function resolveV2DomainName[\s\S]*?\n}/);
-  if (!fnSrc) throw new Error('resolveV2DomainName not found in domain-detail.js');
-  const sandbox: { resolveV2DomainName?: (id: string, names: string[]) => string | null } = {};
-  runInNewContext(`${fnSrc[0]}; this.resolveV2DomainName = resolveV2DomainName;`, sandbox);
-  if (!sandbox.resolveV2DomainName) throw new Error('extraction failed');
-  return sandbox.resolveV2DomainName;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const R = require('../public/js/domain-renderer.js');
+  return R.resolveV2;
 }
 
 const V2 = ['cards', 'code', 'tests', 'builds', 'version-control', 'alerts-monitors'];
