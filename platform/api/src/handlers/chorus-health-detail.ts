@@ -44,7 +44,7 @@ export async function fetchHealthDetail({
   ollamaUrl,
   timestamp,
 }: HealthDetailDeps): Promise<HealthDetailResult> {
-  let ollamaStatus: 'up' | 'degraded' | 'down' | 'unknown' = 'unknown';
+  let ollamaStatus: 'up' | 'degraded' | 'down' | 'unknown';
   try {
     const res = await fetchFn(`${ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
     ollamaStatus = res.ok ? 'up' : 'degraded';

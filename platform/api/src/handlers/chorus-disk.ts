@@ -59,7 +59,7 @@ export async function fetchDisk({ execFile = defaultExecFile }: DiskDeps = {}): 
   const totalBytes = parseBytes(totalSize);
   const containerFreeBytes = parseBytes(containerFreeSize);
 
-  let finderFreeBytes: number | null = null;
+  let finderFreeBytes: number | null;
   try {
     const r = await execFile(
       '/usr/bin/osascript',
