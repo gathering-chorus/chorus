@@ -7,7 +7,7 @@
  * letting chorus-inject guess by window title. AC1 (resolve), AC2 (dead
  * sessions never resolved).
  */
-import { resolveTarget, planDelivery, type SessionReg } from './session-registry';
+import { resolveTarget, planDelivery, describeTarget, type SessionReg } from './session-registry';
 
 const reg = (over: Partial<SessionReg>): SessionReg => ({
   role: 'silas', pid: 100, tty: '/dev/ttys001', host: 'terminal',
@@ -111,5 +111,23 @@ describe('#3352 planDelivery always injects', () => {
       planDelivery(null, 'kade', 'c', null),
     ];
     for (const p of shapes) expect(p.kind).toBe('inject');
+  });
+});
+
+// #3439 AC3 — the MCP must report WHERE a nudge resolved, not a blind "sent".
+// describeTarget is the pure formatter the pulse POST surfaces in its response.
+describe('#3439 describeTarget — report resolved destination (AC3)', () => {
+  test('live session → "role @ tty (host, pid)"', () => {
+    const t = reg({ role: 'kade', pid: 321, tty: '/dev/ttys003', host: 'terminal' });
+    expect(describeTarget('kade', t)).toBe('kade @ /dev/ttys003 (terminal, pid 321)');
+  });
+
+  test('no live session → explicit name-match fallback (not a silent blind "sent")', () => {
+    expect(describeTarget('kade', null)).toBe('kade [no live session — name-match fallback]');
+  });
+
+  test('vscode host is surfaced so a mis-route shows in the report', () => {
+    const t = reg({ role: 'wren', pid: 200, tty: '/dev/ttys004', host: 'vscode' });
+    expect(describeTarget('wren', t)).toContain('(vscode, pid 200)');
   });
 });

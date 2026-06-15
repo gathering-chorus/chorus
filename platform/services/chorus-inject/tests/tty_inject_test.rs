@@ -5,10 +5,10 @@
 //!     than the addressed window (silas's nudge appearing in wren's VS Code pane)
 //!
 //! The script matches the Terminal TAB whose `tty of t` equals the target.
-//! #3128 — ALWAYS WAKE: the old focus-gate (refuse when Terminal isn't
-//! frontmost) is removed. It didn't protect Jeff's focus, it silently dropped
-//! the nudge. Instead the script `activate`s Terminal on a tty match so the
-//! keystroke reliably lands in the matched tab (overrides #2277 by decision).
+//! ALWAYS WAKE: no focus-gate (refuse-when-not-frontmost is gone — it silently
+//! dropped nudges). #3128 originally `activate`d Terminal + keystroked; #3352
+//! (Jeff 2026-06-11) superseded that with `do script` into the matched TAB —
+//! focus-independent, no activate, no focus theft. Tests assert shipped #3352.
 
 use chorus_inject::{build_inject_by_tty_script, dispatch, Dispatch, OsaRunner};
 use std::io;
@@ -29,8 +29,9 @@ fn script_always_wakes_no_focus_gate() {
     // #3128 — always wake: no frontmost-app gate, no focus-gate-miss refusal.
     assert!(!s.contains("focus-gate-miss"), "must NOT refuse on focus; always wake");
     assert!(!s.contains("frontApp"), "frontmost-app gate must be gone");
-    // Instead, activate Terminal on a tty match so the keystroke lands.
-    assert!(s.contains("activate"), "must activate Terminal to land the keystroke");
+    // #3352 superseded #3128's `activate`: the by-tty path writes into the matched
+    // TAB via `do script` (focus-independent), so it must NOT activate/steal focus.
+    assert!(!s.contains("activate"), "#3352: must NOT activate / steal focus");
 }
 
 #[test]
@@ -41,13 +42,14 @@ fn script_returns_ok_and_typed_miss() {
 }
 
 #[test]
-fn script_keystrokes_and_submits() {
+fn script_writes_text_and_submits_via_do_script() {
     let s = build_inject_by_tty_script("/dev/ttys004", "payload");
-    assert!(s.contains(r#"keystroke "payload""#));
-    assert!(s.contains("key code 36"), "must submit with Return");
-    // #3128 — always wake: app-level `activate` is now REQUIRED so the
-    // keystroke lands in the matched tab (overrides the #2277 no-steal rule).
-    assert!(s.contains("activate"));
+    // #3352 superseded #3128's keystroke+key-code: the by-tty path writes the text
+    // into the matched tab with `do script`, then submits with a follow-up empty
+    // `do script` (the real newline Claude treats as submit) — and never activates.
+    assert!(s.contains(r#"do script "payload" in t"#), "must write the text into the matched tab");
+    assert!(s.contains(r#"do script "" in t"#), "must submit with the empty-do-script newline");
+    assert!(!s.contains("activate"), "#3352: no focus theft");
 }
 
 // --- dispatch: the --tty arg form routes to the tty path; name-match unchanged ---

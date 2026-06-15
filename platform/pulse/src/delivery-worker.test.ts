@@ -6,7 +6,7 @@
  * spine event. All deps injected; no real chorus-inject, no real chorus.log.
  */
 
-import { DeliveryWorker, classifyInjectResult, PERMANENT_REASONS, DEFAULT_BACKOFF_MS, type InjectResult, type DeliveryRow } from './delivery-worker';
+import { DeliveryWorker, classifyInjectResult, classifyInjectOutput, PERMANENT_REASONS, DEFAULT_BACKOFF_MS, type InjectResult, type DeliveryRow } from './delivery-worker';
 import { MessageStore } from './store';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -36,6 +36,33 @@ function rowFor(id: number, to = 'wren', content = 'test'): DeliveryRow {
 function lifecycle<T extends { event: string }>(events: T[]): T[] {
   return events.filter(e => !e.event.startsWith('terminal.'));
 }
+
+// #3439 — a spawned chorus-inject defer (VS Code focus-guard, Code not frontmost)
+// surfaces "deferred:<reason>" on stdout with rc 0. classifyInjectOutput must map
+// that to a CLEAN defer (deferred:true), NOT a failed delivery that retries.
+describe('classifyInjectOutput (#3439 runtime defer)', () => {
+  test('a deferred:<reason> stdout token → clean defer (deferred=true, rc 0), never transient', () => {
+    const r = classifyInjectOutput(0, 'deferred:not-frontmost', '', 'vscode-focused');
+    expect(r.deferred).toBe(true);
+    expect(r.deferReason).toBe('not-frontmost');
+    expect(r.rc).toBe(0);
+    // and the worker must NOT classify it as a retryable failure
+    expect(classifyInjectResult(r).kind).toBe('success');
+  });
+
+  test('a real non-zero rc with no defer token passes through (still a failure to classify)', () => {
+    const r = classifyInjectOutput(1, '', 'no claude window found for wren', 'tty:/dev/ttys003');
+    expect(r.deferred).toBeUndefined();
+    expect(r.rc).toBe(1);
+    expect(classifyInjectResult(r).kind).toBe('permanent');
+  });
+
+  test('rc 0 with empty stdout is an ordinary success (not a defer)', () => {
+    const r = classifyInjectOutput(0, '', '', 'tty:/dev/ttys003');
+    expect(r.deferred).toBeUndefined();
+    expect(r.rc).toBe(0);
+  });
+});
 
 describe('classifyInjectResult', () => {
   test('rc=0 is success', () => {

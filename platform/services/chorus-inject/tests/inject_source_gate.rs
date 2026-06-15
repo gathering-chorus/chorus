@@ -34,13 +34,19 @@ fn inject_source_uses_keystroke_not_do_script() {
         source.contains("keystroke"),
         "inject must use 'keystroke' for text delivery"
     );
-    // do script breaks auto-submit (#2029). Only comments should reference it.
+    // #2029: a BARE `do script` breaks auto-submit. #3352 (Jeff 2026-06-11) found
+    // the exception: the by-tty path writes `do script "<text>" in t` then submits
+    // with a follow-up `do script "" in t` (the real newline that Claude treats as
+    // submit). So `do script` is allowed ONLY when paired with that empty-do-script
+    // submit; a lone do-script with no newline submit is still the #2029 bug.
     let code_lines: Vec<&str> = source.lines()
         .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("//!"))
         .collect();
     let code_only = code_lines.join("\n");
-    assert!(
-        !code_only.contains("do script"),
-        "inject must NOT use 'do script' — breaks auto-submit (#2029)"
-    );
+    if code_only.contains("do script") {
+        assert!(
+            code_only.contains(r#"do script "" in t"#),
+            "#3352: `do script` is only allowed in the by-tty path paired with the empty-do-script newline submit; a bare do-script is the #2029 auto-submit bug"
+        );
+    }
 }

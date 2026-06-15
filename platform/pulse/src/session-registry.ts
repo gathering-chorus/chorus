@@ -145,3 +145,15 @@ export function planDelivery(
   }
   return { kind: 'inject', args: [role, content] };
 }
+
+/**
+ * #3439 AC3 — a human-readable summary of WHERE a nudge resolved, so the MCP
+ * can report the actual destination instead of a blind "sent". `target` is the
+ * result of `resolveRoleTarget(role)`: null means no live session was found, so
+ * delivery falls back to legacy name-match (named explicitly here rather than
+ * hidden). Pure, so it's unit-tested without the registry/fs.
+ */
+export function describeTarget(role: string, target: SessionReg | null): string {
+  if (!target) return `${role} [no live session — name-match fallback]`;
+  return `${role} @ ${target.tty || '?'} (${target.host || 'unknown'}, pid ${target.pid})`;
+}

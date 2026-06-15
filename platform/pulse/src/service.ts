@@ -8,8 +8,8 @@
 
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
-import { DeliveryWorker, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
-import { planDelivery, resolveRoleTarget } from './session-registry';
+import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
+import { planDelivery, resolveRoleTarget, describeTarget } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
@@ -136,7 +136,12 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     if (worker) {
       worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
     }
-    res.json({ ok: true, id, traceId });
+    // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
+    // name-match fallback) so the caller/MCP can surface the real destination
+    // instead of a blind "sent". Deterministic registry read; delivery stays async.
+    const resolved = describeTarget(to, resolveRoleTarget(to));
+    log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
+    res.json({ ok: true, id, traceId, resolved });
   });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
   // the spine fold (nudge.emitted minus nudge.surfaced) via
@@ -272,14 +277,19 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
       return;
     }
     const proc = spawn(injectBin, plan.args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
+      // #3439: capture stdout too — the VS Code focus-guard surfaces a runtime
+      // `deferred:<reason>` token there (rc 0), which classifyInjectOutput maps
+      // to a clean defer instead of a failed delivery.
+      stdio: ['ignore', 'pipe', 'pipe'],
       // #2804 — _NUDGE_PULSE_INTERNAL marks this as the canonical caller;
       // chorus-inject rejects shell-direct calls that lack this env.
       env: { ...process.env, _NUDGE_PULSE_INTERNAL: '1' },
     });
+    let stdout = '';
     let stderr = '';
+    proc.stdout.on('data', d => { stdout += d.toString(); });
     proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('close', rc => resolve({ rc: rc ?? 1, stderr, target: targetDesc }));
+    proc.on('close', rc => resolve(classifyInjectOutput(rc ?? 1, stdout, stderr, targetDesc)));
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
   });
 
