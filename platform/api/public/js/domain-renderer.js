@@ -97,6 +97,54 @@
       '<ul style="list-style:none;padding-left:0;margin:.5rem 0">' + kids.map(childTreeHtml).join('') + '</ul></details></div>';
   }
 
+  // ---- THE SET (#3351 AC3 / #3378 wireframe) — the domains-domain renders the live catalog of ALL domains ----
+  // pure row builder (exported, unit-tested). Each row links to that domain's own page.
+  function setRowsHtml(rows) {
+    return '<table class="table"><thead><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td><a href="?id=' + encodeURIComponent(r.name) + '">' + esc(r.label || r.name) + '</a></td>' +
+          '<td>' + esc(r.step || '?') + '</td><td>' + esc(r.owner || '?') + '</td><td>' + esc(r.status || '?') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+  // async: fetch the full set from owl-api, enrich each with step/owner/status, render the catalog fold.
+  function renderTheSet() {
+    return get(OWL + '/domains').then(function (list) {
+      var items = (list && list.items) || [];
+      if (!items.length) return;
+      return Promise.all(items.map(function (it) {
+        return get(OWL + '/domains/' + encodeURIComponent(it.name)).then(function (g) {
+          return { name: it.name, label: it.label || it.name, status: (g && g.status) || it.status || '?',
+                   step: (g && g.atStep && g.atStep.label) || '?', owner: (g && g.ownedBy && g.ownedBy.label) || '?' };
+        });
+      })).then(function (rows) {
+        var slot = $('the-set'); if (!slot) return;
+        slot.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">The Set &mdash; all domains (' + rows.length + ', live catalog)</summary>' +
+          '<div style="padding-top:.5rem">' + setRowsHtml(rows) + '</div></details></div>';
+      });
+    });
+  }
+
+  // ---- Cards (derived + reachable) — the domain's board items, each linking through to Vikunja.
+  // A standalone section (like THE SET / the tree), not a counted facet.
+  function renderCards() {
+    return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/cards').then(function (b) {
+      var el = $('cards-block'); if (!el) return;
+      var dd = (b && b.data) || b || {}; var cards = dd.cards || (Array.isArray(dd) ? dd : []);
+      if (!cards.length) { el.innerHTML = '<div class="card"><details class="fold"><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Cards (0) <span class="muted">derived</span></summary><p class="muted">No cards on the board for this domain.</p></details></div>'; return; }
+      var cap = 40, shown = cards.slice(0, cap);
+      var rows = shown.map(function (c) {
+        var oc = (c.owner || '').toLowerCase();
+        var owner = ROLE_CLASS[oc] !== undefined ? '<span class="role role--' + esc(oc) + '">' + esc(c.owner) + '</span>' : esc(c.owner || '');
+        return '<tr><td><a href="http://localhost:3456/tasks/' + esc(c.id) + '">#' + esc(c.id) + '</a></td>' +
+          '<td>' + esc(c.title) + '</td><td><span class="badge">' + esc(c.status) + '</span></td>' +
+          '<td>' + esc(c.priority || '') + '</td><td>' + owner + '</td></tr>';
+      }).join('');
+      var more = cards.length > cap ? '<p class="muted">…and ' + (cards.length - cap) + ' more — <a href="http://localhost:3456">on the board</a></p>' : '';
+      el.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Cards (' + cards.length + ') <span class="muted">derived · reachable</span></summary>' +
+        '<table class="table"><thead><tr><th>Card</th><th>Title</th><th>Status</th><th>Pri</th><th>Owner</th></tr></thead><tbody>' + rows + '</tbody></table>' + more + '</details></div>';
+    });
+  }
+
   function renderIdentity(d, consumers, cards) {
     document.title = (d.label || id) + ' — Athena';
     $('domain-title').textContent = d.label || id;
@@ -214,8 +262,10 @@
     OWL = location.protocol + '//' + location.hostname + ':' + (window.OWL_PORT || 3360); // model identity (non-fatal)
     if (!id) { $('content-sections').innerHTML = '<div class="callout callout--gap">Add <code>?id=&lt;domain&gt;</code> to the URL.</div>'; return; }
     get(ATHENA + '/subdomains/' + encodeURIComponent(id)).then(function (body) {
-      if (!body) { $('content-sections').innerHTML = '<div class="callout callout--gap">Could not load <code>' + esc(id) + '</code> from Athena.</div>'; return; }
-      var d = body.data || {};
+      // owl-api is the source of record; Athena facets are supplementary + non-fatal (#3378 wireframe).
+      // A meta-domain like `domains` has no Athena subdomain record — DON'T bail; let owl-api identity +
+      // THE SET render anyway. Only the per-facet fetches come up empty, which renders honestly.
+      var d = (body && body.data) || {};
       Promise.resolve(overlayIdentity(d)).then(function () {
         return Promise.all([
           get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/blast-radius'),
@@ -230,7 +280,11 @@
       });
       // facets — fetch all in parallel, render each as it lands (order preserved by slots)
       var ctx = { label: d.label || id };
-      $('content-sections').innerHTML = FACETS.map(function (f) { return '<div id="facet-' + f.key + '"></div>'; }).join('');
+      // THE SET (#3378 wireframe): on the domains-domain, the catalog of all domains renders ABOVE the facets.
+      var isDomainsRoot = id === 'domains' || id === 'domains-domain';
+      $('content-sections').innerHTML = (isDomainsRoot ? '<div id="the-set"></div>' : '') + '<div id="cards-block"></div>' + FACETS.map(function (f) { return '<div id="facet-' + f.key + '"></div>'; }).join('');
+      if (isDomainsRoot) renderTheSet();
+      renderCards();
       FACETS.forEach(function (f) {
         f.fetch().then(function (b) {
           var slot = $('facet-' + f.key); if (slot) slot.innerHTML = renderFacet(f, b, ctx);
@@ -242,6 +296,6 @@
   // browser: wire on load. node/test: skip (no document) + export the pure builders.
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, childTreeHtml: childTreeHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
+    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, childTreeHtml: childTreeHtml, setRowsHtml: setRowsHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
   }
 })();
