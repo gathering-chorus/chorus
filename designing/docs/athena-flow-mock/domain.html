@@ -1,69 +1,194 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Domain — Athena Flow Mock</title>
-<link rel="stylesheet" href="flow.css"><script src="flow.js"></script></head>
-<body><div class="wrap">
-<div class="mock-banner">#3378 MOCK — domain page, running LIVE on the generated Domain API (:3360). The <code>domains</code> domain renders THE SET (Jeff's ruling: "it's important for us to solve these in our domains page").</div>
-<div class="crumb"><a href="index.html">value stream</a> → <span id="bc-step">…</span> → <span id="bc-name">…</span></div>
-<h1 id="title">… <span class="kind">— Domain</span></h1>
-<div class="promise" id="promise">loading from :3360…</div>
-<div class="stats" id="stats"></div>
-<div id="folds"></div>
-</div>
-<script>
-(async function () {
-  const name = new URLSearchParams(location.search).get('d') || 'domains';
-  const g = await fetchDomain(name);
-  if (!g) {
-    document.getElementById('promise').innerHTML = '<strong>:3360 unreachable or unknown domain.</strong> The real page falls back to v1 here (non-fatal by construction, #3373).';
-    return;
-  }
-  const step = (g.atStep && g.atStep.label) || '?';
-  document.title = g.label + ' — Domain';
-  document.getElementById('title').innerHTML = esc(g.label) + ' <span class="kind">— Domain</span>';
-  document.getElementById('bc-step').innerHTML = '<a class="edge" href="step.html?step=' + step.toLowerCase() + '">' + step + '</a>';
-  document.getElementById('bc-name').textContent = g.label;
-  document.getElementById('promise').textContent = (g.comment || '').replace(/\\\\u2014/g, '—');
-  document.getElementById('stats').innerHTML =
-    '<div class="stat"><div class="v">' + ownerDot((g.ownedBy || {}).label) + '</div><div class="l">Owner (ownedBy)</div></div>' +
-    '<div class="stat"><div class="v">' + stepBadge(step) + '</div><div class="l">Step (atStep)</div></div>' +
-    '<div class="stat"><div class="v">' + esc(g.status || '?') + '</div><div class="l">Status</div></div>';
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Domain — Athena (mock · #3378 revised for #3351)</title>
+<!-- #3415 design system — the styles + tokens established 2026-06-14. The real page links /css/system.css;
+     this mock links it relatively so it renders the SAME vocabulary, not a mock-only look. -->
+<link rel="stylesheet" href="../../../platform/api/public/css/system.css">
+<style>
+  /* mock-only: the recursive child-tree list shape (uses system.css tokens only) */
+  body { margin: 0; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-4); }
+  .crumb { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--space-3); }
+  .crumb a { color: var(--accent); text-decoration: none; }
+  h1.title { font-size: var(--fs-2xl); margin: 0 0 2px; }
+  h1.title .kind { color: var(--text-muted); font-weight: var(--fw-regular); font-size: var(--fs-lg); }
+  .tree, .tree ul { list-style: none; margin: 0; padding-left: var(--space-4); }
+  .tree { padding-left: 0; }
+  .tree li { margin: 3px 0; position: relative; padding-left: var(--space-3); }
+  .tree li::before { content: "└"; position: absolute; left: 0; color: var(--text-dim); }
+  .tree a { color: var(--accent); text-decoration: none; }
+  details.fold { margin: 6px 0; }
+  details.fold > summary { cursor: pointer; font-weight: var(--fw-semibold); padding: var(--space-2) 0; }
+  details.fold .src { color: var(--text-dim); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em; margin-left: var(--space-2); }
+  .secthead { font-size: var(--fs-md); font-weight: var(--fw-semibold); margin: var(--space-4) 0 var(--space-2); color: var(--text); }
+</style>
+</head>
+<body class="theme-light">
+<main class="wrap">
 
-  let folds = '';
-  // THE SET — on the domains domain, contains renders all 34 (the catalog view).
-  if (name === 'domains') {
-    const all = await fetchDomains();
-    let rows = '';
-    if (all) {
-      const details = await Promise.all(all.map(d => fetchDomain(d.name)));
-      for (const d of details) {
-        if (!d) continue;
-        const s = (d.atStep && d.atStep.label) || '?';
-        rows += '<tr><td><a class="edge" href="domain.html?d=' + esc(d.label) + '">' + esc(d.label) + '</a></td>' +
-          '<td>' + stepBadge(s) + '</td><td>' + ownerDot((d.ownedBy || {}).label) + '</td>' +
-          '<td>' + esc(d.status) + '</td></tr>';
-      }
-    }
-    folds += fold('The Set — all domains (the generated catalog, live)', 'GET :3360/domains + /domains/:name',
-      rows ? '<table><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr>' + rows + '</table>' : null,
-      ':3360 unreachable — catalog unavailable');
+  <div class="callout callout--caveat" id="mock-banner">
+    <strong>#3378 mock — revised 2026-06-15 as the agreed target for #3351.</strong>
+    This is the SPEC, not the live page. Four requirements shown: (1) renders on <code>#3415 system.css</code> + the
+    generated-page architecture (static shell, client-fetch from owl-api <code>:3360</code>, no runtime template);
+    (2) <strong>all Athena v1 data</strong> as folds; (3) the <strong>recursive child-domain tree</strong>;
+    (4) <strong>THE SET</strong> on the <code>domains</code> domain. Identity / stats / SET / tree / part-of fetch
+    live from <code>:3360</code>; the v1 facet folds are shown with their live data source named (they fetch
+    same-origin in the real served page).
+  </div>
+
+  <div class="crumb"><a href="index.html">value stream</a> &rsaquo; <span id="bc-step">…</span> &rsaquo; <span id="bc-name">…</span></div>
+  <h1 class="title" id="title">… <span class="kind">— Domain</span></h1>
+  <div class="callout" id="promise">loading from :3360…</div>
+
+  <!-- identity stats: Owner / Step / Status (system.css .lanes/.stat) -->
+  <div class="lanes" id="stats" style="grid-template-columns:repeat(3,minmax(0,1fr))"></div>
+
+  <!-- THE SET — only on the domains-domain: the live catalog of all domains -->
+  <div id="theset"></div>
+
+  <!-- decomposition: upward (part of) + downward recursive child tree -->
+  <div id="partof"></div>
+  <div id="tree-block"></div>
+
+  <!-- ALL Athena v1 data — the crawler/scanner folds (the coverage dashboard) -->
+  <div class="secthead">Athena v1 data — coverage folds</div>
+  <div id="folds"></div>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var OWL = 'http://localhost:3360';
+  var params = new URLSearchParams(location.search);
+  var name = params.get('d') || params.get('id') || 'domains';
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function get(u){ return fetch(u).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}); }
+  function $(id){ return document.getElementById(id); }
+  function roleBadge(owner){ var rc=(owner||'').toLowerCase(); return '<span class="role role--'+esc(rc)+'">'+esc(owner||'?')+'</span>'; }
+  function statCard(v,l){ return '<div class="card"><div class="stat"><div class="stat-value">'+v+'</div><div class="stat-label">'+esc(l)+'</div></div></div>'; }
+
+  // The full Athena v1 facet set (the coverage dashboard) — title + the live data source it renders from.
+  // In the real served page these fetch same-origin (/api/athena/... and /api/chorus/domain/...).
+  var FACETS = [
+    ['Cards','GET /api/athena/subdomains/:id/cards','work items on the board for this domain — reachable through to Vikunja'],
+    ['Dependencies','GET /api/chorus/domain/:id/dependencies','typed graph edges — consumes / consumed-by / shared'],
+    ['Actors','GET /api/athena/subdomains/:id/actors','who interacts — roles, services, humans'],
+    ['Scenarios','GET /api/athena/subdomains/:id/scenarios','BDD given/when/then'],
+    ['UI Pages','GET /api/athena/subdomains/:id/pages','HTML pages presenting this domain'],
+    ['Integration','GET /api/athena/subdomains/:id/integrations','wire protocols — how it talks to others'],
+    ['API Contract','GET /api/athena/subdomains/:id/services','HTTP routes this domain exposes'],
+    ['Code','GET /api/athena/subdomains/:id/code','source files implementing this domain'],
+    ['Tests','GET /api/chorus/domain/:id/tests','test files exercising this domain'],
+    ['Persistence','GET /api/athena/subdomains/:id/persistence','data stores it reads/writes'],
+    ['Pipeline','GET /api/chorus/domain/:id/pipeline','build / deploy / CI stages'],
+    ['Release History','GET /api/chorus/domain/:id/releases','shipped versions (git/acp)'],
+    ['Infrastructure','GET /api/chorus/domain/:id/infra','runtime environment — processes, hosts'],
+    ['Prior Art','GET /api/athena/subdomains/:id/prior-art','references, predecessors, ADRs'],
+    ['Decisions','GET /api/chorus/domain/:id/decisions','DEC/ADR recorded for this domain'],
+    ['Logs','GET /api/chorus/domain/:id/logs','log streams emitted by this domain'],
+    ['Alerts','GET /api/chorus/domain/:id/alerts','alert rules monitoring its health'],
+    ['Gaps & Status','GET /api/athena/subdomains/:id/gaps','known gaps / incomplete implementation']
+  ];
+
+  // ---- THE SET — the domains-domain renders the live catalog of every domain ----
+  function renderTheSet() {
+    return get(OWL + '/domains').then(function (list) {
+      var items = (list && list.items) || [];
+      if (!items.length) return;
+      return Promise.all(items.map(function (it) {
+        return get(OWL + '/domains/' + encodeURIComponent(it.name)).then(function (g) {
+          return { name: it.name, label: it.label || it.name, status: (g && g.status) || it.status || '?',
+                   step: (g && g.atStep && g.atStep.label) || '?', owner: (g && g.ownedBy && g.ownedBy.label) || '?' };
+        });
+      })).then(function (rows) {
+        var body = rows.map(function (r) {
+          return '<tr><td><a href="?d=' + encodeURIComponent(r.name) + '">' + esc(r.label) + '</a></td>' +
+            '<td><span class="badge">' + esc(r.step) + '</span></td><td>' + roleBadge(r.owner) + '</td>' +
+            '<td>' + esc(r.status) + '</td></tr>';
+        }).join('');
+        $('theset').innerHTML = '<div class="card"><details class="fold" open><summary>The Set — all domains (' + rows.length +
+          ', live catalog) <span class="src">GET :3360/domains</span></summary>' +
+          '<table class="table"><thead><tr><th>Domain</th><th>Step</th><th>Owner</th><th>Status</th></tr></thead><tbody>' +
+          body + '</tbody></table></details></div>';
+      });
+    });
   }
-  // Child domains — the recursion fold. Renders ALWAYS (honest-folds).
-  const c = await fetchContains(name);
-  const kids = (c && c.contains) || [];
-  folds += fold('Child Domains (hasChild — recursive)', 'GET :3360/domains/' + esc(name) + '/contains',
-    kids.length ? '<table><tr><th>Child</th></tr>' + kids.map(k =>
-      '<tr><td><a class="edge" href="domain.html?d=' + esc(k.name || k) + '">' + esc(k.label || k.name || k) + '</a></td></tr>').join('') + '</table>' : null,
-    '0 children — edges not yet minted (the #3351 instance work; v1\'s 49-subdomain hierarchy is the mint source)');
-  // Design doc edge.
-  folds += fold('Design Doc (hasDesignDoc)', 'model edge → Document instance',
-    g.hasDesignDoc ? '<p>' + esc((g.hasDesignDoc.label || g.hasDesignDoc.name)) + ' <span class="empty">(becomes a served Document instance on Silas\'s ingest leg)</span></p>' : null,
-    'no design doc linked');
-  // Gaps.
-  folds += fold('Gaps', 'authored on the shape', g.gaps && g.gaps !== 'none declared' ? '<p>' + esc(g.gaps) + '</p>' : null, 'none declared');
-  // What the FULL page keeps from today (scanner facets) — named, not faked.
-  folds += fold('Services · Code · Tests · Alerts (scanner facets)', 'stay on v1 until crawler-leg hydration',
-    null, 'rendered from the existing facet endpoints in the real page — out of mock scope, unchanged by the migration');
-  document.getElementById('folds').innerHTML = folds;
+
+  // ---- recursive child-domain tree (hasChild, structural — ADR-041) ----
+  function liHtml(node) {
+    var link = '<a href="?d=' + encodeURIComponent(node.name) + '">' + esc(node.name) + '</a>';
+    var kids = (node.children && node.children.length) ? '<ul>' + node.children.map(liHtml).join('') + '</ul>' : '';
+    return '<li>' + link + kids + '</li>';
+  }
+  function countTree(n){ return (n.children||[]).reduce(function(a,c){return a+1+countTree(c);},0); }
+  function buildTree(nm, seen, depth) {
+    if (depth > 8 || seen.has(nm)) return Promise.resolve({ name: nm, children: [] });
+    seen.add(nm);
+    return get(OWL + '/domains/' + encodeURIComponent(nm) + '/has-child').then(function (p) {
+      var kids = (p && p.hasChild) || [];
+      return Promise.all(kids.map(function (k) { return buildTree(k, seen, depth + 1); }))
+        .then(function (ns) { return { name: nm, children: ns }; });
+    });
+  }
+  function renderTree(root) {
+    var kids = (root && root.children) || [];
+    if (!kids.length) {
+      $('tree-block').innerHTML = '<div class="card"><div class="muted">Child Domains (hasChild) — none minted yet for this domain. ' +
+        '<span class="src">GET :3360/domains/' + esc(name) + '/has-child</span></div></div>';
+      return;
+    }
+    $('tree-block').innerHTML = '<div class="card"><details class="fold" open><summary>Child Domains — recursive (' +
+      countTree(root) + ') <span class="src">GET :3360/domains/:id/has-child</span></summary>' +
+      '<ul class="tree">' + kids.map(liHtml).join('') + '</ul></details></div>';
+  }
+
+  function renderPartOf(p) {
+    var parents = (p && p.partof) || [];
+    if (!parents.length) return;
+    $('partof').innerHTML = '<div class="card"><span class="stat-label" style="margin-right:8px">Part of (upward)</span>' +
+      parents.map(function (n) { return '<a class="badge" href="?d=' + encodeURIComponent(n) + '">' + esc(n) + '</a>'; }).join(' ') + '</div>';
+  }
+
+  // ---- the v1 coverage folds — every Athena v1 data section, named with its live source ----
+  function renderFolds() {
+    $('folds').innerHTML = FACETS.map(function (f) {
+      return '<div class="card"><details class="fold"><summary>' + esc(f[0]) +
+        ' <span class="src">' + esc(f[1].replace(':id', name)) + '</span></summary>' +
+        '<div class="muted" style="padding-top:6px">' + esc(f[2]) +
+        ' — renders live from this endpoint in the served page (same-origin).</div></details></div>';
+    }).join('');
+  }
+
+  // ---- identity ----
+  get(OWL + '/domains/' + encodeURIComponent(name)).then(function (g) {
+    if (!g) {
+      $('promise').innerHTML = '<strong>:3360 unreachable or unknown domain.</strong> The real page falls back to v1 (non-fatal, #3373).';
+      $('title').innerHTML = esc(name) + ' <span class="kind">— Domain</span>';
+      renderFolds();
+      return;
+    }
+    var step = (g.atStep && g.atStep.label) || '?';
+    document.title = (g.label || name) + ' — Domain';
+    $('title').innerHTML = esc(g.label || name) + ' <span class="kind">— Domain</span>';
+    $('bc-step').innerHTML = '<a href="step.html?step=' + encodeURIComponent(step.toLowerCase()) + '">' + esc(step) + '</a>';
+    $('bc-name').textContent = g.label || name;
+    $('promise').textContent = (g.comment || 'no description on the shape').replace(/\\u2014/g, '—');
+    $('stats').innerHTML =
+      statCard(roleBadge((g.ownedBy || {}).label), 'Owner (ownedBy)') +
+      statCard('<span class="badge">' + esc(step) + '</span>', 'Step (atStep)') +
+      statCard('<span class="badge badge--success">' + esc(g.status || '?') + '</span>', 'Status');
+
+    if (name === 'domains' || name === 'domains-domain') renderTheSet();
+    get(OWL + '/domains/' + encodeURIComponent(name) + '/partof').then(renderPartOf);
+    buildTree(name, new Set(), 0).then(renderTree);
+    renderFolds();
+  });
 })();
 </script>
-</body></html>
+</body>
+</html>

@@ -251,6 +251,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         format!("GET /{}/:name", plural),
         format!("GET /{}/:name/contains", plural),
         format!("GET /{}/:name/partof", plural),
+        format!("GET /{}/:name/has-child", plural),
         format!("GET /schema/{}", class_local.to_lowercase()),
     ];
     // #3414 — MODEL-DRIVEN secured-set: query whether THIS class's shape carries the
@@ -437,6 +438,7 @@ pub fn page_html(t: &RouteTable) -> String {
   </div>
   <div id="stats-bar"></div>
   <div id="partof-block"></div>
+  <div id="haschild-block"></div>
   <div id="promise-block"></div>
   <div id="completeness-block"></div>
   <div id="content-sections"></div>
@@ -615,6 +617,27 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
                 Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
             };
         }
+        // #3351 slice 1 — STRUCTURAL recursion: this entity's child entities via chorus:hasChild
+        // (ADR-041: hasChild = domain→domain structure, NEVER contains=content membership).
+        // This is the clickable parent→child edge the page walks (e.g. messages→heralds).
+        if parts.len() == 3 && parts[2] == "has-child" {
+            let q = format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> <{ns}hasChild> ?o }} BIND(STR(?o) AS ?v) }}",
+                g = INSTANCES_GRAPH, ns = NS, n = name
+            );
+            return match sparql_json(&q) {
+                Ok(body) => {
+                    let items: Vec<String> = select_v(&body).into_iter()
+                        .map(|v| format!("\"{}\"", json_escape(v.rsplit('#').next().unwrap_or(&v))))
+                        .collect();
+                    {
+                        meta.result_count = items.len() as i64;
+                        (200, format!("{{ \"domain\": \"{}\", \"count\": {}, \"hasChild\": [{}] }}", json_escape(name), items.len(), items.join(", ")))
+                    }
+                }
+                Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            };
+        }
         return match entity_json(name) {
             Ok(j) => {
                 meta.result_count = 1;
@@ -773,6 +796,7 @@ mod tests {
         assert!(h.contains("id=\"bc-domain\""), "breadcrumb (Athena › Step › Domain)");
         assert!(h.contains("id=\"stats-bar\""), "stats strip mount");
         assert!(h.contains("id=\"partof-block\""), "#3420 AC2 — the UPWARD (part-of) decomposition mount");
+        assert!(h.contains("id=\"haschild-block\""), "#3351 — the DOWNWARD structural-recursion (hasChild) mount");
         assert!(h.contains("id=\"completeness-block\""), "completeness thermometer mount");
         assert!(h.contains("id=\"content-sections\""), "facet sections mount");
         // the shell loads the shared renderer (not inline rendering) — like content-actions.js
