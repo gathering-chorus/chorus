@@ -25,6 +25,20 @@ import { MessageStore } from './store';
 // handed to the inbox/fold instead of surfaced or failed.
 export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string };
 export type RunInject = (to: string, content: string, from?: string) => Promise<InjectResult>;
+
+/**
+ * #3439 — map a spawned chorus-inject's exit into an InjectResult. The VS Code
+ * focus-guard declines to keystroke when Code isn't frontmost; chorus-inject
+ * surfaces that as a `deferred:<reason>` token on stdout with rc 0. That is a
+ * CLEAN defer (route to fold via the worker's deferred path), NOT a failed
+ * delivery — so a runtime defer must never be classified transient and retried.
+ * Anything else passes through (rc + stderr). Pure, so it's unit-tested.
+ */
+export function classifyInjectOutput(rc: number, stdout: string, stderr: string, target?: string): InjectResult {
+  const m = stdout.match(/deferred:(\S+)/);
+  if (m) return { rc: 0, stderr, deferred: true, deferReason: m[1], target };
+  return { rc, stderr, target };
+}
 export type EmitSpine = (event: string, fields: Record<string, unknown>) => Promise<void>;
 
 export interface DeliveryRow {

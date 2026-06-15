@@ -332,6 +332,15 @@ pub fn inject_vscode<R: OsaRunner, W: io::Write>(
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if result == "ok" {
         Ok(())
+    } else if result.starts_with("deferred:") {
+        // #3439: the VS Code focus-guard declined to keystroke (Code not frontmost).
+        // This is a CLEAN defer, NOT a failure: surface the token on stdout and
+        // return Ok (rc 0) so the pulse worker routes it to the fold via its
+        // deferred path, instead of treating a non-zero rc as a failed delivery
+        // to retry/dead-letter. (Without this, the guard's defer becomes a lost
+        // nudge — the bug the demo cold-eyes gate caught.)
+        writeln!(writer, "{}", result).map_err(|e| format!("write failed: {}", e))?;
+        Ok(())
     } else {
         Err(format!("{} stderr: {}", result, stderr))
     }

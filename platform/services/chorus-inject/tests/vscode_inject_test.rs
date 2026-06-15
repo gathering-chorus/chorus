@@ -57,3 +57,34 @@ fn dispatch_vscode_form_routes_to_vscode_inject() {
     let written = String::from_utf8(buf).unwrap();
     assert!(written.to_lowercase().contains("vscode"), "dry-run must name the vscode path: {written:?}");
 }
+
+// #3439: when the focus-guard defers (Code not frontmost), the osascript returns
+// "deferred:not-frontmost". chorus-inject must surface that as a CLEAN outcome —
+// Ok + the token on stdout — NOT an Err. An Err becomes rc!=0, which pulse would
+// classify as a failed delivery to retry/dead-letter (the cold-eyes bug). pulse
+// reads the stdout token to set deferred=true and route to the fold instead.
+struct DeferRunner;
+impl OsaRunner for DeferRunner {
+    fn run(&self, _script: &str) -> io::Result<Output> {
+        use std::os::unix::process::ExitStatusExt;
+        Ok(Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"deferred:not-frontmost".to_vec(),
+            stderr: vec![],
+        })
+    }
+}
+
+#[test]
+fn vscode_defer_surfaces_clean_token_not_error() {
+    let runner = DeferRunner;
+    let mut buf: Vec<u8> = Vec::new();
+    let args = vec!["--vscode".to_string(), "hi".to_string()];
+    let out = dispatch(&runner, &mut buf, &args, false /* real run */);
+    assert_eq!(out, Dispatch::Ok, "a defer must be Ok (rc 0), never Err (rc!=0 = lost nudge)");
+    let written = String::from_utf8(buf).unwrap();
+    assert!(
+        written.contains("deferred:not-frontmost"),
+        "must surface the deferred token on stdout for pulse to detect: {written:?}"
+    );
+}
