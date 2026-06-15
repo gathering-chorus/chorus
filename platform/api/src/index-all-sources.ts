@@ -339,7 +339,7 @@ function coverageCheck(results: Record<string, string>, expected: string[]): str
   }
   if (missing.length) {
     const msg = `WARN coverage — knowledge source(s) empty: ${missing.join(', ')}`;
-    // eslint-disable-next-line no-console -- coverage miss must surface; worker stderr → Loki.
+     
     console.warn(`[index-all-sources] ${msg}`);
     return msg;
   }
@@ -356,7 +356,7 @@ function clearSlackWatermarks(db: IndexDb, results: Record<string, string>): voi
 
 export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<{ indexed: Record<string, string>; elapsed_ms: number }> {
   const nowFn = deps.now ?? (() => new Date().toISOString());
-  // eslint-disable-next-line @typescript-eslint/require-await -- signature preserved as Promise for async-swap later if any source goes async
+   
   return async function indexAllSources() {
     const db = new deps.DatabaseCtor(deps.dbPath);
     db.pragma('journal_mode = WAL');

@@ -371,7 +371,7 @@ function accumulatePainLine(
   let acc = roll.get(key);
   if (!acc) { acc = { role: f.role, event: f.event, reason: f.reason, count: 0, latestNs: '0', detail: '', cards: new Set(), product: f.product }; roll.set(key, acc); }
   acc.count++;
-  // eslint-disable-next-line security/detect-object-injection -- product is productOf()'s closed return set {Gathering,Chorus}
+   
   byProduct[f.product] = (byProduct[f.product] ?? 0) + 1;
   if (tsNs > acc.latestNs) { acc.latestNs = tsNs; acc.detail = sampleDetail(f.o); }
   if (f.cardId) acc.cards.add(f.cardId);
