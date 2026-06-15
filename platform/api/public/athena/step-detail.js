@@ -91,7 +91,7 @@ function renderDomains() {
   }
   grid.innerHTML = filtered.map(d => {
     const oc = ownerClasses[d.owner] || '';
-    return '<a class="domain-card" href="domain-detail.html?id=' + d.id + '" data-domain-id="' + d.id + '">' +
+    return '<a class="domain-card" href="../domain.html?id=' + d.id + '" data-domain-id="' + d.id + '">' +
       '<h3>' + d.label + '</h3>' +
       '<div class="meta"><span class="owner-dot ' + oc + '"></span>' + d.owner + '</div>' +
       '<div class="domain-stats" style="display:flex;gap:8px;margin:8px 0 4px;flex-wrap:wrap"></div>' +

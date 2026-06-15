@@ -126,22 +126,25 @@
 
   // ---- Cards (derived + reachable) — the domain's board items, each linking through to Vikunja.
   // A standalone section (like THE SET / the tree), not a counted facet.
+  // pure builder (exported, unit-tested): the cards table, each row reachable to the board.
+  function cardRowsHtml(cards) {
+    var cap = 40, shown = cards.slice(0, cap);
+    var rows = shown.map(function (c) {
+      var oc = (c.owner || '').toLowerCase();
+      var owner = ROLE_CLASS[oc] !== undefined ? '<span class="role role--' + esc(oc) + '">' + esc(c.owner) + '</span>' : esc(c.owner || '');
+      return '<tr><td><a href="http://localhost:3456/tasks/' + esc(c.id) + '">#' + esc(c.id) + '</a></td>' +
+        '<td>' + esc(c.title) + '</td><td><span class="badge">' + esc(c.status) + '</span></td>' +
+        '<td>' + esc(c.priority || '') + '</td><td>' + owner + '</td></tr>';
+    }).join('');
+    var more = cards.length > cap ? '<p class="muted">…and ' + (cards.length - cap) + ' more — <a href="http://localhost:3456">on the board</a></p>' : '';
+    return '<table class="table"><thead><tr><th>Card</th><th>Title</th><th>Status</th><th>Pri</th><th>Owner</th></tr></thead><tbody>' + rows + '</tbody></table>' + more;
+  }
   function renderCards() {
     return get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/cards').then(function (b) {
       var el = $('cards-block'); if (!el) return;
       var dd = (b && b.data) || b || {}; var cards = dd.cards || (Array.isArray(dd) ? dd : []);
       if (!cards.length) { el.innerHTML = '<div class="card"><details class="fold"><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Cards (0) <span class="muted">derived</span></summary><p class="muted">No cards on the board for this domain.</p></details></div>'; return; }
-      var cap = 40, shown = cards.slice(0, cap);
-      var rows = shown.map(function (c) {
-        var oc = (c.owner || '').toLowerCase();
-        var owner = ROLE_CLASS[oc] !== undefined ? '<span class="role role--' + esc(oc) + '">' + esc(c.owner) + '</span>' : esc(c.owner || '');
-        return '<tr><td><a href="http://localhost:3456/tasks/' + esc(c.id) + '">#' + esc(c.id) + '</a></td>' +
-          '<td>' + esc(c.title) + '</td><td><span class="badge">' + esc(c.status) + '</span></td>' +
-          '<td>' + esc(c.priority || '') + '</td><td>' + owner + '</td></tr>';
-      }).join('');
-      var more = cards.length > cap ? '<p class="muted">…and ' + (cards.length - cap) + ' more — <a href="http://localhost:3456">on the board</a></p>' : '';
-      el.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Cards (' + cards.length + ') <span class="muted">derived · reachable</span></summary>' +
-        '<table class="table"><thead><tr><th>Card</th><th>Title</th><th>Status</th><th>Pri</th><th>Owner</th></tr></thead><tbody>' + rows + '</tbody></table>' + more + '</details></div>';
+      el.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">Cards (' + cards.length + ') <span class="muted">derived · reachable</span></summary>' + cardRowsHtml(cards) + '</details></div>';
     });
   }
 
@@ -296,6 +299,6 @@
   // browser: wire on load. node/test: skip (no document) + export the pure builders.
   if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, childTreeHtml: childTreeHtml, setRowsHtml: setRowsHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
+    module.exports = { esc: esc, unwrap: unwrap, tableFor: tableFor, renderFacet: renderFacet, statCard: statCard, partOfHtml: partOfHtml, childTreeHtml: childTreeHtml, setRowsHtml: setRowsHtml, cardRowsHtml: cardRowsHtml, resolveV2: resolveV2, FACETS: FACETS, ROLE_CLASS: ROLE_CLASS, dlink: dlink };
   }
 })();
