@@ -988,12 +988,43 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, fin
 // record via the existing record_gate witness path. A garbled or errored gate is
 // recorded as "error" (VISIBLE), never silently passed. ===
 
-/// Is the `claude` CLI resolvable + runnable? Gates can only self-run where a
-/// real claude binary exists (Jeff's machine, local `act`). On hosted CI (no
-/// auth, no binary) it is absent — we degrade rather than break the build
-/// (#3284 lesson). Best-effort: a non-zero/failed `--version` means "no".
+/// Resolve the `claude` CLI to an invocable path. #3443 LIVE FIX: a bare
+/// `Command::new("claude")` only searches PATH — and the `act` pipeline runs
+/// host-native with a PATH that does NOT include `~/.local/bin` (where claude
+/// actually lives). The first live `/cw` run degraded for exactly this reason:
+/// claude was there, just not on the job's PATH. So resolve it explicitly:
+///   1. `CHORUS_CLAUDE_BIN` override (lets the env name the exact binary),
+///   2. bare `claude` if PATH already resolves it (interactive shells),
+///   3. known install locations a stripped job PATH commonly misses.
+/// None = genuinely absent (hosted CI) → degrade, don't break (#3284).
+fn claude_bin() -> Option<String> {
+    if let Ok(p) = env::var("CHORUS_CLAUDE_BIN") {
+        if !p.is_empty() && Path::new(&p).exists() {
+            return Some(p);
+        }
+    }
+    if Command::new("claude").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
+        return Some("claude".to_string());
+    }
+    let home = env::var("HOME").unwrap_or_default();
+    for cand in [
+        format!("{}/.local/bin/claude", home),
+        format!("{}/.claude/local/claude", home),
+        "/usr/local/bin/claude".to_string(),
+        "/opt/homebrew/bin/claude".to_string(),
+    ] {
+        if Path::new(&cand).exists() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+/// Is the `claude` CLI resolvable at all? Gates can only self-run where a real
+/// claude binary exists (Jeff's machine, local `act`). On hosted CI (no auth,
+/// no binary) it is absent — we degrade rather than break the build (#3284).
 fn claude_available() -> bool {
-    Command::new("claude").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+    claude_bin().is_some()
 }
 
 /// Unescape the JSON string-escapes claude emits (\" \\ \/ \n \r \t).
@@ -1139,7 +1170,14 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     );
 
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
-    let child = Command::new("claude")
+    let bin = match claude_bin() {
+        Some(b) => b,
+        None => {
+            record_gate(home, role, card, gate, "error", "claude binary not resolvable", round);
+            return;
+        }
+    };
+    let child = Command::new(&bin)
         .args([
             "-p",
             "--model", &model,
@@ -1397,6 +1435,25 @@ mod tests {
     fn parse_gate_verdict_missing_result_is_error() {
         let (r, _) = parse_gate_verdict(r#"{"findings":"only findings, no verdict"}"#);
         assert_eq!(r, "error");
+    }
+
+    #[test]
+    fn claude_bin_honors_explicit_override() {
+        // #3443 live fix — CHORUS_CLAUDE_BIN names the exact binary, so a stripped
+        // job PATH (act host-native missing ~/.local/bin) can still resolve claude.
+        std::env::set_var("CHORUS_CLAUDE_BIN", "/bin/sh"); // any existing executable
+        let got = claude_bin();
+        std::env::remove_var("CHORUS_CLAUDE_BIN");
+        assert_eq!(got.as_deref(), Some("/bin/sh"));
+    }
+
+    #[test]
+    fn claude_bin_ignores_override_that_does_not_exist() {
+        std::env::set_var("CHORUS_CLAUDE_BIN", "/no/such/claude/binary");
+        let got = claude_bin();
+        std::env::remove_var("CHORUS_CLAUDE_BIN");
+        // falls through to PATH / known locations — must NOT return the bogus path
+        assert_ne!(got.as_deref(), Some("/no/such/claude/binary"));
     }
 
     #[test]
