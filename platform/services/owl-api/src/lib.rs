@@ -19,10 +19,6 @@ use std::process::Command;
 /// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
 pub mod auth;
 
-/// #3437 — cascade resolver: the effective-config specificity law (Properties C).
-/// Pure logic Properties A (#3435) bakes in at projection time.
-pub mod cascade;
-
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
