@@ -246,7 +246,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     }
     adr040_check(class_local, &fields)?; // shape-sourced fields obey the law too
     let plural = pluralize(class_local);
-    let routes = vec![
+    let mut routes = vec![
         format!("GET /{}", plural),
         format!("GET /{}/:name", plural),
         format!("GET /{}/:name/contains", plural),
@@ -254,13 +254,12 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         format!("GET /{}/:name/has-child", plural),
         format!("GET /schema/{}", class_local.to_lowercase()),
     ];
-    // #3454 AC1 — the WRITE routes are generated per edge by write_routes(&plural)
-    // (mirrors this read-route vocabulary). They are NOT yet folded into the served
-    // route table: that requires making openapi_json/routes_json method-aware
-    // (today they assume a "GET " prefix) and the live SPARQL-UPDATE handler +
-    // authZ-from-ownedBy. Until that increment, the serve loop fail-closes EVERY
-    // non-GET with a typed 501 (no write reaches a read handler — AC5/AC7). This
-    // keeps the contract honest: writes aren't advertised until they're served.
+    // #3454 AC1 — the generated WRITE routes (POST/PUT/DELETE per edge), folded
+    // into the served contract: routes.json lists them and openapi_json (now
+    // method-aware) advertises them. serve() dispatches non-GET to handle_write
+    // (authN → authZ-from-ownedBy → shape-rejection → SPARQL-UPDATE → spine →
+    // typed status). A new edge type yields its write routes automatically.
+    routes.extend(write_routes(&plural));
     // #3414 — MODEL-DRIVEN secured-set: query whether THIS class's shape carries the
     // auth annotation (`chorus:requiresAuth true`) and PROJECT the guard from it —
     // replacing #3402's hardcoded `is_secured` constant. No annotation = open (AC3:
@@ -312,6 +311,245 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
         _ => (501, "not-implemented"),               // generated, execution not yet wired (no fail-open)
     }
 }
+
+// === #3454 — the generated WRITE layer (POST/PUT/DELETE per edge) ===========
+//
+// authN (verify_token) + authZ (ownedBy == caller role, FAIL-CLOSED) + shape
+// rejection (single-parent partOf → 409) + typed errors (write_status) + a spine
+// event per write — all in ONE generated path, so a write can't forget to auth,
+// validate, or log. Pure decision/builders are unit-tested; the I/O wraps them.
+
+/// The caller's ROLE from the verified token's webId. The static webid format is
+/// `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids). Returns the
+/// `<role>` segment, or None if the shape doesn't match (→ authZ fail-closed).
+pub fn role_from_webid(web_id: &str) -> Option<String> {
+    let after = web_id.split("/_agents/").nth(1)?;
+    let role = after.split('/').next()?;
+    if role.is_empty() { None } else { Some(role.to_string()) }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum WriteOp {
+    CreateEntity,
+    ReplaceEntity { name: String },
+    DeleteEntity { name: String },
+    AddEdge { name: String, edge: String },
+    RemoveEdge { name: String, edge: String },
+}
+
+/// Parse a generated write route into the operation it denotes. Mirrors the
+/// read-route shapes; returns None for anything not a known write route (→ 404).
+pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
+    let p = path.split(['?', '#']).next().unwrap_or(path);
+    let parts: Vec<&str> = p.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    if parts.first().map(|s| *s) != Some(plural) {
+        return None;
+    }
+    match (method, parts.len()) {
+        ("POST", 1) => Some(WriteOp::CreateEntity),
+        ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
+        ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
+        ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
+        ("DELETE", 3) => Some(WriteOp::RemoveEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
+        _ => None,
+    }
+}
+
+/// The OWL predicate local-name for a write edge segment. None = unknown edge
+/// (→ validation 422). The single-valued one (partOf, a FunctionalProperty per
+/// #3450) is flagged so the handler enforces single-parent.
+pub fn edge_predicate(edge: &str) -> Option<&'static str> {
+    match edge {
+        "partof" => Some("partOf"),
+        "contains" => Some("contains"),
+        "has-child" => Some("hasChild"),
+        _ => None,
+    }
+}
+
+/// partOf is the single-valued (FunctionalProperty) edge — a 2nd parent is a 409.
+pub fn edge_is_single_valued(edge: &str) -> bool {
+    edge == "partof"
+}
+
+/// AuthZ: the caller may write a node's edges ONLY if they OWN it. FAIL-CLOSED —
+/// an absent ownedBy (None) denies (the #3414 fail-closed lesson; Silas backfills
+/// coverage). Pure + unit-tested.
+pub fn authz_allows(caller_role: &str, owned_by: Option<&str>) -> bool {
+    matches!(owned_by, Some(o) if !o.is_empty() && o == caller_role)
+}
+
+/// Build the INSERT/DELETE DATA update for an edge triple. Names are pre-validated
+/// (is_safe_local) by the caller before they reach here, so IRI interpolation is
+/// injection-safe. `insert=true` → add, false → remove.
+pub fn build_edge_update(entity: &str, predicate: &str, target: &str, insert: bool) -> String {
+    let verb = if insert { "INSERT DATA" } else { "DELETE DATA" };
+    format!(
+        "{verb} {{ GRAPH <{g}> {{ <{ns}{e}> <{ns}{p}> <{ns}{t}> }} }}",
+        verb = verb, g = INSTANCES_GRAPH, ns = NS, e = entity, p = predicate, t = target
+    )
+}
+
+/// Extract the edge target name from a JSON request body: { "target": "<name>" }.
+/// Minimal zero-dep extractor; the value is validated by is_safe_local downstream
+/// (bare local names only), so escape-handling isn't needed here.
+pub fn parse_body_target(body: &str) -> Option<String> {
+    let needle = "\"target\"";
+    let i = body.find(needle)? + needle.len();
+    let after_colon = &body[i..][body[i..].find(':')? + 1..];
+    let q = after_colon.find('"')? + 1;
+    let val = &after_colon[q..];
+    let end = val.find('"')?;
+    Some(val[..end].to_string())
+}
+
+/// Run a SPARQL UPDATE against Fuseki's /update endpoint (mirrors sparql_json's
+/// curl pattern). Returns Ok on 2xx, a typed reason otherwise.
+fn sparql_update(update: &str) -> R<()> {
+    let out = Command::new("curl")
+        .args([
+            "-sf", "--max-time", "20",
+            "--data-urlencode", &format!("update={}", update),
+            &format!("{}/update", fuseki()),
+        ])
+        .output()
+        .map_err(|e| format!("curl-spawn: {}", e))?;
+    if !out.status.success() {
+        return Err(format!("fuseki-update failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(())
+}
+
+/// Query the ownedBy role of an entity (for authZ). None = no ownedBy on record →
+/// authz_allows fails closed.
+fn query_owned_by(entity: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
+        ns = NS, g = INSTANCES_GRAPH, e = entity
+    );
+    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+}
+
+/// Does the entity already have a partOf parent? (single-parent → 2nd add is 409).
+fn partof_exists(entity: &str) -> bool {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:partOf ?p . BIND('y' AS ?v) }} }}",
+        ns = NS, g = INSTANCES_GRAPH, e = entity
+    );
+    sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+}
+
+/// Emit the per-write spine event (AC4): who / what / which-edge / when. Uniform,
+/// best-effort like the read telemetry — a write is never silent. Resolves the
+/// chorus-log path from CHORUS_HOME (the daemon-PATH lesson, #3151).
+fn emit_write_spine(caller: &str, op: &str, entity: &str, edge: &str, result: &str) {
+    let home = std::env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    let log = format!("{}/platform/scripts/chorus-log", home);
+    let _ = Command::new("bash").args([
+        log.as_str(), "owl.write", caller,
+        &format!("op={}", op), &format!("entity={}", entity),
+        &format!("edge={}", edge), &format!("result={}", result),
+    ]).output();
+}
+
+/// Map a write outcome tag to a typed JSON error/ok response (AC5 — one place,
+/// no silent 200). write_status owns the code; this owns the body shape.
+fn write_resp(tag: &str, message: &str) -> (u16, String) {
+    let (code, t) = write_status(tag);
+    let key = if code < 400 { "status" } else { "error" };
+    (code, format!("{{ \"{}\": \"{}\", \"message\": \"{}\" }}", key, t, json_escape(message)))
+}
+
+/// #3454 — the generated write handler. authZ (ownedBy, fail-closed) → shape
+/// rejection (single-parent partOf → 409) → SPARQL-UPDATE execution → spine event,
+/// every outcome typed via write_status. authN is done by serve() before this is
+/// called (caller_role = the verified token's role). Entity create/replace return
+/// a typed 501 (the next slice: full-property-body shape validation); edge add/
+/// remove + entity delete are live.
+pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str) -> (u16, String) {
+    let class_local = table.class.rsplit('#').next().unwrap_or("");
+    let plural = pluralize(class_local);
+    let op = match parse_write(method, path, &plural) {
+        Some(o) => o,
+        None => return write_resp("not-found", "no such write route"),
+    };
+    // entity name (None for CreateEntity) + injection-safety
+    let entity: Option<String> = match &op {
+        WriteOp::CreateEntity => None,
+        WriteOp::ReplaceEntity { name }
+        | WriteOp::DeleteEntity { name }
+        | WriteOp::AddEdge { name, .. }
+        | WriteOp::RemoveEdge { name, .. } => Some(name.clone()),
+    };
+    if let Some(e) = &entity {
+        if !is_safe_local(e) {
+            return write_resp("validation", "invalid entity name");
+        }
+        // AC3 authZ — only the owning role writes this node's edges (fail-closed).
+        let owned = query_owned_by(e);
+        if !authz_allows(caller_role, owned.as_deref()) {
+            emit_write_spine(caller_role, method, e, "", "authz");
+            return write_resp("authz", "only the owning role may write this node (ownedBy)");
+        }
+    }
+    match &op {
+        WriteOp::AddEdge { name, edge } | WriteOp::RemoveEdge { name, edge } => {
+            let pred = match edge_predicate(edge) {
+                Some(p) => p,
+                None => return write_resp("validation", "unknown edge type"),
+            };
+            let target = match parse_body_target(body) {
+                Some(t) => t,
+                None => return write_resp("validation", "missing 'target' in request body"),
+            };
+            if !is_safe_local(&target) {
+                return write_resp("validation", "invalid target name");
+            }
+            let insert = matches!(op, WriteOp::AddEdge { .. });
+            // AC2 — single-parent partOf: a 2nd parent is a 409, never silently accepted.
+            if insert && edge_is_single_valued(edge) && partof_exists(name) {
+                emit_write_spine(caller_role, "add-edge", name, edge, "conflict");
+                return write_resp("conflict", "partOf is single-valued: node already has a parent");
+            }
+            let update = build_edge_update(name, pred, &target, insert);
+            match sparql_update(&update) {
+                Ok(_) => {
+                    let verb = if insert { "add-edge" } else { "remove-edge" };
+                    emit_write_spine(caller_role, verb, name, edge, "ok");
+                    write_resp("ok", &format!("{} {} {} -> {}", verb, name, edge, target))
+                }
+                Err(e) => {
+                    emit_write_spine(caller_role, "edge", name, edge, "error");
+                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                }
+            }
+        }
+        WriteOp::DeleteEntity { name } => {
+            let update = format!(
+                "DELETE WHERE {{ GRAPH <{g}> {{ <{ns}{e}> ?p ?o }} }}",
+                g = INSTANCES_GRAPH, ns = NS, e = name
+            );
+            match sparql_update(&update) {
+                Ok(_) => {
+                    emit_write_spine(caller_role, "delete-entity", name, "", "ok");
+                    write_resp("ok", &format!("deleted {}", name))
+                }
+                Err(e) => {
+                    emit_write_spine(caller_role, "delete-entity", name, "", "error");
+                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                }
+            }
+        }
+        WriteOp::CreateEntity | WriteOp::ReplaceEntity { .. } => {
+            // Entity create/replace need full-property-body validation against the
+            // shape — the next slice. Edge writes (the #3454 core) are live above.
+            write_resp("not-implemented", "entity create/replace is the next slice; edge writes are live")
+        }
+    }
+}
+
+/// dashboards.json — the observability config as a GENERATED artifact
 
 /// dashboards.json — the observability config as a GENERATED artifact
 /// (#3354: regenerate-not-reload applies to observability too). Emitted
@@ -387,11 +625,16 @@ pub fn openapi_json(t: &RouteTable) -> String {
         props.push(format!("\"{}\": {}", name, schema));
     }
     props.sort();
-    let mut paths: Vec<String> = t
-        .routes
-        .iter()
-        .map(|r| {
-            let p = r.trim_start_matches("GET ").replace(":name", "{name}");
+    // #3454 — method-aware: group operations by path so a path with both a GET
+    // (read) and POST/PUT/DELETE (generated write) emits one path object with
+    // multiple operation keys (valid OpenAPI). Writes document the typed-error
+    // taxonomy (write_status) + the {target} requestBody.
+    let mut by_path: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    for r in &t.routes {
+        let (method, raw) = r.split_once(' ').unwrap_or(("GET", r.as_str()));
+        let p = raw.replace(":name", "{name}");
+        let m = method.to_ascii_lowercase();
+        let op = if m == "get" {
             let (resp, params) = if p.ends_with("/{name}") {
                 (format!("#/components/schemas/{}", class_short), NAME_PARAM)
             } else if p.contains("{name}") {
@@ -402,18 +645,33 @@ pub fn openapi_json(t: &RouteTable) -> String {
                 ("#/components/schemas/List".to_string(), "")
             };
             format!(
-                "    \"{}\": {{ \"get\": {{ {}\"responses\": {{ \"200\": {{ \"description\": \"ok\", \"content\": {{ \"application/json\": {{ \"schema\": {{ \"$ref\": \"{}\" }} }} }} }}, \"404\": {{ \"description\": \"typed refusal\" }} }} }} }}",
-                p, params, resp
+                "\"get\": {{ {}\"responses\": {{ \"200\": {{ \"description\": \"ok\", \"content\": {{ \"application/json\": {{ \"schema\": {{ \"$ref\": \"{}\" }} }} }} }}, \"404\": {{ \"description\": \"typed refusal\" }} }} }}",
+                params, resp
             )
+        } else {
+            let params = if p.contains("{name}") { NAME_PARAM } else { "" };
+            format!(
+                "\"{}\": {{ {}\"requestBody\": {{ \"content\": {{ \"application/json\": {{ \"schema\": {{ \"type\": \"object\", \"properties\": {{ \"target\": {{ \"type\": \"string\" }} }} }} }} }} }}, \"responses\": {{ \"200\": {{ \"description\": \"ok\" }}, \"201\": {{ \"description\": \"created\" }}, \"401\": {{ \"description\": \"authn-missing\" }}, \"403\": {{ \"description\": \"authz (ownedBy)\" }}, \"409\": {{ \"description\": \"conflict (single-parent partOf)\" }}, \"422\": {{ \"description\": \"validation\" }}, \"404\": {{ \"description\": \"not-found\" }} }} }}",
+                m, params
+            )
+        };
+        by_path.entry(p).or_default().push(op);
+    }
+    let paths: String = by_path
+        .iter()
+        .map(|(p, ops)| {
+            let mut o = ops.clone();
+            o.sort();
+            format!("    \"{}\": {{ {} }}", p, o.join(", "))
         })
-        .collect();
-    paths.sort();
+        .collect::<Vec<_>>()
+        .join(",\n");
     format!(
         "{{\n  \"openapi\": \"3.0.3\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
         class_short = class_short,
         class = t.class,
         graph = ONTOLOGY_GRAPH,
-        paths = paths.join(",\n"),
+        paths = paths,
         props = props.join(", "),
         class_l = class_l
     )
@@ -810,18 +1068,28 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let ((code, body), meta) = if method != "GET" {
-            // #3454 — a non-GET is a generated WRITE route. It is NEVER dispatched to a
-            // read handler (the "POST returns 200 from the read handler" anti-pattern AC5
-            // forbids). The write routes exist in the contract (routes.json / openapi);
-            // live execution + authZ-from-ownedBy + shape-rejection are the handler
-            // increment. Until then every write fail-closes with a typed 501 — advertised,
-            // gated, never a silent read. No fail-open interim (AC7).
-            let (wc, tag) = write_status("not-implemented");
-            let b = format!(
-                "{{ \"error\": \"{}\", \"method\": \"{}\", \"path\": \"{}\", \"note\": \"owl-api write endpoint is generated (routes.json/openapi); execution + authZ land in the #3454 handler increment\" }}",
-                tag, json_escape(&method), json_escape(&path)
-            );
-            ((wc, b), ReqMeta { route: "write-not-implemented".into(), ..Default::default() })
+            // #3454 — the WRITE path. authN is ALWAYS required on a write (a write is
+            // never open, unlike a read), then handle_write does authZ-from-ownedBy,
+            // shape rejection, the SPARQL-UPDATE, the spine event, and a typed status.
+            // A write can NEVER reach a read handler (the "POST returns 200" anti-pattern).
+            let auth_hdr = header("authorization");
+            let token = auth_hdr
+                .strip_prefix("Bearer ")
+                .or_else(|| auth_hdr.strip_prefix("bearer "))
+                .unwrap_or(&auth_hdr);
+            match auth::verify_token(token, &secret, &allowed_webids, now_secs) {
+                Err(_) => {
+                    let (c, t) = write_status("authn-missing");
+                    ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
+                     ReqMeta { route: "write-authn".into(), ..Default::default() })
+                }
+                Ok(claims) => {
+                    let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                    let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                    let (c, b) = handle_write(&method, &path, body_str, table, &role);
+                    ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                }
+            }
         } else {
             match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
@@ -1030,6 +1298,57 @@ mod tests {
         }
         // pluralization flows through (mirrors read-route generation)
         assert!(write_routes("properties").contains(&"POST /properties".to_string()));
+    }
+
+    #[test]
+    fn role_from_webid_extracts_role_or_none() {
+        assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me").as_deref(), Some("wren"));
+        assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me").as_deref(), Some("silas"));
+        assert_eq!(role_from_webid("https://example.com/nobody"), None);
+    }
+
+    #[test]
+    fn parse_write_maps_method_and_shape() {
+        assert_eq!(parse_write("POST", "/domains", "domains"), Some(WriteOp::CreateEntity));
+        assert_eq!(parse_write("PUT", "/domains/x", "domains"), Some(WriteOp::ReplaceEntity { name: "x".into() }));
+        assert_eq!(parse_write("DELETE", "/domains/x", "domains"), Some(WriteOp::DeleteEntity { name: "x".into() }));
+        assert_eq!(parse_write("POST", "/domains/x/partof", "domains"), Some(WriteOp::AddEdge { name: "x".into(), edge: "partof".into() }));
+        assert_eq!(parse_write("DELETE", "/domains/x/partof", "domains"), Some(WriteOp::RemoveEdge { name: "x".into(), edge: "partof".into() }));
+        assert_eq!(parse_write("POST", "/widgets", "domains"), None);
+        assert_eq!(parse_write("POST", "/domains/x/y/z", "domains"), None);
+    }
+
+    #[test]
+    fn authz_allows_is_fail_closed() {
+        assert!(authz_allows("wren", Some("wren")));
+        assert!(!authz_allows("wren", Some("silas")));
+        assert!(!authz_allows("wren", None));        // absent ownedBy → FAIL-CLOSED
+        assert!(!authz_allows("wren", Some("")));
+    }
+
+    #[test]
+    fn edge_predicate_and_single_valued() {
+        assert_eq!(edge_predicate("partof"), Some("partOf"));
+        assert_eq!(edge_predicate("contains"), Some("contains"));
+        assert_eq!(edge_predicate("has-child"), Some("hasChild"));
+        assert_eq!(edge_predicate("bogus"), None);
+        assert!(edge_is_single_valued("partof"));
+        assert!(!edge_is_single_valued("contains"));
+    }
+
+    #[test]
+    fn build_edge_update_insert_and_delete() {
+        let ins = build_edge_update("childnode", "partOf", "parentnode", true);
+        assert!(ins.starts_with("INSERT DATA"));
+        assert!(ins.contains("#childnode>") && ins.contains("#partOf>") && ins.contains("#parentnode>"));
+        assert!(build_edge_update("c", "partOf", "p", false).starts_with("DELETE DATA"));
+    }
+
+    #[test]
+    fn parse_body_target_pulls_target() {
+        assert_eq!(parse_body_target(r#"{"target":"parentnode"}"#).as_deref(), Some("parentnode"));
+        assert_eq!(parse_body_target(r#"{ "target" : "p2" , "x": 1 }"#).as_deref(), Some("p2"));
+        assert_eq!(parse_body_target(r#"{"other":"x"}"#), None);
     }
 
     #[test]
