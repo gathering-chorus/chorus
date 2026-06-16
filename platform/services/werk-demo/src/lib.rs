@@ -202,6 +202,27 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec
         .collect()
 }
 
+/// #3443 AC2 — peers who have NOT yet been SENT a gather this round. Distinct
+/// from gathers_missing (which tracks REPLIES): sending is keyed on
+/// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
+/// nudge (the #3305 refire-storm guard). Empty = both peers already have the
+/// reply-required gather; the stop hook (#3218) then holds them until they ack.
+pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
+    let card_key = format!("\"card_id\":{},", card);
+    gather_peers(role)
+        .into_iter()
+        .filter(|peer| {
+            let peer_key = format!("\"peer\":\"{}\"", peer);
+            !witness.lines().any(|l| {
+                l.contains("\"event\":\"demo.gather.sent\"")
+                    && l.contains(&card_key)
+                    && l.contains(&peer_key)
+                    && line_in_round(l, round)
+            })
+        })
+        .collect()
+}
+
 pub fn gates_missing(witness: &str, card: u64, round: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     REQUIRED_GATES
@@ -553,6 +574,40 @@ pub fn mcp_nudge_body(to: &str, message: &str) -> String {
     )
 }
 
+/// #3443 AC2 — record that a reply-required gather was SENT to a peer this round
+/// (dedup key for gathers_unsent so re-invokes don't re-fire). Distinct from the
+/// demo.gather.replied the peer's ack records.
+fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &str, trace: &str) {
+    jsonl(home, role, card, trace, "demo.gather.sent",
+          &format!(",\"peer\":\"{}\",\"round\":\"{}\"", peer, round));
+    emit_spine(home, "demo.gather.sent", role, card, trace);
+}
+
+/// #3443 AC2 — the binary FIRES the reply-required gathers itself, BEFORE the
+/// announce standby. Previously the gather send lived in signal() AFTER the
+/// standby return, so a headless demo (no demoer agent) stood by forever having
+/// never sent them — the chicken/egg Jeff caught live: a gather can't be
+/// "replied" until it's "sent", and sending was the deleted demoer step. Sends
+/// only after gates are recorded (gates → gathers → replies → announce) and only
+/// to peers with no demo.gather.sent this round. The expects=reply envelope
+/// (mcp_nudge_body) + the #3218 RESPOND-FIRST hook make the peer owe an ack; the
+/// hook fires at the recipient's turn-end so the gather never queues silently
+/// behind their auto/focus-mode work.
+fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    if !gates_missing(&witness, card, round).is_empty() {
+        return; // gates not recorded yet — don't ask peers to review un-gated work
+    }
+    for peer in gathers_unsent(&witness, card, role, round) {
+        if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
+            jsonl(home, role, card, trace, "demo.nudge.failed",
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", peer, e.replace('"', "'")));
+        } else {
+            record_gather_sent(home, role, card, peer, round, trace);
+        }
+    }
+}
+
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
@@ -741,6 +796,18 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // relay + the in-binary gate-chain wait stay retired (the agents-grading-agents
     // relay was the waste, not the gates). Smoke folds into the machine prover.
     emit_spine(home, "demo.gates.recorded", role, card, &trace);
+
+    // #3443 AC2 — FIRE the reply-required gathers HERE, before the standby. This
+    // is the bug Jeff caught live: the gather send lived only in signal() (below,
+    // after the standby return), so a headless demo stood by on gathers-pending
+    // having never sent them. fire_gathers sends to unsent peers once gates are
+    // recorded; the expects=reply envelope + #3218 hook make each peer owe an
+    // ack. Skippable only in the unit/e2e suite (which seeds replies directly).
+    let skip_gather_send =
+        std::env::var("CHORUS_DEMO_SKIP_GATHER_SEND").map(|v| v == "1").unwrap_or(false);
+    if !skip_gather_send {
+        fire_gathers(home, role, card, &trace, &round);
+    }
 
     // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
     // announce-bearing tail below (signal → test-surface → DEMO READY → peer
@@ -1664,6 +1731,21 @@ mod tests {
         let b = mcp_nudge_body("silas", "msg");
         assert!(b.contains("\"expects\":\"reply\""), "gather must be expects=reply: {}", b);
         assert!(!b.contains("\"expects\":\"none\""), "gather must never be expects=none: {}", b);
+    }
+
+    #[test]
+    fn gathers_unsent_dedupes_on_sent_not_replied() {
+        // #3443 AC2 — a peer already SENT this round is not re-fired (no #3305
+        // storm), even though they have not yet REPLIED. The other peer is unsent.
+        let w = r#"{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3443,"trace_id":"t","peer":"silas","round":"r1"}"#;
+        assert_eq!(gathers_unsent(w, 3443, "wren", "r1"), vec!["kade"]);
+        // but they STILL count as missing-reply until they actually reply
+        assert!(gathers_missing(w, 3443, "wren", "r1").contains(&"silas"));
+    }
+
+    #[test]
+    fn gathers_unsent_all_when_nothing_sent() {
+        assert_eq!(gathers_unsent("", 3443, "wren", "r1"), vec!["silas", "kade"]);
     }
 
     #[test]

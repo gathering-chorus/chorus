@@ -151,6 +151,9 @@ exit 0
     // new self-RUN path (headless claude -p) is unit-tested separately. Skip it
     // here so e2e never spawns a real claude.
     std::env::set_var("CHORUS_DEMO_SKIP_GATE_RUN", "1");
+    // #3443 AC2 — the suite seeds gather replies directly; skip the real send so
+    // e2e never fires a live MCP nudge (keeps the happy path's zero-nudge contract).
+    std::env::set_var("CHORUS_DEMO_SKIP_GATHER_SEND", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
 
     // #3284 (AC6): with NO gates recorded, the demo REFUSES to present (invariant gate
@@ -392,6 +395,9 @@ exit 0
     // new self-RUN path (headless claude -p) is unit-tested separately. Skip it
     // here so e2e never spawns a real claude.
     std::env::set_var("CHORUS_DEMO_SKIP_GATE_RUN", "1");
+    // #3443 AC2 — the suite seeds gather replies directly; skip the real send so
+    // e2e never fires a live MCP nudge (keeps the happy path's zero-nudge contract).
+    std::env::set_var("CHORUS_DEMO_SKIP_GATHER_SEND", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
     std::env::remove_var("ACT");
 
