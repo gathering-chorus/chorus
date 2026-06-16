@@ -7,10 +7,15 @@
     <!-- #3354 reliability ility: the generated Domain API runs SUPERVISED from
          day one (the 2026-06-11 pulse lesson: unsupervised services become
          landmines). Serves the installed binary from ~/.chorus/bin; KeepAlive
-         restarts on crash; localhost-bound (the gathering local-security model). -->
+         restarts on crash; localhost-bound (the gathering local-security model).
+         #3446: invokes owl-api-launch.sh (NOT owl-api directly) — the launcher
+         sources the realm secret (#3402) and waits for Fuseki readiness before
+         exec, so a clean boot no longer crash-loops while Fuseki is coming up.
+         This must match the installed plist; deploying owl-api direct re-opens
+         the boot crash-loop. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/.chorus/bin/owl-api</string>
+        <string>/Users/jeffbridwell/.chorus/bin/owl-api-launch.sh</string>
         <string>serve</string>
         <string>--port</string>
         <string>3360</string>

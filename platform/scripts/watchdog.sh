@@ -126,7 +126,7 @@ else: print(0)" 2>/dev/null || echo "0")
   fi
 
   # Role is active recently — reset watchdog
-  if [ "$effective_age" -lt "$OPS_NUDGE_THRESHOLD" ]; then
+  if [ "$effective_age" -lt "$NUDGE_THRESHOLD" ]; then
     if [ "$last_action" != "none" ]; then
       echo "none" > "$WATCHDOG_STATE"
       echo "$now" >> "$WATCHDOG_STATE"
@@ -139,7 +139,7 @@ else: print(0)" 2>/dev/null || echo "0")
   inactive_count=$((inactive_count + 1))
 
   # Level 1: Nudge the role (2min)
-  if [ "$effective_age" -ge "$OPS_NUDGE_THRESHOLD" ] && [ "$last_action" = "none" ]; then
+  if [ "$effective_age" -ge "$NUDGE_THRESHOLD" ] && [ "$last_action" = "none" ]; then
     bash "$OPS_NUDGE" "$role" "watchdog: no activity in $((effective_age / 60))min, are you blocked?" system 2>/dev/null || true
     echo "nudged" > "$WATCHDOG_STATE"
     echo "$now" >> "$WATCHDOG_STATE"
