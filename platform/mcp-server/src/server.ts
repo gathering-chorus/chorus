@@ -19,7 +19,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
@@ -27,8 +27,8 @@ import { resolveCardsPath } from './cards-path';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
-import { decideRunAction, extractFailureReason } from './werk-run-state';
-import { readRun, writeRun, markPhase, isRunStale } from './werk-run-store';
+import { decideRunAction } from './werk-run-state';
+import { readRun, writeRun, isRunStale, logPath, reconcileRunning } from './werk-run-store';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
 // This keeps chorus-mcp's surface minimal — only depends on cards CLI, git-queue,
@@ -2006,6 +2006,10 @@ async function executeChorusWerk(
   // starting a second act. A drop is a non-event: the caller re-invokes and gets
   // the truth, never a double-act or a WIP-limbo card. (Half A is no-go/present,
   // so decideRunAction attaches for any existing run here.)
+  // #3458 — advance a finished DETACHED run to its terminal phase from the on-disk
+  // log (the act wrote WERK_EXIT there, not back through this already-returned call)
+  // BEFORE deciding, so a poll reflects the true state.
+  reconcileRunning(args.card_id);
   const existingRun = readRun(args.card_id);
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
@@ -2013,6 +2017,7 @@ async function executeChorusWerk(
   const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false);
   if (action.kind === 'attach') {
     const r = action.run;
+    const polling = r.phase === 'running';
     return {
       content: [{
         type: 'text' as const,
@@ -2020,65 +2025,44 @@ async function executeChorusWerk(
           ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
           role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
           failureReason: r.failureReason,
-          note: `Attached to the run already on record for #${args.card_id} (phase=${r.phase}) — idempotent re-invoke, no second act started. A transport drop is a non-event: this IS the true state.`,
+          note: polling
+            ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
+            : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
         }),
       }],
     };
   }
-  writeRun({
-    runId: `${args.card_id}-${args.role}-${process.pid}`,
-    card: args.card_id, role: args.role, go: false,
-    phase: 'running', startedAt: new Date().toISOString(), pid: process.pid,
+  // #3458 — START: launch act DETACHED and return immediately. A bash wrapper streams
+  // act's output to the per-card log and appends WERK_EXIT=<code> when it finishes — a
+  // DURABLE terminal marker that survives an mcp-server restart (on disk, not an
+  // in-process listener). The MCP call never holds open across the multi-minute run,
+  // so the transport cannot drop. The caller polls by re-invoking (the attach branch
+  // above reconciles the phase from the log). Interpolated values are controlled
+  // (validated card_id:number + role/accepter enums + fixed paths), so the bash -c
+  // string carries no injection surface.
+  const runId = `${args.card_id}-${args.role}-${process.pid}`;
+  const log = logPath(args.card_id);
+  const actCmd =
+    `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
+    `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter}`;
+  const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
+  const child = spawn('bash', ['-c', wrapped], {
+    env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+    detached: true,
+    stdio: 'ignore',
   });
-  const actArgs = [
-    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
-    '--input', `card_id=${args.card_id}`,
-    '--input', `role=${args.role}`,
-    '--input', `accepter=${accepter}`,
-  ];
-  let stdout: string; // assigned in both try and catch before first read
-  let stderr: string;
-  let exitCode = 0;
-  try {
-    const result = await execFileAsync(actBin, actArgs, {
-      env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
-      timeout: 0,
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    stdout = result.stdout || '';
-    stderr = result.stderr || '';
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
-    stdout = e.stdout || '';
-    stderr = e.stderr || '';
-    exitCode = typeof e.code === 'number' ? e.code : 1;
-  }
-  if (exitCode !== 0) {
-    const combined = stderr + stdout;
-    const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
-    const step = stepMatch ? stepMatch[1] : 'unknown';
-    // #3443 AC7 — surface the child verb's REAL reason, not just "step=X exit=1",
-    // and record it so a re-invoke attaches to the failure instead of re-running.
-    const reason = extractFailureReason(stdout, stderr, step);
-    markPhase(args.card_id, 'failed', { failureReason: reason });
-    throw new Error(`pipeline-fail — reason=${reason} step=${step} exit=${exitCode} — Half A stopped; the variant was not presented. Nothing merged. (re-invoke chorus_werk to read this state; it will not re-run.)`);
-  }
-  // #3443 AC7 — record the terminal phase so a re-invoke reports 'presented'
-  // (and a subsequent GO can start the land).
-  markPhase(args.card_id, 'presented');
+  child.unref();
+  writeRun({
+    runId, card: args.card_id, role: args.role, go: false,
+    phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
+  });
   return {
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
-        ok: true,
-        verb: 'chorus_werk',
-        phase: 'presented',
-        role: args.role,
-        card_id: args.card_id,
-        accepter,
-        go_command: landCmd,
-        note: 'Presented and stopped. Nothing is held. On the human GO, re-invoke chorus_werk with go:true — it resumes past the stop (merge → ff-sync → deploy-prod → accept). no-go/more = do nothing; the werk is preserved.',
-        stdout: stdout.trim().slice(-4000),
+        ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
+        run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+        note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
       }),
     }],
   };
@@ -2124,60 +2108,34 @@ async function executeChorusWerkLand(
       }],
     };
   }
-  writeRun({
-    runId: `${args.card_id}-${args.role}-${process.pid}-land`,
-    card: args.card_id, role: args.role, go: true,
-    phase: 'running', startedAt: new Date().toISOString(), pid: process.pid,
+  // #3458 — START the land DETACHED, same model as Half A: the wrapper streams the
+  // go-gated land job (merge → ff-sync → deploy-prod → accept) to the per-card log and
+  // appends WERK_EXIT when done. Returns immediately; the caller polls (the attach
+  // branch reconciles go:true + exit 0 → 'landed'). No held connection on the land's
+  // deploy step → no drop there either.
+  const runId = `${args.card_id}-${args.role}-${process.pid}-land`;
+  const log = logPath(args.card_id);
+  const actCmd =
+    `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
+    `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter} --input go=true`;
+  const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
+  const child = spawn('bash', ['-c', wrapped], {
+    env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+    detached: true,
+    stdio: 'ignore',
   });
-  const actArgs = [
-    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
-    '--input', `card_id=${args.card_id}`,
-    '--input', `role=${args.role}`,
-    '--input', `accepter=${accepter}`,
-    '--input', 'go=true', // #3193 — selects the go-gated `land` job in the ONE werk.yml
-  ];
-  let stdout: string; // assigned in both try and catch before first read
-  let stderr: string;
-  let exitCode = 0;
-  try {
-    const result = await execFileAsync(actBin, actArgs, {
-      env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
-      timeout: 0,
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    stdout = result.stdout || '';
-    stderr = result.stderr || '';
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
-    stdout = e.stdout || '';
-    stderr = e.stderr || '';
-    exitCode = typeof e.code === 'number' ? e.code : 1;
-  }
-  if (exitCode !== 0) {
-    const combined = stderr + stdout;
-    const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
-    const step = stepMatch ? stepMatch[1] : 'unknown';
-    // #3443 AC7 — surface the child verb's REAL reason (the thing that forced a
-    // hand-run of werk-merge tonight), not "step=X exit=1", and record it so a
-    // re-invoke attaches to the failure instead of re-merging.
-    const reason = extractFailureReason(stdout, stderr, step);
-    markPhase(args.card_id, 'failed', { failureReason: reason });
-    throw new Error(`land-fail — reason=${reason} step=${step} exit=${exitCode} — Half B stopped; check what landed before retrying. (re-invoke chorus_werk go:true to read this state; it attaches, it will not re-merge.)`);
-  }
-  // #3443 AC7 — record the terminal land so a re-invoke reports 'landed', idempotent.
-  markPhase(args.card_id, 'landed');
+  child.unref();
+  writeRun({
+    runId, card: args.card_id, role: args.role, go: true,
+    phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
+  });
   return {
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
-        ok: true,
-        verb: 'chorus_werk',
-        phase: 'landed',
-        role: args.role,
-        card_id: args.card_id,
-        accepter,
-        note: 'Landed — merged → ff-synced → deployed to prod → accepted. The GO was the accept (DEC-048): werk-accept ran under the accepter named on this call.',
-        stdout: stdout.trim().slice(-4000),
+        ok: true, verb: 'chorus_werk', phase: 'running', launched: true, go: true,
+        run_id: runId, role: args.role, card_id: args.card_id, accepter,
+        note: `Landing (#${args.card_id}) — merge → ff-sync → deploy-prod → accept runs DETACHED; nothing held. Re-invoke chorus_werk go:true to poll: 'running' until done, then 'landed' (live + accepted) or 'failed' (with the reason).`,
       }),
     }],
   };

@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import type { WerkRun, WerkRunPhase } from './werk-run-state';
+import { parseExitSentinel, extractFailureReason } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 
@@ -63,6 +64,34 @@ export function clearRun(card: number, dir: string = RUNS_DIR): void {
   } catch {
     /* best-effort */
   }
+}
+
+/** The per-card log a detached act run streams to; its tail carries the WERK_EXIT
+ *  sentinel the poll-time reconcile reads (durable, survives an mcp restart). */
+export function logPath(card: number, dir: string = RUNS_DIR): string {
+  return path.join(dir, `${card}.log`);
+}
+
+/** #3458 — poll-time transition: a detached act run writes its result to the log
+ *  (WERK_EXIT=<code>), not back through the (returned-already) MCP call. On a
+ *  re-invoke, advance a 'running' record to its real terminal phase by reading
+ *  that log. null log/no-sentinel → still running (leave as-is); 0 → presented;
+ *  non-zero → failed with the child reason. Returns the (possibly advanced) run. */
+export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun | null {
+  const run = readRun(card, dir);
+  if (!run || run.phase !== 'running') return run;
+  let log = '';
+  try {
+    log = readFileSync(logPath(card, dir), 'utf8');
+  } catch {
+    return run; // no log yet → still running
+  }
+  const code = parseExitSentinel(log);
+  if (code === null) return run; // act still in flight
+  // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
+  // run (go:false) reached 'presented'. Non-zero → failed with the child reason.
+  if (code === 0) return markPhase(card, run.go ? 'landed' : 'presented', {}, dir);
+  return markPhase(card, 'failed', { failureReason: extractFailureReason(log, '', 'unknown') }, dir);
 }
 
 /** A 'running' record should finish in minutes; anything older is a dead run whose

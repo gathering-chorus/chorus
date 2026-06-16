@@ -5,10 +5,10 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { readRun, writeRun, markPhase, clearRun, isRunStale } from '../src/werk-run-store';
+import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning } from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -50,6 +50,45 @@ describe('run-store persistence', () => {
     writeRun(run({ card: 102 }), dir);
     clearRun(102, dir);
     assert.equal(readRun(102, dir), null);
+  });
+});
+
+describe('reconcileRunning — poll-time transition from the detached run\'s log (#3458)', () => {
+  test('running + log WERK_EXIT=0 -> presented (the detached act finished clean)', () => {
+    writeRun(run({ card: 200, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(200, dir), '…build…\n[presented] up\nWERK_EXIT=0\n');
+    const r = reconcileRunning(200, dir);
+    assert.equal(r?.phase, 'presented');
+    assert.equal(readRun(200, dir)?.phase, 'presented'); // persisted
+  });
+
+  test('LAND run (go:true) + WERK_EXIT=0 -> landed, not presented (go-aware terminal)', () => {
+    writeRun(run({ card: 204, phase: 'running', go: true, pid: process.pid }), dir);
+    writeFileSync(logPath(204, dir), 'merge…sync…deploy…\nWERK_EXIT=0\n');
+    assert.equal(reconcileRunning(204, dir)?.phase, 'landed');
+  });
+
+  test('running + log WERK_EXIT=1 -> failed, with the child reason from the log', () => {
+    writeRun(run({ card: 201, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(201, dir), 'Failure - Main merge\nwerk-merge: reason=patch-id-changed\nWERK_EXIT=1\n');
+    const r = reconcileRunning(201, dir);
+    assert.equal(r?.phase, 'failed');
+    assert.equal(r?.failureReason, 'patch-id-changed');
+  });
+
+  test('running + no sentinel yet -> stays running (act still going)', () => {
+    writeRun(run({ card: 202, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(202, dir), '…build still going…\n');
+    assert.equal(reconcileRunning(202, dir)?.phase, 'running');
+  });
+
+  test('already presented -> unchanged (only running reconciles)', () => {
+    writeRun(run({ card: 203, phase: 'presented' }), dir);
+    assert.equal(reconcileRunning(203, dir)?.phase, 'presented');
+  });
+
+  test('missing run -> null (nothing to reconcile)', () => {
+    assert.equal(reconcileRunning(999, dir), null);
   });
 });
 
