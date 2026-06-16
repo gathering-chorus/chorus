@@ -254,6 +254,13 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         format!("GET /{}/:name/has-child", plural),
         format!("GET /schema/{}", class_local.to_lowercase()),
     ];
+    // #3454 AC1 — the WRITE routes are generated per edge by write_routes(&plural)
+    // (mirrors this read-route vocabulary). They are NOT yet folded into the served
+    // route table: that requires making openapi_json/routes_json method-aware
+    // (today they assume a "GET " prefix) and the live SPARQL-UPDATE handler +
+    // authZ-from-ownedBy. Until that increment, the serve loop fail-closes EVERY
+    // non-GET with a typed 501 (no write reaches a read handler — AC5/AC7). This
+    // keeps the contract honest: writes aren't advertised until they're served.
     // #3414 — MODEL-DRIVEN secured-set: query whether THIS class's shape carries the
     // auth annotation (`chorus:requiresAuth true`) and PROJECT the guard from it —
     // replacing #3402's hardcoded `is_secured` constant. No annotation = open (AC3:
@@ -266,6 +273,44 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     let annotated = !select_v(&sparql_json(&aq)?).is_empty();
     let secured = project_secured(class_local, annotated);
     Ok(RouteTable { class, fields, routes, secured })
+}
+
+/// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
+/// POST creates an entity or adds an edge, PUT replaces an entity, DELETE removes
+/// an entity or edge. Generated from the same plural/edge vocabulary as the read
+/// routes, so a new edge type yields its write routes automatically. Pure +
+/// unit-pinned. (The live execution + authZ + shape-rejection are the handler
+/// increment; this is the contract.)
+pub fn write_routes(plural: &str) -> Vec<String> {
+    vec![
+        format!("POST /{}", plural),                  // create entity
+        format!("PUT /{}/:name", plural),             // replace entity
+        format!("DELETE /{}/:name", plural),          // delete entity
+        format!("POST /{}/:name/partof", plural),     // add partOf edge
+        format!("DELETE /{}/:name/partof", plural),   // remove partOf edge
+        format!("POST /{}/:name/contains", plural),   // add contains edge
+        format!("DELETE /{}/:name/contains", plural), // remove contains edge
+        format!("POST /{}/:name/has-child", plural),  // add has-child edge
+        format!("DELETE /{}/:name/has-child", plural),// remove has-child edge
+    ]
+}
+
+/// #3454 AC5 — the typed write-error taxonomy. ONE place maps a write outcome to
+/// an HTTP status, so no route can "return 200 from the read handler" for a
+/// malformed/unauthorized write. Pure so the contract is unit-pinned; the live
+/// handler maps its outcomes through this. 501 = generated-not-yet-executing
+/// (the honest interim — a write is gated + typed, never silently a read).
+pub fn write_status(outcome: &str) -> (u16, &'static str) {
+    match outcome {
+        "ok" => (200, "ok"),
+        "created" => (201, "created"),
+        "authn-missing" => (401, "authn-missing"),   // no/invalid credential
+        "authz" => (403, "authz"),                   // not the owning role (ownedBy)
+        "conflict" => (409, "conflict"),             // e.g. 2nd parent on single-valued partOf
+        "validation" => (422, "validation"),         // malformed / shape violation
+        "not-found" => (404, "not-found"),           // entity/edge target absent
+        _ => (501, "not-implemented"),               // generated, execution not yet wired (no fail-open)
+    }
 }
 
 /// dashboards.json — the observability config as a GENERATED artifact
@@ -749,6 +794,7 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
         let n = stream.read(&mut buf).unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]);
         let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
+        let method = req.lines().next().and_then(|l| l.split_whitespace().next()).unwrap_or("GET").to_string();
         let header = |name: &str| -> String {
             req.lines()
                 .find(|l| l.to_ascii_lowercase().starts_with(&format!("{}:", name)))
@@ -763,16 +809,35 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let ((code, body), meta) = match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
-            Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
-            None => handle_meta(&path, table),
+        let ((code, body), meta) = if method != "GET" {
+            // #3454 — a non-GET is a generated WRITE route. It is NEVER dispatched to a
+            // read handler (the "POST returns 200 from the read handler" anti-pattern AC5
+            // forbids). The write routes exist in the contract (routes.json / openapi);
+            // live execution + authZ-from-ownedBy + shape-rejection are the handler
+            // increment. Until then every write fail-closes with a typed 501 — advertised,
+            // gated, never a silent read. No fail-open interim (AC7).
+            let (wc, tag) = write_status("not-implemented");
+            let b = format!(
+                "{{ \"error\": \"{}\", \"method\": \"{}\", \"path\": \"{}\", \"note\": \"owl-api write endpoint is generated (routes.json/openapi); execution + authZ land in the #3454 handler increment\" }}",
+                tag, json_escape(&method), json_escape(&path)
+            );
+            ((wc, b), ReqMeta { route: "write-not-implemented".into(), ..Default::default() })
+        } else {
+            match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
+                Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
+                None => handle_meta(&path, table),
+            }
         };
         let upstream_ms = upstream_started.elapsed().as_millis();
         let status = match code {
             200 => "200 OK",
+            201 => "201 Created",
             401 => "401 Unauthorized",
             403 => "403 Forbidden",
             404 => "404 Not Found",
+            409 => "409 Conflict",
+            422 => "422 Unprocessable Entity",
+            501 => "501 Not Implemented",
             _ => "502 Bad Gateway",
         };
         let resp = http_response_ct(status, &body, content_type_for(&path));
@@ -947,6 +1012,37 @@ mod tests {
         assert_eq!(content_type_for("/openapi"), "text/html; charset=utf-8");
         assert_eq!(content_type_for("/openapi.json"), "application/json");
         assert_eq!(content_type_for("/domains"), "application/json");
+    }
+
+    // === #3454 — write-route generation + typed-error taxonomy ===
+
+    #[test]
+    fn write_routes_generated_post_put_delete_per_edge() {
+        let r = write_routes("domains");
+        // entity lifecycle
+        assert!(r.contains(&"POST /domains".to_string()), "create entity");
+        assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
+        assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
+        // per-edge add/remove (mirrors the read edges)
+        for edge in ["partof", "contains", "has-child"] {
+            assert!(r.contains(&format!("POST /domains/:name/{}", edge)), "add {} edge", edge);
+            assert!(r.contains(&format!("DELETE /domains/:name/{}", edge)), "remove {} edge", edge);
+        }
+        // pluralization flows through (mirrors read-route generation)
+        assert!(write_routes("properties").contains(&"POST /properties".to_string()));
+    }
+
+    #[test]
+    fn write_status_typed_taxonomy_no_silent_200() {
+        assert_eq!(write_status("created"), (201, "created"));
+        assert_eq!(write_status("authn-missing"), (401, "authn-missing"));
+        assert_eq!(write_status("authz"), (403, "authz"));
+        assert_eq!(write_status("conflict"), (409, "conflict"));   // 2nd parent on single-valued partOf
+        assert_eq!(write_status("validation"), (422, "validation"));
+        assert_eq!(write_status("not-found"), (404, "not-found"));
+        // the honest interim: generated-not-yet-executing is a typed 501, never a silent read-200
+        assert_eq!(write_status("not-implemented"), (501, "not-implemented"));
+        assert_eq!(write_status("anything-unknown"), (501, "not-implemented"));
     }
 
     #[test]
