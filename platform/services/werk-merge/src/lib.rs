@@ -132,6 +132,88 @@ pub fn classify_merge_error(stderr: &str) -> &'static str {
     }
 }
 
+/// #3459 — the #3365 round-validity decision.
+///
+/// The announce gate must let a content-preserving rebase merge (the demoed CHANGE
+/// is unchanged, only the base moved when a peer landed) while still refusing
+/// genuinely un-demoed content. The stable invariant is the card's DIFF — a
+/// `git patch-id` of `merge-base..HEAD` — NOT the commit-sha (churns on every
+/// rebase, the bug this fixes) and NOT the tree (= base+diff, so it churns when the
+/// base moves under a rebase). git itself uses patch-id to detect already-applied
+/// patches; identical change ⇒ identical patch-id, across any clean rebase.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RoundCheck {
+    /// The demo.presented witness carried this exact head-sha round — proceed (common case).
+    ExactSha,
+    /// Sha moved, but the current diff's patch-id matches a demoed one — a rebase of
+    /// the SAME change that was demoed. Proceed; witness `round-rebased`.
+    RebasedSameChange,
+    /// No exact sha match and no matching patch-id — genuinely un-demoed content. Refuse.
+    NoMatch,
+}
+
+/// Pure decision. `exact_sha` = a demo.presented witness carried this exact head-sha.
+/// `current_patch` = patch-id of the current `merge-base..HEAD` diff (None if it
+/// couldn't be computed — e.g. an empty diff). `demoed_patches` = patch-ids recorded
+/// on this card's demo.presented witnesses.
+pub fn round_check(exact_sha: bool, current_patch: Option<&str>, demoed_patches: &[String]) -> RoundCheck {
+    if exact_sha {
+        return RoundCheck::ExactSha;
+    }
+    match current_patch {
+        Some(cur) if !cur.is_empty() && demoed_patches.iter().any(|p| p == cur) => {
+            RoundCheck::RebasedSameChange
+        }
+        _ => RoundCheck::NoMatch,
+    }
+}
+
+/// #3459 — pure: extract the `patch_id` values recorded on this card's
+/// `demo.presented` witness lines. `card_key` is the `"card_id":<n>,` fragment the
+/// witness uses. A line with no `patch_id` (a pre-#3459 demo) contributes nothing —
+/// so an old demo can't match by patch-id, only by exact sha (correct: we can't
+/// prove its change without the recorded id).
+pub fn demoed_patch_ids(witness: &str, card_key: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in witness.lines() {
+        if !(l.contains("\"event\":\"demo.presented\"") && l.contains(card_key)) {
+            continue;
+        }
+        if let Some(p) = json_str_field_raw(l, "patch_id") {
+            if !p.is_empty() && !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+/// Minimal `"key":"value"` extractor over a raw JSONL line (std-only, no serde).
+fn json_str_field_raw(line: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\":\"", key);
+    let start = line.find(&needle)? + needle.len();
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// #3459 — the card's diff identity: `git patch-id --stable` of `merge-base..HEAD`.
+/// Stable across a clean rebase (same change ⇒ same id), unlike the commit-sha or
+/// the tree (both move when the base moves). `None` if it can't be computed (empty
+/// diff / git failure) — the caller treats None as no-match and refuses, never
+/// silently allows. The `diff | patch-id` pipe runs via `bash -c` (subprocess only,
+/// ADR-032 §1 — no code dep).
+fn patch_id(werk_s: &str) -> Option<String> {
+    let base = run_in(werk_s, "git", &["merge-base", "origin/main", "HEAD"]).ok()?;
+    let base = base.trim();
+    if base.is_empty() {
+        return None;
+    }
+    let cmd = format!("git -C '{}' diff {}..HEAD | git patch-id --stable", werk_s, base);
+    let out = run_in(werk_s, "bash", &["-c", &cmd]).ok()?;
+    out.split_whitespace().next().filter(|s| !s.is_empty()).map(|s| s.to_string())
+}
+
 // ─────────────────────────── side-effecting helpers ───────────────────────────
 
 fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &str) {
@@ -438,8 +520,21 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         let announced = demo_witness.lines().any(|l| {
             l.contains("\"event\":\"demo.presented\"") && l.contains(&card_key) && l.contains(&round_key)
         });
-        if !announced {
-            match env::var("CHORUS_GO_OVERRIDE") {
+        // #3459 — exact-sha round missed? Before refusing, check the card's DIFF.
+        // A content-preserving rebase (a peer landed → the base moved) changes the
+        // sha — and the tree — but NOT the change that was demoed, so the demoed
+        // patch-id still matches. The sha churns on every rebase (the bug this
+        // fixes); the patch-id does not. None ⇒ uncomputable ⇒ treated as no-match.
+        let current_patch = if announced { None } else { patch_id(&werk_s) };
+        let demoed_patches = if announced { Vec::new() } else { demoed_patch_ids(&demo_witness, &card_key) };
+        match round_check(announced, current_patch.as_deref(), &demoed_patches) {
+            RoundCheck::ExactSha => {}
+            RoundCheck::RebasedSameChange => {
+                let pid = current_patch.as_deref().unwrap_or("");
+                jsonl(home, role, card, &trace, "merge.round-rebased", &format!(",\"patch_id\":\"{}\"", pid));
+                emit_spine(home, "merge.round_rebased", role, card, &trace, &[("patch_id", pid)]);
+            }
+            RoundCheck::NoMatch => match env::var("CHORUS_GO_OVERRIDE") {
                 Ok(reason) if !reason.trim().is_empty() => {
                     jsonl(home, role, card, &trace, "merge.override",
                           &format!(",\"reason\":\"announce-missing-this-round\",\"justification\":\"{}\"",
@@ -450,16 +545,15 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                 _ => {
                     jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"announce-missing-this-round\"");
                     return Err(format!(
-                        "announce-missing-this-round: no demo.presented for #{} at round {} — \
-                         Jeff's go may not precede the announce (steps 1-3 first: gates, \
-                         feedback, announce on THESE commits). If a demo DID pass and then the \
-                         sha moved (mid-round rebase or new commit), that is round expiry working, \
-                         not a bug — the integration state changed, so re-prove it: run Half A, \
-                         then go. (#3365; explicit override: CHORUS_GO_OVERRIDE=<reason>)",
-                        card, &head_sha[..12.min(head_sha.len())]
+                        "announce-missing-this-round: no demo.presented for #{} matches HEAD's round OR its diff — \
+                         the change about to merge isn't the one demoed. If a rebase moved the sha but the change is \
+                         identical, the patch-id should have matched (check werk-demo emits patch_id on demo.presented). \
+                         If the content genuinely changed, re-prove it: run Half A, then go. \
+                         (#3365/#3459; explicit override: CHORUS_GO_OVERRIDE=<reason>)",
+                        card
                     ));
                 }
-            }
+            },
         }
     }
 

@@ -7,12 +7,64 @@
 
 use werk_merge::{
     branch_name, classify_merge_error, jsonl_line, parse_merge_args, pr_number_for_sha,
-    require_approval,
+    require_approval, round_check, RoundCheck,
 };
 
 #[test]
 fn branch_name_is_role_slash_card() {
     assert_eq!(branch_name("kade", 3175), "kade/3175");
+}
+
+// ── #3459 — round_check: accept a content-preserving rebase, refuse new content ──
+
+#[test]
+fn round_exact_sha_proceeds() {
+    // the common case: the demo.presented witness carried this exact head-sha.
+    assert_eq!(round_check(true, Some("p1"), &[]), RoundCheck::ExactSha);
+}
+
+#[test]
+fn round_rebase_same_change_proceeds() {
+    // sha moved (peer landed → rebase), but the diff's patch-id matches a demoed one:
+    // the SAME change was demoed. This is the false-refusal the bug caused.
+    let demoed = vec!["pAAA".to_string(), "pBBB".to_string()];
+    assert_eq!(round_check(false, Some("pBBB"), &demoed), RoundCheck::RebasedSameChange);
+}
+
+#[test]
+fn round_new_content_refuses() {
+    // sha moved AND the patch-id differs from every demoed one — genuinely un-demoed
+    // content. The #3365 safety must hold: refuse, re-demo.
+    let demoed = vec!["pAAA".to_string()];
+    assert_eq!(round_check(false, Some("pZZZ"), &demoed), RoundCheck::NoMatch);
+}
+
+#[test]
+fn round_no_demoed_patch_refuses() {
+    // no demo.presented patch-id on record for this card — cannot prove it was demoed.
+    assert_eq!(round_check(false, Some("p1"), &[]), RoundCheck::NoMatch);
+}
+
+#[test]
+fn round_uncomputable_current_patch_refuses() {
+    // current patch-id couldn't be computed (empty diff / git failure) — never silently
+    // allow; refuse (honest-red beats lying-green).
+    assert_eq!(round_check(false, None, &["p1".to_string()]), RoundCheck::NoMatch);
+    assert_eq!(round_check(false, Some(""), &["".to_string()]), RoundCheck::NoMatch);
+}
+
+#[test]
+fn demoed_patch_ids_extracts_only_this_cards_presented_lines() {
+    use werk_merge::demoed_patch_ids;
+    let witness = concat!(
+        r#"{"event":"demo.presented","card_id":3459,"round":"aaa","patch_id":"P1"}"#, "\n",
+        r#"{"event":"demo.presented","card_id":9999,"round":"bbb","patch_id":"OTHER"}"#, "\n",
+        r#"{"event":"demo.gate","card_id":3459,"patch_id":"NOTPRESENTED"}"#, "\n",
+        r#"{"event":"demo.presented","card_id":3459,"round":"ccc","patch_id":"P2"}"#, "\n",
+        r#"{"event":"demo.presented","card_id":3459,"round":"ddd"}"#, "\n", // pre-#3459, no patch_id
+    );
+    let got = demoed_patch_ids(witness, "\"card_id\":3459,");
+    assert_eq!(got, vec!["P1".to_string(), "P2".to_string()]);
 }
 
 #[test]
