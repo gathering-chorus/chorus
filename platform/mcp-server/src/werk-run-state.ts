@@ -99,3 +99,22 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
   if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, 300);
   return step ? `step=${step} (no child reason surfaced)` : 'unknown';
 }
+
+/**
+ * #3458 — the detached act run appends `WERK_EXIT=<code>` to its per-card log when
+ * it finishes (the durable terminal marker that survives an mcp-server restart,
+ * since it's on disk, not in-process). parseExitSentinel reads it at poll time:
+ *
+ *   - number → act is DONE (0 = presented/landed, non-zero = failed)
+ *   - null   → no sentinel yet (still running, or crashed before writing it — the
+ *              isRunStale pid/TTL backstop covers the crash case)
+ *
+ * Last match wins (a reused log only ever has one real run, but be defensive).
+ */
+export function parseExitSentinel(logContent: string): number | null {
+  const matches = logContent.match(/WERK_EXIT=(\d+)/g);
+  if (!matches || matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  const n = Number(last.slice('WERK_EXIT='.length));
+  return Number.isNaN(n) ? null : n;
+}
