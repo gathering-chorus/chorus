@@ -19,6 +19,10 @@ use std::process::Command;
 /// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
 pub mod auth;
 
+/// #3437 — cascade resolver: the effective-config specificity law (Properties C).
+/// Pure logic Properties A (#3435) bakes in at projection time.
+pub mod cascade;
+
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
@@ -245,7 +249,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         return Err(format!("no shape found for {} in {} — land the schema first", class, ONTOLOGY_GRAPH));
     }
     adr040_check(class_local, &fields)?; // shape-sourced fields obey the law too
-    let plural = format!("{}s", class_local.to_lowercase());
+    let plural = pluralize(class_local);
     let routes = vec![
         format!("GET /{}", plural),
         format!("GET /{}/:name", plural),
@@ -398,6 +402,25 @@ pub fn routes_json(t: &RouteTable) -> String {
     )
 }
 
+/// English plural for a lowercased class name. Naive `+s` produced `propertys`;
+/// this handles consonant+y→ies and sibilants→es. Used by BOTH generate() and
+/// the serve router so routes and dispatch agree.
+pub fn pluralize(s: &str) -> String {
+    let s = s.to_lowercase();
+    let ends_with_any = |suffixes: &[&str]| suffixes.iter().any(|suf| s.ends_with(suf));
+    if let Some(stem) = s.strip_suffix('y') {
+        let last = stem.chars().last();
+        let vowel = matches!(last, Some('a' | 'e' | 'i' | 'o' | 'u'));
+        if !vowel && last.is_some() {
+            return format!("{}ies", stem); // property → properties
+        }
+    }
+    if ends_with_any(&["s", "x", "z", "ch", "sh"]) {
+        return format!("{}es", s); // class → classes, box → boxes
+    }
+    format!("{}s", s)
+}
+
 fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
 }
@@ -527,7 +550,7 @@ pub fn is_safe_local(s: &str) -> bool {
 }
 
 fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, String) {
-    let plural = format!("/{}s", table.class.rsplit('#').next().unwrap_or("domain").to_lowercase());
+    let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
 
     // GET /schema/domain
@@ -843,6 +866,22 @@ mod tests {
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
+    }
+
+    #[test]
+    fn pluralize_handles_english_irregulars() {
+        // the bug Jeff caught: Property → propertys. consonant + y → ies.
+        assert_eq!(pluralize("property"), "properties");
+        assert_eq!(pluralize("Property"), "properties");
+        // regular: just add s (Domain must NOT regress — it serves /domains on prod)
+        assert_eq!(pluralize("domain"), "domains");
+        assert_eq!(pluralize("service"), "services");
+        assert_eq!(pluralize("valuestream"), "valuestreams");
+        // sibilants take -es
+        assert_eq!(pluralize("class"), "classes");
+        assert_eq!(pluralize("box"), "boxes");
+        // vowel + y is regular (not ies)
+        assert_eq!(pluralize("day"), "days");
     }
 
     #[test]

@@ -1,0 +1,18 @@
+# properties-resolver — the cascade resolver (#3437, Properties C / config-as-data).
+#
+# PURE precedence core: given a TOTALLY-ORDERED scope chain (Service > Domain >
+# Product > ValueStream/Step) and a key, decide the effective value — nearest
+# scope that sets the key wins, inherit otherwise. Hermetic: no Fuseki, no I/O.
+# The graph-walk that BUILDS the chain (ownership edges from #3433) and the
+# owl-api projection (/properties/effective) wire on top of this core — kept out
+# so the precedence logic is unit-testable in isolation and linkable by any
+# consumer (owl-api projection, werk-test, tagging-lift). Silas + Kade, 2026-06-16.
+[package]
+name = "properties-resolver"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
