@@ -540,9 +540,15 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 /// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
 /// chorus_nudge_message. Unit-pinned (the e2e happy path now legitimately
 /// sends zero nudges, so the shape can't be pinned there).
+/// #3443 AC2/AC8 — the gather is REPLY-REQUIRED by construction: every demo
+/// nudge carries `expects:"reply"`, never the default `expects:"none"`. That is
+/// what makes the recipient OWE a response — the #3218 RESPOND-FIRST hook holds
+/// their session until they ack, so the demo's `gathers_missing` ready-gate
+/// (announce_ready_full) can actually be satisfied by a real reply instead of
+/// hoping a fire-and-forget FYI gets noticed. The sender cannot downgrade it.
 pub fn mcp_nudge_body(to: &str, message: &str) -> String {
     format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}","expects":"reply"}}}}}}"#,
         to, message
     )
 }
@@ -1592,6 +1598,15 @@ mod tests {
         assert!(b.contains("\"method\":\"tools/call\""));
         assert!(b.contains("\"name\":\"chorus_nudge_message\""));
         assert!(b.contains("\"to\":\"silas\""));
+    }
+
+    #[test]
+    fn mcp_nudge_body_is_reply_required_never_none() {
+        // #3443 AC2/AC8 — the gather is reply-required by construction; a demo
+        // nudge must never be fire-and-forget (expects=none).
+        let b = mcp_nudge_body("silas", "msg");
+        assert!(b.contains("\"expects\":\"reply\""), "gather must be expects=reply: {}", b);
+        assert!(!b.contains("\"expects\":\"none\""), "gather must never be expects=none: {}", b);
     }
 
     #[test]
