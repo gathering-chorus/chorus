@@ -156,6 +156,40 @@ fn git_short12(werk: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// #3459 — patch-id of the card's werk (whichever role owns it), mirroring
+/// `round_for_card`. Recorded on `demo.presented` so werk-merge can accept a
+/// content-preserving rebase: the sha churns when a peer lands, the patch-id does
+/// not. Empty string when uncomputable — the merge side then refuses (never
+/// silently allows).
+pub fn patch_id_for_card(werk_base: &str, card: u64) -> String {
+    for r in ["wren", "silas", "kade"] {
+        let werk = format!("{}/{}-{}", werk_base, r, card);
+        if Path::new(&werk).is_dir() {
+            return git_patch_id(&werk);
+        }
+    }
+    String::new()
+}
+
+/// `git patch-id --stable` of `merge-base(origin/main,HEAD)..HEAD`. The `diff |
+/// patch-id` pipe runs via `bash -c` (subprocess only). Empty on any failure.
+fn git_patch_id(werk: &str) -> String {
+    if !Path::new(werk).is_dir() { return String::new(); }
+    let base = std::process::Command::new("git")
+        .args(["-C", werk, "merge-base", "origin/main", "HEAD"])
+        .output().ok().filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    if base.is_empty() { return String::new(); }
+    let cmd = format!("git -C '{}' diff {}..HEAD | git patch-id --stable", werk, base);
+    std::process::Command::new("bash").args(["-c", &cmd]).output().ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.split_whitespace().next().map(|t| t.to_string()))
+        .unwrap_or_default()
+}
+
 /// A witness line matches the current round iff it carries this round's key.
 /// Pre-#3365 records have NO round field and therefore match nothing — old
 /// evidence ages out structurally the moment this lands.
@@ -1045,8 +1079,14 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // Jeff decides whenever — minutes, or hours, or after a reboot — and his GO runs
     // Half B (werk.yml's go-gated `land` job: merge → sync → deploy → accept). The "wait"
     // costs nothing because it is a stopped pipeline, not a held connection.
+    // #3459 — record the card's patch-id alongside the round so werk-merge can
+    // accept a content-preserving rebase (sha moved, change identical) on land.
+    let patch = std::env::var("CHORUS_WERK_BASE").ok()
+        .map(|wb| patch_id_for_card(&wb, card))
+        .unwrap_or_default();
     jsonl(home, role, card, &trace, "demo.presented",
-          &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\"", checked, total, round, variant_url));
+          &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\",\"patch_id\":\"{}\"",
+                   checked, total, round, variant_url, patch));
     emit_spine(home, "demo.presented", role, card, &trace);
     // #3284 — RETURN the announce as the verb's message. In auto/focus mode the agent
     // pastes this verbatim into its end-of-turn reply — the ONLY surface Jeff sees.
