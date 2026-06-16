@@ -678,7 +678,22 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // evidence (gates, gathers, announce) must carry it; prior rounds' records
     // never satisfy this one.
     let round = current_round(role, card);
-    if !skip_gate_check && !in_act {
+    // #3443 AC1 — RUN the gates ourselves before enforcing their presence. Where
+    // claude is available (Jeff's box, local act) the binary self-gates: one
+    // headless `claude -p` per absent gate, recorded via record_gate. This kills
+    // the demoer-agent dependency (#3116) AND the act/CI standby (#3318) — gates
+    // now run in the headless path too. Skippable only in the unit/e2e suite,
+    // which seeds its own gate results.
+    let skip_gate_run = std::env::var("CHORUS_DEMO_SKIP_GATE_RUN").map(|v| v == "1").unwrap_or(false);
+    let gates_ran = !skip_gate_run && claude_available();
+    if gates_ran {
+        run_gates(home, role, card, &round, &trace);
+    }
+    // Enforce gate presence whenever we ran them, or whenever we're in the
+    // interactive (non-act) path. The only path that still skips enforcement is
+    // hosted CI with no claude binary (gates_ran=false AND in_act) — degrade, do
+    // not break the build (#3284 lesson).
+    if !skip_gate_check && (gates_ran || !in_act) {
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
         let absent = gates_missing(&witness, card, &round);
         if !absent.is_empty() {
@@ -959,6 +974,224 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, fin
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
+// === AC1 (#3443) — werk-demo RUNS the 5 gates itself via headless `claude -p`,
+// instead of depending on the /demo skill's demoer agent to spawn them. This
+// retires the "a zero-dep binary can't run an LLM gate" excuse (#3116/#3318):
+// `claude -p` is a subprocess like git/cargo/cards. One headless claude per
+// absent gate, each fed the gate's SKILL.md as system prompt + the card AC and
+// branch diff as context, emits {"result":"pass|fail","findings":"..."} which we
+// record via the existing record_gate witness path. A garbled or errored gate is
+// recorded as "error" (VISIBLE), never silently passed. ===
+
+/// Is the `claude` CLI resolvable + runnable? Gates can only self-run where a
+/// real claude binary exists (Jeff's machine, local `act`). On hosted CI (no
+/// auth, no binary) it is absent — we degrade rather than break the build
+/// (#3284 lesson). Best-effort: a non-zero/failed `--version` means "no".
+fn claude_available() -> bool {
+    Command::new("claude").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Unescape the JSON string-escapes claude emits (\" \\ \/ \n \r \t).
+pub fn json_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some('/') => out.push('/'),
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Extract a JSON string field's RAW (still-escaped) body by name: scan for
+/// `"<field>"`, the colon, the opening quote, then read to the next UNescaped
+/// quote. Returns None if absent or non-string. Pure + unit-tested.
+pub fn extract_json_str(json: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{}\"", field);
+    let mut search_from = 0;
+    loop {
+        let hit = json[search_from..].find(&needle)? + search_from;
+        let after = hit + needle.len();
+        search_from = after; // advance so a non-key match doesn't loop forever
+        // It's only a KEY if the next non-whitespace char is ':' — this skips a
+        // bare value like `"type":"result"` matching field="result".
+        let tail = json[after..].trim_start();
+        if !tail.starts_with(':') {
+            continue;
+        }
+        let after_colon = &tail[1..];
+        let val = after_colon.trim_start();
+        if !val.starts_with('"') {
+            // non-string value for this key; not what we extract
+            continue;
+        }
+        let body = &val[1..];
+        let bytes = body.as_bytes();
+        let mut i = 0;
+        let mut esc = false;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if esc {
+                esc = false;
+            } else if b == b'\\' {
+                esc = true;
+            } else if b == b'"' {
+                return Some(body[..i].to_string());
+            }
+            i += 1;
+        }
+        return None;
+    }
+}
+
+/// Parse a gate verdict out of a headless claude gate run. The gate is prompted
+/// to emit `{"result":"pass"|"fail","findings":"<one line>"}`. Handles both a
+/// raw payload and the `--output-format json` envelope (whose `result` field
+/// holds the assistant text). Unknown/garbled → ("error", reason) so a broken
+/// gate is recorded VISIBLE, never silently passed. Pure + unit-tested.
+pub fn parse_gate_verdict(stdout: &str) -> (String, String) {
+    // If an envelope `result` holds nested gate JSON, parse that; else parse raw.
+    let text = match extract_json_str(stdout, "result") {
+        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
+        _ => stdout.to_string(),
+    };
+    let verdict = extract_json_str(&text, "result").map(|v| json_unescape(&v));
+    let findings = extract_json_str(&text, "findings")
+        .map(|v| json_unescape(&v))
+        .unwrap_or_default();
+    match verdict.as_deref().map(|s| s.trim()) {
+        Some("pass") => ("pass".to_string(), findings),
+        Some("fail") => ("fail".to_string(), findings),
+        _ => {
+            let reason = if !findings.is_empty() {
+                findings
+            } else {
+                format!("unparseable gate output: {}", text.chars().take(160).collect::<String>())
+            };
+            ("error".to_string(), reason)
+        }
+    }
+}
+
+/// Build the headless system prompt for a gate: the gate's SKILL.md plus a strict
+/// output contract. Pure so the contract is unit-pinned.
+pub fn gate_system_prompt(skill_md: &str) -> String {
+    format!(
+        "{}\n\n---\nYou are running HEADLESS as this gate. Review the card AC and the \
+         branch diff provided in the user message against the gate's criteria above. \
+         Output ONLY a single JSON object and nothing else: \
+         {{\"result\":\"pass\",\"findings\":\"<one concise line>\"}} \
+         where result is \"pass\" or \"fail\". No prose, no markdown, no code fence.",
+        skill_md.trim()
+    )
+}
+
+/// Run one gate headless and record its verdict. Best-effort: any failure path
+/// records an "error" verdict (visible on the decision surface), never panics,
+/// never silently passes.
+fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
+    let skill = home.join(format!("skills/gate-{}/SKILL.md", gate));
+    let skill_md = match fs::read_to_string(&skill) {
+        Ok(s) => s,
+        Err(e) => {
+            record_gate(home, role, card, gate, "error",
+                        &format!("gate skill unreadable {}: {}", skill.display(), e), round);
+            return;
+        }
+    };
+    let sys = gate_system_prompt(&skill_md);
+
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+    let diff = Command::new("git")
+        .arg("-C").arg(&werk)
+        .args(["diff", "origin/main...HEAD"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    // Cap the diff so a huge change can't blow the context budget.
+    let diff_capped: String = diff.chars().take(60_000).collect();
+    let ctx = format!(
+        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
+        card, card_view, diff_capped
+    );
+
+    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
+    let child = Command::new("claude")
+        .args([
+            "-p",
+            "--model", &model,
+            "--permission-mode", "dontAsk",
+            "--no-session-persistence",
+            "--output-format", "text",
+            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+            "--system-prompt", &sys,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            record_gate(home, role, card, gate, "error", &format!("claude spawn failed: {}", e), round);
+            return;
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(ctx.as_bytes());
+    }
+    let out = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            record_gate(home, role, card, gate, "error", &format!("claude wait failed: {}", e), round);
+            return;
+        }
+    };
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        record_gate(home, role, card, gate, "error",
+                    &format!("claude exit {:?}: {}", out.status.code(), err.chars().take(160).collect::<String>()),
+                    round);
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let (result, findings) = parse_gate_verdict(&stdout);
+    record_gate(home, role, card, gate, &result, &findings, round);
+}
+
+/// AC1 (#3443) — run every required gate that has NO result for THIS round,
+/// recording each itself. Already-recorded gates (e.g. a re-invoke after a drop)
+/// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
+fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let absent = gates_missing(&witness, card, round);
+    if absent.is_empty() {
+        return;
+    }
+    emit_spine(home, "demo.gates.running", role, card, trace);
+    for gate in absent {
+        run_one_gate(home, role, card, gate, round);
+    }
+}
+
 /// #3263 — record the pipeline's test outcome into the witness so the informed-go
 /// check can require it (and Jeff sees it before the go). Called by werk.yml's test
 /// step via `werk-demo test-result <card> pass|fail`. pass AND fail are recorded —
@@ -1100,6 +1333,73 @@ mod tests {
         let (checked, total) = ac_counts(v);
         assert_eq!(checked, 2);
         assert_eq!(total, 3);
+    }
+
+    // === #3443 AC1 — gate self-run parsing ===
+
+    #[test]
+    fn extract_json_str_reads_simple_field() {
+        let j = r#"{"result":"pass","findings":"looks good"}"#;
+        assert_eq!(extract_json_str(j, "result").as_deref(), Some("pass"));
+        assert_eq!(extract_json_str(j, "findings").as_deref(), Some("looks good"));
+        assert_eq!(extract_json_str(j, "missing"), None);
+    }
+
+    #[test]
+    fn extract_json_str_stops_at_unescaped_quote_keeps_escaped() {
+        let j = r#"{"findings":"has a \"quote\" inside"}"#;
+        assert_eq!(extract_json_str(j, "findings").as_deref(), Some(r#"has a \"quote\" inside"#));
+    }
+
+    #[test]
+    fn json_unescape_handles_common_escapes() {
+        assert_eq!(json_unescape(r#"a \"b\" c\nd\\e"#), "a \"b\" c\nd\\e");
+    }
+
+    #[test]
+    fn parse_gate_verdict_raw_pass() {
+        let out = r#"{"result":"pass","findings":"AC met, demo evidence present"}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "pass");
+        assert_eq!(f, "AC met, demo evidence present");
+    }
+
+    #[test]
+    fn parse_gate_verdict_raw_fail() {
+        let out = r#"{"result":"fail","findings":"no tests for AC3"}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "fail");
+        assert_eq!(f, "no tests for AC3");
+    }
+
+    #[test]
+    fn parse_gate_verdict_unwraps_json_envelope() {
+        // claude -p --output-format json: the gate JSON is nested+escaped in `result`.
+        let out = r#"{"type":"result","subtype":"success","result":"{\"result\":\"pass\",\"findings\":\"clean\"}","is_error":false}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "pass");
+        assert_eq!(f, "clean");
+    }
+
+    #[test]
+    fn parse_gate_verdict_garbled_is_error_never_pass() {
+        let (r, f) = parse_gate_verdict("I think this looks fine to me, shipping it");
+        assert_eq!(r, "error");
+        assert!(!f.is_empty());
+    }
+
+    #[test]
+    fn parse_gate_verdict_missing_result_is_error() {
+        let (r, _) = parse_gate_verdict(r#"{"findings":"only findings, no verdict"}"#);
+        assert_eq!(r, "error");
+    }
+
+    #[test]
+    fn gate_system_prompt_embeds_skill_and_output_contract() {
+        let p = gate_system_prompt("# Gate Product\nCheck the AC.");
+        assert!(p.contains("Gate Product"));
+        assert!(p.contains("\"result\":\"pass\""));
+        assert!(p.contains("ONLY a single JSON object"));
     }
 
     #[test]

@@ -147,6 +147,10 @@ exit 0
     // #3263: the demo runs the card's tests in its werk; there's no real werk here,
     // so skip the run (the fixture seeds demo.test_result directly).
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
+    // #3443 AC1 — the suite tests gate ENFORCEMENT by seeding gate results; the
+    // new self-RUN path (headless claude -p) is unit-tested separately. Skip it
+    // here so e2e never spawns a real claude.
+    std::env::set_var("CHORUS_DEMO_SKIP_GATE_RUN", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
 
     // #3284 (AC6): with NO gates recorded, the demo REFUSES to present (invariant gate
@@ -384,6 +388,10 @@ exit 0
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
     std::env::set_var("CHORUS_DEMO_SKIP_VARIANT_CHECK", "1");
     std::env::set_var("CHORUS_DEMO_SKIP_TEST_RUN", "1");
+    // #3443 AC1 — the suite tests gate ENFORCEMENT by seeding gate results; the
+    // new self-RUN path (headless claude -p) is unit-tested separately. Skip it
+    // here so e2e never spawns a real claude.
+    std::env::set_var("CHORUS_DEMO_SKIP_GATE_RUN", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
     std::env::remove_var("ACT");
 
