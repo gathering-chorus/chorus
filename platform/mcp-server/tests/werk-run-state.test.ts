@@ -23,6 +23,24 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
   });
 
+  test('run RUNNING but STALE (dead pid / past TTL) -> start (kills the stale-running attach bug; #3458 + Wren #2)', () => {
+    // belt+suspenders: if the durable terminal-phase write was lost (e.g. mcp
+    // restart churned the run before act wrote its finish), a 'running' whose pid
+    // is dead must not be attached-to forever — it is treated like 'failed'.
+    const r = run({ phase: 'running', pid: 999999 });
+    assert.deepEqual(decideRunAction(r, false, true), { kind: 'start' });
+  });
+
+  test('run RUNNING and LIVE -> attach (a genuinely-live run is never stranded)', () => {
+    const r = run({ phase: 'running', pid: 4242 });
+    assert.deepEqual(decideRunAction(r, false, false), { kind: 'attach', run: r });
+  });
+
+  test('GO while RUNNING-but-STALE -> start (a GO past a dead run is the retry, not an attach)', () => {
+    const r = run({ phase: 'running', go: false, pid: 999999 });
+    assert.deepEqual(decideRunAction(r, true, true), { kind: 'start' });
+  });
+
   test('run PRESENTED, no GO -> attach (idempotent re-invoke returns the outcome)', () => {
     const r = run({ phase: 'presented' });
     assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });

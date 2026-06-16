@@ -64,3 +64,31 @@ export function clearRun(card: number, dir: string = RUNS_DIR): void {
     /* best-effort */
   }
 }
+
+/** A 'running' record should finish in minutes; anything older is a dead run whose
+ *  terminal-phase write was lost. 30 min is well past the slowest cold build+land. */
+export const RUN_TTL_MS = 30 * 60 * 1000;
+
+/** Is a process alive? `kill(pid, 0)` sends no signal but probes existence:
+ *  ESRCH → gone (dead); EPERM → exists but owned by another user (alive). */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** #3458 (+ Wren #2) — is a run STALE: a 'running' record whose pid is dead, or
+ *  past the TTL? Only 'running' can be stale (terminal phases are final). The
+ *  impure liveness probe lives here; decideRunAction stays pure and takes the
+ *  boolean. Belt+suspenders for the rare case where act's own durable terminal
+ *  write was lost (e.g. an mcp-server churn mid-act). */
+export function isRunStale(run: WerkRun, nowMs: number = Date.now(), ttlMs: number = RUN_TTL_MS): boolean {
+  if (run.phase !== 'running') return false;
+  if (typeof run.pid === 'number' && !pidAlive(run.pid)) return true;
+  const started = Date.parse(run.startedAt);
+  if (!Number.isNaN(started) && nowMs - started > ttlMs) return true;
+  return false;
+}

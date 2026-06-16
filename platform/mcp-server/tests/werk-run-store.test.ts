@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { readRun, writeRun, markPhase, clearRun } from '../src/werk-run-store';
+import { readRun, writeRun, markPhase, clearRun, isRunStale } from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -50,5 +50,28 @@ describe('run-store persistence', () => {
     writeRun(run({ card: 102 }), dir);
     clearRun(102, dir);
     assert.equal(readRun(102, dir), null);
+  });
+});
+
+describe('isRunStale — a dead/old running record is detected (#3458 belt+suspenders)', () => {
+  test('running with a dead pid -> stale (the lost-terminal-write case)', () => {
+    assert.equal(isRunStale(run({ phase: 'running', pid: 999999 })), true);
+  });
+
+  test('running with THIS live pid + within TTL -> not stale (a genuine run is never stranded)', () => {
+    const started = '2026-06-16T12:00:00Z';
+    const now = Date.parse('2026-06-16T12:01:00Z'); // 1 min in, well within TTL
+    assert.equal(isRunStale(run({ phase: 'running', pid: process.pid, startedAt: started }), now), false);
+  });
+
+  test('running past the TTL -> stale (no act run lasts this long)', () => {
+    const now = Date.parse('2026-06-16T12:00:00Z');
+    // started 31 min ago, default 30-min TTL, pid alive (so only TTL triggers)
+    const r = run({ phase: 'running', pid: process.pid, startedAt: '2026-06-16T11:29:00Z' });
+    assert.equal(isRunStale(r, now), true);
+  });
+
+  test('presented record is never "stale" (only running can be)', () => {
+    assert.equal(isRunStale(run({ phase: 'presented', pid: 999999 })), false);
   });
 });

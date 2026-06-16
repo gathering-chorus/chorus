@@ -28,7 +28,7 @@ import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { decideRunAction, extractFailureReason } from './werk-run-state';
-import { readRun, writeRun, markPhase } from './werk-run-store';
+import { readRun, writeRun, markPhase, isRunStale } from './werk-run-store';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
 // This keeps chorus-mcp's surface minimal — only depends on cards CLI, git-queue,
@@ -2007,7 +2007,10 @@ async function executeChorusWerk(
   // the truth, never a double-act or a WIP-limbo card. (Half A is no-go/present,
   // so decideRunAction attaches for any existing run here.)
   const existingRun = readRun(args.card_id);
-  const action = decideRunAction(existingRun, false);
+  // #3458 — a dead/stale 'running' record must not be attached-to forever (the
+  // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
+  // dead run starts fresh instead of stranding the card.
+  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false);
   if (action.kind === 'attach') {
     const r = action.run;
     return {
@@ -2105,7 +2108,8 @@ async function executeChorusWerkLand(
   // A re-invoke reads the run's real phase: a GO after a 'presented' stop starts
   // the land; a land already running/landed/failed ATTACHES — never a second merge.
   const existingLand = readRun(args.card_id);
-  const landAction = decideRunAction(existingLand, true);
+  // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
+  const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
   if (landAction.kind === 'attach') {
     const r = landAction.run;
     return {
