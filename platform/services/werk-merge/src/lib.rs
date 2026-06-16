@@ -179,7 +179,7 @@ pub fn demoed_patch_ids(witness: &str, card_key: &str) -> Vec<String> {
         if !(l.contains("\"event\":\"demo.presented\"") && l.contains(card_key)) {
             continue;
         }
-        if let Some(p) = json_str_field_raw(l, "patch_id") {
+        if let Some(p) = json_str_field(l, "patch_id") {
             if !p.is_empty() && !out.contains(&p) {
                 out.push(p);
             }
@@ -188,30 +188,41 @@ pub fn demoed_patch_ids(witness: &str, card_key: &str) -> Vec<String> {
     out
 }
 
-/// Minimal `"key":"value"` extractor over a raw JSONL line (std-only, no serde).
-fn json_str_field_raw(line: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\":\"", key);
-    let start = line.find(&needle)? + needle.len();
-    let rest = &line[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
 /// #3459 — the card's diff identity: `git patch-id --stable` of `merge-base..HEAD`.
 /// Stable across a clean rebase (same change ⇒ same id), unlike the commit-sha or
 /// the tree (both move when the base moves). `None` if it can't be computed (empty
 /// diff / git failure) — the caller treats None as no-match and refuses, never
-/// silently allows. The `diff | patch-id` pipe runs via `bash -c` (subprocess only,
-/// ADR-032 §1 — no code dep).
+/// silently allows. The `diff | patch-id` pipe is wired NATIVELY through std Stdio
+/// (no `bash -c`): an atomic verb must not depend on a shell being on the runtime
+/// PATH (the daemon-PATH fragility that broke lands; ADR-032 §1 — std only, git as
+/// a subprocess, never a shell wrapper).
 fn patch_id(werk_s: &str) -> Option<String> {
     let base = run_in(werk_s, "git", &["merge-base", "origin/main", "HEAD"]).ok()?;
     let base = base.trim();
     if base.is_empty() {
         return None;
     }
-    let cmd = format!("git -C '{}' diff {}..HEAD | git patch-id --stable", werk_s, base);
-    let out = run_in(werk_s, "bash", &["-c", &cmd]).ok()?;
-    out.split_whitespace().next().filter(|s| !s.is_empty()).map(|s| s.to_string())
+    let mut diff = Command::new("git")
+        .args(["-C", werk_s, "diff", &format!("{}..HEAD", base)])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .ok()?;
+    let diff_stdout = diff.stdout.take()?;
+    let out = Command::new("git")
+        .args(["patch-id", "--stable"])
+        .stdin(diff_stdout)
+        .output()
+        .ok()?;
+    let _ = diff.wait();
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8(out.stdout)
+        .ok()?
+        .split_whitespace()
+        .next()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 // ─────────────────────────── side-effecting helpers ───────────────────────────

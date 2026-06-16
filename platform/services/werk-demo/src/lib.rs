@@ -182,12 +182,31 @@ fn git_patch_id(werk: &str) -> String {
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
     if base.is_empty() { return String::new(); }
-    let cmd = format!("git -C '{}' diff {}..HEAD | git patch-id --stable", werk, base);
-    std::process::Command::new("bash").args(["-c", &cmd]).output().ok()
+    // `git diff | git patch-id` wired NATIVELY through std Stdio — no `bash -c`.
+    // An atomic verb must not depend on a shell on the runtime PATH (#3459: the
+    // shell-wrap broke lands in the daemon env; ADR-032 §1 — git subprocess, no shell).
+    let mut diff = match std::process::Command::new("git")
+        .args(["-C", werk, "diff", &format!("{}..HEAD", base)])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+    let diff_stdout = match diff.stdout.take() {
+        Some(s) => s,
+        None => return String::new(),
+    };
+    let pid = std::process::Command::new("git")
+        .args(["patch-id", "--stable"])
+        .stdin(diff_stdout)
+        .output().ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| s.split_whitespace().next().map(|t| t.to_string()))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let _ = diff.wait();
+    pid
 }
 
 /// A witness line matches the current round iff it carries this round's key.
