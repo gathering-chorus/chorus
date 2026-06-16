@@ -1335,6 +1335,34 @@ chorus:skills-service chorus:consumes chorus:time-domain .
 chorus:spine-service chorus:consumes chorus:time-domain .
 chorus:roles-domain chorus:consumes chorus:time-domain .
 
+# --- Ownership hierarchy — chorus:partOf (#3450) ---
+# ONE single-parent "belongs-to" edge, used IDENTICALLY at every level
+# (service/domain/subproduct/product → up to a ValueStream). NOT a per-level
+# taxonomy (no inDomain/inProduct/inValueStream) and NOT a SHACL program —
+# "single-parent" is just this edge being one-valued, populated consistently.
+# Distinct from chorus:consumes (many-to-many USAGE) and chorus:builtBy.
+# The config cascade (#3437) and any owner-walk resolve "effective X" by walking
+# partOf upward. Crawler writes it, owl-api reads it; the bulk write-population
+# rides #3454's validated write layer (raw seeding here is the model-half slice).
+chorus:partOf a owl:ObjectProperty ;
+    rdfs:label "part of" ;
+    rdfs:comment "Single-parent ownership: the one node this node belongs to, one level up. Functional (at most one per node) — the ownership chain is the transitive walk. Used identically across Service/SubDomain/Domain/SubProduct/Product. #3450." ;
+    rdfs:domain [ owl:unionOf ( chorus:Service chorus:SubDomain chorus:Domain chorus:SubProduct chorus:Product ) ] ;
+    rdfs:range [ owl:unionOf ( chorus:SubDomain chorus:Domain chorus:SubProduct chorus:Product chorus:ValueStream ) ] ;
+    a owl:FunctionalProperty .
+
+# Seed slice — coherent chains that resolve up to chorusStream (the model-half
+# demo; full population across all nodes lands through #3454's write layer).
+chorus:chorusProduct chorus:partOf chorus:chorusStream .
+chorus:borgProduct   chorus:partOf chorus:chorusStream .
+chorus:werk-product  chorus:partOf chorus:chorusProduct .
+chorus:athena-product chorus:partOf chorus:chorusProduct .
+chorus:loom          chorus:partOf chorus:chorusProduct .
+chorus:observability-domain chorus:partOf chorus:borgProduct .
+chorus:infrastructure-domain chorus:partOf chorus:borgProduct .
+chorus:gates-service chorus:partOf chorus:werk-product .
+chorus:cards-service chorus:partOf chorus:werk-product .
+
 # =============================================================================
 # 5. ARTIFACTS
 # =============================================================================
