@@ -95,8 +95,8 @@ pub const REQUIRED_GATES: [&str; 5] = ["product", "code", "quality", "arch", "op
 /// returns true: every required gate is recorded for the card, OR the test suite is
 /// driving the tail directly (skip_gate_check). False ⇒ stand by silently, no announce —
 /// Jeff is never pulled into a demo before its gates exist.
-pub fn announce_ready(witness: &str, card: u64, round: &str, skip_gate_check: bool) -> bool {
-    skip_gate_check || gates_missing(witness, card, round).is_empty()
+pub fn announce_ready(witness: &str, card: u64, round: &str, patch_id: &str, skip_gate_check: bool) -> bool {
+    skip_gate_check || gates_missing(witness, card, round, patch_id).is_empty()
 }
 
 /// #3352 — the demo ceremony as an INVARIANT ordering, verb-enforced:
@@ -216,16 +216,38 @@ fn line_in_round(line: &str, round: &str) -> bool {
     line.contains(&format!("\"round\":\"{}\"", round))
 }
 
+/// #3461 — a witness line is VALID for this proving round iff its round sha
+/// matches OR its patch-id matches. The sha churns on a content-preserving rebase
+/// (a peer landing → the werk re-bases → new HEAD sha → new round), but the
+/// patch-id (merge-base..HEAD diff) does NOT. So a gate result / gather reply
+/// recorded before the churn still counts after it — the demo stops re-eliciting
+/// the SAME approvals every rebase (the #3454 re-nudge loop). Empty patch_id =
+/// round-only (no false match); mirrors #3459's land-gate fallback for the
+/// gather/gate gates. Pure + unit-tested.
+fn line_keyed(line: &str, round: &str, patch_id: &str) -> bool {
+    line_in_round(line, round)
+        || (!patch_id.is_empty() && line.contains(&format!("\"patch_id\":\"{}\"", patch_id)))
+}
+
+/// #3461 — the current werk's patch-id (mirrors current_round). I/O (git), so
+/// callers of the pure matchers compute it and pass it in; the matchers stay pure.
+pub fn current_patch_id(card: u64) -> String {
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    patch_id_for_card(&werk_base, card)
+}
+
 /// #3305 AC2/AC3 — the peers actually OWED a gather nudge this round: exactly
 /// gathers_missing. A peer whose reply is on the witness for THIS round is
 /// never re-nudged, however many times the demo re-presents. A new round
 /// re-asks everyone by design (#3365 round discipline, not the re-fire bug).
-pub fn nudge_targets(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
-    gathers_missing(witness, card, role, round)
+pub fn nudge_targets(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
+    gathers_missing(witness, card, role, round, patch_id)
 }
 
-pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, skip: bool) -> bool {
-    skip || (gates_missing(witness, card, round).is_empty() && gathers_missing(witness, card, role, round).is_empty())
+pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, patch_id: &str, skip: bool) -> bool {
+    skip || (gates_missing(witness, card, round, patch_id).is_empty() && gathers_missing(witness, card, role, round, patch_id).is_empty())
 }
 
 /// The two peer roles owed a 4-question gather for this demo: everyone but the
@@ -239,7 +261,7 @@ pub fn gather_peers(role: &str) -> Vec<&'static str> {
 /// (comma-terminated card match, same anti-collision rule). A gather reply is
 /// recorded via `werk-demo gather <card> <peer> replied` when the peer's ACK
 /// arrives — evidence on the witness, never a model claim.
-pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
+pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     gather_peers(role)
         .into_iter()
@@ -249,7 +271,7 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec
                 l.contains("\"event\":\"demo.gather.replied\"")
                     && l.contains(&card_key)
                     && l.contains(&peer_key)
-                    && line_in_round(l, round)
+                    && line_keyed(l, round, patch_id)
             })
         })
         .collect()
@@ -260,7 +282,7 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec
 /// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
 /// nudge (the #3305 refire-storm guard). Empty = both peers already have the
 /// reply-required gather; the stop hook (#3218) then holds them until they ack.
-pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
+pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     gather_peers(role)
         .into_iter()
@@ -270,13 +292,13 @@ pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str) -> Vec<
                 l.contains("\"event\":\"demo.gather.sent\"")
                     && l.contains(&card_key)
                     && l.contains(&peer_key)
-                    && line_in_round(l, round)
+                    && line_keyed(l, round, patch_id)
             })
         })
         .collect()
 }
 
-pub fn gates_missing(witness: &str, card: u64, round: &str) -> Vec<&'static str> {
+pub fn gates_missing(witness: &str, card: u64, round: &str, patch_id: &str) -> Vec<&'static str> {
     let card_key = format!("\"card_id\":{},", card);
     REQUIRED_GATES
         .iter()
@@ -287,7 +309,7 @@ pub fn gates_missing(witness: &str, card: u64, round: &str) -> Vec<&'static str>
                 l.contains("\"event\":\"demo.gate.result\"")
                     && l.contains(&card_key)
                     && l.contains(&gate_key)
-                    && line_in_round(l, round)
+                    && line_keyed(l, round, patch_id)
             })
         })
         .collect()
@@ -631,8 +653,9 @@ pub fn mcp_nudge_body(to: &str, message: &str) -> String {
 /// (dedup key for gathers_unsent so re-invokes don't re-fire). Distinct from the
 /// demo.gather.replied the peer's ack records.
 fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &str, trace: &str) {
+    let pid = current_patch_id(card); // #3461 — survive rebase-churn
     jsonl(home, role, card, trace, "demo.gather.sent",
-          &format!(",\"peer\":\"{}\",\"round\":\"{}\"", peer, round));
+          &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\"", peer, round, pid));
     emit_spine(home, "demo.gather.sent", role, card, trace);
 }
 
@@ -648,11 +671,12 @@ fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &st
 /// behind their auto/focus-mode work.
 fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    if !gates_missing(&witness, card, round).is_empty() {
+    let patch = current_patch_id(card); // #3461 — patch-id tolerant matching across rebase-churn
+    if !gates_missing(&witness, card, round, &patch).is_empty() {
         return; // gates not recorded yet — don't ask peers to review un-gated work
     }
     let mut sent: Vec<&str> = Vec::new();
-    for peer in gathers_unsent(&witness, card, role, round) {
+    for peer in gathers_unsent(&witness, card, role, round, &patch) {
         if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
                   &format!(",\"to\":\"{}\",\"reason\":\"{}\"", peer, e.replace('"', "'")));
@@ -815,6 +839,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // evidence (gates, gathers, announce) must carry it; prior rounds' records
     // never satisfy this one.
     let round = current_round(role, card);
+    let patch = current_patch_id(card); // #3461 — patch-id tolerant matching across rebase-churn
     // #3443 AC1 — RUN the gates ourselves before enforcing their presence. Where
     // claude is available (Jeff's box, local act) the binary self-gates: one
     // headless `claude -p` per absent gate, recorded via record_gate. This kills
@@ -832,7 +857,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // not break the build (#3284 lesson).
     if !skip_gate_check && (gates_ran || !in_act) {
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        let absent = gates_missing(&witness, card, &round);
+        let absent = gates_missing(&witness, card, &round, &patch);
         if !absent.is_empty() {
             jsonl(home, role, card, &trace, "demo.refused",
                   &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", absent.join(",")));
@@ -903,9 +928,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         // Jeff's spec: "announce happens b4 role feedback so go precedes that" — the
         // announce may not exist until the team's feedback is IN. Typed standby names
         // exactly what's missing so the demoer knows the next prework step.
-        if !announce_ready_full(&witness_pre, card, role, &round, skip_gate_check) {
-            let gates_absent = gates_missing(&witness_pre, card, &round);
-            let gathers_absent = gathers_missing(&witness_pre, card, role, &round);
+        if !announce_ready_full(&witness_pre, card, role, &round, &patch, skip_gate_check) {
+            let gates_absent = gates_missing(&witness_pre, card, &round, &patch);
+            let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
             let reason = if !gates_absent.is_empty() { "gates-pending" } else { "gathers-pending" };
             emit_spine(home, "demo.prework.standby", role, card, &trace);
             jsonl(home, role, card, &trace, "demo.prework.standby",
@@ -934,7 +959,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // round get the 4-question nudge; an acked peer is never re-fired however
     // many times the demo re-presents.
     let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let owed = nudge_targets(&witness_now, card, role, &round);
+    let owed = nudge_targets(&witness_now, card, role, &round, &patch);
     let gather_send_failed = signal(card, role, home, &trace, &owed);
     if !gather_send_failed.is_empty() {
         // #3352 — surface the send failure in the returned message itself: the
@@ -1123,8 +1148,9 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, fin
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
+    let pid = current_patch_id(card); // #3461 — record patch-id so the result survives a rebase-churn
     jsonl(home, role, card, &trace, "demo.gate.result",
-          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"findings\":\"{}\"", gate, result, round, f));
+          &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
@@ -1407,7 +1433,8 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
 /// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
 fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let absent = gates_missing(&witness, card, round);
+    let patch = current_patch_id(card); // #3461 — patch-id tolerant across rebase-churn
+    let absent = gates_missing(&witness, card, round, &patch);
     if absent.is_empty() {
         return;
     }
@@ -1522,8 +1549,9 @@ pub fn run_demo() -> R<DemoOutcome> {
         let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
         let event = format!("demo.gather.{}", phase);
         let round = current_round(role.trim(), card);
+        let pid = current_patch_id(card); // #3461 — survive rebase-churn
         jsonl(&home, role.trim(), card, &trace, &event,
-              &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"note\":\"{}\"", peer, round, note));
+              &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"note\":\"{}\"", peer, round, pid, note));
         emit_spine(&home, &event, role.trim(), card, &trace);
         return Ok(DemoOutcome {
             message: format!("gather {} recorded for #{}: peer={}", phase, card, peer),
@@ -1684,36 +1712,75 @@ mod tests {
             .map(|g| gate_line(3237, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(gates_missing(&w, 3237, "r1").is_empty(), "all 5 gates present → none missing");
+        assert!(gates_missing(&w, 3237, "r1", "").is_empty(), "all 5 gates present → none missing");
     }
 
     #[test]
     fn gates_missing_lists_absent_gates() {
         let w = format!("{}\n{}", gate_line(3237, "product"), gate_line(3237, "code"));
-        assert_eq!(gates_missing(&w, 3237, "r1"), vec!["quality", "arch", "ops"]);
+        assert_eq!(gates_missing(&w, 3237, "r1", ""), vec!["quality", "arch", "ops"]);
     }
 
     #[test]
     fn gates_missing_all_when_witness_empty() {
-        assert_eq!(gates_missing("", 3237, "r1").len(), 5);
+        assert_eq!(gates_missing("", 3237, "r1", "").len(), 5);
+    }
+
+    // === #3461 — gate/gather evidence survives a content-preserving rebase ===
+
+    #[test]
+    fn gathers_reply_survives_round_churn_via_patch_id() {
+        // Both peers replied at round sha "rA" carrying patch-id "pidX". A rebase
+        // churns the round to "rB" but the tree (patch-id) is unchanged.
+        let w = "{\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"silas\",\"round\":\"rA\",\"patch_id\":\"pidX\"}\n\
+                 {\"event\":\"demo.gather.replied\",\"card_id\":3461,\"peer\":\"kade\",\"round\":\"rA\",\"patch_id\":\"pidX\"}";
+        // churned round rB, SAME patch pidX → replies still count (no re-nudge loop)
+        assert!(gathers_missing(w, 3461, "wren", "rB", "pidX").is_empty(),
+            "patch-id match must survive the round churn");
+        // different patch (real content change) AND churned round → genuinely missing
+        assert_eq!(gathers_missing(w, 3461, "wren", "rB", "pidY"), vec!["silas", "kade"]);
+        // empty patch → round-only fallback (no false match; #3459 parity)
+        assert_eq!(gathers_missing(w, 3461, "wren", "rB", ""), vec!["silas", "kade"]);
+        // exact round still works
+        assert!(gathers_missing(w, 3461, "wren", "rA", "").is_empty());
+    }
+
+    #[test]
+    fn gates_survive_round_churn_via_patch_id() {
+        let mut w = String::new();
+        for g in ["product", "code", "quality", "arch", "ops"] {
+            w.push_str(&format!("{{\"event\":\"demo.gate.result\",\"card_id\":3461,\"gate\":\"{}\",\"round\":\"rA\",\"patch_id\":\"pidX\"}}\n", g));
+        }
+        assert!(gates_missing(&w, 3461, "rB", "pidX").is_empty(), "gates survive rebase via patch-id");
+        assert_eq!(gates_missing(&w, 3461, "rB", "pidY").len(), 5, "real content change → gates re-run");
+        assert_eq!(gates_missing(&w, 3461, "rB", "").len(), 5, "empty patch → round-only");
+    }
+
+    #[test]
+    fn line_keyed_round_or_patch() {
+        let l = "{\"round\":\"rA\",\"patch_id\":\"pidX\"}";
+        assert!(line_keyed(l, "rA", ""));            // round match
+        assert!(line_keyed(l, "rB", "pidX"));        // patch match across churn
+        assert!(!line_keyed(l, "rB", "pidY"));       // neither
+        assert!(!line_keyed(l, "rB", ""));           // empty patch, wrong round → no match
     }
 
     // #3319 — the announce is the ready-gate: no announce fires until gates are recorded.
     #[test]
     fn announce_blocked_when_any_gate_missing() {
         let w = format!("{}\n{}", gate_line(3319, "product"), gate_line(3319, "code"));
-        assert!(!announce_ready(&w, 3319, "r1", false), "missing gates ⇒ stand by, no announce");
+        assert!(!announce_ready(&w, 3319, "r1", "", false), "missing gates ⇒ stand by, no announce");
     }
 
     #[test]
     fn announce_allowed_when_all_five_recorded() {
         let w = REQUIRED_GATES.iter().map(|g| gate_line(3319, g)).collect::<Vec<_>>().join("\n");
-        assert!(announce_ready(&w, 3319, "r1", false), "all 5 gates ⇒ announce may fire");
+        assert!(announce_ready(&w, 3319, "r1", "", false), "all 5 gates ⇒ announce may fire");
     }
 
     #[test]
     fn announce_blocked_when_witness_empty() {
-        assert!(!announce_ready("", 3319, "r1", false), "no gates at all ⇒ never announce");
+        assert!(!announce_ready("", 3319, "r1", "", false), "no gates at all ⇒ never announce");
     }
 
     // #3324 AUDIT — announce_skip_drives_tail_for_test_suite deleted: with skip=true
@@ -1738,8 +1805,8 @@ mod tests {
         // The 2026-06-11 class: all 5 gates recorded, NO peer feedback — the old
         // announce fired here and Jeff's go preceded the team's input. Now: standby.
         let w = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect::<Vec<_>>().join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "gates without gathers ⇒ no announce");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1"), vec!["silas", "kade"]);
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates without gathers ⇒ no announce");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas", "kade"]);
     }
 
     #[test]
@@ -1747,8 +1814,8 @@ mod tests {
         let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3352, g)).collect();
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "one peer's reply is not the team's feedback");
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1"), vec!["silas"]);
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "one peer's reply is not the team's feedback");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", ""), vec!["silas"]);
     }
 
     #[test]
@@ -1757,7 +1824,7 @@ mod tests {
         lines.push(gather_line(3352, "silas"));
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(announce_ready_full(&w, 3352, "wren", "r1", false), "gates + both replies ⇒ announce");
+        assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + both replies ⇒ announce");
     }
 
     #[test]
@@ -1769,7 +1836,7 @@ mod tests {
         ));
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
-        assert!(!announce_ready_full(&w, 3352, "wren", "r1", false), "sent != replied");
+        assert!(!announce_ready_full(&w, 3352, "wren", "r1", "", false), "sent != replied");
     }
 
     // #3365 — THE core proof: a prior round's records never satisfy this round.
@@ -1779,17 +1846,17 @@ mod tests {
         lines.push(gather_line(3365, "silas"));
         lines.push(gather_line(3365, "kade"));
         let w = lines.join("\n"); // a fully-passed ROUND r1
-        assert!(announce_ready_full(&w, 3365, "wren", "r1", false), "r1 evidence satisfies r1");
-        assert!(!announce_ready_full(&w, 3365, "wren", "r2", false), "r1 evidence must NOT satisfy r2");
-        assert_eq!(gates_missing(&w, 3365, "r2").len(), 5, "all gates fresh per round");
-        assert_eq!(gathers_missing(&w, 3365, "wren", "r2").len(), 2, "all feedback fresh per round");
+        assert!(announce_ready_full(&w, 3365, "wren", "r1", "", false), "r1 evidence satisfies r1");
+        assert!(!announce_ready_full(&w, 3365, "wren", "r2", "", false), "r1 evidence must NOT satisfy r2");
+        assert_eq!(gates_missing(&w, 3365, "r2", "").len(), 5, "all gates fresh per round");
+        assert_eq!(gathers_missing(&w, 3365, "wren", "r2", "").len(), 2, "all feedback fresh per round");
     }
 
     #[test]
     fn pre_3365_records_without_round_field_match_nothing() {
         // Old evidence (no round field) ages out structurally on landing.
         let w = r#"{"ts":1,"event":"demo.gate.result","role":"wren","card_id":3365,"trace_id":"t","gate":"product","result":"pass"}"#;
-        assert_eq!(gates_missing(w, 3365, "r1").len(), 5);
+        assert_eq!(gates_missing(w, 3365, "r1", "").len(), 5);
     }
 
     // #3365 cross-verb contract (Kade's ACK ask): werk-demo's current_round and
@@ -1853,21 +1920,21 @@ mod tests {
         // #3443 AC2 — a peer already SENT this round is not re-fired (no #3305
         // storm), even though they have not yet REPLIED. The other peer is unsent.
         let w = r#"{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3443,"trace_id":"t","peer":"silas","round":"r1"}"#;
-        assert_eq!(gathers_unsent(w, 3443, "wren", "r1"), vec!["kade"]);
+        assert_eq!(gathers_unsent(w, 3443, "wren", "r1", ""), vec!["kade"]);
         // but they STILL count as missing-reply until they actually reply
-        assert!(gathers_missing(w, 3443, "wren", "r1").contains(&"silas"));
+        assert!(gathers_missing(w, 3443, "wren", "r1", "").contains(&"silas"));
     }
 
     #[test]
     fn gathers_unsent_all_when_nothing_sent() {
-        assert_eq!(gathers_unsent("", 3443, "wren", "r1"), vec!["silas", "kade"]);
+        assert_eq!(gathers_unsent("", 3443, "wren", "r1", ""), vec!["silas", "kade"]);
     }
 
     #[test]
     fn nudge_targets_skips_replied_peers_same_round() {
         // wren already replied this round → only silas is owed a nudge (AC2).
         let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
-        assert_eq!(nudge_targets(w, 3305, "kade", "r1"), vec!["silas"]);
+        assert_eq!(nudge_targets(w, 3305, "kade", "r1", ""), vec!["silas"]);
     }
 
     #[test]
@@ -1880,7 +1947,7 @@ mod tests {
             r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#,
             r#"{"ts":2,"event":"demo.gather.replied","role":"silas","card_id":3305,"trace_id":"t","peer":"silas","round":"r1","note":""}"#
         );
-        assert!(nudge_targets(&w, 3305, "kade", "r1").is_empty(), "no re-fire to acked peers");
+        assert!(nudge_targets(&w, 3305, "kade", "r1", "").is_empty(), "no re-fire to acked peers");
     }
 
     #[test]
@@ -1888,7 +1955,7 @@ mod tests {
         // a NEW round legitimately re-asks: #3365 expires evidence per round —
         // that is round discipline, not the re-fire bug.
         let w = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":3305,"trace_id":"t","peer":"wren","round":"r1","note":""}"#;
-        assert_eq!(nudge_targets(w, 3305, "kade", "r2"), vec!["wren", "silas"]);
+        assert_eq!(nudge_targets(w, 3305, "kade", "r2", ""), vec!["wren", "silas"]);
     }
 
     #[test]
@@ -1926,7 +1993,7 @@ mod tests {
     #[test]
     fn gathers_missing_ignores_other_cards_comma_terminated() {
         let w = format!("{}\n{}", gather_line(33520, "silas"), gather_line(33520, "kade"));
-        assert_eq!(gathers_missing(&w, 3352, "wren", "r1").len(), 2, "card 33520's gathers must not satisfy 3352");
+        assert_eq!(gathers_missing(&w, 3352, "wren", "r1", "").len(), 2, "card 33520's gathers must not satisfy 3352");
     }
 
     #[test]
@@ -1937,7 +2004,7 @@ mod tests {
             .map(|g| gate_line(31, g))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(gates_missing(&w, 3, "r1").len(), 5, "card 31's gates must not satisfy card 3");
+        assert_eq!(gates_missing(&w, 3, "r1", "").len(), 5, "card 31's gates must not satisfy card 3");
     }
 
     // #3284 — gate VERDICTS in the decision surface (AC7): show what each gate found.
