@@ -62,6 +62,18 @@ export type ExecFileAsync = (
   opts: { env?: NodeJS.ProcessEnv; timeout?: number; cwd?: string; maxBuffer?: number },
 ) => Promise<{ stdout: string; stderr: string }>;
 
+/** #3458 — DI seam for the DETACHED act spawn. executeChorusWerk/Land now launch act
+ *  via child_process.spawn (detached, return-immediately) instead of the awaited
+ *  execFileAsync — that async-launch is the whole point of #3458 (no held MCP call →
+ *  no transport drop). This seam lets tests capture the spawned act argv + env the way
+ *  they captured the old in-band exec. Structurally matches spawn's (command, args,
+ *  options) → ChildProcess; only pid + unref are used here. */
+export type SpawnFn = (
+  command: string,
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; detached?: boolean; stdio?: 'ignore' },
+) => { pid?: number; unref: () => void };
+
 /** #2474 — DI seam for tests: inject mock execFile / fixed shim path.
  *  #2476 — extends with fetchImpl for tools that delegate to HTTP rather than
  *  spawning a binary (the principles tools call existing Athena REST). Default
@@ -95,6 +107,15 @@ export interface McpServerDeps {
   // #2760 — werk path existence check. Default uses fs.existsSync; tests
   // inject `() => true` so refusal taxonomy tests don't need real /tmp dirs.
   fsExists?: (p: string) => boolean;
+  // #3458 — DI seam for the detached act spawn (executeChorusWerk/Land). Default is
+  // child_process.spawn; tests inject a capture to assert the act argv/env under the
+  // new async-launch contract (the old execFileAsync seam no longer carries the act
+  // run — it's detached now).
+  spawnFn?: SpawnFn;
+  // #3458 — run-state dir override. Default (undefined) → werk-run-store's RUNS_DIR
+  // (~/.chorus/werk-runs); tests inject a temp dir so a run never reads or writes the
+  // live ops run-state (a unit test must not pollute the real werk-runs).
+  runsDir?: string;
 }
 
 export type BoardCard = { id: number; owner: string; title: string };
@@ -1989,7 +2010,8 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // eslint-disable-next-line complexity -- cohesive werk-pipeline dispatch (verb routing + arg marshalling + result shaping in one place); splitting fragments the one trace (#3429)
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
-  execFileAsync: ExecFileAsync,
+  spawnFn: SpawnFn,
+  runsDir?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
@@ -2009,8 +2031,8 @@ async function executeChorusWerk(
   // #3458 — advance a finished DETACHED run to its terminal phase from the on-disk
   // log (the act wrote WERK_EXIT there, not back through this already-returned call)
   // BEFORE deciding, so a poll reflects the true state.
-  reconcileRunning(args.card_id);
-  const existingRun = readRun(args.card_id);
+  reconcileRunning(args.card_id, runsDir);
+  const existingRun = readRun(args.card_id, runsDir);
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.
@@ -2041,12 +2063,12 @@ async function executeChorusWerk(
   // (validated card_id:number + role/accepter enums + fixed paths), so the bash -c
   // string carries no injection surface.
   const runId = `${args.card_id}-${args.role}-${process.pid}`;
-  const log = logPath(args.card_id);
+  const log = logPath(args.card_id, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter}`;
   const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
-  const child = spawn('bash', ['-c', wrapped], {
+  const child = spawnFn('bash', ['-c', wrapped], {
     env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
     detached: true,
     stdio: 'ignore',
@@ -2055,7 +2077,7 @@ async function executeChorusWerk(
   writeRun({
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
-  });
+  }, runsDir);
   return {
     content: [{
       type: 'text' as const,
@@ -2074,7 +2096,8 @@ async function executeChorusWerk(
 // Stop-before-accept (DEC-048): it lands to prod and prints the accept command.
 async function executeChorusWerkLand(
   args: z.infer<typeof WerkRunInput>,
-  execFileAsync: ExecFileAsync,
+  spawnFn: SpawnFn,
+  runsDir?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
@@ -2091,7 +2114,7 @@ async function executeChorusWerkLand(
   // hurt most (the merge dropped, the accept never ran → WIP-limbo, hand-recovery).
   // A re-invoke reads the run's real phase: a GO after a 'presented' stop starts
   // the land; a land already running/landed/failed ATTACHES — never a second merge.
-  const existingLand = readRun(args.card_id);
+  const existingLand = readRun(args.card_id, runsDir);
   // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
   const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
   if (landAction.kind === 'attach') {
@@ -2114,12 +2137,12 @@ async function executeChorusWerkLand(
   // branch reconciles go:true + exit 0 → 'landed'). No held connection on the land's
   // deploy step → no drop there either.
   const runId = `${args.card_id}-${args.role}-${process.pid}-land`;
-  const log = logPath(args.card_id);
+  const log = logPath(args.card_id, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter} --input go=true`;
   const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
-  const child = spawn('bash', ['-c', wrapped], {
+  const child = spawnFn('bash', ['-c', wrapped], {
     env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
     detached: true,
     stdio: 'ignore',
@@ -2128,7 +2151,7 @@ async function executeChorusWerkLand(
   writeRun({
     runId, card: args.card_id, role: args.role, go: true,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
-  });
+  }, runsDir);
   return {
     content: [{
       type: 'text' as const,
@@ -2395,6 +2418,11 @@ async function executeCardsView(
  */
 export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps = {}): Server {
   const execFileAsync: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
+  // #3458 — the detached act spawn + run-state dir, injectable for tests (default
+  // to the real spawn / live RUNS_DIR). chorus_werk no longer routes the act run
+  // through execFileAsync; it spawns detached, so the test seam lives here.
+  const spawnFn: SpawnFn = deps.spawnFn ?? (spawn as unknown as SpawnFn);
+  const runsDir = deps.runsDir;
   // #2804 — shimPath retained in McpServerDeps for backward-compat with
   // tests that pass it; unused now that executeNudge POSTs to pulse instead
   // of spawning chorus-hook-shim. Will be removed when bash + shim subcommand
@@ -2557,9 +2585,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         // #3311 — ONE trigger: go resumes past the demo stop (Half B), else present (Half A).
         if (parsed.data.go) {
-          return executeChorusWerkLand(parsed.data, execFileAsync);
+          return executeChorusWerkLand(parsed.data, spawnFn, runsDir);
         }
-        return executeChorusWerk(parsed.data, execFileAsync);
+        return executeChorusWerk(parsed.data, spawnFn, runsDir);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':
