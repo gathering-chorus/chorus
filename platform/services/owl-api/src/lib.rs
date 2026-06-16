@@ -390,17 +390,87 @@ pub fn build_edge_update(entity: &str, predicate: &str, target: &str, insert: bo
     )
 }
 
-/// Extract the edge target name from a JSON request body: { "target": "<name>" }.
-/// Minimal zero-dep extractor; the value is validated by is_safe_local downstream
-/// (bare local names only), so escape-handling isn't needed here.
-pub fn parse_body_target(body: &str) -> Option<String> {
-    let needle = "\"target\"";
-    let i = body.find(needle)? + needle.len();
+/// Extract a JSON string field by key: { "<key>": "<value>" }. Minimal zero-dep;
+/// values are validated (is_safe_local for names) or SPARQL-literal-escaped
+/// (sparql_lit for property values) downstream, so escape-handling isn't here.
+pub fn json_field(body: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\"", key);
+    let i = body.find(&needle)? + needle.len();
     let after_colon = &body[i..][body[i..].find(':')? + 1..];
     let q = after_colon.find('"')? + 1;
     let val = &after_colon[q..];
     let end = val.find('"')?;
     Some(val[..end].to_string())
+}
+
+/// The edge target name from a write body: { "target": "<name>" }.
+pub fn parse_body_target(body: &str) -> Option<String> {
+    json_field(body, "target")
+}
+
+/// Escape a value for safe interpolation into a SPARQL string literal (injection
+/// guard for property values, which — unlike names — may contain arbitrary text).
+pub fn sparql_lit(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+}
+
+/// The shape's DATATYPE/plain fields present in the body, as (field, value) pairs.
+/// Edge fields (edge:*) are skipped — edges are written through the edge endpoints,
+/// not the entity body. Pure + unit-tested.
+pub fn collect_entity_props(body: &str, fields: &[String]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for f in fields {
+        let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
+        if kind.starts_with("edge:") {
+            continue;
+        }
+        if let Some(v) = json_field(body, name) {
+            out.push((name.to_string(), v));
+        }
+    }
+    out
+}
+
+/// Build the INSERT DATA to CREATE an entity: typed as the class, ownedBy +
+/// creator + created set from the authenticated caller (the creator owns what it
+/// creates), plus the provided datatype properties. ownedBy is written as a
+/// role-name literal so authz_allows reads it back consistently. Names pre-validated.
+pub fn build_create_entity(class: &str, name: &str, caller: &str, created_iso: &str, props: &[(String, String)]) -> String {
+    let mut triples = vec![
+        format!("a <{}>", class),
+        format!("<{ns}ownedBy> \"{c}\"", ns = NS, c = caller),
+        format!("<{ns}creator> \"{c}\"", ns = NS, c = caller),
+        format!("<{ns}created> \"{ts}\"", ns = NS, ts = sparql_lit(created_iso)),
+    ];
+    for (f, v) in props {
+        triples.push(format!("<{ns}{f}> \"{v}\"", ns = NS, f = f, v = sparql_lit(v)));
+    }
+    format!(
+        "INSERT DATA {{ GRAPH <{g}> {{ <{ns}{n}> {tr} }} }}",
+        g = INSTANCES_GRAPH, ns = NS, n = name, tr = triples.join(" ; ")
+    )
+}
+
+/// Build the DELETE/INSERT/WHERE to REPLACE an entity's provided datatype
+/// properties (only the fields present in the body), preserving type, ownedBy,
+/// and edges. A field with no prior value still inserts (OPTIONAL match).
+pub fn build_replace_entity(name: &str, props: &[(String, String)]) -> String {
+    if props.is_empty() {
+        return String::new();
+    }
+    let del = props.iter().enumerate()
+        .map(|(i, (f, _))| format!("<{ns}{n}> <{ns}{f}> ?o{i}", ns = NS, n = name, f = f, i = i))
+        .collect::<Vec<_>>().join(" . ");
+    let ins = props.iter()
+        .map(|(f, v)| format!("<{ns}{n}> <{ns}{f}> \"{v}\"", ns = NS, n = name, f = f, v = sparql_lit(v)))
+        .collect::<Vec<_>>().join(" . ");
+    let opt = props.iter().enumerate()
+        .map(|(i, (f, _))| format!("OPTIONAL {{ <{ns}{n}> <{ns}{f}> ?o{i} }}", ns = NS, n = name, f = f, i = i))
+        .collect::<Vec<_>>().join(" ");
+    format!(
+        "DELETE {{ GRAPH <{g}> {{ {del} }} }} INSERT {{ GRAPH <{g}> {{ {ins} }} }} WHERE {{ GRAPH <{g}> {{ {opt} }} }}",
+        g = INSTANCES_GRAPH, del = del, ins = ins, opt = opt
+    )
 }
 
 /// Run a SPARQL UPDATE against Fuseki's /update endpoint (mirrors sparql_json's
@@ -437,6 +507,24 @@ fn partof_exists(entity: &str) -> bool {
         ns = NS, g = INSTANCES_GRAPH, e = entity
     );
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+}
+
+/// Does the entity exist at all? (create → 409 if it does; replace → 404 if it doesn't).
+fn entity_exists(entity: &str) -> bool {
+    let q = format!(
+        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
+        ns = NS, g = INSTANCES_GRAPH, e = entity
+    );
+    sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+}
+
+/// Epoch-seconds stamp for created/modified (zero-dep, joinable).
+fn now_stamp() -> String {
+    let s = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    s.to_string()
 }
 
 /// Emit the per-write spine event (AC4): who / what / which-edge / when. Uniform,
@@ -541,10 +629,57 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 }
             }
         }
-        WriteOp::CreateEntity | WriteOp::ReplaceEntity { .. } => {
-            // Entity create/replace need full-property-body validation against the
-            // shape — the next slice. Edge writes (the #3454 core) are live above.
-            write_resp("not-implemented", "entity create/replace is the next slice; edge writes are live")
+        WriteOp::CreateEntity => {
+            // CREATE: name from the body; the authenticated caller becomes the owner
+            // (you own what you create) — no prior ownedBy to check, so the top-level
+            // authZ block (entity=None here) is correctly skipped; authN was enforced
+            // by serve(). 409 if the entity already exists.
+            let name = match json_field(body, "name") {
+                Some(n) => n,
+                None => return write_resp("validation", "create requires a 'name' in the body"),
+            };
+            if !is_safe_local(&name) {
+                return write_resp("validation", "invalid entity name");
+            }
+            if entity_exists(&name) {
+                emit_write_spine(caller_role, "create", &name, "", "conflict");
+                return write_resp("conflict", "entity already exists");
+            }
+            let props = collect_entity_props(body, &table.fields);
+            let update = build_create_entity(&table.class, &name, caller_role, &now_stamp(), &props);
+            match sparql_update(&update) {
+                Ok(_) => {
+                    emit_write_spine(caller_role, "create", &name, "", "ok");
+                    write_resp("created", &format!("created {} (ownedBy {})", name, caller_role))
+                }
+                Err(e) => {
+                    emit_write_spine(caller_role, "create", &name, "", "error");
+                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                }
+            }
+        }
+        WriteOp::ReplaceEntity { name } => {
+            // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
+            // above. Must exist (404 otherwise). Replaces only the provided datatype
+            // properties; type/ownedBy/edges are preserved.
+            if !entity_exists(name) {
+                return write_resp("not-found", "entity does not exist");
+            }
+            let props = collect_entity_props(body, &table.fields);
+            if props.is_empty() {
+                return write_resp("validation", "replace requires at least one shape property in the body");
+            }
+            let update = build_replace_entity(name, &props);
+            match sparql_update(&update) {
+                Ok(_) => {
+                    emit_write_spine(caller_role, "replace", name, "", "ok");
+                    write_resp("ok", &format!("replaced {} ({} props)", name, props.len()))
+                }
+                Err(e) => {
+                    emit_write_spine(caller_role, "replace", name, "", "error");
+                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                }
+            }
         }
     }
 }
@@ -1349,6 +1484,42 @@ mod tests {
         assert_eq!(parse_body_target(r#"{"target":"parentnode"}"#).as_deref(), Some("parentnode"));
         assert_eq!(parse_body_target(r#"{ "target" : "p2" , "x": 1 }"#).as_deref(), Some("p2"));
         assert_eq!(parse_body_target(r#"{"other":"x"}"#), None);
+    }
+
+    #[test]
+    fn collect_entity_props_takes_datatype_fields_skips_edges() {
+        let fields = vec!["label|datatype:string".to_string(), "status|plain".to_string(), "partOf|edge:Domain".to_string()];
+        let props = collect_entity_props(r#"{"name":"x","label":"My Label","status":"active","partOf":"shouldskip"}"#, &fields);
+        assert!(props.contains(&("label".to_string(), "My Label".to_string())));
+        assert!(props.contains(&("status".to_string(), "active".to_string())));
+        // edge fields are NOT written via the entity body (they go through edge endpoints)
+        assert!(!props.iter().any(|(f, _)| f == "partOf"));
+    }
+
+    #[test]
+    fn build_create_entity_types_owns_and_sets_props() {
+        let u = build_create_entity("https://jeffbridwell.com/chorus#Property", "myprop", "wren", "1700",
+            &[("label".to_string(), "L".to_string())]);
+        assert!(u.starts_with("INSERT DATA"));
+        assert!(u.contains("<https://jeffbridwell.com/chorus#myprop> a <https://jeffbridwell.com/chorus#Property>"));
+        assert!(u.contains("ownedBy> \"wren\""), "creator owns what it creates");
+        assert!(u.contains("creator> \"wren\""));
+        assert!(u.contains("created> \"1700\""));
+        assert!(u.contains("label> \"L\""));
+    }
+
+    #[test]
+    fn build_replace_entity_delete_insert_where_for_present_props() {
+        let u = build_replace_entity("myprop", &[("label".to_string(), "New".to_string())]);
+        assert!(u.contains("DELETE {") && u.contains("INSERT {") && u.contains("WHERE {"));
+        assert!(u.contains("label> \"New\""));
+        assert!(u.contains("OPTIONAL"));
+        assert_eq!(build_replace_entity("x", &[]), "", "no props → empty (nothing to replace)");
+    }
+
+    #[test]
+    fn sparql_lit_escapes_injection_chars() {
+        assert_eq!(sparql_lit(r#"a"b\c"#), r#"a\"b\\c"#);
     }
 
     #[test]
