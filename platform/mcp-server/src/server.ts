@@ -26,6 +26,9 @@ import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
+// #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
+import { decideRunAction, extractFailureReason } from './werk-run-state';
+import { readRun, writeRun, markPhase } from './werk-run-store';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
 // This keeps chorus-mcp's surface minimal — only depends on cards CLI, git-queue,
@@ -1998,6 +2001,32 @@ async function executeChorusWerk(
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
   const landCmd = `chorus_werk {role:"${args.role}", card_id:${args.card_id}, accepter:"${accepter}", go:true}`;
+  // #3443 AC7 — attach-on-redrive: if a run for this card is already on record, a
+  // re-invoke (e.g. after a transport drop) reads its REAL phase instead of
+  // starting a second act. A drop is a non-event: the caller re-invokes and gets
+  // the truth, never a double-act or a WIP-limbo card. (Half A is no-go/present,
+  // so decideRunAction attaches for any existing run here.)
+  const existingRun = readRun(args.card_id);
+  const action = decideRunAction(existingRun, false);
+  if (action.kind === 'attach') {
+    const r = action.run;
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
+          role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+          failureReason: r.failureReason,
+          note: `Attached to the run already on record for #${args.card_id} (phase=${r.phase}) — idempotent re-invoke, no second act started. A transport drop is a non-event: this IS the true state.`,
+        }),
+      }],
+    };
+  }
+  writeRun({
+    runId: `${args.card_id}-${args.role}-${process.pid}`,
+    card: args.card_id, role: args.role, go: false,
+    phase: 'running', startedAt: new Date().toISOString(), pid: process.pid,
+  });
   const actArgs = [
     'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
     '--input', `card_id=${args.card_id}`,
@@ -2025,8 +2054,15 @@ async function executeChorusWerk(
     const combined = stderr + stdout;
     const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
     const step = stepMatch ? stepMatch[1] : 'unknown';
-    throw new Error(`pipeline-fail — reason=pipeline-fail step=${step} exit=${exitCode} — Half A stopped; the variant was not presented. Nothing merged.`);
+    // #3443 AC7 — surface the child verb's REAL reason, not just "step=X exit=1",
+    // and record it so a re-invoke attaches to the failure instead of re-running.
+    const reason = extractFailureReason(stdout, stderr, step);
+    markPhase(args.card_id, 'failed', { failureReason: reason });
+    throw new Error(`pipeline-fail — reason=${reason} step=${step} exit=${exitCode} — Half A stopped; the variant was not presented. Nothing merged. (re-invoke chorus_werk to read this state; it will not re-run.)`);
   }
+  // #3443 AC7 — record the terminal phase so a re-invoke reports 'presented'
+  // (and a subsequent GO can start the land).
+  markPhase(args.card_id, 'presented');
   return {
     content: [{
       type: 'text' as const,
@@ -2064,6 +2100,31 @@ async function executeChorusWerkLand(
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
+  // #3443 AC7 — attach-on-redrive for the LAND (Half B), where tonight's drops
+  // hurt most (the merge dropped, the accept never ran → WIP-limbo, hand-recovery).
+  // A re-invoke reads the run's real phase: a GO after a 'presented' stop starts
+  // the land; a land already running/landed/failed ATTACHES — never a second merge.
+  const existingLand = readRun(args.card_id);
+  const landAction = decideRunAction(existingLand, true);
+  if (landAction.kind === 'attach') {
+    const r = landAction.run;
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
+          role: args.role, card_id: args.card_id, accepter,
+          failureReason: r.failureReason,
+          note: `Attached to the run on record for #${args.card_id} (phase=${r.phase}) — idempotent re-invoke, no second merge/land. A dropped land is a non-event: this IS the true state.`,
+        }),
+      }],
+    };
+  }
+  writeRun({
+    runId: `${args.card_id}-${args.role}-${process.pid}-land`,
+    card: args.card_id, role: args.role, go: true,
+    phase: 'running', startedAt: new Date().toISOString(), pid: process.pid,
+  });
   const actArgs = [
     'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
     '--input', `card_id=${args.card_id}`,
@@ -2092,8 +2153,15 @@ async function executeChorusWerkLand(
     const combined = stderr + stdout;
     const stepMatch = combined.match(/Failure - Main ([a-z0-9-]+)/i);
     const step = stepMatch ? stepMatch[1] : 'unknown';
-    throw new Error(`land-fail — reason=land-fail step=${step} exit=${exitCode} — Half B stopped; check what landed before retrying.`);
+    // #3443 AC7 — surface the child verb's REAL reason (the thing that forced a
+    // hand-run of werk-merge tonight), not "step=X exit=1", and record it so a
+    // re-invoke attaches to the failure instead of re-merging.
+    const reason = extractFailureReason(stdout, stderr, step);
+    markPhase(args.card_id, 'failed', { failureReason: reason });
+    throw new Error(`land-fail — reason=${reason} step=${step} exit=${exitCode} — Half B stopped; check what landed before retrying. (re-invoke chorus_werk go:true to read this state; it attaches, it will not re-merge.)`);
   }
+  // #3443 AC7 — record the terminal land so a re-invoke reports 'landed', idempotent.
+  markPhase(args.card_id, 'landed');
   return {
     content: [{
       type: 'text' as const,

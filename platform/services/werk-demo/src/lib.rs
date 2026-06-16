@@ -17,7 +17,7 @@
 
 use std::env;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -194,6 +194,27 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str) -> Vec
             let peer_key = format!("\"peer\":\"{}\"", peer);
             !witness.lines().any(|l| {
                 l.contains("\"event\":\"demo.gather.replied\"")
+                    && l.contains(&card_key)
+                    && l.contains(&peer_key)
+                    && line_in_round(l, round)
+            })
+        })
+        .collect()
+}
+
+/// #3443 AC2 — peers who have NOT yet been SENT a gather this round. Distinct
+/// from gathers_missing (which tracks REPLIES): sending is keyed on
+/// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
+/// nudge (the #3305 refire-storm guard). Empty = both peers already have the
+/// reply-required gather; the stop hook (#3218) then holds them until they ack.
+pub fn gathers_unsent(witness: &str, card: u64, role: &str, round: &str) -> Vec<&'static str> {
+    let card_key = format!("\"card_id\":{},", card);
+    gather_peers(role)
+        .into_iter()
+        .filter(|peer| {
+            let peer_key = format!("\"peer\":\"{}\"", peer);
+            !witness.lines().any(|l| {
+                l.contains("\"event\":\"demo.gather.sent\"")
                     && l.contains(&card_key)
                     && l.contains(&peer_key)
                     && line_in_round(l, round)
@@ -540,11 +561,74 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 /// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
 /// chorus_nudge_message. Unit-pinned (the e2e happy path now legitimately
 /// sends zero nudges, so the shape can't be pinned there).
+/// #3443 AC2/AC8 — the gather is REPLY-REQUIRED by construction: every demo
+/// nudge carries `expects:"reply"`, never the default `expects:"none"`. That is
+/// what makes the recipient OWE a response — the #3218 RESPOND-FIRST hook holds
+/// their session until they ack, so the demo's `gathers_missing` ready-gate
+/// (announce_ready_full) can actually be satisfied by a real reply instead of
+/// hoping a fire-and-forget FYI gets noticed. The sender cannot downgrade it.
 pub fn mcp_nudge_body(to: &str, message: &str) -> String {
     format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}"}}}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}","expects":"reply"}}}}}}"#,
         to, message
     )
+}
+
+/// #3443 AC2 — record that a reply-required gather was SENT to a peer this round
+/// (dedup key for gathers_unsent so re-invokes don't re-fire). Distinct from the
+/// demo.gather.replied the peer's ack records.
+fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &str, trace: &str) {
+    jsonl(home, role, card, trace, "demo.gather.sent",
+          &format!(",\"peer\":\"{}\",\"round\":\"{}\"", peer, round));
+    emit_spine(home, "demo.gather.sent", role, card, trace);
+}
+
+/// #3443 AC2 — the binary FIRES the reply-required gathers itself, BEFORE the
+/// announce standby. Previously the gather send lived in signal() AFTER the
+/// standby return, so a headless demo (no demoer agent) stood by forever having
+/// never sent them — the chicken/egg Jeff caught live: a gather can't be
+/// "replied" until it's "sent", and sending was the deleted demoer step. Sends
+/// only after gates are recorded (gates → gathers → replies → announce) and only
+/// to peers with no demo.gather.sent this round. The expects=reply envelope
+/// (mcp_nudge_body) + the #3218 RESPOND-FIRST hook make the peer owe an ack; the
+/// hook fires at the recipient's turn-end so the gather never queues silently
+/// behind their auto/focus-mode work.
+fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    if !gates_missing(&witness, card, round).is_empty() {
+        return; // gates not recorded yet — don't ask peers to review un-gated work
+    }
+    let mut sent: Vec<&str> = Vec::new();
+    for peer in gathers_unsent(&witness, card, role, round) {
+        if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
+            jsonl(home, role, card, trace, "demo.nudge.failed",
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", peer, e.replace('"', "'")));
+        } else {
+            record_gather_sent(home, role, card, peer, round, trace);
+            sent.push(peer);
+        }
+    }
+    // #3443 (Jeff's catch) — make the ask VISIBLE to the human overseer. The
+    // gathers go peer-to-peer; without this, the gathers-pending STANDBY is
+    // silent to Jeff — he can't see the team was asked ("I don't see nudges to
+    // them"). One Bridge post + spine event names exactly who was gathered and
+    // that the demo HOLDS until they reply. Best-effort, like the other signals.
+    if !sent.is_empty() {
+        let text = format!(
+            "[demo] #{} — fired reply-required gathers to [{}]; demo HOLDS until they reply (no announce, no go until the team's feedback is in)",
+            card, sent.join(", ")
+        );
+        let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
+        let _ = run("curl", &[
+            "-s", "-X", "POST",
+            "http://localhost:3470/api/message",
+            "-H", "Content-Type: application/json",
+            "-d", &bridge_body,
+        ]);
+        jsonl(home, role, card, trace, "demo.gathers.surfaced",
+              &format!(",\"peers\":\"{}\",\"round\":\"{}\"", sent.join(","), round));
+        emit_spine(home, "demo.gathers.surfaced", role, card, trace);
+    }
 }
 
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
@@ -657,20 +741,20 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // #3284 (AC6) — INVARIANT GATE EXECUTION. Restore #3237's gate enforcement that
-    // #3279's present-and-exit dropped: refuse to PRESENT unless all 5 gates left a
-    // demo.gate.result in the witness. This blocks presenting UN-GATED; it never
-    // blocks Jeff's go (#3263/DEC-048 sovereign-go intact — gates inform, never veto).
-    // The gates are produced by the /demo skill's LLM subagents (a zero-dep binary
-    // can't spawn an LLM gate); the binary's job is to ENFORCE. Refusing here, before
-    // any announce, is what makes a gate-less pipeline demo fail LOUD instead of
-    // silently presenting "(none run)". Skippable only in the unit/e2e suite.
+    // INVARIANT GATE EXECUTION (#3237/#3284, now #3443). Refuse to PRESENT unless
+    // all 5 gates left a demo.gate.result in the witness. This blocks presenting
+    // UN-GATED; it never blocks Jeff's go (#3263/DEC-048 sovereign-go intact —
+    // gates inform, never veto). #3443: the binary RUNS the gates itself (headless
+    // claude -p, see run_gates below) just before this check, so the refusal now
+    // only triggers where gates genuinely couldn't run. Refusing here, before any
+    // announce, is what makes a gate-less demo fail LOUD instead of silently
+    // presenting "(none run)". Skippable only in the unit/e2e suite.
     //
-    // #3318 — but ONLY on the DEMOER-driven (interactive) present. The headless act/CI
-    // job has no agent to run gates, so enforcing there refuses EVERY Half A demo team-
-    // wide (the #3284 pipeline break). Under act/CI we SKIP enforcement — the pipeline
-    // presents the variant; the demoer then runs gates + the real gated present.
-    // Detected via the act runner's own env (ACT / GITHUB_ACTIONS).
+    // #3318/#3443 — the act/CI degrade. #3318 SKIPPED enforcement under act/CI
+    // because "no agent to run gates" there. #3443 retires that excuse: where the
+    // claude binary resolves (Jeff's box, local act) the binary self-gates and we
+    // ENFORCE. The only remaining skip is hosted CI with no claude (gates_ran=false
+    // AND in_act) — degrade, don't break the build. Detected via ACT/GITHUB_ACTIONS.
     let in_act = std::env::var("ACT").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
     let skip_gate_check =
         std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false);
@@ -678,7 +762,22 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // evidence (gates, gathers, announce) must carry it; prior rounds' records
     // never satisfy this one.
     let round = current_round(role, card);
-    if !skip_gate_check && !in_act {
+    // #3443 AC1 — RUN the gates ourselves before enforcing their presence. Where
+    // claude is available (Jeff's box, local act) the binary self-gates: one
+    // headless `claude -p` per absent gate, recorded via record_gate. This kills
+    // the demoer-agent dependency (#3116) AND the act/CI standby (#3318) — gates
+    // now run in the headless path too. Skippable only in the unit/e2e suite,
+    // which seeds its own gate results.
+    let skip_gate_run = std::env::var("CHORUS_DEMO_SKIP_GATE_RUN").map(|v| v == "1").unwrap_or(false);
+    let gates_ran = !skip_gate_run && claude_available();
+    if gates_ran {
+        run_gates(home, role, card, &round, &trace);
+    }
+    // Enforce gate presence whenever we ran them, or whenever we're in the
+    // interactive (non-act) path. The only path that still skips enforcement is
+    // hosted CI with no claude binary (gates_ran=false AND in_act) — degrade, do
+    // not break the build (#3284 lesson).
+    if !skip_gate_check && (gates_ran || !in_act) {
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
         let absent = gates_missing(&witness, card, &round);
         if !absent.is_empty() {
@@ -714,13 +813,24 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
     }
 
-    // #3116 — the GATE step moves to the /demo SKILL layer. The demoer initiates
-    // the 5 gates as subagents (an LLM gate-review can't run in this zero-dep
-    // binary) and routes each result to its owning role for REVIEW. The old
-    // go-run-your-gate nudge relay + the in-binary gate-chain wait are retired
-    // (the agents-grading-agents medium was the waste, not the gates). Smoke
-    // folds into the machine prover. The binary no longer blocks on gate comments.
-    emit_spine(home, "demo.gate.delegated", role, card, &trace);
+    // #3443 — the GATE step is RUN BY THIS BINARY (run_gates above), not delegated
+    // to the /demo skill's subagents. The owning role still REVIEWS its recorded
+    // result async, but execution is the binary's. The old go-run-your-gate nudge
+    // relay + the in-binary gate-chain wait stay retired (the agents-grading-agents
+    // relay was the waste, not the gates). Smoke folds into the machine prover.
+    emit_spine(home, "demo.gates.recorded", role, card, &trace);
+
+    // #3443 AC2 — FIRE the reply-required gathers HERE, before the standby. This
+    // is the bug Jeff caught live: the gather send lived only in signal() (below,
+    // after the standby return), so a headless demo stood by on gathers-pending
+    // having never sent them. fire_gathers sends to unsent peers once gates are
+    // recorded; the expects=reply envelope + #3218 hook make each peer owe an
+    // ack. Skippable only in the unit/e2e suite (which seeds replies directly).
+    let skip_gather_send =
+        std::env::var("CHORUS_DEMO_SKIP_GATHER_SEND").map(|v| v == "1").unwrap_or(false);
+    if !skip_gather_send {
+        fire_gathers(home, role, card, &trace, &round);
+    }
 
     // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
     // announce-bearing tail below (signal → test-surface → DEMO READY → peer
@@ -959,6 +1069,295 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, fin
     emit_spine(home, "demo.gate.result", role, card, &trace);
 }
 
+// === AC1 (#3443) — werk-demo RUNS the 5 gates itself via headless `claude -p`,
+// instead of depending on the /demo skill's demoer agent to spawn them. This
+// retires the "a zero-dep binary can't run an LLM gate" excuse (#3116/#3318):
+// `claude -p` is a subprocess like git/cargo/cards. One headless claude per
+// absent gate, each fed the gate's SKILL.md as system prompt + the card AC and
+// branch diff as context, emits {"result":"pass|fail","findings":"..."} which we
+// record via the existing record_gate witness path. A garbled or errored gate is
+// recorded as "error" (VISIBLE), never silently passed. ===
+
+/// Resolve the `claude` CLI to an invocable path. #3443 LIVE FIX: a bare
+/// `Command::new("claude")` only searches PATH — and the `act` pipeline runs
+/// host-native with a PATH that does NOT include `~/.local/bin` (where claude
+/// actually lives). The first live `/cw` run degraded for exactly this reason:
+/// claude was there, just not on the job's PATH. So resolve it explicitly:
+///   1. `CHORUS_CLAUDE_BIN` override (lets the env name the exact binary),
+///   2. bare `claude` if PATH already resolves it (interactive shells),
+///   3. known install locations a stripped job PATH commonly misses.
+/// None = genuinely absent (hosted CI) → degrade, don't break (#3284).
+fn claude_bin() -> Option<String> {
+    if let Ok(p) = env::var("CHORUS_CLAUDE_BIN") {
+        if !p.is_empty() && Path::new(&p).exists() {
+            return Some(p);
+        }
+    }
+    if Command::new("claude").arg("--version").output().map(|o| o.status.success()).unwrap_or(false) {
+        return Some("claude".to_string());
+    }
+    let home = env::var("HOME").unwrap_or_default();
+    for cand in [
+        format!("{}/.local/bin/claude", home),
+        format!("{}/.claude/local/claude", home),
+        "/usr/local/bin/claude".to_string(),
+        "/opt/homebrew/bin/claude".to_string(),
+    ] {
+        if Path::new(&cand).exists() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+/// Is the `claude` CLI resolvable at all? Gates can only self-run where a real
+/// claude binary exists (Jeff's machine, local `act`). On hosted CI (no auth,
+/// no binary) it is absent — we degrade rather than break the build (#3284).
+fn claude_available() -> bool {
+    claude_bin().is_some()
+}
+
+/// Unescape the JSON string-escapes claude emits (\" \\ \/ \n \r \t).
+pub fn json_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some('/') => out.push('/'),
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Extract a JSON string field's RAW (still-escaped) body by name: scan for
+/// `"<field>"`, the colon, the opening quote, then read to the next UNescaped
+/// quote. Returns None if absent or non-string. Pure + unit-tested.
+pub fn extract_json_str(json: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{}\"", field);
+    let mut search_from = 0;
+    loop {
+        let hit = json[search_from..].find(&needle)? + search_from;
+        let after = hit + needle.len();
+        search_from = after; // advance so a non-key match doesn't loop forever
+        // It's only a KEY if the next non-whitespace char is ':' — this skips a
+        // bare value like `"type":"result"` matching field="result".
+        let tail = json[after..].trim_start();
+        if !tail.starts_with(':') {
+            continue;
+        }
+        let after_colon = &tail[1..];
+        let val = after_colon.trim_start();
+        if !val.starts_with('"') {
+            // non-string value for this key; not what we extract
+            continue;
+        }
+        let body = &val[1..];
+        let bytes = body.as_bytes();
+        let mut i = 0;
+        let mut esc = false;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if esc {
+                esc = false;
+            } else if b == b'\\' {
+                esc = true;
+            } else if b == b'"' {
+                return Some(body[..i].to_string());
+            }
+            i += 1;
+        }
+        return None;
+    }
+}
+
+/// Parse a gate verdict out of a headless claude gate run. The gate is prompted
+/// to emit `{"result":"pass"|"fail","findings":"<one line>"}`. Handles both a
+/// raw payload and the `--output-format json` envelope (whose `result` field
+/// holds the assistant text). Unknown/garbled → ("error", reason) so a broken
+/// gate is recorded VISIBLE, never silently passed. Pure + unit-tested.
+pub fn parse_gate_verdict(stdout: &str) -> (String, String) {
+    // If an envelope `result` holds nested gate JSON, parse that; else parse raw.
+    let text = match extract_json_str(stdout, "result") {
+        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
+        _ => stdout.to_string(),
+    };
+    let verdict = extract_json_str(&text, "result").map(|v| json_unescape(&v));
+    let findings = extract_json_str(&text, "findings")
+        .map(|v| json_unescape(&v))
+        .unwrap_or_default();
+    match verdict.as_deref().map(|s| s.trim()) {
+        Some("pass") => ("pass".to_string(), findings),
+        Some("fail") => ("fail".to_string(), findings),
+        _ => {
+            let reason = if !findings.is_empty() {
+                findings
+            } else {
+                format!("unparseable gate output: {}", text.chars().take(160).collect::<String>())
+            };
+            ("error".to_string(), reason)
+        }
+    }
+}
+
+/// Build the headless system prompt for a gate: the gate's SKILL.md plus a strict
+/// output contract. Pure so the contract is unit-pinned.
+pub fn gate_system_prompt(skill_md: &str) -> String {
+    format!(
+        "{}\n\n---\nYou are running HEADLESS as this gate. Review the card AC and the \
+         branch diff provided in the user message against the gate's criteria above. \
+         Output ONLY a single JSON object and nothing else: \
+         {{\"result\":\"pass\",\"findings\":\"<one concise line>\"}} \
+         where result is \"pass\" or \"fail\". No prose, no markdown, no code fence.",
+        skill_md.trim()
+    )
+}
+
+/// Run one gate headless and record its verdict. Best-effort: any failure path
+/// records an "error" verdict (visible on the decision surface), never panics,
+/// never silently passes.
+fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
+    let skill = home.join(format!("skills/gate-{}/SKILL.md", gate));
+    let skill_md = match fs::read_to_string(&skill) {
+        Ok(s) => s,
+        Err(e) => {
+            record_gate(home, role, card, gate, "error",
+                        &format!("gate skill unreadable {}: {}", skill.display(), e), round);
+            return;
+        }
+    };
+    let sys = gate_system_prompt(&skill_md);
+
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+    let diff = Command::new("git")
+        .arg("-C").arg(&werk)
+        .args(["diff", "origin/main...HEAD"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    // Cap the diff so a huge change can't blow the context budget.
+    let diff_capped: String = diff.chars().take(60_000).collect();
+    let ctx = format!(
+        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
+        card, card_view, diff_capped
+    );
+
+    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
+    let bin = match claude_bin() {
+        Some(b) => b,
+        None => {
+            record_gate(home, role, card, gate, "error", "claude binary not resolvable", round);
+            return;
+        }
+    };
+    let child = Command::new(&bin)
+        .args([
+            "-p",
+            "--model", &model,
+            "--permission-mode", "dontAsk",
+            "--no-session-persistence",
+            "--output-format", "text",
+            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+            "--system-prompt", &sys,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            record_gate(home, role, card, gate, "error", &format!("claude spawn failed: {}", e), round);
+            return;
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(ctx.as_bytes());
+        // stdin drops here → closed, so claude sees EOF and proceeds.
+    }
+    // #3443 (Silas's BOUNDED contract) — a hung model must NOT block the gate
+    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 180); on
+    // expiry, kill the child and record error-on-expiry (fail-LOUD, never green).
+    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Some(st),
+            Ok(None) => {
+                if start.elapsed() >= Duration::from_secs(timeout_secs) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                sleep(Duration::from_millis(200));
+            }
+            Err(e) => {
+                record_gate(home, role, card, gate, "error",
+                            &format!("claude wait failed: {}", e), round);
+                return;
+            }
+        }
+    };
+    let status = match status {
+        Some(s) => s,
+        None => {
+            record_gate(home, role, card, gate, "error",
+                        &format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs),
+                        round);
+            return;
+        }
+    };
+    let mut stdout = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut stdout);
+    }
+    let mut stderr = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut stderr);
+    }
+    if !status.success() {
+        record_gate(home, role, card, gate, "error",
+                    &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()),
+                    round);
+        return;
+    }
+    let (result, findings) = parse_gate_verdict(&stdout);
+    record_gate(home, role, card, gate, &result, &findings, round);
+}
+
+/// AC1 (#3443) — run every required gate that has NO result for THIS round,
+/// recording each itself. Already-recorded gates (e.g. a re-invoke after a drop)
+/// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
+fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let absent = gates_missing(&witness, card, round);
+    if absent.is_empty() {
+        return;
+    }
+    emit_spine(home, "demo.gates.running", role, card, trace);
+    for gate in absent {
+        run_one_gate(home, role, card, gate, round);
+    }
+}
+
 /// #3263 — record the pipeline's test outcome into the witness so the informed-go
 /// check can require it (and Jeff sees it before the go). Called by werk.yml's test
 /// step via `werk-demo test-result <card> pass|fail`. pass AND fail are recorded —
@@ -1100,6 +1499,92 @@ mod tests {
         let (checked, total) = ac_counts(v);
         assert_eq!(checked, 2);
         assert_eq!(total, 3);
+    }
+
+    // === #3443 AC1 — gate self-run parsing ===
+
+    #[test]
+    fn extract_json_str_reads_simple_field() {
+        let j = r#"{"result":"pass","findings":"looks good"}"#;
+        assert_eq!(extract_json_str(j, "result").as_deref(), Some("pass"));
+        assert_eq!(extract_json_str(j, "findings").as_deref(), Some("looks good"));
+        assert_eq!(extract_json_str(j, "missing"), None);
+    }
+
+    #[test]
+    fn extract_json_str_stops_at_unescaped_quote_keeps_escaped() {
+        let j = r#"{"findings":"has a \"quote\" inside"}"#;
+        assert_eq!(extract_json_str(j, "findings").as_deref(), Some(r#"has a \"quote\" inside"#));
+    }
+
+    #[test]
+    fn json_unescape_handles_common_escapes() {
+        assert_eq!(json_unescape(r#"a \"b\" c\nd\\e"#), "a \"b\" c\nd\\e");
+    }
+
+    #[test]
+    fn parse_gate_verdict_raw_pass() {
+        let out = r#"{"result":"pass","findings":"AC met, demo evidence present"}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "pass");
+        assert_eq!(f, "AC met, demo evidence present");
+    }
+
+    #[test]
+    fn parse_gate_verdict_raw_fail() {
+        let out = r#"{"result":"fail","findings":"no tests for AC3"}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "fail");
+        assert_eq!(f, "no tests for AC3");
+    }
+
+    #[test]
+    fn parse_gate_verdict_unwraps_json_envelope() {
+        // claude -p --output-format json: the gate JSON is nested+escaped in `result`.
+        let out = r#"{"type":"result","subtype":"success","result":"{\"result\":\"pass\",\"findings\":\"clean\"}","is_error":false}"#;
+        let (r, f) = parse_gate_verdict(out);
+        assert_eq!(r, "pass");
+        assert_eq!(f, "clean");
+    }
+
+    #[test]
+    fn parse_gate_verdict_garbled_is_error_never_pass() {
+        let (r, f) = parse_gate_verdict("I think this looks fine to me, shipping it");
+        assert_eq!(r, "error");
+        assert!(!f.is_empty());
+    }
+
+    #[test]
+    fn parse_gate_verdict_missing_result_is_error() {
+        let (r, _) = parse_gate_verdict(r#"{"findings":"only findings, no verdict"}"#);
+        assert_eq!(r, "error");
+    }
+
+    #[test]
+    fn claude_bin_honors_explicit_override() {
+        // #3443 live fix — CHORUS_CLAUDE_BIN names the exact binary, so a stripped
+        // job PATH (act host-native missing ~/.local/bin) can still resolve claude.
+        std::env::set_var("CHORUS_CLAUDE_BIN", "/bin/sh"); // any existing executable
+        let got = claude_bin();
+        std::env::remove_var("CHORUS_CLAUDE_BIN");
+        assert_eq!(got.as_deref(), Some("/bin/sh"));
+    }
+
+    #[test]
+    fn claude_bin_ignores_override_that_does_not_exist() {
+        std::env::set_var("CHORUS_CLAUDE_BIN", "/no/such/claude/binary");
+        let got = claude_bin();
+        std::env::remove_var("CHORUS_CLAUDE_BIN");
+        // falls through to PATH / known locations — must NOT return the bogus path
+        assert_ne!(got.as_deref(), Some("/no/such/claude/binary"));
+    }
+
+    #[test]
+    fn gate_system_prompt_embeds_skill_and_output_contract() {
+        let p = gate_system_prompt("# Gate Product\nCheck the AC.");
+        assert!(p.contains("Gate Product"));
+        assert!(p.contains("\"result\":\"pass\""));
+        assert!(p.contains("ONLY a single JSON object"));
     }
 
     #[test]
@@ -1293,6 +1778,30 @@ mod tests {
         assert!(b.contains("\"method\":\"tools/call\""));
         assert!(b.contains("\"name\":\"chorus_nudge_message\""));
         assert!(b.contains("\"to\":\"silas\""));
+    }
+
+    #[test]
+    fn mcp_nudge_body_is_reply_required_never_none() {
+        // #3443 AC2/AC8 — the gather is reply-required by construction; a demo
+        // nudge must never be fire-and-forget (expects=none).
+        let b = mcp_nudge_body("silas", "msg");
+        assert!(b.contains("\"expects\":\"reply\""), "gather must be expects=reply: {}", b);
+        assert!(!b.contains("\"expects\":\"none\""), "gather must never be expects=none: {}", b);
+    }
+
+    #[test]
+    fn gathers_unsent_dedupes_on_sent_not_replied() {
+        // #3443 AC2 — a peer already SENT this round is not re-fired (no #3305
+        // storm), even though they have not yet REPLIED. The other peer is unsent.
+        let w = r#"{"ts":1,"event":"demo.gather.sent","role":"wren","card_id":3443,"trace_id":"t","peer":"silas","round":"r1"}"#;
+        assert_eq!(gathers_unsent(w, 3443, "wren", "r1"), vec!["kade"]);
+        // but they STILL count as missing-reply until they actually reply
+        assert!(gathers_missing(w, 3443, "wren", "r1").contains(&"silas"));
+    }
+
+    #[test]
+    fn gathers_unsent_all_when_nothing_sent() {
+        assert_eq!(gathers_unsent("", 3443, "wren", "r1"), vec!["silas", "kade"]);
     }
 
     #[test]

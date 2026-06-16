@@ -189,7 +189,12 @@ jobs:
         # human wait, which dropped on long waits (#3277) and could not survive a 12h walk-away.
         # Half A of the pipeline ENDS here. Jeff's GO re-invokes chorus_werk with go:true (#3311). Failure
         # (variant didn't come up) stops the job → nothing to land.
-        run: DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}"
+        #
+        # #3443 — werk-demo now self-runs the gates via headless claude (AC1). act
+        # runs host-native with a PATH that omits ~/.local/bin (where claude lives),
+        # which silently degraded the first live run. Put it on PATH so the binary's
+        # resolver finds claude in the pipeline runtime, not just interactive shells.
+        run: PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}"
 
       - name: presented
         # STOP-BEFORE-LAND (#3279, supersedes the stop-before-accept of the merged pipeline).
