@@ -28,9 +28,14 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
   });
 
-  test('run FAILED -> attach (report recorded failure, do not silently re-run)', () => {
-    const r = run({ phase: 'failed', failureReason: 'announce-missing-this-round' });
-    assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
+  test('run FAILED -> start (RETRYABLE; #3443 Kade catch — never strand on a transient failure)', () => {
+    const r = run({ phase: 'failed', failureReason: 'merge: network hiccup' });
+    assert.deepEqual(decideRunAction(r, false), { kind: 'start' });
+  });
+
+  test('GO on a FAILED run -> start (a GO must not be swallowed by a stale failure)', () => {
+    const r = run({ phase: 'failed', go: false, failureReason: 'deploy-prod transient' });
+    assert.deepEqual(decideRunAction(r, true), { kind: 'start' });
   });
 
   test('GO after a PRESENTED stop -> start (the land is the next legitimate phase)', () => {

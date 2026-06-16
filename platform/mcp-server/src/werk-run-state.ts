@@ -42,9 +42,11 @@ export type RunAction =
  * a second act — it attaches to the existing run and reports its real phase.
  *
  *  - no record / null            → start (first run)
- *  - record exists, ANY phase    → attach (running → report live; terminal →
- *                                  report the recorded outcome). Re-invoking is
- *                                  idempotent: a drop never causes a double-act.
+ *  - record phase==='failed'     → start (RETRY — see below)
+ *  - record phase 'running'/'presented'/'landed' → attach (running → report live;
+ *                                  terminal → report the recorded outcome).
+ *                                  Re-invoking is idempotent: a drop never
+ *                                  double-acts.
  *
  * `requestedGo` lets a GO re-invoke after a no-go present proceed: a terminal
  * `presented` run that the caller now asks to GO is the next legitimate phase
@@ -52,6 +54,13 @@ export type RunAction =
  */
 export function decideRunAction(existing: WerkRun | null, requestedGo: boolean): RunAction {
   if (!existing) return { kind: 'start' };
+  // #3443 (Kade's pre-land catch) — a terminal 'failed' run is RETRYABLE. The act
+  // already finished (no double-act risk) and the failure was already surfaced
+  // (failureReason on record + returned when it happened). Attaching to 'failed'
+  // forever is the INVERSE of WIP-limbo: a transient blip (e.g. a network hiccup
+  // on merge) would strand the card permanently, every re-invoke re-reporting the
+  // old failure even on a GO. A re-invoke means "try again" → start fresh.
+  if (existing.phase === 'failed') return { kind: 'start' };
   // A GO after a presented stop is the next legitimate phase (the land), not a
   // duplicate — only when the prior run actually reached 'presented'.
   if (requestedGo && !existing.go && existing.phase === 'presented') {

@@ -17,7 +17,7 @@
 
 use std::env;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1267,22 +1267,55 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     };
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(ctx.as_bytes());
+        // stdin drops here → closed, so claude sees EOF and proceeds.
     }
-    let out = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            record_gate(home, role, card, gate, "error", &format!("claude wait failed: {}", e), round);
+    // #3443 (Silas's BOUNDED contract) — a hung model must NOT block the gate
+    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 180); on
+    // expiry, kill the child and record error-on-expiry (fail-LOUD, never green).
+    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Some(st),
+            Ok(None) => {
+                if start.elapsed() >= Duration::from_secs(timeout_secs) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                sleep(Duration::from_millis(200));
+            }
+            Err(e) => {
+                record_gate(home, role, card, gate, "error",
+                            &format!("claude wait failed: {}", e), round);
+                return;
+            }
+        }
+    };
+    let status = match status {
+        Some(s) => s,
+        None => {
+            record_gate(home, role, card, gate, "error",
+                        &format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs),
+                        round);
             return;
         }
     };
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
+    let mut stdout = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut stdout);
+    }
+    let mut stderr = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut stderr);
+    }
+    if !status.success() {
         record_gate(home, role, card, gate, "error",
-                    &format!("claude exit {:?}: {}", out.status.code(), err.chars().take(160).collect::<String>()),
+                    &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()),
                     round);
         return;
     }
-    let stdout = String::from_utf8_lossy(&out.stdout);
     let (result, findings) = parse_gate_verdict(&stdout);
     record_gate(home, role, card, gate, &result, &findings, round);
 }
