@@ -598,13 +598,36 @@ fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
     if !gates_missing(&witness, card, round).is_empty() {
         return; // gates not recorded yet — don't ask peers to review un-gated work
     }
+    let mut sent: Vec<&str> = Vec::new();
     for peer in gathers_unsent(&witness, card, role, round) {
         if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
                   &format!(",\"to\":\"{}\",\"reason\":\"{}\"", peer, e.replace('"', "'")));
         } else {
             record_gather_sent(home, role, card, peer, round, trace);
+            sent.push(peer);
         }
+    }
+    // #3443 (Jeff's catch) — make the ask VISIBLE to the human overseer. The
+    // gathers go peer-to-peer; without this, the gathers-pending STANDBY is
+    // silent to Jeff — he can't see the team was asked ("I don't see nudges to
+    // them"). One Bridge post + spine event names exactly who was gathered and
+    // that the demo HOLDS until they reply. Best-effort, like the other signals.
+    if !sent.is_empty() {
+        let text = format!(
+            "[demo] #{} — fired reply-required gathers to [{}]; demo HOLDS until they reply (no announce, no go until the team's feedback is in)",
+            card, sent.join(", ")
+        );
+        let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
+        let _ = run("curl", &[
+            "-s", "-X", "POST",
+            "http://localhost:3470/api/message",
+            "-H", "Content-Type: application/json",
+            "-d", &bridge_body,
+        ]);
+        jsonl(home, role, card, trace, "demo.gathers.surfaced",
+              &format!(",\"peers\":\"{}\",\"round\":\"{}\"", sent.join(","), round));
+        emit_spine(home, "demo.gathers.surfaced", role, card, trace);
     }
 }
 
