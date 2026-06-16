@@ -15,4 +15,12 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+# The primary artifact is the LIB (linked by owl-api / werk-test / tagging-lift).
+# The bin is a thin self-check/smoke binary — the platform/services build contract
+# signs a binary per crate (pulse-gather, a linkable lib, ships one too). It runs
+# the cascade over a documented fixture so a deployed copy is provably runnable.
+[[bin]]
+name = "properties-resolver"
+path = "src/main.rs"
+
 [dependencies]
