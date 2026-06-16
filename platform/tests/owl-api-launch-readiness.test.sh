@@ -87,6 +87,32 @@ else
   test_fail "launcher never exec'd owl-api (rc=$rc)"
 fi
 
+# AC1c: graceful fallback — if Fuseki NEVER comes up, the launcher must still exec
+# owl-api after the bounded wait (never hang boot). curl always fails; stubbed sleep
+# keeps it fast. (cold-eyes #3446: the timeout path was previously untested.)
+rm -f "$MARKER"
+cat > "$SBX/stubbin/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$SBX/stubbin/curl"
+PATH="$SBX/stubbin:$PATH" bash "$LAUNCHER" >/dev/null 2>&1
+if [ -f "$MARKER" ]; then
+  test_pass "launcher exec'd owl-api anyway after the bounded wait (no boot hang when Fuseki never readies)"
+else
+  test_fail "launcher hung / never exec'd owl-api when Fuseki stayed down"
+fi
+
+# AC: the installed boot path must invoke the launcher, not owl-api directly —
+# otherwise the readiness gate is dead code (product-gate catch #3446). Guard the
+# repo plist source against drifting back to a direct owl-api invocation.
+PLIST="$REPO_ROOT/config/launchagents/com.chorus.owl-api.plist"
+if [ -f "$PLIST" ] && grep -q "owl-api-launch.sh" "$PLIST"; then
+  test_pass "owl-api launchd plist invokes owl-api-launch.sh (readiness gate is on the boot path)"
+else
+  test_fail "owl-api launchd plist does NOT invoke owl-api-launch.sh — readiness gate bypassed on deploy"
+fi
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
