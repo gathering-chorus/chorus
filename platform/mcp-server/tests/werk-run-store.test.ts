@@ -5,10 +5,10 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { readRun, writeRun, markPhase, clearRun } from '../src/werk-run-store';
+import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning } from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -50,5 +50,67 @@ describe('run-store persistence', () => {
     writeRun(run({ card: 102 }), dir);
     clearRun(102, dir);
     assert.equal(readRun(102, dir), null);
+  });
+});
+
+describe('reconcileRunning — poll-time transition from the detached run\'s log (#3458)', () => {
+  test('running + log WERK_EXIT=0 -> presented (the detached act finished clean)', () => {
+    writeRun(run({ card: 200, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(200, dir), '…build…\n[presented] up\nWERK_EXIT=0\n');
+    const r = reconcileRunning(200, dir);
+    assert.equal(r?.phase, 'presented');
+    assert.equal(readRun(200, dir)?.phase, 'presented'); // persisted
+  });
+
+  test('LAND run (go:true) + WERK_EXIT=0 -> landed, not presented (go-aware terminal)', () => {
+    writeRun(run({ card: 204, phase: 'running', go: true, pid: process.pid }), dir);
+    writeFileSync(logPath(204, dir), 'merge…sync…deploy…\nWERK_EXIT=0\n');
+    assert.equal(reconcileRunning(204, dir)?.phase, 'landed');
+  });
+
+  test('running + log WERK_EXIT=1 -> failed, with the child reason from the log', () => {
+    writeRun(run({ card: 201, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(201, dir), 'Failure - Main merge\nwerk-merge: reason=patch-id-changed\nWERK_EXIT=1\n');
+    const r = reconcileRunning(201, dir);
+    assert.equal(r?.phase, 'failed');
+    assert.equal(r?.failureReason, 'patch-id-changed');
+  });
+
+  test('running + no sentinel yet -> stays running (act still going)', () => {
+    writeRun(run({ card: 202, phase: 'running', pid: process.pid }), dir);
+    writeFileSync(logPath(202, dir), '…build still going…\n');
+    assert.equal(reconcileRunning(202, dir)?.phase, 'running');
+  });
+
+  test('already presented -> unchanged (only running reconciles)', () => {
+    writeRun(run({ card: 203, phase: 'presented' }), dir);
+    assert.equal(reconcileRunning(203, dir)?.phase, 'presented');
+  });
+
+  test('missing run -> null (nothing to reconcile)', () => {
+    assert.equal(reconcileRunning(999, dir), null);
+  });
+});
+
+describe('isRunStale — a dead/old running record is detected (#3458 belt+suspenders)', () => {
+  test('running with a dead pid -> stale (the lost-terminal-write case)', () => {
+    assert.equal(isRunStale(run({ phase: 'running', pid: 999999 })), true);
+  });
+
+  test('running with THIS live pid + within TTL -> not stale (a genuine run is never stranded)', () => {
+    const started = '2026-06-16T12:00:00Z';
+    const now = Date.parse('2026-06-16T12:01:00Z'); // 1 min in, well within TTL
+    assert.equal(isRunStale(run({ phase: 'running', pid: process.pid, startedAt: started }), now), false);
+  });
+
+  test('running past the TTL -> stale (no act run lasts this long)', () => {
+    const now = Date.parse('2026-06-16T12:00:00Z');
+    // started 31 min ago, default 30-min TTL, pid alive (so only TTL triggers)
+    const r = run({ phase: 'running', pid: process.pid, startedAt: '2026-06-16T11:29:00Z' });
+    assert.equal(isRunStale(r, now), true);
+  });
+
+  test('presented record is never "stale" (only running can be)', () => {
+    assert.equal(isRunStale(run({ phase: 'presented', pid: 999999 })), false);
   });
 });

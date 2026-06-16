@@ -4,28 +4,36 @@
 // encapsulates: canonical werk.yml (-W), host-native runner (-P …=-self-hosted),
 // card inputs, and the PATH that makes chorus-mcp-call.sh resolvable.
 //
-// These tests build the real production server with an injected execFileAsync that
-// captures the act invocation, and assert the surface + the encapsulated argv. RED
-// until chorus_werk is registered + wired.
+// #3458 — the act run is now a DETACHED spawn (async-launch, return-immediately) so the
+// MCP call never holds open across the multi-minute run → the transport cannot drop.
+// The test seam moved from the awaited execFileAsync to the injected spawnFn; these
+// tests capture the spawned (command, args, opts) and assert the SAME encapsulated argv
+// + env, plus the new async contract: first call returns phase:"running" and surfaces
+// the go-resume command, never auto-accepting (DEC-048). A fresh temp runsDir per server
+// keeps run-state off the live ~/.chorus/werk-runs.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildMcpServer, type ExecFileAsync } from '../src/server';
+import { buildMcpServer, type SpawnFn } from '../src/server';
 
-type Call = { file: string; args: string[]; opts: { env?: Record<string, string> } };
+type SpawnCall = { command: string; args: string[]; opts: { env?: Record<string, string>; detached?: boolean; stdio?: string } };
 
-function captureExec(sink: Call[]): ExecFileAsync {
-  return (async (file: string, args: string[], opts: { env?: Record<string, string> } = {}) => {
-    sink.push({ file, args, opts });
-    // act prints the pipeline log to stdout; the landed line carries the accept cmd.
-    return { stdout: '[landed] #3241 deployed + LIVE. NOT yet accepted.\n  DEPLOY_ROLE=jeff werk-accept 3241 kade', stderr: '' };
-  }) as unknown as ExecFileAsync;
+function captureSpawn(sink: SpawnCall[]): SpawnFn {
+  return ((command: string, args: string[], opts: SpawnCall['opts'] = {}) => {
+    sink.push({ command, args, opts });
+    // a detached child: the verb only reads .pid (for run-state) and calls .unref().
+    return { pid: 4242, unref() {} };
+  }) as unknown as SpawnFn;
 }
 
-async function withServer(fn: (client: Client) => Promise<void>, sink: Call[]) {
-  const server = buildMcpServer(() => 'kade', { execFileAsync: captureExec(sink), cardsPath: '/fake/cards' });
+async function withServer(fn: (client: Client) => Promise<void>, sink: SpawnCall[]) {
+  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'werk-runs-test-'));
+  const server = buildMcpServer(() => 'kade', { spawnFn: captureSpawn(sink), runsDir, cardsPath: '/fake/cards' });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'chorus-werk-test', version: '1.0' });
   await Promise.all([server.connect(st), client.connect(ct)]);
@@ -48,36 +56,50 @@ test('chorus_werk requires role + card_id', async () => {
   }, []);
 });
 
-test('chorus_werk runs act on CANONICAL werk.yml, host-native, with card inputs (encapsulated)', async () => {
-  const sink: Call[] = [];
+test('chorus_werk launches act on CANONICAL werk.yml, host-native, with card inputs — detached (#3458)', async () => {
+  const sink: SpawnCall[] = [];
   await withServer(async (client) => {
     await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
   }, sink);
 
-  assert.equal(sink.length, 1, 'exactly one subprocess — the act run');
+  assert.equal(sink.length, 1, 'exactly one detached spawn — the act run');
   const call = sink[0];
-  assert.match(call.file, /(^|\/)act$/, 'invokes the act binary');
-  const a = call.args.join(' ');
-  assert.match(a, /workflow_dispatch/, 'workflow_dispatch event');
-  assert.match(a, /-W .*\.github\/workflows\/werk\.yml/, 'targets werk.yml');
-  assert.match(a, /-P macos-latest=-self-hosted/, 'host-native runner (no docker)');
-  assert.match(a, /--input card_id=3241/, 'forwards card_id');
-  assert.match(a, /--input role=kade/, 'forwards role');
-  assert.match(a, /--input accepter=jeff/, 'forwards accepter');
+  // #3458 — act runs inside a `bash -c` wrapper that streams to the per-card log and
+  // appends the durable WERK_EXIT sentinel; the act argv lives in the wrapped string.
+  assert.equal(call.command, 'bash', 'spawns the act run via a bash -c wrapper');
+  assert.equal(call.args[0], '-c', 'bash -c <wrapped act command>');
+  const wrapped = call.args[1];
+  assert.match(wrapped, /(^|["/])act"? workflow_dispatch/, 'invokes the act binary');
+  assert.match(wrapped, /workflow_dispatch/, 'workflow_dispatch event');
+  assert.match(wrapped, /-W .*\.github\/workflows\/werk\.yml/, 'targets werk.yml');
+  assert.match(wrapped, /-P macos-latest=-self-hosted/, 'host-native runner (no docker)');
+  assert.match(wrapped, /--input card_id=3241/, 'forwards card_id');
+  assert.match(wrapped, /--input role=kade/, 'forwards role');
+  assert.match(wrapped, /--input accepter=jeff/, 'forwards accepter');
   // canonical werk.yml, not a per-werk copy (the pipeline config is infra)
-  assert.ok(/-W (?!.*chorus-werk).*werk\.yml/.test(a), 'uses canonical werk.yml, not a werk copy');
+  assert.ok(/-W (?!.*chorus-werk).*werk\.yml/.test(wrapped), 'uses canonical werk.yml, not a werk copy');
+  // #3458 — the durable terminal marker that survives an mcp-server restart
+  assert.match(wrapped, /WERK_EXIT=\$\?/, 'appends the durable WERK_EXIT sentinel to the log');
+  // #3458 — detached + unref: the call returns immediately, nothing held → no transport drop
+  assert.equal(call.opts.detached, true, 'detached (async-launch — the MCP call never holds open across the run)');
   // PATH encapsulates chorus-mcp-call.sh (canonical platform/scripts) so the caller needs no symlink
   assert.match(call.opts.env?.PATH ?? '', /platform\/scripts/, 'PATH includes canonical platform/scripts (chorus-mcp-call.sh resolvable)');
 });
 
-test('chorus_werk returns the stop-before-accept command, never auto-accepts (DEC-048)', async () => {
-  const sink: Call[] = [];
+test('chorus_werk first call returns running + surfaces the go-resume command, never auto-accepts (DEC-048, #3458)', async () => {
+  const sink: SpawnCall[] = [];
+  let res: { content: Array<{ type: string; text: string }> } | undefined;
   await withServer(async (client) => {
-    const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } });
-    const text = (res.content as Array<{ type: string; text: string }>).map((c) => c.text).join('\n');
-    assert.match(text, /werk-accept 3241 kade/, 'surfaces the accept command for the human');
+    res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 3241, accepter: 'jeff' } }) as typeof res;
   }, sink);
-  // the verb itself must never invoke werk-accept
-  const a = sink.map((c) => c.args.join(' ')).join(' | ');
-  assert.ok(!/werk-accept/.test(sink.map((c) => c.file).join(' ')), 'chorus_werk must not exec werk-accept');
+  const text = (res!.content).map((c) => c.text).join('\n');
+  // #3458 — async-launch contract: the first call launches detached and returns 'running',
+  // it does NOT run synchronously to a presented/landed state in one call.
+  assert.match(text, /"phase":"running"/, 'first call launches detached and returns running');
+  // the human's GO is a SEPARATE resume invocation (go:true) — surfaced, never auto-run (DEC-048).
+  assert.match(text, /go_command/, 'surfaces the go-resume command for the human');
+  assert.match(text, /go:true/, 'the resume command carries go:true (Jeff resumes the same pipeline)');
+  // the verb itself must never invoke werk-accept — not in the wrapped act command, not as a spawn.
+  const spawned = sink.map((c) => `${c.command} ${c.args.join(' ')}`).join(' | ');
+  assert.ok(!/werk-accept/.test(spawned), 'chorus_werk must not exec werk-accept (no self-accept)');
 });

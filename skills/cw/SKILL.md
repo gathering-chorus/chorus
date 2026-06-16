@@ -28,25 +28,27 @@ The skill's only job is collecting the args and invoking the MCP. Verify before 
 
 Validate / commit / push / build / test / deploy / env-up / demo / merge / accept — all owned by the MCP.
 
-## Step 1: Invoke `chorus_werk`
+## Step 1: Invoke `chorus_werk` — launch, then POLL (#3458)
+
+`chorus_werk` is now ASYNC: it spawns the pipeline DETACHED and returns immediately so the MCP call never holds open across the multi-minute run (that hold was the transport-drop root). It returns `{ phase: "running", launched: true, run_id }` in seconds. You then POLL by re-invoking the SAME call — it attaches to the live run (never double-acts) and reports the current phase, advancing to `presented` / `landed` / `failed` when the detached `act` finishes.
 
 Run-to-demo (no go):
 ```
 mcp__chorus-api__chorus_werk({ role: "<role>", card_id: <CARD_ID> })
 ```
-Returns `{ ok, phase: "presented", go_command }` in minutes — the variant is up and presented; nothing is held across the human wait.
+First call → `{ phase: "running", launched: true }`. Re-invoke the same call to poll: `{ phase: "running", attached: true }` while in flight, then `{ phase: "presented" }` (variant up) or `{ phase: "failed", failureReason }`. Poll on a sane cadence (the run is minutes); each poll is cheap (it reads run-state, doesn't re-run).
 
 Resume-to-land (on the human GO only):
 ```
 mcp__chorus-api__chorus_werk({ role: "<role>", card_id: <CARD_ID>, go: true, accepter: "jeff" })
 ```
-Resumes past the stop: merge → ff-sync → deploy-prod → accept. Returns `{ phase: "landed" }`.
+Same shape: launches the land DETACHED → `{ phase: "running" }`; poll the same call until `{ phase: "landed" }` (merged → ff-synced → deployed → accepted) or `{ phase: "failed", failureReason }`.
 
-That's the entire skill. The MCP drives the pipeline deterministically via `act` + `werk.yml`.
+That's the entire skill. The MCP drives the pipeline deterministically via `act` + `werk.yml`; you launch and poll, nothing is held.
 
 ## Step 2: Report
 
-After the no-go run, report `presented` + the variant URL and that the demo prework (gates + peer gathers) must complete before a GO lands (the announce is the ready-gate). After a `go` run, report `#<card> landed` (deployed + accepted). Refusals come back typed from the verbs — pass the reason through, don't paper over it.
+Report what the CURRENT phase is, not a hoped-for one. On `running`, say it's in flight and you're polling. On `presented`, report the variant + that demo prework (gates + peer gathers) must complete before a GO lands (the announce is the ready-gate). On `landed`, report `#<card> landed` (deployed + accepted). On `failed`, surface the typed `failureReason` verbatim — don't paper over it. A re-invoke after a transport drop is a non-event: it attaches and reports the true phase (no double-act, no lost call).
 
 ## Hard rules
 

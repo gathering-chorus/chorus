@@ -52,8 +52,16 @@ export type RunAction =
  * `presented` run that the caller now asks to GO is the next legitimate phase
  * (the land), so it starts; everything else attaches.
  */
-export function decideRunAction(existing: WerkRun | null, requestedGo: boolean): RunAction {
+export function decideRunAction(existing: WerkRun | null, requestedGo: boolean, isStale = false): RunAction {
   if (!existing) return { kind: 'start' };
+  // #3458 (+ Wren #2) — a 'running' record whose pid is dead or past its TTL is
+  // STALE: act writes its own terminal phase so this is rare, but if even that
+  // durable write was lost (e.g. the mcp-server was churned by a deploy mid-act),
+  // a stale 'running' must NOT be attached-to forever (the stale-running attach
+  // bug Kade/Wren hit). Treat it like 'failed' → start fresh. `isStale` is computed
+  // by the impure caller (pid-liveness + TTL); the core stays pure. A LIVE 'running'
+  // (isStale=false, the default) still attaches — a genuine run is never stranded.
+  if (existing.phase === 'running' && isStale) return { kind: 'start' };
   // #3443 (Kade's pre-land catch) — a terminal 'failed' run is RETRYABLE. The act
   // already finished (no double-act risk) and the failure was already surfaced
   // (failureReason on record + returned when it happened). Attaching to 'failed'
@@ -90,4 +98,23 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
   const stderrLines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
   if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, 300);
   return step ? `step=${step} (no child reason surfaced)` : 'unknown';
+}
+
+/**
+ * #3458 — the detached act run appends `WERK_EXIT=<code>` to its per-card log when
+ * it finishes (the durable terminal marker that survives an mcp-server restart,
+ * since it's on disk, not in-process). parseExitSentinel reads it at poll time:
+ *
+ *   - number → act is DONE (0 = presented/landed, non-zero = failed)
+ *   - null   → no sentinel yet (still running, or crashed before writing it — the
+ *              isRunStale pid/TTL backstop covers the crash case)
+ *
+ * Last match wins (a reused log only ever has one real run, but be defensive).
+ */
+export function parseExitSentinel(logContent: string): number | null {
+  const matches = logContent.match(/WERK_EXIT=(\d+)/g);
+  if (!matches || matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  const n = Number(last.slice('WERK_EXIT='.length));
+  return Number.isNaN(n) ? null : n;
 }
