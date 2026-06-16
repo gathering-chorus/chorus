@@ -657,20 +657,20 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     write_trace_file(card, &trace);
     jsonl(home, role, card, &trace, "demo.preflight.passed", &format!(",\"ac\":\"{}/{}\"", checked, total));
 
-    // #3284 (AC6) — INVARIANT GATE EXECUTION. Restore #3237's gate enforcement that
-    // #3279's present-and-exit dropped: refuse to PRESENT unless all 5 gates left a
-    // demo.gate.result in the witness. This blocks presenting UN-GATED; it never
-    // blocks Jeff's go (#3263/DEC-048 sovereign-go intact — gates inform, never veto).
-    // The gates are produced by the /demo skill's LLM subagents (a zero-dep binary
-    // can't spawn an LLM gate); the binary's job is to ENFORCE. Refusing here, before
-    // any announce, is what makes a gate-less pipeline demo fail LOUD instead of
-    // silently presenting "(none run)". Skippable only in the unit/e2e suite.
+    // INVARIANT GATE EXECUTION (#3237/#3284, now #3443). Refuse to PRESENT unless
+    // all 5 gates left a demo.gate.result in the witness. This blocks presenting
+    // UN-GATED; it never blocks Jeff's go (#3263/DEC-048 sovereign-go intact —
+    // gates inform, never veto). #3443: the binary RUNS the gates itself (headless
+    // claude -p, see run_gates below) just before this check, so the refusal now
+    // only triggers where gates genuinely couldn't run. Refusing here, before any
+    // announce, is what makes a gate-less demo fail LOUD instead of silently
+    // presenting "(none run)". Skippable only in the unit/e2e suite.
     //
-    // #3318 — but ONLY on the DEMOER-driven (interactive) present. The headless act/CI
-    // job has no agent to run gates, so enforcing there refuses EVERY Half A demo team-
-    // wide (the #3284 pipeline break). Under act/CI we SKIP enforcement — the pipeline
-    // presents the variant; the demoer then runs gates + the real gated present.
-    // Detected via the act runner's own env (ACT / GITHUB_ACTIONS).
+    // #3318/#3443 — the act/CI degrade. #3318 SKIPPED enforcement under act/CI
+    // because "no agent to run gates" there. #3443 retires that excuse: where the
+    // claude binary resolves (Jeff's box, local act) the binary self-gates and we
+    // ENFORCE. The only remaining skip is hosted CI with no claude (gates_ran=false
+    // AND in_act) — degrade, don't break the build. Detected via ACT/GITHUB_ACTIONS.
     let in_act = std::env::var("ACT").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
     let skip_gate_check =
         std::env::var("CHORUS_DEMO_SKIP_GATE_CHECK").map(|v| v == "1").unwrap_or(false);
@@ -729,13 +729,12 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
     }
 
-    // #3116 — the GATE step moves to the /demo SKILL layer. The demoer initiates
-    // the 5 gates as subagents (an LLM gate-review can't run in this zero-dep
-    // binary) and routes each result to its owning role for REVIEW. The old
-    // go-run-your-gate nudge relay + the in-binary gate-chain wait are retired
-    // (the agents-grading-agents medium was the waste, not the gates). Smoke
-    // folds into the machine prover. The binary no longer blocks on gate comments.
-    emit_spine(home, "demo.gate.delegated", role, card, &trace);
+    // #3443 — the GATE step is RUN BY THIS BINARY (run_gates above), not delegated
+    // to the /demo skill's subagents. The owning role still REVIEWS its recorded
+    // result async, but execution is the binary's. The old go-run-your-gate nudge
+    // relay + the in-binary gate-chain wait stay retired (the agents-grading-agents
+    // relay was the waste, not the gates). Smoke folds into the machine prover.
+    emit_spine(home, "demo.gates.recorded", role, card, &trace);
 
     // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
     // announce-bearing tail below (signal → test-surface → DEMO READY → peer
