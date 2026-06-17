@@ -2,5 +2,7 @@
   "generatedFrom": "https://jeffbridwell.com/chorus#Domain",
   "graph": "urn:chorus:ontology",
   "fields": ["atStep|edge:ValueStreamStep", "comment|datatype:string", "contains|plain", "gaps|datatype:string", "hasDesignDoc|edge:Document", "label|datatype:string", "ownedBy|edge:Role", "status|plain"],
-  "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /schema/domain"]
+  "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /domains/:name/partof", "GET /domains/:name/has-child", "GET /domains/:name/completeness", "GET /schema/domain", "POST /domains", "PUT /domains/:name", "DELETE /domains/:name", "POST /domains/:name/partof", "DELETE /domains/:name/partof", "POST /domains/:name/contains", "DELETE /domains/:name/contains", "POST /domains/:name/has-child", "DELETE /domains/:name/has-child"],
+  "secured": ["/schema/domain"],
+  "mandatory": ["comment", "gaps", "label", "status"]
 }
