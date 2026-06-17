@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests — Service Design</title>
+<style>
+  :root { --bg:#fbfaf7; --ink:#1a1a1a; --muted:#666; --accent:#7a3e9d; --rule:#e2ddd3; --code:#f1ede4; --good:#1a7a4c; --warn:#b3541e; }
+  body { font-family: Georgia, serif; max-width: 60rem; margin: 40px auto; padding: 0 1.25in; color: var(--ink); background: var(--bg); line-height: 1.62; }
+  h1 { font-size: 2rem; border-bottom: 2px solid var(--accent); padding-bottom: .3em; }
+  h2 { font-size: 1.4rem; margin-top: 2.2em; color: var(--accent); border-bottom: 1px solid var(--rule); padding-bottom: .2em; }
+  h3 { font-size: 1.08rem; margin-top: 1.5em; }
+  code, pre { font-family: "SF Mono", Menlo, monospace; background: var(--code); border-radius: 4px; }
+  code { padding: .1em .35em; font-size: .88em; }
+  pre { padding: 1em 1.1em; overflow-x: auto; font-size: .82rem; line-height: 1.5; border-left: 3px solid var(--accent); }
+  .meta { color: var(--muted); font-size: .9rem; font-style: italic; }
+  .axis { background:#fff; border:1px solid var(--rule); border-radius:6px; padding: .8em 1em; margin:.6em 0; }
+  .axis b { color: var(--accent); }
+  blockquote { border-left: 3px solid var(--rule); margin: 1em 0; padding: .2em 1em; color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .9rem; }
+  th, td { border: 1px solid var(--rule); padding: .45em .6em; text-align: left; vertical-align: top; }
+  th { background: var(--code); }
+  .tag { font-size:.75rem; background:var(--accent); color:#fff; padding:.1em .5em; border-radius:10px; }
+</style>
+</head>
+<body>
+
+<h1>Tests — Service Design</h1>
+<p class="meta">Kade · 2026-06-17 · #3473 · DRAFT for Jeff review before further build. Companion to <code>quality-service-design.html</code>, <code>werk-review-service-design.html</code>, <code>properties-domain-design.html</code>.</p>
+
+<blockquote>
+<b>One-line frame:</b> <b>Tests is a domain; werk is the subproduct that implements it.</b> This design is how werk implements the tests domain — one <em>declared, governed</em> model of tests that the gate, werk-test, the pyramid UI, and agents (via generated MCP) all read as a single source of truth. The model is config-as-data: the test classification axes are <em>declared properties</em>, governed in the OWL, projected into the API + MCP by owl-api.
+</blockquote>
+
+<h2>1. Why this exists — the sprawl</h2>
+<p>Tests is a <b>base element</b>: everything in the system depends on it, directly or indirectly. It is one of the few true <b>hubs</b> — high out-degree (a test <code>:covers</code> any of 30+ domains) <em>and</em> high in-degree (Proving, Borg, the gates, demo, ship-readiness all rest on "is it tested?"). Incoherence in a hub propagates everywhere. Yet today the hub has no service design and is governed by accident:</p>
+<ul>
+  <li><b>Two classification engines that disagree.</b> The live <code>/borg/quality</code> pyramid + every per-domain test count read a <b>filesystem scanner</b> (<code>quality-summary.ts</code>) that infers a test's layer from its <b>filename</b> (regex). Separately, the graph carries a <b>declared</b> classification (<code>discover-tests.ts</code> + #3442's <code>testType</code> property). #2098 retired the graph as the UI source — so the live surface runs on filename inference, which we proved drifts (the <code>*-unit.test.ts</code> files that actually touch real fs and are integration).</li>
+  <li><b>Two pyramids</b> — a stale hand-authored <code>quality-service.html</code> with hardcoded counts, and the live scanner-fed <code>/borg/quality</code>.</li>
+  <li><b>Triplicated gate definitions</b> — <code>gate-registry.md</code>, <code>design-gate-definitions.html</code>, and five <code>gate-*/SKILL.md</code> files.</li>
+  <li><b>Real-but-undeclared taxonomy</b> — the layer assignment is regex/filename inference in code; <code>test-categorization.html</code> is a human convention the code does not actually read.</li>
+</ul>
+<p>The fix is not a 16th surface. It is to give the hub one governed model and make every surface a projection of it.</p>
+
+<h2>2. The model — a Test and its three axes</h2>
+<p>Core entity: <code>chorus:Test</code>, file-grained, making the test artifact first-class. Today's confusion comes from <b>fusing two axes into one</b> (<code>*.integration.test.ts</code> means both "integration layer" AND "needs a live stack"). The model separates <b>three orthogonal axes</b>, each a <b>declared, governed property</b>:</p>
+
+<div class="axis"><b>1. type / layer</b> — <em>what kind</em>. Vocab: <code>unit · integration · api · ui · perf · security · e2e · bdd</code>. The pyramid axis. (Declared today by #3442's <code>testType</code>.)</div>
+<div class="axis"><b>2. hermeticity</b> — <em>where it can run</em>: <code>hermetic</code> (no live deps) vs <code>needs-stack</code> (live Fuseki/app/db). <b>werk-test gates on this</b>: hermetic blocks always; needs-stack blocks only when the env is up. Independent of type — a security test may be either.</div>
+<div class="axis"><b>3. value</b> — <em>is it worth keeping</em> (#3324 taxonomy): <code>valid · asserts-retired-behavior · passes-by-definition · integration-not-gated</code>.</div>
+
+<p>Plus identity/relations and the dynamic side:</p>
+<pre>:Test
+  :testFile     "platform/api/tests/server-unit.test.ts"
+  :framework    jest | cargo | bats | cucumber
+  :hasProperty  [ :propertyKey "testType"     ; :propertyValue "integration" ]
+  :hasProperty  [ :propertyKey "hermeticity"  ; :propertyValue "needs-stack" ]
+  :hasProperty  [ :propertyKey "testValue"    ; :propertyValue "valid" ]
+  :covers       &lt;SubDomain&gt;          # what it tests — ties Test into the domain graph
+
+:TestRun
+  :runOf  &lt;Test&gt; ; :result pass|fail|skip ; :round/:patch_id ; :at … ; :context werk|nightly|pre-commit
+# knownFail = a Test with :knownFail [ card ; reason ; ttl ] ; flake = a Test whose TestRuns disagree</pre>
+
+<h2>3. The approach — declared, governed PROPERTIES (config-as-data)</h2>
+<p>The three axes are not bespoke fields — they are <b>properties</b> (per <code>properties-domain-design.html</code>, #3433/#3435), which is what makes the whole thing generate correctly. The critical discipline (Jeff): <b>the governance must live in the OWL</b>, because owl-api generates the API <em>and</em> MCP from the model. Constraints-in-OWL → the generated interface enforces them by construction; constraints-in-code → a dumb CRUD surface that re-creates the scatter.</p>
+
+<p>So each axis is a <b>registered <code>PropertyKey</code></b> in the properties OWL, carrying its own SHACL:</p>
+<pre>:testType a chorus:PropertyKey ;
+    sh:in ( "unit" "integration" "api" "ui" "perf" "security" "e2e" "bdd" ) ;
+    chorus:propertyValueType "string" ;
+    sh:targetClass chorus:Test ;
+    chorus:owner chorus:tests-domain .</pre>
+<p><b>Read vs write (corrected per Wren, 2026-06-17):</b> owl-api is <b>read-only</b> — it generates the read API + MCP from the model. <b>Writes go through the DAL (chorus-model)</b>, the single write authority, and that is where SHACL is enforced. So "the generated interface enforces it" precisely means: the DAL rejects writes that violate the shape. What the DAL enforces today is mixed:</p>
+<table>
+<tr><th>SHACL</th><th>Enforced by the DAL today?</th><th>Bearing on tests</th></tr>
+<tr><td><code>sh:in</code> (enum)</td><td><span class="tag" style="background:var(--good)">YES</span> — out-of-enum write rejected (<code>shape-violation: not in sh:in</code>)</td><td>The <code>testType</code> vocab migration <b>works now</b>.</td></tr>
+<tr><td><code>sh:minCount</code> (required)</td><td><span class="tag" style="background:var(--good)">YES</span> — fail-closed (completeness floor, #3468)</td><td>Required axes can be mandated.</td></tr>
+<tr><td><code>sh:datatype</code> / valueType</td><td><span class="tag" style="background:var(--warn)">NO</span> — every value written as an untyped string; no type check</td><td><b>Gap.</b> Bites thresholds-as-int, toggles-as-bool.</td></tr>
+<tr><td><code>sh:class</code> on edges (target type)</td><td><span class="tag" style="background:var(--warn)">PARTIAL</span> — target must <em>exist</em>; target's <em>type</em> not checked</td><td><b>Gap on the hub edge:</b> <code>:covers</code> could point at any node, not just a SubDomain.</td></tr>
+</table>
+<p>Consequences for the design:</p>
+<ul>
+  <li><b>Migrate #3442's in-code <code>VALID_TYPES</code> into the OWL</b> as <code>:testType sh:in (…)</code> — the DAL then enforces the vocab; the gate's hardcoded enum is deleted. <b>Precision:</b> only the <em>enum</em> moves. The gate's <em>contradiction check</em> ("declared <code>unit</code> but content signals <code>integration</code>") is <b>behavior, not a constraint</b> — it stays in the gate. Clean split: vocab→OWL, drift-detection→gate.</li>
+  <li><b>Conformance tests prove the model's own enforcement</b> (the elegant dogfood — Wren): the tests domain's first tests assert its SHACL is enforced. <code>sh:in</code> + <code>sh:minCount</code> tests are <span class="tag" style="background:var(--good)">GREEN</span> (real enforcement); <code>sh:datatype</code> + edge-target-type tests are <span class="tag" style="background:var(--warn)">RED</span> — and that RED is good: it documents the gap and drives building the enforcement.</li>
+  <li>The properties browser UI (#3472) reads the same declared set via the generated read MCP — and doubles as the <b>taxonomy health surface</b> (orphan keys, drift, expiring toggles).</li>
+</ul>
+<p>This is <b>not</b> a config sweep. Properties usage is curated — only config that <em>varies</em>, is <em>deploy-painful</em> to change, and is <em>operationally valuable</em> — and demand-driven. The test axes qualify (they're the hub's classification); the static long tail stays in code.</p>
+<p><b>Peer consumer (Jeff + Wren):</b> bootstrap the top-level CHORUS environment (paths, ports, the :33xx registry, bin locations) from properties — the env is another base-element config-as-data consumer. <b>Discipline (the bootstrap trap):</b> this must be <b>generative, not runtime</b> — properties are the <em>source</em>, but the env is emitted at build/setup time, because the properties store (owl-api/Fuseki) itself needs the env (ports/paths) to run. Runtime-resolving the env from properties is a circular dependency (can't read properties to find the store you need the env to reach). A minimal static seed reaches the store; everything else generates from properties at setup. The factory-independence test applies: <em>turn chorus off — does the environment still bootstrap?</em></p>
+
+<h2>4. Convergence — one source of truth</h2>
+<p>The declared classification becomes the single source; the scanner's filename inference is <b>retired</b> (reverses #2098 — a numbered decision, not a quiet refactor). The pyramid UI, per-domain counts, the gates, and werk-test all read the declared model. The scanner was the old implementation that bypassed the domain; the new path is werk implementing <em>against</em> the domain.</p>
+
+<h2>5. Cross-domain dependencies — the integration crux</h2>
+<p>Because tests is a hub, its edges into the rest of the ontology are the load-bearing part, and the place coherence is won or lost at 30+ domains.</p>
+<table>
+<tr><th>Edge</th><th>Direction</th><th>Discipline</th></tr>
+<tr><td><code>:Test :covers :SubDomain</code></td><td>tests → every domain</td><td>The defining edge. Must reference the <b>canonical</b> SubDomain vocabulary (real IRIs, populated #3437 containment), so coverage scales <b>2n, not n²</b>. Coverage / blind-spots / fitness all derive from it.</td></tr>
+<tr><td>blast-radius <code>Test → code → SubDomain</code></td><td>tests → code domain</td><td>How werk-test selects "the right tests for this change." Must be <b>build/author-time, not a runtime coupling</b> (factory-independence: a built product runs with chorus off).</td></tr>
+<tr><td><code>testType :hasProperty</code> (Property model)</td><td>tests → properties domain</td><td>Reuses #3433. Tests depends on the properties model.</td></tr>
+<tr><td><code>tests :implementedBy werk</code></td><td>tests → werk</td><td>Implementation dep — werk-test/gates are werk reading the domain.</td></tr>
+<tr><td><code>TestRun</code> → Borg / gates / demo</td><td>everything → tests</td><td>The in-degree: Proving, the gates, the demo prover, ship-readiness all consume test state. This is why the hub must be accurate.</td></tr>
+</table>
+<p><b>Coherence rule:</b> tests <em>covers</em> domains; domains do not <em>own</em> tests (one direction, avoids bidirectional drift). One bad property name or dangling <code>:covers</code> on this hub is wrong in <em>every</em> generated surface — which is why standards (Silas) matter more here than for any leaf domain.</p>
+
+<h2>6. werk-test — the verb that reads the domain</h2>
+<p>werk-test is not greenfield: <code>ci-pipeline-service-design.html</code> already names it as "flip the advisory test step to a gate." This design specifies it as <b>the gate that reads the tests domain</b>, staged:</p>
+<ol>
+  <li><b>Declared test-type gate</b> — DONE (#3442, today): every changed test declares its type; pre-commit blocks undeclared/contradicting.</li>
+  <li><b>Trustworthy nightly</b> — the nightly stops crying false reds (env-break vs regression distinguishable).</li>
+  <li><b>Flake quarantine</b> (#2530) — flakes can't poison a blocking gate.</li>
+  <li><b>Blast-radius selection</b> — run the right tests for the card, via <code>:covers</code> + the code→domain edge.</li>
+  <li><b>Flip to blocking</b> — and the <b>enforcement state is itself a property</b>: <code>:gate-test :hasProperty [ :propertyKey "enforcement" ; :propertyValue "advisory" ]</code>, flipped via a model write (lifecycle-bound toggle) when 2–4 are met. No code change to promote the gate.</li>
+</ol>
+
+<h2>7. Projections — every surface is a view of the model</h2>
+<ul>
+  <li><b>Pyramid</b> (<code>/borg/quality</code>) = Tests grouped by <code>type</code>, per repo.</li>
+  <li><b>Coverage</b> = Tests per <code>:covers</code> SubDomain.</li>
+  <li><b>Fitness / blind-spots</b> = SubDomains missing a risk-type (security/perf) — #3442's surface, made loud.</li>
+  <li><b>Properties browser</b> (#3472) = the governed property set, browsable + sortable.</li>
+  <li><b>werk-test</b> = the gate, reading the same model.</li>
+</ul>
+
+<h2>8. ADRs this design references (the standards half — Silas)</h2>
+<table>
+<tr><th>ADR</th><th>Decision</th><th>Status</th></tr>
+<tr><td>declared-source</td><td>Declared classification is the single source of truth; retire the scanner's filename inference (reverses #2098).</td><td><span class="tag">new</span></td></tr>
+<tr><td>tests-domain-OWL</td><td>The tests domain is OWL-modeled; its API is owl-api-generated.</td><td><span class="tag">new</span></td></tr>
+<tr><td>werk-test-flip</td><td>The advisory→blocking flip criteria (trustworthy nightly + flake quarantine), enforcement-as-property.</td><td><span class="tag">new</span></td></tr>
+<tr><td>PropertyKey-governance</td><td>Property keys are a governed, registered vocabulary; unregistered/out-of-enum writes refused; per-key SHACL (sh:in, valueType, targetClass) + lifecycle/TTL.</td><td><span class="tag">new</span></td></tr>
+<tr><td>ADR-040 / 025 / 031 / 028</td><td>IRI formation · ontology-vs-instances · MCP/REST grain · domain completeness — <em>referenced, already accepted</em>.</td><td><span class="tag" style="background:var(--good)">have</span></td></tr>
+</table>
+
+<h2>9. Process & sequence</h2>
+<p><b>Kade models the domain</b> (this doc) → <b>then standards + ontology integration paired with Silas</b> (the PropertyKey taxonomy, SHACL, IRI, how <code>:covers</code>/blast-radius integrate through the canonical model). owl-api generation (REST+MCP) is Wren's lane.</p>
+<p>Build order: governed taxonomy + read substrate (Silas's #3435→#3438) → migrate #3442's vocab into the OWL → converge the scanner → <b>then</b> werk-test (#3190) at the end, gated on the rest. Properties lifts stay curated and demand-driven, never a sweep.</p>
+
+<p class="meta"><b>Resolved (Wren, 2026-06-17):</b> writes go through the DAL (chorus-model), not owl-api. The DAL enforces <code>sh:in</code> + <code>sh:minCount</code> today; <code>sh:datatype</code> and edge-target-type (<code>sh:class</code>) are NOT enforced. <b>Gap-closer card (DAL is the home — one write authority):</b> "DAL enforces sh:datatype + sh:class edge-target-type" — pairs with #3473, drives the RED conformance tests to green. Pair with Wren on placement.</p>
+
+</body>
+</html>
