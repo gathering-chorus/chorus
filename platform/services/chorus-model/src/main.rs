@@ -7,14 +7,17 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{mint, to_turtle, write, FusekiStore, WriteReq};
+use chorus_model::{add_edge, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
     "chorus-model — the governed RDF/OWL writer (ADR-040 Rule 0; #3257)\n\
      usage:\n\
-       chorus-model add  --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
-       chorus-model mint --kind <kind> --name <name>\n\
+       chorus-model add    --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
+       chorus-model delete --kind <kind> --name <name>\n\
+       chorus-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
+       chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
+       chorus-model mint   --kind <kind> --name <name>\n\
        chorus-model kinds"
         .to_string()
 }
@@ -77,6 +80,27 @@ fn run() -> Result<String, String> {
                 let subject = write(&store, &req)?;
                 Ok(format!("written: {}", subject))
             }
+        }
+        // #3468 — delete / link / unlink: the governed verbs owl-api delegates to,
+        // so every entity-delete and edge-mutation rides ONE audited write path.
+        Some("delete") => {
+            let (req, _) = parse_req(&args[1..])?;
+            let store = FusekiStore::new();
+            Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name)?))
+        }
+        Some(verb @ ("link" | "unlink")) => {
+            let (req, _) = parse_req(&args[1..])?;
+            let (prop, tkind, tname) = req
+                .edges
+                .first()
+                .ok_or(format!("{} needs --edge prop=kind:name", verb))?;
+            let store = FusekiStore::new();
+            let subject = if verb == "link" {
+                add_edge(&store, &req.kind, &req.name, prop, tkind, tname)?
+            } else {
+                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname)?
+            };
+            Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
         }
         _ => Err(usage()),
     }

@@ -395,17 +395,6 @@ pub fn authz_allows(caller_role: &str, owned_by: Option<&str>) -> bool {
     matches!(owned_by, Some(o) if !o.is_empty() && o == caller_role)
 }
 
-/// Build the INSERT/DELETE DATA update for an edge triple. Names are pre-validated
-/// (is_safe_local) by the caller before they reach here, so IRI interpolation is
-/// injection-safe. `insert=true` → add, false → remove.
-pub fn build_edge_update(entity: &str, predicate: &str, target: &str, insert: bool) -> String {
-    let verb = if insert { "INSERT DATA" } else { "DELETE DATA" };
-    format!(
-        "{verb} {{ GRAPH <{g}> {{ <{ns}{e}> <{ns}{p}> <{ns}{t}> }} }}",
-        verb = verb, g = INSTANCES_GRAPH, ns = NS, e = entity, p = predicate, t = target
-    )
-}
-
 /// Extract a JSON string field by key: { "<key>": "<value>" }. Minimal zero-dep;
 /// values are validated (is_safe_local for names) or SPARQL-literal-escaped
 /// (sparql_lit for property values) downstream, so escape-handling isn't here.
@@ -424,11 +413,6 @@ pub fn parse_body_target(body: &str) -> Option<String> {
     json_field(body, "target")
 }
 
-/// Escape a value for safe interpolation into a SPARQL string literal (injection
-/// guard for property values, which — unlike names — may contain arbitrary text).
-pub fn sparql_lit(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
-}
 
 /// The shape's DATATYPE/plain fields present in the body, as (field, value) pairs.
 /// Edge fields (edge:*) are skipped — edges are written through the edge endpoints,
@@ -472,64 +456,10 @@ pub fn completeness(present: &[(String, String)], mandatory: &[String]) -> (bool
     (missing.is_empty(), pct, present_names, missing)
 }
 
-/// Build the INSERT DATA to CREATE an entity: typed as the class, ownedBy +
-/// creator + created set from the authenticated caller (the creator owns what it
-/// creates), plus the provided datatype properties. ownedBy is written as a
-/// role-name literal so authz_allows reads it back consistently. Names pre-validated.
-pub fn build_create_entity(class: &str, name: &str, caller: &str, created_iso: &str, props: &[(String, String)]) -> String {
-    let mut triples = vec![
-        format!("a <{}>", class),
-        format!("<{ns}ownedBy> \"{c}\"", ns = NS, c = caller),
-        format!("<{ns}creator> \"{c}\"", ns = NS, c = caller),
-        format!("<{ns}created> \"{ts}\"", ns = NS, ts = sparql_lit(created_iso)),
-    ];
-    for (f, v) in props {
-        triples.push(format!("<{ns}{f}> \"{v}\"", ns = NS, f = f, v = sparql_lit(v)));
-    }
-    format!(
-        "INSERT DATA {{ GRAPH <{g}> {{ <{ns}{n}> {tr} }} }}",
-        g = INSTANCES_GRAPH, ns = NS, n = name, tr = triples.join(" ; ")
-    )
-}
-
-/// Build the DELETE/INSERT/WHERE to REPLACE an entity's provided datatype
-/// properties (only the fields present in the body), preserving type, ownedBy,
-/// and edges. A field with no prior value still inserts (OPTIONAL match).
-pub fn build_replace_entity(name: &str, props: &[(String, String)]) -> String {
-    if props.is_empty() {
-        return String::new();
-    }
-    let del = props.iter().enumerate()
-        .map(|(i, (f, _))| format!("<{ns}{n}> <{ns}{f}> ?o{i}", ns = NS, n = name, f = f, i = i))
-        .collect::<Vec<_>>().join(" . ");
-    let ins = props.iter()
-        .map(|(f, v)| format!("<{ns}{n}> <{ns}{f}> \"{v}\"", ns = NS, n = name, f = f, v = sparql_lit(v)))
-        .collect::<Vec<_>>().join(" . ");
-    let opt = props.iter().enumerate()
-        .map(|(i, (f, _))| format!("OPTIONAL {{ <{ns}{n}> <{ns}{f}> ?o{i} }}", ns = NS, n = name, f = f, i = i))
-        .collect::<Vec<_>>().join(" ");
-    format!(
-        "DELETE {{ GRAPH <{g}> {{ {del} }} }} INSERT {{ GRAPH <{g}> {{ {ins} }} }} WHERE {{ GRAPH <{g}> {{ {opt} }} }}",
-        g = INSTANCES_GRAPH, del = del, ins = ins, opt = opt
-    )
-}
-
-/// Run a SPARQL UPDATE against Fuseki's /update endpoint (mirrors sparql_json's
-/// curl pattern). Returns Ok on 2xx, a typed reason otherwise.
-fn sparql_update(update: &str) -> R<()> {
-    let out = Command::new("curl")
-        .args([
-            "-sf", "--max-time", "20",
-            "--data-urlencode", &format!("update={}", update),
-            &format!("{}/update", fuseki()),
-        ])
-        .output()
-        .map_err(|e| format!("curl-spawn: {}", e))?;
-    if !out.status.success() {
-        return Err(format!("fuseki-update failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    Ok(())
-}
+// #3468 — owl-api's raw-SPARQL write builders (build_create_entity /
+// build_replace_entity / build_edge_update) and sparql_update were RETIRED: every
+// write now delegates to the DAL (chorus-model), the one governed write path.
+// owl-api is read-only over Fuseki again, per its Cargo.toml contract.
 
 /// #3468 — DELEGATE a create to the DAL (chorus-model) — the ONE governed write
 /// path. Shells to the DAL CLI (the same subprocess pattern owl-api uses for curl);
@@ -538,8 +468,28 @@ fn sparql_update(update: &str) -> R<()> {
 /// witness. `ownedBy` is passed as a field literal so owl-api's authZ reads it back
 /// consistently; DEPLOY_ROLE=caller stamps the creator. Returns the DAL's typed
 /// refusal text on failure (mapped onto the write taxonomy by the caller).
-fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> R<()> {
+fn dal_run(args: &[String], caller: &str) -> R<()> {
     let bin = std::env::var("CHORUS_MODEL_BIN").unwrap_or_else(|_| "chorus-model".to_string());
+    let out = Command::new(&bin)
+        .args(args)
+        .env("DEPLOY_ROLE", caller)
+        .output()
+        .map_err(|e| format!("dal-spawn: {}", e))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    // The DAL prints its typed refusal (shape-violation / unknown-endpoint /
+    // not-found / …) to stderr+stdout; surface whichever carries it so the caller
+    // can map it onto the write taxonomy.
+    let err = String::from_utf8_lossy(&out.stderr);
+    let msg = if err.trim().is_empty() { String::from_utf8_lossy(&out.stdout).trim().to_string() } else { err.trim().to_string() };
+    Err(msg)
+}
+
+/// Create/replace an entity via the DAL `add` (full governed upsert: floor + mint
+/// + audit). ownedBy is a field literal owl-api's authZ reads back; DEPLOY_ROLE
+/// stamps the creator.
+fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> R<()> {
     let mut args: Vec<String> = vec![
         "add".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
         "--field".into(), format!("ownedBy={}", caller),
@@ -548,19 +498,33 @@ fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> 
         args.push("--field".into());
         args.push(format!("{}={}", f, v));
     }
-    let out = Command::new(&bin)
-        .args(&args)
-        .env("DEPLOY_ROLE", caller)
-        .output()
-        .map_err(|e| format!("dal-spawn: {}", e))?;
-    if out.status.success() {
-        return Ok(());
+    dal_run(&args, caller)
+}
+
+/// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
+fn dal_delete(kind: &str, name: &str, caller: &str) -> R<()> {
+    dal_run(&["delete".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string()], caller)
+}
+
+/// Add/remove one edge via the DAL `link`/`unlink` (incremental + referential
+/// integrity + witness). The structural edges (partOf/contains/hasChild) connect
+/// bare-kind entities (Domain/Product), so the subject kind mints the target IRI
+/// identically (mint is kind-independent for bare kinds).
+fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, caller: &str) -> R<()> {
+    let verb = if insert { "link" } else { "unlink" };
+    dal_run(&[verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+              "--edge".into(), format!("{}={}:{}", prop, kind, tname)], caller)
+}
+
+/// Map a DAL refusal string onto owl-api's typed write response.
+fn dal_err_resp(e: &str) -> (u16, String) {
+    if e.contains("shape-violation") || e.contains("unknown-endpoint") || e.contains("unknown-target") || e.contains("bad-property") {
+        write_resp("validation", e)
+    } else if e.contains("not-found") {
+        write_resp("not-found", e)
+    } else {
+        (502, format!("{{ \"error\": \"dal\", \"message\": \"{}\" }}", json_escape(e)))
     }
-    // The DAL prints its typed refusal (shape-violation / unknown-target / …) to
-    // stderr+stdout; surface whichever carries it so the caller can map the status.
-    let err = String::from_utf8_lossy(&out.stderr);
-    let msg = if err.trim().is_empty() { String::from_utf8_lossy(&out.stdout).trim().to_string() } else { err.trim().to_string() };
-    Err(msg)
 }
 
 /// Query the ownedBy role of an entity (for authZ). None = no ownedBy on record →
@@ -667,32 +631,33 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 emit_write_spine(caller_role, "add-edge", name, edge, "conflict");
                 return write_resp("conflict", "partOf is single-valued: node already has a parent");
             }
-            let update = build_edge_update(name, pred, &target, insert);
-            match sparql_update(&update) {
+            // #3468 — DELEGATE to the DAL (link/unlink): incremental edge write with
+            // referential integrity + witness. Replaces the raw build_edge_update +
+            // sparql_update path so edges ride the ONE governed write path too.
+            let kind = class_local.to_lowercase();
+            match dal_edge(insert, &kind, name, pred, &target, caller_role) {
                 Ok(_) => {
                     let verb = if insert { "add-edge" } else { "remove-edge" };
                     emit_write_spine(caller_role, verb, name, edge, "ok");
-                    write_resp("ok", &format!("{} {} {} -> {}", verb, name, edge, target))
+                    write_resp("ok", &format!("{} {} {} -> {} (via DAL)", verb, name, edge, target))
                 }
                 Err(e) => {
                     emit_write_spine(caller_role, "edge", name, edge, "error");
-                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                    dal_err_resp(&e)
                 }
             }
         }
         WriteOp::DeleteEntity { name } => {
-            let update = format!(
-                "DELETE WHERE {{ GRAPH <{g}> {{ <{ns}{e}> ?p ?o }} }}",
-                g = INSTANCES_GRAPH, ns = NS, e = name
-            );
-            match sparql_update(&update) {
+            // #3468 — DELEGATE to the DAL `delete` (governed, fail-closed, witnessed).
+            let kind = class_local.to_lowercase();
+            match dal_delete(&kind, name, caller_role) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "delete-entity", name, "", "ok");
-                    write_resp("ok", &format!("deleted {}", name))
+                    write_resp("ok", &format!("deleted {} (via DAL)", name))
                 }
                 Err(e) => {
                     emit_write_spine(caller_role, "delete-entity", name, "", "error");
-                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                    dal_err_resp(&e)
                 }
             }
         }
@@ -728,25 +693,16 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                     emit_write_spine(caller_role, "create", &name, "", "ok");
                     write_resp("created", &format!("created {} via DAL (ownedBy {})", name, caller_role))
                 }
-                // The DAL's typed refusals map onto owl-api's write taxonomy.
-                Err(e) if e.contains("shape-violation") => {
-                    emit_write_spine(caller_role, "create", &name, "", "incomplete");
-                    write_resp("validation", &e)
-                }
-                Err(e) if e.contains("unknown-target") => {
-                    emit_write_spine(caller_role, "create", &name, "", "unknown-target");
-                    write_resp("validation", &e)
-                }
                 Err(e) => {
-                    emit_write_spine(caller_role, "create", &name, "", "error");
-                    (502, format!("{{ \"error\": \"dal\", \"message\": \"{}\" }}", json_escape(&e)))
+                    let outcome = if e.contains("shape-violation") { "incomplete" } else { "error" };
+                    emit_write_spine(caller_role, "create", &name, "", outcome);
+                    dal_err_resp(&e)
                 }
             }
         }
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
-            // above. Must exist (404 otherwise). Replaces only the provided datatype
-            // properties; type/ownedBy/edges are preserved.
+            // above. Must exist (404 otherwise).
             if !entity_exists(name) {
                 return write_resp("not-found", "entity does not exist");
             }
@@ -754,15 +710,20 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             if props.is_empty() {
                 return write_resp("validation", "replace requires at least one shape property in the body");
             }
-            let update = build_replace_entity(name, &props);
-            match sparql_update(&update) {
+            // #3468 — DELEGATE to the DAL `add` (idempotent full upsert). NOTE: the
+            // DAL is single-writer full-replace by design (#3345) — a replace must
+            // restate the COMPLETE entity (the floor re-applies; omitted edges/fields
+            // are not preserved). This unifies replace onto the DAL's one write
+            // semantic rather than owl-api's prior partial-update (a competing impl).
+            let kind = class_local.to_lowercase();
+            match dal_add(&kind, name, caller_role, &props) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
-                    write_resp("ok", &format!("replaced {} ({} props)", name, props.len()))
+                    write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))
                 }
                 Err(e) => {
                     emit_write_spine(caller_role, "replace", name, "", "error");
-                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                    dal_err_resp(&e)
                 }
             }
         }
@@ -1588,14 +1549,6 @@ mod tests {
     }
 
     #[test]
-    fn build_edge_update_insert_and_delete() {
-        let ins = build_edge_update("childnode", "partOf", "parentnode", true);
-        assert!(ins.starts_with("INSERT DATA"));
-        assert!(ins.contains("#childnode>") && ins.contains("#partOf>") && ins.contains("#parentnode>"));
-        assert!(build_edge_update("c", "partOf", "p", false).starts_with("DELETE DATA"));
-    }
-
-    #[test]
     fn parse_body_target_pulls_target() {
         assert_eq!(parse_body_target(r#"{"target":"parentnode"}"#).as_deref(), Some("parentnode"));
         assert_eq!(parse_body_target(r#"{ "target" : "p2" , "x": 1 }"#).as_deref(), Some("p2"));
@@ -1612,31 +1565,8 @@ mod tests {
         assert!(!props.iter().any(|(f, _)| f == "partOf"));
     }
 
-    #[test]
-    fn build_create_entity_types_owns_and_sets_props() {
-        let u = build_create_entity("https://jeffbridwell.com/chorus#Property", "myprop", "wren", "1700",
-            &[("label".to_string(), "L".to_string())]);
-        assert!(u.starts_with("INSERT DATA"));
-        assert!(u.contains("<https://jeffbridwell.com/chorus#myprop> a <https://jeffbridwell.com/chorus#Property>"));
-        assert!(u.contains("ownedBy> \"wren\""), "creator owns what it creates");
-        assert!(u.contains("creator> \"wren\""));
-        assert!(u.contains("created> \"1700\""));
-        assert!(u.contains("label> \"L\""));
-    }
-
-    #[test]
-    fn build_replace_entity_delete_insert_where_for_present_props() {
-        let u = build_replace_entity("myprop", &[("label".to_string(), "New".to_string())]);
-        assert!(u.contains("DELETE {") && u.contains("INSERT {") && u.contains("WHERE {"));
-        assert!(u.contains("label> \"New\""));
-        assert!(u.contains("OPTIONAL"));
-        assert_eq!(build_replace_entity("x", &[]), "", "no props → empty (nothing to replace)");
-    }
-
-    #[test]
-    fn sparql_lit_escapes_injection_chars() {
-        assert_eq!(sparql_lit(r#"a"b\c"#), r#"a\"b\\c"#);
-    }
+    // (build_create_entity / build_replace_entity / sparql_lit tests retired with
+    // their fns — writes delegate to the DAL, owl-api builds no raw SPARQL. #3468)
 
     #[test]
     fn write_status_typed_taxonomy_no_silent_200() {
