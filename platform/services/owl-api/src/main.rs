@@ -3,7 +3,7 @@
 //!   owl-api generate [--class Domain]            → prints routes.json (the artifact)
 //!   owl-api serve [--class Domain] [--port 3360] → generates, then serves
 
-use owl_api::{dashboards_json, generate, openapi_json, page_html, routes_json, serve};
+use owl_api::{dashboards_json, generate, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
 use std::process::ExitCode;
 
 fn arg(args: &[String], flag: &str, default: &str) -> String {
@@ -54,6 +54,26 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("generate-tests") => match generate(&class) {
+            Ok(t) => {
+                print!("{}", tests_manifest(&t));
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("owl-api: {}", e);
+                ExitCode::FAILURE
+            }
+        },
+        Some("generate-mcp") => match generate(&class) {
+            Ok(t) => {
+                print!("{}", mcp_binding(&t));
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("owl-api: {}", e);
+                ExitCode::FAILURE
+            }
+        },
         Some("serve") => {
             let port: u16 = arg(&args, "--port", "3360").parse().unwrap_or(3360);
             match generate(&class).and_then(|t| serve(port, &t)) {
@@ -65,7 +85,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("usage: owl-api generate|generate-dashboard|generate-openapi|generate-page [--class Domain] | owl-api serve [--class Domain] [--port 3360]");
+            eprintln!("usage: owl-api generate|generate-dashboard|generate-openapi|generate-page|generate-tests|generate-mcp [--class Domain] | owl-api serve [--class Domain] [--port 3360]");
             ExitCode::FAILURE
         }
     }

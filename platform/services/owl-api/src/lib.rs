@@ -885,6 +885,62 @@ pub fn routes_json(t: &RouteTable) -> String {
     )
 }
 
+/// #3467 — TEST manifest projection: unit (route/mandatory/secured snapshot) +
+/// API conformance (every GET route → 200) + security (unauth write → 401, secured
+/// surface → 401, injection name → 400, incomplete create → 422), all DERIVED from
+/// the RouteTable. A generic runner executes it against the live API — tests as a
+/// model projection, not hand-written per domain. Pure + unit-pinned.
+pub fn tests_manifest(t: &RouteTable) -> String {
+    let class = t.class.rsplit('#').next().unwrap_or("").to_string();
+    let plural = pluralize(&class);
+    let p = format!("/{}", plural);
+    let arr = |v: &[String]| v.iter().map(|x| format!("\"{}\"", json_escape(x))).collect::<Vec<_>>().join(", ");
+    let conformance: Vec<String> = t.routes.iter()
+        .filter(|r| r.starts_with("GET "))
+        .map(|r| {
+            let path = r.trim_start_matches("GET ");
+            format!("{{ \"id\": \"conform {r}\", \"method\": \"GET\", \"path\": \"{path}\", \"expectStatus\": 200 }}",
+                r = json_escape(r), path = json_escape(path))
+        })
+        .collect();
+    let mut security: Vec<String> = vec![
+        format!("{{ \"id\": \"unauth-create-401\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"none\", \"expectStatus\": 401 }}", p = json_escape(&p)),
+        format!("{{ \"id\": \"injection-name-400\", \"method\": \"GET\", \"path\": \"{p}/bad%20name\", \"auth\": \"none\", \"expectStatus\": 400 }}", p = json_escape(&p)),
+        format!("{{ \"id\": \"incomplete-create-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{}}\", \"expectStatus\": 422 }}", p = json_escape(&p)),
+    ];
+    for s in &t.secured {
+        security.push(format!("{{ \"id\": \"secured-401 {s}\", \"method\": \"GET\", \"path\": \"{s}\", \"auth\": \"none\", \"expectStatus\": 401 }}", s = json_escape(s)));
+    }
+    format!(
+        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ]\n}}\n",
+        class = json_escape(&class), plural = json_escape(&plural),
+        routes = arr(&t.routes), mandatory = arr(&t.mandatory), secured = arr(&t.secured),
+        conf = conformance.join(",\n    "), sec = security.join(",\n    ")
+    )
+}
+
+/// #3467 — ADR-031 MCP tool BINDING projection: chorus_<plural-resource>_<verb>
+/// (closed verb set get/list/add; add delegates to the DAL — the one write
+/// authority). The MCP surface generated from the SAME model as the REST routes, so
+/// the two bindings cannot drift. Pure + unit-pinned.
+pub fn mcp_binding(t: &RouteTable) -> String {
+    let class = t.class.rsplit('#').next().unwrap_or("").to_string();
+    let plural = pluralize(&class);
+    let tool = |verb: &str, route: String, extra: &str| format!(
+        "{{ \"name\": \"chorus_{plural}_{verb}\", \"verb\": \"{verb}\", \"route\": \"{route}\"{extra} }}",
+        plural = plural, verb = verb, route = json_escape(&route), extra = extra
+    );
+    let tools = vec![
+        tool("list", format!("GET /{}", plural), ""),
+        tool("get", format!("GET /{}/:name", plural), ""),
+        tool("add", format!("POST /{}", plural), ", \"delegatesTo\": \"DAL (chorus-model)\""),
+    ];
+    format!(
+        "{{\n  \"class\": \"{class}\",\n  \"binding\": \"mcp\",\n  \"convention\": \"ADR-031 chorus_<plural-resource>_<verb>\",\n  \"tools\": [\n    {tools}\n  ]\n}}\n",
+        class = json_escape(&class), tools = tools.join(",\n    ")
+    )
+}
+
 /// English plural for a lowercased class name. Naive `+s` produced `propertys`;
 /// this handles consonant+y→ies and sibilants→es. Used by BOTH generate() and
 /// the serve router so routes and dispatch agree.
