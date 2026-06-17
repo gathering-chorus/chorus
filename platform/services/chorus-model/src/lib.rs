@@ -117,6 +117,10 @@ pub struct ShapeReq {
     pub required: Vec<String>,
     /// property local name → allowed values (sh:in)
     pub enums: BTreeMap<String, Vec<String>>,
+    /// #3467 — property local name → xsd datatype local (sh:datatype), for value-type enforcement
+    pub datatypes: BTreeMap<String, String>,
+    /// #3467 — edge property local name → target class local (sh:class), for edge-target-type enforcement
+    pub edge_classes: BTreeMap<String, String>,
 }
 
 /// The store seam — injected so the engine unit-tests hermetically (the
@@ -188,6 +192,24 @@ impl Store for FusekiStore {
     }
 }
 
+/// #3467 (B) — does `value` satisfy xsd:`xsd_local`? Strict on the numeric and
+/// boolean lexical spaces; permissive on string/anyURI/dateTime/unknown/empty (a
+/// string literal accepts anything). The DAL's datatype gate — pure + unit-pinned;
+/// the per-property xsd type comes from read_shape (sh:datatype), never hardcoded.
+pub fn datatype_ok(value: &str, xsd_local: &str) -> bool {
+    match xsd_local {
+        "integer" | "int" | "long" | "short" | "byte"
+        | "nonNegativeInteger" | "positiveInteger" | "nonPositiveInteger"
+        | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort" => {
+            value.parse::<i64>().is_ok()
+        }
+        "decimal" | "double" | "float" => value.parse::<f64>().is_ok(),
+        "boolean" => matches!(value, "true" | "false" | "1" | "0"),
+        // string / anyURI / dateTime / date / unknown / empty → permissive.
+        _ => true,
+    }
+}
+
 /// Read the shape requirements for a class from the ontology graph. A class
 /// with no shape yields Default (no required fields) — permissive, but the
 /// caller logs it; shapes arriving later tighten writes with no code change.
@@ -206,7 +228,27 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
             enums.entry(prop.to_string()).or_default().push(val.to_string());
         }
     }
-    Ok(ShapeReq { required, enums })
+    // #3467 — per-property sh:datatype (value-type enforcement) and per-edge sh:class
+    // (edge-target-type enforcement). Both read from the SAME shape; local-names only.
+    let mut datatypes: BTreeMap<String, String> = BTreeMap::new();
+    for row in store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:datatype ?dt . FILTER(isIRI(?path)) BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', REPLACE(STR(?dt), '.*#', '')) AS ?v) }} }}",
+        g = ONTOLOGY_GRAPH, c = class
+    ))? {
+        if let Some((prop, dt)) = row.split_once('|') {
+            datatypes.insert(prop.to_string(), dt.to_string());
+        }
+    }
+    let mut edge_classes: BTreeMap<String, String> = BTreeMap::new();
+    for row in store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:class ?cl . FILTER(isIRI(?path)) BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', REPLACE(STR(?cl), '.*#', '')) AS ?v) }} }}",
+        g = ONTOLOGY_GRAPH, c = class
+    ))? {
+        if let Some((prop, cl)) = row.split_once('|') {
+            edge_classes.insert(prop.to_string(), cl.to_string());
+        }
+    }
+    Ok(ShapeReq { required, enums, datatypes, edge_classes })
 }
 
 /// Turtle string-literal escape.
@@ -305,6 +347,17 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
             }
         }
     }
+    // #3467 (B) — DATATYPE enforcement: a field value must satisfy its sh:datatype.
+    // Constraint-blind no more — a wrong-type value (non-numeric for xsd:integer,
+    // bad xsd:boolean) is rejected, not silently stored. Derived from the shape.
+    for (prop, v) in &req.fields {
+        if let Some(dt) = shape.datatypes.get(prop) {
+            if !datatype_ok(v, dt) {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
+                return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", v, dt, prop));
+            }
+        }
+    }
 
     // Referential integrity: every edge target must already exist. Fail-closed.
     for (prop, tkind, tname) in &req.edges {
@@ -316,6 +369,22 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
                 "unknown-target: {} → <{}> does not exist in the store — create the target first (referential integrity, fail-closed)",
                 prop, target
             ));
+        }
+        // #3467 (B) — EDGE-TARGET-TYPE enforcement: existence is not enough; the
+        // target's rdf:type must match the edge property's sh:class (e.g. partOf →
+        // a Product, not any node). Beyond referential integrity. Derived from the shape.
+        if let Some(want_class) = shape.edge_classes.get(prop) {
+            let typed = store.ask(&format!(
+                "ASK {{ GRAPH ?g {{ <{t}> a <{ns}{cl}> }} }}",
+                t = target, ns = NS, cl = want_class
+            ))?;
+            if !typed {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("edge", prop)]);
+                return Err(format!(
+                    "shape-violation: {} → <{}> is not a {} (sh:class edge-target-type, fail-closed)",
+                    prop, target, want_class
+                ));
+            }
         }
     }
 
