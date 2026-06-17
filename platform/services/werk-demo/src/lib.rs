@@ -1353,6 +1353,13 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         }
     };
     let child = Command::new(&bin)
+        // #3471 — mark the gate's claude -p as HEADLESS so chorus-hooks'
+        // owes_response_block (#3218 RESPOND-FIRST) exempts it. A headless gate has
+        // no peer to answer; without this the nudge-block deadlocks the gate's own
+        // shell → the 180s timeout / denied chorus-health that errored this card's
+        // product+ops gates. owes_response_block reads env::var("CHORUS_HEADLESS").is_ok()
+        // (any value), alongside GITHUB_ACTIONS/ACT — same exemption family.
+        .env("CHORUS_HEADLESS", "1")
         .args([
             "-p",
             "--model", &model,
