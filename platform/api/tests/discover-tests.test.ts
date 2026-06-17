@@ -1,4 +1,5 @@
-import { createDiscoverTests, classifyTestType, inferDomain, loadAliasMap } from '../src/discover-tests';
+// @test-type: unit — signal:integration is fixture-data (deriveTestType test inputs; fs/sparql are mocked).
+import { createDiscoverTests, deriveTestType, inferDomain, loadAliasMap } from '../src/discover-tests';
 
 const FAKE_PATH = {
   join: (...parts: string[]) => parts.join('/'),
@@ -7,25 +8,28 @@ const FAKE_PATH = {
   basename: (p: string) => p.split('/').pop() || p,
 };
 
-describe('classifyTestType', () => {
-  it('detects e2e by path and by extension', () => {
-    expect(classifyTestType('tests/e2e/app.spec.ts')).toBe('e2e');
-    expect(classifyTestType('tests/app.e2e.ts')).toBe('e2e');
+describe('deriveTestType', () => {
+  // #3442: superseded the path-only classifyTestType. Precedence is
+  // declaration > extension-type (bdd/e2e) > content signals. Folder
+  // conventions (/integration/, /performance/) are GONE — content is truth.
+  it('extension types by path: e2e and bdd (.bats/.feature)', () => {
+    expect(deriveTestType('', 'tests/e2e/app.spec.ts')).toBe('e2e');
+    expect(deriveTestType('', 'tests/app.e2e.ts')).toBe('e2e');
+    expect(deriveTestType('', 'scripts/check.bats')).toBe('bdd');
+    expect(deriveTestType('', 'features/login.feature')).toBe('bdd');
   });
 
-  it('detects integration, performance, security path conventions', () => {
-    expect(classifyTestType('tests/integration/x.ts')).toBe('integration');
-    expect(classifyTestType('tests/performance/x.ts')).toBe('performance');
-    expect(classifyTestType('tests/security/x.ts')).toBe('security');
+  it('THE DRIFT FIX: content signals override the path — real fs → integration', () => {
+    // a *-unit.test.ts that touches real fs is integration, not unit.
+    expect(deriveTestType(`const dir = mkdtempSync('/tmp/x-')`, 'tests/server-unit.test.ts')).toBe('integration');
   });
 
-  it('classifies .bats and .feature as bdd', () => {
-    expect(classifyTestType('scripts/check.bats')).toBe('bdd');
-    expect(classifyTestType('features/login.feature')).toBe('bdd');
+  it('an explicit @test-type declaration is authoritative (gate enforces it matches signals)', () => {
+    expect(deriveTestType('// @test-type: security\nconst x = 1', 'tests/foo.test.ts')).toBe('security');
   });
 
-  it('defaults to unit', () => {
-    expect(classifyTestType('tests/unit/foo.test.ts')).toBe('unit');
+  it('defaults to unit when no declaration, extension, or content signal', () => {
+    expect(deriveTestType('const sum = add(1, 2)', 'tests/unit/foo.test.ts')).toBe('unit');
   });
 });
 

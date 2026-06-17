@@ -1,3 +1,4 @@
+// @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
 /**
  * fitness-summary — unit tests (#2167).
  *

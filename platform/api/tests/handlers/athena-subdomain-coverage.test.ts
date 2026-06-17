@@ -1,3 +1,4 @@
+// @test-type: unit — handler tests with mocked sparql.
 /**
  * athena-subdomain-coverage + test-coverage handlers — unit tests (#2187).
  *
@@ -42,6 +43,19 @@ describe('fetchAthenaSubdomainCoverage (#2187)', () => {
     let q = '';
     await fetchAthenaSubdomainCoverage(deps({ sparql: async (qq) => { q = qq; return result([]); } }), 'pulse');
     expect(q).toContain('https://jeffbridwell.com/chorus#pulse');
+  });
+
+  test('#3442: query reads testType via hasProperty→Property, NOT a bare literal', async () => {
+    // Regression guard: these mocks return a fixed binding, so a revert to the
+    // bare `chorus:testType ?testType` literal would still pass the mapping
+    // tests above and silently go empty against the promoted graph. Assert the
+    // query SHAPE so that revert goes red here.
+    let q = '';
+    await fetchAthenaSubdomainCoverage(deps({ sparql: async (qq) => { q = qq; return result([]); } }), 'pulse');
+    expect(q).toContain('chorus:hasProperty');
+    expect(q).toContain('chorus:propertyKey "testType"');
+    expect(q).toContain('chorus:propertyValue ?testType');
+    expect(q).not.toMatch(/chorus:testType\s+\?testType/);
   });
 
   test('SPARQL throws returns 500 with error envelope', async () => {

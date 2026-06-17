@@ -1,3 +1,4 @@
+// @test-type: api — #3442 backfill: starts the real app via startTestApp(); misnamed -unit, actually api.
 /**
  * patterns-summary — unit tests (#2167).
  *

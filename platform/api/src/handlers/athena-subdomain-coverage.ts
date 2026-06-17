@@ -29,7 +29,8 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 }
 
 function buildCoverageQuery(sdUri: string): string {
-  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:testType ?testType ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
+  // #3442: testType is a declared hasProperty→Property, not a bare literal.
+  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:testFile ?testFile ; chorus:hasProperty [ chorus:propertyKey "testType" ; chorus:propertyValue ?testType ] ; chorus:covers <${sdUri}> . } } ORDER BY ?testType ?testFile`;
 }
 
 export async function fetchAthenaSubdomainCoverage(

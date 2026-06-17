@@ -58,7 +58,8 @@ export async function fetchDomainTests(
       try {
         const sdId = await deps.resolveSubdomainId(subdomainName);
         const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:testType ?testType } }`;
+        // #3442: testType is a declared hasProperty→Property, not a bare literal.
+        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:hasProperty [ chorus:propertyKey "testType" ; chorus:propertyValue ?testType ] } }`;
         const result = await deps.sparql(query);
         const sparqlTests = ((result as { results?: { bindings?: Array<{ testFile?: { value?: string }; testType?: { value?: string } }> } }).results?.bindings ?? []).map((b) => ({
           path: b.testFile?.value || '',

@@ -4,6 +4,21 @@
 # with --no-verify locally, but CI is authoritative on main (ADR-026 quality layers).
 set -euo pipefail
 REPO="$(git rev-parse --show-toplevel)"
+
+# #3442 — test-type declaration gate (diff-scoped: staged test files only).
+# Local-authoritative per the cost-stop model (ADR-026 layer-3 CI is schedule-
+# only; local guards hold the line — same class as branch-check/deploy-from-main).
+# The script fail-opens on any infra gap and exits non-zero ONLY on a real
+# declaration contradiction. Placed before the gitleaks block so it runs even
+# where gitleaks isn't installed.
+if ! "$REPO/platform/scripts/gate-test-type.sh" staged; then
+  echo "" >&2
+  echo "🏷  pre-commit BLOCKED: a changed test file is missing or contradicting its @test-type declaration (#3442)." >&2
+  echo "   Add a header // @test-type: <unit|integration|api|ui|perf|security|bdd|e2e>." >&2
+  echo "   If a content signal is fixture-data, justify it: // @test-type: <type> — <why>." >&2
+  exit 1
+fi
+
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks not installed (brew install gitleaks) — secret scan SKIPPED" >&2
   exit 0  # fail-open on missing tool: don't block work on a dev-setup gap; CI gates hard
