@@ -18,6 +18,9 @@ edition = "2021"
 [dependencies]
 hmac = "0.12"
 sha2 = "0.10"
+# #3435 — the pure cascade resolver (#3437): decide_effective_value over a scope chain.
+# Path dep on the sibling crate; owl-api stays the I/O half (SPARQL fetch + coerce + serve).
+properties-resolver = { path = "../properties-resolver" }
 
 [[bin]]
 name = "owl-api"

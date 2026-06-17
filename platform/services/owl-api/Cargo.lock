@@ -77,8 +77,13 @@ name = "owl-api"
 version = "0.1.0"
 dependencies = [
  "hmac",
+ "properties-resolver",
  "sha2",
 ]
+
+[[package]]
+name = "properties-resolver"
+version = "0.1.0"
 
 [[package]]
 name = "sha2"
