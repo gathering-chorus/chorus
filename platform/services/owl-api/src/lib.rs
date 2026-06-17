@@ -23,6 +23,12 @@ pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 
+// #3435 — re-export the pure resolver surface (#3437) so the handler and consumers
+// import one place: owl_api::{ScopeKind, ScopeNode, decide_effective_value, ...}.
+pub use properties_resolver::{
+    decide_effective_value, CascadeError, PropertyDatum, Resolution, ScopeKind, ScopeNode,
+};
+
 pub type R<T> = Result<T, String>;
 
 fn fuseki() -> String {
@@ -990,6 +996,172 @@ fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
 }
 
+/// #3435 — coerce a Property's string-encoded value to its typed JSON fragment,
+/// ONCE per propertyValueType (string | int | bool | json | list). The effective-config
+/// read calls this so a consumer gets a typed value, not a raw literal. Fails LOUD on a
+/// type mismatch — never silently defaults to string (a wrong type must surface, not hide).
+/// list/json are stored already-encoded: coercion is a structural shape-check + passthrough
+/// (zero-dep — owl-api takes no JSON parser; a full parse is a follow-on if depth matters).
+pub fn coerce_effective(value: &str, value_type: &str) -> R<String> {
+    match value_type {
+        "int" => value
+            .parse::<i64>()
+            .map(|n| n.to_string())
+            .map_err(|_| format!("propertyValue {:?} is not an int", value)),
+        "bool" => match value {
+            "true" | "false" => Ok(value.to_string()),
+            _ => Err(format!("propertyValue {:?} is not a bool (want true|false)", value)),
+        },
+        "string" => Ok(format!("\"{}\"", json_escape(value))),
+        "list" => {
+            let t = value.trim();
+            if t.len() >= 2 && t.starts_with('[') && t.ends_with(']') {
+                Ok(t.to_string())
+            } else {
+                Err(format!("propertyValue {:?} is not a JSON array", value))
+            }
+        }
+        "json" => {
+            let t = value.trim();
+            let shaped = t.len() >= 2
+                && ((t.starts_with('{') && t.ends_with('}'))
+                    || (t.starts_with('[') && t.ends_with(']')));
+            if shaped {
+                Ok(t.to_string())
+            } else {
+                Err(format!("propertyValue {:?} is not a JSON object/array", value))
+            }
+        }
+        other => Err(format!("unknown propertyValueType {:?}", other)),
+    }
+}
+
+/// #3435 — parse one effective-config fetch row into a PropertyDatum. The fetch CONCATs
+/// each Property as "iri|key|valueType|value" into ?v (owl-api's single-var seam). `value`
+/// is LAST and `splitn(4)` gives it the remainder, so an arbitrary config value may itself
+/// contain '|'. An empty value is an explicit override (meaningful to the resolver), not
+/// malformed; a missing iri/key/value field is.
+pub fn parse_property_row(row: &str) -> R<properties_resolver::PropertyDatum> {
+    let mut it = row.splitn(4, '|');
+    let iri = it.next().unwrap_or("");
+    match (it.next(), it.next(), it.next()) {
+        (Some(key), Some(value_type), Some(value)) if !iri.is_empty() && !key.is_empty() => {
+            Ok(properties_resolver::PropertyDatum {
+                iri: iri.to_string(),
+                key: key.to_string(),
+                value: value.to_string(),
+                value_type: value_type.to_string(),
+            })
+        }
+        _ => Err(format!("malformed property row: {:?}", row)),
+    }
+}
+
+/// #3435 — assemble a node's fetched property rows into a ScopeNode. `kind` is
+/// chosen by the caller (the handler): for the single-node proof the leaf is the
+/// most specific, so the handler passes ScopeKind::Service; the leaf-kind taxonomy
+/// for non-structural nodes (e.g. a TestCoverage carrying testType) is deferred to
+/// the ownership-walk follow-on. A malformed row fails LOUD — never a dropped property.
+pub fn build_scope_node(node_iri: &str, kind: ScopeKind, rows: &[String]) -> R<ScopeNode> {
+    let mut properties = Vec::with_capacity(rows.len());
+    for row in rows {
+        properties.push(parse_property_row(row)?);
+    }
+    Ok(ScopeNode { kind, iri: node_iri.to_string(), properties })
+}
+
+/// #3435 — the node-scoped effective-config fetch. Reads `urn:chorus:instances` LIVE
+/// via SPARQL — NO projection/mirror/sqlite store (the AC invariant; the query-builder
+/// test asserts the instances graph + hasProperty traversal so a projection swap goes
+/// red). Traverses hasProperty→Property and returns ALL the node's declared properties
+/// as "iri|key|valueType|value" rows (value LAST so it may contain '|') in ONE round-trip.
+/// The key is selected in pure code (decide_effective_value), never filtered in SPARQL —
+/// so the round-trip stays one and key-selection stays unit-tested.
+pub fn effective_fetch_query(node_iri: &str) -> String {
+    format!(
+        "SELECT ?v WHERE {{ \
+           GRAPH <{g}> {{ \
+             <{node}> <{ns}hasProperty> ?prop . \
+             ?prop <{ns}propertyKey> ?key . \
+             ?prop <{ns}propertyValue> ?value . \
+             ?prop <{ns}propertyValueType> ?vtype . \
+           }} \
+           BIND(CONCAT(STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
+         }}",
+        g = INSTANCES_GRAPH,
+        ns = NS,
+        node = node_iri
+    )
+}
+
+/// #3435 — shape the effective-config response from a node's already-fetched rows.
+/// The handler's pure core (it adds only the live `sparql_json` fetch): build the
+/// 1-element scope chain, resolve `key`, coerce. 200 with the typed value + provenance,
+/// 404 if the key is unset on the node, 500 on a malformed row / coercion mismatch.
+/// `value` is the coerced JSON fragment (bare `3000`, `true`, or a quoted string).
+pub fn effective_response(node_name: &str, key: &str, rows: &[String]) -> (u16, String) {
+    let node_iri = format!("{}{}", NS, node_name);
+    let node = match build_scope_node(&node_iri, ScopeKind::Service, rows) {
+        Ok(n) => n,
+        Err(e) => return (500, format!("{{\"error\":\"{}\"}}", json_escape(&e))),
+    };
+    match decide_effective_value(&[node], key) {
+        Ok(Some(res)) => match coerce_effective(&res.value, &res.value_type) {
+            Ok(coerced) => (
+                200,
+                format!(
+                    "{{\"node\":\"{}\",\"key\":\"{}\",\"value\":{},\"valueType\":\"{}\",\"winningScope\":\"{}\"}}",
+                    json_escape(node_name),
+                    json_escape(key),
+                    coerced,
+                    json_escape(&res.value_type),
+                    json_escape(&res.winning_scope_iri)
+                ),
+            ),
+            Err(e) => (500, format!("{{\"error\":\"{}\"}}", json_escape(&e))),
+        },
+        Ok(None) => (
+            404,
+            format!(
+                "{{\"error\":\"no property sets key\",\"node\":\"{}\",\"key\":\"{}\"}}",
+                json_escape(node_name),
+                json_escape(key)
+            ),
+        ),
+        Err(e) => (500, format!("{{\"error\":\"malformed scope chain: {:?}\"}}", e)),
+    }
+}
+
+/// #3435 — a config key is compared in pure code, never interpolated into SPARQL (the
+/// read is node-scoped + fetches the full property set), so it needs hygiene, not the
+/// strict injection guard. Dotted keys (`alert.threshold`) are valid; `is_safe_local`
+/// would wrongly reject them. Allow alphanumeric + `-` `_` `.`, bounded, non-empty.
+pub fn is_safe_key(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+}
+
+/// #3435 — the HTTP status line for a response code. Extracted from serve()'s inline
+/// match so it's unit-testable; a live /effective request exposed that 400 (bad input)
+/// and 500 (server error) were absent and silently serialized as "502 Bad Gateway".
+pub fn status_line(code: u16) -> &'static str {
+    match code {
+        200 => "200 OK",
+        201 => "201 Created",
+        400 => "400 Bad Request",
+        401 => "401 Unauthorized",
+        403 => "403 Forbidden",
+        404 => "404 Not Found",
+        409 => "409 Conflict",
+        422 => "422 Unprocessable Entity",
+        500 => "500 Internal Server Error",
+        501 => "501 Not Implemented",
+        _ => "502 Bad Gateway",
+    }
+}
+
 /// #3420 — GENERATE the Athena domain page as a PROJECTION on the #3415 design system,
 /// replacing the hand-built domain-detail page. page_html emits the STATIC SHELL — the
 /// real anatomy (breadcrumb → identity → stats → promise → completeness → facet sections)
@@ -1117,6 +1289,33 @@ pub fn is_safe_local(s: &str) -> bool {
 fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, String) {
     let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+
+    // #3435 — GET /effective/:node/:key — the effective-config read. The ONLY impure
+    // point in this card: read urn:chorus:instances LIVE via SPARQL (no projection), then
+    // resolve + coerce in pure code. is_safe_local guards the node (interpolated into the
+    // query); is_safe_key guards the key (compared in code only — dotted keys allowed).
+    if parts.len() == 3 && parts[0] == "effective" {
+        let (node, key) = (parts[1], parts[2]);
+        meta.route = "effective".into();
+        meta.entity = node.to_string();
+        meta.fold = key.to_string();
+        if !is_safe_local(node) {
+            return (400, "{ \"error\": \"invalid node name\" }".to_string());
+        }
+        if !is_safe_key(key) {
+            return (400, "{ \"error\": \"invalid key\" }".to_string());
+        }
+        let q = effective_fetch_query(&format!("{}{}", NS, node));
+        return match sparql_json(&q) {
+            Ok(body) => {
+                let rows = select_v(&body);
+                let (code, resp) = effective_response(node, key, &rows);
+                meta.result_count = if code == 200 { 1 } else { 0 };
+                (code, resp)
+            }
+            Err(e) => (502, format!("{{ \"error\": \"fuseki: {}\" }}", json_escape(&e))),
+        };
+    }
 
     // GET /schema/domain
     if path.starts_with("/schema/") {
@@ -1388,17 +1587,7 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
             }
         };
         let upstream_ms = upstream_started.elapsed().as_millis();
-        let status = match code {
-            200 => "200 OK",
-            201 => "201 Created",
-            401 => "401 Unauthorized",
-            403 => "403 Forbidden",
-            404 => "404 Not Found",
-            409 => "409 Conflict",
-            422 => "422 Unprocessable Entity",
-            501 => "501 Not Implemented",
-            _ => "502 Bad Gateway",
-        };
+        let status = status_line(code);
         let resp = http_response_ct(status, &body, content_type_for(&path));
         let _ = stream.write_all(resp.as_bytes());
         // THE SEAM: every request passes here once — telemetry now; auth,
