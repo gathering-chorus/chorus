@@ -7,7 +7,12 @@ use owl_api::{mcp_binding, tests_manifest, RouteTable};
 fn fixture() -> RouteTable {
     RouteTable {
         class: "https://jeffbridwell.com/chorus#Domain".into(),
-        fields: vec!["label|datatype:string".into(), "comment|datatype:string".into(), "partOf|edge:Product".into()],
+        fields: vec![
+            "label|datatype:string".into(),
+            "comment|datatype:string".into(),
+            "port|datatype:integer".into(),   // a STRICT datatype → a wrong value is rejectable
+            "partOf|edge:Product".into(),     // an edge → target-type is enforced
+        ],
         routes: vec![
             "GET /domains".into(),
             "GET /domains/:name".into(),
@@ -39,6 +44,12 @@ fn tests_manifest_projects_unit_conformance_security() {
     assert!(m.contains("400"), "injection name must assert 400");
     // completeness floor → incomplete create 422
     assert!(m.contains("422"), "incomplete create must assert 422");
+    // #3467 finish — the generated tests ASSERT the new constraint-enforcement:
+    // datatype rejection (a strict-typed field gets a bad value → 422) and
+    // edge-target-type rejection (an edge points at a wrong-typed target → 422).
+    assert!(m.contains("\"constraints\""), "manifest carries a constraints block");
+    assert!(m.contains("datatype") && m.contains("port"), "datatype-rejection case for the strict field 'port'");
+    assert!(m.contains("edge-target-type") && m.contains("partOf"), "edge-target-type rejection case for the partOf edge");
 }
 
 #[test]

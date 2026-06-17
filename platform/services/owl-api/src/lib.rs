@@ -911,11 +911,37 @@ pub fn tests_manifest(t: &RouteTable) -> String {
     for s in &t.secured {
         security.push(format!("{{ \"id\": \"secured-401 {s}\", \"method\": \"GET\", \"path\": \"{s}\", \"auth\": \"none\", \"expectStatus\": 401 }}", s = json_escape(s)));
     }
+    // #3467 finish — CONSTRAINT-enforcement cases, derived from the shape's fields:
+    // a strict-datatype field gets a bad value → 422 (sh:datatype); an edge points at
+    // a wrong-typed target → 422 (sh:class edge-target-type). These ASSERT the DAL
+    // enforcement that makes the write surface constraint-safe (not just well-formed).
+    let strict_xsd = |x: &str| matches!(x,
+        "integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
+        | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
+        | "decimal" | "double" | "float" | "boolean");
+    let mut constraints: Vec<String> = vec![];
+    for f in &t.fields {
+        let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
+        if let Some(xsd) = kind.strip_prefix("datatype:") {
+            if strict_xsd(xsd) {
+                constraints.push(format!(
+                    "{{ \"id\": \"datatype-reject {name}\", \"check\": \"datatype\", \"field\": \"{name}\", \"xsd\": \"{xsd}\", \"method\": \"POST\", \"path\": \"{p}\", \"badValue\": \"not-a-{xsd}\", \"expectStatus\": 422 }}",
+                    name = json_escape(name), xsd = json_escape(xsd), p = json_escape(&p)
+                ));
+            }
+        } else if let Some(cls) = kind.strip_prefix("edge:") {
+            let seg = name.to_lowercase();
+            constraints.push(format!(
+                "{{ \"id\": \"edge-target-type-reject {name}\", \"check\": \"edge-target-type\", \"edge\": \"{name}\", \"targetClass\": \"{cls}\", \"method\": \"POST\", \"path\": \"{p}/:name/{seg}\", \"targetOfWrongType\": true, \"expectStatus\": 422 }}",
+                name = json_escape(name), cls = json_escape(cls), p = json_escape(&p), seg = json_escape(&seg)
+            ));
+        }
+    }
     format!(
-        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ]\n}}\n",
+        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
         class = json_escape(&class), plural = json_escape(&plural),
         routes = arr(&t.routes), mandatory = arr(&t.mandatory), secured = arr(&t.secured),
-        conf = conformance.join(",\n    "), sec = security.join(",\n    ")
+        conf = conformance.join(",\n    "), sec = security.join(",\n    "), cons = constraints.join(",\n    ")
     )
 }
 
