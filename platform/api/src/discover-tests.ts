@@ -4,6 +4,9 @@
 // /api/athena/discover-tests logic (extracted from server.ts for #2205 wave 24).
 // Returns a flat summary object; server.ts wraps it in athenaEnvelope.
 
+import { tagTestType } from './tag-test-type';
+import { parseDeclaration } from './gate-test-type';
+
 interface SparqlResult { results?: { bindings?: Array<Record<string, { value: string }>> } }
 
 interface SparqlClient {
@@ -22,6 +25,7 @@ interface FsModule {
   existsSync: (p: string) => boolean;
   readdirSync: (p: string, opts?: BufferEncoding | { encoding: BufferEncoding | null; withFileTypes?: false; recursive?: boolean } | null) => string[];
   statSync: (p: string) => { isFile: () => boolean };
+  readFileSync: (p: string, enc: BufferEncoding) => string;
 }
 
 export interface DiscoverTestsDeps {
@@ -37,14 +41,21 @@ export interface DiscoverTestsDeps {
 // "alias" triples in urn:chorus:ontology. Migration: scripts/migrate-aliases-to-graph.ts.
 // New subdomains declare their own hasTestPathPrefix triples at creation time.
 
-export function classifyTestType(relPath: string): string {
+// #3442: the type derivation authority. Replaces the old path-only
+// classifyTestType (folder/extension heuristic) that mislabeled 7
+// *-unit.test.ts touching real fs as "unit". Precedence:
+//   1. explicit @test-type declaration (gate-enforced to match signals)
+//   2. extension types the content tagger can't see (bdd: .bats/.feature; e2e)
+//   3. mechanical content signals (the deterministic tagger)
+// The folder-convention classification (/integration/, /performance/, ...) is
+// REMOVED — content signals are more accurate (a file's location lied; its code
+// doesn't). Vocab is single-source via the tagger (perf, not "performance").
+export function deriveTestType(content: string, relPath: string): string {
+  const declared = parseDeclaration(content);
+  if (declared) return declared;
+  if (/\.bats$/i.test(relPath) || /\.feature$/i.test(relPath)) return 'bdd';
   if (/\/e2e\//i.test(relPath) || /\.e2e\./i.test(relPath)) return 'e2e';
-  if (/\/integration\//i.test(relPath)) return 'integration';
-  if (/\/performance\//i.test(relPath)) return 'performance';
-  if (/\/security\//i.test(relPath)) return 'security';
-  if (/\.bats$/i.test(relPath)) return 'bdd';
-  if (/\.feature$/i.test(relPath)) return 'bdd';
-  return 'unit';
+  return tagTestType(content, relPath);
 }
 
 export function loadAliasMap(
@@ -104,7 +115,10 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
       const relPath = deps.path.relative(repoRoot, fullPath);
       const coversDomain = inferDomain(relPath, aliasToId, deps.path);
       if (!coversDomain) return null;
-      return { testFile: `${prefix}/${relPath}`, testType: classifyTestType(relPath), coversDomain };
+      // #3442: read content so type is derived from real signals, not the path.
+      let content = '';
+      try { content = deps.fs.readFileSync(fullPath, 'utf8'); } catch { content = ''; }
+      return { testFile: `${prefix}/${relPath}`, testType: deriveTestType(content, relPath), coversDomain };
     };
 
     const scanTests = (dir: string, repoRoot: string) => {
@@ -127,6 +141,13 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
     scanTests(deps.path.join(deps.chorusRoot, 'directing/products/cards/tests'), deps.chorusRoot);
     scanTests(deps.path.join(deps.chorusRoot, 'platform/tests'), deps.chorusRoot);
 
+    // #3442: clear the testType Property nodes reachable from TestCoverage
+    // FIRST (before the link is gone), then the TestCoverage instances — so the
+    // promoted Property nodes don't orphan-accumulate across crawls.
+    const clearProps = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> '
+      + 'DELETE WHERE { GRAPH <urn:chorus:instances> { '
+      + '?t a chorus:TestCoverage ; chorus:hasProperty ?p . ?p ?pp ?po . } }';
+    await deps.sparqlClient.update(clearProps);
     const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?t a <https://jeffbridwell.com/chorus#TestCoverage> ; ?p ?o . } }';
     await deps.sparqlClient.update(clearQuery);
 
@@ -137,8 +158,13 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
       const triples = batch.map(t => {
         const tcId = `test-coverage-${t.testFile.replace(/[/.]/g, '-').toLowerCase()}`;
         const tcUri = `https://jeffbridwell.com/chorus#${tcId}`;
+        const propUri = `https://jeffbridwell.com/chorus#${tcId}-prop-testtype`;
         const sdUri = `https://jeffbridwell.com/chorus#${t.coversDomain}`;
-        return `<${tcUri}> a chorus:TestCoverage ; chorus:testFile "${t.testFile.replace(/"/g, '\\"')}" ; chorus:testType "${t.testType}" ; chorus:covers <${sdUri}> .`;
+        const tt = t.testType.replace(/"/g, '\\"');
+        // #3442: testType promoted from bare literal → declared hasProperty→Property
+        // (what owl-api /effective resolves). Named Property IRI for traceability.
+        return `<${tcUri}> a chorus:TestCoverage ; chorus:testFile "${t.testFile.replace(/"/g, '\\"')}" ; chorus:covers <${sdUri}> ; chorus:hasProperty <${propUri}> .\n`
+          + `<${propUri}> a chorus:Property ; chorus:propertyKey "testType" ; chorus:propertyValue "${tt}" ; chorus:propertyValueType "string" .`;
       }).join('\n');
       const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
       await deps.sparqlClient.update(insert);

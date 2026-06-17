@@ -1,3 +1,4 @@
+// @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
 /* global RequestInit */
 /**
  * server.ts — in-process unit tests (#2167).

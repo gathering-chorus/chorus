@@ -1,3 +1,4 @@
+// @test-type: unit — signal:integration is fixture-data (handler tests with mocked fetch/sparql).
 /**
  * domain-facets handlers — unit tests (#2173 AC4).
  *
@@ -109,6 +110,22 @@ describe('fetchDomainTests', () => {
     expect(body.data.tests[0].path).toContain('seed-loom-decisions');
     expect(body.data.byType.unit).toBe(1);
     expect(body.data.byType.integration).toBe(1);
+  });
+
+  test('#3442: fallback query reads testType via hasProperty→Property, NOT a bare literal', async () => {
+    // Regression guard: the fallback above mocks the sparql RESPONSE, so a
+    // revert to `chorus:testType ?testType` would still pass it and silently go
+    // empty against the promoted graph. Assert the query SHAPE so revert → red.
+    let q = '';
+    const d = deps({
+      fetcher: async () => mockFetch(200, { files: [], total: 0 }),
+      sparql: async (qq: string) => { q = qq; return { results: { bindings: [] } } as SparqlResult; },
+    });
+    await fetchDomainTests(d, 'loom-decisions');
+    expect(q).toContain('chorus:hasProperty');
+    expect(q).toContain('chorus:propertyKey "testType"');
+    expect(q).toContain('chorus:propertyValue ?testType');
+    expect(q).not.toMatch(/chorus:testType\s+\?testType/);
   });
 
   test('#2485 — upstream data takes precedence; SPARQL fallback only fires on empty upstream', async () => {
