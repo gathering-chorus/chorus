@@ -237,6 +237,17 @@ const WerkAcceptInput = z.object({
   card_id: z.number().int().positive().describe('Card ID to finalize.'),
 }).strict();
 
+// #3479 — feedback registration input. A peer answers a demo's reply-required
+// feedback gather; recorded as demo.gather.replied for {card, role}.
+const RegisterFeedbackInput = z.object({
+  // #3479 — NO role param: the peer is derived from the AUTHENTICATED caller
+  // (getCallerRole), not trusted from args, so feedback provenance can't be spoofed
+  // (Kade + Silas review catch). Mirrors werk-accept's accepter-from-getCallerRole.
+  card_id: z.number().int().positive().describe('Card whose demo gather is being answered.'),
+  verdict: z.enum(['pass', 'concerns', 'block']).describe('The review verdict.'),
+  substance: z.string().min(1).describe('The feedback substance (the review).'),
+}).strict();
+
 // #2900 — chorus_design_refresh input. Refreshes cite-density layers of a
 // service-design HTML from current card statuses. Skill body is one MCP
 // call; same substrate pattern as /acp + /pull.
@@ -548,6 +559,27 @@ const CHORUS_WERK_TOOL_DEF = {
       go: { type: 'boolean', description: 'The human GO. false/absent = run to the demo stop and present. true = resume past the stop: merge → deploy-prod → accept.' },
     },
     required: ['role', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #3479 — feedback registration: the EXPLICIT MCP endpoint a peer calls to answer
+// a demo's reply-required feedback gather. Writes demo.gather.replied (via the
+// werk-demo binary) so the announce gate (tests+gates+feedback registered) can
+// pass — closing the nudge≠gather-record deadlock that forced an override on every
+// land. Not nudge-text parsing: the peer calls this to SATISFY the gather. The
+// gate is unchanged (Jeff's bar); this only makes feedback register reliably.
+const REGISTER_FEEDBACK_TOOL_DEF = {
+  name: 'chorus_register_feedback',
+  description: 'Register YOUR feedback on a card\'s demo gather — the explicit way to SATISFY a reply-required feedback gather (#3403 {expects:feedback}). The replying peer is the AUTHENTICATED caller (not a param — provenance can\'t be spoofed). Writes demo.gather.replied for {card, caller} so gathers_missing clears and the demo can present. The gate is unchanged (tests+gates+feedback registered → presented); a `block` verdict still registers (feedback is IN) and presents with the verdict visible — Jeff gates at the GO seeing it (registered≠passed). Call this when you receive a feedback gather nudge.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      card_id: { type: 'integer', minimum: 1, description: 'Card whose demo gather is being answered.' },
+      verdict: { type: 'string', enum: ['pass', 'concerns', 'block'], description: 'The review verdict (block still registers + presents with the verdict visible; Jeff gates at the GO).' },
+      substance: { type: 'string', minLength: 1, description: 'The feedback substance (the review).' },
+    },
+    required: ['card_id', 'verdict', 'substance'],
     additionalProperties: false,
   },
 } as const;
@@ -1964,6 +1996,49 @@ async function executeChorusBuild(
   return executeWerkVerb('werk-build', [String(args.card_id), args.role], args.role, args.card_id, {});
 }
 
+// #3479 — register a peer's gather feedback by invoking werk-demo's gather-replied
+// path (the single canonical writer of demo.gather.replied). Shells the werk-demo
+// binary (not in executeWerkVerb's verb union — its arg shape is
+// `gather <card> <peer> replied <verdict> <note>`), peer = the calling role.
+async function executeRegisterFeedback(
+  args: z.infer<typeof RegisterFeedbackInput>,
+  peer: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // #3479 — `peer` is the AUTHENTICATED caller (getCallerRole), never an arg, so
+  // the gather record's provenance is real (Kade+Silas catch: a role param lets
+  // anyone register AS anyone). Mirrors werk-accept binding the accepter to the caller.
+  const pathMod = require('path') as typeof import('path');
+  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binPath = pathMod.join(binDir, 'werk-demo');
+  const execFileP = promisify(execFile);
+  try {
+    const { stdout } = await execFileP(
+      binPath,
+      ['gather', String(args.card_id), peer, 'replied', args.verdict, args.substance],
+      {
+        env: {
+          ...process.env,
+          DEPLOY_ROLE: peer,
+          CHORUS_ROLE: peer,
+          CHORUS_HOME: process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus',
+          CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
+        },
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ ok: true, verb: 'chorus_register_feedback', peer, card_id: args.card_id, verdict: args.verdict, recorded: stdout.trim() }),
+      }],
+    };
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    throw new Error(`chorus_register_feedback-fail — exit=${e.code ?? 1}${(e.stderr || '').trim() ? ' stderr=' + (e.stderr || '').trim().slice(0, 300) : ''}`);
+  }
+}
+
 async function executeChorusDeploy(
   args: z.infer<typeof DeployInput>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
@@ -2471,6 +2546,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CHORUS_BUILD_TOOL_DEF,
       CHORUS_DEPLOY_TOOL_DEF,
       CHORUS_WERK_TOOL_DEF,
+      REGISTER_FEEDBACK_TOOL_DEF,
       FLOW_REPORT_TOOL_DEF,
       PRINCIPLES_LIST_TOOL_DEF,
       PRINCIPLES_GET_TOOL_DEF,
@@ -2556,6 +2632,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return executeChorusEnvUp(parsed.data);
         }
         return executeChorusDeploy(parsed.data);
+      }
+      case 'chorus_register_feedback': {
+        const parsed = RegisterFeedbackInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeRegisterFeedback(parsed.data, getCallerRole());
       }
       case 'chorus_flow_report': {
         const hours = Number((req.params.arguments as { hours?: number } | undefined)?.hours);
