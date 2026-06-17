@@ -1314,6 +1314,21 @@ pub fn gate_system_prompt(skill_md: &str) -> String {
 /// Run one gate headless and record its verdict. Best-effort: any failure path
 /// records an "error" verdict (visible on the decision surface), never panics,
 /// never silently passes.
+/// #3468/#3471 — fold a pre-run chorus-health report into the OPS gate's context.
+/// The ops gate judges health but can't fetch it (claude -p has `--disallowedTools
+/// Bash`); the gate-runner pre-runs chorus-health (it can shell) and the gate reads
+/// the report here instead of trying to execute one. ops-only; other gates pass
+/// through unchanged. Pure + unit-pinned.
+pub fn ops_ctx(base: &str, gate: &str, health: &str) -> String {
+    if gate != "ops" {
+        return base.to_string();
+    }
+    format!(
+        "{}\n\n=== chorus-health --verbose (PRE-RUN by the gate-runner — JUDGE this output for pass/fail; do NOT run chorus-health yourself, you have no shell) ===\n{}",
+        base, health
+    )
+}
+
 fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     let skill = home.join(format!("skills/gate-{}/SKILL.md", gate));
     let skill_md = match fs::read_to_string(&skill) {
@@ -1339,10 +1354,32 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         .unwrap_or_default();
     // Cap the diff so a huge change can't blow the context budget.
     let diff_capped: String = diff.chars().take(60_000).collect();
-    let ctx = format!(
+    let base_ctx = format!(
         "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
         card, card_view, diff_capped
     );
+    // #3468/#3471 — for the OPS gate, pre-run chorus-health HERE (the Rust gate-runner
+    // can shell; the gate's claude -p cannot) and fold its full output + exit status
+    // into the context. Captured regardless of exit code — chorus-health exits 1 on
+    // FAIL, which the gate must still SEE to judge. Non-ops gates: base_ctx unchanged.
+    let ctx = if gate == "ops" {
+        let hp = script_path(home, "chorus-health");
+        let health = Command::new(&hp)
+            .arg("--verbose")
+            .output()
+            .map(|o| {
+                format!(
+                    "exit_status: {}\n{}{}",
+                    o.status.code().map(|c| c.to_string()).unwrap_or_else(|| "killed-by-signal".into()),
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr),
+                )
+            })
+            .unwrap_or_else(|e| format!("(chorus-health failed to spawn: {})", e));
+        ops_ctx(&base_ctx, gate, &health)
+    } else {
+        base_ctx
+    };
 
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let bin = match claude_bin() {
@@ -1353,6 +1390,13 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         }
     };
     let child = Command::new(&bin)
+        // #3471 — mark the gate's claude -p as HEADLESS so chorus-hooks'
+        // owes_response_block (#3218 RESPOND-FIRST) exempts it. A headless gate has
+        // no peer to answer; without this the nudge-block deadlocks the gate's own
+        // shell → the 180s timeout / denied chorus-health that errored this card's
+        // product+ops gates. owes_response_block reads env::var("CHORUS_HEADLESS").is_ok()
+        // (any value), alongside GITHUB_ACTIONS/ACT — same exemption family.
+        .env("CHORUS_HEADLESS", "1")
         .args([
             "-p",
             "--model", &model,

@@ -361,6 +361,74 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     Ok(subject)
 }
 
+/// An edge property local-name must be camelCase (ADR-040 Level 4) — the same law
+/// to_turtle enforces on fields, applied to incremental edge ops.
+fn check_edge_prop(prop: &str) -> R<()> {
+    let ok = !prop.is_empty()
+        && prop.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
+        && prop.chars().all(|c| c.is_ascii_alphanumeric());
+    if !ok {
+        return Err(format!("bad-property: '{}' — edge properties are camelCase (ADR-040 Level 4)", prop));
+    }
+    Ok(())
+}
+
+/// #3468 — DELETE an entity wholesale (governed). Fail-closed: refuses a subject
+/// that does not exist (so a typo can't be a silent no-op). Witnesses the delete.
+/// owl-api's DELETE delegates here instead of a raw SPARQL DELETE — one governed
+/// write path, audited, never silent.
+pub fn delete_entity(store: &dyn Store, kind: &str, name: &str) -> R<String> {
+    let subject = mint(kind, name)?;
+    if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
+        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found")]);
+        return Err(format!("not-found: <{}> does not exist", subject));
+    }
+    store.update(&format!(
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
+        g = INSTANCES_GRAPH, s = subject
+    ))?;
+    witness("model.delete", &[("kind", kind), ("name", name), ("iri", subject.as_str())]);
+    Ok(subject)
+}
+
+/// #3468 — ADD one edge INCREMENTALLY (governed). Unlike `write` (full-subject
+/// replace), this touches only the single triple — so adding a partOf edge never
+/// wipes the node's other data. Referential integrity on BOTH endpoints
+/// (fail-closed). Witnesses the link. The governed replacement for owl-api's raw
+/// build_edge_update.
+pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str) -> R<String> {
+    check_edge_prop(prop)?;
+    let subject = mint(kind, name)?;
+    let target = mint(tkind, tname)?;
+    for iri in [&subject, &target] {
+        if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", iri))? {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "unknown-endpoint"), ("iri", iri.as_str())]);
+            return Err(format!("unknown-endpoint: <{}> does not exist — referential integrity, fail-closed", iri));
+        }
+    }
+    store.update(&format!(
+        "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
+        g = INSTANCES_GRAPH, ns = NS, s = subject, p = prop, t = target
+    ))?;
+    witness("model.link", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
+    Ok(subject)
+}
+
+/// #3468 — REMOVE one edge (governed). Single DELETE DATA, witnessed. Idempotent:
+/// removing an absent edge is a no-op success (removal toward absence is safe).
+/// The governed replacement for owl-api's raw edge-delete.
+pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str) -> R<String> {
+    check_edge_prop(prop)?;
+    let subject = mint(kind, name)?;
+    let target = mint(tkind, tname)?;
+    store.update(&format!(
+        "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
+        g = INSTANCES_GRAPH, ns = NS, s = subject, p = prop, t = target
+    ))?;
+    witness("model.unlink", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
+    Ok(subject)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(test)]
 mod tests {
@@ -521,5 +589,69 @@ mod tests {
         let e = write(&store, &req).unwrap_err();
         assert!(e.starts_with("shape-violation"), "{}", e);
         assert!(e.contains("vision"));
+    }
+
+    // ── #3468 — delete / link / unlink (the governed verbs owl-api delegates to) ──
+
+    #[test]
+    fn delete_entity_refuses_unknown_subject_fail_closed() {
+        let store = stub(&[], &[]);
+        let e = delete_entity(&store, "domain", "ghost").unwrap_err();
+        assert!(e.starts_with("not-found"), "{}", e);
+        assert!(store.updates.borrow().is_empty(), "nothing deleted on a missing subject");
+    }
+
+    #[test]
+    fn delete_entity_deletes_existing_subject() {
+        let subj = format!("{}tests", NS);
+        let store = stub(&[subj.as_str()], &[]);
+        let got = delete_entity(&store, "domain", "tests").unwrap();
+        assert_eq!(got, subj);
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1);
+        assert!(ups[0].contains("DELETE WHERE"), "wholesale subject delete");
+        assert!(ups[0].contains(INSTANCES_GRAPH), "routed to instances graph");
+    }
+
+    #[test]
+    fn add_edge_is_referential_and_incremental() {
+        // both endpoints exist → one INSERT DATA of the single triple (NOT a full
+        // replace — the subject's other data is untouched).
+        let subj = format!("{}tests", NS);
+        let tgt = format!("{}athena", NS);
+        let store = stub(&[subj.as_str(), tgt.as_str()], &[]);
+        let got = add_edge(&store, "domain", "tests", "partOf", "product", "athena").unwrap();
+        assert_eq!(got, subj);
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1);
+        assert!(ups[0].contains("INSERT DATA"), "incremental, not DELETE-WHERE");
+        assert!(ups[0].contains("partOf"), "the edge predicate is written");
+    }
+
+    #[test]
+    fn add_edge_refuses_missing_target_fail_closed() {
+        let subj = format!("{}tests", NS);
+        let store = stub(&[subj.as_str()], &[]); // target absent
+        let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost").unwrap_err();
+        assert!(e.starts_with("unknown-endpoint"), "{}", e);
+        assert!(store.updates.borrow().is_empty(), "no edge written when an endpoint is missing");
+    }
+
+    #[test]
+    fn add_edge_refuses_non_camelcase_property() {
+        let store = stub(&[], &[]);
+        let e = add_edge(&store, "domain", "tests", "Part-Of", "product", "athena").unwrap_err();
+        assert!(e.starts_with("bad-property"), "{}", e);
+    }
+
+    #[test]
+    fn remove_edge_is_idempotent_delete_data() {
+        let store = stub(&[], &[]); // no existence requirement — removal toward absence
+        let got = remove_edge(&store, "domain", "tests", "partOf", "product", "athena").unwrap();
+        assert_eq!(got, format!("{}tests", NS));
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1);
+        assert!(ups[0].contains("DELETE DATA"), "single-triple removal");
+        assert!(ups[0].contains("partOf"));
     }
 }

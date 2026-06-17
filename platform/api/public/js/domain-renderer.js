@@ -273,12 +273,14 @@
         return Promise.all([
           get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/blast-radius'),
           get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/cards'),
-          get(ATHENA + '/subdomains/' + encodeURIComponent(id) + '/completeness'),
+          // #3468 — completeness is now MODEL-DRIVEN: owl-api computes present-vs-floor
+          // from the shape (sh:severity sh:Violation), severing the Athena-v1 dependency.
+          get(OWL + '/domains/' + encodeURIComponent(id) + '/completeness'),
         ]).then(function (res) {
           var consumers = (d.consumedBy && d.consumedBy.length) || (res[0] && res[0].data && res[0].data.consumers && res[0].data.consumers.length) || 0;
           var cards = (res[1] && res[1].data && (res[1].data.cards || res[1].data) && (res[1].data.cards || res[1].data).length) || 0;
           renderIdentity(d, consumers, cards);
-          renderCompleteness(res[2] && res[2].data);
+          renderCompleteness(res[2]); // owl-api returns the gauge unwrapped (not v1 .data)
         });
       });
       // facets — fetch all in parallel, render each as it lands (order preserved by slots)
