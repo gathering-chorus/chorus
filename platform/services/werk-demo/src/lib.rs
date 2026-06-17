@@ -659,6 +659,26 @@ fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &st
     emit_spine(home, "demo.gather.sent", role, card, trace);
 }
 
+/// #3479 — record that a peer REPLIED to a gather (the feedback the announce gate
+/// requires). THE missing wire: the writer existed only behind a manual CLI nobody
+/// ran on a real reply, so gathers_missing never emptied → no demo.presented →
+/// forced override. This is the single canonical writer, called by both the CLI
+/// and the chorus_register_feedback MCP endpoint (the peer's explicit reply).
+/// Keyed peer+round+patch_id so a reply survives rebase-churn (#3461 line_keyed),
+/// and carries the verdict (pass|concerns|block) + substance. The GATE is
+/// unchanged (Jeff's bar: tests+gates+feedback registered → presented); this only
+/// makes the feedback that already happens actually register.
+pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, verdict: &str, note: &str) {
+    let round = current_round(role, card);
+    let pid = current_patch_id(card);
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    let n = note.replace('\\', " ").replace('"', "'").replace('\n', " ");
+    jsonl(home, role, card, &trace, "demo.gather.replied",
+          &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"verdict\":\"{}\",\"note\":\"{}\"",
+                   peer, round, pid, verdict, n));
+    emit_spine(home, "demo.gather.replied", role, card, &trace);
+}
+
 /// #3443 AC2 — the binary FIRES the reply-required gathers itself, BEFORE the
 /// announce standby. Previously the gather send lived in signal() AFTER the
 /// standby return, so a headless demo (no demoer agent) stood by forever having
@@ -1586,21 +1606,33 @@ pub fn run_demo() -> R<DemoOutcome> {
             return Err(format!("unknown peer '{}' — one of wren|silas|kade", peer));
         }
         let phase = args.next().unwrap_or_else(|| "replied".to_string());
-        if !["sent", "replied"].contains(&phase.as_str()) {
-            return Err(format!("unknown gather phase '{}' — sent|replied", phase));
+        match phase.as_str() {
+            "sent" => {
+                let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+                let round = current_round(role.trim(), card);
+                record_gather_sent(&home, role.trim(), card, &peer, &round, &trace);
+                return Ok(DemoOutcome {
+                    message: format!("gather sent recorded for #{}: peer={}", card, peer),
+                    exit: 0,
+                });
+            }
+            "replied" => {
+                // #3479 — `replied [verdict] [note...]`: verdict (pass|concerns|block)
+                // is parsed if present, else defaults to pass with the rest as note
+                // (backward-compatible). Routes through the single canonical writer.
+                let rest: Vec<String> = args.collect();
+                let (verdict, note) = match rest.split_first() {
+                    Some((v, n)) if ["pass", "concerns", "block"].contains(&v.as_str()) => (v.clone(), n.join(" ")),
+                    _ => ("pass".to_string(), rest.join(" ")),
+                };
+                record_gather_replied(&home, role.trim(), card, &peer, &verdict, &note);
+                return Ok(DemoOutcome {
+                    message: format!("gather replied recorded for #{}: peer={} verdict={}", card, peer, verdict),
+                    exit: 0,
+                });
+            }
+            other => return Err(format!("unknown gather phase '{}' — sent|replied", other)),
         }
-        let note = args.collect::<Vec<_>>().join(" ").replace('\\', " ").replace('"', "'").replace('\n', " ");
-        let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
-        let event = format!("demo.gather.{}", phase);
-        let round = current_round(role.trim(), card);
-        let pid = current_patch_id(card); // #3461 — survive rebase-churn
-        jsonl(&home, role.trim(), card, &trace, &event,
-              &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"note\":\"{}\"", peer, round, pid, note));
-        emit_spine(&home, &event, role.trim(), card, &trace);
-        return Ok(DemoOutcome {
-            message: format!("gather {} recorded for #{}: peer={}", phase, card, peer),
-            exit: 0,
-        });
     }
 
     if first == "test-result" {
