@@ -273,17 +273,15 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let annotated = !select_v(&sparql_json(&aq)?).is_empty();
     let secured = project_secured(class_local, annotated);
-    // #3468 — MODEL-DRIVEN completeness FLOOR: the mandatory set is the shape's
-    // properties carrying `sh:severity sh:Violation` (paired with sh:minCount 1).
-    // No hardcoded list — annotate the shape and the floor moves with it (AC1).
-    // The graded human-era tiers collapse: an agent must supply 100% at write
-    // (Jeff's Staples ICD lesson — partial completeness was a human-pace concession).
-    // The floor is the DATATYPE sections the agent supplies in the create body —
-    // edge properties (sh:class: ownedBy is system-set, atStep/contains/membership
-    // are written via the edge endpoints) are EXCLUDED, or the body-gate would 422
-    // every create for a section it never carries. Edges enforce on their own paths.
+    // #3468 — the required DATATYPE sections, read from the SAME source the DAL
+    // (chorus-model::read_shape) enforces: sh:minCount >= 1. This is owl-api's
+    // READ-ONLY completeness GAUGE (the migration thermometer) — it MEASURES how
+    // far an instance sits below the floor; the floor itself is ENFORCED at write
+    // by the DAL, not here (owl-api is read-only; writes delegate to the DAL).
+    // Edge properties (sh:class: ownedBy/atStep/membership) are excluded so the
+    // gauge measures the prose sections, not edges that have their own write paths.
     let mq = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:severity sh:Violation . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?cl }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?cl }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let mut mandatory: Vec<String> = select_v(&sparql_json(&mq)?);
@@ -533,6 +531,38 @@ fn sparql_update(update: &str) -> R<()> {
     Ok(())
 }
 
+/// #3468 — DELEGATE a create to the DAL (chorus-model) — the ONE governed write
+/// path. Shells to the DAL CLI (the same subprocess pattern owl-api uses for curl);
+/// the DAL enforces the completeness floor (sh:minCount, fail-closed), mints the
+/// IRI, validates sh:in enums + referential integrity, and stamps the audit/spine
+/// witness. `ownedBy` is passed as a field literal so owl-api's authZ reads it back
+/// consistently; DEPLOY_ROLE=caller stamps the creator. Returns the DAL's typed
+/// refusal text on failure (mapped onto the write taxonomy by the caller).
+fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> R<()> {
+    let bin = std::env::var("CHORUS_MODEL_BIN").unwrap_or_else(|_| "chorus-model".to_string());
+    let mut args: Vec<String> = vec![
+        "add".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+        "--field".into(), format!("ownedBy={}", caller),
+    ];
+    for (f, v) in props {
+        args.push("--field".into());
+        args.push(format!("{}={}", f, v));
+    }
+    let out = Command::new(&bin)
+        .args(&args)
+        .env("DEPLOY_ROLE", caller)
+        .output()
+        .map_err(|e| format!("dal-spawn: {}", e))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    // The DAL prints its typed refusal (shape-violation / unknown-target / …) to
+    // stderr+stdout; surface whichever carries it so the caller can map the status.
+    let err = String::from_utf8_lossy(&out.stderr);
+    let msg = if err.trim().is_empty() { String::from_utf8_lossy(&out.stdout).trim().to_string() } else { err.trim().to_string() };
+    Err(msg)
+}
+
 /// Query the ownedBy role of an entity (for authZ). None = no ownedBy on record →
 /// authz_allows fails closed.
 fn query_owned_by(entity: &str) -> Option<String> {
@@ -561,14 +591,8 @@ fn entity_exists(entity: &str) -> bool {
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
 }
 
-/// Epoch-seconds stamp for created/modified (zero-dep, joinable).
-fn now_stamp() -> String {
-    let s = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    s.to_string()
-}
+// (created/modified stamping now lives in the DAL's audit envelope — owl-api's
+// own now_stamp was retired with the raw create path, #3468.)
 
 /// Emit the per-write spine event (AC4): who / what / which-edge / when. Uniform,
 /// best-effort like the read telemetry — a write is never silent. Resolves the
@@ -689,26 +713,33 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 return write_resp("conflict", "entity already exists");
             }
             let props = collect_entity_props(body, &table.fields);
-            // #3468 — COMPLETENESS FLOOR: an agent must supply the full mandatory
-            // section set at create. Missing/empty mandatory sections → typed 422
-            // naming them (no fail-open; the graded "finish it later" tier is gone).
-            let missing = missing_mandatory(&props, &table.mandatory);
-            if !missing.is_empty() {
-                emit_write_spine(caller_role, "create", &name, "", "incomplete");
-                return write_resp(
-                    "validation",
-                    &format!("incomplete: missing mandatory sections: {}", missing.join(", ")),
-                );
-            }
-            let update = build_create_entity(&table.class, &name, caller_role, &now_stamp(), &props);
-            match sparql_update(&update) {
+            // #3468 — DELEGATE THE WRITE TO THE DAL (chorus-model). owl-api is
+            // read-only by contract; the DAL is the ONE governed write path. It
+            // enforces the completeness FLOOR (sh:minCount, fail-closed), mints the
+            // IRI (ADR-040), checks sh:in enums + referential integrity, and stamps
+            // the audit/spine witness — none of which a raw SPARQL write does. The
+            // old build_create_entity + sparql_update path was a competing impl that
+            // bypassed all of it (and contradicted owl-api's own read-only contract).
+            // ownedBy is passed as a field literal (matches owl-api's authZ read) and
+            // DEPLOY_ROLE=caller stamps the creator.
+            let kind = class_local.to_lowercase();
+            match dal_add(&kind, &name, caller_role, &props) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "create", &name, "", "ok");
-                    write_resp("created", &format!("created {} (ownedBy {})", name, caller_role))
+                    write_resp("created", &format!("created {} via DAL (ownedBy {})", name, caller_role))
+                }
+                // The DAL's typed refusals map onto owl-api's write taxonomy.
+                Err(e) if e.contains("shape-violation") => {
+                    emit_write_spine(caller_role, "create", &name, "", "incomplete");
+                    write_resp("validation", &e)
+                }
+                Err(e) if e.contains("unknown-target") => {
+                    emit_write_spine(caller_role, "create", &name, "", "unknown-target");
+                    write_resp("validation", &e)
                 }
                 Err(e) => {
                     emit_write_spine(caller_role, "create", &name, "", "error");
-                    (502, format!("{{ \"error\": \"upstream\", \"message\": \"{}\" }}", json_escape(&e)))
+                    (502, format!("{{ \"error\": \"dal\", \"message\": \"{}\" }}", json_escape(&e)))
                 }
             }
         }
