@@ -25,6 +25,7 @@ fn table() -> RouteTable {
             "GET /schema/domain".into(),
         ],
         secured: vec!["/schema/domain".into()],  // #3414 — model-projected secured-set
+        mandatory: vec!["comment".into()],       // #3468 — model-projected completeness floor
     }
 }
 

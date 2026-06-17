@@ -177,6 +177,7 @@ pub struct RouteTable {
     pub fields: Vec<String>,     // direct-path shape properties (label, comment, ...)
     pub routes: Vec<String>,     // human-readable route list (the artifact)
     pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
+    pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
 }
 
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
@@ -252,6 +253,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         format!("GET /{}/:name/contains", plural),
         format!("GET /{}/:name/partof", plural),
         format!("GET /{}/:name/has-child", plural),
+        format!("GET /{}/:name/completeness", plural), // #3468 — model-driven completeness gauge (unsecured read)
         format!("GET /schema/{}", class_local.to_lowercase()),
     ];
     // #3454 AC1 — the generated WRITE routes (POST/PUT/DELETE per edge), folded
@@ -271,7 +273,23 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let annotated = !select_v(&sparql_json(&aq)?).is_empty();
     let secured = project_secured(class_local, annotated);
-    Ok(RouteTable { class, fields, routes, secured })
+    // #3468 — MODEL-DRIVEN completeness FLOOR: the mandatory set is the shape's
+    // properties carrying `sh:severity sh:Violation` (paired with sh:minCount 1).
+    // No hardcoded list — annotate the shape and the floor moves with it (AC1).
+    // The graded human-era tiers collapse: an agent must supply 100% at write
+    // (Jeff's Staples ICD lesson — partial completeness was a human-pace concession).
+    // The floor is the DATATYPE sections the agent supplies in the create body —
+    // edge properties (sh:class: ownedBy is system-set, atStep/contains/membership
+    // are written via the edge endpoints) are EXCLUDED, or the body-gate would 422
+    // every create for a section it never carries. Edges enforce on their own paths.
+    let mq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:severity sh:Violation . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?cl }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
+    );
+    let mut mandatory: Vec<String> = select_v(&sparql_json(&mq)?);
+    mandatory.sort();
+    mandatory.dedup();
+    Ok(RouteTable { class, fields, routes, secured, mandatory })
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -429,6 +447,31 @@ pub fn collect_entity_props(body: &str, fields: &[String]) -> Vec<(String, Strin
         }
     }
     out
+}
+
+/// #3468 — the completeness FLOOR decision: which mandatory sections are ABSENT
+/// from the provided props. An EMPTY value counts as absent (a blank section is
+/// not a present section). Order follows `mandatory` so the 422 message is stable.
+/// Pure + unit-pinned — the gate's verdict is tested without a graph.
+pub fn missing_mandatory(present: &[(String, String)], mandatory: &[String]) -> Vec<String> {
+    mandatory
+        .iter()
+        .filter(|m| !present.iter().any(|(n, v)| n == *m && !v.trim().is_empty()))
+        .cloned()
+        .collect()
+}
+
+/// #3468 — completeness as the MIGRATION GAUGE (AC4): (met, pct 0..=100, present,
+/// missing). MEASURES how far an instance sits below the 100% floor — never blocks
+/// a read, never a fill-target (thermometer). A shape with no mandatory set is
+/// vacuously 100% complete. Pure + unit-pinned.
+pub fn completeness(present: &[(String, String)], mandatory: &[String]) -> (bool, u8, Vec<String>, Vec<String>) {
+    let missing = missing_mandatory(present, mandatory);
+    let total = mandatory.len();
+    let have = total.saturating_sub(missing.len());
+    let pct = if total == 0 { 100 } else { ((have * 100) / total) as u8 };
+    let present_names: Vec<String> = mandatory.iter().filter(|m| !missing.contains(m)).cloned().collect();
+    (missing.is_empty(), pct, present_names, missing)
 }
 
 /// Build the INSERT DATA to CREATE an entity: typed as the class, ownedBy +
@@ -646,6 +689,17 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 return write_resp("conflict", "entity already exists");
             }
             let props = collect_entity_props(body, &table.fields);
+            // #3468 — COMPLETENESS FLOOR: an agent must supply the full mandatory
+            // section set at create. Missing/empty mandatory sections → typed 422
+            // naming them (no fail-open; the graded "finish it later" tier is gone).
+            let missing = missing_mandatory(&props, &table.mandatory);
+            if !missing.is_empty() {
+                emit_write_spine(caller_role, "create", &name, "", "incomplete");
+                return write_resp(
+                    "validation",
+                    &format!("incomplete: missing mandatory sections: {}", missing.join(", ")),
+                );
+            }
             let update = build_create_entity(&table.class, &name, caller_role, &now_stamp(), &props);
             match sparql_update(&update) {
                 Ok(_) => {
@@ -830,9 +884,12 @@ pub fn routes_json(t: &RouteTable) -> String {
     let fields = t.fields.iter().map(|f| format!("\"{}\"", f)).collect::<Vec<_>>().join(", ");
     let routes = t.routes.iter().map(|r| format!("\"{}\"", r)).collect::<Vec<_>>().join(", ");
     let secured = t.secured.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
+    // #3468 — the completeness FLOOR is part of the published contract: the page
+    // meter computes mandatory-met + % from this list, sourced from the model (not v1).
+    let mandatory = t.mandatory.iter().map(|m| format!("\"{}\"", m)).collect::<Vec<_>>().join(", ");
     format!(
-        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}],\n  \"secured\": [{}]\n}}\n",
-        t.class, ONTOLOGY_GRAPH, fields, routes, secured
+        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}],\n  \"secured\": [{}],\n  \"mandatory\": [{}]\n}}\n",
+        t.class, ONTOLOGY_GRAPH, fields, routes, secured, mandatory
     )
 }
 
@@ -990,7 +1047,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.0.3 spec (#3453). Another
@@ -1105,6 +1162,31 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
                         meta.result_count = items.len() as i64;
                         (200, format!("{{ \"domain\": \"{}\", \"count\": {}, \"hasChild\": [{}] }}", json_escape(name), items.len(), items.join(", ")))
                     }
+                }
+                Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            };
+        }
+        // #3468 — MODEL-DRIVEN completeness gauge: present datatype sections vs the
+        // mandatory floor (table.mandatory, projected from sh:severity sh:Violation).
+        // Unsecured read — it MEASURES, never blocks (thermometer). Replaces the page's
+        // Athena-v1 /subdomains/:id/completeness call (severs the old↔new dependency).
+        if parts.len() == 3 && parts[2] == "completeness" {
+            let q = format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> ?p ?o . FILTER(isLiteral(?o)) BIND(CONCAT(REPLACE(STR(?p), '.*#', ''), '|', STR(?o)) AS ?v) }} }}",
+                g = INSTANCES_GRAPH, ns = NS, n = name
+            );
+            return match sparql_json(&q) {
+                Ok(body) => {
+                    let present: Vec<(String, String)> = select_v(&body).into_iter()
+                        .filter_map(|row| row.split_once('|').map(|(a, b)| (a.to_string(), b.to_string())))
+                        .collect();
+                    let (met, pct, have, miss) = completeness(&present, &table.mandatory);
+                    let arr = |v: &[String]| v.iter().map(|s| format!("\"{}\"", json_escape(s))).collect::<Vec<_>>().join(", ");
+                    meta.result_count = table.mandatory.len() as i64;
+                    (200, format!(
+                        "{{ \"domain\": \"{}\", \"met\": {}, \"percentage\": {}, \"present\": [{}], \"missing\": [{}] }}",
+                        json_escape(name), met, pct, arr(&have), arr(&miss)
+                    ))
                 }
                 Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
             };
@@ -1311,6 +1393,7 @@ mod tests {
             fields: vec!["label|plain".into(), "status|datatype:string".into()],
             routes: vec!["GET /domains".into()],
             secured: vec![],
+            mandatory: vec![],
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -1343,6 +1426,7 @@ mod tests {
             fields: vec![],
             routes: vec![],
             secured: vec![],
+            mandatory: vec![],
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -1366,6 +1450,7 @@ mod tests {
         RouteTable {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
+            mandatory: vec![],
             routes: vec![
                 "GET /domains".into(),
                 "GET /domains/:name".into(),
@@ -1542,9 +1627,72 @@ mod tests {
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
             secured: vec!["/schema/domain".into()],
+            mandatory: vec!["label".into(), "comment".into()],
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
+    }
+
+    // === #3468 — the completeness FLOOR (100% at write) + migration gauge ===
+
+    #[test]
+    fn missing_mandatory_flags_absent_and_empty_sections() {
+        // The floor's verdict: a mandatory section is satisfied ONLY by a present,
+        // NON-EMPTY value. Absent and blank both count as missing (no "I'll fill it
+        // later" — the graded human-era tier is gone). Order follows the mandatory set.
+        let mandatory: Vec<String> = vec!["identity".into(), "promise".into(), "value".into()];
+        let present = vec![
+            ("identity".to_string(), "Athena".to_string()),
+            ("promise".to_string(), "   ".to_string()), // blank → NOT satisfied
+            ("unrelated".to_string(), "x".to_string()), // extra props don't help
+        ];
+        assert_eq!(
+            missing_mandatory(&present, &mandatory),
+            vec!["promise".to_string(), "value".to_string()],
+            "blank 'promise' + absent 'value' are both missing"
+        );
+        let full = vec![
+            ("identity".to_string(), "a".to_string()),
+            ("promise".to_string(), "b".to_string()),
+            ("value".to_string(), "c".to_string()),
+        ];
+        assert!(missing_mandatory(&full, &mandatory).is_empty(), "all present → nothing missing");
+        assert!(missing_mandatory(&present, &[]).is_empty(), "no floor → vacuously satisfied");
+    }
+
+    #[test]
+    fn completeness_is_a_migration_gauge_not_a_gate() {
+        // AC4 — completeness MEASURES distance to the 100% floor; it never blocks a read.
+        let mandatory: Vec<String> = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        let partial = vec![("a".to_string(), "1".to_string()), ("b".to_string(), "2".to_string())];
+        let (met, pct, have, miss) = completeness(&partial, &mandatory);
+        assert!(!met, "2 of 4 mandatory → not met");
+        assert_eq!(pct, 50, "2/4 → 50%");
+        assert_eq!(have, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(miss, vec!["c".to_string(), "d".to_string()]);
+        let full = vec![
+            ("a".to_string(), "1".to_string()), ("b".to_string(), "2".to_string()),
+            ("c".to_string(), "3".to_string()), ("d".to_string(), "4".to_string()),
+        ];
+        let (met2, pct2, _, _) = completeness(&full, &mandatory);
+        assert!(met2 && pct2 == 100, "all mandatory → met, 100%");
+        assert_eq!(completeness(&[], &[]).1, 100, "a shape with no floor is vacuously complete");
+    }
+
+    #[test]
+    fn routes_json_publishes_the_mandatory_floor() {
+        // AC4/AC5 — the floor is part of the published /schema contract so the page
+        // meter sources completeness from the MODEL (severing the Athena-v1 dependency).
+        let t = RouteTable {
+            class: format!("{}Domain", NS),
+            fields: vec!["label".into(), "comment".into()],
+            routes: vec!["GET /domains".into()],
+            secured: vec![],
+            mandatory: vec!["label".into(), "comment".into()],
+        };
+        let j = routes_json(&t);
+        assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
+            "the mandatory floor is published in /schema, got: {}", j);
     }
 
     #[test]
@@ -1565,7 +1713,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![] };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![] };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));

@@ -25,8 +25,13 @@ chorus:ProductShape a sh:NodeShape ;
 chorus:DomainShape a sh:NodeShape ;
     sh:targetClass chorus:Domain ;
     chorus:requiresAuth true ;  # #3414 (PROVISIONAL — Silas to bless term/shape): this class's surface requires auth; owl-api generate() PROJECTS the guard for /schema/domain from THIS annotation (replacing #3402's hardcoded check). Granularity = schema route (Gall's-Law one-surface, matches #3402, zero new blast radius).
-    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:comment      ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    # #3468 (PROVISIONAL — Silas to bless): the COMPLETENESS FLOOR. Datatype sections
+    # at sh:severity sh:Violation are mandatory at create — owl-api's missing_mandatory
+    # gate refuses an incomplete write (422). For Domain the floor is the base set:
+    # label (Identity) + comment (Promise). ownedBy is system-set (creator owns), so
+    # it stays minCount-only — the gate excludes sh:class edges from the body-floor.
+    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:severity sh:Violation ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:comment      ; sh:minCount 1 ; sh:severity sh:Violation ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path chorus:atStep       ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:status       ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
