@@ -1,9 +1,15 @@
 # ADR-020: Product vs Domain Typing in Ontology
 
 **Date**: 2026-04-15
-**Status**: Accepted
+**Status**: Superseded by ADR-040 — 2026-06-17 (Jeff, ratified). Originally Accepted 2026-04-15.
 **Deciders**: Jeff Bridwell, Wren, Silas
 **References**: DEC-1786 (graph-lens architecture), #2085 (graph hygiene)
+
+> **Superseded by ADR-040 (2026-06-17).** ADR-040 collapsed the class-of-record to 11 (Product / Domain; **no `SubProduct`, no `SubDomain`**), so this ADR's SubProduct-vs-SubDomain *typing rule* is retired — a "sub-product" is a Product nested via `hasChild`, a "sub-domain" a Domain nested via `hasChild`.
+>
+> **Surviving ideas — preserved so they don't vanish with the typing rule:**
+> - *Products own lenses, not data* → **DEC-1786** (graph-lens architecture).
+> - *One capability = one node; scanners/components are service instances under it, not separate nodes* (the Heralds pattern) → **ADR-022 Rule 3** + **ADR-041 `hasChild`**.
 
 ## Context
 
