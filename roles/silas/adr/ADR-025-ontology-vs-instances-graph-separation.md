@@ -1,6 +1,6 @@
 # ADR-025: Ontology graph vs Instances graph separation
 
-**Status:** Proposed — 2026-04-24 (Silas). Pending: Wren (PM review), Kade (code impact review), Jeff (final).
+**Status:** Accepted — 2026-06-17 (Jeff, final). Proposed 2026-04-24 (Silas); ratified per the 2026-06-17 coherence audit — it was load-bearing under ADR-027/028/040 (Accepted-resting-on-Proposed, now cleared).
 **Card:** #2468 (ADR) — blocks #2314 (Loom Principles API) and #2437 follow-ups.
 **Supersedes:** — (establishes the rule for the first time; prior graph writes happened case-by-case without a stated policy).
 

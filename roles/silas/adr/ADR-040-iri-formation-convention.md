@@ -1,6 +1,6 @@
 # ADR-040: Namespace + IRI-Formation Convention — One Rule Per Level
 
-**Status:** Proposed — 2026-06-11 (Silas, SA/OWL-DBA). Pending: Jeff (final).
+**Status:** Accepted — 2026-06-17 (Jeff, final). Proposed 2026-06-11 (Silas, SA/OWL-DBA); ratified per the 2026-06-17 coherence audit — it was load-bearing under ADR-041/042/044 (Accepted-resting-on-Proposed, now cleared).
 **Card:** #3256 — step 1 of the coherent-model program (convention → DAL → reconcile-OWLs → crawler → OWL→API).
 **Consolidates:** ADR-020 (typing), ADR-025 (graph separation), ADR-031 (interface naming) + #1772 (URN inventory). Each retains its own domain; this ADR is the umbrella that states the IRI-formation rule at every level and names what is canonical where they touch.
 **Resolves:** the #3242 impedance mismatch (`chorus:Proving` vs `chorus:value-stream-step-proving`).
