@@ -55,7 +55,7 @@ run_script() {
   NIGHTLY_COVERAGE_FLOORS="$FLOORS_FILE" \
   NIGHTLY_COVERAGE_FIXTURES="$fixtures" \
   NIGHTLY_COVERAGE_DRY_RUN=1 \
-  BRIDGE_NUDGE_URL="http://localhost:3475/api/nudge" \
+  BRIDGE_NUDGE_URL="http://127.0.0.1:3341/nudge" \
   bash "$SCRIPT" 2>&1
 }
 

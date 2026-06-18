@@ -24,6 +24,7 @@ import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
+import { resolvePulseSecret } from './pulse-secret';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
@@ -2239,13 +2240,21 @@ async function executeChorusWerkLand(
   };
 }
 
-async function executeNudge(
+// #3485 — exported so the plain-HTTP POST /nudge route (main.ts) routes
+// through the SAME single execution path the MCP tool uses. This is THE one
+// place that POSTs pulse; ops-nudge / nightly-coverage / transport.ts all
+// funnel here ("all of them must point to mcp" — Jeff 2026-06-18).
+export async function executeNudge(
   args: NudgeArgs,
   from: string,
   fetchImpl: FetchImpl,
-  pulseUrl: string,
+  pulseUrl?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { to, message, expects } = args;
+  // #3485 — the pulse endpoint lives in exactly ONE place: here. Callers
+  // (the MCP dispatch, the POST /nudge route, transport.ts) do not name it,
+  // so this is the single file that knows/POSTs the pulse nudge URL.
+  const resolvedPulseUrl = pulseUrl ?? process.env.CHORUS_PULSE_URL ?? 'http://localhost:3475/api/nudge';
   const traceId = mintTraceIdV7();
   logEvent('info', 'mcp.nudge.invoked', { from, to, trace_id: traceId });
 
@@ -2266,13 +2275,19 @@ async function executeNudge(
   try {
     const ctrl = new AbortController();
     const timeoutId = setTimeout(() => ctrl.abort(), 5000);
-    const resp = await fetchImpl(pulseUrl, {
+    // #3485 — present the shared secret so pulse's gate accepts us as the
+    // canonical caller. X-Chorus-MCP-Caller kept for one migration window
+    // (pulse no longer reads it, but old pulse builds still do).
+    const pulseSecret = resolvePulseSecret();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Chorus-Trace-Id': traceId,
+      'X-Chorus-MCP-Caller': '1',
+    };
+    if (pulseSecret) headers['X-Chorus-Pulse-Secret'] = pulseSecret;
+    const resp = await fetchImpl(resolvedPulseUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Chorus-Trace-Id': traceId,
-        'X-Chorus-MCP-Caller': '1',
-      },
+      headers,
       body: JSON.stringify({ from, to, content: message, traceId, expects: expects ?? 'none' }),
       signal: ctrl.signal,
     });
@@ -2612,8 +2627,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         // #2804 — executeNudge POSTs to pulse instead of spawning shim.
-        const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
-        return executeNudge(parsed.data, from, fetchImpl, pulseUrl);
+        // #3485 — pulse URL is defaulted inside executeNudge (single owner).
+        return executeNudge(parsed.data, from, fetchImpl);
       }
       case 'werk-build': { // #3310 — renamed from chorus_build (ADR-031/032)
         const parsed = BuildInput.safeParse(req.params.arguments);

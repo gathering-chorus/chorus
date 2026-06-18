@@ -27,6 +27,7 @@ import { buildMcpServer } from './server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
+import { executeNudge, type FetchImpl, type NudgeArgs } from './server';
 
 // #3000 — transport-level error capture. Emit typed mcp.transport.error
 // spine events on non-2xx /mcp responses + connection-level failures.
@@ -69,24 +70,17 @@ async function notifyTransportError(fields: Record<string, unknown>): Promise<vo
     fields['kind'] && `kind=${str(fields['kind'])}`,
     fields['error_message'] && `msg=${str(fields['error_message']).slice(0, 200)}`,
   ].filter(Boolean).join(' ');
-  const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+  // #3485 — route through the single execution path (executeNudge), not a
+  // direct pulse POST. In-package call; best-effort (errors must not affect
+  // the HTTP response). executeNudge is the only thing that POSTs pulse, and
+  // it owns the pulse URL (no URL named here).
+  const fetchAdapter: FetchImpl = (url, init) =>
+    fetch(url, init as RequestInit) as unknown as ReturnType<FetchImpl>;
   try {
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), 2000);
-    const resp = await fetch(pulseUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Chorus-MCP-Caller': '1' },
-      body: JSON.stringify({ from: 'chorus-mcp', to: 'silas', content: summary }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!resp.ok) {
-      // log via stderr (chorus-log spawn already attempted above)
-       
-      console.error('[chorus-mcp] mcp.notification.failed', { reason: `pulse-${resp.status}` });
-    }
-  } catch {
-    // best-effort
+    await executeNudge({ to: 'silas', message: summary } as NudgeArgs, 'chorus-mcp', fetchAdapter);
+  } catch (err) {
+
+    console.error('[chorus-mcp] mcp.notification.failed', { reason: err instanceof Error ? err.message : String(err) });
   }
 }
 

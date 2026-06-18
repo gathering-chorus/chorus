@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model async injectors (async documents the contract even without await); repeated fixture literals are intentional for per-case readability (#3429) */
+// @test-type: integration — supertest exercises createApp()'s HTTP routes end-to-end (signal:security is the auth-gate subject under test)
 /**
  * service.test.ts — REST contract for pulse messaging service (#2237)
  *
@@ -46,8 +47,8 @@ describe('pulse service — health and metrics', () => {
   });
 });
 
-describe('#2804 pulse caller-check', () => {
-  it('POST /api/nudge without X-Chorus-MCP-Caller header is rejected with 403 + typed error', async () => {
+describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gate)', () => {
+  it('POST /api/nudge without the secret is rejected with 403 + typed error', async () => {
     expect(MessageStore.prototype.sendNudge).toBeDefined();
     const { app } = fresh();
     delete process.env.PULSE_ALLOW_DIRECT_POST;
@@ -63,35 +64,41 @@ describe('#2804 pulse caller-check', () => {
     }
   });
 
-  it('POST /api/nudge with X-Chorus-MCP-Caller header is accepted', async () => {
+  it('POST /api/nudge with the matching secret is accepted', async () => {
     expect(MessageStore.prototype.sendNudge).toBeDefined();
     const { app } = fresh();
     delete process.env.PULSE_ALLOW_DIRECT_POST;
+    process.env.CHORUS_PULSE_SECRET = 'test-secret-3485';
+    try {
+      const res = await request(app)
+        .post('/api/nudge')
+        .set('X-Chorus-Pulse-Secret', 'test-secret-3485')
+        .send({ from: 'k', to: 'w', content: 'hi' });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    } finally {
+      delete process.env.CHORUS_PULSE_SECRET;
+      process.env.PULSE_ALLOW_DIRECT_POST = '1';
+    }
+  });
+
+  // #3485 — the pre-#3485 spoofable behavior is GONE: the old presence-only
+  // X-Chorus-MCP-Caller header (any value) no longer authorizes. Only the
+  // matching secret does. This pins the hardened contract.
+  it('X-Chorus-MCP-Caller header alone no longer authorizes (secret required)', async () => {
+    expect(MessageStore.prototype.sendNudge).toBeDefined();
+    const { app } = fresh();
+    delete process.env.PULSE_ALLOW_DIRECT_POST;
+    process.env.CHORUS_PULSE_SECRET = 'test-secret-3485';
     try {
       const res = await request(app)
         .post('/api/nudge')
         .set('X-Chorus-MCP-Caller', '1')
         .send({ from: 'k', to: 'w', content: 'hi' });
-      expect(res.status).toBe(200);
-      expect(res.body.ok).toBe(true);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('not-canonical-caller');
     } finally {
-      process.env.PULSE_ALLOW_DIRECT_POST = '1';
-    }
-  });
-
-  // #2814 — gate is presence-only (header value not inspected). Documented
-  // intent: marker is honest, not authorization. Test pins this contract.
-  it('X-Chorus-MCP-Caller: 0 is accepted (gate is presence-only by design)', async () => {
-    expect(MessageStore.prototype.sendNudge).toBeDefined();
-    const { app } = fresh();
-    delete process.env.PULSE_ALLOW_DIRECT_POST;
-    try {
-      const res = await request(app)
-        .post('/api/nudge')
-        .set('X-Chorus-MCP-Caller', '0')
-        .send({ from: 'k', to: 'w', content: 'hi' });
-      expect(res.status).toBe(200);
-    } finally {
+      delete process.env.CHORUS_PULSE_SECRET;
       process.env.PULSE_ALLOW_DIRECT_POST = '1';
     }
   });
