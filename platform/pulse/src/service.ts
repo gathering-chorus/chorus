@@ -11,6 +11,7 @@ import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, resolveRoleTarget, describeTarget } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
+import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
 import { appendFile } from 'fs/promises';
@@ -90,11 +91,13 @@ function registerHealthMetricsRoutes(app: Express, store: MessageStore, metrics:
 
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', (req, res) => {
-    // #2804 — only the MCP server is the canonical caller. Reject others.
-    // Tests and migration callers can opt out via PULSE_ALLOW_DIRECT_POST=1.
-    const mcpHeader = req.headers['x-chorus-mcp-caller'];
-    const allowDirect = process.env.PULSE_ALLOW_DIRECT_POST === '1';
-    if (!mcpHeader && !allowDirect) {
+    // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
+    // accepted any request carrying a guessable X-Chorus-MCP-Caller header;
+    // now the caller must present the shared secret (the mcp-server reads the
+    // same secret file). PULSE_ALLOW_DIRECT_POST=1 still opts out for tests.
+    // "all of them must point to mcp" (Jeff 2026-06-18).
+    const providedSecret = req.headers['x-chorus-pulse-secret'];
+    if (!callerIsAuthorized(typeof providedSecret === 'string' ? providedSecret : undefined)) {
       return res.status(403).json({
         error: 'not-canonical-caller',
         message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus_nudge_message MCP tool from a Claude session.',
@@ -333,6 +336,15 @@ if (require.main === module) {
   const store = new MessageStore();
   const { runInject, emitSpine, selfTest } = buildRuntimeDeps();
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
+
+  // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
+  // request), so the secret file exists before the mcp-server sends its first
+  // nudge. Lazy generation would 403 the first post-deploy nudge (mcp reads
+  // the file before pulse created it). Value is never logged.
+  {
+    const ok = resolvePulseSecret() !== null;
+    process.stderr.write(JSON.stringify({ event: 'startup.secret', resolved: ok }) + '\n');
+  }
 
   process.on('SIGTERM', () => { store.close(); process.exit(0); });
   process.on('SIGINT', () => { store.close(); process.exit(0); });

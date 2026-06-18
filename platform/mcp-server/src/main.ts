@@ -7,6 +7,7 @@
 import express, { Application, Request, Response } from 'express';
 import { mountMcpEndpoint } from './transport';
 import { execFileSync } from 'child_process';
+import { executeNudge, type FetchImpl, type NudgeArgs } from './server';
 
 // #3000 — process-level error capture. Emit mcp.process.error to spine
 // before exit so a crash is observable to ops, not silent. Uses sync exec
@@ -48,6 +49,33 @@ app.get('/api/chorus/health', (_req: Request, res: Response) => {
     uptime: Math.floor((Date.now() - START_TS) / 1000),
     timestamp: new Date().toISOString().slice(0, 19).replace('T', ' '),
   });
+});
+
+// #3485 — the single nudge execution path, callable over plain HTTP.
+// "all of them must point to mcp" (Jeff 2026-06-18): ops-nudge, the nightly
+// scripts, and the in-process error-notify all POST here instead of pulse
+// directly. This route runs the SAME executeNudge() the MCP tool uses — the
+// one place that emits the spine trail and POSTs pulse. Loopback-only (3341),
+// so the trust boundary is the bind host; pulse then accepts only this service.
+// Adapt global fetch to the narrow FetchImpl shape executeNudge expects.
+const fetchAdapter: FetchImpl = (url, init) =>
+  fetch(url, init as RequestInit) as unknown as ReturnType<FetchImpl>;
+
+app.post('/nudge', async (req: Request, res: Response) => {
+  const b = (req.body ?? {}) as { from?: string; to?: string; content?: string; message?: string; expects?: string };
+  const from = b.from;
+  const to = b.to;
+  const message = b.content ?? b.message;
+  if (!from || !to || !message) {
+    res.status(400).json({ ok: false, error: 'from, to, content required' });
+    return;
+  }
+  try {
+    await executeNudge({ to, message, expects: b.expects } as NudgeArgs, from, fetchAdapter);
+    res.json({ ok: true, from, to });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Mount the MCP endpoint at /mcp — same path shape as chorus-api so client

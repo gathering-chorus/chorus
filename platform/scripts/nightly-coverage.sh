@@ -16,7 +16,8 @@ set -uo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 FLOORS_FILE="${NIGHTLY_COVERAGE_FLOORS:-${CHORUS_ROOT}/coverage-floors.yml}"
-BRIDGE_NUDGE_URL="${BRIDGE_NUDGE_URL:-http://localhost:3475/api/nudge}"
+# #3485 — route through the MCP /nudge endpoint (single execution path), not pulse directly.
+BRIDGE_NUDGE_URL="${BRIDGE_NUDGE_URL:-http://127.0.0.1:3341/nudge}"
 DRY_RUN="${NIGHTLY_COVERAGE_DRY_RUN:-}"
 FIXTURES="${NIGHTLY_COVERAGE_FIXTURES:-}"
 

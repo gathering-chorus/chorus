@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# ops-nudge — POST a nudge to pulse from operational scripts.
+# ops-nudge — fire a nudge from operational scripts THROUGH the MCP.
 #
-# Why this exists: bash `nudge` was retired by #2804 (MCP-only nudge gate)
-# and deleted by #2809. The 6 operational health/alert scripts (deep-health,
-# alert-delivery, library-health-probe, infra-alert, session-health,
-# health-check-bedroom) still need to fire nudges when probes detect issues —
-# they ARE calls to action for a role, which is the correct use of nudges
-# (per Jeff 2026-05-08: "anything else isnt a call to action for the team
-# as agents"). They just need a path that doesn't go through the deleted
-# bash wrapper.
+# Why this exists: bash `nudge` was retired by #2804 and deleted by #2809.
+# The 6 operational health/alert scripts (deep-health, alert-delivery,
+# library-health-probe, infra-alert, session-health, health-check-bedroom)
+# still need to fire nudges when probes detect issues — they ARE calls to
+# action for a role (Jeff 2026-05-08). They need a path that isn't the
+# deleted bash wrapper.
 #
-# This wrapper POSTs to pulse /api/nudge with X-Chorus-MCP-Caller: 1 so
-# post-#2804 pulse gate accepts the call. Pulse then handles delivery via
-# its own worker (chorus-inject under _NUDGE_PULSE_INTERNAL env).
+# #3485 (Jeff 2026-06-18: "all of them must point to mcp"): this no longer
+# POSTs pulse directly. It POSTs the mcp-server's /nudge route, which runs
+# the SAME executeNudge() the MCP tool uses — the single execution path and
+# the only thing that POSTs pulse. One way to call nudge.
 #
 # Usage:
 #   ops-nudge <to> <content> [from]
@@ -21,7 +20,7 @@
 #   ops-nudge silas "deep-health: chorus-api degraded"
 #   ops-nudge silas "infra-alert: disk 92%" system
 #
-# Returns 0 on success, non-zero on pulse rejection or transport error.
+# Returns 0 on success, non-zero on MCP rejection or transport error.
 
 set -eo pipefail
 
@@ -34,20 +33,20 @@ if [ -z "$TO" ] || [ -z "$CONTENT" ]; then
   exit 1
 fi
 
-PULSE_URL="${CHORUS_PULSE_URL:-http://localhost:3475/api/nudge}"
+# The single execution path: the mcp-server /nudge route (loopback :3341).
+MCP_NUDGE_URL="${CHORUS_MCP_NUDGE_URL:-http://127.0.0.1:3341/nudge}"
 
 BODY=$(jq -nc --arg from "$FROM" --arg to "$TO" --arg content "$CONTENT" \
   '{from:$from,to:$to,content:$content}')
 
-RESP=$(curl -s --max-time 5 -X POST "$PULSE_URL" \
+RESP=$(curl -s --max-time 5 -X POST "$MCP_NUDGE_URL" \
   -H 'Content-Type: application/json' \
-  -H 'X-Chorus-MCP-Caller: 1' \
   -d "$BODY" 2>&1) || {
-    echo "ops-nudge: transport error to $PULSE_URL — $RESP" >&2
+    echo "ops-nudge: transport error to $MCP_NUDGE_URL — $RESP" >&2
     exit 2
   }
 
 if ! echo "$RESP" | grep -q '"ok":true'; then
-  echo "ops-nudge: pulse rejected — $RESP" >&2
+  echo "ops-nudge: mcp rejected — $RESP" >&2
   exit 3
 fi
