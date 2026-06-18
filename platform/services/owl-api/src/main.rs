@@ -3,7 +3,7 @@
 //!   owl-api generate [--class Domain]            → prints routes.json (the artifact)
 //!   owl-api serve [--class Domain] [--port 3360] → generates, then serves
 
-use owl_api::{dashboards_json, generate, generate_product_index, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
+use owl_api::{all_vocab_classes, dashboards_json, generate, generate_product_index, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
 use std::process::ExitCode;
 
 fn arg(args: &[String], flag: &str, default: &str) -> String {
@@ -119,6 +119,25 @@ fn main() -> ExitCode {
                     }
                     Err(e) => eprintln!("owl-api: skip {} ({})", c, e),
                 }
+            }
+            // #3494 — VOCABULARY FAN-OUT: every class any domain definesVocabulary
+            // gets its #3454 CRUD surface generated and mounted on this same origin.
+            // No per-class code: the domain's definesVocabulary edge IS the
+            // registration. Zero edges → adds nothing (so today, pre-#3489, it's a
+            // silent no-op; the moment the edges land, /<vocab-class> surfaces appear).
+            match all_vocab_classes() {
+                Ok(vocab) => {
+                    for c in vocab {
+                        match generate(&c) {
+                            Ok(t) => {
+                                eprintln!("owl-api: + {} API (vocab)", c);
+                                tables.push(t);
+                            }
+                            Err(e) => eprintln!("owl-api: skip vocab {} ({})", c, e),
+                        }
+                    }
+                }
+                Err(e) => eprintln!("owl-api: vocab fan-out read failed ({})", e),
             }
             if tables.is_empty() {
                 eprintln!("owl-api: no classes generated — nothing to serve");
