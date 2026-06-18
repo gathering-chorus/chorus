@@ -112,12 +112,14 @@ else
   fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
 fi
 
-# hooks-executable — pre-commit + pre-push in platform/hooks; post-commit in canonical .git/hooks
+# hooks-executable — pre-commit in platform/hooks; post-commit in canonical .git/hooks.
+# pre-push was RETIRED by #3182 (eliminate the v1 git substrate) — CI (quality.yml) is the
+# authoritative gate per ADR-026. Checking for it was stale and red since 2026-06-02 (#3498).
 # CHORUS_ROOT is the worktree; canonical git dir is always at CHORUS_HOME/.git/
 CHORUS_CANONICAL="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
 HOOK_FAILURES=0
 HOOK_MISSING=()
-for hook in pre-commit pre-push; do
+for hook in pre-commit; do
   hpath="${CHORUS_CANONICAL}/platform/hooks/${hook}"
   if [ ! -x "$hpath" ]; then
     HOOK_FAILURES=$((HOOK_FAILURES + 1))
@@ -125,7 +127,7 @@ for hook in pre-commit pre-push; do
   fi
 done
 git_hooks_dir="${CHORUS_CANONICAL}/.git/hooks"
-for hook in pre-commit pre-push post-commit; do
+for hook in pre-commit post-commit; do
   hpath="${git_hooks_dir}/${hook}"
   if [ ! -x "$hpath" ]; then
     HOOK_FAILURES=$((HOOK_FAILURES + 1))
