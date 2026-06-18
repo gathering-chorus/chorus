@@ -6,7 +6,7 @@
 //! loud. Resolving by the current HEAD oid is what makes the merge land the real work.
 
 use werk_merge::{
-    branch_name, classify_merge_error, jsonl_line, parse_merge_args, pr_number_for_sha,
+    branch_name, classify_merge_error, failure_class, jsonl_line, parse_merge_args, pr_number_for_sha,
     require_approval, round_check, RoundCheck,
 };
 
@@ -134,6 +134,51 @@ fn classify_merge_error_detects_not_mergeable() {
 #[test]
 fn classify_merge_error_falls_back_to_merge_fail() {
     assert_eq!(classify_merge_error("some unexpected gh error"), "merge-fail");
+}
+
+// ── #3495 — failure_class: the DORA change-failure-rate discriminator ──
+// CHANGE = the change itself is bad (failed its tests/gates); TOOLING = the
+// pipeline mechanics failed, the change is fine. Emitted AT THE SOURCE so CFR is
+// honest by construction (ADR-046: emit the discriminating field, don't post-hoc
+// classify). Only the existing flow-report walk-away bar (#3266) counts these;
+// once it filters failureClass="tooling", today's pr-create-fail/announce-missing
+// retries stop poisoning CFR.
+
+#[test]
+fn failure_class_test_and_gate_failures_are_change() {
+    assert_eq!(failure_class("test-fail"), "change");
+    assert_eq!(failure_class("gate-fail"), "change");
+}
+
+#[test]
+fn failure_class_werk_merge_mechanical_reasons_are_tooling() {
+    for r in [
+        "no-werk",
+        "branch-mismatch",
+        "pr-create-fail",
+        "no-open-pr",
+        "announce-missing-this-round",
+        "merge-fail",
+    ] {
+        assert_eq!(failure_class(r), "tooling", "{} must be tooling (not a change failure)", r);
+    }
+}
+
+#[test]
+fn failure_class_merge_conflict_defaults_tooling_v1() {
+    // v1: merge-conflict / not-mergeable default to tooling (the common
+    // rebase-artifact case). Promoting a genuine CONTENT conflict to "change"
+    // needs the git conflict signal at the emit point — a flagged #3495 follow-on,
+    // not faked here.
+    assert_eq!(failure_class("merge-conflict"), "tooling");
+    assert_eq!(failure_class("not-mergeable"), "tooling");
+}
+
+#[test]
+fn failure_class_unknown_reason_defaults_tooling() {
+    // Conservative: an unrecognized reason does NOT inflate CFR. A new
+    // change-class reason must be added to the CHANGE arm explicitly.
+    assert_eq!(failure_class("some-future-reason"), "tooling");
 }
 
 // ── #3297 — merge --atomic parse (same CLI-seam discipline as push #3296): recognize
