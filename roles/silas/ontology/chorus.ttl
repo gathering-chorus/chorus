@@ -932,12 +932,10 @@ chorus:spine-service a chorus:SubDomain ;
 
 # --- Cross-cutting infrastructure sub-domains ---
 
-chorus:Properties-domain a chorus:SubDomain ;
-    rdfs:label "Properties" ;
-    rdfs:comment "Externalized configuration — ports, URLs, feature flags. Services look up config, not hardcode it." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library, chorus:bedroom .
+# --- properties RETIRED as a SubDomain here (#3489 / ADR-045): collapsed into the
+# punned domain-class chorus:Properties (owl:Class + chorus:Domain) defined below in
+# the ADR-045 section. partOf borgProduct directly (a first-class config-as-data domain,
+# no longer nested under observability). Edges repointed; blast-radius(Properties-domain) → ∅. ---
 
 chorus:security-domain a chorus:SubDomain ;
     rdfs:label "Security & Trust" ;
@@ -1178,7 +1176,7 @@ chorus:werk-product chorus:hasDomain chorus:streams-domain .
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability-domain chorus:hasDomain chorus:Properties-domain, chorus:time-domain .
+chorus:observability-domain chorus:hasDomain chorus:time-domain .
 
 chorus:loom chorus:hasDomain chorus:loom-policies .
 
@@ -1266,11 +1264,11 @@ chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
-chorus:cards-service chorus:consumes chorus:Properties-domain .
-chorus:observability-domain chorus:consumes chorus:Properties-domain .
-chorus:infrastructure-domain chorus:consumes chorus:Properties-domain .
-chorus:deploys-domain chorus:consumes chorus:Properties-domain .
-chorus:logs-domain chorus:consumes chorus:Properties-domain .
+chorus:cards-service chorus:consumes chorus:Properties .
+chorus:observability-domain chorus:consumes chorus:Properties .
+chorus:infrastructure-domain chorus:consumes chorus:Properties .
+chorus:deploys-domain chorus:consumes chorus:Properties .
+chorus:logs-domain chorus:consumes chorus:Properties .
 
 chorus:code-domain chorus:consumes chorus:security-domain .
 chorus:gates-service chorus:consumes chorus:security-domain .
@@ -1289,7 +1287,7 @@ chorus:infrastructure-domain chorus:consumes chorus:security-domain .
 chorus:logs-domain chorus:consumes chorus:security-domain .
 chorus:messages-domain chorus:consumes chorus:security-domain .
 chorus:observability-domain chorus:consumes chorus:security-domain .
-chorus:Properties-domain chorus:consumes chorus:security-domain .
+chorus:Properties chorus:consumes chorus:security-domain .
 # pulse-metrics-domain security edge removed
 chorus:loom-rcas chorus:consumes chorus:security-domain .
 chorus:streams-domain chorus:consumes chorus:security-domain .
@@ -1320,7 +1318,7 @@ chorus:infrastructure-domain chorus:consumes chorus:time-domain .
 chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
 chorus:observability-domain chorus:consumes chorus:time-domain .
-chorus:Properties-domain chorus:consumes chorus:time-domain .
+chorus:Properties chorus:consumes chorus:time-domain .
 chorus:security-domain chorus:consumes chorus:time-domain .
 # pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
@@ -1977,8 +1975,9 @@ chorus:Properties a owl:Class , chorus:Domain ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
     chorus:partOf chorus:borgProduct ;
     chorus:atStream chorus:chorusStream ;
-    chorus:atStep chorus:value-stream-step-proving ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:atStep chorus:Proving ;
+    chorus:ownedBy chorus:silas ;
+    chorus:runsOn chorus:library, chorus:bedroom ;
     chorus:repoTarget "borg/properties" ;
     chorus:definesVocabulary chorus:Property , chorus:PropertyKey .
 
