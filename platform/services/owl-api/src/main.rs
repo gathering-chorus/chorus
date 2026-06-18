@@ -105,7 +105,26 @@ fn main() -> ExitCode {
         }
         Some("serve") => {
             let port: u16 = arg(&args, "--port", "3360").parse().unwrap_or(3360);
-            match generate(&class).and_then(|t| serve(port, &t)) {
+            // #3466 — serve EVERY Athena primitive on ONE origin (multi-class).
+            // value-stream → product → domain → service is one live API. Generate
+            // each from its shape; skip any without a shape (graceful, not fatal),
+            // so adding a shape to the model adds its API with zero code change.
+            let candidates = ["ValueStream", "ValueStreamStep", "Product", "Domain", "Service"];
+            let mut tables = Vec::new();
+            for c in candidates {
+                match generate(c) {
+                    Ok(t) => {
+                        eprintln!("owl-api: + {} API", c);
+                        tables.push(t);
+                    }
+                    Err(e) => eprintln!("owl-api: skip {} ({})", c, e),
+                }
+            }
+            if tables.is_empty() {
+                eprintln!("owl-api: no classes generated — nothing to serve");
+                return ExitCode::FAILURE;
+            }
+            match serve(port, &tables) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("owl-api: {}", e);
