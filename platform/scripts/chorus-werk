@@ -208,10 +208,21 @@ cmd_remove() {
   # refuse the remove). Covers both /acp and /unpull (both call remove).
   [ "$werk_present" = "1" ] && teardown_werk_mcp "$werk"
 
-  # Idempotent: nothing left to remove.
+  # Idempotent LOCALLY — but the REMOTE ref may still exist (#3498 orphan-drift):
+  # local gone is the post-accept state (or a peer removed it elsewhere), yet if the
+  # remote-delete never propagated the remote orphans. So local-gone is NOT "already
+  # removed" until the remote is confirmed gone too. Propagate the delete here (direct
+  # push, #2598-exempt subprocess — see the normal-path delete below).
   if [ "$werk_present" = "0" ] && [ "$branch_present" = "0" ]; then
     git -C "$CHORUS_HOME" worktree prune >/dev/null 2>&1 || true
-    echo "chorus-werk: $role-$card_id already removed"
+    if git -C "$CHORUS_HOME" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      # remote-only orphan: local gone, remote still present → propagate the delete.
+      git -C "$CHORUS_HOME" push origin --delete "$branch" >/dev/null 2>&1 || true
+      emit_spine card.branch.closed "$role" "card=$card_id" "branch=$branch" "via=orphan-propagate"
+      echo "chorus-werk: $role-$card_id local already gone; propagated delete of orphaned remote ref $branch"
+    else
+      echo "chorus-werk: $role-$card_id already removed (local + remote both gone)"
+    fi
     return 0
   fi
 
@@ -311,12 +322,13 @@ cmd_remove() {
     fi
   fi
 
-  # Best-effort remote-ref delete via git-queue.sh. Already-deleted-remote
-  # (the common case post-acp) is fine.
-  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
-  if [ -x "$gq" ]; then
-    DEPLOY_ROLE="$role" "$gq" push --delete "$branch" >/dev/null 2>&1 || true
-  fi
+  # Best-effort remote-ref delete. #3498: git-queue.sh was retired (#3182) and this
+  # call silently no-op'd since 2026-06-02 — the root of the 184 orphans. Direct push
+  # is #2598-EXEMPT: the push-guard is a Bash-PreToolUse hook that fires on the AGENT's
+  # `git push` tool-call, never on this subprocess; and #3182 also removed the git-level
+  # platform/hooks/pre-push, so nothing fires at the git level. (If a pre-push hook is
+  # ever re-added at core.hooksPath=platform/hooks, it MUST allow this internal delete.)
+  git -C "$CHORUS_HOME" push origin --delete "$branch" >/dev/null 2>&1 || true
 
   # Prune stale .git/worktrees admin entries (Silas gate-arch condition 3b).
   # git worktree remove unregisters cleanly; prune also catches entries left
