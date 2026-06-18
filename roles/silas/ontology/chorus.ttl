@@ -1928,6 +1928,32 @@ chorus:PropertyCarrierShape a sh:NodeShape ;
           sh:property [ sh:path chorus:propertyValue    ; sh:maxCount 0 ] ]
     ) .
 
+# PropertyKey CRUD-projection shape — the field spec owl-api's vocab fan-out (#3494) reads to
+# generate the PropertyKey surface (mirrors PropertyShape for Property). keyName + propertyKind +
+# appliesToClass + lifecycleEnabled are core to every registry row; the arm-specific carriers
+# (keyValueType/allowedValue | edgeTargetClass/hubProjected) stay optional, propertyKind-discriminated.
+chorus:PropertyKeyShape a sh:NodeShape ;
+    sh:targetClass chorus:PropertyKey ;
+    sh:property [
+        sh:path chorus:keyName ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:propertyKind ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:appliesToClass ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path chorus:lifecycleEnabled ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+    ] .
+
 # --- registry seed: the three-shapes proof (ADR-044 — enum-scalar / lifecycle-toggle / typed-edge) ---
 chorus:pk-testType a chorus:PropertyKey ;
     chorus:keyName "testType" ; chorus:propertyKind "datatype" ;
@@ -1944,6 +1970,23 @@ chorus:pk-covers a chorus:PropertyKey ;
     chorus:keyName "covers" ; chorus:propertyKind "object" ;
     chorus:appliesToClass chorus:Test ; chorus:edgeTargetClass chorus:Domain ;
     chorus:hubProjected true ; chorus:lifecycleEnabled false .
+
+# --- Property instances (proof: the generated /borg/properties Property surface serves real
+# rows → committed→Fuseki→generated→served round-trip, #3489 AC5). Datatype-arm carriers
+# (propertyValue, no propertyValueRef → PropertyCarrierShape xone arm 1). register-before-use:
+# each propertyKey resolves to a registered PropertyKey above. ---
+chorus:prop-cards-gate-enforced a chorus:Property ;
+    chorus:propertyKey "gate.enforced" ;
+    chorus:propertyValue "true" ;
+    chorus:propertyValueType "bool" ;
+    chorus:propertyScope "instance" .
+chorus:cards-service chorus:hasProperty chorus:prop-cards-gate-enforced .
+
+chorus:prop-pipeline-test-type a chorus:Property ;
+    chorus:propertyKey "testType" ;
+    chorus:propertyValue "integration" ;
+    chorus:propertyValueType "string" ;
+    chorus:propertyScope "instance" .
 
 # --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
 # PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
