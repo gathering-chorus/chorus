@@ -932,7 +932,7 @@ chorus:spine-service a chorus:SubDomain ;
 
 # --- Cross-cutting infrastructure sub-domains ---
 
-chorus:properties-domain a chorus:SubDomain ;
+chorus:Properties-domain a chorus:SubDomain ;
     rdfs:label "Properties" ;
     rdfs:comment "Externalized configuration — ports, URLs, feature flags. Services look up config, not hardcode it." ;
     chorus:ownedBy chorus:silas ;
@@ -1178,7 +1178,7 @@ chorus:werk-product chorus:hasDomain chorus:streams-domain .
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability-domain chorus:hasDomain chorus:properties-domain, chorus:time-domain .
+chorus:observability-domain chorus:hasDomain chorus:Properties-domain, chorus:time-domain .
 
 chorus:loom chorus:hasDomain chorus:loom-policies .
 
@@ -1266,11 +1266,11 @@ chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
-chorus:cards-service chorus:consumes chorus:properties-domain .
-chorus:observability-domain chorus:consumes chorus:properties-domain .
-chorus:infrastructure-domain chorus:consumes chorus:properties-domain .
-chorus:deploys-domain chorus:consumes chorus:properties-domain .
-chorus:logs-domain chorus:consumes chorus:properties-domain .
+chorus:cards-service chorus:consumes chorus:Properties-domain .
+chorus:observability-domain chorus:consumes chorus:Properties-domain .
+chorus:infrastructure-domain chorus:consumes chorus:Properties-domain .
+chorus:deploys-domain chorus:consumes chorus:Properties-domain .
+chorus:logs-domain chorus:consumes chorus:Properties-domain .
 
 chorus:code-domain chorus:consumes chorus:security-domain .
 chorus:gates-service chorus:consumes chorus:security-domain .
@@ -1289,7 +1289,7 @@ chorus:infrastructure-domain chorus:consumes chorus:security-domain .
 chorus:logs-domain chorus:consumes chorus:security-domain .
 chorus:messages-domain chorus:consumes chorus:security-domain .
 chorus:observability-domain chorus:consumes chorus:security-domain .
-chorus:properties-domain chorus:consumes chorus:security-domain .
+chorus:Properties-domain chorus:consumes chorus:security-domain .
 # pulse-metrics-domain security edge removed
 chorus:loom-rcas chorus:consumes chorus:security-domain .
 chorus:streams-domain chorus:consumes chorus:security-domain .
@@ -1320,7 +1320,7 @@ chorus:infrastructure-domain chorus:consumes chorus:time-domain .
 chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
 chorus:observability-domain chorus:consumes chorus:time-domain .
-chorus:properties-domain chorus:consumes chorus:time-domain .
+chorus:Properties-domain chorus:consumes chorus:time-domain .
 chorus:security-domain chorus:consumes chorus:time-domain .
 # pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
@@ -1836,6 +1836,151 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
     ] .
+
+# --- PropertyKey registry — config-as-data governance (ADR-044) ---
+# A property key is a REGISTERED, governed vocabulary, not a free-text field.
+# register-before-use: every chorus:Property.propertyKey MUST resolve to a
+# registered chorus:PropertyKey. The registry is DATA — a new key / enum /
+# edge-type is a MODEL WRITE, not a code or hand-authored-SHACL edit. The DAL
+# compiles each row into write-time validation (#3436); owl-api projects the
+# same registry into the generated API + MCP. ADR-044.
+
+chorus:PropertyKey a owl:Class ;
+    rdfs:label "Property Key" ;
+    rdfs:comment "Governed definition (registry entry) of a config key. register-before-use: every chorus:Property.propertyKey MUST resolve to a registered PropertyKey. propertyKind-discriminated (datatype|object). The DAL compiles each to write-validation; owl-api projects it into the generated API+MCP. ADR-044." .
+
+chorus:keyName a owl:DatatypeProperty ;
+    rdfs:label "key name" ;
+    rdfs:comment "The dotted config key this row governs, e.g. 'testType', 'gate.enforced', 'covers'. Matches chorus:Property.propertyKey. ADR-044." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:propertyKind a owl:DatatypeProperty ;
+    rdfs:label "property kind" ;
+    rdfs:comment "Discriminator: 'datatype' (literal value — keyValueType + allowedValue) | 'object' (IRI value — edgeTargetClass). Selects which value carrier the Property uses (propertyValue xor propertyValueRef). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:appliesToClass a owl:ObjectProperty ;
+    rdfs:label "applies to class" ;
+    rdfs:comment "The ADR-041 class a Property with this key may attach to — the level a key is valid at (the primary governance act). A pointer into ADR-041's tree, not a new taxonomy. ADR-044." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range owl:Class .
+
+chorus:lifecycleEnabled a owl:DatatypeProperty ;
+    rdfs:label "lifecycle enabled" ;
+    rdfs:comment "Capability: MAY values of this key expire (expiresAt + sourceCard on the instance)? Default false. The capability is on the KEY; the TTL is on the value — never fused. ADR-044 Decision 4." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:boolean .
+
+# datatype arm
+chorus:keyValueType a owl:DatatypeProperty ;
+    rdfs:label "key value type" ;
+    rdfs:comment "datatype-arm: how to read the literal value — string|int|bool|json|list. Authoritative over the now-redundant #3433 propertyValueType (reconcile in #3436). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:allowedValue a owl:DatatypeProperty ;
+    rdfs:label "allowed value" ;
+    rdfs:comment "datatype-arm: 0..n permitted literals — the sh:in enum the DAL compiles. Absent = unconstrained literal of keyValueType. ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+# object arm
+chorus:edgeTargetClass a owl:ObjectProperty ;
+    rdfs:label "edge target class" ;
+    rdfs:comment "object-arm: the owl:Class the value-IRI must belong to — the sh:class constraint the DAL compiles. A sub-domain is a Domain that is hasChild of another Domain; SubDomain is NOT a class of record (ADR-040). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range owl:Class .
+
+chorus:hubProjected a owl:DatatypeProperty ;
+    rdfs:label "hub projected" ;
+    rdfs:comment "object-arm: if true, the DAL materializes a derived direct predicate (e.g. chorus:covers) FROM the reified Property — never independently authored. Keeps a hub edge 1-hop traversable with no dual-authoring drift. ADR-044 Decision 5." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:boolean .
+
+# value carrier (object-key) + lifecycle value (instance-level)
+chorus:propertyValueRef a owl:ObjectProperty ;
+    rdfs:label "property value ref" ;
+    rdfs:comment "object-key value: an IRI to a node of the key's edgeTargetClass. The only carrier that works for object keys — sh:class needs a real node, the edge must be SPARQL-traversable. Carrier-matches-kind: a Property has propertyValue (datatype) XOR propertyValueRef (object). ADR-044 Decision 3." ;
+    rdfs:domain chorus:Property .
+
+chorus:expiresAt a owl:DatatypeProperty ;
+    rdfs:label "expires at" ;
+    rdfs:comment "Instance-level: this value expires at T (only when the key.lifecycleEnabled). ADR-044 Decision 4." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:dateTime .
+
+chorus:sourceCard a owl:DatatypeProperty ;
+    rdfs:label "source card" ;
+    rdfs:comment "Instance-level: the card that authorized this (expiring) value. ADR-044 Decision 4." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+# carrier-matches-kind invariant — a mismatched carrier is un-representable (ADR-044 Decision 3).
+# This IS hand-authored SHACL (one invariant for all Property). The per-KEY constraints
+# (allowedValue->sh:in, edgeTargetClass->sh:class, keyValueType->sh:datatype) are COMPILED
+# by the DAL from each PropertyKey row at write (#3436) — never hand-authored per key.
+chorus:PropertyCarrierShape a sh:NodeShape ;
+    sh:targetClass chorus:Property ;
+    sh:xone (
+        [ sh:property [ sh:path chorus:propertyValue    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValueRef ; sh:maxCount 0 ] ]
+        [ sh:property [ sh:path chorus:propertyValueRef ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValue    ; sh:maxCount 0 ] ]
+    ) .
+
+# --- registry seed: the three-shapes proof (ADR-044 — enum-scalar / lifecycle-toggle / typed-edge) ---
+chorus:pk-testType a chorus:PropertyKey ;
+    chorus:keyName "testType" ; chorus:propertyKind "datatype" ;
+    chorus:appliesToClass chorus:Test ; chorus:keyValueType "string" ;
+    chorus:allowedValue "unit", "integration", "api", "ui", "perf", "security", "e2e", "bdd" ;
+    chorus:lifecycleEnabled false .
+
+chorus:pk-gateEnforced a chorus:PropertyKey ;
+    chorus:keyName "gate.enforced" ; chorus:propertyKind "datatype" ;
+    chorus:appliesToClass chorus:Service ; chorus:keyValueType "bool" ;
+    chorus:lifecycleEnabled true .
+
+chorus:pk-covers a chorus:PropertyKey ;
+    chorus:keyName "covers" ; chorus:propertyKind "object" ;
+    chorus:appliesToClass chorus:Test ; chorus:edgeTargetClass chorus:Domain ;
+    chorus:hubProjected true ; chorus:lifecycleEnabled false .
+
+# --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
+# PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
+# projects into the API surface) AND a chorus:Domain individual (individual-facet — sits in
+# the ADR-041 tree). The tree bindings + definesVocabulary hang on the INDIVIDUAL facet.
+# FACET DISCIPLINE (Kade DE-review delta #1): NO vocabulary/content triple on the class-facet —
+# class-facet = "things typed by :properties"; individual-facet = tree placement + vocabulary.
+chorus:definesVocabulary a owl:ObjectProperty ;
+    rdfs:label "defines vocabulary" ;
+    rdfs:comment "Domain-individual -> a member CLASS it defines (its schema/vocabulary). DEDICATED edge, distinct from chorus:contains (content-membership, ADR-041) — the generator enumerates a domain's surface by this. ADR-045 §3 (Kade DE-review: no overloaded contains)." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range owl:Class .
+
+chorus:atStream a owl:ObjectProperty ;
+    rdfs:label "at stream" ;
+    rdfs:comment "Domain -> its ValueStream (chorusStream | gatheringStream | lifeStream). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range chorus:ValueStream .
+
+# Domain shape: atStream + atStep BOTH required -> the ambiguous step-only state is un-representable (ADR-045 §4 / Kade delta #4).
+chorus:DomainCoordinateShape a sh:NodeShape ;
+    sh:targetClass chorus:Domain ;
+    sh:property [ sh:path chorus:atStream ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:atStep   ; sh:minCount 1 ] .
+
+# the properties domain-class itself (punned)
+chorus:Properties a owl:Class , chorus:Domain ;
+    rdfs:label "properties" ;
+    rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:value-stream-step-proving ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:repoTarget "borg/properties" ;
+    chorus:definesVocabulary chorus:Property , chorus:PropertyKey .
 
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;

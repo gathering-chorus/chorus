@@ -1,0 +1,53 @@
+# ADR-044 PropertyKey — validation proof (#3489 Card 1 acceptance)
+# Proves the three shapes are ENFORCEABLE, not just well-formed: a bad value for
+# each kind is actually REJECTED. The carrier-matches-kind invariant (sh:xone) is
+# the real authored SHACL (mirrors chorus:PropertyCarrierShape in chorus.ttl).
+# The per-key shapes (sh:in for testType, sh:class for covers) demonstrate what
+# the DAL COMPILES from each PropertyKey row at write (#3436) — hand-authored here
+# only to prove the registry rows are expressible + enforceable.
+#
+#   $ shacl validate --shapes adr044-propertykey-proof.ttl --data adr044-propertykey-proof.ttl
+#   EXPECT: conforms=false, exactly 4 violations:
+#     p-bad-testType (sh:in fires) · p-bad-covers (sh:class fires) · p-both + p-neither (sh:xone fires)
+#   and the two p-good-* instances conform.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix proof:  <urn:proof:adr044#> .
+
+# --- carrier-matches-kind invariant (mirror of chorus:PropertyCarrierShape) ---
+proof:CarrierShape a sh:NodeShape ;
+    sh:targetClass chorus:Property ;
+    sh:xone (
+        [ sh:property [ sh:path chorus:propertyValue    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValueRef ; sh:maxCount 0 ] ]
+        [ sh:property [ sh:path chorus:propertyValueRef ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValue    ; sh:maxCount 0 ] ]
+    ) .
+
+# --- per-key shapes the DAL compiles from pk-testType (sh:in) and pk-covers (sh:class) ---
+proof:TestTypeEnumProof a sh:NodeShape ;
+    sh:targetNode proof:p-good-testType, proof:p-bad-testType ;
+    sh:property [ sh:path chorus:propertyValue ;
+        sh:in ( "unit" "integration" "api" "ui" "perf" "security" "e2e" "bdd" ) ] .
+
+proof:CoversClassProof a sh:NodeShape ;
+    sh:targetNode proof:p-good-covers, proof:p-bad-covers ;
+    sh:property [ sh:path chorus:propertyValueRef ; sh:class chorus:Domain ] .
+
+# --- VALID instances (must CONFORM) ---
+proof:p-good-testType a chorus:Property ; chorus:propertyKey "testType" ; chorus:propertyValue "integration" .
+proof:p-good-covers   a chorus:Property ; chorus:propertyKey "covers"   ; chorus:propertyValueRef proof:dom-real .
+proof:dom-real a chorus:Domain .
+
+# --- INVALID instances (must be REJECTED) ---
+# 1. sh:in fires — testType not in the enum
+proof:p-bad-testType a chorus:Property ; chorus:propertyKey "testType" ; chorus:propertyValue "bogus" .
+# 2. sh:class fires — covers points at a non-Domain node
+proof:p-bad-covers a chorus:Property ; chorus:propertyKey "covers" ; chorus:propertyValueRef proof:not-a-domain .
+proof:not-a-domain a chorus:Service .
+# 3. sh:xone fires — BOTH carriers present (object-IRI smuggled alongside a literal)
+proof:p-both a chorus:Property ; chorus:propertyKey "testType" ; chorus:propertyValue "unit" ; chorus:propertyValueRef proof:dom-real .
+# 4. sh:xone fires — NEITHER carrier present
+proof:p-neither a chorus:Property ; chorus:propertyKey "testType" .
