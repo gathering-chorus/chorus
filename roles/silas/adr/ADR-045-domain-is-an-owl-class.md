@@ -1,6 +1,6 @@
 # ADR-045: A Domain is an `owl:Class` — the unit owl-api generates from
 
-**Status:** Proposed — 2026-06-18 (Silas, SA/OWL-DBA). Driver: the properties-domain gap surfaced live in the model viewer; Jeff: *"a domain is an owl class in our world"* and *"that is how owl-api generates the domain."*
+**Status:** **Accepted** — 2026-06-18 (Silas, SA/OWL-DBA). **Ratified off the working surface, not the doc:** the punned `chorus:Properties` domain-class (#3489) drives owl-api's `definesVocabulary` fan-out (#3494) to compose `/borg/properties`, serving Property + PropertyKey CRUD end-to-end — verified live (Property=2, PropertyKey=3 on the generated surface). Proposed driver: the properties-domain gap surfaced live in the model viewer; Jeff: *"a domain is an owl class in our world"* and *"that is how owl-api generates the domain."*
 **Builds on:** ADR-040 (IRI formation), ADR-041 (repo tree: ValueStream → Products → Domains), ADR-044 (PropertyKey governance).
 **Worked example / first instance:** the `properties` domain (#3489) → generate `/borg/properties` (after Wren's #3488 `repoTarget`).
 

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vocabulary as the Validation Surface — Chorus</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a212b; --panel2:#222c38; --ink:#e6edf3; --mut:#9fb0c0;
+    --line:#2d3845; --accent:#58a6ff; --green:#3fb950; --amber:#d29922; --red:#f85149;
+    --violet:#bc8cff; --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 28px 96px}
+  h1{font-size:30px;line-height:1.25;margin:0 0 6px}
+  h2{font-size:21px;margin:48px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:26px 0 8px;color:var(--accent)}
+  .sub{color:var(--mut);font-size:15px;margin:0 0 8px}
+  .tag{display:inline-block;font:600 11px/1 var(--mono);letter-spacing:.06em;
+    color:var(--violet);border:1px solid var(--line);border-radius:5px;padding:5px 8px;margin-bottom:22px}
+  p{margin:10px 0}
+  .lead{font-size:18px;color:var(--ink)}
+  code{font-family:var(--mono);font-size:13.5px;background:var(--panel2);
+    padding:1px 6px;border-radius:4px;color:#cfe3ff}
+  .mut{color:var(--mut)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .loop{display:flex;gap:0;align-items:stretch;margin:22px 0;flex-wrap:wrap}
+  .step{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:16px 18px;position:relative}
+  .step .n{font:700 12px/1 var(--mono);color:var(--accent);letter-spacing:.1em}
+  .step h4{margin:8px 0 6px;font-size:16px}
+  .step p{font-size:14px;color:var(--mut);margin:4px 0}
+  .arrow{align-self:center;color:var(--accent);font-size:24px;padding:0 8px}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+  td code{font-size:12.5px}
+  .ok{color:var(--green)} .warn{color:var(--amber)} .bad{color:var(--red)}
+  .callout{border-left:3px solid var(--accent);background:var(--panel);
+    padding:12px 18px;margin:18px 0;border-radius:0 8px 8px 0}
+  .callout.green{border-color:var(--green)} .callout.amber{border-color:var(--amber)}
+  .ttl{font-family:var(--mono);font-size:13px;white-space:pre;overflow-x:auto;display:block;
+    background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:14px 16px;color:#cfe3ff;margin:12px 0}
+  .ttl .k{color:var(--violet)} .ttl .c{color:#6b7886;font-style:italic} .ttl .s{color:var(--green)}
+  footer{margin-top:60px;color:var(--mut);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .pill{font:600 11px var(--mono);padding:2px 7px;border-radius:20px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="tag">CHORUS · DESIGNING · SILAS · 2026-06-18</div>
+  <h1>Vocabulary as the Validation Surface</h1>
+  <p class="sub">A domain's vocabulary, declared as data, is the single source the system <b>generates from</b> and <b>validates against</b>. One surface, three jobs.</p>
+
+  <div class="callout">
+    <p style="margin:0"><b>The one idea.</b> In Chorus, a "vocabulary" is a domain's governed set of terms — its classes, its fields, its allowed values, its expected shape — <b>declared as data in the OWL</b>. That declaration is not documentation about the system. It <em>is</em> the system's contract: owl-api <b>generates</b> the API/MCP/monitors from it, and the same declaration is the <b>surface every write is validated against</b>. Change the vocabulary → the generated interface and the enforced rules move together, by construction.</p>
+  </div>
+
+  <h2>The loop: Declare → Generate → Enforce</h2>
+  <p>Every vocabulary does three jobs from one declaration. A classic data dictionary does only the first (it <em>describes</em>). Ours is executable in both downstream directions.</p>
+
+  <div class="loop">
+    <div class="step">
+      <div class="n">01 · DECLARE</div>
+      <h4>Vocabulary as data</h4>
+      <p>An <code>owl:Class</code> + its <code>sh:NodeShape</code> + governed registry rows. The dictionary: terms, fields, types, allowed values, expected grain.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="step">
+      <div class="n">02 · GENERATE</div>
+      <h4>Surface from the model</h4>
+      <p>owl-api reads the vocabulary and projects the API, MCP tools, and monitors. No hand-written routes — the surface <em>is</em> the vocabulary, rendered.</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="step">
+      <div class="n">03 · ENFORCE</div>
+      <h4>The validation surface</h4>
+      <p>The same declaration is what every write/event is checked against. SHACL shapes, enum constraints, grain rules — validation <em>projected</em>, not hand-coded.</p>
+    </div>
+  </div>
+
+  <div class="callout green">
+    <p style="margin:0"><b>The validation-surface insight.</b> Validation today is scattered — a regex here, an <code>if</code> there, a hook that re-implements a rule the model already knows. When the vocabulary is the surface, <b>there is one place a rule can live</b>: the declaration. <code>allowedValue</code> compiles to <code>sh:in</code>. <code>edgeTargetClass</code> compiles to <code>sh:class</code>. A required field is <code>sh:minCount 1</code>. An event's expected cardinality is a grain rule. The validator is <em>generated from</em> the dictionary, so the thing you read and the thing that's enforced can never drift apart.</p>
+  </div>
+
+  <h2>Already live in Chorus — three worked instances</h2>
+  <p>This isn't a proposal; the pattern is running today. Three vocabularies, same shape:</p>
+
+  <table>
+    <tr><th>Vocabulary</th><th>Declares</th><th>Generates</th><th>Validates</th></tr>
+    <tr>
+      <td><b>PropertyKey</b><br><span class="mut">config-as-data registry</span></td>
+      <td>Each config key: <code>keyName</code>, kind, <code>allowedValue</code>, <code>appliesToClass</code></td>
+      <td>Property CRUD surface; the config dictionary</td>
+      <td><span class="ok">register-before-use</span>: a Property's key must resolve to a registered PropertyKey; <code>allowedValue</code> → <code>sh:in</code></td>
+    </tr>
+    <tr>
+      <td><b>definesVocabulary</b><br><span class="mut">domain → its classes</span></td>
+      <td>Which classes a domain governs (<code>Properties definesVocabulary Property, PropertyKey</code>)</td>
+      <td><span class="ok">/borg/properties</span> composes Property + PropertyKey CRUD — proven live today</td>
+      <td>Off-vocabulary class for the domain = not served; the domain's surface is exactly its declared classes</td>
+    </tr>
+    <tr>
+      <td><b>EmitContract</b><br><span class="mut">spine observability (ADR-046)</span></td>
+      <td>What a service/domain emits: metrics, event names, required fields, <span class="warn">expected grain</span></td>
+      <td>The monitors surface (Borg's 7th generated surface)</td>
+      <td><span class="warn">spine conformance</span>: an off-vocab or wrong-shaped event becomes a <b>loud, detectable</b> violation instead of silent corruption</td>
+    </tr>
+  </table>
+
+  <p class="mut">The first two shipped today (#3489 / #3494). The third (EmitContract) is the vocabulary being authored now — and it's where the validation-surface idea pays off most, because the spine is the noisiest, least-governed data we have.</p>
+
+  <h2>How we leverage it across Chorus</h2>
+
+  <h3>1 · Every surface generates from a vocabulary</h3>
+  <p>The owl-api fan-out (#3494) generalizes: any domain that declares its vocabulary gets its API, MCP tools, and monitors projected — no per-domain hand-coding. The system's entire interface surface becomes a projection of the declared model. (This is the API-side of "the whole model renders as a conceptual map.")</p>
+
+  <h3>2 · The spine-straighten — vocabulary as cleanup tool</h3>
+  <p>The spine today is the counter-example: 4 storage patterns, 3 naming conventions, ~71 distinct events in werk alone, ~3.5% unparseable lines. No governing vocabulary → silent drift. The EmitContract declares <b>one canonical vocabulary</b> (<code>&lt;verb-or-domain&gt;.&lt;event&gt;</code>, with grain + required fields + plausible-ts), then we <b>conform emitters vertebra-by-vertebra</b> and retire the bare/non-verb/redundant events (blast-radius → ∅). werk is vertebra one (#3495). Incremental only — the spine feeds every gate, metric, gemba, and pulse; a big-bang blinds the system.</p>
+
+  <h3>3 · It is the change-management loop, pointed at our own data</h3>
+  <p>This is the deepest leverage. Drift in Chorus is not a drift problem — it's an <em>absent change-management</em> problem. The vocabulary closes the loop:</p>
+  <div class="panel">
+    <table style="margin:0">
+      <tr><th>Change-mgmt leg</th><th>Vocabulary mechanism</th></tr>
+      <tr><td><b>Declare canonical model</b></td><td>The vocabulary <em>is</em> the canonical declaration (OWL + shapes + grain)</td></tr>
+      <tr><td><b>Propagate / reconcile</b></td><td>Conform emitters & surfaces to the vocabulary (generate-from-model; vertebra-by-vertebra)</td></tr>
+      <tr><td><b>Verify</b></td><td>The validation surface — every write/event checked against the declaration; off-vocab = loud failure</td></tr>
+    </table>
+  </div>
+  <p>N hand-built drift detectors collapse into <b>one mechanism</b>: declare it, generate from it, validate against it. That's consistency by construction, with the gate as a backstop rather than the strategy.</p>
+
+  <h3>4 · One place to change a rule</h3>
+  <p>Want to add an allowed test type, secure an endpoint, tighten an SLO, ban an event name? It's a <b>model write</b> — the generated interface and the enforced validation both move. No code change, no flaky deploy, no rule re-implemented in three places that quietly diverge.</p>
+
+  <h2>What it looks like — the declaration</h2>
+  <p>A vocabulary entry carrying all three jobs at once (PropertyKey shown; EmitContract grain-spec is the same shape):</p>
+  <span class="ttl"><span class="c"># DECLARE — the dictionary entry (data, not code)</span>
+<span class="k">chorus:pk-testType</span> a chorus:PropertyKey ;
+    chorus:keyName <span class="s">"testType"</span> ;
+    chorus:appliesToClass chorus:Test ;        <span class="c"># where it's valid</span>
+    chorus:keyValueType <span class="s">"string"</span> ;
+    chorus:allowedValue <span class="s">"unit","integration","api","ui","e2e"</span> .  <span class="c"># the enum</span>
+
+<span class="c"># GENERATE → owl-api projects the Property/PropertyKey CRUD surface</span>
+<span class="c"># ENFORCE  → allowedValue compiles to sh:in; a Property with</span>
+<span class="c">#           propertyKey "testType" + value "banana" is REJECTED at write,</span>
+<span class="c">#           by a validator nobody hand-wrote.</span></span>
+
+  <div class="callout amber">
+    <p style="margin:0"><b>The discipline that keeps it honest.</b> The vocabulary only stays the single surface if rules live <em>nowhere else</em>. Every hand-coded validation that duplicates a declarable rule is a future drift point. The work is continuous: as each domain's vocabulary lands, the scattered checks it subsumes get retired (with a retirement gate), so the declaration stays authoritative.</p>
+  </div>
+
+  <h2>Why this is the right shape for Chorus</h2>
+  <p>It's your Staples canonical-model / data-dictionary lineage — made <b>executable</b>. A data dictionary that doesn't just describe the data but <em>builds the interface to it and guards every write against it</em>. Three domains already prove it (config, domain-APIs, and now the spine). The leverage compounds: each vocabulary we declare removes a class of hand-coded surface and a class of silent drift at the same time.</p>
+
+  <footer>
+    Silas · Designing artifact · 2026-06-18 · companion to ADR-044 (PropertyKey), ADR-045 (domain-as-owl-class), ADR-046 (EmitContract).
+    Pattern proven live: <code>/borg/properties</code> (#3489/#3494). Next vertebra: the spine-straighten via EmitContract (#3495).
+  </footer>
+
+</div>
+</body>
+</html>
