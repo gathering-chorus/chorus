@@ -1531,8 +1531,13 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
         meta.route = if parts.len() == 3 { "fold".into() } else { "detail".into() };
         if parts.len() == 3 { meta.fold = parts[2].to_string(); }
         if parts.len() == 3 && parts[2] == "contains" {
+            // DOWN containment, symmetric with /partof's UNION below: a node "contains"
+            // its children via chorus:contains (domain→sub) OR chorus:hasDomain
+            // (product→domain). Querying only `contains` left /products/:p/contains
+            // empty though the hasDomain edges exist — the UP bind Kade's product-rooted
+            // tree render needs (#3466). One predicate set, both directions mirror.
             let q = format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> <{ns}contains> ?o }} BIND(STR(?o) AS ?v) }}",
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} }} BIND(STR(?o) AS ?v) }}",
                 g = INSTANCES_GRAPH, ns = NS, n = name
             );
             return match sparql_json(&q) {
