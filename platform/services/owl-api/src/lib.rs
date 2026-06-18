@@ -1531,8 +1531,13 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
         meta.route = if parts.len() == 3 { "fold".into() } else { "detail".into() };
         if parts.len() == 3 { meta.fold = parts[2].to_string(); }
         if parts.len() == 3 && parts[2] == "contains" {
+            // DOWN containment, symmetric with /partof's UNION below: a node "contains"
+            // its children via chorus:contains (domain→sub) OR chorus:hasDomain
+            // (product→domain). Querying only `contains` left /products/:p/contains
+            // empty though the hasDomain edges exist — the UP bind Kade's product-rooted
+            // tree render needs (#3466). One predicate set, both directions mirror.
             let q = format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> <{ns}contains> ?o }} BIND(STR(?o) AS ?v) }}",
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} }} BIND(STR(?o) AS ?v) }}",
                 g = INSTANCES_GRAPH, ns = NS, n = name
             );
             return match sparql_json(&q) {
@@ -1674,9 +1679,29 @@ pub fn openapi_html(class: &str) -> String {
     )
 }
 
-pub fn serve(port: u16, table: &RouteTable) -> R<()> {
+/// #3466 — pick the RouteTable whose class owns this request's path resource.
+/// `/products/loom` → resource "products" → the Product table; `/schema/product`
+/// → "product" → the Product table; `/health` is handled server-level upstream.
+/// None = no class owns the resource (typed 404). Multi-class serve dispatches
+/// through this so one server fronts every generated API on one origin.
+pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a RouteTable> {
+    let trimmed = path.trim_start_matches('/');
+    let mut segs = trimmed.split('/');
+    let first = segs.next().unwrap_or("");
+    let resource = if first == "schema" { segs.next().unwrap_or("") } else { first };
+    if resource.is_empty() {
+        return None;
+    }
+    tables.iter().find(|t| {
+        let cl = t.class.rsplit('#').next().unwrap_or("");
+        pluralize(cl).eq_ignore_ascii_case(resource) || cl.eq_ignore_ascii_case(resource)
+    })
+}
+
+pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
-    eprintln!("owl-api: serving generated {} API on :{} (read-only; writes go through chorus-model)", table.class, port);
+    let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
+    eprintln!("owl-api: serving {} generated API(s) on :{} [{}] (read-only; writes go through chorus-model)", tables.len(), port, classes.join(", "));
     let mut req_counter: u64 = 0;
     // #3402 — seam auth config, loaded ONCE (no per-request env read, no graph call).
     let secret = std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().into_bytes();
@@ -1698,6 +1723,26 @@ pub fn serve(port: u16, table: &RouteTable) -> R<()> {
                 .find(|l| l.to_ascii_lowercase().starts_with(&format!("{}:", name)))
                 .map(|l| l.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
                 .unwrap_or_default()
+        };
+        // #3466 — multi-class dispatch: /health is server-level; otherwise select
+        // the table whose class owns this path's resource. Unknown resource → 404.
+        if path == "/health" {
+            let resp = http_response_ct(status_line(200), "{ \"ok\": true, \"service\": \"owl-api\" }", "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
+        let table = match select_table(&path, tables) {
+            Some(t) => t,
+            None => {
+                let served: Vec<String> = tables
+                    .iter()
+                    .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
+                    .collect();
+                let nf = format!("{{ \"error\": \"unknown route\", \"served\": [{}] }}", served.join(", "));
+                let resp = http_response_ct(status_line(404), &nf, "application/json");
+                let _ = stream.write_all(resp.as_bytes());
+                continue;
+            }
         };
         let upstream_started = std::time::Instant::now();
         // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured

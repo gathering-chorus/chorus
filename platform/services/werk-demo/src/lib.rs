@@ -677,6 +677,37 @@ pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, ver
           &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"verdict\":\"{}\",\"note\":\"{}\"",
                    peer, round, pid, verdict, n));
     emit_spine(home, "demo.gather.replied", role, card, &trace);
+
+    // #3466 — fire the announce witness the MOMENT this reply COMPLETES the set.
+    // The gap (#3479 wired the reply; this wires the announce): in a headless
+    // pipeline nothing re-invokes demo() after peers reply, so the demo.presented
+    // witness werk-merge's land-gate reads never landed even though the gate's
+    // conditions (gates recorded + ALL gathers replied, THIS round) were satisfied
+    // by this very reply. demo() only emits demo.presented on a fresh invocation
+    // that happens to run after the replies are in — which a demoer-less pipeline
+    // never does, so the land refused a card that was actually fully demoed. Emit
+    // here, idempotently. The GATE is unchanged; this makes the announce that
+    // SHOULD fire actually fire without a manual re-present.
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    if should_emit_announce(&witness, card, role, &round, &pid) {
+        jsonl(home, role, card, &trace, "demo.presented",
+              &format!(",\"round\":\"{}\",\"patch_id\":\"{}\",\"via\":\"gather-completion\"", round, pid));
+        emit_spine(home, "demo.presented", role, card, &trace);
+    }
+}
+
+/// #3466 — pure decision: should recording a reply now emit the demo.presented
+/// witness? True iff the announce gate's conditions are met for THIS round (gates
+/// recorded AND both gathers replied) AND no announce for this round already
+/// exists (idempotent — a re-replied peer never double-announces). Pure over the
+/// witness string so the announce-on-completion wire is unit-testable without the
+/// file/git/spine I/O of record_gather_replied.
+pub fn should_emit_announce(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> bool {
+    let card_key = format!("\"card_id\":{},", card);
+    let already = witness.lines().any(|l| {
+        l.contains("\"event\":\"demo.presented\"") && l.contains(&card_key) && line_keyed(l, round, patch_id)
+    });
+    !already && announce_ready_full(witness, card, role, round, patch_id, false)
 }
 
 /// #3443 AC2 — the binary FIRES the reply-required gathers itself, BEFORE the
@@ -1901,6 +1932,28 @@ mod tests {
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
         assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + both replies ⇒ announce");
+    }
+
+    #[test]
+    fn should_emit_announce_fires_on_completing_reply_then_is_idempotent() {
+        // #3466 — the announce-on-completion wire: once gates + BOTH replies are in
+        // for THIS round, recording the completing reply must emit demo.presented
+        // (the witness werk-merge's land-gate reads), and never double-emit.
+        let mut lines: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3466, g)).collect();
+        lines.push(gather_line(3466, "silas"));
+        lines.push(gather_line(3466, "kade"));
+        let w = lines.join("\n");
+        assert!(should_emit_announce(&w, 3466, "wren", "r1", ""), "gates + both replies ⇒ emit the witness");
+
+        // one peer short ⇒ no announce (the gate is unchanged)
+        let mut partial: Vec<String> = REQUIRED_GATES.iter().map(|g| gate_line(3466, g)).collect();
+        partial.push(gather_line(3466, "kade"));
+        assert!(!should_emit_announce(&partial.join("\n"), 3466, "wren", "r1", ""), "one reply short ⇒ no announce");
+
+        // idempotent: a demo.presented already on the witness for this round ⇒ no re-emit
+        let already = format!("{}\n{}", w,
+            r#"{"ts":9,"event":"demo.presented","role":"wren","card_id":3466,"trace_id":"t","round":"r1","patch_id":""}"#);
+        assert!(!should_emit_announce(&already, 3466, "wren", "r1", ""), "already announced ⇒ no double-emit");
     }
 
     #[test]
