@@ -26,7 +26,12 @@ curl -s -m 20 -o /dev/null -w "%{http_code}" "$BASE/domains/zz-no-such" | grep -
 
 # ── contract validation (#3364 AC3): every detail-response field must be ──
 # ── declared in the generated OpenAPI spec — undocumented fields fail.   ──
-SPEC="$(cd "$(dirname "$0")/.." && pwd)/services/owl-api/generated/openapi-domain.json"
+# #3488 — the generated OpenAPI baseline now lands at its model-declared home
+# (chorus:repoTarget → designing/products/athena/domains/domains), not the old
+# hardcoded platform/services/owl-api/generated/. Repointed as part of the
+# repoTarget migration (old generated/ retired). Follow-on: derive this via
+# `owl-api generate-target --class Domain` so the path stays config-as-data.
+SPEC="$(cd "$(dirname "$0")/../.." && pwd)/designing/products/athena/domains/domains/openapi.json"
 if [ -f "$SPEC" ]; then
   echo "$DETAIL" | python3 -c "
 import json,sys
@@ -41,7 +46,7 @@ sys.exit(1 if (undocumented or missing_required) else 0)" \
     && ok "/domains/$NAME validates against generated OpenAPI contract" \
     || bad "contract validation"
 else
-  bad "contract validation (no generated/openapi-domain.json baseline)"
+  bad "contract validation (no designing/products/athena/domains/domains/openapi.json baseline)"
 fi
 echo "════ $PASS passed, $FAIL failed"
 exit $([ "$FAIL" -eq 0 ] && echo 0 || echo 1)

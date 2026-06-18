@@ -1,0 +1,1 @@
+{ "product": "athena", "domains": [{ "name": "domains", "api": "/domains" }] }

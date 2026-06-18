@@ -184,6 +184,7 @@ pub struct RouteTable {
     pub routes: Vec<String>,     // human-readable route list (the artifact)
     pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
     pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
+    pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
 }
 
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
@@ -232,6 +233,132 @@ pub fn project_secured(class_local: &str, annotated: bool) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// #3488 — the repo tree IS the OWL containment graph projected onto a
+/// filesystem, RECURSIVELY (Jeff, 2026-06-18: "its like our repo becomes
+/// recursive in exactly the same way as our owl"). A `RepoKind` is a containment
+/// level; every level except the value-stream root carries a collection prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepoKind {
+    ValueStream, // the step: a bare root segment (designing/, building/, …)
+    Product,     // products/<name>
+    Domain,      // domains/<name>
+    Service,     // services/<name>
+}
+
+impl RepoKind {
+    /// The collection directory this kind lives under, or None for the bare root.
+    pub fn collection(self) -> Option<&'static str> {
+        match self {
+            RepoKind::ValueStream => None,
+            RepoKind::Product => Some("products"),
+            RepoKind::Domain => Some("domains"),
+            RepoKind::Service => Some("services"),
+        }
+    }
+}
+
+/// Project an ordered ROOT→LEAF containment chain into a repo path (ADR-041's
+/// Value Stream → Products → Domains, generalized). The vs-step is the bare root;
+/// every other ancestor emits `<collection>/<name>`. RECURSIVE by construction —
+/// sub-products, sub-domains, and a service that parents off a PRODUCT (a
+/// cross-domain service like the clearing/chorus service) vs off a DOMAIN are all
+/// just different (kind, name) links in the chain; the projector follows whatever
+/// the model says the parent is. Empty/whitespace names are skipped. Pure.
+pub fn project_repo_path(chain: &[(RepoKind, &str)]) -> String {
+    let mut segs: Vec<String> = Vec::new();
+    for (kind, name) in chain {
+        let n = name.trim().trim_end_matches('/').to_lowercase();
+        if n.is_empty() {
+            continue;
+        }
+        match kind.collection() {
+            Some(coll) => {
+                segs.push(coll.to_string());
+                segs.push(n);
+            }
+            None => segs.push(n),
+        }
+    }
+    segs.join("/")
+}
+
+/// Resolve the repo land location for a generated entity, HONORING the recursive
+/// containment structure. `declared` (`chorus:repoTarget`, non-empty) is the
+/// explicit override for a bespoke case; otherwise the path is PROJECTED from the
+/// walked containment `chain` (root→leaf). The LOCATION half of "generated APIs
+/// land in the repo where they belong". Pure so it's unit-pinned; the SPARQL walk
+/// that assembles the chain in generate() is integration-proven separately.
+pub fn resolve_repo_target(declared: Option<&str>, chain: &[(RepoKind, &str)]) -> String {
+    if let Some(p) = declared.map(str::trim).filter(|s| !s.is_empty()) {
+        return p.trim_end_matches('/').to_string();
+    }
+    project_repo_path(chain)
+}
+
+/// #3488 — read a single containment-edge target's localname for `class` (None
+/// if absent). Covers both modeling styles: the edge on the shape
+/// (`?shape sh:targetClass <class> ; <pred> ?t`) or on the class directly
+/// (`<class> <pred> ?t`). `strip` removes a kind-tag prefix from the localname
+/// so `chorus:value-stream-step-designing` → `designing`. Best-effort: a missing
+/// edge yields None (that level is simply skipped in the projected path).
+fn read_containment_local(class: &str, pred: &str, strip: &str) -> R<Option<String>> {
+    let q = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ ?s sh:targetClass <{c}> ; {pred} ?t }} UNION {{ <{c}> {pred} ?t }} BIND(REPLACE(STR(?t), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class, pred = pred
+    );
+    let raw = select_v(&sparql_json(&q)?).into_iter().next();
+    Ok(raw.map(|v| v.strip_prefix(strip).unwrap_or(&v).to_string()))
+}
+
+/// #3488 — project a PRODUCT API index from its bound domains. A product's API
+/// is the aggregate of the domains it `hasDomain`: generating a domain API binds
+/// it here BY CONSTRUCTION (Jeff, 2026-06-18: "automation to bind the domain api
+/// to the product api"). Add/remove a hasDomain edge → regenerate → the binding
+/// follows; no manual register step, so the product API can't drift from the set
+/// of domains that exist (registration-is-derived). Pure; the SPARQL read is
+/// integration-proven separately. Names lowercased, sorted, de-duped; each
+/// domain carries its API mount (the pluralized route root the domain serves).
+pub fn project_product_index(product: &str, domains: &[&str]) -> String {
+    let mut ds: Vec<String> = domains
+        .iter()
+        .map(|d| d.trim().to_lowercase())
+        .filter(|d| !d.is_empty())
+        .collect();
+    ds.sort();
+    ds.dedup();
+    let items: Vec<String> = ds
+        .iter()
+        .map(|d| format!("{{ \"name\": \"{}\", \"api\": \"/{}\" }}", d, d))
+        .collect();
+    format!(
+        "{{ \"product\": \"{}\", \"domains\": [{}] }}",
+        product.trim().to_lowercase(),
+        items.join(", ")
+    )
+}
+
+/// #3488 — read the domains a product `hasDomain` (localnames) for the product
+/// API index. Instance edge: `<product> chorus:hasDomain ?d`.
+fn read_product_domains(product_local: &str) -> R<Vec<String>> {
+    let product = format!("{}{}", NS, product_local);
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{p}> chorus:hasDomain ?d BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH, p = product
+    );
+    let mut ds = select_v(&sparql_json(&q)?);
+    ds.sort();
+    ds.dedup();
+    Ok(ds)
+}
+
+/// #3488 — generate the product API index from the model (the bind, derived from
+/// the product's hasDomain edges). The product surface auto-mounts its domains.
+pub fn generate_product_index(product_local: &str) -> R<String> {
+    let domains = read_product_domains(product_local)?;
+    let refs: Vec<&str> = domains.iter().map(String::as_str).collect();
+    Ok(project_product_index(product_local, &refs))
 }
 
 /// GENERATE — read the shape's direct-path properties for `class` from the
@@ -293,7 +420,30 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     let mut mandatory: Vec<String> = select_v(&sparql_json(&mq)?);
     mandatory.sort();
     mandatory.dedup();
-    Ok(RouteTable { class, fields, routes, secured, mandatory })
+    // #3488 — resolve the repo land location as a PROJECTION of the class's
+    // containment chain (ADR-041 recursive tree: <vs-step>/products/<product>/
+    // domains/<domain>). chorus:repoTarget is the explicit override; otherwise
+    // we walk the class's containment edges (best-effort: vs-step via atStep,
+    // product via partOf) and project. Absent levels are skipped, so a partly
+    // modeled class still lands deterministically. Localnames strip the IRI
+    // prefix and any kind-tag (value-stream-step-designing → designing).
+    let rq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:repoTarget ?v }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let declared = select_v(&sparql_json(&rq)?).into_iter().next();
+    let step = read_containment_local(&class, "chorus:atStep", "value-stream-step-")?;
+    let product = read_containment_local(&class, "chorus:partOf", "")?;
+    let mut chain: Vec<(RepoKind, &str)> = Vec::new();
+    if let Some(s) = step.as_deref() {
+        chain.push((RepoKind::ValueStream, s));
+    }
+    if let Some(p) = product.as_deref() {
+        chain.push((RepoKind::Product, p));
+    }
+    chain.push((RepoKind::Domain, class_local));
+    let repo_target = resolve_repo_target(declared.as_deref(), &chain);
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target })
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -1320,7 +1470,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.0.3 spec (#3453). Another
@@ -1648,6 +1798,90 @@ mod tests {
     }
 
     #[test]
+    fn project_repo_path_is_the_recursive_owl_projection() {
+        use RepoKind::*;
+        // ADR-041 one-level case: <vs-step>/products/<product>/domains/<domain>
+        assert_eq!(
+            project_repo_path(&[(ValueStream, "designing"), (Product, "athena"), (Domain, "domains")]),
+            "designing/products/athena/domains/domains",
+            "vs-step bare root, product + domain carry their collection prefix",
+        );
+        // RECURSION: sub-product + sub-domain are just more links in the chain
+        assert_eq!(
+            project_repo_path(&[
+                (ValueStream, "directing"), (Product, "clearing"),
+                (Product, "pulse"), (Domain, "messages"), (Domain, "streams"),
+            ]),
+            "directing/products/clearing/products/pulse/domains/messages/domains/streams",
+            "sub-product (pulse under clearing) and sub-domain nest by the same rule",
+        );
+        // a DOMAIN-scoped service nests under its domain
+        assert_eq!(
+            project_repo_path(&[(ValueStream, "directing"), (Product, "clearing"), (Domain, "cards"), (Service, "card-store")]),
+            "directing/products/clearing/domains/cards/services/card-store",
+            "domain-scoped service lives under its domain",
+        );
+        // a PRODUCT-spanning service (the clearing/chorus service) parents off the PRODUCT, peer to domains/
+        assert_eq!(
+            project_repo_path(&[(ValueStream, "directing"), (Product, "clearing"), (Service, "clearing")]),
+            "directing/products/clearing/services/clearing",
+            "cross-domain service parents off the product, not forced under a domain",
+        );
+        // names lowercased + slashes/whitespace normalized; empty links skipped
+        assert_eq!(
+            project_repo_path(&[(ValueStream, " Building/ "), (Product, "Werk"), (Domain, ""), (Domain, "CICD")]),
+            "building/products/werk/domains/cicd",
+            "segments normalized, empty links dropped",
+        );
+    }
+
+    #[test]
+    fn resolve_repo_target_override_else_projection() {
+        use RepoKind::*;
+        let chain = [(ValueStream, "designing"), (Product, "athena"), (Domain, "domains")];
+        // declared chorus:repoTarget is the explicit override (bespoke case)
+        assert_eq!(
+            resolve_repo_target(Some("  custom/home/  "), &chain),
+            "custom/home",
+            "declared override wins, trimmed + slash-normalized",
+        );
+        // absent/empty declared → project the walked containment chain
+        assert_eq!(
+            resolve_repo_target(None, &chain),
+            "designing/products/athena/domains/domains",
+            "no override → recursive projection of the chain",
+        );
+        assert_eq!(
+            resolve_repo_target(Some("   "), &chain),
+            "designing/products/athena/domains/domains",
+            "whitespace-only declared falls through to the projection",
+        );
+        // partial chain (vs-step + domain, product unknown) still lands deterministically
+        assert_eq!(
+            resolve_repo_target(None, &[(ValueStream, "proving"), (Domain, "logs")]),
+            "proving/domains/logs",
+            "a partly-modeled entity still projects a deterministic path",
+        );
+    }
+
+    #[test]
+    fn project_product_index_binds_domains_from_the_graph() {
+        // #3488: the product API is the aggregate of its hasDomain domains — the
+        // binding is DERIVED (no manual register), sorted + deduped, each domain
+        // mounted at its own route root.
+        let idx = project_product_index("Athena", &["domains", "services", "knowledge"]);
+        assert!(idx.contains("\"product\": \"athena\""), "product lowercased");
+        assert!(idx.contains("{ \"name\": \"domains\", \"api\": \"/domains\" }"), "domain bound with its mount");
+        assert!(idx.contains("services") && idx.contains("knowledge"), "all hasDomain domains bound");
+        // adding a domain to the graph → it auto-appears (binding by construction)
+        let idx2 = project_product_index("athena", &["domains", "cards"]);
+        assert!(idx2.contains("\"name\": \"cards\""), "a new domain auto-registers in the product index");
+        // normalization: dedup + skip empty, names lowercased
+        let idx3 = project_product_index("athena", &["Domains", "domains", ""]);
+        assert_eq!(idx3.matches("\"name\":").count(), 1, "dedup + skip-empty → one domain");
+    }
+
+    #[test]
     fn page_html_is_a_generated_projection_on_system_css() {
         // #3420: page_html emits the SHELL of the real Athena domain page anatomy on the
         // #3415 design system; the shared /js/domain-renderer.js fills the mount points.
@@ -1657,6 +1891,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec![],
+            repo_target: String::new(),
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -1690,6 +1925,7 @@ mod tests {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
+            repo_target: String::new(),
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -1714,6 +1950,7 @@ mod tests {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec![],
+            repo_target: String::new(),
             routes: vec![
                 "GET /domains".into(),
                 "GET /domains/:name".into(),
@@ -1860,6 +2097,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec!["/schema/domain".into()],
             mandatory: vec!["label".into(), "comment".into()],
+            repo_target: String::new(),
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -1921,6 +2159,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec!["label".into(), "comment".into()],
+            repo_target: String::new(),
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -1945,7 +2184,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![] };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));

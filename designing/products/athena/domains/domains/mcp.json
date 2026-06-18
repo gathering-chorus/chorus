@@ -1,0 +1,10 @@
+{
+  "class": "Domain",
+  "binding": "mcp",
+  "convention": "ADR-031 chorus_<plural-resource>_<verb>",
+  "tools": [
+    { "name": "chorus_domains_list", "verb": "list", "route": "GET /domains" },
+    { "name": "chorus_domains_get", "verb": "get", "route": "GET /domains/:name" },
+    { "name": "chorus_domains_add", "verb": "add", "route": "POST /domains", "delegatesTo": "DAL (chorus-model)" }
+  ]
+}
