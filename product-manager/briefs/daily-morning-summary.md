@@ -1,34 +1,35 @@
-# Daily Morning Summary — 2026-06-17
+# Daily Morning Summary — 2026-06-18
 
-**HEADLINE:** Team shipped 9 cards yesterday at high velocity, but quality is dark for Day 8 and the board snapshot is 70 days stale — we're shipping blind.
+**HEADLINE:** Quality toolchain is dark for Day 10 with escalation overdue — `npm ci` is a 15-minute fix that nobody has run in 10 days; ship velocity is good but we're still flying blind on test signal.
 
 ---
 
-## OPS — RED (Silas, 2026-06-16)
-- **RED:** Board snapshot 70 days stale (last: Apr 7); WIP card count unknown
-- **RED:** Domain context stale — chorus/music/photos/seeds all 11 days old, 7-day threshold breached; 18+ cards shipped against them
+## OPS — RED (Silas, 2026-06-16 — 2 days stale)
+- **RED:** Board snapshot 70 days stale (last: Apr 7); WIP card count still unknown
+- **RED:** Domain context stale — chorus/music/photos/seeds 13 days old, 7-day threshold breached
 - YELLOW: 8 dead-code warnings in `chorus-hooks` — 14-day carry, 15-min fix
 - YELLOW: 33 `/tmp` LaunchAgent log refs — 14-day carry, no movement
 - YELLOW: Perf baseline never run — 14-day carry
 - GREEN: CLAUDE.md fragments, CSC compliance, git dirty state all clean
 
-## QUALITY — RED (Kade, 2026-06-16)
-- **All 4 suites BLOCKED** — `ts-jest` preset missing; 0 of ~183 tests run, Day 8
-- **Lint BLOCKED** — `@eslint/js` missing at root, Day 10
+## QUALITY — RED (Kade, 2026-06-18)
+- **All 4 suites BLOCKED** — `ts-jest` preset missing; 0 of ~183 tests run, Day 10
+- **Lint BLOCKED** — `@eslint/js` missing at root, Day 12
 - **Build RED:** 149 type errors (stable — no regressions, no fixes)
-- Fix path: `npm ci` at root + `directing/clearing`, `workflow-engine`, `chorus-sdk`, `pulse`
+- Root cause confirmed: node_modules empty everywhere. Fix: `npm ci` at root + each package
+- Kade has flagged escalation overdue
 
-## YESTERDAY — 9 cards merged (Jun 16)
-- **Wren (4):** #3461 (gate/gather evidence survives rebase — kills re-nudge loop), #3453 (owl-api OpenAPI spec endpoints), #3443, #3454
-- **Silas (4):** #3446, #3437, #3450 (chorus:partOf ownership model), #3458
-- **Kade (1):** #3459
+## YESTERDAY — 6 cards merged (Jun 17)
+- **Wren (3):** #3467, #3468, #3479
+- **Kade (2):** #3473, #3442 (test-type as declared/gated property — content-signal tagger, gate, backfill)
+- **Silas (1):** #3435 (owl-api effective-config: Fuseki cascade resolve + /effective/:node/:key)
 
 ## TODAY — Recommended priorities
-1. **`npm ci` across all packages (P0)** — Day 8 is too long; assign to Kade or Silas, 15 minutes
-2. **Board snapshot refresh (RED ops)** — Wren/Silas; wire daily LaunchAgent snapshot
-3. **Domain context refresh (RED ops)** — Wren: `domain-context-chorus.md` today; assign music/photos/seeds
-4. **Dead-code warnings (YELLOW)** — suppress or delete; 14-day carry, one small PR
+1. **`npm ci` across all packages (P0)** — Day 10 is past escalation; assign now, 15 minutes
+2. **Domain context refresh (RED ops)** — Wren: `domain-context-chorus.md` today; assign music/photos/seeds
+3. **Board snapshot refresh (RED ops)** — Wren/Silas; still 70 days stale
+4. **Ops review freshness** — Silas review is 2 days old; request today's run
 
 ## BLOCKERS — Needs Jeff
-- **Quality dark Day 8 (RED):** Zero test signal. Root cause confirmed: empty node_modules across all packages. Fix is `npm ci` — has been for 8 days. Someone needs to own the 15 minutes.
-- **Board snapshot 70 days stale (RED):** WIP state is a guess. We don't know what's truly in flight.
+- **Quality dark Day 10 (RED):** Zero test signal for 10 days. `npm ci` is the fix. Escalation overdue per Kade. Assign an owner.
+- **Board snapshot 70 days stale (RED):** WIP state is still a guess. Second day carrying this without movement.
