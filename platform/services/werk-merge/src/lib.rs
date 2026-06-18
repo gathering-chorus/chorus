@@ -468,6 +468,25 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         return Ok(main_sha);
     }
 
+    // #3476 — PUSH local HEAD to origin BEFORE the by-oid PR-resolve. The #3175
+    // header assumed an already-pushed branch, but a post-present werk-commit
+    // advances LOCAL HEAD without pushing — so origin's branch sits at the OLD oid,
+    // gh pr list returns the open PR at that stale headRefOid, the by-oid match
+    // misses, and the create-fallback hits "a pull request for this branch already
+    // exists" → pr-create-fail. (Jeff: "happens almost every cw"; Wren root-caused
+    // it on #3466.) Pushing first makes origin == local, so the open PR's
+    // headRefOid == HEAD and the resolve finds it — no spurious create. --force is
+    // safe: it's the role's own per-card branch (one werk, one writer), and it
+    // covers the rebase-onto-advancing-main (round-churn) case where a plain push
+    // would be non-fast-forward. Best-effort + witnessed: a push failure degrades to
+    // the existing resolve/create path (no regression), never strands silently.
+    match run_in(&werk_s, "git", &["push", "--force", "origin", &format!("HEAD:{}", branch)]) {
+        Ok(_) => jsonl(home, role, card, &trace, "merge.branch.pushed",
+            &format!(",\"sha\":\"{}\",\"branch\":\"{}\"", head_sha, branch)),
+        Err(e) => jsonl(home, role, card, &trace, "merge.branch.push.failed",
+            &format!(",\"branch\":\"{}\",\"err\":\"{}\"", branch, e.replace('"', "'"))),
+    }
+
     // Resolve the OPEN PR for the current HEAD oid — NOT the branch name. Create one
     // if none open for this oid (covers never-PR'd AND the stale-merged-PR case that
     // generated the false-green). This is the #3175 fix.

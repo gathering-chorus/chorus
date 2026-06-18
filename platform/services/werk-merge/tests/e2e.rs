@@ -71,6 +71,15 @@ fn commit_and_push(werk: &Path, branch: &str, file: &str, content: &str) -> Stri
     git_out(werk, &["rev-parse", "HEAD"])
 }
 
+/// #3476 — commit WITHOUT pushing (the post-present werk-commit case): local HEAD
+/// advances, origin's branch stays at its old oid.
+fn commit_no_push(werk: &Path, file: &str, content: &str) -> String {
+    fs::write(werk.join(file), content).unwrap();
+    git(werk, &["add", "."]);
+    git(werk, &["commit", "-q", "-m", &format!("add {} (unpushed)", file)]);
+    git_out(werk, &["rev-parse", "HEAD"])
+}
+
 fn origin_main_has(origin: &Path, file: &str) -> bool {
     Command::new("git")
         .args(["-C", origin.to_str().unwrap(), "cat-file", "-e", &format!("main:{}", file)])
@@ -101,6 +110,36 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         assert!(main_sha.len() >= 7, "returns the merged main sha");
         assert!(origin_main_has(&origin, "a.txt"), "scenario A: the work landed on origin/main");
         assert_ne!(sha, main_sha, "main moved to a NEW squash commit (not the branch tip)");
+    }
+
+    // ── Scenario #3476: POST-PRESENT COMMIT NOT PUSHED. An OPEN PR exists at the
+    //    pushed oid; a post-present werk-commit advances LOCAL HEAD without pushing,
+    //    so origin's branch (and the PR's live headRefOid) sit at the OLD oid. The
+    //    by-oid resolve misses → create-fallback hits "branch PR already exists" →
+    //    pr-create-fail (Jeff: "happens almost every cw"; Wren root-caused on #3466).
+    //    The fix: push HEAD→origin BEFORE the resolve, so the PR's headRefOid == HEAD
+    //    and the resolve finds it. RED without push-before-resolve; GREEN with it. ──
+    {
+        let (origin, home, werk_base, werk) = scenario("kade", 9476);
+        let old = commit_and_push(&werk, "kade/9476", "one.txt", "v1");
+        let state = tmp("ghstate");
+        // An OPEN PR for the branch at the pushed oid.
+        fs::write(
+            state.join("pr-476"),
+            format!("PR_NUM=476\nPR_HEAD={}\nPR_BRANCH=kade/9476\nPR_STATE=open\nPR_MERGE=\n", old),
+        ).unwrap();
+        // Post-present commit — advances LOCAL HEAD, NOT pushed (origin branch still at `old`).
+        let new = commit_no_push(&werk, "two.txt", "v2");
+        assert_ne!(old, new, "local HEAD advanced past the pushed oid");
+        std::env::set_var("ORIGIN", origin.to_str().unwrap());
+        std::env::set_var("GH_STATE", state.to_str().unwrap());
+        std::env::remove_var("GH_FAKE_MERGE");
+
+        merge(9476, "kade", &home, &werk_base)
+            .expect("#3476: push-before-resolve lands the post-present commit — no pr-create-fail on the existing branch PR");
+        assert!(origin_main_has(&origin, "two.txt"), "#3476: the unpushed post-present work landed");
+        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(witness.contains("merge.branch.pushed"), "#3476: the push-before-resolve is witnessed");
     }
 
     // ── Scenario B: Wren's bug — a STALE already-merged PR matches the branch NAME
@@ -297,8 +336,17 @@ pr)
       PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
       [ "$PR_BRANCH" = "$head" ] || continue
       [ "$PR_STATE" = "$state" ] || continue
+      # #3476 — an OPEN PR's headRefOid follows the branch (real GitHub updates it on
+      # push), so push-before-resolve makes the by-oid resolve find it. A MERGED PR's
+      # headRefOid is FROZEN at the merged sha (branch may be gone) — live tip would
+      # falsely match a new HEAD and break merged-PR idempotency. Live only for open.
+      if [ "$PR_STATE" = "open" ]; then
+        oid=$(git -C "$ORIGIN" rev-parse "refs/heads/$PR_BRANCH" 2>/dev/null || echo "$PR_HEAD")
+      else
+        oid="$PR_HEAD"
+      fi
       [ $first -eq 1 ] || out="$out,"
-      out="$out{\"number\":$PR_NUM,\"headRefOid\":\"$PR_HEAD\"}"
+      out="$out{\"number\":$PR_NUM,\"headRefOid\":\"$oid\"}"
       first=0
     done
     printf '%s]' "$out"
@@ -307,6 +355,16 @@ pr)
     head=""
     while [ $# -gt 0 ]; do
       case "$1" in --head) head="$2"; shift 2;; *) shift;; esac
+    done
+    # #3476 — real GitHub refuses a SECOND open PR for the same branch; the create
+    # fallback hitting this is the pr-create-fail the unpushed-commit case triggers.
+    for f in "$GH_STATE"/pr-*; do
+      [ -e "$f" ] || continue
+      PR_NUM=; PR_HEAD=; PR_BRANCH=; PR_STATE=; PR_MERGE=; . "$f"
+      if [ "$PR_BRANCH" = "$head" ] && [ "$PR_STATE" = "open" ]; then
+        echo "a pull request for branch \"$head\" into branch \"main\" already exists" 1>&2
+        exit 1
+      fi
     done
     sha=$(git -C "$ORIGIN" rev-parse "refs/heads/$head")
     n=$(cat "$GH_STATE/counter" 2>/dev/null || echo 100); n=$((n+1)); echo "$n" > "$GH_STATE/counter"
