@@ -25,6 +25,7 @@ chorus:ProductShape a sh:NodeShape ;
 chorus:DomainShape a sh:NodeShape ;
     sh:targetClass chorus:Domain ;
     chorus:requiresAuth true ;  # #3414 (PROVISIONAL — Silas to bless term/shape): this class's surface requires auth; owl-api generate() PROJECTS the guard for /schema/domain from THIS annotation (replacing #3402's hardcoded check). Granularity = schema route (Gall's-Law one-surface, matches #3402, zero new blast radius).
+    chorus:repoTarget "designing/products/athena/domains/domains" ;  # #3488 (PROVISIONAL — Silas to bless term): WHERE this class's generated artifacts land in the repo (ADR-041 tree: <vs-step>/products/<product>/domains/<domain>). owl-api generate() reads this; generate-target prints it; the regen step writes surfaces here. The "domains" domain (the model itself) lives under designing/products/athena per ADR-041. Override of the derived path until per-instance atStep/hasDomain walk is populated.
     sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:comment      ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Role ] ;

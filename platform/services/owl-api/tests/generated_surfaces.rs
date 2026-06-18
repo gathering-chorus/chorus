@@ -22,6 +22,7 @@ fn fixture() -> RouteTable {
         ],
         secured: vec!["/schema/domain".into()],
         mandatory: vec!["label".into(), "comment".into()],
+        repo_target: "generated/domain".into(),  // #3488 — repo land location
     }
 }
 
@@ -64,4 +65,39 @@ fn mcp_binding_is_adr031_conformant() {
     assert!(b.to_lowercase().contains("dal"), "add delegates to the DAL");
     // pluralized resource, not the bare class
     assert!(!b.contains("chorus_domain_get"), "must pluralize the resource (domains, not domain)");
+}
+
+// #3482 (folded into #3488) — the ADR-031 name GATE: not just "the expected
+// names exist" but "EVERY generated tool name conforms" — so a future generator
+// change that emits a non-conformant name (verb-first, bad verb, un-pluralized,
+// uppercase) FAILS here instead of drifting silently. Pure check over the
+// generated binding; no regex crate (owl-api is zero-dep).
+#[test]
+fn every_generated_mcp_name_obeys_adr031_grain() {
+    let b = mcp_binding(&fixture());
+    // extract every "name": "<tool>" value
+    let names: Vec<String> = b
+        .match_indices("\"name\":")
+        .filter_map(|(i, _)| {
+            let after = &b[i + 7..];
+            let start = after.find('"')? + 1;
+            let end = after[start..].find('"')? + start;
+            Some(after[start..end].to_string())
+        })
+        .collect();
+    assert!(!names.is_empty(), "binding must emit at least one tool name");
+    let verbs = ["get", "list", "add"];
+    for n in &names {
+        let parts: Vec<&str> = n.split('_').collect();
+        assert_eq!(parts.len(), 3, "ADR-031 grain is chorus_<resource>_<verb>: '{}'", n);
+        assert_eq!(parts[0], "chorus", "must be chorus-namespaced: '{}'", n);
+        assert!(verbs.contains(&parts[2]), "verb must be one of {:?}: '{}'", verbs, n);
+        let resource = parts[1];
+        assert!(
+            !resource.is_empty()
+                && resource.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+            "resource must be lowercase alnum: '{}'", n
+        );
+        assert!(resource.ends_with('s'), "resource must be pluralized: '{}'", n);
+    }
 }

@@ -1,0 +1,25 @@
+{
+  "class": "Domain",
+  "plural": "domains",
+  "unit": { "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /domains/:name/partof", "GET /domains/:name/has-child", "GET /domains/:name/completeness", "GET /schema/domain", "POST /domains", "PUT /domains/:name", "DELETE /domains/:name", "POST /domains/:name/partof", "DELETE /domains/:name/partof", "POST /domains/:name/contains", "DELETE /domains/:name/contains", "POST /domains/:name/has-child", "DELETE /domains/:name/has-child"], "mandatory": ["comment", "gaps", "label", "status"], "secured": ["/schema/domain"] },
+  "conformance": [
+    { "id": "conform GET /domains", "method": "GET", "path": "/domains", "expectStatus": 200 },
+    { "id": "conform GET /domains/:name", "method": "GET", "path": "/domains/:name", "expectStatus": 200 },
+    { "id": "conform GET /domains/:name/contains", "method": "GET", "path": "/domains/:name/contains", "expectStatus": 200 },
+    { "id": "conform GET /domains/:name/partof", "method": "GET", "path": "/domains/:name/partof", "expectStatus": 200 },
+    { "id": "conform GET /domains/:name/has-child", "method": "GET", "path": "/domains/:name/has-child", "expectStatus": 200 },
+    { "id": "conform GET /domains/:name/completeness", "method": "GET", "path": "/domains/:name/completeness", "expectStatus": 200 },
+    { "id": "conform GET /schema/domain", "method": "GET", "path": "/schema/domain", "expectStatus": 200 }
+  ],
+  "security": [
+    { "id": "unauth-create-401", "method": "POST", "path": "/domains", "auth": "none", "expectStatus": 401 },
+    { "id": "injection-name-400", "method": "GET", "path": "/domains/bad%20name", "auth": "none", "expectStatus": 400 },
+    { "id": "incomplete-create-422", "method": "POST", "path": "/domains", "auth": "owner", "body": "{}", "expectStatus": 422 },
+    { "id": "secured-401 /schema/domain", "method": "GET", "path": "/schema/domain", "auth": "none", "expectStatus": 401 }
+  ],
+  "constraints": [
+    { "id": "edge-target-type-reject atStep", "check": "edge-target-type", "edge": "atStep", "targetClass": "ValueStreamStep", "method": "POST", "path": "/domains/:name/atstep", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject hasDesignDoc", "check": "edge-target-type", "edge": "hasDesignDoc", "targetClass": "Document", "method": "POST", "path": "/domains/:name/hasdesigndoc", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject ownedBy", "check": "edge-target-type", "edge": "ownedBy", "targetClass": "Role", "method": "POST", "path": "/domains/:name/ownedby", "targetOfWrongType": true, "expectStatus": 422 }
+  ]
+}
