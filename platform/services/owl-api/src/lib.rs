@@ -1773,6 +1773,109 @@ pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a Rout
     })
 }
 
+/// #3494 — a COMPOSED domain surface: a domain (`domain`) mounted at its
+/// `chorus:repoTarget` path (`mount`, e.g. "borg/properties"), composing the
+/// per-class CRUD surfaces of the classes it `definesVocabulary` (`classes`,
+/// localnames). Each class is a sub-resource under the mount
+/// (`/borg/properties/property`, `/borg/properties/property-key`). The route shape
+/// Silas's ADR-045 ratified: definesVocabulary exists to COMPOSE a domain's
+/// surface — vocabulary classes belong UNDER their domain, not as root peers.
+#[derive(Clone, Debug)]
+pub struct DomainSurface {
+    pub mount: String,
+    pub domain: String,
+    pub classes: Vec<String>,
+}
+
+/// #3494 — kebab a class localname into its sub-resource segment: PropertyKey →
+/// "property-key", Property → "property". Lowercase with a hyphen before each
+/// internal uppercase boundary.
+pub fn class_subresource(class_local: &str) -> String {
+    let mut out = String::new();
+    for (i, ch) in class_local.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            out.push('-');
+        }
+        out.extend(ch.to_lowercase());
+    }
+    out
+}
+
+/// #3494 — what a composed-domain request resolves to. Pure over (path, surfaces).
+#[derive(PartialEq, Debug)]
+pub enum SurfaceHit {
+    /// GET /<mount> → the domain's vocabulary index.
+    Index { domain: String, classes: Vec<String> },
+    /// /<mount>/<class-kebab>[/...] → dispatch to that vocab class's RouteTable,
+    /// with the path rewritten to the class's own plural root for `handle()`.
+    Class { class_local: String, rewritten_path: String },
+}
+
+/// #3494 — resolve a request path against the composed domain surfaces. Longest
+/// mount wins (so a nested mount isn't shadowed). `/<mount>` exactly → Index;
+/// `/<mount>/<sub>[/rest]` → the vocab class whose kebab matches `<sub>`, rewritten
+/// to `/<plural>[/rest]` for the existing per-class `handle()`. None = not a
+/// surface path (falls through to the primitive select_table). Pure + testable.
+pub fn resolve_surface(path: &str, surfaces: &[DomainSurface]) -> Option<SurfaceHit> {
+    let trimmed = path.trim_start_matches('/');
+    // longest mount first so /a/b wins over /a
+    let mut ordered: Vec<&DomainSurface> = surfaces.iter().collect();
+    ordered.sort_by(|a, b| b.mount.len().cmp(&a.mount.len()));
+    for s in ordered {
+        let m = s.mount.trim_matches('/');
+        if m.is_empty() {
+            continue;
+        }
+        if trimmed == m {
+            return Some(SurfaceHit::Index { domain: s.domain.clone(), classes: s.classes.clone() });
+        }
+        let prefix = format!("{}/", m);
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+            let mut segs = rest.splitn(2, '/');
+            let sub = segs.next().unwrap_or("");
+            let tail = segs.next().map(|t| format!("/{}", t)).unwrap_or_default();
+            if let Some(cl) = s.classes.iter().find(|c| class_subresource(c) == sub) {
+                let rewritten = format!("/{}{}", pluralize(cl), tail);
+                return Some(SurfaceHit::Class { class_local: cl.clone(), rewritten_path: rewritten });
+            }
+            // mount matched but no such vocab class → still a surface miss (typed 404 upstream)
+            return Some(SurfaceHit::Index { domain: s.domain.clone(), classes: s.classes.clone() });
+        }
+    }
+    None
+}
+
+/// #3494 — read the composed domain surfaces from the model: every domain with a
+/// `chorus:repoTarget` (the mount) AND `chorus:definesVocabulary` edges (the
+/// classes). One SPARQL; grouped per domain. Empty → no composed routes.
+pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
+    // CONCAT dom|mount|cls into ?v (the single-var pattern select_v reads, as
+    // generate() does for field|kind) — one row per (domain, class) pair.
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH
+    );
+    let body = sparql_json(&q)?;
+    let mut by_mount: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
+    for row in select_v(&body) {
+        let parts: Vec<&str> = row.splitn(3, '|').collect();
+        if parts.len() == 3 && !parts[1].is_empty() && !parts[2].is_empty() {
+            by_mount
+                .entry((parts[1].to_string(), parts[0].to_string()))
+                .or_default()
+                .push(parts[2].to_string());
+        }
+    }
+    Ok(by_mount
+        .into_iter()
+        .map(|((mount, domain), mut classes)| {
+            classes.sort();
+            classes.dedup();
+            DomainSurface { mount, domain, classes }
+        })
+        .collect())
+}
+
 pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
@@ -1784,6 +1887,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     if secret.is_empty() {
         // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
         eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
+    }
+    // #3494 — composed domain surfaces (the definesVocabulary fan-out): every domain
+    // with chorus:repoTarget + definesVocabulary mounts at /<repoTarget>, composing
+    // its vocab classes (whose RouteTables are already in `tables` via the serve
+    // fan-out) as sub-resources. Read once at boot; empty → no composed routes.
+    let surfaces = read_domain_surfaces().unwrap_or_default();
+    for s in &surfaces {
+        eprintln!("owl-api: + /{} domain surface [{}]", s.mount, s.classes.join(", "));
     }
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
@@ -1806,6 +1917,21 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
+        // #3494 — composed domain surface dispatch, BEFORE the primitive select_table.
+        // /<mount> → the domain's vocabulary index; /<mount>/<class-kebab>[/...] →
+        // rewrite to the vocab class's own plural root and fall through to the normal
+        // per-class flow (so the composed sub-resource reuses handle()/auth untouched).
+        let path = match resolve_surface(&path, &surfaces) {
+            Some(SurfaceHit::Index { domain, classes }) => {
+                let refs: Vec<&str> = classes.iter().map(String::as_str).collect();
+                let idx = project_domain_vocab_index(&domain, &refs);
+                let resp = http_response_ct(status_line(200), &idx, "application/json");
+                let _ = stream.write_all(resp.as_bytes());
+                continue;
+            }
+            Some(SurfaceHit::Class { rewritten_path, .. }) => rewritten_path,
+            None => path,
+        };
         let table = match select_table(&path, tables) {
             Some(t) => t,
             None => {
@@ -2017,6 +2143,49 @@ mod tests {
         // AC4 — zero definesVocabulary edges → empty vocab array, no phantom surface
         let idx3 = project_domain_vocab_index("borg", &[]);
         assert!(idx3.contains("\"vocab\": []"), "zero classes → empty vocab, no phantom route");
+    }
+
+    #[test]
+    fn class_subresource_kebabs_vocab_classes() {
+        assert_eq!(class_subresource("Property"), "property");
+        assert_eq!(class_subresource("PropertyKey"), "property-key");
+        assert_eq!(class_subresource("Service"), "service");
+    }
+
+    #[test]
+    fn resolve_surface_mounts_composed_domain_route() {
+        // #3494 AC3: /<repoTarget> composes the domain's vocab classes as
+        // sub-resources, each rewritten to its own plural root for handle().
+        let surfaces = vec![DomainSurface {
+            mount: "borg/properties".into(),
+            domain: "properties".into(),
+            classes: vec!["Property".into(), "PropertyKey".into()],
+        }];
+        // /<mount> → the vocab index
+        match resolve_surface("/borg/properties", &surfaces) {
+            Some(SurfaceHit::Index { domain, classes }) => {
+                assert_eq!(domain, "properties");
+                assert_eq!(classes, vec!["Property".to_string(), "PropertyKey".to_string()]);
+            }
+            other => panic!("expected Index, got {:?}", other),
+        }
+        // /<mount>/<class-kebab> → that class, rewritten to its plural root
+        assert_eq!(
+            resolve_surface("/borg/properties/property", &surfaces),
+            Some(SurfaceHit::Class { class_local: "Property".into(), rewritten_path: "/properties".into() })
+        );
+        assert_eq!(
+            resolve_surface("/borg/properties/property-key", &surfaces),
+            Some(SurfaceHit::Class { class_local: "PropertyKey".into(), rewritten_path: format!("/{}", pluralize("PropertyKey")) })
+        );
+        // sub-resource tail (e.g. an instance name) is preserved through the rewrite
+        match resolve_surface("/borg/properties/property/some-key", &surfaces) {
+            Some(SurfaceHit::Class { rewritten_path, .. }) => assert_eq!(rewritten_path, "/properties/some-key"),
+            other => panic!("expected Class with tail, got {:?}", other),
+        }
+        // a non-surface path falls through to the primitive select_table
+        assert_eq!(resolve_surface("/products/loom", &surfaces), None);
+        assert_eq!(resolve_surface("/domains/properties", &surfaces), None);
     }
 
     #[test]
