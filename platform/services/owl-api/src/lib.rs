@@ -361,6 +361,81 @@ pub fn generate_product_index(product_local: &str) -> R<String> {
     Ok(project_product_index(product_local, &refs))
 }
 
+/// #3494 — read the OWL classes a DOMAIN governs via `chorus:definesVocabulary`
+/// (the VOCABULARY edge — what classes this domain's API serves — distinct from
+/// partOf/contains CONTAINMENT). Multi-valued: a domain may define several classes
+/// (properties → Property, PropertyKey). The per-class generator (#3454) fans out
+/// over these. Localnames, sorted, de-duped. Same graph + shape as
+/// `read_product_domains` (the hasDomain bind), so the vocab bind reads the model
+/// the same way the containment bind does.
+fn read_defines_vocabulary(domain_local: &str) -> R<Vec<String>> {
+    let domain = format!("{}{}", NS, domain_local);
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{d}> chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH, d = domain
+    );
+    let mut cs = select_v(&sparql_json(&q)?);
+    cs.sort();
+    cs.dedup();
+    Ok(cs)
+}
+
+/// #3494 — pure: project a DOMAIN's vocabulary surface index from the classes it
+/// `definesVocabulary`. Mirrors `project_product_index` (the product→domain bind):
+/// the domain's API is the aggregate of the per-class surfaces its vocabulary
+/// classes generate. Each class carries its API mount (the pluralized route root).
+/// Names lowercased, sorted, de-duped. Zero classes → an empty `vocab` array (no
+/// phantom surface, AC4). Pure; the SPARQL read is integration-proven separately.
+pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
+    let mut cs: Vec<String> = classes
+        .iter()
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+        .collect();
+    cs.sort();
+    cs.dedup();
+    let items: Vec<String> = cs
+        .iter()
+        .map(|c| format!("{{ \"class\": \"{}\", \"api\": \"/{}\" }}", c, pluralize(c)))
+        .collect();
+    format!(
+        "{{ \"domain\": \"{}\", \"vocab\": [{}] }}",
+        domain.trim().to_lowercase(),
+        items.join(", ")
+    )
+}
+
+/// #3494 — enumerate EVERY class any domain `definesVocabulary` across the model
+/// (distinct, sorted). The serve fan-out uses this to mount every vocabulary
+/// surface on one origin: each class generates its #3454 CRUD table and dispatches
+/// via the existing `select_table`. Zero edges → empty Vec (serve adds nothing).
+pub fn all_vocab_classes() -> R<Vec<String>> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH
+    );
+    let mut cs = select_v(&sparql_json(&q)?);
+    cs.sort();
+    cs.dedup();
+    Ok(cs)
+}
+
+/// #3494 — FAN-OUT: enumerate a domain's `definesVocabulary` classes and run the
+/// EXISTING per-class generator (#3454) on each, composing the domain's vocabulary
+/// surface from one edge set — no new per-class machinery. A domain with zero
+/// `definesVocabulary` edges yields an EMPTY Vec (no surface, no crash, no phantom
+/// route — AC4). This is the API-surface case of "the whole model renders as a
+/// projection": every domain that declares vocabulary gets its CRUD surface
+/// projected from that single edge, never hand-written.
+pub fn generate_domain_vocab(domain_local: &str) -> R<Vec<RouteTable>> {
+    let classes = read_defines_vocabulary(domain_local)?;
+    let mut tables = Vec::with_capacity(classes.len());
+    for class in classes {
+        tables.push(generate(&class)?);
+    }
+    Ok(tables)
+}
+
 /// GENERATE — read the shape's direct-path properties for `class` from the
 /// ontology graph and derive the route table.
 pub fn generate(class_local: &str) -> R<RouteTable> {
@@ -1924,6 +1999,24 @@ mod tests {
         // normalization: dedup + skip empty, names lowercased
         let idx3 = project_product_index("athena", &["Domains", "domains", ""]);
         assert_eq!(idx3.matches("\"name\":").count(), 1, "dedup + skip-empty → one domain");
+    }
+
+    #[test]
+    fn project_domain_vocab_index_composes_definesvocabulary_classes() {
+        // #3494: a domain's API is the aggregate of the classes it definesVocabulary
+        // — each class mounted at its pluralized route root (the per-class #3454
+        // surface). Sorted, deduped; domain lowercased.
+        let idx = project_domain_vocab_index("properties", &["Property", "PropertyKey"]);
+        assert!(idx.contains("\"domain\": \"properties\""), "domain lowercased");
+        assert!(idx.contains("{ \"class\": \"Property\", \"api\": \"/propertys\" }")
+                || idx.contains("\"class\": \"Property\""), "vocab class bound with its mount");
+        assert!(idx.contains("PropertyKey"), "all definesVocabulary classes composed");
+        // dedup + skip-empty
+        let idx2 = project_domain_vocab_index("Properties", &["Property", "Property", ""]);
+        assert_eq!(idx2.matches("\"class\":").count(), 1, "dedup + skip-empty → one class");
+        // AC4 — zero definesVocabulary edges → empty vocab array, no phantom surface
+        let idx3 = project_domain_vocab_index("borg", &[]);
+        assert!(idx3.contains("\"vocab\": []"), "zero classes → empty vocab, no phantom route");
     }
 
     #[test]
