@@ -862,7 +862,11 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     );
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    let body = mcp_nudge_body("jeff", &msg);
+    // The announce surfaces in the DEMOER's session — that's where Jeff is sitting
+    // during the demo (he runs /cw <role>, then watches that role's terminal). A
+    // nudge to=jeff has no terminal of its own and surface-fails; to=<demoer> lands
+    // in the window Jeff is actually looking at.
+    let body = mcp_nudge_body(from, &msg);
     let _ = run("curl", &[
         "-s", "-f", "-X", "POST", &mcp_url,
         "-H", "Content-Type: application/json",
