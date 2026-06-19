@@ -160,7 +160,7 @@ exit 0
     // execution) — exit 1, typed gates-missing — BEFORE any announce. This is the
     // loud-stop that replaces #3279's silent "(none run — optional)" present.
     fs::create_dir_all(home.join("ops/logs")).unwrap();
-    let ungated = demo(3046, "wren", &home, false).expect("demo() returns Ok even when it refuses");
+    let ungated = demo(3046, "wren", &home).expect("demo() returns Ok even when it refuses");
     assert_eq!(ungated.exit, 1, "un-gated demo must REFUSE to present (AC6): {}", ungated.message);
     assert!(ungated.message.contains("gates not run"), "typed gates-missing refusal: {}", ungated.message);
     // #3318: under act/CI (ACT set) the same un-gated demo SKIPS enforcement and presents
@@ -190,32 +190,37 @@ exit 0
     // live flow records them via `werk-demo gather <card> <peer> replied`.
     gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
     gate_seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
+    // #3511 — the demo also BLOCKS for JEFF's go (the accept) after the announce.
+    // Seed it the way `werk-demo go <card>` records it (round-keyed), so the full
+    // conversation — gates → gathers → announce → Jeff's go — completes → exit 0.
+    gate_seed.push_str("{\"ts\":1,\"event\":\"demo.go\",\"role\":\"wren\",\"card_id\":3046,\"trace_id\":\"seed\",\"round\":\"e2e-r1\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
 
     // --- run the proving ceremony ---
-    // #3499 — go=true AT INVOKE. Both gathers are already replied (seeded above), so
-    // announce_ready_full is true → the block-poll is skipped, the proven path runs,
-    // and the exit is 0 (proven → act merges). This IS the proven→merge happy path in
-    // the one-run world; the no-go and timeout branches are covered by the standby test.
-    let result = demo(3046, "wren", &home, true /* go */).expect("demo should succeed");
-    assert_eq!(result.exit, 0, "#3499 proven + go → exit 0 (act merges); got {}", result.exit);
-    // #3284 — the announce IS Jeff's 5-step demo contract, RETURNED as the message so
-    // the agent pastes it into its end-of-turn reply (auto/focus mode: Jeff never sees
-    // a Bridge post). Assert all five steps are present in what Jeff will read:
-    assert!(result.message.contains("#3046"), "announce names the card: {}", result.message);
-    assert!(result.message.contains("AC 2/2"), "ac count in the announce: {}", result.message);
-    assert!(result.message.contains("gates:"), "(1) gates required + shown: {}", result.message);
+    // #3511 — full conversation seeded: 5 gates + both peer gathers replied + JEFF's go.
+    // demo() blocks for peer-review (in), announces, blocks for Jeff's go (recorded at
+    // THIS round), and returns proven → exit 0. The one-run happy path with Jeff's seat
+    // intact. (Gather/jeff-go TIMEOUT branches are covered by the #3052 test below.)
+    let result = demo(3046, "wren", &home).expect("demo should succeed");
+    assert_eq!(result.exit, 0, "#3511 proven (gates + gathers + jeff-go) → exit 0; got {}", result.exit);
+    // #3511 — the announce does the FOUR things Jeff named (2026-06-19): (1) each
+    // gate's status, (2) the team's role feedback, (3) the card # + description + AC,
+    // (4) a CLAIM of how to prove it works. Assert each is in what Jeff reads:
+    assert!(result.message.contains("#3046"), "(3) names the card: {}", result.message);
+    assert!(result.message.contains("AC 2/2"), "(3) AC count: {}", result.message);
+    assert!(result.message.contains("AC:"), "(3) the AC items are listed: {}", result.message);
+    assert!(result.message.contains("gates:"), "(1) gate status shown: {}", result.message);
     assert!(
         result.message.contains("feedback:") && result.message.contains("reviewed, no concerns"),
-        "(2) feedback required — each gate's findings shown: {}",
-        result.message
+        "per-gate findings shown: {}", result.message
     );
+    assert!(result.message.contains("team review:"), "(2) role feedback summarized: {}", result.message);
+    assert!(result.message.contains("🔬"), "(4) a claim of how to prove it works: {}", result.message);
     assert!(
-        result.message.contains("Ask me anything") && result.message.contains("TEST"),
-        "(4) announce invites your questions + a test: {}",
-        result.message
+        result.message.to_lowercase().contains("ask me anything") && result.message.contains("TEST"),
+        "invites questions + a test against the variant: {}", result.message
     );
-    assert!(result.message.contains("go / no"), "(5) ends in the go/no decision: {}", result.message);
+    assert!(result.message.contains("werk-demo go 3046"), "(5) ends in Jeff's go path: {}", result.message);
 
     // --- assert side effects ---
 
@@ -416,29 +421,29 @@ exit 0
     seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &seed).unwrap();
 
-    // #3499 — go==false is PRESENT-ONLY: prove + show, never land. Gathers pending
-    // (silas hasn't replied) → clean GREEN exit 2 (presented-not-landed), NOT a block.
-    let out = demo(3052, "wren", &home, false /* present-only */).expect("present-only standby returns Ok");
-    assert_eq!(out.exit, 2, "#3499: present-only is a clean GREEN exit — presented, not landed: {}", out.message);
-    assert!(out.message.contains("present-only"), "names present-only: {}", out.message);
-    assert!(out.message.contains("silas"), "names the missing peer: {}", out.message);
-    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
-    assert!(
-        witness.contains("\"reason\":\"gathers-pending\"") && witness.contains("\"gathers_missing\":\"silas\""),
-        "standby witnessed with the missing peer named:\n{}",
-        witness
-    );
-
-    // #3499 — go==true HOLDS in-run on the gathers, but TIMES OUT CLEANLY (exit 2,
-    // green) rather than hanging when a peer never replies. CHORUS_DEMO_BLOCK_TIMEOUT=0
-    // trips the deadline on the first poll iteration — proves the block-poll bounds
-    // itself and never red-fails on a slow peer.
+    // #3511 — PHASE 1: peer review. A peer missing (silas) → the demo BLOCKS in-run,
+    // and TIMES OUT cleanly (exit 2, green), never hangs. BLOCK_TIMEOUT=0 trips the
+    // deadline on the first poll. No go arg — every run blocks for review, then Jeff.
     std::env::set_var("CHORUS_DEMO_BLOCK_TIMEOUT", "0");
-    let timed = demo(3052, "wren", &home, true /* go */).expect("go+timeout returns Ok (clean stop, not error)");
-    assert_eq!(timed.exit, 2, "#3499: go-but-gather-timeout is a clean GREEN stop, never red: {}", timed.message);
+    let timed = demo(3052, "wren", &home).expect("gather timeout returns Ok (clean stop, not error)");
+    assert_eq!(timed.exit, 2, "#3511: gather-timeout is a clean GREEN stop, never red: {}", timed.message);
     assert!(timed.message.to_lowercase().contains("timeout"), "names the timeout: {}", timed.message);
-    assert!(timed.message.contains("silas"), "names the peer that didn't reply: {}", timed.message);
+    assert!(timed.message.contains("silas"), "names the peer that didn't review: {}", timed.message);
     let w2 = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
-    assert!(w2.contains("\"event\":\"demo.gather.timeout\""), "timeout witnessed:\n{}", w2);
+    assert!(w2.contains("\"event\":\"demo.gather.timeout\""), "gather timeout witnessed:\n{}", w2);
     std::env::remove_var("CHORUS_DEMO_BLOCK_TIMEOUT");
+
+    // #3511 — PHASE 2 (the seat): seed the missing peer so peer-review PASSES, but give
+    // NO Jeff go. The demo announces, then BLOCKS for JEFF's go and TIMES OUT cleanly
+    // (exit 2, green) — NO go → NO land, the exact thing #3499 broke (it auto-landed on
+    // peer-blessing). Generous timeout forced to 0 so the test doesn't wait 24h.
+    let mut both = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
+    both.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"silas\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
+    fs::write(home.join("ops/logs/werk-demo.jsonl"), &both).unwrap();
+    std::env::set_var("CHORUS_DEMO_JEFFGO_TIMEOUT", "0");
+    let nogo = demo(3052, "wren", &home).expect("jeff-go timeout returns Ok (clean stop, not error)");
+    assert_eq!(nogo.exit, 2, "#3511: peers reviewed but NO Jeff go → exit 2, never land: {}", nogo.message);
+    let w3 = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
+    assert!(w3.contains("\"event\":\"demo.jeffgo.timeout\""), "jeff-go timeout witnessed:\n{}", w3);
+    std::env::remove_var("CHORUS_DEMO_JEFFGO_TIMEOUT");
 }

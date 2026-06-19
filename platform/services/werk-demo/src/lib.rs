@@ -277,6 +277,20 @@ pub fn gathers_missing(witness: &str, card: u64, role: &str, round: &str, patch_
         .collect()
 }
 
+/// #3511 — true iff JEFF's go is recorded for this card at THIS round. The go is
+/// the human accept (DEC-048), given AFTER the demoer presents the finished, gated
+/// variant — recorded via `werk-demo go <card>`. The go-INPUT method (how Jeff
+/// says go) is Jeff's to shape; this is the witness slot the block reads. Patch-
+/// tolerant (#3461 line_keyed) like the gathers, so his go survives a content-
+/// preserving rebase. NOT the peers' gathers: peer-review is never the verdict —
+/// proving is Jeff's, the /demo skill's own rule ("never peer-blessing").
+pub fn jeff_go_recorded(witness: &str, card: u64, round: &str, patch_id: &str) -> bool {
+    let card_key = format!("\"card_id\":{},", card);
+    witness.lines().any(|l| {
+        l.contains("\"event\":\"demo.go\"") && l.contains(&card_key) && line_keyed(l, round, patch_id)
+    })
+}
+
 /// #3443 AC2 — peers who have NOT yet been SENT a gather this round. Distinct
 /// from gathers_missing (which tracks REPLIES): sending is keyed on
 /// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
@@ -432,6 +446,63 @@ pub fn render_gate_feedback(witness: &str, card: u64) -> String {
     } else {
         format!("feedback:\n{}", lines.join("\n"))
     }
+}
+
+/// #3511 — summarize the ROLE feedback (the peer gathers) for the announce: each
+/// peer's recorded demo.gather.replied verdict + substance. Distinct from the
+/// per-gate findings above — this is the TEAM's review Jeff weighs before his go.
+pub fn render_role_feedback(witness: &str, card: u64) -> String {
+    let card_key = format!("\"card_id\":{},", card);
+    let mut lines = Vec::new();
+    for peer in ["silas", "kade", "wren"] {
+        let peer_key = format!("\"peer\":\"{}\"", peer);
+        if let Some(l) = witness.lines().rev().find(|l| {
+            l.contains("\"event\":\"demo.gather.replied\"") && l.contains(&card_key) && l.contains(&peer_key)
+        }) {
+            let verdict = json_str_after(l, "verdict").unwrap_or_else(|| "pass".to_string());
+            let note = json_str_after(l, "note").unwrap_or_default();
+            let tail = if note.is_empty() { String::new() } else { format!(" — {}", note) };
+            lines.push(format!("  {}: {}{}", peer, verdict, tail));
+        }
+    }
+    if lines.is_empty() { String::new() } else { format!("team review:\n{}", lines.join("\n")) }
+}
+
+/// #3511 — the card's TITLE line from `cards view` (first non-empty line, "#N …").
+pub fn card_title(card_view: &str) -> String {
+    card_view.lines().map(|l| l.trim()).find(|l| !l.is_empty()).unwrap_or("").to_string()
+}
+
+/// #3511 — pull a "## <header>" markdown section body from `cards view`. Used for
+/// the demo CLAIM (the card's Experience = what "working" looks like). Returns the
+/// section's non-empty lines (until the next "## " header or EOF), space-joined.
+pub fn extract_section(card_view: &str, header: &str) -> String {
+    let want = format!("## {}", header);
+    let mut out = Vec::new();
+    let mut in_sec = false;
+    for line in card_view.lines() {
+        let t = line.trim();
+        if t.starts_with("## ") {
+            in_sec = t.eq_ignore_ascii_case(&want);
+            continue;
+        }
+        if in_sec && !t.is_empty() {
+            out.push(t.to_string());
+        }
+    }
+    out.join(" ")
+}
+
+/// #3511 — the AC checklist from `cards view` (the `- [ ]`/`- [x]` items, each with
+/// its done-box) so Jeff sees what's demonstrated vs outstanding, not just a count.
+pub fn render_ac_items(card_view: &str) -> String {
+    let items: Vec<String> = card_view
+        .lines()
+        .map(|l| l.trim())
+        .filter(|t| t.starts_with("- [x]") || t.starts_with("- [ ]"))
+        .map(|t| format!("  {}", t))
+        .collect();
+    if items.is_empty() { String::new() } else { format!("AC:\n{}", items.join("\n")) }
 }
 
 // #3331 — the #3237 Decision enum + read_decision were REMOVED here: #3279 retired
@@ -775,6 +846,33 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
     ]).map(|_| ())
 }
 
+/// #3511 — surface the demo to JEFF via the nudge wire (to=jeff), so he actually
+/// SEES it in his terminal — the invisibility (a silent demo.presented spine event)
+/// was #3499's whole failure. Best-effort: a send failure never blocks the demo;
+/// the block still holds for his go. Single-line, no embedded double-quotes, so it
+/// interpolates safely into the JSON-RPC body. This is the MINIMAL mechanism pointer
+/// (run `werk-demo go <card>` to land); the rich announce stays the DemoOutcome
+/// message + Bridge post. The announce CONTENT is Jeff's to shape — this is the slot.
+fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round: &str) {
+    let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
+    let msg = format!(
+        "Demo ready for your GO — #{} (round {}). Peers reviewed; variant: {}. Look at it, then run \
+         `werk-demo go {}` to land it, or no/more to hold. The demo is HOLDING in-run for your call.",
+        card, round, url, card
+    );
+    let mcp_url = std::env::var("CHORUS_MCP_URL")
+        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
+    let body = mcp_nudge_body("jeff", &msg);
+    let _ = run("curl", &[
+        "-s", "-f", "-X", "POST", &mcp_url,
+        "-H", "Content-Type: application/json",
+        "-H", "Accept: application/json, text/event-stream",
+        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
+        "-d", &body,
+    ]);
+}
+
 /// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
 /// All four are best-effort (the act has already gated; signal is the announcement,
 /// not a gate). Bridge + nudges are HTTP POSTs to localhost services (zero-dep:
@@ -832,16 +930,21 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
 /// (build/deploy/env-up) is done by the PRIOR verbs in the flat sequence; the
 /// gates run as subagents in the /demo skill layer. demo records demo.verdict;
 /// werk-accept gates finalize on it.
-/// #3499 — `go` is passed AT INVOKE (the one-run collapse). go==true means "prove
-/// and land if it proves": demo runs gates, fires the peer gathers, then BLOCKS in
-/// this same run until the replies land (or the window closes) and returns the
-/// #3237 exit code that drives the next step — 0=proven→merge, 2=no-go/timeout→stop
-/// (green, presented-not-landed), 1=error. go==false is present-only: prove + show,
-/// never land, exit 2. Blocking IN-RUN is what kills the cross-run round-churn (the
-/// gathers reply at the SAME round) and retires the second go-keyed invocation.
-pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
+/// #3511 — ONE run, but it STOPS for Jeff. The demo is a CONVERSATION (the /demo
+/// skill's own JX): the machine does prework (gates) + peer-review (gathers), then
+/// ANNOUNCES the finished, gated variant to Jeff, then BLOCKS for HIS in-run go
+/// (`werk-demo go <card>`) before it returns proven. The sequence the verb already
+/// documents — gates → gathers REPLIED → announce → go — restored after #3499
+/// silently collapsed past the announce+go and made peer-blessing the verdict
+/// (which it never is). Exit: 0 = Jeff's go recorded (proven → merge); 2 = no go /
+/// timeout / present-only (green, presented-not-landed); 1 = error. There is NO
+/// at-invoke go: only Jeff's recorded go lands a card, so an agent can never
+/// auto-accept (the self-accept hole closed by construction). Two block phases,
+/// each round+patch-keyed (#3461) so a content-preserving rebase loses neither the
+/// peer replies nor Jeff's go.
+pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
-    jsonl(home, role, card, &trace, "demo.started", &format!(",\"go\":{}", go));
+    jsonl(home, role, card, &trace, "demo.started", "");
 
     let card_s = card.to_string();
 
@@ -1011,12 +1114,12 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
             }
 
             // Gates recorded; only the peer GATHERS are outstanding (fired above).
-            // #3499 — BLOCK-POLL in this SAME run when go was given: hold until the
-            // replies land (same round → zero churn) or the window closes. It's a
-            // detached act run, safe to block. !go → present-only, return exit 2 now.
-            // The test suite (skip_gate_check) never reaches here — announce_ready_full
-            // short-circuits true — so the poll stays out of tests, hermetic + instant.
-            if go {
+            // #3511 — BLOCK-POLL in this SAME run for PEER REVIEW: hold until the
+            // replies land (same round → zero churn) or the window closes. Detached
+            // act run, safe to block. No go gating — EVERY run blocks for peer review,
+            // then announces to Jeff and blocks for HIS go (below). The test suite
+            // (skip_gate_check) never reaches here — announce_ready_full short-circuits.
+            {
                 let timeout_s = std::env::var("CHORUS_DEMO_BLOCK_TIMEOUT")
                     .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
                 let start = Instant::now();
@@ -1026,7 +1129,7 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
                 loop {
                     let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
                     if gathers_missing(&w, card, role, &round, &patch).is_empty() {
-                        // every peer replied at THIS round → fall through to the proven path.
+                        // peer review IN at THIS round → fall through to announce + Jeff's go.
                         break;
                     }
                     if start.elapsed().as_secs() >= timeout_s {
@@ -1037,8 +1140,8 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
                                        round, gathers_absent.join(","), timeout_s));
                         return Ok(DemoOutcome {
                             message: format!(
-                                "demo #{} — presented; gather TIMEOUT after {}s (round {}). Peers [{}] \
-                                 did not reply; NOTHING landed (clean stop, green). Re-run go once they ack.",
+                                "demo #{} — gather TIMEOUT after {}s (round {}). Peers [{}] did not \
+                                 review; NOTHING landed (clean stop, green). Re-run once they ack.",
                                 card, timeout_s, round, gathers_absent.join(",")
                             ),
                             exit: 2,
@@ -1046,19 +1149,6 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
                     }
                     sleep(Duration::from_secs(10));
                 }
-            } else {
-                let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
-                emit_spine(home, "demo.prework.standby", role, card, &trace);
-                jsonl(home, role, card, &trace, "demo.prework.standby",
-                      &format!(",\"reason\":\"gathers-pending\",\"gathers_missing\":\"{}\"", gathers_absent.join(",")));
-                return Ok(DemoOutcome {
-                    message: format!(
-                        "demo #{} — presented (present-only, no go). Peer gather replies pending: [{}], \
-                         round {}. Not landed. Re-run with go to hold in-run for the replies and land on proof.",
-                        card, gathers_absent.join(","), round
-                    ),
-                    exit: 2,
-                });
             }
         }
     }
@@ -1198,20 +1288,37 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
     // asks to test · then go / no. Built ONCE as plain text and RETURNED as this
     // verb's message — because in auto/focus mode Jeff sees only the agent's
     // end-of-turn reply, never a Bridge post; the agent pastes this verbatim.
-    let feedback_block = if gate_feedback.is_empty() {
-        String::new()
+    // #3511 — THE ANNOUNCE, the four things Jeff named (2026-06-19): (1) each gate's
+    // status, (2) the team's role feedback, (3) the card # + description + AC, and
+    // (4) a CLAIM of how to prove it works against the variant. Built once, RETURNED
+    // as the verb's message AND surfaced to Jeff via the wire (announce_to_jeff).
+    let title = card_title(&cv);
+    let experience = extract_section(&cv, "Experience");
+    let ac_items = render_ac_items(&cv);
+    let role_feedback = render_role_feedback(&witness, card);
+    let claim = if experience.is_empty() {
+        format!("🔬 To prove it works: exercise the AC against the live variant ({}).", variant_url)
     } else {
-        format!("\n{}", gate_feedback)
+        format!("🔬 Claim — what working looks like (prove it against the variant): {}", experience)
     };
-    let announce = format!(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 #{} — DEMO · ready for your review   AC {}/{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{}\n{}{}\nvariant: {}\n{}\n──────────────────────────────────\nAsk me anything about this, or tell me to TEST the change against the variant.\nThen your call → go / no / more.",
-        card, checked, total,
-        cockpit,
-        gate_summary,
-        feedback_block,
-        variant_status,
-        test_summary,
-    );
+
+    let mut parts: Vec<String> = Vec::new();
+    parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
+    parts.push(format!("🎬 {}", if title.is_empty() { format!("#{}", card) } else { title })); // (3) card # + title
+    parts.push(format!("   DEMO · ready for your GO · AC {}/{}", checked, total));
+    parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
+    parts.push(cockpit.clone());
+    if !ac_items.is_empty() { parts.push(ac_items); }                       // (3) AC items
+    parts.push(gate_summary.clone());                                       // (1) gate status
+    if !gate_feedback.is_empty() { parts.push(gate_feedback.clone()); }     // per-gate findings
+    if !role_feedback.is_empty() { parts.push(role_feedback); }             // (2) role feedback
+    parts.push(claim);                                                      // (4) prove-it claim
+    parts.push(format!("variant: {}", variant_status));
+    parts.push(test_summary.clone());
+    parts.push("──────────────────────────────────".to_string());
+    parts.push("Look at the variant, ask me anything, or tell me to TEST it.".to_string());
+    parts.push(format!("Then your call → `werk-demo go {}` to land · no/more to hold.", card));
+    let announce = parts.join("\n");
     // Also POST to Bridge (history + any non-focus surface). Escaped for one-line JSON.
     let surface_body = format!(
         r#"{{"from":"{}","text":"{}"}}"#,
@@ -1243,14 +1350,47 @@ pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
           &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\",\"patch_id\":\"{}\"",
                    checked, total, round, variant_url, patch));
     emit_spine(home, "demo.presented", role, card, &trace);
-    // #3284 — RETURN the announce as the verb's message. In auto/focus mode the agent
-    // pastes this verbatim into its end-of-turn reply — the ONLY surface Jeff sees.
-    // The Bridge post above is the non-focus mirror. (Your GO runs Half B / werk-land.)
-    jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"presented\"");
-    // #3499 — proven (gates recorded + both gathers replied for THIS round). The
-    // exit drives the next step: go==true → 0 (act merges); go==false (present-only)
-    // → 2 (green, presented-not-landed — never land without the go).
-    Ok(DemoOutcome { message: announce, exit: if go { 0 } else { 2 } })
+    // #3511 — the variant is PRESENTED (announce above). Now the demo is a
+    // CONVERSATION: surface it to JEFF via the nudge wire so he SEES it (the silent
+    // demo.presented was #3499's whole failure), then BLOCK for HIS in-run go before
+    // returning proven. Peer-review is in; the verdict is JEFF'S, given here. No go
+    // → no land. (The announce stays the DemoOutcome message + Bridge post too.)
+    if !skip_gate_check {
+        // Surface the demo to Jeff (real runs only; the suite seeds demo.go directly
+        // and must never fire a live nudge — same guard as the gather send).
+        if !skip_gather_send {
+            announce_to_jeff(role, card, &trace, &variant_url, &round);
+        }
+        let jeffgo_timeout = std::env::var("CHORUS_DEMO_JEFFGO_TIMEOUT")
+            .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(86_400); // 24h — a walk-away must NOT force a re-run
+        let start = Instant::now();
+        emit_spine(home, "demo.jeffgo.block", role, card, &trace);
+        jsonl(home, role, card, &trace, "demo.jeffgo.block",
+              &format!(",\"round\":\"{}\",\"timeout_s\":{}", round, jeffgo_timeout));
+        loop {
+            let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+            if jeff_go_recorded(&w, card, &round, &patch) {
+                break; // Jeff's GO is IN at this round → proven, release to merge.
+            }
+            if start.elapsed().as_secs() >= jeffgo_timeout {
+                emit_spine(home, "demo.jeffgo.timeout", role, card, &trace);
+                jsonl(home, role, card, &trace, "demo.jeffgo.timeout",
+                      &format!(",\"round\":\"{}\",\"waited_s\":{}", round, jeffgo_timeout));
+                return Ok(DemoOutcome {
+                    message: format!(
+                        "demo #{} — presented; NO go after {}s (round {}). Not landed (clean stop, \
+                         green). Re-run when you're ready to give the go.",
+                        card, jeffgo_timeout, round
+                    ),
+                    exit: 2,
+                });
+            }
+            sleep(Duration::from_secs(10));
+        }
+    }
+    // Jeff's go is recorded (or skip_gate_check in tests) → proven, release to merge.
+    jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"go\"");
+    Ok(DemoOutcome { message: announce, exit: 0 })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
@@ -1742,12 +1882,34 @@ pub fn run_demo() -> R<DemoOutcome> {
         });
     }
 
-    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id> [go]")?;
-    // #3499 — go AT INVOKE (2nd positional): {true|go|yes} → land-if-proven (demo
-    // blocks in-run on the gathers, exits 0 on proof → act merges); absent or
-    // anything else → present-only (exit 2, green). One run, exit code drives merge.
-    let go = args.next().map(|s| matches!(s.trim(), "true" | "go" | "yes")).unwrap_or(false);
-    demo(card, role.trim(), &home, go)
+    if first == "go" {
+        // #3511 — JEFF's GO: the human accept (DEC-048), recorded AFTER the demoer
+        // presents the finished, gated variant and Jeff has seen it. This is the
+        // SECOND block condition (with the peer gathers) that releases the demo to
+        // merge. Recorded at round + patch_id so it survives a content-preserving
+        // rebase, exactly like the gather replies. NOT a peer signal — only Jeff's.
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo go <card>")?;
+        let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+        let round = current_round(role.trim(), card);
+        let patch = current_patch_id(card);
+        jsonl(&home, role.trim(), card, &trace, "demo.go",
+              &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
+        emit_spine(&home, "demo.go", role.trim(), card, &trace);
+        return Ok(DemoOutcome {
+            message: format!("Jeff's GO recorded for #{} (round {}) — the demo releases to merge.", card, round),
+            exit: 0,
+        });
+    }
+
+    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id>")?;
+    // #3511 — NO go at invoke. Every run proves (gates + peer gathers) → ANNOUNCES
+    // to Jeff → blocks for HIS in-run go (`werk-demo go <card>`) before merge. The
+    // go-flag conflation is gone: there is no arg for an agent to set, so only
+    // Jeff's recorded go can land a card (self-accept hole closed by construction).
+    demo(card, role.trim(), &home)
 }
 
 #[cfg(test)]
@@ -2201,6 +2363,20 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert_eq!(gates_missing(&w, 3, "r1", "").len(), 5, "card 31's gates must not satisfy card 3");
+    }
+
+    // #3511 — JEFF's go matcher: round+patch-keyed, card-scoped, his go only.
+    #[test]
+    fn jeff_go_recorded_keys_on_round_card_and_patch() {
+        let w = r#"{"event":"demo.go","role":"wren","card_id":3511,"trace_id":"t","round":"rA","patch_id":"pX"}"#;
+        assert!(jeff_go_recorded(w, 3511, "rA", ""), "matches by round");
+        assert!(jeff_go_recorded(w, 3511, "rOTHER", "pX"), "patch-tolerant: matches by patch across a rebase");
+        assert!(!jeff_go_recorded(w, 3511, "rB", "pZ"), "no round and no patch match → not recorded");
+        assert!(!jeff_go_recorded(w, 9999, "rA", ""), "card-scoped — another card's go doesn't count");
+        assert!(!jeff_go_recorded("", 3511, "rA", ""), "empty witness → no go");
+        // a peer gather reply is NOT a Jeff go (peer-blessing is never the verdict).
+        let g = r#"{"event":"demo.gather.replied","card_id":3511,"peer":"kade","round":"rA"}"#;
+        assert!(!jeff_go_recorded(g, 3511, "rA", ""), "a peer gather is not Jeff's go");
     }
 
     // #3284 — gate VERDICTS in the decision surface (AC7): show what each gate found.
