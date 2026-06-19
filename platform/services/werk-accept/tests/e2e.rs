@@ -153,7 +153,7 @@ fn signal_then_finalize_one_exit_verb() {
     //     signal records the go silently, finalize closes — accept_output shows ONLY the
     //     finalize line, never "go signaled… act continues to merge".
     let out = run_accept_in(9003, "kade", "jeff", &home).expect("one-shot accept of a WIP card");
-    assert!(out.contains("finalized"), "fold output reports finalize; got: {}", out);
+    assert!(out.contains("accepted"), "fold output reports accept; got: {}", out);
     assert!(!out.contains("go signaled"), "clean fold output must NOT re-announce a go; got: {}", out);
     assert!(!out.contains("continues to merge"), "no future-tense merge language; got: {}", out);
     let after_fold = fs::read_to_string(&log).unwrap_or_default();
@@ -207,10 +207,10 @@ fn signal_then_finalize_one_exit_verb() {
     std::env::set_var("WERKDEPLOY_ENVDOWN_FAIL", "1");
     let fin_witness = home.join("ops/logs/werk-accept.jsonl");
     let fin = finalize(9006, "kade", &home).expect("finalize COMPLETES despite env-down failure");
-    assert!(fin.contains("finalized"), "finalize still reports done; got: {}", fin);
+    assert!(fin.contains("accepted"), "accept still reports done; got: {}", fin);
     let wlog = fs::read_to_string(&fin_witness).unwrap_or_default();
-    assert!(wlog.contains("finalize.env_down.failed") && wlog.contains("\"result\":\"fail\""),
+    assert!(wlog.contains("accept.env_down.failed") && wlog.contains("\"result\":\"fail\""),
         "env-down failure is witnessed honestly, not swallowed; got:\n{}", wlog);
-    assert!(wlog.contains("finalize.completed"), "finalize completes past the teardown failure");
+    assert!(wlog.contains("accept.completed"), "accept completes past the teardown failure");
     std::env::set_var("WERKDEPLOY_ENVDOWN_FAIL", "0");
 }
