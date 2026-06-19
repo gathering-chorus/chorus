@@ -208,10 +208,21 @@ cmd_remove() {
   # refuse the remove). Covers both /acp and /unpull (both call remove).
   [ "$werk_present" = "1" ] && teardown_werk_mcp "$werk"
 
-  # Idempotent: nothing left to remove.
+  # Idempotent LOCALLY — but the REMOTE ref may still exist (#3498 orphan-drift):
+  # local gone is the post-accept state (or a peer removed it elsewhere), yet if the
+  # remote-delete never propagated the remote orphans. So local-gone is NOT "already
+  # removed" until the remote is confirmed gone too. Propagate the delete here (direct
+  # push, #2598-exempt subprocess — see the normal-path delete below).
   if [ "$werk_present" = "0" ] && [ "$branch_present" = "0" ]; then
     git -C "$CHORUS_HOME" worktree prune >/dev/null 2>&1 || true
-    echo "chorus-werk: $role-$card_id already removed"
+    if git -C "$CHORUS_HOME" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+      # remote-only orphan: local gone, remote still present → propagate the delete.
+      git -C "$CHORUS_HOME" push origin --delete "$branch" >/dev/null 2>&1 || true
+      emit_spine card.branch.closed "$role" "card=$card_id" "branch=$branch" "via=orphan-propagate"
+      echo "chorus-werk: $role-$card_id local already gone; propagated delete of orphaned remote ref $branch"
+    else
+      echo "chorus-werk: $role-$card_id already removed (local + remote both gone)"
+    fi
     return 0
   fi
 
@@ -311,12 +322,13 @@ cmd_remove() {
     fi
   fi
 
-  # Best-effort remote-ref delete via git-queue.sh. Already-deleted-remote
-  # (the common case post-acp) is fine.
-  local gq="$CHORUS_HOME/platform/scripts/git-queue.sh"
-  if [ -x "$gq" ]; then
-    DEPLOY_ROLE="$role" "$gq" push --delete "$branch" >/dev/null 2>&1 || true
-  fi
+  # Best-effort remote-ref delete. #3498: git-queue.sh was retired (#3182) and this
+  # call silently no-op'd since 2026-06-02 — the root of the 184 orphans. Direct push
+  # is #2598-EXEMPT: the push-guard is a Bash-PreToolUse hook that fires on the AGENT's
+  # `git push` tool-call, never on this subprocess; and #3182 also removed the git-level
+  # platform/hooks/pre-push, so nothing fires at the git level. (If a pre-push hook is
+  # ever re-added at core.hooksPath=platform/hooks, it MUST allow this internal delete.)
+  git -C "$CHORUS_HOME" push origin --delete "$branch" >/dev/null 2>&1 || true
 
   # Prune stale .git/worktrees admin entries (Silas gate-arch condition 3b).
   # git worktree remove unregisters cleanly; prune also catches entries left
@@ -325,6 +337,51 @@ cmd_remove() {
 
   emit_spine card.branch.closed "$role" "card=$card_id" "branch=$branch"
   echo "chorus-werk: removed $role-$card_id (worktree gone, branch $branch deleted, remote cleanup attempted)"
+}
+
+# prune-merged (#3498) — sweep merged-but-orphaned remote branches. NOT `--merged`
+# (werk-merge SQUASH-merges, so merged tips aren't ancestors of main — see cmd_remove's
+# Tier-1 note). Enumerate ALL role/card orphans + ride cmd_remove's squash-safe Tier-1
+# proof: it prunes the merged (#<card> on origin/main) and refuses the unmerged. Continues
+# past every refusal. --dry-run previews per orphan via the same Tier-1 grep.
+cmd_prune_merged() {
+  local dry_run=0
+  [ "${1:-}" = "--dry-run" ] && dry_run=1
+  require_canonical
+  git -C "$CHORUS_HOME" fetch --quiet -p origin 2>/dev/null || true
+
+  local branches
+  branches=$(git -C "$CHORUS_HOME" branch -r 2>/dev/null \
+    | sed 's/^[ *]*//' \
+    | grep -E '^origin/(kade|wren|silas)/[0-9]+$' \
+    | sed 's#^origin/##' | sort -u)
+  [ -z "$branches" ] && { echo "chorus-werk: prune-merged — no role/card remote branches"; return 0; }
+
+  local subjects
+  subjects=$(git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null)
+
+  local pruned=0 unmerged=0 live=0
+  while IFS= read -r branch; do
+    [ -z "$branch" ] && continue
+    local role="${branch%%/*}" card="${branch##*/}"
+    if [ -d "$CHORUS_WERK_BASE/$role-$card" ]; then
+      echo "chorus-werk: prune-merged — SKIP $branch (live local werk)"; live=$((live+1)); continue
+    fi
+    if grep -qE "#${card}([^0-9]|\$)" <<< "$subjects"; then
+      if [ "$dry_run" = "1" ]; then
+        echo "chorus-werk: prune-merged --dry-run — would prune $branch (merged: #$card on main)"
+      else
+        echo "chorus-werk: prune-merged — pruning $branch"; cmd_remove "$role" "$card" || true
+      fi
+      pruned=$((pruned+1))
+    else
+      echo "chorus-werk: prune-merged — leave $branch (no #$card on main → unmerged; Part-3 policy)"; unmerged=$((unmerged+1))
+    fi
+  done <<EOF
+$branches
+EOF
+  local verb; [ "$dry_run" = "1" ] && verb="would prune" || verb="pruned"
+  echo "chorus-werk: prune-merged — $verb $pruned merged; left $unmerged unmerged; skipped $live live-werk"
 }
 
 cmd_status() {
@@ -357,6 +414,7 @@ main() {
   case "$sub" in
     add) cmd_add "$@" ;;
     remove) cmd_remove "$@" ;;
+    prune-merged) cmd_prune_merged "$@" ;;
     status) cmd_status "$@" ;;
     -h|--help|help) usage ;;
     *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
