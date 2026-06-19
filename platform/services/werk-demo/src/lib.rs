@@ -1356,47 +1356,23 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
           &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\",\"patch_id\":\"{}\"",
                    checked, total, round, variant_url, patch));
     emit_spine(home, "demo.presented", role, card, &trace);
-    // #3511 — the variant is PRESENTED (announce above). Now the demo is a
-    // CONVERSATION: surface it to JEFF via the nudge wire so he SEES it (the silent
-    // demo.presented was #3499's whole failure), then BLOCK for HIS in-run go before
-    // returning proven. Peer-review is in; the verdict is JEFF'S, given here. No go
-    // → no land. (The announce stays the DemoOutcome message + Bridge post too.)
-    if !skip_gate_check {
-        // Surface the demo to Jeff (real runs only; the suite seeds demo.go directly
-        // and must never fire a live nudge — same guard as the gather send).
-        if !skip_gather_send {
-            announce_to_jeff(role, card, &trace, &variant_url, &round);
-        }
-        let jeffgo_timeout = std::env::var("CHORUS_DEMO_JEFFGO_TIMEOUT")
-            .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(86_400); // 24h — a walk-away must NOT force a re-run
-        let start = Instant::now();
-        emit_spine(home, "demo.jeffgo.block", role, card, &trace);
-        jsonl(home, role, card, &trace, "demo.jeffgo.block",
-              &format!(",\"round\":\"{}\",\"timeout_s\":{}", round, jeffgo_timeout));
-        loop {
-            let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-            if jeff_go_recorded(&w, card, &round, &patch) {
-                break; // Jeff's GO is IN at this round → proven, release to merge.
-            }
-            if start.elapsed().as_secs() >= jeffgo_timeout {
-                emit_spine(home, "demo.jeffgo.timeout", role, card, &trace);
-                jsonl(home, role, card, &trace, "demo.jeffgo.timeout",
-                      &format!(",\"round\":\"{}\",\"waited_s\":{}", round, jeffgo_timeout));
-                return Ok(DemoOutcome {
-                    message: format!(
-                        "demo #{} — presented; NO go after {}s (round {}). Not landed (clean stop, \
-                         green). Re-run when you're ready to give the go.",
-                        card, jeffgo_timeout, round
-                    ),
-                    exit: 2,
-                });
-            }
-            sleep(Duration::from_secs(10));
-        }
+    // #3511 (corrected — Jeff 2026-06-19: "no 24 loop · u just fucking wait ·
+    // however long it takes") — the demo PRESENTS and EXITS. It does NOT block
+    // in-process for the go. The announce is RETURNED as this run's message; the
+    // driving role prints it as its final turn output and STOPS — the conversation
+    // turn IS the wait, and it holds however long Jeff takes (no timeout, no 24h
+    // loop, no detached process). The in-process jeffgo loop was the bug: it forced
+    // a backgrounded run whose own events flashed the turn past Jeff before he could
+    // read the announce. Present-and-exit restores the #3279 design that loop violated.
+    //
+    // Jeff's GO is the separate, whenever-ready step: `werk-demo go <card>` records
+    // demo.go → the go-gated land (werk-merge reads demo.presented + demo.go) merges.
+    // Only Jeff's recorded go lands a card — the self-accept hole stays closed by
+    // construction (no at-invoke go flag exists for an agent to set).
+    if !skip_gate_check && !skip_gather_send {
+        announce_to_jeff(role, card, &trace, &variant_url, &round);
     }
-    // Jeff's go is recorded (or skip_gate_check in tests) → proven, release to merge.
-    jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"go\"");
-    Ok(DemoOutcome { message: announce, exit: 0 })
+    Ok(DemoOutcome { message: announce, exit: 2 })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
