@@ -509,7 +509,7 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
 
 /// #3167 — witness `deploy.failed{reason}` on a TRUE terminal Err: a deploy that DIED
 /// before it could roll back (werk-build subprocess fail, empty build summary, lock
-/// timeout). Distinct from `deploy.rolledback` (caught + reverted) and `deploy.refused`
+/// timeout). Distinct from `deploy.rolled_back` (caught + reverted) and `deploy.refused`
 /// (guard-rejected) — both of which already emit. Same witness channel
 /// (ops/logs/werk-deploy.jsonl) + card_id/trace the other events use; the rollup counts
 /// `.failed`. Returns the message so call sites read `return Err(died(..))` /
@@ -1257,7 +1257,7 @@ fn deploy_ts_daemon_canonical(
         let _ = kickstart(); // bash parity: warn-only
         smoke().map_err(|e| died(home, role, card, trace, "smoke-timeout-rollback", e))?;
         emit_spine(home, "deploy.rolled_back", role, card, trace, &[("crate", name)]);
-        jsonl(home, role, card, trace, "deploy.rolledback", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\"", name));
+        jsonl(home, role, card, trace, "deploy.rolled_back", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\"", name));
         return Ok(format!("{} rolled back", name));
     }
 
@@ -1737,7 +1737,7 @@ fn deploy_ts_service(
             let _ = fs::remove_dir_all(&canonical_dist);
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-install-fail\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-install-fail\"");
         return Err(format!("install of {} dist failed; restored prev: {}", svc_name, e));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-service\",\"target\":\"{}\"", svc_name, target));
@@ -1765,7 +1765,7 @@ fn deploy_ts_service(
         if Path::new(&canonical_dist_prev).is_dir() {
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-identity-mismatch-pre-kickstart\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-identity-mismatch-pre-kickstart\"");
         return Err(format!(
             "installed dist sha != built for {} (pre-kickstart snapshot): built={} installed={} — rolled back, prev preserved",
             svc_name, built_dist_sha, installed_sha
@@ -1781,7 +1781,7 @@ fn deploy_ts_service(
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-kickstart-fail\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-kickstart-fail\"");
         return Err(format!("kickstart {} failed; restored prev dist: {}", svc, e));
     }
 
@@ -1804,7 +1804,7 @@ fn deploy_ts_service(
             let _ = fs::rename(&canonical_dist_prev, &canonical_dist);
         }
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"ts-verify-fail\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"ts-verify-fail\"");
         return Err(format!("post-restart verify for {} failed; restored prev dist: {}", svc_name, e));
     }
 
@@ -2181,14 +2181,14 @@ fn deploy_shared_lib(
     let canonical_lib_dist = format!("{}/{}", canonical_root, lib_dist_rel);
     if let Err(e) = install_dist(&werk_lib_dist, &canonical_lib_dist, &mut moved) {
         restore(&moved);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"sharedlib-install-fail\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"sharedlib-install-fail\"");
         return Err(format!("install of {} dist failed; rolled back: {}", lib, e));
     }
     // identity verify: installed lib dist == built H.
     let installed_lib_sha = dist_sha(&canonical_lib_dist).unwrap_or_default();
     if installed_lib_sha != built_identity {
         restore(&moved);
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"sharedlib-identity-mismatch\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"sharedlib-identity-mismatch\"");
         return Err(format!("installed {} dist sha != built: built={} installed={} — rolled back", lib, built_identity, installed_lib_sha));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"shared-lib\",\"target\":\"{}\",\"identity\":\"{}\"", lib, target, installed_lib_sha));
@@ -2203,12 +2203,12 @@ fn deploy_shared_lib(
         let canonical_consumer_dist = format!("{}/{}/dist", canonical_root, c.dir_rel);
         if !Path::new(&werk_consumer_dist).is_dir() {
             restore(&moved);
-            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-dist-missing\"");
+            jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"consumer-dist-missing\"");
             return Err(format!("consumer {} werk dist not found at {} (werk-build cascade should have produced it)", c.name, werk_consumer_dist));
         }
         if let Err(e) = install_dist(&werk_consumer_dist, &canonical_consumer_dist, &mut moved) {
             restore(&moved);
-            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-install-fail\"");
+            jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"consumer-install-fail\"");
             return Err(format!("install of consumer {} dist failed; rolled back: {}", c.name, e));
         }
         jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"consumer\",\"target\":\"{}\"", c.name, target));
@@ -2219,7 +2219,7 @@ fn deploy_shared_lib(
         let resolved_sdk_dist = format!("{}/{}/node_modules/{}/dist", canonical_root, c.dir_rel, lib);
         if !Path::new(&resolved_sdk_dist).exists() {
             restore(&moved);
-            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-cannot-resolve-lib\"");
+            jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"consumer-cannot-resolve-lib\"");
             return Err(format!(
                 "anti-stale: consumer {} cannot resolve {} (no {}); it would run a missing/old lib — rolled back",
                 c.name, lib, resolved_sdk_dist
@@ -2228,7 +2228,7 @@ fn deploy_shared_lib(
         let resolved_sha = dist_sha(&resolved_sdk_dist).unwrap_or_default();
         if resolved_sha != built_identity {
             restore(&moved);
-            jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"consumer-resolves-stale-lib\"");
+            jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"consumer-resolves-stale-lib\"");
             return Err(format!(
                 "anti-stale: consumer {} resolves {} dist sha {} != merged {} — prod would run STALE, rolled back (#3126)",
                 c.name, lib, resolved_sha, built_identity
@@ -2356,7 +2356,7 @@ fn deploy_ts_package(
             let _ = fs::remove_dir_all(canonical);
             if Path::new(prev).is_dir() { let _ = fs::rename(prev, canonical); }
         }
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"tspackage-install-fail\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"tspackage-install-fail\"");
         return Err(format!("install of {} dist failed; rolled back: {}", name, e));
     }
     let installed_sha = dist_sha(&canonical_dist).unwrap_or_default();
@@ -2365,7 +2365,7 @@ fn deploy_ts_package(
             let _ = fs::remove_dir_all(canonical);
             if Path::new(prev).is_dir() { let _ = fs::rename(prev, canonical); }
         }
-        jsonl(home, role, card, trace, "deploy.rolledback", ",\"reason\":\"tspackage-identity-mismatch\"");
+        jsonl(home, role, card, trace, "deploy.rolled_back", ",\"reason\":\"tspackage-identity-mismatch\"");
         return Err(format!("installed {} dist sha != built: built={} installed={} — rolled back", name, built_dist_sha, installed_sha));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-package\",\"target\":\"{}\",\"identity\":\"{}\"", name, target, installed_sha));
@@ -2418,7 +2418,7 @@ fn register_gh(werk_s: &str, card: u64, role: &str, trace: &str, crate_name: &st
 // reducing the real fan-in. The lint is the wrong call for a finalize-step helper.
 #[allow(clippy::too_many_arguments)]
 fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, target: &str, bin: &str, reason: &str) {
-    jsonl(home, role, card, trace, "deploy.rolledback", &format!(",\"reason\":\"{}\",\"target\":\"{}\"", reason, target));
+    jsonl(home, role, card, trace, "deploy.rolled_back", &format!(",\"reason\":\"{}\",\"target\":\"{}\"", reason, target));
     let _ = run_env(Some(werk_s), &[("CHORUS_ROLE", role)], &chorus_bin_install_cmd(home, werk_s), &["--target", target, "--rollback", bin]);
     if target == "canonical" {
         let svc = service_for_crate(bin);

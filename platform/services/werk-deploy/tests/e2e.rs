@@ -188,7 +188,7 @@ fn e2e_deploy_failed_witnessed_on_died_not_rolledback() {
     assert!(witness.contains("\"reason\":\"empty-summary\""),
         "deploy.failed carries the reason: {}", witness);
     assert!(witness.contains("\"card_id\":7301"), "deploy.failed is card-bound: {}", witness);
-    assert!(!witness.contains("deploy.rolledback"),
+    assert!(!witness.contains("deploy.rolled_back"),
         "empty-summary is a death, not a rollback: {}", witness);
 }
 
