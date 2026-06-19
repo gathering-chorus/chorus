@@ -23,10 +23,12 @@ Every generated surface emits the SAME dimensioned event — `api.request.served
   "fold":"read", "status":"200", "result_count":35,
   "total_ms":12, "upstream_ms":4,                         // RED: rate(count) / errors(status) / duration(ms)
   "caller":"silas", "trace_id":"00-<trace>-<span>-01",    // W3C traceparent (finding O1)
-  "product":"athena", "apiVersion":"v1", "shapeVersion":"2026-06-19", "commit":"534805b9" }   // NEW dims
+  "product":"athena", "apiVersion":"v1", "shapeVersion":"2026-06-19", "commit":"534805b9",  // NEW dims
+  "synthetic": false }                                    // NEW — REQUIRED: conformance/test traffic = true (§ below)
 ```
 
 - **New dims** (the addendum's core): `product`, `apiVersion`, `shapeVersion`, `commit` — so Borg rolls up **per-product and per-version** without bespoke rules. `class`/`route`/`fold`/`status`/`*_ms`/`caller`/`trace_id` already exist in the crate (code review 2026-06-19).
+- **`synthetic` (REQUIRED, non-negotiable):** every emit carries `synthetic:true|false`. The #3507 conformance runner's traffic emits `synthetic:true`; Borg **excludes** `synthetic:true` from all real RED/saturation/CFR roll-ups. Without this, conformance runs (every CI invocation) emit `api.request.served` indistinguishable from real traffic and **skew the live dashboards every run** — the same discriminating-field lesson as `failureClass` on merge.refused (#3495). Default `false`; the runner sets it `true` at the source.
 - **Coverage = RED + write-health + liveness + saturation:**
   - **RED** — rate (event count), errors (status≠2xx), duration (`total_ms`) — present.
   - **Write-health** — `emit_write_spine` carries the validation outcome (422 rate = bad-input signal) + the auth allow/deny (ADR-048 §6).

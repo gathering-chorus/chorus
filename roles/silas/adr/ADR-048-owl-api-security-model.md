@@ -16,6 +16,8 @@ The 2026-06-19 research pass (OWASP API Top 10 2023) named the gaps: object-leve
 
 Security is **authz-as-data**: declared on the shape, projected and *enforced* by the generator — never per-endpoint code. Six parts.
 
+**Already live in owl-api (verified 2026-06-19 — this ADR CODIFIES these, does not invent them):** ADR-042's HS256 token authN (`mod auth`); the `requiresAuth → guard` projection from the shape (#3414); **object-level authZ via `ownedBy`, FAIL-CLOSED** in the single generated write path (lib.rs ~564 — the BOLA check of §2 is *already enforced*, so a write can't forget to auth); **SHACL write-validation** via `sh:minCount` (the DAL completeness floor, fail-closed → 422 — §4 is *already* the write boundary); SPARQL-injection safety (`is_safe_local` / literal-escape, ~630). **What this ADR genuinely EXTENDS (the real #3506 delta):** read/write SCOPE asymmetry (vs today's auth-boolean + ownedBy), the field-exposure whitelist (§3), rate-limit/query-timeout + security headers + auth-DENY→spine (§6). The core authz/validation/fail-closed/single-path is done; the delta is scope + exposure + limits + headers.
+
 ### 1. Per-shape authorization scope (read/write asymmetry)
 
 A shape declares who may read and who may write, as data:
