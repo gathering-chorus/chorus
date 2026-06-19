@@ -174,28 +174,30 @@ return "no claude window found for tty {tty}""#,
 /// returns "no claude window found" for a VS Code pseudo-tty — the no-window-found
 /// failure.
 ///
-/// #3439 — VS Code FOCUS-GUARD (supersedes the prior activate-and-keystroke).
-/// The old script ran `tell application "Code" to activate` and then keystroked
-/// into the focused window. When Code was NOT the right target — a mis-routed
-/// nudge, or Jeff typing in another app — that `activate` STOLE focus and the
-/// keystroke sprayed into whatever window Jeff was in, cascading windows and once
-/// closing his editor (2026-06-15). The guard fixes that at the source:
-///   - NEVER `activate` — the script never steals focus.
-///   - Only keystroke if Code is ALREADY frontmost; otherwise return
-///     `deferred:not-frontmost` and deliver nothing.
-/// A nudge that defers cleanly beats one that hijacks Jeff's keystrokes; the
-/// message still persists via the API path (DEC-107), so nothing is lost.
+/// #3439 → REVERTED by #3499 (2026-06-19). #3439 replaced the working
+/// `activate Code + keystroke` delivery with a FOCUS-GUARD: keystroke only if
+/// Code is ALREADY frontmost, else `return "deferred:not-frontmost"` and deliver
+/// nothing. The intent was to stop an `activate` from stealing focus / spraying
+/// into the wrong window. The effect was a REGRESSION that broke nudge delivery
+/// to every VS Code session: a nudge that arrives while Code isn't the front
+/// window — i.e. exactly when it needs to interrupt — silently defers and never
+/// lands. Proven live (trace 019ee061, reason=not-frontmost). Jeff watched it
+/// land reliably for days BEFORE #3439, then break after. The morning of
+/// 2026-06-19 was lost to it; and because the demo gather REPLIES come back as
+/// nudges, a broken nudge means the demo can never complete — nudge is the floor.
 ///
-/// Why only the VS Code path guards: the Terminal by-tty path keeps #3128
-/// always-wake because it can write into a specific matched tab WITHOUT focus
-/// theft. Electron exposes no addressable terminal pane, so the only safe move
-/// here is "deliver when focused, else defer" rather than activate-and-spray.
+/// The fix is to restore the proven delivery (activate + keystroke + submit).
+/// Jeff's standing ruling, re-affirmed: DELIVER. A focus-blip beats a dead nudge
+/// (the same value the Terminal `--tty` path already encodes in #3128's
+/// always-wake). The mis-route fear that motivated #3439 is handled where it
+/// belongs — in ROUTING (#3352 resolves the correct session before transport),
+/// not by refusing to deliver. Do NOT re-add a frontmost guard here: if focus
+/// theft must be reduced, do it without dropping delivery.
 pub fn build_inject_vscode_script(escaped_text: &str) -> String {
     format!(
-        r#"tell application "System Events"
-    if (name of first process whose frontmost is true) is not "Code" then
-        return "deferred:not-frontmost"
-    end if
+        r#"tell application "Code" to activate
+delay 0.15
+tell application "System Events"
     tell process "Code"
         keystroke "{text}"
         delay 0.3
@@ -332,16 +334,10 @@ pub fn inject_vscode<R: OsaRunner, W: io::Write>(
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if result == "ok" {
         Ok(())
-    } else if result.starts_with("deferred:") {
-        // #3439: the VS Code focus-guard declined to keystroke (Code not frontmost).
-        // This is a CLEAN defer, NOT a failure: surface the token on stdout and
-        // return Ok (rc 0) so the pulse worker routes it to the fold via its
-        // deferred path, instead of treating a non-zero rc as a failed delivery
-        // to retry/dead-letter. (Without this, the guard's defer becomes a lost
-        // nudge — the bug the demo cold-eyes gate caught.)
-        writeln!(writer, "{}", result).map_err(|e| format!("write failed: {}", e))?;
-        Ok(())
     } else {
+        // #3499: the vscode path DELIVERS (activate + keystroke) — it no longer
+        // emits a "deferred:not-frontmost" token, so there is no clean-defer
+        // branch. Anything but "ok" is a real transport error (Err → rc!=0).
         Err(format!("{} stderr: {}", result, stderr))
     }
 }

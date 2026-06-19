@@ -239,39 +239,31 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         );
     }
 
-    // ── Scenario G (#3365): NO GO BEFORE ANNOUNCE, per round. A merge without a
-    //    demo.presented for THIS card at THIS round refuses typed; with the
-    //    announce seeded for the exact round (sha[..12]) it proceeds. ─────────
+    // ── Scenario G (#3499): the verb is a PURE STEP. It lands WITHOUT any
+    //    demo.presented witness — werk-merge no longer audits the demo step.
+    //    Ordering is the orchestrator's job (werk.yml runs demo before merge,
+    //    fail-stop). Pre-#3499 this refused "announce-missing-this-round"; the
+    //    whole demo-facts gate is gone, so the merge proceeds on its own work. ──
     {
         let (origin, home, werk_base, werk) = scenario("kade", 9365);
-        let sha = commit_and_push(&werk, "kade/9365", "g.txt", "golf");
+        commit_and_push(&werk, "kade/9365", "g.txt", "golf");
         let state = tmp("ghstate");
         std::env::set_var("ORIGIN", origin.to_str().unwrap());
         std::env::set_var("GH_STATE", state.to_str().unwrap());
         std::env::remove_var("GH_FAKE_MERGE");
-        std::env::remove_var("CHORUS_GO_OVERRIDE"); // the gate is LIVE here
 
-        let r = merge(9365, "kade", &home, &werk_base);
-        assert!(r.is_err(), "go without announce must refuse");
-        assert!(r.unwrap_err().contains("announce-missing-this-round"), "typed refusal");
-        assert!(!origin_main_has(&origin, "g.txt"), "nothing landed before the announce");
-
-        // Seed the announce for THIS round → merge proceeds.
-        fs::create_dir_all(home.join("ops/logs")).unwrap();
-        fs::write(home.join("ops/logs/werk-demo.jsonl"), format!(
-            "{{\"ts\":1,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9365,\"trace_id\":\"t\",\"ac\":\"1/1\",\"round\":\"{}\",\"variant\":\"x\"}}\n",
-            &sha[..12]
-        )).unwrap();
-        let landed = merge(9365, "kade", &home, &werk_base).expect("announce present => go proceeds");
+        // NO demo.presented seeded anywhere. The merge still lands — the verb does
+        // not read the demo witness or gate on it.
+        let landed = merge(9365, "kade", &home, &werk_base)
+            .expect("#3499: merge lands with no demo witness — the verb doesn't audit the demo step");
         assert!(landed.len() >= 7);
-        assert!(origin_main_has(&origin, "g.txt"), "the work landed after the announce");
+        assert!(origin_main_has(&origin, "g.txt"), "the work landed");
 
-        // Silas's ACK ask (#3365): SAME-ROUND RESUME ≠ STALE. A re-run go on the
-        // already-merged sha (his live #3364 case: two go re-runs, same sha) must
-        // no-op-pass via idempotency — the gate guards NEW merges, never recovery.
-        let again = merge(9365, "kade", &home, &werk_base).expect("same-round resume passes (idempotent), never refuses as stale");
+        // SAME-ROUND RESUME ≠ double-merge: a re-run on the already-merged sha
+        // (the #3336/#3364 recovery path) no-op-passes via idempotency.
+        let again = merge(9365, "kade", &home, &werk_base)
+            .expect("same-round resume passes (idempotent)");
         assert_eq!(again, landed, "resume returns the same landed sha");
-        std::env::set_var("CHORUS_GO_OVERRIDE", "e2e-merge-mechanics"); // restore for later scenarios
     }
 
     // ── Scenario F (#3336): CONTENT-VERIFY idempotency — a dropped-land resume where PR

@@ -245,15 +245,24 @@ jobs:
 
     steps:
       - name: shared-trace
-        # Mint ONE trace for the land run. #3410 — the land job NO LONGER synthesizes a
-        # demo.verdict from inputs.go. That fabricated record ("verdict:pass, prover:jeff",
-        # written purely because go=true was passed) was the self-accept hole: it let an
-        # agent calling chorus_werk{go:true,accepter:jeff} stamp "jeff proved it" with zero
-        # human involvement. The land path's real proof is now (a) werk-merge's #3365
-        # round-gate (refuses without a demo.presented for THIS card at THIS HEAD) and (b)
-        # werk-accept's presented-gate, both reading the REAL demo.presented werk-demo emits
-        # at present time. The forge-proof "Jeff DECIDED this round" (vs "a demo ran") is the
-        # asymmetric signed go-token end-state — ADR-042 family, the same lock as #3402.
+        # Mint ONE trace for the land run.
+        #
+        # #3499 — what makes this land legitimate is the HUMAN GO, not a machine check.
+        # The go-invocation that fired THIS job (inputs.go == 'true') IS Jeff's accept
+        # (DEC-048: the authorizing identity is ACCEPTER; a builder can never self-accept).
+        # The verbs are now PURE STEPS (#3499): werk-merge and werk-accept no longer read
+        # the demo witness or gate on demo.presented. "merge isn't called without a demo"
+        # is a HUMAN guarantee — Jeff gives go AFTER the demo presents (/cw) — and is
+        # DELIBERATELY not a machine demo-round check. That round-keyed check WAS the
+        # witness-wall churn (#3466/#3476/#3494/#3498 land failures): a rebase moved the sha,
+        # the demo.presented for the round didn't match or never emitted, and a PROVEN card
+        # couldn't land. Removing it is the fix, not a hole.
+        #
+        # The only-door is structural: this land job is reachable ONLY via the go-invocation
+        # (if: inputs.go == 'true'); merge → sync → deploy → accept run sequentially and
+        # fail-stop (GHA default — no continue-on-error/always), so a failed merge never
+        # reaches accept and nothing half-lands. #3410 (superseded): the land job no longer
+        # synthesizes a demo.verdict from inputs.go — go == accept authority, recorded honestly.
         run: |
           trace="$(date +%s%N)-$$"
           echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
