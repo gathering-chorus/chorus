@@ -332,7 +332,7 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
 pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     let trace = trace_id();
     let home_s = path(home)?.to_string();
-    jsonl(home, role, card, &trace, "finalize.started", "");
+    jsonl(home, role, card, &trace, "accept.started", "");
 
     // serialize the board flip under one flock so concurrent finalizes can't race.
     let _lock = lock(home, Duration::from_secs(30))?;
@@ -346,8 +346,8 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     // env-down BEFORE chorus-werk remove so variant services release handles into the
     // werk tree before it's deleted. Honest witness: emit the real teardown outcome.
     match run(&bin_path("werk-deploy"), &["env-down", role, &card.to_string()]) {
-        Ok(_) => jsonl(home, role, card, &trace, "finalize.env_down", ",\"result\":\"ok\""),
-        Err(e) => jsonl(home, role, card, &trace, "finalize.env_down.failed",
+        Ok(_) => jsonl(home, role, card, &trace, "accept.env_down", ",\"result\":\"ok\""),
+        Err(e) => jsonl(home, role, card, &trace, "accept.env_down.failed",
             &format!(",\"result\":\"fail\",\"error\":\"{}\"", e.replace('"', "'"))),
     }
 
@@ -364,6 +364,6 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
         ]);
     }
 
-    jsonl(home, role, card, &trace, "finalize.completed", "");
-    Ok(format!("#{} finalized (board Done + closed)", card))
+    jsonl(home, role, card, &trace, "accept.completed", "");
+    Ok(format!("#{} accepted (board Done + closed)", card))
 }
