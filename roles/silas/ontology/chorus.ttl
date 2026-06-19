@@ -2103,15 +2103,20 @@ chorus:DomainShape a sh:NodeShape ;
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
     sh:targetClass chorus:Service ;
-    sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
+    # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
+    #   public = emitted to everyone · internal = authed callers only · secret = never
+    #   · UNMARKED = hidden (fail-closed). Proven live: unauth→label/status; authed adds
+    #   overview; implementationPlan (secret) + every unmarked field absent in both.
+    sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
     sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
-    sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:secret ] ;
     sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;

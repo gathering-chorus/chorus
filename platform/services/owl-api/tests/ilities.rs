@@ -27,6 +27,7 @@ fn table() -> RouteTable {
         secured: vec!["/schema/domain".into()],  // #3414 — model-projected secured-set
         mandatory: vec!["comment".into()],       // #3468 — model-projected completeness floor
         repo_target: "generated/domain".into(),  // #3488 — repo land location
+        exposure: vec![],
     }
 }
 

@@ -198,6 +198,20 @@ pub struct RouteTable {
     pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
     pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
+    pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
+}
+
+/// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
+/// projected `chorus:exposure` level decides whether it appears in `data`:
+///   public → always · internal → authed callers only · secret → never ·
+///   None (unmarked) → hidden. Pure + unit-pinned.
+pub fn field_exposed(level: Option<&str>, authed: bool) -> bool {
+    match level {
+        Some("public") => true,
+        Some("internal") => authed,
+        Some("secret") => false,
+        _ => false, // unmarked/unknown → hidden (default-closed)
+    }
 }
 
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
@@ -531,7 +545,19 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     }
     chain.push((RepoKind::Domain, class_local));
     let repo_target = resolve_repo_target(declared.as_deref(), &chain);
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target })
+    // #3506 / ADR-048 §3 — PROJECT field-exposure: each shape property's
+    // chorus:exposure level (public|internal|secret). Generated, not hand-authored;
+    // a property with no chorus:exposure simply doesn't appear here → hidden by the
+    // fail-closed default in field_exposed(). One row per (field, level).
+    let eq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; chorus:exposure ?ex . FILTER(isIRI(?path)) BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', REPLACE(STR(?ex), '.*#', '')) AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let exposure: Vec<(String, String)> = select_v(&sparql_json(&eq)?)
+        .into_iter()
+        .filter_map(|row| row.split_once('|').map(|(f, l)| (f.to_string(), l.to_string())))
+        .collect();
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure })
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -1460,7 +1486,7 @@ pub fn page_html(t: &RouteTable) -> String {
 /// `contains`, ~80 files on the cards domain) as duplicate JSON keys — malformed
 /// JSON. links also drops the per-edge label lookup (#3354): a link is a traversal
 /// ref, the label lives on the target — fewer queries, ADR-conformant.
-fn entity_json(name: &str) -> R<(String, String)> {
+fn entity_json(name: &str, exposure: &[(String, String)], authed: bool) -> R<(String, String)> {
     let subject = format!("{}{}", NS, name);
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} BIND(CONCAT(STR(?p), \"|\", STR(?o)) AS ?v) }} ORDER BY ?v",
@@ -1471,6 +1497,14 @@ fn entity_json(name: &str) -> R<(String, String)> {
     if prs.is_empty() {
         return Err("not-found".to_string());
     }
+    // #3506 / ADR-048 §3 — field-exposure enforcement is PER-SHADE OPT-IN (migration-
+    // safe, the #3414 mixed-state pattern): a shape that DECLARES any chorus:exposure
+    // enforces the whitelist fail-closed (a data field shows only if its level passes
+    // field_exposed); a shape with NO exposure annotations stays fully open until it's
+    // migrated. So annotating ServiceShape tightens it without breaking un-annotated
+    // Domain/Product reads.
+    let enforced = !exposure.is_empty();
+    let level_of = |k: &str| exposure.iter().find(|(f, _)| f == k).map(|(_, l)| l.as_str());
     let mut data_parts = vec![format!("\"iri\": \"{}\"", json_escape(&subject))];
     let mut links: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for rowv in prs {
@@ -1480,10 +1514,16 @@ fn entity_json(name: &str) -> R<(String, String)> {
             // EDGE → links (target id ref). Multi-valued accumulates into one array.
             let target_name = o.rsplit('#').next().unwrap_or(&o).to_string();
             links.entry(key).or_default().push(format!("chorus:{}", target_name));
-        } else if o.starts_with("http") && o.contains('#') {
-            data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
         } else {
-            data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
+            // SCALAR data field — fail-closed exposure gate when the shape opts in.
+            if enforced && !field_exposed(level_of(&key), authed) {
+                continue;
+            }
+            if o.starts_with("http") && o.contains('#') {
+                data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
+            } else {
+                data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
+            }
         }
     }
     let data = format!("{{ {} }}", data_parts.join(", "));
@@ -1628,18 +1668,21 @@ pub struct ReqMeta {
 
 /// SERVE — answer the generated routes from the live graph.
 pub fn handle(path: &str, table: &RouteTable) -> (u16, String) {
-    handle_meta(path, table).0
+    // #3506 / ADR-048 §3 — default unauthenticated; the serve seam passes the real
+    // authed state. An unauth read sees only `public` fields of an exposure-enforced shape.
+    handle_meta(path, table, false).0
 }
 
-/// handle + envelope metadata (the seam's data source).
-pub fn handle_meta(path: &str, table: &RouteTable) -> ((u16, String), ReqMeta) {
+/// handle + envelope metadata (the seam's data source). `authed` = the caller
+/// presented a valid token (gates `internal`-exposure fields, ADR-048 §3).
+pub fn handle_meta(path: &str, table: &RouteTable, authed: bool) -> ((u16, String), ReqMeta) {
     let mut meta = ReqMeta::default();
     // /health — the probe target (blackbox-exporter, launchagent checks).
     if path == "/health" {
         meta.route = "health".into();
         return ((200, "{ \"ok\": true, \"service\": \"owl-api\" }".to_string()), meta);
     }
-    let resp = handle_inner(path, table, &mut meta);
+    let resp = handle_inner(path, table, &mut meta, authed);
     (resp, meta)
 }
 
@@ -1652,7 +1695,7 @@ pub fn is_safe_local(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, String) {
+fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool) -> (u16, String) {
     // #3506 / ADR-047 §7 — split the query string off BEFORE route matching, so
     // `?limit=&cursor=` (cursor pagination, AIP-158) never breaks the path parse.
     let (path, query) = match path.split_once('?') {
@@ -1692,7 +1735,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.0.3 spec (#3453). Another
@@ -1860,7 +1903,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
                 Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
             };
         }
-        return match entity_json(name) {
+        return match entity_json(name, &table.exposure, authed) {
             Ok((data, links)) => {
                 meta.result_count = 1;
                 // #3506 / ADR-047 — wrap the entity read in the uniform envelope
@@ -2254,7 +2297,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
                 None => {
                     let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
-                    handle_meta(&hp, table)
+                    // #3506 / ADR-048 §3 — authed = a valid service token is present; it
+                    // gates `internal`-exposure fields on an exposure-enforced shape.
+                    let ah = header("authorization");
+                    let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
+                    let authed = auth::verify_token(tok, &secret, &allowed_webids, now_secs).is_ok();
+                    handle_meta(&hp, table, authed)
                 }
             }
         };
@@ -2353,6 +2401,20 @@ mod tests {
         }
         // an entity carries no `count`
         assert!(!e.contains("\"count\""), "entity envelope must not carry count: {}", e);
+    }
+
+    // #3506 / ADR-048 §3 — the read-side field-exposure gate, fail-closed.
+    #[test]
+    fn field_exposed_is_fail_closed() {
+        assert!(field_exposed(Some("public"), false));
+        assert!(field_exposed(Some("public"), true));
+        assert!(!field_exposed(Some("internal"), false), "internal hidden from unauth");
+        assert!(field_exposed(Some("internal"), true), "internal shown to authed");
+        assert!(!field_exposed(Some("secret"), false));
+        assert!(!field_exposed(Some("secret"), true), "secret NEVER emitted, even authed");
+        assert!(!field_exposed(None, false));
+        assert!(!field_exposed(None, true), "unmarked hidden even when authed (default-closed)");
+        assert!(!field_exposed(Some("bogus"), true), "unknown level → hidden");
     }
 
     // #3506 / ADR-047 §7 — cursor pagination: page slicing + next cursor + query parse.
@@ -2589,6 +2651,7 @@ mod tests {
             secured: vec![],
             mandatory: vec![],
             repo_target: String::new(),
+            exposure: vec![],
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -2623,6 +2686,7 @@ mod tests {
             secured: vec![],
             mandatory: vec![],
             repo_target: String::new(),
+            exposure: vec![],
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -2648,6 +2712,7 @@ mod tests {
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec![],
             repo_target: String::new(),
+            exposure: vec![],
             routes: vec![
                 "GET /domains".into(),
                 "GET /domains/:name".into(),
@@ -2795,6 +2860,7 @@ mod tests {
             secured: vec!["/schema/domain".into()],
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
+            exposure: vec![],
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -2857,6 +2923,7 @@ mod tests {
             secured: vec![],
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
+            exposure: vec![],
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -2881,7 +2948,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new() };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![] };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
