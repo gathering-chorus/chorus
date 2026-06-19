@@ -19,6 +19,10 @@ fn telemetry_line_carries_the_full_envelope() {
         upstream_ms: 9,
         caller: "wren".into(),
         trace_id: "abc-123".into(),
+        // #3506 / ADR-047 AC3 — the contract emit-dims
+        product: "borg".into(),
+        shape_version: "2026-06-19".into(),
+        commit: "534805b9".into(),
     };
     let line = t.to_jsonl(1781200000000);
     assert!(line.contains("\"event\":\"api.request.served\""));
@@ -26,6 +30,12 @@ fn telemetry_line_carries_the_full_envelope() {
     assert!(line.contains("\"status\":\"ok\""));
     assert!(line.contains("\"result_count\":9"), "count:0+ok is the silent-broken-chain signal — count must serialize");
     assert!(line.contains("\"trace_id\":\"abc-123\""), "trace_id joins the card→werk chain");
+    // #3506 / ADR-047 AC3 — the served line now carries the contract dims, so a
+    // metric/trace can group by product + both version axes + the model commit.
+    assert!(line.contains("\"product\":\"borg\""), "product dim present");
+    assert!(line.contains("\"apiVersion\":\"v1\""), "apiVersion dim (the constant)");
+    assert!(line.contains("\"shapeVersion\":\"2026-06-19\""), "shapeVersion dim present");
+    assert!(line.contains("\"commit\":\"534805b9\""), "model commit dim present");
     assert!(line.ends_with('\n'), "newline-terminated jsonl");
 }
 

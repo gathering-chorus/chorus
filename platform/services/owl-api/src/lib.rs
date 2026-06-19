@@ -22,6 +22,10 @@ pub mod auth;
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
+/// #3506 / ADR-047 — the response-contract version. Coarse, infrastructure-wide;
+/// path-prefixed (/v1/...) AND echoed in every envelope. Bumps only when the
+/// envelope shape changes — orthogonal to a primitive's per-shape `shapeVersion`.
+pub const API_VERSION: &str = "v1";
 
 // #3435 — re-export the pure resolver surface (#3437) so the handler and consumers
 // import one place: owl_api::{ScopeKind, ScopeNode, decide_effective_value, ...}.
@@ -117,12 +121,17 @@ pub struct TelemetryLine {
     pub upstream_ms: u128,
     pub caller: String,
     pub trace_id: String,
+    // #3506 / ADR-047 AC3 — the contract emit-dims (computed once per class at boot,
+    // not per request). apiVersion is the constant API_VERSION, emitted directly.
+    pub product: String,
+    pub shape_version: String,
+    pub commit: String,
 }
 
 impl TelemetryLine {
     pub fn to_jsonl(&self, ts_ms: u128) -> String {
         format!(
-            "{{\"ts\":{},\"event\":\"api.request.served\",\"service\":\"owl-api\",\"class\":\"{}\",\"entity\":\"{}\",\"route\":\"{}\",\"fold\":\"{}\",\"status\":\"{}\",\"result_count\":{},\"total_ms\":{},\"upstream_ms\":{},\"caller\":\"{}\",\"trace_id\":\"{}\"}}\n",
+            "{{\"ts\":{},\"event\":\"api.request.served\",\"service\":\"owl-api\",\"class\":\"{}\",\"entity\":\"{}\",\"route\":\"{}\",\"fold\":\"{}\",\"status\":\"{}\",\"result_count\":{},\"total_ms\":{},\"upstream_ms\":{},\"caller\":\"{}\",\"trace_id\":\"{}\",\"product\":\"{}\",\"apiVersion\":\"{}\",\"shapeVersion\":\"{}\",\"commit\":\"{}\"}}\n",
             ts_ms,
             json_escape(&self.class),
             json_escape(&self.entity),
@@ -133,7 +142,11 @@ impl TelemetryLine {
             self.total_ms,
             self.upstream_ms,
             json_escape(&self.caller),
-            json_escape(&self.trace_id)
+            json_escape(&self.trace_id),
+            json_escape(&self.product),
+            API_VERSION,
+            json_escape(&self.shape_version),
+            json_escape(&self.commit)
         )
     }
 }
@@ -1440,7 +1453,14 @@ pub fn page_html(t: &RouteTable) -> String {
 }
 
 /// Build the JSON for one entity: every direct property in the instances graph.
-fn entity_json(name: &str) -> R<String> {
+/// #3506 / ADR-047 §1+§3 — project an entity into (data, links). DATATYPE props are
+/// scalars in `data`; EDGE props (NS-IRI objects) project into `links` as target id
+/// refs — single-valued → string, multi-valued → ARRAY. The array is the fix for a
+/// real bug the contract exposed: the old shape emitted a multi-valued edge (e.g.
+/// `contains`, ~80 files on the cards domain) as duplicate JSON keys — malformed
+/// JSON. links also drops the per-edge label lookup (#3354): a link is a traversal
+/// ref, the label lives on the target — fewer queries, ADR-conformant.
+fn entity_json(name: &str) -> R<(String, String)> {
     let subject = format!("{}{}", NS, name);
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} BIND(CONCAT(STR(?p), \"|\", STR(?o)) AS ?v) }} ORDER BY ?v",
@@ -1451,29 +1471,150 @@ fn entity_json(name: &str) -> R<String> {
     if prs.is_empty() {
         return Err("not-found".to_string());
     }
-    let mut parts = vec![format!("\"iri\": \"{}\"", json_escape(&subject))];
+    let mut data_parts = vec![format!("\"iri\": \"{}\"", json_escape(&subject))];
+    let mut links: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for rowv in prs {
         let (p, o) = match rowv.split_once('|') { Some((a, b)) => (a.to_string(), b.to_string()), None => continue };
         let key = p.rsplit(['#', '/']).next().unwrap_or(&p).to_string();
         if o.starts_with(NS) {
-            // EDGE RESOLUTION (#3354 AC2): linked entities return name + label,
-            // not a bare fragment — one extra lookup per edge, detail-route only.
+            // EDGE → links (target id ref). Multi-valued accumulates into one array.
             let target_name = o.rsplit('#').next().unwrap_or(&o).to_string();
-            let label = sparql_json(&format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{o}> <{ns}label> ?l }} BIND(STR(?l) AS ?v) }}",
-                g = INSTANCES_GRAPH, o = o, ns = NS
-            )).ok().map(|b| select_v(&b).into_iter().next().unwrap_or_default()).unwrap_or_default();
-            parts.push(format!(
-                "\"{}\": {{ \"name\": \"{}\", \"label\": \"{}\" }}",
-                json_escape(&key), json_escape(&target_name), json_escape(&label)
-            ));
+            links.entry(key).or_default().push(format!("chorus:{}", target_name));
         } else if o.starts_with("http") && o.contains('#') {
-            parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
+            data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
         } else {
-            parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
+            data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
         }
     }
-    Ok(format!("{{ {} }}", parts.join(", ")))
+    let data = format!("{{ {} }}", data_parts.join(", "));
+    let mut link_parts: Vec<String> = Vec::new();
+    for (k, vals) in &links {
+        if vals.len() == 1 {
+            link_parts.push(format!("\"{}\": \"{}\"", json_escape(k), json_escape(&vals[0])));
+        } else {
+            let arr = vals.iter().map(|v| format!("\"{}\"", json_escape(v))).collect::<Vec<_>>().join(", ");
+            link_parts.push(format!("\"{}\": [{}]", json_escape(k), arr));
+        }
+    }
+    let links_json = format!("{{ {} }}", link_parts.join(", "));
+    Ok((data, links_json))
+}
+
+/// #3506 / ADR-047 — the uniform response envelope. Every owl-api read (and, as the
+/// slice fans out, write + error) is wrapped in this ONE shape, generated from the
+/// model — no per-endpoint shaping. PURE: every field is an input derived by the
+/// caller from the request + the shape, so it is unit-testable without the store.
+/// `data` is the only payload slot; collections omit `id` and carry `count`.
+#[allow(clippy::too_many_arguments)]
+pub fn envelope(
+    kind: &str,
+    id: Option<&str>,
+    self_url: &str,
+    shape: &str,
+    shape_version: &str,
+    commit: &str,
+    requires_auth: bool,
+    data_json: &str,
+    links_json: &str,
+    count: Option<i64>,
+) -> String {
+    let mut p: Vec<String> = Vec::new();
+    p.push(format!("\"apiVersion\": \"{}\"", API_VERSION));
+    p.push(format!("\"kind\": \"{}\"", json_escape(kind)));
+    if let Some(i) = id {
+        p.push(format!("\"id\": \"{}\"", json_escape(i)));
+    }
+    p.push(format!("\"self\": \"{}\"", json_escape(self_url)));
+    p.push(format!(
+        "\"generatedFrom\": {{ \"graph\": \"{}\", \"shape\": \"{}\", \"shapeVersion\": \"{}\", \"commit\": \"{}\" }}",
+        json_escape(ONTOLOGY_GRAPH), json_escape(shape), json_escape(shape_version), json_escape(commit)
+    ));
+    p.push(format!("\"data\": {}", data_json));
+    p.push(format!("\"links\": {}", links_json));
+    if let Some(c) = count {
+        p.push(format!("\"count\": {}", c));
+    }
+    p.push(format!("\"requiresAuth\": {}", requires_auth));
+    p.push("\"deprecation\": null".to_string());
+    format!("{{ {} }}", p.join(", "))
+}
+
+/// #3506 / ADR-047 §2 — the `generatedFrom` provenance for a class, sourced from the
+/// model (never hand-authored): the shape IRI, its model-declared `chorus:shapeVersion`
+/// (falls back to "unversioned" — explicit, not faked — until the shape declares one),
+/// and the chorus.ttl deploy commit (env `OWL_API_MODEL_COMMIT`, "unknown" until wired
+/// by the deploy). Both version axes trace to the model/deploy, not a hardcode.
+fn shape_meta(class_local: &str) -> (String, String, String) {
+    let shape = format!("chorus:{}Shape", class_local);
+    let class = format!("{}{}", NS, class_local);
+    let svq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:shapeVersion ?sv BIND(STR(?sv) AS ?v) }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let shape_version = sparql_json(&svq)
+        .ok()
+        .and_then(|b| select_v(&b).into_iter().next())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unversioned".to_string());
+    let commit = std::env::var("OWL_API_MODEL_COMMIT").unwrap_or_else(|_| "unknown".to_string());
+    (shape, shape_version, commit)
+}
+
+/// #3506 / ADR-047 §4 — an error IS the same envelope (`kind:"Error"`) carrying an
+/// RFC-9457 Problem-Details `data`. Served as `application/problem+json`. Per-field
+/// `errors[]` is the projected SHACL violation report (generated) when present —
+/// the model is the input-validation boundary, so the detail is not hand-written.
+pub fn error_envelope(
+    table: &RouteTable,
+    instance_name: &str,
+    status: u16,
+    type_slug: &str,
+    detail: &str,
+    field_errors: &[(String, String)],
+) -> String {
+    let kind_local = table.class.rsplit('#').next().unwrap_or("Resource");
+    let (shape, shape_version, commit) = shape_meta(kind_local);
+    let plural = pluralize(kind_local);
+    let instance = format!("/{}/{}/{}", API_VERSION, plural, instance_name);
+    let title = match status {
+        400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found",
+        409 => "Conflict", 412 => "Precondition Failed", 422 => "Unprocessable Entity",
+        428 => "Precondition Required", 429 => "Too Many Requests", 502 => "Bad Gateway",
+        _ => "Error",
+    };
+    let errs = if field_errors.is_empty() {
+        String::new()
+    } else {
+        let items = field_errors
+            .iter()
+            .map(|(f, d)| format!("{{ \"field\": \"{}\", \"detail\": \"{}\" }}", json_escape(f), json_escape(d)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", \"errors\": [{}]", items)
+    };
+    let data = format!(
+        "{{ \"type\": \"/errors/{}\", \"title\": \"{}\", \"status\": {}, \"detail\": \"{}\", \"instance\": \"{}\"{} }}",
+        json_escape(type_slug), title, status, json_escape(detail), json_escape(&instance), errs
+    );
+    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None)
+}
+
+/// #3506 / ADR-047 §7 — read one query param from a `&`-joined query string.
+pub fn query_param(query: &str, key: &str) -> Option<String> {
+    query.split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        if k == key { Some(v.to_string()) } else { None }
+    })
+}
+
+/// #3506 / ADR-047 §7 — opaque-cursor pagination (AIP-158). The cursor is the next
+/// offset into the ordered, stable-per-request list; returns the page slice + the
+/// next cursor (None at the end). Pure + unit-pinned.
+pub fn paginate<'a>(items: &'a [String], cursor: Option<&str>, limit: usize) -> (&'a [String], Option<usize>) {
+    let start = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0).min(items.len());
+    let end = start.saturating_add(limit.max(1)).min(items.len());
+    let next = if end < items.len() { Some(end) } else { None };
+    (&items[start..end], next)
 }
 
 /// Request metadata for the telemetry envelope, filled by handle().
@@ -1512,6 +1653,12 @@ pub fn is_safe_local(s: &str) -> bool {
 }
 
 fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, String) {
+    // #3506 / ADR-047 §7 — split the query string off BEFORE route matching, so
+    // `?limit=&cursor=` (cursor pagination, AIP-158) never breaks the path parse.
+    let (path, query) = match path.split_once('?') {
+        Some((p, q)) => (p, q),
+        None => (path, ""),
+    };
     let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
 
@@ -1585,11 +1732,30 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
                     })
                     .collect();
                 {
-                    meta.result_count = items.len() as i64;
-                    (200, format!("{{ \"count\": {}, \"items\": [\n  {}\n] }}", items.len(), items.join(",\n  ")))
+                    // #3506 / ADR-047 — the collection list, enveloped + paginated:
+                    // kind = the item class, no `id`, `data` = the page, `count` = the
+                    // TOTAL, `links.next` = the cursor URL when more remain. Uniform
+                    // with the entity read; consumers learn ONE shape.
+                    let total = items.len() as i64;
+                    let limit = query_param(query, "limit")
+                        .and_then(|l| l.parse::<usize>().ok())
+                        .filter(|n| *n > 0)
+                        .unwrap_or(100);
+                    let cursor = query_param(query, "cursor");
+                    let (page, next) = paginate(&items, cursor.as_deref(), limit);
+                    meta.result_count = page.len() as i64;
+                    let data = format!("[\n  {}\n]", page.join(",\n  "));
+                    let kind = table.class.rsplit('#').next().unwrap_or("Domain");
+                    let (shape, shape_version, commit) = shape_meta(kind);
+                    let self_url = format!("/{}{}", API_VERSION, plural);
+                    let links = match next {
+                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, plural, n, limit),
+                        None => "{}".to_string(),
+                    };
+                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, !table.secured.is_empty(), &data, &links, Some(total)))
                 }
             }
-            Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            Err(e) => (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
         };
     }
     // GET /domains/:name and /domains/:name/contains
@@ -1695,12 +1861,22 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta) -> (u16, Str
             };
         }
         return match entity_json(name) {
-            Ok(j) => {
+            Ok((data, links)) => {
                 meta.result_count = 1;
-                (200, j)
+                // #3506 / ADR-047 — wrap the entity read in the uniform envelope
+                // (prove-one-first: this GET /:name path is the end-to-end proof).
+                let kind = table.class.rsplit('#').next().unwrap_or("Domain");
+                let (shape, shape_version, commit) = shape_meta(kind);
+                let self_url = format!("/{}{}/{}", API_VERSION, plural, name);
+                let id = format!("chorus:{}", name);
+                let body = envelope(
+                    kind, Some(&id), &self_url, &shape, &shape_version, &commit,
+                    !table.secured.is_empty(), &data, &links, None,
+                );
+                (200, body)
             }
-            Err(e) if e == "not-found" => (404, format!("{{ \"error\": \"no such domain: {}\" }}", json_escape(name))),
-            Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            Err(e) if e == "not-found" => (404, error_envelope(table, name, 404, "not-found", &format!("no such {}: {}", table.class.rsplit('#').next().unwrap_or("entity").to_lowercase(), name), &[])),
+            Err(e) => (502, error_envelope(table, name, 502, "upstream", &json_escape(&e), &[])),
         };
     }
     (404, format!("{{ \"error\": \"unknown route\", \"routes\": [{}] }}",
@@ -1732,6 +1908,33 @@ pub fn http_response_ct(status: &str, body: &str, content_type: &str) -> String 
     format!(
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         status, content_type, body.len(), body
+    )
+}
+
+/// #3506 / ADR-047 §7 — a cacheable read response: adds `Vary: Accept` (content-
+/// negotiation) and, when an ETag is supplied (= the model `commit`), `ETag` +
+/// `Cache-Control: no-cache` so a client can revalidate with `If-None-Match` and get
+/// a 304 when the model hasn't moved. Pure so it's unit-pinned.
+pub fn http_response_cacheable(status: &str, body: &str, content_type: &str, etag: Option<&str>) -> String {
+    let mut headers = format!(
+        "Content-Type: {}\r\nAccess-Control-Allow-Origin: *\r\nVary: Accept\r\n",
+        content_type
+    );
+    if let Some(tag) = etag {
+        headers.push_str(&format!("ETag: \"{}\"\r\nCache-Control: no-cache\r\n", tag));
+    }
+    format!(
+        "HTTP/1.1 {}\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+        status, headers, body.len(), body
+    )
+}
+
+/// #3506 / ADR-047 §7 — the 304 Not Modified for a conditional-GET hit (commit
+/// unchanged): ETag echoed, no body.
+pub fn http_response_304(etag: &str) -> String {
+    format!(
+        "HTTP/1.1 304 Not Modified\r\nETag: \"{}\"\r\nVary: Accept\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        etag
     )
 }
 
@@ -1896,13 +2099,34 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     for s in &surfaces {
         eprintln!("owl-api: + /{} domain surface [{}]", s.mount, s.classes.join(", "));
     }
+    // #3506 / ADR-047 AC3 — emit-dims computed ONCE per class at boot (the #3066
+    // lesson: never a Fuseki query per request). class → (product, shapeVersion,
+    // commit); looked up at the telemetry seam below. apiVersion is the constant.
+    let dim_cache: std::collections::HashMap<String, (String, String, String)> = tables
+        .iter()
+        .map(|t| {
+            let local = t.class.rsplit('#').next().unwrap_or("").to_string();
+            let product = read_containment_local(&t.class, "chorus:partOf", "")
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let (_, shape_version, commit) = shape_meta(&local);
+            (local, (product, shape_version, commit))
+        })
+        .collect();
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
         let started = std::time::Instant::now();
         let mut buf = [0u8; 4096];
         let n = stream.read(&mut buf).unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]);
-        let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
+        let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
+        // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
+        // breaks select_table at serve level); carry it to handle for pagination.
+        let (path, query) = match raw_path.split_once('?') {
+            Some((p, q)) => (p.to_string(), q.to_string()),
+            None => (raw_path, String::new()),
+        };
         let method = req.lines().next().and_then(|l| l.split_whitespace().next()).unwrap_or("GET").to_string();
         let header = |name: &str| -> String {
             req.lines()
@@ -1916,6 +2140,55 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             let resp = http_response_ct(status_line(200), "{ \"ok\": true, \"service\": \"owl-api\" }", "application/json");
             let _ = stream.write_all(resp.as_bytes());
             continue;
+        }
+        // #3506 / ADR-047 §7 — the DISCOVERY ROOT: GET / (and /v1) lists every served
+        // primitive with its collection URL + per-shape version, so a consumer learns
+        // the whole surface from one entrypoint (no out-of-band knowledge). Plus
+        // /livez + /readyz liveness probes (the heartbeat the contract calls for).
+        if path == "/livez" || path == "/readyz" {
+            let resp = http_response_ct(status_line(200), "{ \"ok\": true }", "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
+        if path == "/" || path == format!("/{}", API_VERSION) {
+            let prims: Vec<String> = tables
+                .iter()
+                .map(|t| {
+                    let local = t.class.rsplit('#').next().unwrap_or("");
+                    let plural = pluralize(local);
+                    let sv = dim_cache.get(local).map(|d| d.1.clone()).unwrap_or_default();
+                    format!(
+                        "{{ \"kind\": \"{}\", \"collection\": \"/{}/{}\", \"openapi\": \"/{}/openapi.json\", \"shapeVersion\": \"{}\" }}",
+                        json_escape(local), API_VERSION, plural, plural, json_escape(&sv)
+                    )
+                })
+                .collect();
+            let doc = format!(
+                "{{ \"apiVersion\": \"{}\", \"service\": \"owl-api\", \"kind\": \"Discovery\", \"count\": {}, \"primitives\": [{}] }}",
+                API_VERSION, tables.len(), prims.join(", ")
+            );
+            let resp = http_response_ct(status_line(200), &doc, "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
+        // #3506 / ADR-047 §7 — served OpenAPI for EVERY surface: /<plural>/openapi.json
+        // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
+        // every primitive documents itself, found via the discovery root above.
+        if let Some(rest) = path.strip_suffix("/openapi.json").or_else(|| path.strip_suffix("/openapi")) {
+            let want = rest.trim_start_matches('/');
+            if let Some(t) = tables
+                .iter()
+                .find(|t| pluralize(t.class.rsplit('#').next().unwrap_or("")) == want)
+            {
+                let (body, ct) = if path.ends_with(".json") {
+                    (openapi_json(t), "application/json")
+                } else {
+                    (openapi_html(t.class.rsplit('#').next().unwrap_or("")), "text/html; charset=utf-8")
+                };
+                let resp = http_response_ct(status_line(200), &body, ct);
+                let _ = stream.write_all(resp.as_bytes());
+                continue;
+            }
         }
         // #3494 — composed domain surface dispatch, BEFORE the primitive select_table.
         // /<mount> → the domain's vocabulary index; /<mount>/<class-kebab>[/...] →
@@ -1979,18 +2252,39 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         } else {
             match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
-                None => handle_meta(&path, table),
+                None => {
+                    let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
+                    handle_meta(&hp, table)
+                }
             }
         };
         let upstream_ms = upstream_started.elapsed().as_millis();
         let status = status_line(code);
-        let resp = http_response_ct(status, &body, content_type_for(&path));
+        // #3506 / ADR-047 §7 — ETag = the model commit; a conditional GET whose
+        // If-None-Match equals it gets a 304 (the served bytes change only when the
+        // model commit moves). GET 200s carry ETag + Vary so a client can revalidate.
+        let etag = dim_cache
+            .get(table.class.rsplit('#').next().unwrap_or(""))
+            .map(|d| d.2.clone())
+            .filter(|c| !c.is_empty() && c != "unknown");
+        let cond_hit = method == "GET"
+            && code == 200
+            && etag.as_deref().map_or(false, |t| header("if-none-match").trim().trim_matches('"') == t);
+        let resp = if cond_hit {
+            http_response_304(etag.as_deref().unwrap_or(""))
+        } else if method == "GET" && code == 200 {
+            http_response_cacheable(status, &body, content_type_for(&path), etag.as_deref())
+        } else {
+            http_response_ct(status, &body, content_type_for(&path))
+        };
         let _ = stream.write_all(resp.as_bytes());
         // THE SEAM: every request passes here once — telemetry now; auth,
         // validation, rate limits inject at this same point (the IoC payoff).
         if path != "/health" { // probes are noise, not signal
+            let class_local = table.class.rsplit('#').next().unwrap_or("").to_string();
+            let (product, shape_version, commit) = dim_cache.get(&class_local).cloned().unwrap_or_default();
             emit_telemetry(&TelemetryLine {
-                class: table.class.rsplit('#').next().unwrap_or("").to_string(),
+                class: class_local,
                 entity: meta.entity,
                 route: meta.route,
                 fold: meta.fold,
@@ -2011,6 +2305,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         .unwrap_or(0);
                     effective_trace(&header("x-chorus-trace-id"), now, req_counter)
                 },
+                product,
+                shape_version,
+                commit,
             });
         }
     }
@@ -2020,6 +2317,99 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #3506 / ADR-047 — the envelope wrapper pins the full response contract for a
+    // single entity AND a collection, generated from inputs (pure, no store).
+    #[test]
+    fn envelope_wraps_entity_in_adr047_contract() {
+        let e = envelope(
+            "Domain",
+            Some("chorus:properties"),
+            "/v1/domains/properties",
+            "chorus:DomainShape",
+            "2026-06-19",
+            "534805b9",
+            true,
+            "{ \"purpose\": \"config-as-data\" }",
+            "{ \"partOf\": \"/v1/products/borg\" }",
+            None,
+        );
+        for needle in [
+            "\"apiVersion\": \"v1\"",
+            "\"kind\": \"Domain\"",
+            "\"id\": \"chorus:properties\"",
+            "\"self\": \"/v1/domains/properties\"",
+            "\"generatedFrom\":",
+            "\"graph\": \"urn:chorus:ontology\"",
+            "\"shape\": \"chorus:DomainShape\"",
+            "\"shapeVersion\": \"2026-06-19\"",
+            "\"commit\": \"534805b9\"",
+            "\"data\": { \"purpose\":",
+            "\"links\": { \"partOf\":",
+            "\"requiresAuth\": true",
+            "\"deprecation\": null",
+        ] {
+            assert!(e.contains(needle), "entity envelope missing `{}`:\n{}", needle, e);
+        }
+        // an entity carries no `count`
+        assert!(!e.contains("\"count\""), "entity envelope must not carry count: {}", e);
+    }
+
+    // #3506 / ADR-047 §7 — cursor pagination: page slicing + next cursor + query parse.
+    #[test]
+    fn paginate_pages_and_signals_next() {
+        let items: Vec<String> = (0..25).map(|i| i.to_string()).collect();
+        let (p0, n0) = paginate(&items, None, 10);
+        assert_eq!(p0.len(), 10, "first page is `limit`");
+        assert_eq!(n0, Some(10), "next cursor = end offset when more remain");
+        let (p1, n1) = paginate(&items, Some("10"), 10);
+        assert_eq!(p1, &["10", "11", "12", "13", "14", "15", "16", "17", "18", "19"]);
+        assert_eq!(n1, Some(20));
+        let (p2, n2) = paginate(&items, Some("20"), 10);
+        assert_eq!(p2.len(), 5, "last partial page");
+        assert_eq!(n2, None, "no next cursor at the end");
+        // cursor past the end → empty page, no panic
+        let (p3, n3) = paginate(&items, Some("999"), 10);
+        assert!(p3.is_empty() && n3.is_none());
+    }
+
+    #[test]
+    fn query_param_reads_keys() {
+        assert_eq!(query_param("limit=20&cursor=10", "limit").as_deref(), Some("20"));
+        assert_eq!(query_param("limit=20&cursor=10", "cursor").as_deref(), Some("10"));
+        assert_eq!(query_param("limit=20", "cursor"), None);
+        assert_eq!(query_param("", "limit"), None);
+    }
+
+    // #3506 / ADR-047 §7 — cacheable read carries ETag + Vary; 304 echoes the tag, no body.
+    #[test]
+    fn cacheable_response_carries_etag_and_vary() {
+        let r = http_response_cacheable("200 OK", "{}", "application/json", Some("534805b9"));
+        assert!(r.contains("ETag: \"534805b9\""), "ETag from the model commit: {}", r);
+        assert!(r.contains("Vary: Accept"), "content-negotiation Vary: {}", r);
+        assert!(r.contains("Cache-Control: no-cache"), "revalidate, don't blind-cache: {}", r);
+        // no etag → no ETag header (e.g. commit unknown)
+        let r2 = http_response_cacheable("200 OK", "{}", "application/json", None);
+        assert!(!r2.contains("ETag:"), "no etag header when commit unknown: {}", r2);
+        assert!(r2.contains("Vary: Accept"), "Vary still present: {}", r2);
+
+        let nm = http_response_304("534805b9");
+        assert!(nm.starts_with("HTTP/1.1 304 Not Modified"), "conditional hit → 304: {}", nm);
+        assert!(nm.contains("ETag: \"534805b9\""), "304 echoes the tag: {}", nm);
+        assert!(nm.trim_end().ends_with("\r\n") || nm.ends_with("\r\n\r\n"), "304 has no body");
+    }
+
+    #[test]
+    fn envelope_collection_omits_id_and_carries_count() {
+        let c = envelope(
+            "Domain", None, "/v1/domains", "chorus:DomainShape",
+            "2026-06-19", "534805b9", false, "[]", "{}", Some(35),
+        );
+        assert!(c.contains("\"count\": 35"), "collection carries count: {}", c);
+        assert!(!c.contains("\"id\":"), "collection omits id: {}", c);
+        assert!(c.contains("\"requiresAuth\": false"), "open collection: {}", c);
+        assert!(c.contains("\"data\": []"), "collection data is the array: {}", c);
+    }
 
     #[test]
     fn select_v_parses_all_rows() {
