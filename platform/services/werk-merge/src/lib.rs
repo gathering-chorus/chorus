@@ -132,6 +132,33 @@ pub fn classify_merge_error(stderr: &str) -> &'static str {
     }
 }
 
+/// #3495 — failureClass discriminator for DORA change-failure-rate (ADR-046,
+/// "emit the discriminating field, don't post-hoc classify"). CHANGE = the change
+/// itself failed (its tests/gates); TOOLING = the pipeline mechanics failed, the
+/// change is fine. Emitted alongside `reason` on land-fail events so the existing
+/// flow-report walk-away bar (#3266) can exclude tooling from the CFR denominator
+/// — today's pr-create-fail / announce-missing retries stop poisoning CFR.
+///
+/// Only test-fail / gate-fail are CHANGE; every werk-merge mechanical reason is
+/// TOOLING. merge-conflict / not-mergeable default TOOLING (the common
+/// rebase-artifact case) — promoting a genuine CONTENT conflict to CHANGE needs
+/// the git conflict signal at the emit point, a flagged #3495 follow-on, not faked
+/// here. An unknown reason defaults TOOLING (conservative: never inflate CFR; a
+/// new change-class reason must be added to the CHANGE arm explicitly).
+pub fn failure_class(reason: &str) -> &'static str {
+    match reason {
+        "test-fail" | "gate-fail" => "change",
+        _ => "tooling",
+    }
+}
+
+/// #3495 — the `merge.refused` witness payload: `reason` + its `failureClass`, so
+/// every refusal carries the DORA discriminator at the source (the flow-report
+/// walk-away bar reads failureClass to exclude tooling from change-failure-rate).
+fn refused_extra(reason: &str) -> String {
+    format!(",\"reason\":\"{}\",\"failureClass\":\"{}\"", reason, failure_class(reason))
+}
+
 /// #3459 — the #3365 round-validity decision.
 ///
 /// The announce gate must let a content-preserving rebase merge (the demoed CHANGE
@@ -429,13 +456,13 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
 
     // Refuse if no werk (deterministic, no canonical fallback — the #3012/#3013 fix).
     if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"no-werk\"");
+        jsonl(home, role, card, &trace, "merge.refused", &refused_extra("no-werk"));
         return Err(format!("no werk for #{} at {} — pull/commit/push the card first", card, werk.display()));
     }
     // werk must be on the card's branch (carries the #2580 cross-role intent).
     let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
     if cur != branch {
-        jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"branch-mismatch\"");
+        jsonl(home, role, card, &trace, "merge.refused", &refused_extra("branch-mismatch"));
         return Err(format!("werk is on '{}', not '{}' — refusing to merge", cur, branch));
     }
 
@@ -504,7 +531,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                 ],
             )
             .map_err(|e| {
-                jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"pr-create-fail\"");
+                jsonl(home, role, card, &trace, "merge.refused", &refused_extra("pr-create-fail"));
                 format!("pr-create-fail: {}", e)
             })?;
             // re-resolve by oid. GitHub's list API lags its create API — tonight's
@@ -524,7 +551,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                 }
             }
             found.ok_or_else(|| {
-                jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"no-open-pr\"");
+                jsonl(home, role, card, &trace, "merge.refused", &refused_extra("no-open-pr"));
                 // #3336 — if you hit this on a MANUAL resume, the usual cause is operator
                 // discipline, not a bug: the local HEAD commit was not PUSHED before go, so
                 // no PR matches the oid (and the content-verify above found nothing on main
@@ -573,7 +600,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                                &[("reason", "announce-missing-this-round")]);
                 }
                 _ => {
-                    jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"announce-missing-this-round\"");
+                    jsonl(home, role, card, &trace, "merge.refused", &refused_extra("announce-missing-this-round"));
                     return Err(format!(
                         "announce-missing-this-round: no demo.presented for #{} matches HEAD's round OR its diff — \
                          the change about to merge isn't the one demoed. If a rebase moved the sha but the change is \
@@ -600,7 +627,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         jsonl(home, role, card, &trace, "lock.acquired", &format!(",\"pr\":{}", pr));
         if let Err(e) = run_in(&werk_s, "gh", &["pr", "merge", &pr.to_string(), "--squash"]) {
             let reason = classify_merge_error(&e);
-            jsonl(home, role, card, &trace, "merge.refused", &format!(",\"reason\":\"{}\"", reason));
+            jsonl(home, role, card, &trace, "merge.refused", &refused_extra(reason));
             return Err(format!("{}: pr #{} did not merge; nothing landed: {}", reason, pr, e));
         }
         jsonl(home, role, card, &trace, "merged", &format!(",\"pr\":{}", pr));
@@ -615,11 +642,11 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     let state = json_str_field(&view, "state").unwrap_or_default();
     let merge_oid = json_str_field(&view, "oid").unwrap_or_default();
     if state != "MERGED" {
-        jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"merge-fail\"");
+        jsonl(home, role, card, &trace, "merge.refused", &refused_extra("merge-fail"));
         return Err(format!("merge-fail: pr #{} state is '{}', not MERGED — content did not land", pr, state));
     }
     if merge_oid.is_empty() || !oid_on_main(&werk_s, &merge_oid) {
-        jsonl(home, role, card, &trace, "merge.refused", ",\"reason\":\"merge-fail\"");
+        jsonl(home, role, card, &trace, "merge.refused", &refused_extra("merge-fail"));
         return Err(format!(
             "merge-fail: pr #{} reports MERGED but merge commit {} is not on origin/main (false-green guard)",
             pr, merge_oid

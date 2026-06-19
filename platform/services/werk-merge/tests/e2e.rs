@@ -228,6 +228,15 @@ fn merge_resolves_by_oid_lands_real_work_and_content_verifies() {
         std::env::set_var("ORIGIN", origin.to_str().unwrap());
         std::env::set_var("GH_STATE", state.to_str().unwrap());
         assert!(merge(9999, "kade", &home, &werk_base).is_err(), "no werk => refuse");
+        // #3495 — the refusal witness carries the failureClass discriminator at the
+        // source: no-werk is a TOOLING failure, never a change failure (must not
+        // count against change-failure-rate).
+        let witness = fs::read_to_string(home.join("ops/logs/werk-merge.jsonl")).unwrap_or_default();
+        assert!(
+            witness.contains("\"reason\":\"no-werk\"") && witness.contains("\"failureClass\":\"tooling\""),
+            "#3495: merge.refused witness must carry failureClass=tooling alongside reason — got: {}",
+            witness
+        );
     }
 
     // ── Scenario G (#3365): NO GO BEFORE ANNOUNCE, per round. A merge without a
