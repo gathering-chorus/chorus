@@ -932,12 +932,10 @@ chorus:spine-service a chorus:SubDomain ;
 
 # --- Cross-cutting infrastructure sub-domains ---
 
-chorus:properties-domain a chorus:SubDomain ;
-    rdfs:label "Properties" ;
-    rdfs:comment "Externalized configuration — ports, URLs, feature flags. Services look up config, not hardcode it." ;
-    chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library, chorus:bedroom .
+# --- properties RETIRED as a SubDomain here (#3489 / ADR-045): collapsed into the
+# punned domain-class chorus:Properties (owl:Class + chorus:Domain) defined below in
+# the ADR-045 section. partOf borgProduct directly (a first-class config-as-data domain,
+# no longer nested under observability). Edges repointed; blast-radius(Properties-domain) → ∅. ---
 
 chorus:security-domain a chorus:SubDomain ;
     rdfs:label "Security & Trust" ;
@@ -1178,7 +1176,7 @@ chorus:werk-product chorus:hasDomain chorus:streams-domain .
 chorus:convergence-product chorus:hasDomain chorus:integrations-domain, chorus:convergence-domain .
 
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability-domain chorus:hasDomain chorus:properties-domain, chorus:time-domain .
+chorus:observability-domain chorus:hasDomain chorus:time-domain .
 
 chorus:loom chorus:hasDomain chorus:loom-policies .
 
@@ -1186,7 +1184,10 @@ chorus:loom chorus:hasDomain chorus:loom-policies .
 chorus:athena-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain .
+chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties .
+# ^ chorus:Properties wired via hasDomain (product→domain membership, what owl-api enumerates to
+# bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
+# pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
 
 # cards-product domain moved to loom
 chorus:loom chorus:hasDomain chorus:cards-service .
@@ -1266,11 +1267,11 @@ chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
-chorus:cards-service chorus:consumes chorus:properties-domain .
-chorus:observability-domain chorus:consumes chorus:properties-domain .
-chorus:infrastructure-domain chorus:consumes chorus:properties-domain .
-chorus:deploys-domain chorus:consumes chorus:properties-domain .
-chorus:logs-domain chorus:consumes chorus:properties-domain .
+chorus:cards-service chorus:consumes chorus:Properties .
+chorus:observability-domain chorus:consumes chorus:Properties .
+chorus:infrastructure-domain chorus:consumes chorus:Properties .
+chorus:deploys-domain chorus:consumes chorus:Properties .
+chorus:logs-domain chorus:consumes chorus:Properties .
 
 chorus:code-domain chorus:consumes chorus:security-domain .
 chorus:gates-service chorus:consumes chorus:security-domain .
@@ -1289,7 +1290,7 @@ chorus:infrastructure-domain chorus:consumes chorus:security-domain .
 chorus:logs-domain chorus:consumes chorus:security-domain .
 chorus:messages-domain chorus:consumes chorus:security-domain .
 chorus:observability-domain chorus:consumes chorus:security-domain .
-chorus:properties-domain chorus:consumes chorus:security-domain .
+chorus:Properties chorus:consumes chorus:security-domain .
 # pulse-metrics-domain security edge removed
 chorus:loom-rcas chorus:consumes chorus:security-domain .
 chorus:streams-domain chorus:consumes chorus:security-domain .
@@ -1320,7 +1321,7 @@ chorus:infrastructure-domain chorus:consumes chorus:time-domain .
 chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
 chorus:observability-domain chorus:consumes chorus:time-domain .
-chorus:properties-domain chorus:consumes chorus:time-domain .
+chorus:Properties chorus:consumes chorus:time-domain .
 chorus:security-domain chorus:consumes chorus:time-domain .
 # pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
@@ -1836,6 +1837,323 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
     ] .
+
+# --- PropertyKey registry — config-as-data governance (ADR-044) ---
+# A property key is a REGISTERED, governed vocabulary, not a free-text field.
+# register-before-use: every chorus:Property.propertyKey MUST resolve to a
+# registered chorus:PropertyKey. The registry is DATA — a new key / enum /
+# edge-type is a MODEL WRITE, not a code or hand-authored-SHACL edit. The DAL
+# compiles each row into write-time validation (#3436); owl-api projects the
+# same registry into the generated API + MCP. ADR-044.
+
+chorus:PropertyKey a owl:Class ;
+    rdfs:label "Property Key" ;
+    rdfs:comment "Governed definition (registry entry) of a config key. register-before-use: every chorus:Property.propertyKey MUST resolve to a registered PropertyKey. propertyKind-discriminated (datatype|object). The DAL compiles each to write-validation; owl-api projects it into the generated API+MCP. ADR-044." .
+
+chorus:keyName a owl:DatatypeProperty ;
+    rdfs:label "key name" ;
+    rdfs:comment "The dotted config key this row governs, e.g. 'testType', 'gate.enforced', 'covers'. Matches chorus:Property.propertyKey. ADR-044." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:propertyKind a owl:DatatypeProperty ;
+    rdfs:label "property kind" ;
+    rdfs:comment "Discriminator: 'datatype' (literal value — keyValueType + allowedValue) | 'object' (IRI value — edgeTargetClass). Selects which value carrier the Property uses (propertyValue xor propertyValueRef). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:appliesToClass a owl:ObjectProperty ;
+    rdfs:label "applies to class" ;
+    rdfs:comment "The ADR-041 class a Property with this key may attach to — the level a key is valid at (the primary governance act). A pointer into ADR-041's tree, not a new taxonomy. ADR-044." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range owl:Class .
+
+chorus:lifecycleEnabled a owl:DatatypeProperty ;
+    rdfs:label "lifecycle enabled" ;
+    rdfs:comment "Capability: MAY values of this key expire (expiresAt + sourceCard on the instance)? Default false. The capability is on the KEY; the TTL is on the value — never fused. ADR-044 Decision 4." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:boolean .
+
+# datatype arm
+chorus:keyValueType a owl:DatatypeProperty ;
+    rdfs:label "key value type" ;
+    rdfs:comment "datatype-arm: how to read the literal value — string|int|bool|json|list. Authoritative over the now-redundant #3433 propertyValueType (reconcile in #3436). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+chorus:allowedValue a owl:DatatypeProperty ;
+    rdfs:label "allowed value" ;
+    rdfs:comment "datatype-arm: 0..n permitted literals — the sh:in enum the DAL compiles. Absent = unconstrained literal of keyValueType. ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:string .
+
+# object arm
+chorus:edgeTargetClass a owl:ObjectProperty ;
+    rdfs:label "edge target class" ;
+    rdfs:comment "object-arm: the owl:Class the value-IRI must belong to — the sh:class constraint the DAL compiles. A sub-domain is a Domain that is hasChild of another Domain; SubDomain is NOT a class of record (ADR-040). ADR-044 Decision 2." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range owl:Class .
+
+chorus:hubProjected a owl:DatatypeProperty ;
+    rdfs:label "hub projected" ;
+    rdfs:comment "object-arm: if true, the DAL materializes a derived direct predicate (e.g. chorus:covers) FROM the reified Property — never independently authored. Keeps a hub edge 1-hop traversable with no dual-authoring drift. ADR-044 Decision 5." ;
+    rdfs:domain chorus:PropertyKey ;
+    rdfs:range xsd:boolean .
+
+# value carrier (object-key) + lifecycle value (instance-level)
+chorus:propertyValueRef a owl:ObjectProperty ;
+    rdfs:label "property value ref" ;
+    rdfs:comment "object-key value: an IRI to a node of the key's edgeTargetClass. The only carrier that works for object keys — sh:class needs a real node, the edge must be SPARQL-traversable. Carrier-matches-kind: a Property has propertyValue (datatype) XOR propertyValueRef (object). ADR-044 Decision 3." ;
+    rdfs:domain chorus:Property .
+
+chorus:expiresAt a owl:DatatypeProperty ;
+    rdfs:label "expires at" ;
+    rdfs:comment "Instance-level: this value expires at T (only when the key.lifecycleEnabled). ADR-044 Decision 4." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:dateTime .
+
+chorus:sourceCard a owl:DatatypeProperty ;
+    rdfs:label "source card" ;
+    rdfs:comment "Instance-level: the card that authorized this (expiring) value. ADR-044 Decision 4." ;
+    rdfs:domain chorus:Property ;
+    rdfs:range xsd:string .
+
+# carrier-matches-kind invariant — a mismatched carrier is un-representable (ADR-044 Decision 3).
+# This IS hand-authored SHACL (one invariant for all Property). The per-KEY constraints
+# (allowedValue->sh:in, edgeTargetClass->sh:class, keyValueType->sh:datatype) are COMPILED
+# by the DAL from each PropertyKey row at write (#3436) — never hand-authored per key.
+chorus:PropertyCarrierShape a sh:NodeShape ;
+    sh:targetClass chorus:Property ;
+    sh:xone (
+        [ sh:property [ sh:path chorus:propertyValue    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValueRef ; sh:maxCount 0 ] ]
+        [ sh:property [ sh:path chorus:propertyValueRef ; sh:minCount 1 ; sh:maxCount 1 ] ;
+          sh:property [ sh:path chorus:propertyValue    ; sh:maxCount 0 ] ]
+    ) .
+
+# PropertyKey CRUD-projection shape — the field spec owl-api's vocab fan-out (#3494) reads to
+# generate the PropertyKey surface (mirrors PropertyShape for Property). keyName + propertyKind +
+# appliesToClass + lifecycleEnabled are core to every registry row; the arm-specific carriers
+# (keyValueType/allowedValue | edgeTargetClass/hubProjected) stay optional, propertyKind-discriminated.
+chorus:PropertyKeyShape a sh:NodeShape ;
+    sh:targetClass chorus:PropertyKey ;
+    sh:property [
+        sh:path chorus:keyName ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:propertyKind ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:appliesToClass ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path chorus:lifecycleEnabled ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+    ] .
+
+# --- registry seed: the three-shapes proof (ADR-044 — enum-scalar / lifecycle-toggle / typed-edge) ---
+chorus:pk-testType a chorus:PropertyKey ;
+    chorus:keyName "testType" ; chorus:propertyKind "datatype" ;
+    chorus:appliesToClass chorus:Test ; chorus:keyValueType "string" ;
+    chorus:allowedValue "unit", "integration", "api", "ui", "perf", "security", "e2e", "bdd" ;
+    chorus:lifecycleEnabled false .
+
+chorus:pk-gateEnforced a chorus:PropertyKey ;
+    chorus:keyName "gate.enforced" ; chorus:propertyKind "datatype" ;
+    chorus:appliesToClass chorus:Service ; chorus:keyValueType "bool" ;
+    chorus:lifecycleEnabled true .
+
+chorus:pk-covers a chorus:PropertyKey ;
+    chorus:keyName "covers" ; chorus:propertyKind "object" ;
+    chorus:appliesToClass chorus:Test ; chorus:edgeTargetClass chorus:Domain ;
+    chorus:hubProjected true ; chorus:lifecycleEnabled false .
+
+# --- Property instances (proof: the generated /borg/properties Property surface serves real
+# rows → committed→Fuseki→generated→served round-trip, #3489 AC5). Datatype-arm carriers
+# (propertyValue, no propertyValueRef → PropertyCarrierShape xone arm 1). register-before-use:
+# each propertyKey resolves to a registered PropertyKey above. ---
+chorus:prop-cards-gate-enforced a chorus:Property ;
+    chorus:propertyKey "gate.enforced" ;
+    chorus:propertyValue "true" ;
+    chorus:propertyValueType "bool" ;
+    chorus:propertyScope "instance" .
+chorus:cards-service chorus:hasProperty chorus:prop-cards-gate-enforced .
+
+chorus:prop-pipeline-test-type a chorus:Property ;
+    chorus:propertyKey "testType" ;
+    chorus:propertyValue "integration" ;
+    chorus:propertyValueType "string" ;
+    chorus:propertyScope "instance" .
+
+# --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
+# PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
+# projects into the API surface) AND a chorus:Domain individual (individual-facet — sits in
+# the ADR-041 tree). The tree bindings + definesVocabulary hang on the INDIVIDUAL facet.
+# FACET DISCIPLINE (Kade DE-review delta #1): NO vocabulary/content triple on the class-facet —
+# class-facet = "things typed by :properties"; individual-facet = tree placement + vocabulary.
+chorus:definesVocabulary a owl:ObjectProperty ;
+    rdfs:label "defines vocabulary" ;
+    rdfs:comment "Domain-individual -> a member CLASS it defines (its schema/vocabulary). DEDICATED edge, distinct from chorus:contains (content-membership, ADR-041) — the generator enumerates a domain's surface by this. ADR-045 §3 (Kade DE-review: no overloaded contains)." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range owl:Class .
+
+chorus:atStream a owl:ObjectProperty ;
+    rdfs:label "at stream" ;
+    rdfs:comment "Domain -> its ValueStream (chorusStream | gatheringStream | lifeStream). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range chorus:ValueStream .
+
+# Domain shape: atStream + atStep BOTH required -> the ambiguous step-only state is un-representable (ADR-045 §4 / Kade delta #4).
+chorus:DomainCoordinateShape a sh:NodeShape ;
+    sh:targetClass chorus:Domain ;
+    sh:property [ sh:path chorus:atStream ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:atStep   ; sh:minCount 1 ] .
+
+# the properties domain-class itself (punned)
+chorus:Properties a owl:Class , chorus:Domain ;
+    rdfs:label "properties" ;
+    rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Proving ;
+    chorus:ownedBy chorus:silas ;
+    chorus:runsOn chorus:library, chorus:bedroom ;
+    chorus:repoTarget "borg/properties" ;
+    chorus:definesVocabulary chorus:Property , chorus:PropertyKey .
+
+# === ADR-046: the Emit Contract — domains declare what they emit; Borg leverages ===
+# CONFORM-DON'T-INVENT: OTel semantic-conventions (declare-what-you-emit) + RED/Golden/USE
+# (metric primitives) + DORA (werk = our CI/CD, so its emissions ARE the four keys + reliability).
+# The contract is DATA: a Service/Domain emits an EmitContract that declares Metrics; each Metric
+# is COMPUTED from the real spine event(s) it binds to (emittedAs) — never separately authored —
+# and its SLO threshold is a config Property (thresholds-as-properties = SLO-as-code, ADR-044/045).
+# owl-api projects EmitContract into monitors (the 7th generated surface). This is the VOCABULARY;
+# Kade authors werk's concrete EmitContract block (#3495) against it. ADR-046.
+
+chorus:EmitContract a owl:Class ;
+    rdfs:label "Emit Contract" ;
+    rdfs:comment "A declared observability contract: the set of Metrics a Service or Domain emits, each bound to the spine events that carry it. Domains emit, Borg leverages. The declare-what-you-emit surface owl-api projects into monitors. ADR-046." .
+
+chorus:emits a owl:ObjectProperty ;
+    rdfs:label "emits" ;
+    rdfs:comment "A Service or Domain emits an EmitContract — its observability declaration. ADR-046." ;
+    rdfs:domain [ owl:unionOf ( chorus:Service chorus:Domain ) ] ;
+    rdfs:range chorus:EmitContract .
+
+chorus:declaresMetric a owl:ObjectProperty ;
+    rdfs:label "declares metric" ;
+    rdfs:comment "An EmitContract declares the Metrics it carries. ADR-046." ;
+    rdfs:domain chorus:EmitContract ;
+    rdfs:range chorus:Metric .
+
+chorus:Metric a owl:Class ;
+    rdfs:label "Metric" ;
+    rdfs:comment "A single observable signal. metricKind classifies it (RED/USE/DORA/liveness); emittedAs binds it to the spine event(s) it is computed FROM; spanStartEvent/spanEndEvent bound a duration; subSpanOf decomposes it; an optional SLO threshold is a config Property. ADR-046." .
+
+chorus:metricKind a owl:DatatypeProperty ;
+    rdfs:label "metric kind" ;
+    rdfs:comment "Primitive classification (conform-don't-invent): 'rate'|'error'|'duration' (RED) | 'saturation'|'utilization' (USE) | 'dora.deployFreq'|'dora.leadTime'|'dora.cfr'|'dora.mttr' (DORA four keys) | 'liveness' (absence-is-the-signal: a missing emission is the unhealthy state). ADR-046." ;
+    rdfs:domain chorus:Metric ;
+    rdfs:range xsd:string .
+
+chorus:emittedAs a owl:DatatypeProperty ;
+    rdfs:label "emitted as" ;
+    rdfs:comment "The real spine event name(s) that carry this metric (e.g. 'card.pulled','demo.presented','card.accepted','werk.land.failed'). The metric is COMPUTED from these — binds the declared contract to the live stream Kade verified, never dual-authored. ADR-046." ;
+    rdfs:domain chorus:Metric ;
+    rdfs:range xsd:string .
+
+# DORA lead-time decomposition: a duration metric spans two spine events; sub-spans let
+# round-churn surface as coordination-wait (presented→go), not pipeline time.
+chorus:spanStartEvent a owl:DatatypeProperty ;
+    rdfs:label "span start event" ;
+    rdfs:comment "Duration metric: the spine event that opens the interval. ADR-046." ;
+    rdfs:domain chorus:Metric ; rdfs:range xsd:string .
+
+chorus:spanEndEvent a owl:DatatypeProperty ;
+    rdfs:label "span end event" ;
+    rdfs:comment "Duration metric: the spine event that closes the interval. ADR-046." ;
+    rdfs:domain chorus:Metric ; rdfs:range xsd:string .
+
+chorus:subSpanOf a owl:ObjectProperty ;
+    rdfs:label "sub-span of" ;
+    rdfs:comment "This duration metric is a decomposition leg of a larger one (e.g. the three legs of DORA lead-time). The legs sum to the parent; isolating coordination-wait is the whole point. ADR-046." ;
+    rdfs:domain chorus:Metric ; rdfs:range chorus:Metric .
+
+chorus:hasThreshold a owl:ObjectProperty ;
+    rdfs:label "has threshold" ;
+    rdfs:comment "A Metric's SLO bound is a config Property (thresholds-as-properties = SLO-as-code) — changing an SLO is a model write, not a code change. Ties ADR-046 to the properties domain. ADR-046." ;
+    rdfs:domain chorus:Metric ; rdfs:range chorus:Property .
+
+# failureClass is a GOVERNED registry enum (config-as-data) — emitted at the source by werk
+# (#3495), not post-hoc classified. CFR counts only 'change'; 'tooling' is excluded so today's
+# land.failed bugs never poison the change-failure-rate.
+chorus:pk-failureClass a chorus:PropertyKey ;
+    chorus:keyName "failureClass" ; chorus:propertyKind "datatype" ;
+    chorus:appliesToClass chorus:Metric ; chorus:keyValueType "string" ;
+    chorus:allowedValue "change", "tooling" ;
+    chorus:lifecycleEnabled false .
+
+chorus:EmitContractShape a sh:NodeShape ;
+    sh:targetClass chorus:EmitContract ;
+    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] .
+
+chorus:MetricShape a sh:NodeShape ;
+    sh:targetClass chorus:Metric ;
+    sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+# --- ADR-046 PROOF / TEMPLATE: the DORA four-key metrics over the live werk spine.
+# Kade authors werk's EmitContract (#3495) by pointing the werk service's chorus:emits at this
+# (or a refined copy). Every metric is COMPUTED from its emittedAs spine events — names are
+# Kade-verified live, not invented. This block proves the ADR-046 vocabulary round-trips. ---
+
+# DORA lead-time, decomposed into three legs so round-churn surfaces as coordination-wait (leg 2).
+chorus:metric-werk-lead-time a chorus:Metric ;
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "card.accepted" ;
+    chorus:emittedAs "card.pulled", "card.accepted" .
+
+chorus:metric-werk-lead-build a chorus:Metric ;          # leg 1: build (pulled → demo presented)
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "demo.presented" ;
+    chorus:emittedAs "card.pulled", "demo.presented" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+chorus:metric-werk-lead-coordwait a chorus:Metric ;      # leg 2: coordination-wait — round-churn lives HERE
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "demo.presented" ; chorus:spanEndEvent "go" ;
+    chorus:emittedAs "demo.presented", "go" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+chorus:metric-werk-lead-land a chorus:Metric ;           # leg 3: land (go → accepted)
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "go" ; chorus:spanEndEvent "card.accepted" ;
+    chorus:emittedAs "go", "card.accepted" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+# Change-failure-rate — counts ONLY failureClass="change"; "tooling" excluded (pk-failureClass enum)
+# so today's land.failed tooling bugs never poison CFR. failureClass is emitted at the source (#3495).
+chorus:metric-werk-cfr a chorus:Metric ;
+    chorus:metricKind "dora.cfr" ;
+    chorus:emittedAs "werk.land.failed", "merge.refused" .
+
+# Liveness-as-emission — absence of werk.heartbeat IS the unhealthy signal (closes the absence leak).
+chorus:metric-werk-liveness a chorus:Metric ;
+    chorus:metricKind "liveness" ;
+    chorus:emittedAs "werk.heartbeat" .
+
+chorus:werk-emit-contract a chorus:EmitContract ;
+    rdfs:label "werk Emit Contract (ADR-046 template — Kade #3495)" ;
+    rdfs:comment "The Building value-stream's observability declaration: DORA lead-time (decomposed), CFR (failureClass-gated), liveness. Kade refines + attaches to the werk service. ADR-046 / #3495." ;
+    chorus:declaresMetric chorus:metric-werk-lead-time, chorus:metric-werk-lead-build,
+        chorus:metric-werk-lead-coordwait, chorus:metric-werk-lead-land,
+        chorus:metric-werk-cfr, chorus:metric-werk-liveness .
 
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;

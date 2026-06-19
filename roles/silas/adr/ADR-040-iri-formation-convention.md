@@ -125,6 +125,23 @@ chorus:kebab-lower               instance     (per Level 3)
   (Product, Domain, Service, Role, ValueStream, ValueStreamStep, Document,
   Principle, Practice, Infrastructure, Store) — `ValueStreamStep`, not
   `Phase`/`Vertebra`; the older OWLs rename at model-3.
+- **Punned class IRIs (ADR-045 amendment — 2026-06-18, Jeff ruled; covers ANY punned generator-class):**
+  a *punned* IRI is ONE node that is both an `owl:Class` (the generative unit owl-api projects
+  into the API surface) and an individual of its meta-class — a `chorus:Domain` / `chorus:Product`
+  / `chorus:Service` / `chorus:ValueStream`, i.e. **any class the generator builds from** (ADR-045).
+  Casing cannot encode both facets at once, so **the class-facet governs: a punned class IRI is
+  CamelCase** (`chorus:Properties`, not `chorus:properties`). General rule, NOT an enumeration —
+  it holds for every punned generator-class. The lowercase-instance rule (Level 3) governs
+  **non-punned DATA individuals** only. Rationale: the class-facet is what the generator enforces
+  and projects, so naming follows the generative unit. Surfaced empirically by owl-api rejecting
+  `generate --class properties` (adr040-violation) in the #3489 spike — proof-off-the-surface,
+  not the doc. Triggers a one-time naming migration of the punned classes — **DOMAINS only**
+  (genuinely punned: a domain is a class data types into, ADR-045 §1; `chorus:<lower>` →
+  `chorus:<Camel>` + every ref), one blast-radius pass (Silas; properties is the proven first
+  instance). **PRODUCTS do NOT pun and stay lowercase** — verified 2026-06-18: nothing is typed
+  `a chorus:<product>`; borg/werk/loom are pure *individuals* of `chorus:Product` (container-only,
+  `contains` → domains), so the rule correctly EXCLUDES them — not an exception. The data settles
+  the scope; no per-class ruling needed.
 
 ## What each prior decision contributed / what is canonical now
 
