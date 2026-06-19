@@ -273,8 +273,20 @@ run_lint_ratchet() {
   local path="$CHORUS_ROOT" owner="kade" status="pass" summary="" out rc
   if [ -f "$path/.eslint-baseline.json" ] && [ -f "$path/eslint.config.js" ]; then
     out=$(cd "$path" && npm run lint:ratchet --silent 2>&1); rc=$?
-    summary=$(echo "$out" | tail -1 | tr -d '\n')
-    [ "$rc" -ne 0 ] && status="fail"
+    # #3484: emit a CONSUMER-PARSEABLE summary. daily-review-quality.sh requires
+    # `[0-9]+ (pass|ok)` AND `[0-9]+ fail` to count a suite as RUN (lines 88-90);
+    # the raw ratchet tail-line matches neither, so lint:chorus was silently
+    # bucketed "DID NOT RUN (no parseable test output)" → a false-red every nightly.
+    # The ratchet is binary (clean=rc0 / drifted=rc!=0), so synthesize the count
+    # from rc — mirroring the cargo/shell synthesis — and keep the real tail as
+    # trailing context.
+    local detail; detail=$(echo "$out" | tail -1 | tr -d '\n')
+    if [ "$rc" -eq 0 ]; then
+      summary="1 pass, 0 fail (lint:ratchet clean — ${detail})"
+    else
+      status="fail"
+      summary="0 pass, 1 fail (lint:ratchet drifted rc=${rc} — ${detail})"
+    fi
     echo "SUITE|lint|$path|$owner|$status|$summary"
   fi
 }
