@@ -769,7 +769,7 @@ export function groupPrioritiesReadout(rows: ReadoutRow[]) {
   const toCard = (p: P): ReadoutCard => ({ id: p.id, title: p.title, bucket: p.bucket, owner: p.owner });
   const proving: ReadoutCard[] = [];
   const prune: ReadoutCard[] = [];
-  const roleMap: Record<string, { chunks: Record<string, ReadoutCard[]>; untagged: ReadoutCard[] }> = {};
+  const roleMap: Record<string, { chunks: Record<string, ReadoutCard[] | undefined>; untagged: ReadoutCard[] }> = {};
   for (const r of ROLES) roleMap[r] = { chunks: {}, untagged: [] };
   let chunked = 0;
   let untaggedN = 0;
@@ -787,7 +787,7 @@ export function groupPrioritiesReadout(rows: ReadoutRow[]) {
   const roles = ROLES.map((role) => ({
     role,
     rank: READOUT_ROLE_RANK[role],
-    chunks: Object.keys(roleMap[role].chunks).sort().map((chunk) => ({ chunk, cards: roleMap[role].chunks[chunk] })),
+    chunks: Object.keys(roleMap[role].chunks).sort().map((chunk) => ({ chunk, cards: roleMap[role].chunks[chunk] ?? [] })),
     untagged: roleMap[role].untagged,
   })).sort((a, b) => a.rank - b.rank);
   return {
@@ -2035,8 +2035,8 @@ async function executeRegisterFeedback(
       }],
     };
   } catch (err) {
-    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
-    throw new Error(`chorus_register_feedback-fail — exit=${e.code ?? 1}${(e.stderr || '').trim() ? ' stderr=' + (e.stderr || '').trim().slice(0, 300) : ''}`);
+    const e = err as { code?: number; stdout?: string; stderr?: string };
+    throw new Error(`chorus_register_feedback-fail — exit=${e.code ?? 1}${(e.stderr || '').trim() ? ' stderr=' + (e.stderr || '').trim().slice(0, 300) : ''}`, { cause: err });
   }
 }
 

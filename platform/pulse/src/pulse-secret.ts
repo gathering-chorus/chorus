@@ -31,6 +31,7 @@ export function resolvePulseSecret(): string | null {
   if (cached) return cached;
   const p = secretPath();
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: env override or ~/.chorus/pulse-nudge.secret, never user input
     const existing = fs.readFileSync(p, 'utf8').trim();
     if (existing) {
       cached = existing;
@@ -41,14 +42,17 @@ export function resolvePulseSecret(): string | null {
   }
   const secret = randomBytes(32).toString('hex');
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: ~/.chorus dir, never user input
     fs.mkdirSync(path.dirname(p), { recursive: true });
     // 'wx' = exclusive create: throws EEXIST if another process won the race.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: ~/.chorus secret file, never user input
     fs.writeFileSync(p, secret, { flag: 'wx', mode: 0o600 });
     cached = secret;
     return cached;
   } catch {
     // Lost the race (EEXIST) or transient error — try to read the winner's.
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: ~/.chorus secret file, never user input
       cached = fs.readFileSync(p, 'utf8').trim() || null;
     } catch {
       cached = null;

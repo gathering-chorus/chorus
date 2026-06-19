@@ -12,8 +12,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import type { WerkRun, WerkRunPhase } from './werk-run-state';
-import { parseExitSentinel, extractFailureReason } from './werk-run-state';
+import { parseExitSentinel, extractFailureReason, type WerkRun, type WerkRunPhase } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 
@@ -24,8 +23,9 @@ function runPath(dir: string, card: number): string {
 /** Read the run record for a card, or null (missing/malformed → null, never throws). */
 export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: runs dir under ~/.chorus + numeric card, never user input
     const raw = readFileSync(runPath(dir, card), 'utf8');
-    const obj = JSON.parse(raw) as WerkRun;
+    const obj = JSON.parse(raw) as WerkRun | null;
     if (obj && typeof obj.card === 'number' && typeof obj.phase === 'string') return obj;
     return null;
   } catch {
@@ -36,7 +36,9 @@ export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
 /** Write/overwrite the run record. Best-effort (a write failure must not break the verb). */
 export function writeRun(run: WerkRun, dir: string = RUNS_DIR): void {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: runs dir under ~/.chorus, never user input
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: runs dir + numeric card, never user input
     writeFileSync(runPath(dir, run.card), JSON.stringify(run, null, 2));
   } catch {
     /* best-effort: a lost record degrades to start-fresh, never throws */
@@ -80,8 +82,9 @@ export function logPath(card: number, dir: string = RUNS_DIR): string {
 export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun | null {
   const run = readRun(card, dir);
   if (!run || run.phase !== 'running') return run;
-  let log = '';
+  let log: string;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: logPath under the runs dir, never user input
     log = readFileSync(logPath(card, dir), 'utf8');
   } catch {
     return run; // no log yet → still running

@@ -1652,19 +1652,19 @@ function buildFieldChanges(
 ): Array<{ field: string; old_value: string; new_value: string }> {
   const out: Array<{ field: string; old_value: string; new_value: string }> = [];
   const tagCategories = ['domain', 'chunk', 'sequence', 'type', 'origin'];
-  const beforeLabels = before.domains || [];
+  const beforeLabels = before.domains;
   for (const [key, value] of Object.entries(pairs)) {
     if (tagCategories.includes(key)) {
       const prior = beforeLabels.find((l) => l.startsWith(`${key}:`));
       out.push({ field: key, old_value: prior ? prior.slice(key.length + 1) : '', new_value: value });
     } else if (key === 'owner') {
-      out.push({ field: 'owner', old_value: before.owner ?? '', new_value: value });
+      out.push({ field: 'owner', old_value: before.owner, new_value: value });
     } else if (key === 'priority') {
-      out.push({ field: 'priority', old_value: before.priority ?? '', new_value: value });
+      out.push({ field: 'priority', old_value: before.priority, new_value: value });
     } else if (key === 'title') {
-      out.push({ field: 'title', old_value: before.title ?? '', new_value: value });
+      out.push({ field: 'title', old_value: before.title, new_value: value });
     } else if (key === 'status') {
-      out.push({ field: 'status', old_value: before.status ?? '', new_value: value });
+      out.push({ field: 'status', old_value: before.status, new_value: value });
     } else if (key === 'desc' || key === 'description') {
       // Don't include full desc text in spine payload; just signal length delta.
       out.push({ field: 'description', old_value: '(omitted)', new_value: `(${value.length} chars)` });

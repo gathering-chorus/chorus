@@ -23,6 +23,7 @@ export function resolvePulseSecret(): string | null {
   if (process.env.CHORUS_PULSE_SECRET) return process.env.CHORUS_PULSE_SECRET;
   if (cached) return cached;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled internal path: env override or ~/.chorus/pulse-nudge.secret, never user input
     cached = fs.readFileSync(secretPath(), 'utf8').trim() || null;
   } catch {
     cached = null;
