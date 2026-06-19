@@ -107,17 +107,12 @@ fn signal_then_finalize_one_exit_verb() {
     assert!(!after_signal.contains("werk-deploy env-down"), "signal must NOT tear down variants");
     assert!(!after_signal.contains("pr merge"), "signal never merges");
 
-    // (3) finalize PRESENTED GATE (#3410): no demo.presented yet (the go wrote a decision,
-    //     not proof a demo ran) => Err, NO finalize. The gate now reads the REAL demo.presented
-    //     werk-demo emits at present time, not a verdict synthesized from inputs.go.
-    assert!(finalize(9001, "kade", &home).is_err(), "finalize refuses without demo.presented");
-    assert!(!fs::read_to_string(&log).unwrap_or_default().contains("cards done 9001"),
-        "presented-gate refusal must NOT finalize");
-    // record the demo.presented werk-demo emits when the demo actually runs.
-    fs::write(&demo_witness, format!(
-        "{}{{\"ts\":1,\"event\":\"demo.presented\",\"role\":\"kade\",\"card_id\":9001,\"trace_id\":\"t\",\"round\":\"r1\"}}\n",
-        fs::read_to_string(&demo_witness).unwrap()
-    )).unwrap();
+    // (3) #3499 — the demo.presented gate is GONE. finalize is a PURE STEP: with NO
+    //     demo.presented on record it still proceeds (it does not audit the demo step).
+    //     Pre-#3499 this refused "no-demo-presented"; ordering is the orchestrator's job
+    //     (werk.yml runs demo → merge → accept, fail-stop). Step (4) proves the proceed.
+    assert!(!fs::read_to_string(&demo_witness).unwrap_or_default().contains("demo.presented"),
+        "precondition for (4): NO demo.presented seeded — finalize must still proceed");
 
     // (4) finalize HAPPY: mechanical close — runs inside accept after the gated signal.
     finalize(9001, "kade", &home).expect("finalize runs post-deploy");

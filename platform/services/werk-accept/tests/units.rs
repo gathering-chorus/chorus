@@ -3,7 +3,7 @@
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.
 
 use werk_accept::{
-    accept_output, can_accept, demo_decision_line, demo_presented, jsonl_line,
+    accept_output, can_accept, demo_decision_line, jsonl_line,
     parse_accept_args, script_path,
 };
 
@@ -120,40 +120,8 @@ fn non_authority_roles_cannot_accept() {
 // (accept is finalize-only since #3175; branch close is chorus-werk remove's).
 // Removing the dead helper itself is a fill card (blast-radius pass, #3148).
 
-#[test]
-fn demo_presented_gate_requires_a_real_demo_not_a_synthesized_verdict() {
-    // #3410: accept gates on a REAL demo.presented (werk-demo emits it at present
-    // time) — NOT a demo.verdict the land job synthesized from inputs.go. This is the
-    // regression pin for the self-accept hole: a fabricated "verdict:pass prover:jeff"
-    // record must NOT satisfy the gate.
-    use std::path::PathBuf;
-    let home: PathBuf = std::env::temp_dir().join(format!(
-        "wa-presented-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-    ));
-    let logs = home.join("ops/logs");
-    std::fs::create_dir_all(&logs).unwrap();
-    let witness = logs.join("werk-demo.jsonl");
-
-    // no witness → no demo ran → false
-    assert!(!demo_presented(&home, 3410));
-
-    // THE HOLE, CLOSED: a synthesized demo.verdict (the old self-accept path) must NOT
-    // satisfy the gate — only a real demo.presented does.
-    std::fs::write(&witness, "{\"event\":\"demo.verdict\",\"card_id\":3410,\"verdict\":\"pass\",\"prover\":\"jeff\"}\n").unwrap();
-    assert!(!demo_presented(&home, 3410), "a synthesized verdict must NOT pass the gate (#3410)");
-
-    // a present for #34100 must NOT satisfy #3410 (comma-terminated key guards the prefix)
-    std::fs::write(&witness, "{\"event\":\"demo.presented\",\"card_id\":34100,\"round\":\"abc\"}\n").unwrap();
-    assert!(!demo_presented(&home, 3410));
-
-    // a REAL demo.presented for #3410 → true
-    std::fs::write(&witness, "{\"event\":\"demo.presented\",\"card_id\":3410,\"round\":\"abc123\"}\n").unwrap();
-    assert!(demo_presented(&home, 3410));
-
-    let _ = std::fs::remove_dir_all(&home);
-}
+// #3499 — REMOVED: demo_presented_gate test. The finalize demo.presented gate is
+// gone (the verb no longer audits the demo step), and so is the function it tested.
 
 #[test]
 fn jsonl_line_is_valid_witness_record() {

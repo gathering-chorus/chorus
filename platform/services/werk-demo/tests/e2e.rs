@@ -160,7 +160,7 @@ exit 0
     // execution) — exit 1, typed gates-missing — BEFORE any announce. This is the
     // loud-stop that replaces #3279's silent "(none run — optional)" present.
     fs::create_dir_all(home.join("ops/logs")).unwrap();
-    let ungated = demo(3046, "wren", &home).expect("demo() returns Ok even when it refuses");
+    let ungated = demo(3046, "wren", &home, false).expect("demo() returns Ok even when it refuses");
     assert_eq!(ungated.exit, 1, "un-gated demo must REFUSE to present (AC6): {}", ungated.message);
     assert!(ungated.message.contains("gates not run"), "typed gates-missing refusal: {}", ungated.message);
     // #3318: under act/CI (ACT set) the same un-gated demo SKIPS enforcement and presents
@@ -193,10 +193,12 @@ exit 0
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &gate_seed).unwrap();
 
     // --- run the proving ceremony ---
-    let result = demo(3046, "wren", &home).expect("demo should succeed");
-    // #3279 — present-and-exit: the demo PRESENTS and returns exit 0 WITHOUT blocking
-    // for a decision. The go is no longer consumed here (it runs Half B / werk-land).
-    assert_eq!(result.exit, 0, "present-and-exit → exit 0 (Half A done); got {}", result.exit);
+    // #3499 — go=true AT INVOKE. Both gathers are already replied (seeded above), so
+    // announce_ready_full is true → the block-poll is skipped, the proven path runs,
+    // and the exit is 0 (proven → act merges). This IS the proven→merge happy path in
+    // the one-run world; the no-go and timeout branches are covered by the standby test.
+    let result = demo(3046, "wren", &home, true /* go */).expect("demo should succeed");
+    assert_eq!(result.exit, 0, "#3499 proven + go → exit 0 (act merges); got {}", result.exit);
     // #3284 — the announce IS Jeff's 5-step demo contract, RETURNED as the message so
     // the agent pastes it into its end-of-turn reply (auto/focus mode: Jeff never sees
     // a Bridge post). Assert all five steps are present in what Jeff will read:
@@ -414,9 +416,11 @@ exit 0
     seed.push_str("{\"ts\":1,\"event\":\"demo.gather.replied\",\"role\":\"wren\",\"card_id\":3052,\"trace_id\":\"seed\",\"peer\":\"kade\",\"round\":\"e2e-r1\",\"note\":\"ack\"}\n");
     fs::write(home.join("ops/logs/werk-demo.jsonl"), &seed).unwrap();
 
-    let out = demo(3052, "wren", &home).expect("standby returns Ok");
-    assert_eq!(out.exit, 0, "standby is a clean exit, not a failure: {}", out.message);
-    assert!(out.message.contains("gathers-pending"), "typed standby reason: {}", out.message);
+    // #3499 — go==false is PRESENT-ONLY: prove + show, never land. Gathers pending
+    // (silas hasn't replied) → clean GREEN exit 2 (presented-not-landed), NOT a block.
+    let out = demo(3052, "wren", &home, false /* present-only */).expect("present-only standby returns Ok");
+    assert_eq!(out.exit, 2, "#3499: present-only is a clean GREEN exit — presented, not landed: {}", out.message);
+    assert!(out.message.contains("present-only"), "names present-only: {}", out.message);
     assert!(out.message.contains("silas"), "names the missing peer: {}", out.message);
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
     assert!(
@@ -424,4 +428,17 @@ exit 0
         "standby witnessed with the missing peer named:\n{}",
         witness
     );
+
+    // #3499 — go==true HOLDS in-run on the gathers, but TIMES OUT CLEANLY (exit 2,
+    // green) rather than hanging when a peer never replies. CHORUS_DEMO_BLOCK_TIMEOUT=0
+    // trips the deadline on the first poll iteration — proves the block-poll bounds
+    // itself and never red-fails on a slow peer.
+    std::env::set_var("CHORUS_DEMO_BLOCK_TIMEOUT", "0");
+    let timed = demo(3052, "wren", &home, true /* go */).expect("go+timeout returns Ok (clean stop, not error)");
+    assert_eq!(timed.exit, 2, "#3499: go-but-gather-timeout is a clean GREEN stop, never red: {}", timed.message);
+    assert!(timed.message.to_lowercase().contains("timeout"), "names the timeout: {}", timed.message);
+    assert!(timed.message.contains("silas"), "names the peer that didn't reply: {}", timed.message);
+    let w2 = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap();
+    assert!(w2.contains("\"event\":\"demo.gather.timeout\""), "timeout witnessed:\n{}", w2);
+    std::env::remove_var("CHORUS_DEMO_BLOCK_TIMEOUT");
 }

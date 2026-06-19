@@ -94,32 +94,10 @@ pub fn json_str_field(json: &str, key: &str) -> Option<String> {
     Some(val[..q2].to_string())
 }
 
-/// #3410 — true iff a REAL demo was PRESENTED for this card: a `demo.presented`
-/// event in the werk-demo witness (ops/logs/werk-demo.jsonl), emitted by the demo
-/// binary AT PRESENT TIME. This replaces the #3116 `demo.verdict` gate, which read a
-/// record the land job SYNTHESIZED from `inputs.go` ("verdict:pass, prover:jeff") —
-/// the self-accept hole (#3410): an agent calling `chorus_werk{go:true,accepter:jeff}`
-/// made the pipeline fabricate a "jeff proved it" verdict with zero human involvement.
-/// A synthesized `demo.verdict` no longer satisfies this gate; only a demo that
-/// actually ran does. The ROUND-bound enforcement (demo.presented for THIS card at
-/// THIS HEAD) is werk-merge's #3365 gate — the authoritative pre-merge check in the
-/// land path, run before this; this card-bound check is the standalone-accept backstop.
-/// Missing witness = no demo ran = false. card_id comma-terminated so #3410 can't
-/// collide with #34100. (The forge-proof "Jeff DECIDED this round" — vs merely "a demo
-/// ran" — is the asymmetric signed go-token end-state, ADR-042 family, shared with #3402.)
-pub fn demo_presented(home: &Path, card: u64) -> bool {
-    let witness = home.join("ops/logs/werk-demo.jsonl");
-    match std::fs::read_to_string(&witness) {
-        Ok(text) => {
-            let card_key = format!("\"card_id\":{},", card);
-            text.lines().any(|l| {
-                l.contains("\"event\":\"demo.presented\"")
-                    && l.contains(&card_key)
-            })
-        }
-        Err(_) => false,
-    }
-}
+// #3499 — REMOVED: demo_presented(). It read the werk-demo witness for a
+// `demo.presented` event and gated finalize on it (#3410 self-accept backstop).
+// finalize no longer audits the demo step — the orchestrator owns ordering — so
+// the check and its reader are gone.
 
 // --- side-effecting helpers ---
 
@@ -340,25 +318,21 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
 
 
 /// werk-finalize (#3237) — the MECHANICAL post-deploy finalize. NO authority gate (the
-/// authority was the go); act runs this after merge+deploy-prod succeed. Gated on a REAL
-/// demo.presented for the card (#3410, was the synthesized demo.verdict). Idempotent: board Done, card.accepted,
-/// teardown (env-down then chorus-werk remove), and chorus/accept on origin/main HEAD.
+/// authority was the go); act runs this after merge+deploy-prod succeed. Idempotent: board Done,
+/// card.accepted, teardown (env-down then chorus-werk remove), and chorus/accept on origin/main HEAD.
 /// The HEAD sha is read from CANONICAL home (always present), NOT the werk, which this
 /// verb removes — so the gh status posts regardless of teardown order.
+///
+/// #3499 — the demo.presented gate is GONE. finalize is a PURE STEP: it does its own
+/// teardown work and never audits whether the demo ran. A downstream step checking an
+/// upstream step's completion is the witness-wall anti-pattern (#3410's demo_presented
+/// read failed to land cards whose demo was actually proven). Ordering is the
+/// orchestrator's job (werk.yml runs demo → merge → accept, fail-stop): reaching
+/// finalize MEANS demo + merge succeeded, structurally — not because this verb re-checks.
 pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     let trace = trace_id();
     let home_s = path(home)?.to_string();
     jsonl(home, role, card, &trace, "finalize.started", "");
-
-    if !demo_presented(home, card) {
-        jsonl(home, role, card, &trace, "finalize.refused", ",\"reason\":\"no-demo-presented\"");
-        return Err(format!(
-            "#{}: no demo.presented on record — a REAL demo must run before accept (werk-demo \
-             emits it at present time). #3410 closed the inputs.go-synthesis hole: a fabricated \
-             verdict no longer satisfies this gate. Round-bound enforcement is werk-merge's #3365.",
-            card
-        ));
-    }
 
     // serialize the board flip under one flock so concurrent finalizes can't race.
     let _lock = lock(home, Duration::from_secs(30))?;

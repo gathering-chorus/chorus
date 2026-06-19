@@ -1,25 +1,20 @@
 name: werk
 
-# werk — THE pipeline. #3236/#3193. One orchestrator (act), one toolchain (MCP),
-# ONE FILE — both halves (Jeff 2026-06-11: "it must be one runner, not two").
+# werk — THE pipeline. ONE job, ONE run (#3499). There is no demo-half / land-half:
+# the GO is given AT INVOKE (the `go` input), werk-demo PROVES in-run (gates, gathers,
+# block-on-replies) and its EXIT CODE drives whether the next step runs. No inputs.go
+# job fork, no second invocation, no cross-run witness — the demo→merge edge is a
+# native in-run dependency, so it can't round-churn.
 #
-# This IS werk-mcp.sh, hosted in act instead of bash. The whole flow — prove in the
-# slot, then land to prod — runs as one workflow_dispatch, stopping before accept
-# (the human's hand). Decided 2026-06-04 (Jeff): collapse the two-orchestrator drift
-# (bash werk-mcp.sh + direct-binary acp.yml) AND don't re-split it into demo.yml +
-# acp.yml — that just re-introduces the multiplicity werk-mcp.sh already collapsed.
-# One pipeline = one werk.yml.
+# werk-demo exit contract (#3237, go-at-invoke world — Wren aed9dd4e):
+#   0 = proven AND go==true  → continue to merge  (gates recorded + both gathers replied in time)
+#   2 = clean stop, job GREEN → presented, NOT landed  (go==false present-only / timeout / gates-pending)
+#   1 = real error           → job fails red
+# The demo step maps that rc to a step output `proven`; merge→sync→deploy→accept are
+# gated `if: steps.demo.outputs.proven == 'true'`. rc=2 → those skip, job stays green.
 #
-# Every verb runs THROUGH MCP via chorus-mcp-call.sh (the single toolchain); act only
-# sequences + makes each step a legible line in GitHub. werk-demo is the one binary
-# (the proving ceremony, #3116). The job halts on the first failure (GHA default) and
-# STOPS before accept (#3234, DEC-048) — it prints the accept command, never runs it.
-#
-# Two jobs, gated on the `go` input — the human decision in the middle is a STOPPED
-# pipeline, not a held connection (#3279):
-#   go absent/false → job `werk`: commit → push → build → test → review → deploy(werk)
-#                     → env-up → demo PRESENT → STOP
-#   go=true         → job `land`: merge → sync → deploy(canonical) → accept (GO=accept, #3311)
+# Every verb runs THROUGH MCP via chorus-mcp-call.sh (the single toolchain). Stop-on-
+# failure is the GHA default — any verb's non-zero exit halts the job; nothing half-lands.
 
 on:
   workflow_dispatch:
@@ -32,52 +27,46 @@ on:
         description: "Builder role whose werk runs (kade / silas / wren)."
         required: true
         type: string
-      accepter:
-        description: "Authorizing identity (jeff / wren) (DEC-048). With go=true this is whose GO lands the card."
-        required: true
-        type: string
       go:
-        description: "false/absent = prove half (present + stop). true = land half (merge → sync → deploy → accept). GO = accept."
+        description: "GO AT INVOKE. {true|go|yes} = prove-and-land (merge→sync→deploy→accept if proven). false/absent = present-only, stop green."
         required: false
         type: string
         default: "false"
+      accepter:
+        description: "Authorizing identity (jeff / wren) (DEC-048) — whose GO lands the card. Required for a landing run (go=true); ignored present-only."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   werk:
-    # Half A — prove. Runs only when go != true (#3193 one-file collapse).
-    if: ${{ inputs.go != 'true' }}
-    # act runs this LOCALLY (orchestrator). -P macos-latest=-self-hosted runs host-native.
-    # GitHub does NOT run this — act is the orchestrator; gh gets the mirror (per-verb
-    # commit-statuses), not the execution. The self-hosted-runner config (#3240, thrown
-    # away) was the wrong model: act orchestrates, gh reflects.
     runs-on: macos-latest
-
     # CHORUS_HOME / CHORUS_WERK_BASE / PATH inherited from the local shell act runs in
     # (chorus-env-setup.sh provides them). The workflow MUST NOT hardcode them.
     env:
       CARD_ID: ${{ inputs.card_id }}
       ROLE: ${{ inputs.role }}
+      GO: ${{ inputs.go }}
       ACCEPTER: ${{ inputs.accepter }}
 
     steps:
       - name: shared-trace
-        # Mint ONE trace, propagate via $GITHUB_ENV so every later step (and every verb
-        # subprocess the MCP server spawns) inherits CHORUS_TRACE_ID. Best-effort witness.
+        # Mint ONE trace for the whole run, propagate via $GITHUB_ENV so every later step
+        # (and every verb subprocess the MCP server spawns) inherits CHORUS_TRACE_ID.
         run: |
           trace="$(date +%s%N)-$$"
           echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
-          echo "minted trace=$trace for card=#${CARD_ID} role=${ROLE} accepter=${ACCEPTER}"
+          echo "minted trace=$trace for card=#${CARD_ID} role=${ROLE} go=${GO} accepter=${ACCEPTER:-<none>}"
           mkdir -p "${CHORUS_HOME}/ops/logs" 2>/dev/null || true
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.started","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N (#3266)
+          printf '{"ts":%s,"event":"werk.started","card_id":%s,"role":"%s","go":"%s","accepter":"%s","trace_id":"%s"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${GO}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
-      # ═══ prove in the role's slot — never touches main ═══
+      # ═══ prove in the role's slot — never touches main until merge (gated on proven) ═══
       - name: commit
-        # werk-commit, via MCP. Stages add-A in the card's werk and commits. Rebase onto
-        # origin/main happens INSIDE commit, atomically under flock (#3186) — no separate
-        # rebase step (a standalone `git rebase` would race that lock).
+        # werk-commit, via MCP. Stages add-A in the card's werk + commits. Rebase onto
+        # origin/main happens INSIDE commit under flock (#3186) — no separate rebase step.
         run: chorus-mcp-call.sh "${ROLE}" werk-commit "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: push
@@ -88,48 +77,22 @@ jobs:
         run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
-        # Your model (Jeff, 2026-06-04): "once pull happens it's your questions/observations,
-        # then TEST and demo at end." Test is its OWN step here, not folded into build —
-        # build compiles, test proves green BEFORE we deploy to the slot and demo. Runs the
-        # same hermetic gate CI's required jobs use (quality.yml): cargo hermetic + jest.
-        # Runs in the card's werk so it proves THIS card's code. Failure stops the job →
-        # nothing deploys, nothing lands.
+        # Hermetic gate (quality.yml parity): cargo per changed crate + jest per changed package.
+        # ADVISORY until werk-test #3190 — posts chorus/test/<card> status, does NOT block.
         run: |
           set -o pipefail
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
-          # #3240 — test is an inline step (no verb), so it posts its own chorus/test/<card>
-          # status to gh (pending→success/failure) for VISIBILITY.
-          # ADVISORY, NOT BLOCKING (#3190): until werk-test exists as a real verb/gate, test does
-          # NOT fail the pipeline — a pre-existing/red test must not block every card's run. The
-          # status reflects reality (success/failure) so it's visible in gh; werk-test (#3190)
-          # promotes this to a hard gate. No `exit 1` here on purpose.
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (advisory until werk-test #3190)" >/dev/null 2>&1 || true; }
           post pending
           echo "-- test (hermetic, ADVISORY until werk-test #3190) in $WERK --"
           rc=0
           BASE=$(git -C "$WERK" merge-base origin/main HEAD 2>/dev/null || echo HEAD~1)
           CHANGED=$(git -C "$WERK" diff --name-only "$BASE"..HEAD)
-          # #3397 — cargo runs PER CHANGED CRATE. There is NO workspace Cargo.toml, so the
-          # old `cargo test` from the werk ROOT always failed ("could not find Cargo.toml")
-          # — the other half of the false tests:fail. Each crate is platform/services/<name>.
-          # Compile only the crates THIS card changed (compiling all ~20 was the real tax);
-          # a TS-only card runs no cargo at all. ASSUMPTION: Rust crates live under
-          # platform/services/<name> (current layout) — a crate elsewhere would be skipped.
           for crate in $(echo "$CHANGED" | grep -oE '^platform/services/[^/]+' | sort -u); do
             [ -f "$WERK/$crate/Cargo.toml" ] || continue
             echo "-- cargo: $crate --"
             ( cd "$WERK/$crate" && cargo test --lib --bins ) 2>&1 | tail -15 || rc=1
           done
-          # #3397 — jest runs PER CHANGED PACKAGE. The old `npx jest` from the werk ROOT could
-          # never run (no root jest config, no node_modules → npx fetch flake) = a perpetual
-          # FALSE tests:fail on every card. Fix, hardened per cold-eyes review:
-          #  - only run a package whose files THIS card changed (no unrelated false-red);
-          #  - provide deps by symlinking node_modules from canonical ($CHORUS_HOME) ONLY when
-          #    the werk's package-lock matches canonical's (no dep drift — else the deps are
-          #    wrong and we must not guess);
-          #  - if a CHANGED package's jest still can't run (CHORUS_HOME unset / lockfile drift),
-          #    FAIL LOUD (rc=1) — never a silent skip. A silent skip is a FALSE GREEN, the
-          #    #3190 masking anti-pattern; honest-red beats lying-green.
           for pkg in platform/api platform/chorus-sdk platform/pulse platform/workflow-engine; do
             echo "$CHANGED" | grep -q "^$pkg/" || continue
             [ -d "$WERK/$pkg" ] || continue
@@ -142,20 +105,14 @@ jobs:
               echo "-- jest: $pkg --"
               ( cd "$WERK/$pkg" && node_modules/.bin/jest --ci --forceExit --passWithNoTests ) 2>&1 | tail -12 || rc=1
             else
-              echo "!! jest: $pkg CHANGED but deps unavailable (CHORUS_HOME unset / lockfile drift) — FAIL LOUD"; rc=1
+              echo "!! jest: $pkg CHANGED but deps unavailable — FAIL LOUD"; rc=1
             fi
           done
           if [ "$rc" = 0 ]; then post success; else post failure; fi
           echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
 
       - name: review
-        # #3193 — werk-review, ADVISORY. This step runs the verb's STRUCTURED FLOOR (same contract as the test
-        # step above): records review.floor findings (unchecked AC, src-without-test,
-        # removed pub symbols) to the witness + a chorus/review/<card> gh status.
-        # The cold-eyes AGENT half runs session-side in the demoer's prework batch and
-        # records review.verdict via `werk-review verdict` — an LLM can't run here
-        # (the #3284 lesson). The flip to blocking is `werk-review check <card>` as an
-        # exit-gating step, once proven not-ceremony.
+        # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" \
@@ -167,15 +124,12 @@ jobs:
           case "$out" in *"floor clean"*) post success ;; *) post failure ;; esac
           echo "review: advisory — floor findings inform the cold-eyes agent + the demo surface"
 
-      - name: deploy
+      - name: deploy-werk
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
-        # #3240 — env-up posts chorus/env-up/<card> via a step-level gh-status (the verb emits
-        # spine/jsonl but not a gh status today). Silas's #3244 follow-on moves this INTO the
-        # werk-deploy verb (self-reporting via shared emit_status) + carry-forward; until then
-        # this step-wrap stands (Silas confirmed, standing down tonight). pending→success/failure.
+        # posts chorus/env-up/<card>; fails the job if the slot doesn't come up.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
@@ -183,150 +137,88 @@ jobs:
           if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
       - name: demo
-        # werk-demo (#3116; PRESENT-AND-EXIT since #3279). The proving ceremony against the
-        # env-up'd slot: it PRESENTS the running variant + decision surface and EXITS. It no
-        # longer BLOCKS for the go — blocking held the synchronous MCP call open for the whole
-        # human wait, which dropped on long waits (#3277) and could not survive a 12h walk-away.
-        # Half A of the pipeline ENDS here. Jeff's GO re-invokes chorus_werk with go:true (#3311). Failure
-        # (variant didn't come up) stops the job → nothing to land.
-        #
-        # #3443 — werk-demo now self-runs the gates via headless claude (AC1). act
-        # runs host-native with a PATH that omits ~/.local/bin (where claude lives),
-        # which silently degraded the first live run. Put it on PATH so the binary's
-        # resolver finds claude in the pipeline runtime, not just interactive shells.
-        run: PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}"
-
-      - name: presented
-        # STOP-BEFORE-LAND (#3279, supersedes the stop-before-accept of the merged pipeline).
-        # Half A is done: the variant is up and presented; NOTHING is held — no connection to
-        # drop, no detached process to leak. Tell the human what to look at and how to land it.
-        # The GO is a SEPARATE short run (Half B = werk-land.yml: merge → ff-sync → deploy-prod
-        # → accept; GO = accept, #3311), so the wait holds nothing and survives a 12h walk-away.
-        # no-go/more = simply don't land; the werk is preserved for iteration.
+        id: demo
+        # werk-demo PROVES in-run (#3499): runs the gates, sends the gathers, and when go==true
+        # BLOCKS-POLL on the witness until both gathers reply (same round → zero churn) or
+        # CHORUS_DEMO_BLOCK_TIMEOUT (600s). GO passed AT INVOKE as the 2nd positional.
+        # Its exit code IS the gate — mapped to the `proven` output that gates the land steps.
         run: |
-          echo "[presented] #${CARD_ID} — variant up, demo presented. Half A done; NOTHING is held."
-          echo "  Look at the variant, then your call (Half B — a separate short run):"
-          echo "    GO         → chorus_werk {role:${ROLE}, card_id:${CARD_ID}, go:true}   (merge → ff-sync → deploy-prod → accept)"
-          echo "    no-go/more → do nothing; the werk is preserved for iteration."
+          set +e
+          PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "proven=true"  >> "$GITHUB_OUTPUT"; echo "[demo] proven + go → landing." ;;
+            2) echo "proven=false" >> "$GITHUB_OUTPUT"; echo "[demo] presented, NOT landed (present-only / no-go / timeout)." ;;
+            *) echo "[demo] error rc=$rc"; exit "$rc" ;;
+          esac
 
-      # --- orchestrator witness close (pairs with werk.started) ---
-      - name: werk-presented
-        # #3279 — Half A success = PRESENTED, not landed. The card is up for review; nothing
-        # has merged or deployed. werk.landed is emitted by Half B (werk-land.yml) on the go.
-        if: success()
-        run: |
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.presented","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
-            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
-
-      - name: werk-failed
-        if: failure()
-        run: |
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
-            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
-
-# Stop-on-failure: GHA default — steps run in order, the job halts on first non-zero
-# exit. A demo failure prevents merge/deploy; nothing half-lands. Accept never runs here
-# (it's the human's, post-run). Each verb runs its OWN all-or-nothing rollback via MCP;
-# the workflow just stops sequencing.
-
-  land:
-    # Half B — THE GO (#3279 stop-and-resume; #3311 GO=accept; #3193 one-file collapse:
-    # formerly werk-land.yml, deleted — same steps, same trace contract, gated on go=true).
-    if: ${{ inputs.go == 'true' }}
-    runs-on: macos-latest
-    env:
-      CARD_ID: ${{ inputs.card_id }}
-      ROLE: ${{ inputs.role }}
-      ACCEPTER: ${{ inputs.accepter }}
-
-    steps:
-      - name: shared-trace
-        # Mint ONE trace for the land run. #3410 — the land job NO LONGER synthesizes a
-        # demo.verdict from inputs.go. That fabricated record ("verdict:pass, prover:jeff",
-        # written purely because go=true was passed) was the self-accept hole: it let an
-        # agent calling chorus_werk{go:true,accepter:jeff} stamp "jeff proved it" with zero
-        # human involvement. The land path's real proof is now (a) werk-merge's #3365
-        # round-gate (refuses without a demo.presented for THIS card at THIS HEAD) and (b)
-        # werk-accept's presented-gate, both reading the REAL demo.presented werk-demo emits
-        # at present time. The forge-proof "Jeff DECIDED this round" (vs "a demo ran") is the
-        # asymmetric signed go-token end-state — ADR-042 family, the same lock as #3402.
-        run: |
-          trace="$(date +%s%N)-$$"
-          echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
-          echo "minted trace=$trace for LAND of card=#${CARD_ID} role=${ROLE} go-by=${ACCEPTER}"
-          mkdir -p "${CHORUS_HOME}/ops/logs" 2>/dev/null || true
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.land.started","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "$trace" \
-            >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
-
-      # ═══ land to prod — prod is a build of MAIN ═══
+      # ═══ land to prod — prod is a build of MAIN. Runs ONLY if the demo proved (go==true). ═══
       - name: merge
-        # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid (NOT
-        # branch name — retires the stale-PR false-green), squash-merges, content-verifies.
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid, squash-merges,
+        # content-verifies. #3499: werk-merge no longer reads a demo witness — reaching this step
+        # MEANS the in-run demo proved (the only-door is structural: this step is gated on proven).
         run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: sync
-        # canonical ff-sync — the werk-sync verb's territory (#3300); inline today, see follow-on.
-        # 5.5 (#3234) — ff-sync canonical to origin/main so SCRIPT-only changes go LIVE with
-        # zero manual steps. deploy-prod handles crate binaries; this makes canonical ==
-        # origin/main immediately. SYNC_OK crosses to the landed step to gate the "live" claim.
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        # canonical ff-sync so SCRIPT-only changes go LIVE; SYNC_OK gates the "live" claim.
         run: |
           if [ -n "${CHORUS_HOME:-}" ] \
              && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
              && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
-            echo "   [ok] 5.5 canonical ff-synced to origin/main"
+            echo "   [ok] canonical ff-synced to origin/main"
             echo "SYNC_OK=1" >> "$GITHUB_ENV"
           else
-            echo "   [warn] 5.5 canonical NOT ff-synced (unset/diverged/dirty) — run 'werk-sync recover'" >&2
+            echo "   [warn] canonical NOT ff-synced (unset/diverged/dirty) — run 'werk-sync recover'" >&2
             echo "SYNC_OK=0" >> "$GITHUB_ENV"
           fi
 
-      - name: deploy
-        # target=canonical: prod is a build of MAIN.
-        # werk-deploy target=canonical, via MCP (#3311 rename). SELF-BUILDS from canonical@origin/main
-        # (#3222) — prod binaries are structurally a build of MAIN, not the werk.
+      - name: deploy-canonical
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        # target=canonical: prod is a build of MAIN. SELF-BUILDS from canonical@origin/main (#3222).
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
 
       - name: accept
-        # #3311 — GO = ACCEPT (Jeff's ruling): the human GO that fired this run IS the
-        # acceptance, so Half B ends in werk-accept, the canonical exit-finalize verb
-        # (DEC-048 authority gate runs INSIDE the verb: ACCEPTER is the authorizing
-        # identity; a builder can never self-accept). Replaces werk-finalize here —
-        # accept is the verb of record (flip Done + card.accepted + teardown +
-        # chorus/accept stamp); the stop-before-accept print (#3234) is retired: it
-        # asked the human to re-state a GO they had already given.
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        # #3311 GO=ACCEPT: the GO given at invoke IS the acceptance. werk-accept's DEC-048 authority
+        # gate runs INSIDE the verb (ACCEPTER is the authorizing identity; a builder can't self-accept).
         run: DEPLOY_ROLE="${ACCEPTER}" werk-accept "${CARD_ID}" "${ROLE}"
 
-      - name: landed
-        # Tell the truth: "live" is CONDITIONAL on 5.5 (SYNC_OK).
+      - name: outcome
+        if: success()
+        # Tell the truth about the terminal state — landed (proven) vs presented (not proven).
         run: |
-          if [ "${SYNC_OK:-0}" = "1" ]; then
-            echo "[landed] #${CARD_ID} built-of-main, deployed + LIVE, accepted by ${ACCEPTER} (GO=accept)."
+          if [ "${{ steps.demo.outputs.proven }}" = "true" ]; then
+            if [ "${SYNC_OK:-0}" = "1" ]; then
+              echo "[landed] #${CARD_ID} merged + deployed + LIVE, accepted by ${ACCEPTER} (GO=accept)."
+            else
+              echo "[accepted, NOT yet live] #${CARD_ID} merged + accepted, but canonical did NOT ff-sync — run 'werk-sync recover'." >&2
+            fi
           else
-            echo "[accepted, NOT yet live] #${CARD_ID} merged + deployed + accepted, but canonical did NOT ff-sync — script changes are STALE in prod. Run 'werk-sync recover'." >&2
+            echo "[presented] #${CARD_ID} — variant up, presented, NOT landed (present-only / no-go / timeout). Re-invoke with go to land."
           fi
 
-      # --- orchestrator witness close (pairs with werk.land.started) ---
-      - name: werk-landed
+      # --- orchestrator witness close ---
+      - name: witness-close
         if: success()
         run: |
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.landed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N (#3266)
+          if [ "${{ steps.demo.outputs.proven }}" = "true" ]; then ev="werk.landed"; else ev="werk.presented"; fi
+          printf '{"ts":%s,"event":"%s","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
+            "$ts" "$ev" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
-      - name: werk-land-failed
+      - name: witness-failed
         if: failure()
         run: |
-          ts=$(($(date +%s)*1000))  # BSD date has no %3N — the old form wrote a literal N, corrupting every witness line (#3266)
-          printf '{"ts":%s,"event":"werk.land.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
+          ts=$(($(date +%s)*1000))  # BSD date has no %3N (#3266)
+          printf '{"ts":%s,"event":"werk.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
             "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
-# Stop-on-failure: GHA default. merge fails → nothing deploys. Each verb runs its OWN
-# all-or-nothing rollback via MCP; this workflow just sequences. Accept never runs here.
+# Stop-on-failure: GHA default — steps run in order, the job halts on first non-zero exit.
+# The demo step's rc=0/2 are CLEAN (caught + mapped to `proven`); only a real error (rc=1)
+# or a verb failure halts the job. merge→sync→deploy→accept are gated on proven — they run
+# only when the in-run demo proved (go==true). No second invocation, no witness wall.

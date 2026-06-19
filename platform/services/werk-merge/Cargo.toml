@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 # Self-contained: ZERO dependencies. std only + a direct libc `flock` extern,
-# and the `git`/`gh` CLIs as subprocesses. The v2 verb-binary blueprint is
-# werk-pull (#3045); this is the atomic MERGE verb (#3175) that retires the
-# inline `gh pr merge` glue in werk-accept / the werk-mcp.sh interim path.
+# and the `git`/`gh` CLIs as subprocesses. #3499 dropped the brief werk-demo dep
+# (a facts-based land gate) along with the gate itself — werk-merge is a pure step
+# that never audits the demo. The v2 verb-binary blueprint is werk-pull (#3045);
+# this is the atomic MERGE verb (#3175).
 [dependencies]
 
 [[bin]]
