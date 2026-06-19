@@ -20,6 +20,10 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
+
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+// Single source under services/shared, compiled into every verb. Not a crate, not a verb.
+include!("../../shared/failure_class.rs");
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 extern "C" {
@@ -852,10 +856,10 @@ fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, uni
     };
     res.inspect_err(|e| {
         let reason: String = e.chars().take(80).collect();
-        emit_spine(home, "build.failed", role, card, trace, &[("disposition", "fail"), ("kind", kind), ("name", name)]);
+        emit_spine(home, "build.failed", role, card, trace, &[("disposition", "fail"), ("kind", kind), ("name", name), ("failureClass", failure_class("build-fail"))]);
         jsonl(
             home, role, card, trace, "build.failed",
-            &format!(",\"kind\":\"{}\",\"name\":\"{}\",\"reason\":\"{}\"", kind, name, reason.replace('"', "'")),
+            &format!(",\"kind\":\"{}\",\"name\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", kind, name, reason.replace('"', "'"), failure_class("build-fail")),
         );
     })
 }
@@ -928,14 +932,14 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
                 .unwrap_or_default().trim().parse::<u64>().unwrap_or(0);
             let dirty = !run("git", &["-C", &home_s, "status", "--porcelain"]).unwrap_or_default().trim().is_empty();
             if ahead > 0 || dirty {
-                jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"canonical-unsyncable\"");
+                jsonl(home, role, card, &trace, "build.refused", &fail_extra("canonical-unsyncable"));
                 return Err(format!(
                     "canonical is {} behind origin/main but can't ff cleanly (ahead={}, dirty={}) — run werk-sync recover, then re-deploy",
                     behind, ahead, dirty
                 ));
             }
             run("git", &["-C", &home_s, "merge", "--ff-only", "origin/main"]).map_err(|e| {
-                jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"canonical-ff-failed\"");
+                jsonl(home, role, card, &trace, "build.refused", &fail_extra("canonical-ff-failed"));
                 format!("canonical ff to origin/main failed: {}", e)
             })?;
         }
@@ -946,12 +950,12 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
         let werk_s = path(&werk)?.to_string();
         // no-werk-refuse guard (ADR-032 §4): the werk path never builds canonical.
         if !werk.is_dir() {
-            jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"no-werk\"");
+            jsonl(home, role, card, &trace, "build.refused", &fail_extra("no-werk"));
             return Err(format!("no werk at {} — pull #{} first (build never touches canonical)", werk.display(), card));
         }
         let cur = run("git", &["-C", &werk_s, "rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
         if cur.trim() != branch {
-            jsonl(home, role, card, &trace, "build.refused", ",\"reason\":\"branch-mismatch\"");
+            jsonl(home, role, card, &trace, "build.refused", &fail_extra("branch-mismatch"));
             return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
         }
         // #3169 — node_modules ensure (werk only): symlink each werk package's node_modules

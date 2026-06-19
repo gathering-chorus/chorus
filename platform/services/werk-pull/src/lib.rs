@@ -18,6 +18,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -335,16 +338,16 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         Ok(s) => s,
         Err(e) => {
             // #3161: card-not-found is a refusal — emit to the spine, not silence.
-            jsonl(home, role, card, &trace, "pull.refused", ",\"reason\":\"card-not-found\"");
-            emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "card-not-found")]);
+            jsonl(home, role, card, &trace, "pull.refused", &fail_extra("card-not-found"));
+            emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "card-not-found"), ("failureClass", failure_class("card-not-found"))]);
             return Err(format!("card #{} not viewable: {}", card, e));
         }
     };
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "Next" && status != "Later" {
-        jsonl(home, role, card, &trace, "pull.refused", ",\"reason\":\"wrong-status\"");
+        jsonl(home, role, card, &trace, "pull.refused", &fail_extra("wrong-status"));
         // #3161: refusal to the ONE spine (was jsonl-witness-only, invisible to Loki).
-        emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-status")]);
+        emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-status"), ("failureClass", failure_class("wrong-status"))]);
         return Err(format!("card #{} is in '{}', not Next/Later", card, status));
     }
 

@@ -27,6 +27,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -255,15 +258,15 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
 
     // #3012/#3013 fix: deterministic werk, REFUSE if absent. No canonical fallback.
     if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"no-werk\"");
-        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "no-werk"), ("disposition", "refuse")]);
+        jsonl(home, role, card, &trace, "push.refused", &fail_extra("no-werk"));
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "no-werk"), ("failureClass", failure_class("no-werk")), ("disposition", "refuse")]);
         return Err(format!("no werk for #{} at {} — pull + commit the card first", card, werk.display()));
     }
     // werk must be on the card's branch (carries the #2580 cross-role intent).
     let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
     if cur != branch {
-        jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"wrong-branch\"");
-        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "wrong-branch"), ("disposition", "refuse")]);
+        jsonl(home, role, card, &trace, "push.refused", &fail_extra("wrong-branch"));
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "wrong-branch"), ("failureClass", failure_class("wrong-branch")), ("disposition", "refuse")]);
         return Err(format!("werk is on '{}', not '{}' — refusing to push", cur, branch));
     }
 
@@ -274,8 +277,8 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         .parse::<u64>()
         .unwrap_or(0);
     if ahead == 0 {
-        jsonl(home, role, card, &trace, "push.refused", ",\"reason\":\"nothing-to-push\"");
-        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "nothing-to-push"), ("disposition", "refuse")]);
+        jsonl(home, role, card, &trace, "push.refused", &fail_extra("nothing-to-push"));
+        emit_spine(home, "push.refused", role, card, &trace, &[("reason", "nothing-to-push"), ("failureClass", failure_class("nothing-to-push")), ("disposition", "refuse")]);
         return Err(format!("#{}: nothing to push (no commits ahead of origin/main — commit first)", card));
     }
 
@@ -315,8 +318,8 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
             // silent before, returning Err with no record. Surface push.failed on the ONE
             // spine, carrying the INHERITED trace + reason + disposition, so the break
             // shows on the card's thread the instant it happens (merged-not-live precursor).
-            jsonl(home, role, card, &trace, "push.failed", ",\"reason\":\"push-rejected\"");
-            emit_spine(home, "push.failed", role, card, &trace, &[("reason", "push-rejected"), ("disposition", "refuse")]);
+            jsonl(home, role, card, &trace, "push.failed", &fail_extra("push-rejected"));
+            emit_spine(home, "push.failed", role, card, &trace, &[("reason", "push-rejected"), ("failureClass", failure_class("push-rejected")), ("disposition", "refuse")]);
             return Err(format!("push failed: {}", e));
         }
     }

@@ -38,6 +38,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -252,7 +255,7 @@ pub fn commit_continue(card: u64, role: &str, home: &Path, werk_base: &Path) -> 
         return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
     }
     if !rebase_in_progress(&werk_s) {
-        jsonl(home, role, card, &trace, "continue.refused", ",\"reason\":\"no-rebase\"");
+        jsonl(home, role, card, &trace, "continue.refused", &fail_extra("no-rebase"));
         return Err(format!("#{}: no rebase in progress — nothing to --continue", card));
     }
     let _lock = lock(home, Duration::from_secs(30))?;
@@ -281,9 +284,9 @@ pub fn commit_continue(card: u64, role: &str, home: &Path, werk_base: &Path) -> 
             Err(conflict_hold_message(card, role, &files))
         }
         Err(e) => {
-            jsonl(home, role, card, &trace, "continue.failed", "");
+            jsonl(home, role, card, &trace, "continue.failed", &fail_extra("continue-fail"));
             emit_spine(home, "commit.failed", role, card, &trace,
-                &[("disposition", "fail"), ("reason", "continue-fail")]);
+                &[("disposition", "fail"), ("reason", "continue-fail"), ("failureClass", failure_class("continue-fail"))]);
             Err(format!("--continue failed: {}", e))
         }
     }
@@ -299,7 +302,7 @@ pub fn commit_abort(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<S
         return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
     }
     if !rebase_in_progress(&werk_s) {
-        jsonl(home, role, card, &trace, "abort.refused", ",\"reason\":\"no-rebase\"");
+        jsonl(home, role, card, &trace, "abort.refused", &fail_extra("no-rebase"));
         return Err(format!("#{}: no rebase in progress — nothing to --abort", card));
     }
     let _lock = lock(home, Duration::from_secs(30))?;
@@ -469,15 +472,15 @@ fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &P
 
     // #3012/#3013 fix: deterministic werk, REFUSE if absent. No canonical fallback.
     if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"no-werk\"");
-        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "no-werk")]);
+        jsonl(home, role, card, &trace, "commit.refused", &fail_extra("no-werk"));
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "no-werk"), ("failureClass", failure_class("no-werk"))]);
         return Err(format!("no werk for #{} at {} — pull the card first", card, werk.display()));
     }
     // werk must be on the card's branch (guards same-role wrong-card, #2641 class).
     let cur = run_in(&werk_s, "git", &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
     if cur != branch {
-        jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"wrong-branch\"");
-        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-branch")]);
+        jsonl(home, role, card, &trace, "commit.refused", &fail_extra("wrong-branch"));
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "wrong-branch"), ("failureClass", failure_class("wrong-branch"))]);
         return Err(format!("werk is on '{}', not '{}' — refusing to commit", cur, branch));
     }
 
@@ -501,8 +504,8 @@ fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &P
     // rebase either — the next real commit rebases it.)
     if !dirty && ahead == 0 {
         // #3162 — this refusal was fully SILENT (the bug). Surface it on the spine + jsonl.
-        jsonl(home, role, card, &trace, "commit.refused", ",\"reason\":\"nothing-to-commit\"");
-        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "nothing-to-commit")]);
+        jsonl(home, role, card, &trace, "commit.refused", &fail_extra("nothing-to-commit"));
+        emit_spine(home, "commit.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", "nothing-to-commit"), ("failureClass", failure_class("nothing-to-commit"))]);
         return Err(format!("#{}: nothing to commit (werk clean, no commits ahead of origin/main)", card));
     }
 
@@ -536,8 +539,8 @@ fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &P
                 .map_err(|e| {
                     // #3162 — the pre-commit gate block was fully SILENT (the other key
                     // bug). Surface commit.failed on the spine before bubbling the error.
-                    jsonl(home, role, card, &trace, "commit.failed", ",\"reason\":\"pre-commit-gate\"");
-                    emit_spine(home, "commit.failed", role, card, &trace, &[("disposition", "fail"), ("reason", "pre-commit-gate")]);
+                    jsonl(home, role, card, &trace, "commit.failed", &fail_extra("pre-commit-gate"));
+                    emit_spine(home, "commit.failed", role, card, &trace, &[("disposition", "fail"), ("reason", "pre-commit-gate"), ("failureClass", failure_class("pre-commit-gate"))]);
                     format!("commit failed (pre-commit gate?): {}", e)
                 })?;
             jsonl(home, role, card, &trace, "committed", "");
