@@ -832,9 +832,16 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
 /// (build/deploy/env-up) is done by the PRIOR verbs in the flat sequence; the
 /// gates run as subagents in the /demo skill layer. demo records demo.verdict;
 /// werk-accept gates finalize on it.
-pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
+/// #3499 — `go` is passed AT INVOKE (the one-run collapse). go==true means "prove
+/// and land if it proves": demo runs gates, fires the peer gathers, then BLOCKS in
+/// this same run until the replies land (or the window closes) and returns the
+/// #3237 exit code that drives the next step — 0=proven→merge, 2=no-go/timeout→stop
+/// (green, presented-not-landed), 1=error. go==false is present-only: prove + show,
+/// never land, exit 2. Blocking IN-RUN is what kills the cross-run round-churn (the
+/// gathers reply at the SAME round) and retires the second go-keyed invocation.
+pub fn demo(card: u64, role: &str, home: &Path, go: bool) -> R<DemoOutcome> {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
-    jsonl(home, role, card, &trace, "demo.started", "");
+    jsonl(home, role, card, &trace, "demo.started", &format!(",\"go\":{}", go));
 
     let card_s = card.to_string();
 
@@ -981,25 +988,78 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         // exactly what's missing so the demoer knows the next prework step.
         if !announce_ready_full(&witness_pre, card, role, &round, &patch, skip_gate_check) {
             let gates_absent = gates_missing(&witness_pre, card, &round, &patch);
-            let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
-            let reason = if !gates_absent.is_empty() { "gates-pending" } else { "gathers-pending" };
-            emit_spine(home, "demo.prework.standby", role, card, &trace);
-            jsonl(home, role, card, &trace, "demo.prework.standby",
-                  &format!(",\"reason\":\"{}\",\"gates_missing\":\"{}\",\"gathers_missing\":\"{}\"",
-                           reason, gates_absent.join(","), gathers_absent.join(",")));
-            return Ok(DemoOutcome {
-                message: format!(
-                    "demo #{} — prework standby ({}, round {}). Variant is up; NO announce fired (the \
-                     announce is the ready-gate: gates recorded AND peer gathers replied, \
-                     #3319+#3352, all keyed to THIS round). Missing gates: [{}]. Missing gather replies: [{}]. The \
-                     demoer completes prework (run gates via `werk-demo gate`, send the \
-                     4-question gathers, record replies via `werk-demo gather <card> <peer> \
-                     replied`), then re-invokes. Jeff is never asked for a go that precedes \
-                     the team's feedback.",
-                    card, reason, round, gates_absent.join(","), gathers_absent.join(",")
-                ),
-                exit: 0,
-            });
+
+            // GATES pending → no demoer recorded the 5 gates; blocking can't fill them
+            // (nothing async writes gate results). Stand by, exit 2 — can't prove by
+            // waiting. Happy path the in-run #3443 demoer records gates ABOVE this, so
+            // this is the defensive fallback (hosted CI with no claude, or a skipped run).
+            if !gates_absent.is_empty() {
+                let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
+                emit_spine(home, "demo.prework.standby", role, card, &trace);
+                jsonl(home, role, card, &trace, "demo.prework.standby",
+                      &format!(",\"reason\":\"gates-pending\",\"gates_missing\":\"{}\",\"gathers_missing\":\"{}\"",
+                               gates_absent.join(","), gathers_absent.join(",")));
+                return Ok(DemoOutcome {
+                    message: format!(
+                        "demo #{} — prework standby (gates-pending, round {}). Gates not recorded: [{}] \
+                         — cannot prove by waiting (no async writer fills gates). Run them \
+                         (`werk-demo gate ...`) then re-invoke. Presented-not-landed (clean stop).",
+                        card, round, gates_absent.join(",")
+                    ),
+                    exit: 2,
+                });
+            }
+
+            // Gates recorded; only the peer GATHERS are outstanding (fired above).
+            // #3499 — BLOCK-POLL in this SAME run when go was given: hold until the
+            // replies land (same round → zero churn) or the window closes. It's a
+            // detached act run, safe to block. !go → present-only, return exit 2 now.
+            // The test suite (skip_gate_check) never reaches here — announce_ready_full
+            // short-circuits true — so the poll stays out of tests, hermetic + instant.
+            if go {
+                let timeout_s = std::env::var("CHORUS_DEMO_BLOCK_TIMEOUT")
+                    .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
+                let start = Instant::now();
+                emit_spine(home, "demo.gather.block", role, card, &trace);
+                jsonl(home, role, card, &trace, "demo.gather.block",
+                      &format!(",\"round\":\"{}\",\"timeout_s\":{}", round, timeout_s));
+                loop {
+                    let w = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+                    if gathers_missing(&w, card, role, &round, &patch).is_empty() {
+                        // every peer replied at THIS round → fall through to the proven path.
+                        break;
+                    }
+                    if start.elapsed().as_secs() >= timeout_s {
+                        let gathers_absent = gathers_missing(&w, card, role, &round, &patch);
+                        emit_spine(home, "demo.gather.timeout", role, card, &trace);
+                        jsonl(home, role, card, &trace, "demo.gather.timeout",
+                              &format!(",\"round\":\"{}\",\"gathers_missing\":\"{}\",\"waited_s\":{}",
+                                       round, gathers_absent.join(","), timeout_s));
+                        return Ok(DemoOutcome {
+                            message: format!(
+                                "demo #{} — presented; gather TIMEOUT after {}s (round {}). Peers [{}] \
+                                 did not reply; NOTHING landed (clean stop, green). Re-run go once they ack.",
+                                card, timeout_s, round, gathers_absent.join(",")
+                            ),
+                            exit: 2,
+                        });
+                    }
+                    sleep(Duration::from_secs(10));
+                }
+            } else {
+                let gathers_absent = gathers_missing(&witness_pre, card, role, &round, &patch);
+                emit_spine(home, "demo.prework.standby", role, card, &trace);
+                jsonl(home, role, card, &trace, "demo.prework.standby",
+                      &format!(",\"reason\":\"gathers-pending\",\"gathers_missing\":\"{}\"", gathers_absent.join(",")));
+                return Ok(DemoOutcome {
+                    message: format!(
+                        "demo #{} — presented (present-only, no go). Peer gather replies pending: [{}], \
+                         round {}. Not landed. Re-run with go to hold in-run for the replies and land on proof.",
+                        card, gathers_absent.join(","), round
+                    ),
+                    exit: 2,
+                });
+            }
         }
     }
 
@@ -1187,7 +1247,10 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // pastes this verbatim into its end-of-turn reply — the ONLY surface Jeff sees.
     // The Bridge post above is the non-focus mirror. (Your GO runs Half B / werk-land.)
     jsonl(home, role, card, &trace, "demo.completed", ",\"phase\":\"presented\"");
-    Ok(DemoOutcome { message: announce, exit: 0 })
+    // #3499 — proven (gates recorded + both gathers replied for THIS round). The
+    // exit drives the next step: go==true → 0 (act merges); go==false (present-only)
+    // → 2 (green, presented-not-landed — never land without the go).
+    Ok(DemoOutcome { message: announce, exit: if go { 0 } else { 2 } })
 }
 
 /// #3237 — record one gate's result into the witness so the verdict step can
@@ -1679,8 +1742,12 @@ pub fn run_demo() -> R<DemoOutcome> {
         });
     }
 
-    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id>")?;
-    demo(card, role.trim(), &home)
+    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id> [go]")?;
+    // #3499 — go AT INVOKE (2nd positional): {true|go|yes} → land-if-proven (demo
+    // blocks in-run on the gathers, exits 0 on proof → act merges); absent or
+    // anything else → present-only (exit 2, green). One run, exit code drives merge.
+    let go = args.next().map(|s| matches!(s.trim(), "true" | "go" | "yes")).unwrap_or(false);
+    demo(card, role.trim(), &home, go)
 }
 
 #[cfg(test)]
