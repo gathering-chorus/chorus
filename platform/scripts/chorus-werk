@@ -339,6 +339,51 @@ cmd_remove() {
   echo "chorus-werk: removed $role-$card_id (worktree gone, branch $branch deleted, remote cleanup attempted)"
 }
 
+# prune-merged (#3498) — sweep merged-but-orphaned remote branches. NOT `--merged`
+# (werk-merge SQUASH-merges, so merged tips aren't ancestors of main — see cmd_remove's
+# Tier-1 note). Enumerate ALL role/card orphans + ride cmd_remove's squash-safe Tier-1
+# proof: it prunes the merged (#<card> on origin/main) and refuses the unmerged. Continues
+# past every refusal. --dry-run previews per orphan via the same Tier-1 grep.
+cmd_prune_merged() {
+  local dry_run=0
+  [ "${1:-}" = "--dry-run" ] && dry_run=1
+  require_canonical
+  git -C "$CHORUS_HOME" fetch --quiet -p origin 2>/dev/null || true
+
+  local branches
+  branches=$(git -C "$CHORUS_HOME" branch -r 2>/dev/null \
+    | sed 's/^[ *]*//' \
+    | grep -E '^origin/(kade|wren|silas)/[0-9]+$' \
+    | sed 's#^origin/##' | sort -u)
+  [ -z "$branches" ] && { echo "chorus-werk: prune-merged — no role/card remote branches"; return 0; }
+
+  local subjects
+  subjects=$(git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null)
+
+  local pruned=0 unmerged=0 live=0
+  while IFS= read -r branch; do
+    [ -z "$branch" ] && continue
+    local role="${branch%%/*}" card="${branch##*/}"
+    if [ -d "$CHORUS_WERK_BASE/$role-$card" ]; then
+      echo "chorus-werk: prune-merged — SKIP $branch (live local werk)"; live=$((live+1)); continue
+    fi
+    if grep -qE "#${card}([^0-9]|\$)" <<< "$subjects"; then
+      if [ "$dry_run" = "1" ]; then
+        echo "chorus-werk: prune-merged --dry-run — would prune $branch (merged: #$card on main)"
+      else
+        echo "chorus-werk: prune-merged — pruning $branch"; cmd_remove "$role" "$card" || true
+      fi
+      pruned=$((pruned+1))
+    else
+      echo "chorus-werk: prune-merged — leave $branch (no #$card on main → unmerged; Part-3 policy)"; unmerged=$((unmerged+1))
+    fi
+  done <<EOF
+$branches
+EOF
+  local verb; [ "$dry_run" = "1" ] && verb="would prune" || verb="pruned"
+  echo "chorus-werk: prune-merged — $verb $pruned merged; left $unmerged unmerged; skipped $live live-werk"
+}
+
 cmd_status() {
   require_canonical
   echo "Canonical: $CHORUS_HOME (HEAD=$(git -C "$CHORUS_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null))"
@@ -369,6 +414,7 @@ main() {
   case "$sub" in
     add) cmd_add "$@" ;;
     remove) cmd_remove "$@" ;;
+    prune-merged) cmd_prune_merged "$@" ;;
     status) cmd_status "$@" ;;
     -h|--help|help) usage ;;
     *) echo "chorus-werk: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
