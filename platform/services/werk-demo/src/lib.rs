@@ -857,15 +857,17 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
     let msg = format!(
         "Demo ready for your GO — #{} (round {}). Peers reviewed; variant: {}. Look at it, then run \
-         `werk-demo go {}` to land it, or no/more to hold. The demo is HOLDING in-run for your call.",
+         `werk-demo go {}` to land it, or no/more to hold. Take however long you need — the demo \
+         presented and exited; nothing is spinning, your go lands it whenever.",
         card, round, url, card
     );
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    // The announce surfaces in the DEMOER's session — that's where Jeff is sitting
-    // during the demo (he runs /cw <role>, then watches that role's terminal). A
-    // nudge to=jeff has no terminal of its own and surface-fails; to=<demoer> lands
-    // in the window Jeff is actually looking at.
+    // The announce's PRIMARY surface is the returned DemoOutcome.message, which the
+    // driving role prints as its final turn (Jeff reads the role's session, not a
+    // separate terminal — he's always in auto+focus). This nudge is a best-effort
+    // SECONDARY ping into the demoer's own session; a nudge to=jeff has no terminal of
+    // its own and surface-fails, so it goes to=<demoer> where Jeff is actually looking.
     let body = mcp_nudge_body(from, &msg);
     let _ = run("curl", &[
         "-s", "-f", "-X", "POST", &mcp_url,
