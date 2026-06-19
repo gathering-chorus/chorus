@@ -68,4 +68,39 @@ if naked:
     print(f"\nFAIL (#3513 Part B): {len(naked)} failure emit(s) ship without failureClass — wrap the extra in fail_extra(reason).")
     sys.exit(1)
 print("OK: every *.failed/*.refused jsonl emit carries failureClass.")
+
+# 5. CLOSED VOCABULARY (#3513, Wren's review): failureClass is a CLOSED enum —
+#    {change, tooling} — not free-text. Presence (check 4) is not enough: a hand-
+#    written class string would drift into the per-surface mess. Two guarantees:
+#    (a) the ONE classifier's codomain is exactly {change, tooling}; (b) no verb
+#    source hard-codes a failureClass literal outside that set. Together: the value
+#    is closed by construction AND the guard validates it, so the read side (#3497)
+#    can treat failureClass as a 2-valued enum.
+ALLOWED = {"change", "tooling"}
+violations = []
+
+# (a) classifier codomain — every string literal the match arms return.
+clsf = os.path.join(root, "platform/services/shared/failure_class.rs")
+csrc = open(clsf).read()
+fn = re.search(r'pub fn failure_class\(reason: &str\) -> &.static str \{(.*?)\n\}', csrc, re.S)
+returned = set(re.findall(r'=>\s*"([a-z]+)"', fn.group(1))) if fn else set()
+for v in sorted(returned - ALLOWED):
+    violations.append(f"classifier returns non-enum value: {v!r}")
+if not returned:
+    violations.append("could not parse failure_class() codomain")
+
+# (b) no hard-coded failureClass literal outside the enum anywhere in the verbs.
+LIT = re.compile(r'\\"failureClass\\":\\"([a-z]+)\\"')
+for f in glob.glob(os.path.join(root, "platform/services/werk-*/src/*.rs")):
+    for val in LIT.findall(open(f).read()):
+        if val not in ALLOWED:
+            violations.append(f"{os.path.basename(os.path.dirname(os.path.dirname(f)))}: hard-coded failureClass {val!r}")
+
+print(f"\nfailureClass closed-vocabulary check | classifier codomain={sorted(returned)} | violations: {len(violations)}")
+for v in violations:
+    print(f"  OUT-OF-ENUM: {v}")
+if violations:
+    print(f"\nFAIL (#3513): failureClass is not a closed {{change,tooling}} enum — fix the classifier/emit, don't widen the vocabulary silently.")
+    sys.exit(1)
+print("OK: failureClass is a closed {change, tooling} enum, validated by construction.")
 PY

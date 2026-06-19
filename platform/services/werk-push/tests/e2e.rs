@@ -199,6 +199,11 @@ fn wrong_branch_refuses_sentinel_reaches_git_and_gh_fail_rolls_back() {
     let emitted = fs::read_to_string(&cap).unwrap_or_default();
     assert!(emitted.contains("push.refused") && emitted.contains("reason=wrong-branch"),
         "wrong-branch refusal reached the spine: {emitted}");
+    // #3513 — RUNTIME PROOF: a REAL refusal carries the failureClass discriminator
+    // (change-vs-tooling) in the emitted witness, not just in a unit test. wrong-branch
+    // is pipeline mechanics → tooling. This is the live "show it in the wild" evidence.
+    assert!(emitted.contains("failureClass=tooling"),
+        "real push.refused emits failureClass=tooling at runtime (#3513 DORA discriminator): {emitted}");
     git(&werk, &["checkout", "-q", "kade/9101"]);
 
     // ── sentinel: a client-side pre-push hook that REJECTS unless the sanctioned-
