@@ -2009,11 +2009,113 @@ chorus:atStream a owl:ObjectProperty ;
     rdfs:domain chorus:Domain ;
     rdfs:range chorus:ValueStream .
 
-# Domain shape: atStream + atStep BOTH required -> the ambiguous step-only state is un-representable (ADR-045 §4 / Kade delta #4).
-chorus:DomainCoordinateShape a sh:NodeShape ;
+# ════════════════════════════════════════════════════════════════════════
+# v2 STRUCTURAL SHAPES (#3509) — the four primitives' SHACL shapes, ONE model.
+# Folds + supersedes the stranded designing/ontology/chorus-v2*.ttl (deleted by #3509).
+# Supersedes chorus:DomainCoordinateShape (its atStream+atStep fold into DomainShape).
+# Field set = research-grounded essence (SAFe/DDD/ArchiMate/SOA, 2026-06-19) + the
+# ADR-029 service-design template (asIs/toBe/...) + ADR-045 (definesVocabulary/atStream)
+# + the v2 ruling (Jeff 2026-06-19: FOUR FLAT types, no Sub-*; Capability = Domain.purpose).
+# Conformance to the OWL ADRs (ADR-040 IRI/class grain · ADR-041 value-stream layer · ADR-045 domain-as-class):
+#   • name/description = rdfs:label / rdfs:comment (live convention; no ADR mandates a chorus: label variant).
+#   • step class = chorus:ValueStreamStep, step→stream edge = chorus:inStream (ADR-040 line 30 / ADR-041 line 80).
+#     chorus:Vertebra is a NICKNAME for the step, not a real class (Jeff 2026-06-19) — the AS-IS Shaping/Directing/...
+#     (typed chorus:Vertebra, linked chorus:belongsTo) reconcile TO ValueStreamStep + inStream (downstream migration).
+# Shapes are the TARGET the 50+ design-doc corpus ingests into; pre-ingestion instances
+# are not expected to satisfy them yet (ingestion + re-model bring them to spec).
+# ════════════════════════════════════════════════════════════════════════
+
+# --- narrative property defs absent from v0.3.0 (datatype = invariant-rendered) ---
+chorus:purpose            a owl:DatatypeProperty ; rdfs:label "purpose" ; rdfs:domain chorus:Domain ; rdfs:range xsd:string ;
+    rdfs:comment "The capability a Domain expresses — Jeff 2026-06-19: 'a domain IS a capability, expressed.' Names what the domain can DO; distinct from rdfs:comment (description). Resolves ArchiMate/BIZBOK Capability into Domain (no 5th type)." .
+chorus:trigger            a owl:DatatypeProperty ; rdfs:label "trigger" ; rdfs:domain chorus:ValueStream ; rdfs:range xsd:string ;
+    rdfs:comment "What starts the stream — the customer request/event at the head of the flow (SAFe/BIZBOK)." .
+chorus:outcome            a owl:DatatypeProperty ; rdfs:label "outcome" ; rdfs:domain chorus:ValueStream ; rdfs:range xsd:string ;
+    rdfs:comment "The value the stream delivers to its stakeholder (ArchiMate/BIZBOK: value from the stakeholder's perspective)." .
+chorus:vision             a owl:DatatypeProperty ; rdfs:label "vision" ; rdfs:range xsd:string .
+chorus:valueProposition   a owl:DatatypeProperty ; rdfs:label "value proposition" ; rdfs:range xsd:string .
+chorus:audience           a owl:DatatypeProperty ; rdfs:label "audience" ; rdfs:range xsd:string .
+chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:range xsd:string .
+chorus:asIs               a owl:DatatypeProperty ; rdfs:label "as-is" ; rdfs:range xsd:string .
+chorus:toBe               a owl:DatatypeProperty ; rdfs:label "to-be" ; rdfs:range xsd:string .
+chorus:implementationPlan a owl:DatatypeProperty ; rdfs:label "implementation plan" ; rdfs:range xsd:string .
+chorus:pathToClose        a owl:DatatypeProperty ; rdfs:label "path to close" ; rdfs:range xsd:string .
+chorus:notInScope         a owl:DatatypeProperty ; rdfs:label "not in scope" ; rdfs:range xsd:string .
+chorus:gaps               a owl:DatatypeProperty ; rdfs:label "gaps" ; rdfs:range xsd:string .
+
+# --- object props absent from v0.3.0 ---
+chorus:atStep        a owl:ObjectProperty ; rdfs:label "at step" ; rdfs:range chorus:ValueStreamStep ;
+    rdfs:comment "subject (Product|Domain|Service) -> its primary value-stream step (chorus:ValueStreamStep, ADR-040). Ingestion maps the AS-IS chorus:primaryStep onto this." .
+chorus:hasDesignDoc  a owl:ObjectProperty ; rdfs:label "has design doc" ; rdfs:range chorus:Document .
+chorus:hosts         a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Service ;
+    rdfs:comment "Domain hosts Service (1:* from Domain). Inverse drives the Service 'exactly one hosting Domain' constraint." .
+
+# --- value-stream step layer (ADR-040 class grain + ADR-041 §value-stream-layer) ---
+chorus:ValueStreamStep a owl:Class ; rdfs:label "Value Stream Step" ;
+    rdfs:comment "A step in a value stream (ADR-040 canonical class). AS-IS nickname: chorus:Vertebra (Jeff 2026-06-19 — a nickname, not a real class). The live Shaping/Directing/Designing/Building/Proving reconcile to this." .
+chorus:inStream a owl:ObjectProperty ; rdfs:label "in stream" ; rdfs:domain chorus:ValueStreamStep ; rdfs:range chorus:ValueStream ;
+    rdfs:comment "A step belongs to a value stream (ADR-041 line 80). AS-IS edge: chorus:belongsTo." .
+
+chorus:StepShape a sh:NodeShape ;
+    sh:targetClass chorus:ValueStreamStep ;
+    sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:inStream   ; sh:minCount 1 ; sh:class chorus:ValueStream ] ;
+    sh:property [ sh:path chorus:stageOrder ; sh:minCount 1 ; sh:datatype xsd:integer ] .
+
+# --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
+chorus:ValueStreamShape a sh:NodeShape ;
+    sh:targetClass chorus:ValueStream ;
+    sh:property [ sh:path rdfs:label     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:trigger ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:outcome ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:inStream ] ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] .  # >=1 stage (ADR-041 inStream)
+
+# --- ProductShape ---
+chorus:ProductShape a sh:NodeShape ;
+    sh:targetClass chorus:Product ;
+    sh:property [ sh:path rdfs:label              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path rdfs:comment            ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy          ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:vision           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:valueProposition ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:audience         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:status           ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:atStep           ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:hasDesignDoc     ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:hasDomain        ; sh:minCount 1 ; sh:class chorus:Domain ] .
+
+# --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
+chorus:DomainShape a sh:NodeShape ;
     sh:targetClass chorus:Domain ;
-    sh:property [ sh:path chorus:atStream ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:atStep   ; sh:minCount 1 ] .
+    sh:property [ sh:path rdfs:label               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path rdfs:comment             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:purpose           ; sh:minCount 1 ; sh:datatype xsd:string ] ;   # the capability the domain expresses
+    sh:property [ sh:path chorus:definesVocabulary ; sh:minCount 1 ; sh:class owl:Class ] ;        # the DDD ubiquitous-language mark
+    sh:property [ sh:path chorus:atStream          ; sh:minCount 1 ; sh:class chorus:ValueStream ] ;
+    sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:hasDomain ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Product ] .  # exactly one parent Product
+
+# --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
+chorus:ServiceShape a sh:NodeShape ;
+    sh:targetClass chorus:Service ;
+    sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
+    sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
+    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
 
 # the properties domain-class itself (punned)
 chorus:Properties a owl:Class , chorus:Domain ;
