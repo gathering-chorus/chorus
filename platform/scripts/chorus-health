@@ -112,6 +112,16 @@ else
   fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
 fi
 
+# werk-emit conformance (#3513): every werk verb emit must be registered in
+# spine-events.json under the 4-pattern naming law (verb-phase / verb-substep /
+# card-state / sequencer-namespace). Red = a phantom emit crept in — the spine
+# can't enforce what it doesn't know. Kade's guard wired here as the standing gate.
+if emit_out=$(bash "${SCRIPTS}/test-werk-emit-conformance.sh" 2>&1); then
+  pass "werk-emit-conformance" "$(echo "$emit_out" | grep -E '^OK' | head -1)"
+else
+  fail "werk-emit-conformance" "$(echo "$emit_out" | grep -E 'PHANTOM|FAIL' | head -1)"
+fi
+
 # hooks-executable — pre-commit in platform/hooks; post-commit in canonical .git/hooks.
 # pre-push was RETIRED by #3182 (eliminate the v1 git substrate) — CI (quality.yml) is the
 # authoritative gate per ADR-026. Checking for it was stale and red since 2026-06-02 (#3498).

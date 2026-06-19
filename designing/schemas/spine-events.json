@@ -37,7 +37,7 @@
       "event": {
         "type": "string",
         "required": true,
-        "description": "Event type name — domain.noun.verb_past format (must match an entry in events)"
+        "description": "Event type name. #3513 naming law — FOUR patterns: (1) verb-phase `<verb>.<phase>` for the 7 werk verbs; (2) verb-substep `<substep>.<x>` (mechanical step nested under its parent verb); (3) card-lifecycle `card.*` (card state); (4) sequencer namespaces `werk.*` / `demo.*` / `env.*` / `review.*` (declared orchestrators/ceremonies, not verbs). Legacy `domain.noun.verb_past` still valid for non-werk domains. Must match an entry in `events`."
       },
       "role": {
         "type": "string",
@@ -1836,6 +1836,1095 @@
         "step": "Step number",
         "total_steps": "Total steps in workflow",
         "notes": "Step completion notes"
+      }
+    },
+    "abort.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `abort` mechanical step under `commit`: `abort.refused` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "accept.audit": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.audit` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "accept.completed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.completed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "accept.env_down": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.env_down` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "accept.env_down.failed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.env_down.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "accept.started": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.started` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "build.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `build` verb — `refused` phase (build.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "build.skipped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `build` verb — `skipped` phase (build.skipped). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "build.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `build` verb — `started` phase (build.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "card.done": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "Card-lifecycle event: `card.done` — the card's state, distinct from verb events (#3513).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "card.unpulled": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "Card-lifecycle event: `card.unpulled` — the card's state, distinct from verb events (#3513).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "card.wip": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "Card-lifecycle event: `card.wip` — the card's state, distinct from verb events (#3513).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "cards.move.idempotent": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "Card-lifecycle event: `cards.move.idempotent` — the card's state, distinct from verb events (#3513).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "commit.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `completed` phase (commit.completed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "commit.conflict": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `conflict` phase (commit.conflict). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "commit.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `failed` phase (commit.failed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "commit.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `refused` phase (commit.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "commit.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `started` phase (commit.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "consumer.rebuild.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `consumer` mechanical step under `build`: `consumer.rebuild.completed` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "consumer.rebuild.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `consumer` mechanical step under `build`: `consumer.rebuild.started` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "content.verified": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk verb-substep — `content` mechanical step under `merge`: `content.verified` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "continue.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `continue` mechanical step under `commit`: `continue.failed` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "continue.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `continue` mechanical step under `commit`: `continue.refused` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "decision.refused": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk verb-substep — `decision` mechanical step under `accept`: `decision.refused` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.ac_status": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.ac_status` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.bridge.failed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.bridge.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.completed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.completed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.decision_surface": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.decision_surface` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gate.result": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gate.result` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gates.recorded": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gates.recorded` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gates.running": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gates.running` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gather.block": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gather.block` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gather.replied": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gather.replied` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gather.send_failed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gather.send_failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gather.sent": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gather.sent` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gather.timeout": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gather.timeout` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.gathers.surfaced": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.gathers.surfaced` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.nudge.failed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.nudge.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.preflight.passed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.preflight.passed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.presented": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.presented` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.prework.standby": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.prework.standby` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.ready_for_review": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.ready_for_review` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.refused": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.refused` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.signal.completed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.signal.completed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.started": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.started` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.test_ran": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.test_ran` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.test_result": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.test_result` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "demo.test_surface.ready": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.test_surface.ready` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.approved": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `approved` phase (deploy.approved). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.cdhash.diverged": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `cdhash.diverged` phase (deploy.cdhash.diverged). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.cdhash.matched": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `cdhash.matched` phase (deploy.cdhash.matched). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.cdhash.unverified": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `cdhash.unverified` phase (deploy.cdhash.unverified). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.detach.warn": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `detach.warn` phase (deploy.detach.warn). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.detached": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `detached` phase (deploy.detached). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `refused` phase (deploy.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.rolled_back": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `rolled_back` phase (deploy.rolled_back). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.skipped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `skipped` phase (deploy.skipped). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `started` phase (deploy.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.verify.liveness": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `verify.liveness` phase (deploy.verify.liveness). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "deploy.verify.smoke": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb — `verify.smoke` phase (deploy.verify.smoke). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.down.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.down.completed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.down.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.down.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.down.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.down.started` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.down.stopped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.down.stopped` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.up.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.up.completed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.up.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.up.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.up.smoked": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.up.smoked` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "env.up.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `env` sequencer (demo-variant lifecycle): `env.up.started` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "fetch.done": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `fetch` mechanical step under `pull/sync`: `fetch.done` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "fetch.warn": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `fetch` mechanical step under `pull/sync`: `fetch.warn` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "gh.registered": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `gh` mechanical step under `merge`: `gh.registered` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "lock.acquired": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `lock` mechanical step under `merge`: `lock.acquired` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.approved": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `approved` phase (merge.approved). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.branch.push.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `branch.push.failed` phase (merge.branch.push.failed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.branch.pushed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `branch.pushed` phase (merge.branch.pushed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `completed` phase (merge.completed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.idempotent": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `idempotent` phase (merge.idempotent). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.pr.create": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `pr.create` phase (merge.pr.create). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.pr.resolve.retry": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `pr.resolve.retry` phase (merge.pr.resolve.retry). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `refused` phase (merge.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "merge.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb — `started` phase (merge.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "pull.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `pull` verb — `completed` phase (pull.completed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "pull.idempotent": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `pull` verb — `idempotent` phase (pull.idempotent). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "pull.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `pull` verb — `refused` phase (pull.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "pull.rolledback": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `pull` verb — `rolledback` phase (pull.rolledback). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "pull.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `pull` verb — `started` phase (pull.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `completed` phase (push.completed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `failed` phase (push.failed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.idempotent": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `idempotent` phase (push.idempotent). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `refused` phase (push.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.rolledback": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `rolledback` phase (push.rolledback). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "push.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `push` verb — `started` phase (push.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "rebase.aborted": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.aborted` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "rebase.conflict.held": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.conflict.held` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "rebase.done": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.done` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "rebase.resolved": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.resolved` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "rebase.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.started` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "review.floor": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `review` sequencer (review-floor): `review.floor` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "review.refused": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `review` sequencer (review-floor): `review.refused` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "review.verdict": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `review` sequencer (review-floor): `review.verdict` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "sharedlib.built": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.built` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "sharedlib.cascade.skipped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.cascade.skipped` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "sharedlib.consumers.discovered": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.consumers.discovered` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "sharedlib.consumers.none": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.consumers.none` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "signal.go": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.go` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "signal.refused": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.refused` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "signal.started": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.started` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "slot.refresh_failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.refresh_failed` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "slot.refreshed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.refreshed` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "slot.retired_stale": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.retired_stale` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "unit.build.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `unit` mechanical step under `build`: `unit.build.completed` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "unit.build.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `unit` mechanical step under `build`: `unit.build.started` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "unpull.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `unpull` verb — `completed` phase (unpull.completed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "unpull.refused": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `unpull` verb — `refused` phase (unpull.refused). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "unpull.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `unpull` verb — `started` phase (unpull.started). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "werk.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.failed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "werk.landed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.landed` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "werk.presented": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.presented` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "werk.remove.idempotent": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.remove.idempotent` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "werk.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.started` (#3513 sequencer-namespace).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "worktree.added": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `worktree` mechanical step under `pull`: `worktree.added` (#3513 verb-substep).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
       }
     }
   }
