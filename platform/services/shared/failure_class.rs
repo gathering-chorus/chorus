@@ -1,5 +1,10 @@
 // #3513 — the ONE failure classifier, shared by every werk verb.
 //
+// BOUNDARY (Silas, #3513 review): `shared/` holds pure, dep-free, single-file
+// `include!`s ONLY. The moment this needs a 2nd file, a type, or a dependency,
+// promote it to a real NON-verb-named crate (e.g. `chorus-werk-shared`) — never
+// let `shared/` grow into a verb-namespace crate. That rule is why this can't drift.
+//
 // NOT a crate, NOT a verb. A single source file under `shared/` (deliberately
 // outside the werk-* verb family — werk-common would have read as a phantom verb,
 // which is the exact drift this card kills). Each verb does:

@@ -37,7 +37,7 @@
       "event": {
         "type": "string",
         "required": true,
-        "description": "Event type name. #3513 naming law — FOUR patterns: (1) verb-phase `<verb>.<phase>` for the 7 werk verbs; (2) verb-substep `<substep>.<x>` (mechanical step nested under its parent verb); (3) card-lifecycle `card.*` (card state); (4) sequencer namespaces `werk.*` / `demo.*` / `env.*` / `review.*` (declared orchestrators/ceremonies, not verbs). Legacy `domain.noun.verb_past` still valid for non-werk domains. Must match an entry in `events`."
+        "description": "Event type name. #3513 naming law \u2014 FOUR patterns: (1) verb-phase `<verb>.<phase>` for the 7 werk verbs; (2) verb-substep `<substep>.<x>` (mechanical step nested under its parent verb); (3) card-lifecycle `card.*` (card state); (4) sequencer namespaces `werk.*` / `demo.*` / `env.*` / `review.*` (declared orchestrators/ceremonies, not verbs). Legacy `domain.noun.verb_past` still valid for non-werk domains. Must match an entry in `events`."
       },
       "role": {
         "type": "string",
@@ -59,7 +59,7 @@
       "domain": {
         "type": "string",
         "required": false,
-        "description": "Owning domain — first-class for owner-routing (#3140)"
+        "description": "Owning domain \u2014 first-class for owner-routing (#3140)"
       },
       "value_stream": {
         "type": "string",
@@ -75,23 +75,23 @@
   },
   "vertebrae": {
     "capturing": {
-      "description": "Card creation — Jeff pulls work into the flow",
+      "description": "Card creation \u2014 Jeff pulls work into the flow",
       "color": "#ede9fe"
     },
     "directing": {
-      "description": "Card sequencing — moving cards through the board",
+      "description": "Card sequencing \u2014 moving cards through the board",
       "color": "#fef3c7"
     },
     "building": {
-      "description": "Engineering work — commits, tests, builds",
+      "description": "Engineering work \u2014 commits, tests, builds",
       "color": "#d1fae5"
     },
     "proving": {
-      "description": "Deploy pipeline — verification and release",
+      "description": "Deploy pipeline \u2014 verification and release",
       "color": "#fce7f3"
     },
     "operations": {
-      "description": "Operating — infrastructure health, deploys, and system lifecycle",
+      "description": "Operating \u2014 infrastructure health, deploys, and system lifecycle",
       "color": "#f3f4f6"
     }
   },
@@ -215,19 +215,19 @@
         "trace"
       ],
       "fields": {
-        "hook": "Dispatch point — pre_tool_use | post_tool_use | user_prompt_submit | stop_hook",
-        "tool": "Tool name under dispatch (Bash, Edit, Read, …); empty for prompt/stop",
+        "hook": "Dispatch point \u2014 pre_tool_use | post_tool_use | user_prompt_submit | stop_hook",
+        "tool": "Tool name under dispatch (Bash, Edit, Read, \u2026); empty for prompt/stop",
         "module": "Deciding hook module, or none / prompt_pipeline / autonomy_guard for aggregate paths",
         "decision": "allow | WARN | DENY | BLOCK",
         "trace": "Shared werk trace_id (CHORUS_TRACE_ID) when in a werk run, else a minted per-dispatch fallback",
         "latency_ms": "Dispatch wall-clock in milliseconds",
-        "session_id": "Claude Code session id (8-char) — secondary join key for ad-hoc tool calls"
+        "session_id": "Claude Code session id (8-char) \u2014 secondary join key for ad-hoc tool calls"
       }
     },
     "ac.ticked": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "AC item checked on a card — `- [ ]` → `- [x]`. Emitted per update that advances the check count. #2193.",
+      "description": "AC item checked on a card \u2014 `- [ ]` \u2192 `- [x]`. Emitted per update that advances the check count. #2193.",
       "keys": [
         "card_id"
       ],
@@ -320,7 +320,7 @@
       "vertebra": "directing",
       "legacy_name": "board_audit_close",
       "source": "cards",
-      "description": "Board audit at session close — checks for retroactive cards",
+      "description": "Board audit at session close \u2014 checks for retroactive cards",
       "fields": {
         "board": "Board name",
         "new_cards": "Cards created during session",
@@ -363,7 +363,7 @@
       "vertebra": "designing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Brief surfaced at boot by werk-init — closes the send/receive chain (#616)",
+      "description": "Brief surfaced at boot by werk-init \u2014 closes the send/receive chain (#616)",
       "fields": {
         "artifact": "Brief filename"
       }
@@ -403,7 +403,7 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Built+signed binary hashed post-codesign — invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
+      "description": "Built+signed binary hashed post-codesign \u2014 invariant evidence for build-domain (#2775). Same source commit must produce identical sha256 across machines.",
       "fields": {
         "commit": "Source commit SHA (short)",
         "crate": "Cargo crate name (e.g., chorus-hooks, chorus-inject)",
@@ -450,14 +450,15 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases — never to absence of build.completed.",
+      "description": "Building-pipeline build step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-build CLI before non-zero exit. Consumers of build outcomes (crawler hydrator, dashboards) should bind to this event for failure cases \u2014 never to absence of build.completed.",
       "fields": {
         "commit": "Source commit SHA (short) at build time",
         "crate": "Cargo crate name",
         "exit_code": "Numeric exit code from build-signed.sh",
         "duration_ms": "Time elapsed before failure (ms)",
         "reason": "Coarse failure class (build-signed-fail today; finer classes added as named)",
-        "builder_host": "Hostname of machine that built it"
+        "builder_host": "Hostname of machine that built it",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "build.memory.written": {
@@ -598,7 +599,7 @@
       "vertebra": "operating",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "chorus-werk-sync recover finished — stashed zero or more files and synced canonical to origin/main tip (#2909). Pairs each `canonical.recovery.stashed` emit with a completion record so a fitness function can detect started-without-completed cases.",
+      "description": "chorus-werk-sync recover finished \u2014 stashed zero or more files and synced canonical to origin/main tip (#2909). Pairs each `canonical.recovery.stashed` emit with a completion record so a fitness function can detect started-without-completed cases.",
       "fields": {
         "recovered": "Count of files stashed in this run (0 = no-op, tree was already clean)",
         "to": "Short sha of canonical HEAD after sync"
@@ -612,7 +613,7 @@
       "fields": {
         "path": "Original path inside canonical (relative)",
         "recovery_path": "Absolute path under ~/.chorus/recovery/<ts>/ where the content was copied",
-        "sha": "sha256 of stashed content (empty if file was D-state — already deleted from disk)"
+        "sha": "sha256 of stashed content (empty if file was D-state \u2014 already deleted from disk)"
       }
     },
     "canonical.sync.repaired": {
@@ -637,10 +638,11 @@
       "vertebra": "designing",
       "legacy_name": null,
       "source": "cards",
-      "description": "Blast radius generation failed — card has 0 files on a code card",
+      "description": "Blast radius generation failed \u2014 card has 0 files on a code card",
       "fields": {
         "card_id": "Card identifier",
-        "reason": "Failure reason"
+        "reason": "Failure reason",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "card.blast_radius.generated": {
@@ -801,7 +803,7 @@
     "card.pulled": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Card pulled to WIP — role started building",
+      "description": "Card pulled to WIP \u2014 role started building",
       "keys": [
         "card_id"
       ],
@@ -816,7 +818,7 @@
       "vertebra": "capturing",
       "legacy_name": "quality_gate_warn",
       "source": "cards",
-      "description": "Quality gate warning — title too short, empty description, or no comments at done",
+      "description": "Quality gate warning \u2014 title too short, empty description, or no comments at done",
       "fields": {
         "gate": "Gate type (title_short, description_empty, no_comments)",
         "stage": "Vertebra stage where warning fired",
@@ -873,7 +875,7 @@
       "vertebra": "capturing",
       "legacy_name": null,
       "source": "cards",
-      "description": "SWAT card created — crisis fast-lane card outside WIP limit (DEC-055)",
+      "description": "SWAT card created \u2014 crisis fast-lane card outside WIP limit (DEC-055)",
       "fields": {
         "card_id": "Card identifier",
         "title": "Card title",
@@ -937,11 +939,12 @@
       "vertebra": "operating",
       "legacy_name": null,
       "source": "crawler-hydrate-graph.sh",
-      "description": "Crawler hydrator failed to write to Fuseki — batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
+      "description": "Crawler hydrator failed to write to Fuseki \u2014 batch insert failures, stale-update HTTP errors, or Fuseki unreachable (#2827).",
       "fields": {
         "class": "Hydratable class identifier; '*' when Fuseki itself is unreachable",
         "reason": "Failure reason (e.g., batch-insert-fail-count-N, stale-update-fail-http-N, fuseki-unreachable)",
-        "duration_ms": "Duration when known; absent on Fuseki-unreachable case"
+        "duration_ms": "Duration when known; absent on Fuseki-unreachable case",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "crawler.graph.hydrated": {
@@ -985,7 +988,7 @@
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Installed artifact post-deploy verification — invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
+      "description": "Installed artifact post-deploy verification \u2014 invariant evidence for deploy-domain (#2775). Same artifact must reach the same running state (same cdhash, same on-disk sha256).",
       "fields": {
         "artifact_sha256": "Expected sha256 (from build.artifact.hashed)",
         "target": "Install target name (e.g., chorus-hook-shim)",
@@ -997,43 +1000,44 @@
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on. #3270 — carries the ground-truth envelope (verb/step/outcome/cdhash/live_main/artifact_class) sharing the `trace` join key so trace.html?trace=<id> renders this verb alongside hook.decision (#3252) and the other verbs as one flow.",
+      "description": "Building-pipeline deploy step finished for one crate (#2774). Emitted by chorus-deploy CLI after binaries are atomic-installed to ~/.chorus/bin/ and dependent services are kickstarted. Per-binary detail lives in binary.deployed; this event is the crate-level signal the act workflow sequences on. #3270 \u2014 carries the ground-truth envelope (verb/step/outcome/cdhash/live_main/artifact_class) sharing the `trace` join key so trace.html?trace=<id> renders this verb alongside hook.decision (#3252) and the other verbs as one flow.",
       "keys": [
         "trace"
       ],
       "fields": {
-        "verb": "#3270 — emitting verb (deploy)",
-        "step": "#3270 — pipeline step name (deploy)",
-        "outcome": "#3270 — success (failure path emits deploy.failed{reason})",
-        "artifact_class": "#3270 — rust-daemon (kickstarted) | rust-cli (no daemon); TS services emit on their own paths",
-        "cdhash": "#3270 — loaded cdhash: post-install codesign of the installed file the daemon loads (== built, verified #3222)",
-        "live_main": "#3270 — is what's now live origin/main? true|false (canonical: HEAD==origin/main) | na (werk preview slot) | unknown (no origin/main ref). Kills the silent merged≠live false-green.",
+        "verb": "#3270 \u2014 emitting verb (deploy)",
+        "step": "#3270 \u2014 pipeline step name (deploy)",
+        "outcome": "#3270 \u2014 success (failure path emits deploy.failed{reason})",
+        "artifact_class": "#3270 \u2014 rust-daemon (kickstarted) | rust-cli (no daemon); TS services emit on their own paths",
+        "cdhash": "#3270 \u2014 loaded cdhash: post-install codesign of the installed file the daemon loads (== built, verified #3222)",
+        "live_main": "#3270 \u2014 is what's now live origin/main? true|false (canonical: HEAD==origin/main) | na (werk preview slot) | unknown (no origin/main ref). Kills the silent merged\u2260live false-green.",
         "commit": "Source commit SHA (short) at deploy time",
         "crate": "Cargo crate name (chorus-hooks, chorus-inject)",
         "target": "Primary install path (~/.chorus/bin/<name>)",
         "deploy_target": "canonical (production) | werk (session preview slot)",
         "card": "Card id driving the deploy",
         "duration_ms": "End-to-end deploy slice duration in milliseconds",
-        "trace": "Shared join key — CHORUS_TRACE_ID (|| session_id), auto-stamped by chorus-log (#2897/#3252). NEVER a per-call uuid."
+        "trace": "Shared join key \u2014 CHORUS_TRACE_ID (|| session_id), auto-stamped by chorus-log (#2897/#3252). NEVER a per-call uuid."
       }
     },
     "deploy.failed": {
       "vertebra": "operations",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures — never to absence of deploy.completed.",
+      "description": "Building-pipeline deploy step failed for one crate (#2774 review feedback from Kade). Emitted by chorus-deploy CLI before non-zero exit. Consumers should bind to this event for deploy failures \u2014 never to absence of deploy.completed.",
       "fields": {
         "commit": "Source commit SHA (short)",
         "crate": "Cargo crate name",
         "duration_ms": "Time elapsed before failure (ms)",
-        "reason": "Failure class — install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)"
+        "reason": "Failure class \u2014 install-script-missing | binary-missing | install-fail (kickstart failures are advisory-only and don't fail the deploy)",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "deploy.freeze.activated": {
       "vertebra": "proving",
       "legacy_name": "deploy_freeze",
       "source": "chorus-events",
-      "description": "Deploy freeze activated — blocks all deploys",
+      "description": "Deploy freeze activated \u2014 blocks all deploys",
       "fields": {
         "message": "Freeze message",
         "role": "Role that activated freeze"
@@ -1090,7 +1094,8 @@
       "source": "chorus-events",
       "description": "Deploy or rollback failed",
       "fields": {
-        "message": "Error message"
+        "message": "Error message",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "deploy.pipeline.started": {
@@ -1121,7 +1126,7 @@
       "description": "Card verification completed (board-ts done triggers this)",
       "fields": {
         "card_id": "Card identifier",
-        "result": "pass (always — manual verification)",
+        "result": "pass (always \u2014 manual verification)",
         "method": "manual"
       }
     },
@@ -1133,7 +1138,8 @@
       "fields": {
         "design_name": "Filename stem of the design",
         "reason": "Refusal taxonomy slug",
-        "detail": "Specific section / line / card_id that triggered the refusal"
+        "detail": "Specific section / line / card_id that triggered the refusal",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "design.refresh.started": {
@@ -1165,14 +1171,14 @@
       "description": "chorus_design_refresh auto-conformed a service-design doc that lacked the canonical template structure (#2900). Inserted summary-block scaffold and/or data-section attributes on standard H2 headings so the same refresh command works on any next doc with one command. Emits before design.refreshed in the same run.",
       "fields": {
         "design_name": "Filename stem of the design",
-        "scaffolded": "Comma-separated list of what was scaffolded — e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
+        "scaffolded": "Comma-separated list of what was scaffolded \u2014 e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
       }
     },
     "guard.classify.decided": {
       "vertebra": "building",
       "legacy_name": "data_classification",
       "source": "chorus-events",
-      "description": "Sensitive paths hook fired — classified file read attempt",
+      "description": "Sensitive paths hook fired \u2014 classified file read attempt",
       "fields": {
         "decision": "deny or ask",
         "tier": "Data classification tier (private or internal)",
@@ -1183,7 +1189,7 @@
       "vertebra": "building",
       "legacy_name": "guardrail_decision",
       "source": "chorus-events",
-      "description": "Infrastructure guardrail hook fired — deny/ask/allow on prohibited commands",
+      "description": "Infrastructure guardrail hook fired \u2014 deny/ask/allow on prohibited commands",
       "fields": {
         "decision": "deny, ask, or allow",
         "pattern": "Pattern that matched (docker-exec, kill, etc.)",
@@ -1194,7 +1200,7 @@
       "vertebra": "building",
       "legacy_name": "write_scrub",
       "source": "chorus-events",
-      "description": "Write scrubber hook fired — credential or internal pattern detected in shared file write",
+      "description": "Write scrubber hook fired \u2014 credential or internal pattern detected in shared file write",
       "fields": {
         "decision": "deny or warn",
         "tier": "Data classification tier (private or internal)",
@@ -1267,7 +1273,8 @@
       "description": "Bedroom-side probe: one or more Library services unreachable/degraded (#2835)",
       "fields": {
         "source": "Probe source (e.g., bedroom-probe)",
-        "failures": "Count of services that failed health check"
+        "failures": "Count of services that failed health check",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "library.health.passed": {
@@ -1283,16 +1290,16 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign — the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
+      "description": "New entry written to ~/.chorus/manifest.json by build-signed.sh after codesign \u2014 the queryable cache of build records (#2791). Emitted on new {commit, crate, identifier, cdhash} only; idempotency hits do NOT re-emit. Manifest is the cross-domain interface for build-domain (writes) and deploy-domain (reads).",
       "fields": {
-        "commit": "Source commit SHA (short) — same as build.artifact.hashed",
-        "crate": "Cargo crate name — same as build.artifact.hashed",
-        "identifier": "Installed binary identifier — same as build.artifact.hashed",
-        "cdhash": "Codesign cdhash — same as build.artifact.hashed; the binding identity",
-        "sha256": "SHA-256 of signed binary — same as build.artifact.hashed; informational",
+        "commit": "Source commit SHA (short) \u2014 same as build.artifact.hashed",
+        "crate": "Cargo crate name \u2014 same as build.artifact.hashed",
+        "identifier": "Installed binary identifier \u2014 same as build.artifact.hashed",
+        "cdhash": "Codesign cdhash \u2014 same as build.artifact.hashed; the binding identity",
+        "sha256": "SHA-256 of signed binary \u2014 same as build.artifact.hashed; informational",
         "build_time": "ISO 8601 UTC timestamp of the build",
-        "builder_host": "Hostname of machine that built it — same as build.artifact.hashed",
-        "builder_role": "Role attribution — wren/silas/kade/system"
+        "builder_host": "Hostname of machine that built it \u2014 same as build.artifact.hashed",
+        "builder_role": "Role attribution \u2014 wren/silas/kade/system"
       }
     },
     "observer.digest": {
@@ -1338,7 +1345,7 @@
       "vertebra": "proving",
       "legacy_name": "audit_check",
       "source": "chorus-events",
-      "description": "Chorus audit check result — pass/warn/fail for a specific gate",
+      "description": "Chorus audit check result \u2014 pass/warn/fail for a specific gate",
       "fields": {
         "check": "Check name",
         "result": "pass, warn, or fail",
@@ -1388,7 +1395,7 @@
       "vertebra": "proving",
       "legacy_name": "disk_check",
       "source": "chorus-events",
-      "description": "Disk usage check — emitted on session start, full audit, and periodic health",
+      "description": "Disk usage check \u2014 emitted on session start, full audit, and periodic health",
       "fields": {
         "disk_pct": "Disk usage percentage",
         "status": "ok, warning, or critical",
@@ -1430,7 +1437,7 @@
     "pair.session.started": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Pair programming session started — strong-style pairing with navigator and driver",
+      "description": "Pair programming session started \u2014 strong-style pairing with navigator and driver",
       "fields": {
         "card": "Card being worked on",
         "partner": "Partner role"
@@ -1440,7 +1447,7 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol boot sequence completed — envelope close with summary",
+      "description": "Protocol boot sequence completed \u2014 envelope close with summary",
       "fields": {
         "steps": "Number of steps executed",
         "ok": "Steps that passed",
@@ -1453,14 +1460,14 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol boot sequence started — envelope open for grouping boot steps",
+      "description": "Protocol boot sequence started \u2014 envelope open for grouping boot steps",
       "fields": {}
     },
     "protocol.close.completed": {
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol close-out sequence completed — envelope close with summary",
+      "description": "Protocol close-out sequence completed \u2014 envelope close with summary",
       "fields": {
         "steps": "Number of steps executed",
         "ok": "Steps that passed",
@@ -1472,7 +1479,7 @@
       "vertebra": "directing",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Protocol close-out sequence started — envelope open for grouping close steps",
+      "description": "Protocol close-out sequence started \u2014 envelope open for grouping close steps",
       "fields": {}
     },
     "protocol.step.completed": {
@@ -1523,7 +1530,7 @@
       "vertebra": "building",
       "legacy_name": null,
       "source": "chorus-events",
-      "description": "Search query executed — covers FTS, semantic, and hybrid across Chorus API and Gathering app (#1107)",
+      "description": "Search query executed \u2014 covers FTS, semantic, and hybrid across Chorus API and Gathering app (#1107)",
       "fields": {
         "system": "Source system (chorus-api or gathering-app)",
         "query": "Search query text (truncated to 200 chars)",
@@ -1566,7 +1573,7 @@
     "seed.dropped": {
       "vertebra": "capturing",
       "source": "jeff-bridwell-personal-site",
-      "description": "Seed dropped — no routable content, no hashtag, no correlation",
+      "description": "Seed dropped \u2014 no routable content, no hashtag, no correlation",
       "keys": [
         "slug"
       ],
@@ -1592,7 +1599,7 @@
     "seed.received": {
       "vertebra": "capturing",
       "source": "jeff-bridwell-personal-site",
-      "description": "SMS webhook received — Twilio payload validated, before dedup check",
+      "description": "SMS webhook received \u2014 Twilio payload validated, before dedup check",
       "keys": [
         "messageSid"
       ],
@@ -1605,7 +1612,7 @@
     "seed.recovered": {
       "vertebra": "capturing",
       "source": "chorus-events",
-      "description": "Seed recovered — spine event emitted retroactively for a seed that arrived during app downtime",
+      "description": "Seed recovered \u2014 spine event emitted retroactively for a seed that arrived during app downtime",
       "keys": [
         "slug"
       ],
@@ -1632,7 +1639,7 @@
     "self.biometric.transposition_rate": {
       "vertebra": "building",
       "source": "chorus-events",
-      "description": "Typing correction rate — backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
+      "description": "Typing correction rate \u2014 backspace-after-keystroke sequences per 30s window. Proxy for cognitive load / stress.",
       "fields": {
         "rate": "Corrections / keystrokes ratio (0.0 to 1.0)",
         "errors_30s": "Correction count in window",
@@ -1667,7 +1674,8 @@
         "crate": "Deploy unit name",
         "step": "Where it died: chorus-deploy / kickstart / verify",
         "reason": "Typed reason: build-fail / install-fail / kickstart-fail / cdhash-divergence / verify-timeout",
-        "exit_code": "Non-zero exit code from the failing step"
+        "exit_code": "Non-zero exit code from the failing step",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "service.deploy.started": {
@@ -1712,7 +1720,8 @@
         "crate": "Deploy unit name",
         "step": "Where it died: lookup / restore / kickstart / verify",
         "reason": "Typed reason: no-prior-cdhash / restore-fail / kickstart-fail / cdhash-divergence",
-        "exit_code": "Non-zero exit code from the failing step"
+        "exit_code": "Non-zero exit code from the failing step",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "service.rollback.started": {
@@ -1741,7 +1750,7 @@
       "vertebra": "directing",
       "legacy_name": "doc_scan",
       "source": "chorus-events",
-      "description": "Domain doc scan at session close — role validated their vertical docs for staleness (DEC-058, #312)",
+      "description": "Domain doc scan at session close \u2014 role validated their vertical docs for staleness (DEC-058, #312)",
       "fields": {
         "checked": "Number of files scanned",
         "updated": "Number of files updated"
@@ -1780,7 +1789,7 @@
       "vertebra": "building",
       "legacy_name": "session_turn",
       "source": "chorus-events",
-      "description": "Session turn — user/assistant exchange",
+      "description": "Session turn \u2014 user/assistant exchange",
       "fields": {
         "duration_seconds": "Turn duration",
         "message": "Turn summary"
@@ -1841,10 +1850,11 @@
     "abort.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `abort` mechanical step under `commit`: `abort.refused` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `abort` mechanical step under `commit`: `abort.refused` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "accept.audit": {
@@ -1880,7 +1890,8 @@
       "description": "Werk `accept` sequencer (finalize ceremony): `accept.env_down.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "accept.started": {
@@ -1895,16 +1906,17 @@
     "build.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `build` verb — `refused` phase (build.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `build` verb \u2014 `refused` phase (build.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "build.skipped": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `build` verb — `skipped` phase (build.skipped). Verb-phase event (#3513 naming law).",
+      "description": "Werk `build` verb \u2014 `skipped` phase (build.skipped). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1913,7 +1925,7 @@
     "build.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `build` verb — `started` phase (build.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `build` verb \u2014 `started` phase (build.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1922,7 +1934,7 @@
     "card.done": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "Card-lifecycle event: `card.done` — the card's state, distinct from verb events (#3513).",
+      "description": "Card-lifecycle event: `card.done` \u2014 the card's state, distinct from verb events (#3513).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1931,7 +1943,7 @@
     "card.unpulled": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "Card-lifecycle event: `card.unpulled` — the card's state, distinct from verb events (#3513).",
+      "description": "Card-lifecycle event: `card.unpulled` \u2014 the card's state, distinct from verb events (#3513).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1940,7 +1952,7 @@
     "card.wip": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "Card-lifecycle event: `card.wip` — the card's state, distinct from verb events (#3513).",
+      "description": "Card-lifecycle event: `card.wip` \u2014 the card's state, distinct from verb events (#3513).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1949,7 +1961,7 @@
     "cards.move.idempotent": {
       "vertebra": "directing",
       "source": "cards",
-      "description": "Card-lifecycle event: `cards.move.idempotent` — the card's state, distinct from verb events (#3513).",
+      "description": "Card-lifecycle event: `cards.move.idempotent` \u2014 the card's state, distinct from verb events (#3513).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1958,7 +1970,7 @@
     "commit.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `commit` verb — `completed` phase (commit.completed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `commit` verb \u2014 `completed` phase (commit.completed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1967,7 +1979,7 @@
     "commit.conflict": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `commit` verb — `conflict` phase (commit.conflict). Verb-phase event (#3513 naming law).",
+      "description": "Werk `commit` verb \u2014 `conflict` phase (commit.conflict). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -1976,25 +1988,27 @@
     "commit.failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `commit` verb — `failed` phase (commit.failed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `commit` verb \u2014 `failed` phase (commit.failed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "commit.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `commit` verb — `refused` phase (commit.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `commit` verb \u2014 `refused` phase (commit.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "commit.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `commit` verb — `started` phase (commit.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `commit` verb \u2014 `started` phase (commit.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2003,7 +2017,7 @@
     "consumer.rebuild.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `consumer` mechanical step under `build`: `consumer.rebuild.completed` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `consumer` mechanical step under `build`: `consumer.rebuild.completed` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2012,7 +2026,7 @@
     "consumer.rebuild.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `consumer` mechanical step under `build`: `consumer.rebuild.started` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `consumer` mechanical step under `build`: `consumer.rebuild.started` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2021,7 +2035,7 @@
     "content.verified": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk verb-substep — `content` mechanical step under `merge`: `content.verified` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `content` mechanical step under `merge`: `content.verified` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2030,28 +2044,31 @@
     "continue.failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `continue` mechanical step under `commit`: `continue.failed` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `continue` mechanical step under `commit`: `continue.failed` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "continue.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `continue` mechanical step under `commit`: `continue.refused` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `continue` mechanical step under `commit`: `continue.refused` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "decision.refused": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk verb-substep — `decision` mechanical step under `accept`: `decision.refused` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `decision` mechanical step under `accept`: `decision.refused` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "demo.ac_status": {
@@ -2069,7 +2086,8 @@
       "description": "Werk `demo` sequencer (proving ceremony): `demo.bridge.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "demo.completed": {
@@ -2177,7 +2195,8 @@
       "description": "Werk `demo` sequencer (proving ceremony): `demo.nudge.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "demo.preflight.passed": {
@@ -2222,7 +2241,8 @@
       "description": "Werk `demo` sequencer (proving ceremony): `demo.refused` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "demo.signal.completed": {
@@ -2273,7 +2293,7 @@
     "deploy.approved": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `approved` phase (deploy.approved). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `approved` phase (deploy.approved). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2282,7 +2302,7 @@
     "deploy.cdhash.diverged": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `cdhash.diverged` phase (deploy.cdhash.diverged). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `cdhash.diverged` phase (deploy.cdhash.diverged). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2291,7 +2311,7 @@
     "deploy.cdhash.matched": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `cdhash.matched` phase (deploy.cdhash.matched). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `cdhash.matched` phase (deploy.cdhash.matched). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2300,7 +2320,7 @@
     "deploy.cdhash.unverified": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `cdhash.unverified` phase (deploy.cdhash.unverified). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `cdhash.unverified` phase (deploy.cdhash.unverified). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2309,7 +2329,7 @@
     "deploy.detach.warn": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `detach.warn` phase (deploy.detach.warn). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `detach.warn` phase (deploy.detach.warn). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2318,7 +2338,7 @@
     "deploy.detached": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `detached` phase (deploy.detached). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `detached` phase (deploy.detached). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2327,16 +2347,17 @@
     "deploy.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `refused` phase (deploy.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `refused` phase (deploy.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "deploy.rolled_back": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `rolled_back` phase (deploy.rolled_back). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `rolled_back` phase (deploy.rolled_back). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2345,7 +2366,7 @@
     "deploy.skipped": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `skipped` phase (deploy.skipped). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `skipped` phase (deploy.skipped). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2354,7 +2375,7 @@
     "deploy.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `started` phase (deploy.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `started` phase (deploy.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2363,7 +2384,7 @@
     "deploy.verify.liveness": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `verify.liveness` phase (deploy.verify.liveness). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `verify.liveness` phase (deploy.verify.liveness). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2372,7 +2393,7 @@
     "deploy.verify.smoke": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `deploy` verb — `verify.smoke` phase (deploy.verify.smoke). Verb-phase event (#3513 naming law).",
+      "description": "Werk `deploy` verb \u2014 `verify.smoke` phase (deploy.verify.smoke). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2393,7 +2414,8 @@
       "description": "Werk `env` sequencer (demo-variant lifecycle): `env.down.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "env.down.started": {
@@ -2429,7 +2451,8 @@
       "description": "Werk `env` sequencer (demo-variant lifecycle): `env.up.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "env.up.smoked": {
@@ -2453,7 +2476,7 @@
     "fetch.done": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `fetch` mechanical step under `pull/sync`: `fetch.done` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `fetch` mechanical step under `pull/sync`: `fetch.done` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2462,7 +2485,7 @@
     "fetch.warn": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `fetch` mechanical step under `pull/sync`: `fetch.warn` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `fetch` mechanical step under `pull/sync`: `fetch.warn` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2471,7 +2494,7 @@
     "gh.registered": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `gh` mechanical step under `merge`: `gh.registered` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `gh` mechanical step under `merge`: `gh.registered` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2480,7 +2503,7 @@
     "lock.acquired": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `lock` mechanical step under `merge`: `lock.acquired` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `lock` mechanical step under `merge`: `lock.acquired` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2489,7 +2512,7 @@
     "merge.approved": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `approved` phase (merge.approved). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `approved` phase (merge.approved). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2498,16 +2521,17 @@
     "merge.branch.push.failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `branch.push.failed` phase (merge.branch.push.failed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `branch.push.failed` phase (merge.branch.push.failed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "merge.branch.pushed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `branch.pushed` phase (merge.branch.pushed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `branch.pushed` phase (merge.branch.pushed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2516,7 +2540,7 @@
     "merge.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `completed` phase (merge.completed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `completed` phase (merge.completed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2525,7 +2549,7 @@
     "merge.idempotent": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `idempotent` phase (merge.idempotent). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `idempotent` phase (merge.idempotent). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2534,7 +2558,7 @@
     "merge.pr.create": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `pr.create` phase (merge.pr.create). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `pr.create` phase (merge.pr.create). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2543,7 +2567,7 @@
     "merge.pr.resolve.retry": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `pr.resolve.retry` phase (merge.pr.resolve.retry). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `pr.resolve.retry` phase (merge.pr.resolve.retry). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2552,16 +2576,17 @@
     "merge.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `refused` phase (merge.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `refused` phase (merge.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "merge.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb — `started` phase (merge.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `merge` verb \u2014 `started` phase (merge.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2570,7 +2595,7 @@
     "pull.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `pull` verb — `completed` phase (pull.completed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `pull` verb \u2014 `completed` phase (pull.completed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2579,7 +2604,7 @@
     "pull.idempotent": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `pull` verb — `idempotent` phase (pull.idempotent). Verb-phase event (#3513 naming law).",
+      "description": "Werk `pull` verb \u2014 `idempotent` phase (pull.idempotent). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2588,16 +2613,17 @@
     "pull.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `pull` verb — `refused` phase (pull.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `pull` verb \u2014 `refused` phase (pull.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "pull.rolledback": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `pull` verb — `rolledback` phase (pull.rolledback). Verb-phase event (#3513 naming law).",
+      "description": "Werk `pull` verb \u2014 `rolledback` phase (pull.rolledback). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2606,7 +2632,7 @@
     "pull.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `pull` verb — `started` phase (pull.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `pull` verb \u2014 `started` phase (pull.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2615,7 +2641,7 @@
     "push.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `completed` phase (push.completed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `completed` phase (push.completed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2624,16 +2650,17 @@
     "push.failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `failed` phase (push.failed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `failed` phase (push.failed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "push.idempotent": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `idempotent` phase (push.idempotent). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `idempotent` phase (push.idempotent). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2642,16 +2669,17 @@
     "push.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `refused` phase (push.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `refused` phase (push.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "push.rolledback": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `rolledback` phase (push.rolledback). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `rolledback` phase (push.rolledback). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2660,7 +2688,7 @@
     "push.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `push` verb — `started` phase (push.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `push` verb \u2014 `started` phase (push.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2669,7 +2697,7 @@
     "rebase.aborted": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.aborted` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `rebase` mechanical step under `commit/merge`: `rebase.aborted` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2678,7 +2706,7 @@
     "rebase.conflict.held": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.conflict.held` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `rebase` mechanical step under `commit/merge`: `rebase.conflict.held` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2687,7 +2715,7 @@
     "rebase.done": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.done` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `rebase` mechanical step under `commit/merge`: `rebase.done` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2696,7 +2724,7 @@
     "rebase.resolved": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.resolved` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `rebase` mechanical step under `commit/merge`: `rebase.resolved` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2705,7 +2733,7 @@
     "rebase.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: `rebase.started` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `rebase` mechanical step under `commit/merge`: `rebase.started` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2726,7 +2754,8 @@
       "description": "Werk `review` sequencer (review-floor): `review.refused` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "review.verdict": {
@@ -2741,7 +2770,7 @@
     "sharedlib.built": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.built` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `sharedlib` mechanical step under `build`: `sharedlib.built` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2750,7 +2779,7 @@
     "sharedlib.cascade.skipped": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.cascade.skipped` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `sharedlib` mechanical step under `build`: `sharedlib.cascade.skipped` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2759,7 +2788,7 @@
     "sharedlib.consumers.discovered": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.consumers.discovered` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `sharedlib` mechanical step under `build`: `sharedlib.consumers.discovered` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2768,7 +2797,7 @@
     "sharedlib.consumers.none": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `sharedlib` mechanical step under `build`: `sharedlib.consumers.none` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `sharedlib` mechanical step under `build`: `sharedlib.consumers.none` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2777,7 +2806,7 @@
     "signal.go": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.go` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `signal` mechanical step under `accept`: `signal.go` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2786,16 +2815,17 @@
     "signal.refused": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.refused` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `signal` mechanical step under `accept`: `signal.refused` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "signal.started": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk verb-substep — `signal` mechanical step under `accept`: `signal.started` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `signal` mechanical step under `accept`: `signal.started` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2804,7 +2834,7 @@
     "slot.refresh_failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.refresh_failed` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `slot` mechanical step under `build`: `slot.refresh_failed` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2813,7 +2843,7 @@
     "slot.refreshed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.refreshed` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `slot` mechanical step under `build`: `slot.refreshed` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2822,7 +2852,7 @@
     "slot.retired_stale": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `slot` mechanical step under `build`: `slot.retired_stale` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `slot` mechanical step under `build`: `slot.retired_stale` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2831,7 +2861,7 @@
     "unit.build.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `unit` mechanical step under `build`: `unit.build.completed` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `unit` mechanical step under `build`: `unit.build.completed` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2840,7 +2870,7 @@
     "unit.build.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `unit` mechanical step under `build`: `unit.build.started` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `unit` mechanical step under `build`: `unit.build.started` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2849,7 +2879,7 @@
     "unpull.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `unpull` verb — `completed` phase (unpull.completed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `unpull` verb \u2014 `completed` phase (unpull.completed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2858,16 +2888,17 @@
     "unpull.refused": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `unpull` verb — `refused` phase (unpull.refused). Verb-phase event (#3513 naming law).",
+      "description": "Werk `unpull` verb \u2014 `refused` phase (unpull.refused). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "unpull.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `unpull` verb — `started` phase (unpull.started). Verb-phase event (#3513 naming law).",
+      "description": "Werk `unpull` verb \u2014 `started` phase (unpull.started). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2879,7 +2910,8 @@
       "description": "Werk `werk` sequencer (orchestrator run): `werk.failed` (#3513 sequencer-namespace).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "werk.landed": {
@@ -2921,10 +2953,46 @@
     "worktree.added": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk verb-substep — `worktree` mechanical step under `pull`: `worktree.added` (#3513 verb-substep).",
+      "description": "Werk verb-substep \u2014 `worktree` mechanical step under `pull`: `worktree.added` (#3513 verb-substep).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
+      }
+    },
+    "demo.go": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): Jeff's in-run go recorded \u2014 the accept gate before merge (#3511).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card": "Card id",
+        "round": "Demo round key",
+        "patch_id": "Patch identity (rebase-tolerant)"
+      }
+    },
+    "demo.jeffgo.block": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer: blocking for Jeff's in-run go after the announce (#3511).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card": "Card id",
+        "round": "Demo round key",
+        "timeout_s": "Jeff-go block timeout (s)"
+      }
+    },
+    "demo.jeffgo.timeout": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer: Jeff-go wait timed out \u2192 presented-not-landed, exit 2 (#3511).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card": "Card id",
+        "round": "Demo round key",
+        "waited_s": "Seconds waited before timeout"
       }
     }
   }
