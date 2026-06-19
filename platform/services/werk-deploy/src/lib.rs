@@ -26,6 +26,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 // #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
 // Encapsulated in demo_env.rs so the per-service plist/marker logic has ONE
 // home instead of being scattered across werk-deploy + chorus-werk + future
@@ -517,7 +520,7 @@ fn jsonl(home: &Path, role: &str, card: u64, trace: &str, event: &str, extra: &s
 /// disposition=died distinguishes it from reverted at a glance.
 fn died(home: &Path, role: &str, card: u64, trace: &str, reason: &str, msg: String) -> String {
     jsonl(home, role, card, trace, "deploy.failed",
-        &format!(",\"reason\":\"{}\",\"disposition\":\"died\"", reason));
+        &format!("{},\"disposition\":\"died\"", fail_extra(reason)));
     msg
 }
 
@@ -735,9 +738,9 @@ fn run_env_up(args: &[String]) -> R<String> {
         Err(e) => {
             let err = e.replace('\\', "/").replace('"', "'");
             jsonl(home_p, &role, card_n, &trace, "env.up.failed",
-                &format!(",\"error\":\"{}\"", err));
+                &format!("{},\"error\":\"{}\"", fail_extra("env-up-fail"), err));
             emit_spine(home_p, "env.up.failed", &role, card_n, &trace,
-                &[("reason", "env-up-fail"), ("disposition", "died"), ("error", &err)]);
+                &[("reason", "env-up-fail"), ("failureClass", failure_class("env-up-fail")), ("disposition", "died"), ("error", &err)]);
         }
     }
     result
@@ -766,9 +769,9 @@ fn run_env_down(args: &[String]) -> R<String> {
         Err(e) => {
             let err = e.replace('\\', "/").replace('"', "'");
             jsonl(home_p, &role, card_n, &trace, "env.down.failed",
-                &format!(",\"error\":\"{}\"", err));
+                &format!("{},\"error\":\"{}\"", fail_extra("env-down-fail"), err));
             emit_spine(home_p, "env.down.failed", &role, card_n, &trace,
-                &[("reason", "env-down-fail"), ("disposition", "died"), ("error", &err)]);
+                &[("reason", "env-down-fail"), ("failureClass", failure_class("env-down-fail")), ("disposition", "died"), ("error", &err)]);
         }
     }
     result
@@ -805,12 +808,12 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
 
     // no-werk-refuse guard (ADR-032 §4): never deploy from canonical.
     if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "deploy.refused", ",\"reason\":\"no-werk\"");
+        jsonl(home, role, card, &trace, "deploy.refused", &fail_extra("no-werk"));
         return Err(format!("no werk at {} — pull #{} first (deploy never touches canonical source)", werk.display(), card));
     }
     let cur = run_env(Some(&werk_s), &[], "git", &["-C", &werk_s, "rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
     if cur.trim() != branch {
-        jsonl(home, role, card, &trace, "deploy.refused", ",\"reason\":\"branch-mismatch\"");
+        jsonl(home, role, card, &trace, "deploy.refused", &fail_extra("branch-mismatch"));
         return Err(format!("werk {} is on '{}', not '{}'", werk.display(), cur.trim(), branch));
     }
 
@@ -1190,9 +1193,9 @@ fn detach_self_deploy(
         .filter(|t| !t.is_empty());
     if gh_token.is_none() {
         jsonl(home, role, card, trace, "gh-token-capture.failed",
-            ",\"detail\":\"parent could not capture gh auth token; detached child runs gh-less\"");
+            &format!("{},\"detail\":\"parent could not capture gh auth token; detached child runs gh-less\"", fail_extra("gh-token-capture-failed")));
         emit_spine(home, "deploy.detach.warn", role, card, trace,
-            &[("crate", name), ("reason", "gh-token-capture-failed")]);
+            &[("crate", name), ("reason", "gh-token-capture-failed"), ("failureClass", failure_class("gh-token-capture-failed"))]);
     }
     let mut cmd = Command::new(&exe);
     cmd.args(detach_argv(name, rollback))
@@ -1272,12 +1275,12 @@ fn deploy_ts_daemon_canonical(
             let _ = fs::remove_dir_all(&dist);
             let _ = fs::rename(&prev, &dist);
         }
-        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail")]);
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-build-fail"), ("failureClass", failure_class("npm-build-fail"))]);
         return Err(died(home, role, card, trace, "npm-build-fail", format!("npm run build failed for {}: {}", name, e)));
     }
     let _ = kickstart(); // bash parity: warn-only — the smoke is the gate
     if let Err(e) = smoke() {
-        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout")]);
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "smoke-timeout"), ("failureClass", failure_class("smoke-timeout"))]);
         return Err(died(home, role, card, trace, "smoke-timeout", format!("{} smoke failed after deploy: {}", name, e)));
     }
     jsonl(home, role, card, trace, "installed", &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"target\":\"canonical\"", name));
@@ -1595,7 +1598,7 @@ fn deploy_rust_service(
             if crate_source_changed(werk_s, crate_name) {
                 // All binaries match the installed cdhash but source changed this card →
                 // the rebuild didn't take. Refuse rather than ship stale.
-                jsonl(home, role, card, trace, "deploy.refused", ",\"reason\":\"cdhash-divergence\"");
+                jsonl(home, role, card, trace, "deploy.refused", &fail_extra("cdhash-divergence"));
                 return Err(format!(
                     "cdhash-divergence: rebuild of {} matches the installed cdhash but its source changed this card — stale build, refusing (werk-build invariance suspect)",
                     crate_name

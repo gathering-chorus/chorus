@@ -408,7 +408,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         Ok(_) => jsonl(home, role, card, &trace, "merge.branch.pushed",
             &format!(",\"sha\":\"{}\",\"branch\":\"{}\"", head_sha, branch)),
         Err(e) => jsonl(home, role, card, &trace, "merge.branch.push.failed",
-            &format!(",\"branch\":\"{}\",\"err\":\"{}\"", branch, e.replace('"', "'"))),
+            &format!("{},\"branch\":\"{}\",\"err\":\"{}\"", fail_extra("push-rejected"), branch, e.replace('"', "'"))),
     }
 
     // Resolve the OPEN PR for the current HEAD oid — NOT the branch name. Create one

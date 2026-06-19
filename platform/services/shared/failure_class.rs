@@ -17,7 +17,7 @@ pub fn failure_class(reason: &str) -> &'static str {
     match reason {
         // CHANGE — the code/work under test is what failed.
         "test-fail" | "gate-fail" | "build-fail" | "compile-fail" | "tsc-fail"
-        | "clippy-fail" | "review-floor-fail" | "dirty-floor-inputs" => "change",
+        | "npm-build-fail" | "clippy-fail" | "review-floor-fail" | "dirty-floor-inputs" => "change",
         // TOOLING (default) — pipeline mechanics, and anything not yet seen.
         _ => "tooling",
     }

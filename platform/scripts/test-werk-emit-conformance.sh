@@ -41,4 +41,31 @@ if phantom:
     print(f"\nFAIL (#3513): {len(phantom)} werk emit(s) not in spine-events.json — register them (Silas's schema lane).")
     sys.exit(1)
 print("OK: every werk emit is registered in spine-events.json.")
+
+# 4. failureClass conformance (#3513 Part B): every jsonl() emit of a *.failed or
+#    *.refused event must carry the DORA change-vs-tooling discriminator —
+#    failureClass — via the shared fail_extra() helper or a literal "failureClass"
+#    key. The jsonl witness is what the read side (#3497) walks; a naked failure
+#    fails loud here, by construction. (Scoped to jsonl, the durable witness;
+#    spine is best-effort. The ONE classifier lives at services/shared/failure_class.rs.)
+FAIL_EVENT = re.compile(r'"([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*\.(?:failed|refused))"')
+JSONL_STMT = re.compile(r'jsonl\((.*?)\);', re.S)
+naked = []
+for f in glob.glob(os.path.join(root, "platform/services/werk-*/src/*.rs")):
+    verb = os.path.basename(os.path.dirname(os.path.dirname(f)))
+    src = open(f).read()
+    for body in JSONL_STMT.findall(src):
+        evs = FAIL_EVENT.findall(body)
+        if not evs:
+            continue
+        if "failureClass" not in body and "fail_extra" not in body:
+            naked.append((verb, evs[0]))
+
+print(f"\nfailure jsonl emits checked for failureClass | naked: {len(naked)}")
+for verb, ev in naked:
+    print(f"  NAKED (no failureClass): {verb} -> {ev}")
+if naked:
+    print(f"\nFAIL (#3513 Part B): {len(naked)} failure emit(s) ship without failureClass — wrap the extra in fail_extra(reason).")
+    sys.exit(1)
+print("OK: every *.failed/*.refused jsonl emit carries failureClass.")
 PY

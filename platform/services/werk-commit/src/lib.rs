@@ -223,7 +223,7 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
             jsonl(home, role, card, trace, "rebase.conflict.held",
                 &format!(",\"files\":\"{}\"", files.join(",")));
             emit_spine(home, "commit.conflict", role, card, trace,
-                &[("disposition", "held"), ("reason", "rebase-conflict"), ("failureClass", failure_class("rebase-conflict")), ("files", &files.join(","))]);
+                &[("disposition", "held"), ("reason", "rebase-conflict"), ("files", &files.join(","))]);
             Err(conflict_hold_message(card, role, &files))
         }
     }
@@ -490,7 +490,7 @@ fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &P
     // downstream refuse-if-stale guard (werk-deploy / werk-merge) is the backstop.
     // --atomic skips the fetch+rebase entirely (commit-without-rebase).
     if rebase && run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]).is_err() {
-        jsonl(home, role, card, &trace, "fetch.warn", &fail_extra("fetch-failed"));
+        jsonl(home, role, card, &trace, "fetch.warn", ",\"reason\":\"fetch-failed\"");
     }
 
     let dirty = !run_in(&werk_s, "git", &["status", "--porcelain"])?.trim().is_empty();

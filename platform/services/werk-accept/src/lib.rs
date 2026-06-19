@@ -29,6 +29,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -247,7 +250,7 @@ pub fn accept_output(signal_msg: &str, finalize_msg: &str) -> String {
 /// never the session role (#3086 live proof).
 fn gate_decision(card: u64, role: &str, accepter: &str, home: &Path, trace: &str) -> R<String> {
     if !matches!(accepter, "jeff" | "wren") {
-        jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"unauthorized\"");
+        jsonl(home, role, card, trace, "decision.refused", &fail_extra("unauthorized"));
         return Err(format!("accepter '{}' may not decide #{}: only jeff/wren (DEC-048)", accepter, card));
     }
     let cj = run(&script_path(home, "cards"), &["view", &card.to_string(), "--json"])
@@ -255,12 +258,12 @@ fn gate_decision(card: u64, role: &str, accepter: &str, home: &Path, trace: &str
     let owner = match json_str_field(&cj, "owner") {
         Some(o) => o.trim().to_lowercase(),
         None => {
-            jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"owner-unresolved\"");
+            jsonl(home, role, card, trace, "decision.refused", &fail_extra("owner-unresolved"));
             return Err(format!("#{}: cannot resolve owner — refusing (can't prove non-self-accept)", card));
         }
     };
     if !can_accept(accepter, &owner) {
-        jsonl(home, role, card, trace, "decision.refused", ",\"reason\":\"self-accept\"");
+        jsonl(home, role, card, trace, "decision.refused", &fail_extra("self-accept"));
         return Err(format!(
             "accepter '{}' may not self-decide #{} (owner={}): no grading your own homework (DEC-048)",
             accepter, card, owner
@@ -303,7 +306,7 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
         ));
     }
     if status != "WIP" {
-        jsonl(home, role, card, &trace, "signal.refused", &format!(",\"reason\":\"not-wip\",\"status\":\"{}\"", status));
+        jsonl(home, role, card, &trace, "signal.refused", &format!("{},\"status\":\"{}\"", fail_extra("not-wip"), status));
         return Err(format!("#{} is '{}', not WIP — a go applies to a WIP card", card, status));
     }
     write_decision(home, card, "go", &accepter, &trace);
@@ -348,7 +351,7 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     match run(&bin_path("werk-deploy"), &["env-down", role, &card.to_string()]) {
         Ok(_) => jsonl(home, role, card, &trace, "accept.env_down", ",\"result\":\"ok\""),
         Err(e) => jsonl(home, role, card, &trace, "accept.env_down.failed",
-            &format!(",\"result\":\"fail\",\"error\":\"{}\"", e.replace('"', "'"))),
+            &format!("{},\"result\":\"fail\",\"error\":\"{}\"", fail_extra("env-down-fail"), e.replace('"', "'"))),
     }
 
     let _ = run(&script_path(home, "chorus-werk"), &["remove", role, &card.to_string()]);

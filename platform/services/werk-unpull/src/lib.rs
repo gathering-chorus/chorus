@@ -20,6 +20,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 pub type R<T> = Result<T, String>;
 
 // --- pure helpers (unit-tested) ---
@@ -192,9 +195,9 @@ pub fn unpull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String>
 
     let refuse = |step: &str, reason: &str, detail: String| -> String {
         jsonl(home, role, card, &trace, "unpull.refused",
-            &format!(",\"step\":\"{}\",\"reason\":\"{}\"", step, reason));
+            &format!(",\"step\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", step, reason, failure_class(reason)));
         emit_spine(home, "unpull.refused", role, card, &trace,
-            &[("disposition", "refuse"), ("step", step), ("reason", reason)]);
+            &[("disposition", "refuse"), ("step", step), ("reason", reason), ("failureClass", failure_class(reason))]);
         format!("{}: {}", reason, detail.lines().next().unwrap_or(""))
     };
 

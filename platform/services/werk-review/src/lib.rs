@@ -29,6 +29,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 pub type R<T> = Result<T, String>;
 
 // --- pure helpers (unit-tested) ---
@@ -255,7 +258,7 @@ pub fn floor(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     let trace = resolve_trace(card);
     let werk = werk_base.join(format!("{}-{}", role, card));
     if !werk.is_dir() {
-        jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"no-werk\"");
+        jsonl(home, role, card, &trace, "review.refused", &fail_extra("no-werk"));
         return Err(format!("no-werk: no werk for #{} at {} — pull the card first", card, werk.display()));
     }
     let werk_s = werk.to_string_lossy().to_string();
@@ -266,14 +269,14 @@ pub fn floor(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
     let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
     let base = run_in(&werk_s, "git", &["merge-base", "origin/main", "HEAD"])
         .map_err(|e| {
-            jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"dirty-floor-inputs\"");
+            jsonl(home, role, card, &trace, "review.refused", &fail_extra("dirty-floor-inputs"));
             format!("dirty-floor-inputs: cannot read the card diff (merge-base failed): {}", e)
         })?
         .trim()
         .to_string();
     let range = format!("{}..HEAD", base);
     let names = run_in(&werk_s, "git", &["diff", "--name-only", &range]).map_err(|e| {
-        jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"dirty-floor-inputs\"");
+        jsonl(home, role, card, &trace, "review.refused", &fail_extra("dirty-floor-inputs"));
         format!("dirty-floor-inputs: cannot read the card diff: {}", e)
     })?;
     let diff = run_in(&werk_s, "git", &["diff", &range]).unwrap_or_default();
@@ -292,7 +295,7 @@ pub fn floor(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> 
         })
         .count();
     if total_boxes == 0 {
-        jsonl(home, role, card, &trace, "review.refused", ",\"reason\":\"no-ac\"");
+        jsonl(home, role, card, &trace, "review.refused", &fail_extra("no-ac"));
         return Err(format!("no-ac: card #{} has no AC checkboxes — nothing to review the diff against", card));
     }
     let open = unchecked_ac(&view);

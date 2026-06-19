@@ -24,6 +24,9 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+// #3513 — the ONE shared failure classifier (failure_class / fail_extra).
+include!("../../shared/failure_class.rs");
+
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
@@ -801,7 +804,7 @@ fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
     for peer in gathers_unsent(&witness, card, role, round, &patch) {
         if let Err(e) = send_mcp_nudge(role, peer, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
-                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", peer, e.replace('"', "'")));
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", peer, e.replace('"', "'"), failure_class("nudge-fail")));
         } else {
             record_gather_sent(home, role, card, peer, round, trace);
             sent.push(peer);
@@ -922,7 +925,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
     for other in owed.iter() {
         if let Err(e) = send_mcp_nudge(role, other, card, trace) {
             jsonl(home, role, card, trace, "demo.nudge.failed",
-                  &format!(",\"to\":\"{}\",\"reason\":\"{}\"", other, e.replace('"', "'")));
+                  &format!(",\"to\":\"{}\",\"reason\":\"{}\",\"failureClass\":\"{}\"", other, e.replace('"', "'"), failure_class("nudge-fail")));
             send_failed.push(other.to_string());
         }
     }
@@ -959,7 +962,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         .map_err(|e| format!("validate: cannot read card #{}: {}", card, e))?;
     let status = json_str_field(&cj, "status").unwrap_or_default();
     if status != "WIP" && status != "Now" {
-        jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"wrong-status\"");
+        jsonl(home, role, card, &trace, "demo.refused", &fail_extra("wrong-status"));
         emit_spine_reason(home, "demo.refused", role, card, &trace, "wrong-status");
         return Err(format!("#{} is {} — must be WIP/Now to demo", card, status));
     }
@@ -968,7 +971,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let cv = run(&script_path(home, "cards"), &["view", &card_s])?;
     let (checked, total) = ac_counts(&cv);
     if total == 0 {
-        jsonl(home, role, card, &trace, "demo.refused", ",\"reason\":\"no-ac\"");
+        jsonl(home, role, card, &trace, "demo.refused", &fail_extra("no-ac"));
         emit_spine_reason(home, "demo.refused", role, card, &trace, "no-ac");
         return Err(format!("#{} has no acceptance criteria", card));
     }
@@ -1027,7 +1030,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         let absent = gates_missing(&witness, card, &round, &patch);
         if !absent.is_empty() {
             jsonl(home, role, card, &trace, "demo.refused",
-                  &format!(",\"reason\":\"gates-missing\",\"missing\":\"{}\"", absent.join(",")));
+                  &format!("{},\"missing\":\"{}\"", fail_extra("gates-missing"), absent.join(",")));
             emit_spine_reason(home, "demo.refused", role, card, &trace, "gates-missing");
             return Ok(DemoOutcome {
                 message: format!(
@@ -1211,7 +1214,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         "-d", &test_surface_body,
     ]) {
         jsonl(home, role, card, &trace, "demo.bridge.failed",
-              &format!(",\"reason\":\"test_surface:{}\"", e.replace('"', "'")));
+              &format!(",\"reason\":\"test_surface:{}\",\"failureClass\":\"{}\"", e.replace('"', "'"), failure_class("bridge-fail")));
     }
     emit_spine(home, "demo.test_surface.ready", role, card, &trace);
     jsonl(home, role, card, &trace, "demo.test_surface.ready", "");
@@ -1252,7 +1255,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         ],
     ) {
         jsonl(home, role, card, &trace, "demo.bridge.failed",
-              &format!(",\"reason\":\"{}\"", e.replace('"', "'")));
+              &format!(",\"reason\":\"{}\",\"failureClass\":\"{}\"", e.replace('"', "'"), failure_class("bridge-fail")));
     }
     jsonl(home, role, card, &trace, "demo.ready_for_review", "");
 
