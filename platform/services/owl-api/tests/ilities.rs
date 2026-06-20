@@ -62,7 +62,7 @@ fn adr040_passes_conformant_input() {
 #[test]
 fn openapi_is_valid_json_with_paths_and_typed_properties() {
     let spec = openapi_json(&table());
-    assert!(spec.contains("\"openapi\": \"3.0.3\""));
+    assert!(spec.contains("\"openapi\": \"3.1.0\""));
     // every generated route appears as a path
     assert!(spec.contains("\"/domains\""));
     assert!(spec.contains("\"/domains/{name}\""));
