@@ -39,6 +39,11 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("product", "Product", true),
     ("domain", "Domain", true),
     ("role", "Role", false),
+    // #3522 (Wren, Jeff-authorized 2026-06-20) — ValueStream is a generated owl-api
+    // surface + SHACL shape but was missing from the DAL mint-allowlist (the
+    // generate-vs-write drift). Type-prefixed like value-stream-step (mints
+    // value-stream-<name>). PROVISIONAL pending Silas's ADR-040/OWL-DBA blessing.
+    ("value-stream", "ValueStream", false),
     ("value-stream-step", "ValueStreamStep", false),
     ("service", "Service", false),
     ("principle", "Principle", false),
