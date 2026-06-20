@@ -356,7 +356,8 @@ if (require.main === module) {
   //    inspect/drain pathway preserved, deploy-time spine stays quiet.
   //    When enabled, requeue is the explicit deliberate operator action.
   // 3. app.listen — only after smoke + (optional) scan complete
-  (async () => {
+  // `void`: deliberate fire-and-forget boot IIFE (self-handles errors + process.exit).
+  void (async () => {
     try {
       await worker.startupSmoke();
     } catch (e) {

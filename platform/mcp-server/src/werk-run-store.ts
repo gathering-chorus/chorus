@@ -25,7 +25,7 @@ function runPath(dir: string, card: number): string {
 export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
   try {
     const raw = readFileSync(runPath(dir, card), 'utf8');
-    const obj = JSON.parse(raw) as WerkRun;
+    const obj = JSON.parse(raw) as WerkRun | null;
     if (obj && typeof obj.card === 'number' && typeof obj.phase === 'string') return obj;
     return null;
   } catch {
