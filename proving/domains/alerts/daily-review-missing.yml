@@ -42,7 +42,7 @@ action: |
   touch "$COOLDOWN_FILE"
   # Nudge Silas — alerts go to roles, not the Clearing
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "daily-review: did not fire by 6:30am. Fix: check launchctl list | grep daily-review, check ~/Library/Logs/daily-review.log, run review manually if LaunchAgent is unloaded" 2>/dev/null || true
+  "$OPS_NUDGE" silas "daily-review: no 'ops.review.completed' event for today's date in chorus.log as of 06:30" 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] daily review did not fire' --arg from 'system' '{from: $from, text: $text}')" \

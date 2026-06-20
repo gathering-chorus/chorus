@@ -19,10 +19,11 @@ check: |
   WORKFLOW="${CI_MAIN_RED_WORKFLOW:-quality.yml}"
 
   if [ -z "${GH_TOKEN:-}" ]; then
-    # Token absent — alert can't run but shouldn't fire false-red. Treat
-    # as ok and surface a separate config alert if Silas wants one.
-    echo "ok"
-    exit 0
+    # #3519 — Token absent = CI state is UNVERIFIABLE, not ok. Silently
+    # returning ok is a false-negative: a genuinely red main never surfaces.
+    # Report the observation (can't see CI) instead of guessing it's fine.
+    echo "unverifiable:GH_TOKEN-absent"
+    exit 1
   fi
 
   RESULT=$(curl -sf --max-time 10 \
@@ -65,4 +66,4 @@ action: |
   fi
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "ci-main-red: quality workflow failing on main. Check: gh run list --branch main --workflow quality.yml" 2>/dev/null || true
+  "$OPS_NUDGE" silas "ci-main-red: $STATUS (quality.yml on main — red:<url> means completed+failure; unverifiable:GH_TOKEN-absent means CI state could not be checked)" 2>/dev/null || true
