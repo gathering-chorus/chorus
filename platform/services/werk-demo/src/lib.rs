@@ -253,6 +253,20 @@ pub fn announce_ready_full(witness: &str, card: u64, role: &str, round: &str, pa
     skip || (gates_missing(witness, card, round, patch_id).is_empty() && gathers_missing(witness, card, role, round, patch_id).is_empty())
 }
 
+/// #3519 — THE WITNESS-GATED LAND predicate. demo() present-and-exits (ALWAYS exit 2,
+/// #3279/#3511) and so can never signal "proven" through its exit code; but werk.yml gated
+/// the merge on demo exit-0 (#3499). The two contradict → the merge step never fired →
+/// nothing landed. This is the predicate the merge keys on INSTEAD: the land is proven iff,
+/// for THIS patch, the witness shows every required gate + both peer gathers replied
+/// (announce_ready_full) AND Jeff's recorded go (jeff_go_recorded). All matching is patch-
+/// keyed (line_keyed, #3461) so it survives the concurrent rebases that churn the round-sha.
+/// Pure + unit-tested (tests/3519-verdict.rs). Reconciles #3499 (gate the land) with #3511
+/// (present-and-exit): demo presents, the go records, verdict reads the witness, merge lands.
+pub fn verdict_proven(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> bool {
+    announce_ready_full(witness, card, role, round, patch_id, false)
+        && jeff_go_recorded(witness, card, round, patch_id)
+}
+
 /// The two peer roles owed a 4-question gather for this demo: everyone but the
 /// demoer. (jeff is the prover, not a gather peer.)
 pub fn gather_peers(role: &str) -> Vec<&'static str> {
@@ -1886,6 +1900,34 @@ pub fn run_demo() -> R<DemoOutcome> {
         return Ok(DemoOutcome {
             message: format!("Jeff's GO recorded for #{} (round {}) — the demo releases to merge.", card, round),
             exit: 0,
+        });
+    }
+
+    if first == "verdict" {
+        // #3519 — THE WITNESS-GATED LAND, the verb werk.yml's merge now keys on (replacing
+        // the demo-exit-0 gate that can never fire). Reads the witness and returns exit 0 iff
+        // verdict_proven — gates + both peer gathers + Jeff's go, all patch-keyed for THIS
+        // round. demo() still present-and-exits (#3511); the go records (`werk-demo go`);
+        // THIS reads the witness and decides the land. Exit 2 = presented-not-landed (a clean
+        // green stop, not an error), mirroring demo()'s present-and-exit contract.
+        let card: u64 = args
+            .next()
+            .and_then(|s| s.parse().ok())
+            .ok_or("usage: werk-demo verdict <card>")?;
+        let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+        let round = current_round(role.trim(), card);
+        let patch = current_patch_id(card);
+        let proven = verdict_proven(&witness, card, role.trim(), &round, &patch);
+        return Ok(DemoOutcome {
+            message: if proven {
+                format!("[verdict] #{} PROVEN (round {}) — gates + gathers + Jeff's go all on the witness for this patch → land.", card, round)
+            } else {
+                let mut missing: Vec<&str> = Vec::new();
+                if !announce_ready_full(&witness, card, role.trim(), &round, &patch, false) { missing.push("gates/gathers"); }
+                if !jeff_go_recorded(&witness, card, &round, &patch) { missing.push("jeff-go"); }
+                format!("[verdict] #{} NOT proven (round {}) — witness missing: [{}]. Presented, not landed.", card, round, missing.join(", "))
+            },
+            exit: if proven { 0 } else { 2 },
         });
     }
 

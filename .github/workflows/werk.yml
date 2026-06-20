@@ -138,32 +138,35 @@ jobs:
 
       - name: demo
         id: demo
-        # werk-demo PROVES in-run (#3499): runs the gates, sends the gathers, and when go==true
-        # BLOCKS-POLL on the witness until both gathers reply (same round → zero churn) or
-        # CHORUS_DEMO_BLOCK_TIMEOUT (600s). GO passed AT INVOKE as the 2nd positional.
-        # Its exit code IS the gate — mapped to the `proven` output that gates the land steps.
+        # #3519 — THE WITNESS-GATED LAND. Three separable steps, one source of truth (the
+        # witness ops/logs/werk-demo.jsonl):
+        #   1. RECORD the human GO. #3511 retired the at-invoke go-flag (werk-demo ignores the
+        #      2nd positional), and the /cw land path was never reconnected to the go-RECORDING
+        #      (`werk-demo go`) — so Jeff's go was never written. Recorded under ACCEPTER (not
+        #      ROLE) so #3511's self-accept guard stays closed; GO without accepter is refused.
+        #   2. PRESENT the variant — demo() ALWAYS exits 2 (present-and-exit, #3279/#3511). Its
+        #      exit code is NOT the land gate (that was the #3499/#3511 contradiction: merge gated
+        #      on a demo exit-0 that can never come → nothing landed, 101 historically vs 0 recent).
+        #   3. VERDICT — `werk-demo verdict` reads the WITNESS and exits 0 iff gates + both peer
+        #      gathers + Jeff's go are recorded for THIS patch-id (patch-keyed → survives the
+        #      concurrent rebases that churn the round-sha). proven keys on THIS, not demo's exit.
         run: |
           set +e
-          # #3519 — RECORD the human GO before the prove step. #3511 retired the at-invoke
-          # go-flag (werk-demo's dispatch parses only the card and IGNORES the 2nd positional),
-          # but the /cw land path was never reconnected to the go-RECORDING (`werk-demo go`).
-          # So Jeff's go via `/cw <card> go` was never written → jeff_go_recorded found nothing
-          # → exit 2 → re-present (it was NOT round-churn; the go simply never recorded).
-          # Recorded under ACCEPTER (not ROLE) so #3511's self-accept guard stays closed:
-          # the witness is the human authority, never the builder. Recorded here (after the
-          # commit-step rebase) so round+patch_id match the round the prove step checks.
           case "${GO}" in
             true|go|yes|GO)
               if [ -z "${ACCEPTER}" ]; then echo "[demo] GO with no accepter — refusing (DEC-048)"; exit 1; fi
               PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ACCEPTER}" werk-demo go "${CARD_ID}" ;;
           esac
           PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
-          rc=$?
+          drc=$?
+          if [ "$drc" != 0 ] && [ "$drc" != 2 ]; then echo "[demo] present error rc=$drc"; exit "$drc"; fi
+          PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo verdict "${CARD_ID}"
+          vrc=$?
           set -e
-          case "$rc" in
-            0) echo "proven=true"  >> "$GITHUB_OUTPUT"; echo "[demo] proven + go → landing." ;;
-            2) echo "proven=false" >> "$GITHUB_OUTPUT"; echo "[demo] presented, NOT landed (present-only / no-go / timeout)." ;;
-            *) echo "[demo] error rc=$rc"; exit "$rc" ;;
+          case "$vrc" in
+            0) echo "proven=true"  >> "$GITHUB_OUTPUT"; echo "[demo] witness PROVEN (gates+gathers+go for this patch) → landing." ;;
+            2) echo "proven=false" >> "$GITHUB_OUTPUT"; echo "[demo] presented, NOT landed (witness missing gates/gathers/go for this patch)." ;;
+            *) echo "[demo] verdict error rc=$vrc"; exit "$vrc" ;;
           esac
 
       # ═══ land to prod — prod is a build of MAIN. Runs ONLY if the demo proved (go==true). ═══
