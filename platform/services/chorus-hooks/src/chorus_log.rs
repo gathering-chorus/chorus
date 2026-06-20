@@ -228,6 +228,13 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     );
 
     let path = PathBuf::from(&log_file());
+    // #3528 — self-heal the parent dir. `create(true)` makes the file but not
+    // its directory; on a fresh machine (or CI with an overridden HOME and no
+    // `.chorus/` subdir) the open() fails and we drop the event. create_dir_all
+    // is idempotent and cheap, so the spine write never fails for a missing dir.
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     match fs::OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut f) => {
             // #3278 — ONE atomic O_APPEND write (line+newline in a single buffer).
