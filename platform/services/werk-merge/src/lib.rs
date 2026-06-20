@@ -310,6 +310,51 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extr
         .output();
 }
 
+/// #3517 slice 1 (ADR-049) — the cicd→build/deploy TRIGGER, emitted INLINE from werk-merge
+/// (FORK 1: inline, not a watcher — a watcher is a second runner that drifts, #3531).
+/// Fired at EVERY success return — including the idempotent no-ops — so a transport-dropped
+/// land SELF-HEALS on re-run (deploy is idempotent on its half: no-op when running==built).
+/// `landed_commit` is the origin/main sha werk-merge already resolved ("from main, not the
+/// slot" — already true; we EMIT it, never recompute). `changedUnits` is the dependency-
+/// driven deploy set that retires the hardcoded allowlist.
+fn emit_landed_trigger(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, landed_commit: &str) {
+    let units = changed_units(werk_s, landed_commit);
+    jsonl(home, role, card, trace, "merge.landed",
+        &format!(",\"landedCommit\":\"{}\",\"changedUnits\":\"{}\"", landed_commit, units));
+    emit_spine(home, "merge.landed", role, card, trace,
+        &[("landedCommit", landed_commit), ("changedUnits", &units)]);
+}
+
+/// The git-diff (impure) half: `git diff --name-only landed~1..landed` → `units_from_files`.
+/// A root/orphan commit yields a git error → `unwrap_or_default` → empty units (safe).
+fn changed_units(werk_s: &str, landed_commit: &str) -> String {
+    let files = run_in(werk_s, "git",
+        &["diff", "--name-only", &format!("{}~1", landed_commit), landed_commit])
+        .unwrap_or_default();
+    units_from_files(&files)
+}
+
+/// #3517 — PURE: changed file list → the dependency-driven deploy set (`crate:<c>` / `pkg:<p>`),
+/// deduped. REUSES werk.yml's affected-unit prefixes (cargo: platform/services/<crate>; the
+/// fixed TS pkg set) — ONE mapping, no competing impl. Unit-tested (units.rs).
+pub fn units_from_files(files: &str) -> String {
+    let mut units: Vec<String> = Vec::new();
+    let push = |u: String, units: &mut Vec<String>| { if !units.contains(&u) { units.push(u); } };
+    for line in files.lines() {
+        if let Some(rest) = line.strip_prefix("platform/services/") {
+            if let Some(c) = rest.split('/').next().filter(|s| !s.is_empty()) {
+                push(format!("crate:{}", c), &mut units);
+            }
+        }
+        for pkg in ["platform/api", "platform/chorus-sdk", "platform/pulse", "platform/workflow-engine"] {
+            if line.starts_with(&format!("{}/", pkg)) {
+                push(format!("pkg:{}", pkg), &mut units);
+            }
+        }
+    }
+    units.join(",")
+}
+
 /// Entry: parse the contract args (`werk-merge <card> <role> [--atomic]`, role falls
 /// back to $DEPLOY_ROLE) + env, then run the verb. The accepter (who authorized) comes
 /// from $ACCEPTER — the land sets it; `--atomic` operators set it explicitly.
@@ -371,6 +416,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     if let Some(pr) = merged_pr_for_sha(&werk_s, &branch, &head_sha) {
         let main_sha = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).unwrap_or_default().trim().to_string();
         jsonl(home, role, card, &trace, "merge.idempotent", &format!(",\"pr\":{},\"sha\":\"{}\"", pr, main_sha));
+        emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — self-heal: fire on idempotent no-op
         return Ok(main_sha);
     }
 
@@ -389,6 +435,7 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
         let main_sha = run_in(&werk_s, "git", &["rev-parse", "origin/main"]).unwrap_or_default().trim().to_string();
         jsonl(home, role, card, &trace, "merge.idempotent",
             &format!(",\"reason\":\"content-on-main\",\"sha\":\"{}\"", main_sha));
+        emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — self-heal: content-on-main re-triggers deploy
         return Ok(main_sha);
     }
 
@@ -532,5 +579,6 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     );
 
     jsonl(home, role, card, &trace, "merge.completed", &format!(",\"pr\":{},\"sha\":\"{}\"", pr, main_sha));
+    emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — real-merge land fires the deploy trigger
     Ok(main_sha)
 }

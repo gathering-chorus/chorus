@@ -46,6 +46,87 @@ fn write_exec(path: &Path, body: &str) {
 }
 fn read(p: &Path) -> String { fs::read_to_string(p).unwrap_or_default() }
 
+/// #3517 inc2 — a FRESH canonical-deploy fixture for the running-proof tests: shims (incl the `ps`
+/// shim whose lstart is driven by $CHORUS_TEST_LSTART), a git origin+home clone, and the werk
+/// silas-7001 carrying the chorus-inject crate + a committed com.chorus.inject.plist (which forces
+/// target_class_in → RustService → the daemon path, so resolve_restarted runs). Marker removed →
+/// the deploy runs FULLY (install→verify), never the unchanged-skip. Each outcome test gets its
+/// OWN fixture (hermetic-by-construction; no shared marker to leak across Ok/Stale/Unknown).
+/// Returns (home, werk_base). Caller holds ENV_LOCK + sets $CHORUS_TEST_LSTART for the outcome.
+fn canon_running_proof_fixture() -> (PathBuf, PathBuf) {
+    let bin = tmp("bin");
+    let logd = tmp("logs");
+    let bs = logd.join("build");
+    let inst = logd.join("install");
+    let lc = logd.join("launchctl");
+    let marker = logd.join("installed.marker");
+    std::env::set_var("CS_MARKER", marker.to_str().unwrap());
+    write_exec(&bin.join("werk-build"), &format!("#!/bin/sh\necho \"$@\" >> {bs:?}\necho 'chorus-inject=DEADBEEF'\n"));
+    write_exec(&bin.join("chorus-bin-install"), &format!("#!/bin/sh\necho \"$@\" >> {inst:?}\ntouch \"$CS_MARKER\"\nexit 0\n"));
+    write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nif [ \"$1\" = print ]; then echo 'state = running'; echo 'pid = 123'; fi\nexit 0\n"));
+    write_exec(&bin.join("codesign"), &format!("#!/bin/sh\ncase \"$*\" in\n  *target/release*) echo \"CDHash=${{CS_BUILT:-DEADBEEF}}\" ;;\n  *) if [ -f \"$CS_MARKER\" ]; then echo \"CDHash=${{CS_CDHASH:-DEADBEEF}}\"; else echo \"CDHash=${{CS_PRE:-OLD000}}\"; fi ;;\nesac\n"));
+    // ps shim: real `date` parses its lstart (the LC_ALL=C parse stays exercised). OLD→-1y→Stale,
+    // EMPTY→none→Unknown, default→+1y→restarted→Ok.
+    write_exec(&bin.join("ps"), "#!/bin/sh\ncase \"$*\" in\n  *lstart*)\n    case \"${CHORUS_TEST_LSTART:-FUTURE}\" in\n      OLD) date -v-1y '+%a %b %d %H:%M:%S %Y' ;;\n      EMPTY) : ;;\n      *) date -v+1y '+%a %b %d %H:%M:%S %Y' ;;\n    esac ;;\n  *) exit 0 ;;\nesac\n");
+    write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::remove_var("CHORUS_TRACE_ID");
+
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
+    fs::write(origin.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
+    fs::write(origin.join("platform/services/chorus-inject/src/lib.rs"), "// v0\n").unwrap();
+    fs::create_dir_all(origin.join("config/launchagents")).unwrap();
+    fs::write(origin.join("config/launchagents/com.chorus.inject.plist"), "<plist><string>chorus-inject</string></plist>").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    let home = tmp("home");
+    assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()]).status().unwrap().success());
+    let werk_base = tmp("werk");
+    std::env::set_var("CHORUS_BIN", tmp("chorusbin").to_str().unwrap());
+    std::env::set_var("WERK_SILAS_BIN", tmp("werkbin").to_str().unwrap());
+    std::env::set_var("CHORUS_DEPLOY_LIVENESS_TIMEOUT_S", "3");
+    std::env::set_var("CHORUS_HOME", home.to_str().unwrap());
+    let werk = werk_base.join("silas-7001");
+    git(&home, &["worktree", "add", "-q", "-b", "silas/7001", werk.to_str().unwrap(), "origin/main"]);
+    fs::write(werk.join("platform/services/chorus-inject/src/lib.rs"), "// w\n").unwrap();
+    git(&werk, &["add", "."]);
+    git(&werk, &["commit", "-q", "-m", "chorus-inject"]);
+    let _ = fs::remove_file(&marker); // installed reads OLD until install → FULL deploy, not skip
+    (home, werk_base)
+}
+
+// #3517 inc2 — the 06-04 STALE-DAEMON catch, ISOLATED: installed==built but the daemon did NOT
+// restart onto the new binary (codesign-on-path alone would false-pass it). ps-shim → OLD lstart
+// (< install_epoch) → restarted=false → Stale → kickstart -k ONCE → re-resolve (still OLD) → Err.
+// The must-test case: proves the running-proof + bounded-retry-then-Err end-to-end.
+#[test]
+fn e2e_running_proof_stale_daemon_reds() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let (home, werk_base) = canon_running_proof_fixture();
+    std::env::set_var("CHORUS_TEST_LSTART", "OLD");
+    let e = deploy(7001, "silas", "canonical", &home, &werk_base)
+        .expect_err("stale daemon (didn't restart onto the built binary) must RED, not pass");
+    std::env::remove_var("CHORUS_TEST_LSTART");
+    std::env::remove_var("CHORUS_HOME");
+    assert!(e.contains("stale-running") || e.contains("did not reload"), "06-04 stale gate fires: {}", e);
+}
+
+// #3517 inc2 — UNKNOWN, ISOLATED: PID/start-time unresolvable → RED (never silent-pass).
+#[test]
+fn e2e_running_proof_unknown_pid_reds() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let (home, werk_base) = canon_running_proof_fixture();
+    std::env::set_var("CHORUS_TEST_LSTART", "EMPTY");
+    let e = deploy(7001, "silas", "canonical", &home, &werk_base)
+        .expect_err("unresolvable running process must RED (unknown=RED)");
+    std::env::remove_var("CHORUS_TEST_LSTART");
+    std::env::remove_var("CHORUS_HOME");
+    assert!(e.contains("unknown=RED") || e.contains("runtime unverified"), "unknown=RED gate fires: {}", e);
+}
+
 #[test]
 fn e2e_deploy_both_slots_and_guards() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -62,6 +143,12 @@ fn e2e_deploy_both_slots_and_guards() {
     // launchctl shim: log argv; answer `print` with a live job (state=running + pid) so
     // the #3317 post-kickstart liveness gate (bash #3232 port) sees the daemon up.
     write_exec(&bin.join("launchctl"), &format!("#!/bin/sh\necho \"$@\" >> {lc:?}\nif [ \"$1\" = print ]; then echo 'state = running'; echo 'pid = 123'; fi\nexit 0\n"));
+    // #3517 inc2 — ps shim: resolve_restarted runs REAL `ps -p <pid> -o lstart=` against the
+    // launchctl-shim's pid; answer with a controlled lstart so the e2e exercises the REAL LC_ALL=C
+    // lstart→date-j parse (the fragile bit). Default +1y (>= install_epoch) → restarted → Ok.
+    // $CHORUS_TEST_LSTART overrides: OLD → -1y → Stale; EMPTY → no output → None → Unknown.
+    write_exec(&bin.join("ps"),
+        "#!/bin/sh\ncase \"$*\" in\n  *lstart*)\n    case \"${CHORUS_TEST_LSTART:-FUTURE}\" in\n      OLD) date -v-1y '+%a %b %d %H:%M:%S %Y' ;;\n      EMPTY) : ;;\n      *) date -v+1y '+%a %b %d %H:%M:%S %Y' ;;\n    esac ;;\n  *) exit 0 ;;\nesac\n");
     // #3179 — path-aware: codesign of the WERK's BUILT file (…/target/release/…) is
     // always the freshly-built hash ($CS_BUILT, default DEADBEEF, matching werk-build's
     // echo). codesign of the INSTALLED file is marker-based: post-install/new

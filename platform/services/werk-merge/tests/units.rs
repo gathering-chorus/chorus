@@ -7,8 +7,27 @@
 
 use werk_merge::{
     branch_name, classify_merge_error, failure_class, jsonl_line, parse_merge_args, pr_number_for_sha,
-    require_approval,
+    require_approval, units_from_files,
 };
+
+// #3517 slice 1 — changedUnits mapping (the dependency-driven deploy set; the PURE half of
+// changed_units). Kade's Part-D test, made unit-testable by the pure/impure split.
+#[test]
+fn units_from_files_maps_crates_and_pkgs_deduped() {
+    let files = "platform/services/werk-merge/src/lib.rs\nplatform/api/handlers/x.ts\nplatform/services/werk-merge/tests/units.rs\nplatform/chorus-sdk/y.ts\nREADME.md";
+    let units = units_from_files(files);
+    assert!(units.contains("crate:werk-merge"), "got: {units}");
+    assert_eq!(units.matches("crate:werk-merge").count(), 1, "deduped across two werk-merge files — got: {units}");
+    assert!(units.contains("pkg:platform/api"), "got: {units}");
+    assert!(units.contains("pkg:platform/chorus-sdk"), "got: {units}");
+    assert!(!units.contains("README"), "non-unit files ignored — got: {units}");
+}
+
+#[test]
+fn units_from_files_empty_when_no_units() {
+    assert_eq!(units_from_files(""), "");
+    assert_eq!(units_from_files("docs/foo.md\nrandom.txt"), "", "non-unit paths → empty set");
+}
 
 #[test]
 fn branch_name_is_role_slash_card() {

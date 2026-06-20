@@ -74,6 +74,21 @@ pub fn resolve_trace(card: u64) -> String {
 
 /// Parse `--target werk|canonical` from args; default canonical (prod), mirroring
 /// chorus-deploy. werk = test-in-demo (role slot, no kickstart); canonical = test-in-prod.
+/// #3517 — parse the optional `--landedCommit <sha>` flag. None = flag ABSENT (a manual / --atomic
+/// recovery deploy not via the pipeline → ungated, skip the one-sha gate). Some(value) = flag PRESENT
+/// (the pipeline passed it; value may be "" if the werk.yml capture failed → Some("") → RED, never
+/// silent-pass). Mirrors parse_target's argv scan exactly — no new path, no competing impl.
+pub fn parse_landed_commit(args: &[String]) -> Option<String> {
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--landedCommit" {
+            return Some(args.get(i + 1).cloned().unwrap_or_default());
+        }
+        i += 1;
+    }
+    None
+}
+
 pub fn parse_target(args: &[String]) -> R<&'static str> {
     let mut i = 0;
     while i < args.len() {
@@ -704,7 +719,10 @@ pub fn run_deploy() -> R<String> {
             &[("approver", approver.as_str()), ("atomic", if atomic { "true" } else { "false" })],
         );
     }
-    deploy(card, &role, target, &home, &werk_base)
+    // #3517 — thread the pipeline's landedCommit (--landedCommit) so deploy_canonical's verify
+    // gates deployed-commit == landedCommit. Absent (manual/--atomic recovery) → None → ungated.
+    let landed = parse_landed_commit(&argv);
+    deploy_with_landed(card, &role, target, &home, &werk_base, landed.as_deref())
 }
 
 /// #3092 — werk-deploy env-up <role> [card]
@@ -799,6 +817,16 @@ fn parse_optional_card(args: &[String]) -> Option<u64> {
 /// The whole verb, all inputs explicit (testable: deps injected via PATH — real or
 /// shimmed werk-build / chorus-bin-install / launchctl / codesign).
 pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path) -> R<String> {
+    // #3517 — manual/test/--atomic-recovery deploys carry NO pipeline landedCommit → ungated
+    // (None = skip the one-sha gate; there's no pipeline-landed sha to verify against).
+    deploy_with_landed(card, role, target, home, werk_base, None)
+}
+
+/// #3517 — deploy with the pipeline's landedCommit threaded for the one-sha verify gate.
+/// `landed_commit`: None = manual/recovery (skip gate); Some(sha) = pipeline land (deploy_canonical
+/// gates deployed-commit == landedCommit); Some("") = pipeline-passed-but-capture-failed (RED).
+#[allow(clippy::too_many_arguments)]
+pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path, landed_commit: Option<&str>) -> R<String> {
     let trace = resolve_trace(card);
     let branch = branch_name(role, card);
     let werk = werk_base.join(format!("{}-{}", role, card));
@@ -825,7 +853,7 @@ pub fn deploy(card: u64, role: &str, target: &str, home: &Path, werk_base: &Path
     // path needed: a build of main can't ship a stale werk tree, so there is nothing to be
     // stale against. The werk is still read here, but ONLY to derive which crates changed.
     if target == "canonical" {
-        return deploy_canonical(home, &werk_s, role, card, &trace);
+        return deploy_canonical(home, &werk_s, role, card, &trace, landed_commit);
     }
 
     // serialize all system mutation under one lock.
@@ -919,6 +947,57 @@ pub fn card_from_subject(subject: &str) -> u64 {
 /// neither behind nor ahead. Pure half, unit-testable.
 pub fn live_main_flag(behind: u64, ahead: u64) -> &'static str {
     if behind == 0 && ahead == 0 { "true" } else { "false" }
+}
+
+/// #3517 — the one-sha invariant gate, PURE half (inc1). `deployed` = the origin/main HEAD the
+/// build/deploy ran against; `landed` = the trigger's landedCommit threaded forward through
+/// werk.yml. RED (false) when they differ (main advanced between trigger and build = drift) OR
+/// when `landed` is EMPTY (the werk.yml capture failed → unresolvable → "unknown"=RED, never
+/// silent-pass — the claimed≠verified rule at the anchor layer). The one-sha invariant is proven
+/// HERE at the verify, not via a risky checkout (#2706 shared-HEAD / detached-HEAD class).
+pub fn landed_commit_ok(deployed: &str, landed: &str) -> bool {
+    !landed.trim().is_empty() && deployed.trim() == landed.trim()
+}
+
+/// #3517 inc2 — the running-proof verdict (the 2026-06-04 stale-daemon catcher), PURE core.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RunVerdict {
+    /// running == built — the daemon restarted onto the built file, or it's a one-shot CLI verb.
+    Ok,
+    /// installed != built — a broken install → rollback + Err (regardless of process state).
+    Mismatch,
+    /// the daemon did NOT restart since the deploy (old inode) → kickstart -k ONCE → re-decide.
+    Stale,
+    /// PID / start-time unresolvable → RED (the contract's "unknown" = RED).
+    Unknown,
+}
+
+/// #3517 inc2 — decide whether the ACTUALLY-RUNNING binary is the one we built. macOS exposes NO
+/// CLI to read a running process's in-memory cdhash: codesign reads the FILE at a path, and an
+/// atomic-move install makes codesign(program-path) == built REGARDLESS of whether the daemon
+/// restarted. So path-cdhash ALONE false-passes a stale (non-restarted) daemon — exactly the
+/// 2026-06-04 outage. "running == built" can only be proven as (installed == built) AND (the
+/// process RESTARTED onto that file). `restarted` — not the codesign — is what actually catches
+/// stale. CLI verbs are one-shot (no running process) → install-verify (inc1) is their proof → Ok.
+/// `restarted` is computed in the thin shell (start_epoch >= install_epoch, from LC_ALL=C
+/// lstart→date-j); None = unresolvable PID → Unknown (RED). Pure so the 5 branches unit-test hard.
+pub fn running_verdict(
+    class_is_daemon: bool,
+    built: &str,
+    installed: &str,
+    restarted: Option<bool>,
+) -> RunVerdict {
+    if !class_is_daemon {
+        return RunVerdict::Ok; // one-shot CLI — no live process; install-verify already gated it
+    }
+    if installed != built {
+        return RunVerdict::Mismatch; // broken install, regardless of the process state
+    }
+    match restarted {
+        None => RunVerdict::Unknown,        // can't resolve the live process → RED
+        Some(true) => RunVerdict::Ok,       // restarted onto the built file
+        Some(false) => RunVerdict::Stale,   // did not restart = old inode = stale (06-04)
+    }
 }
 
 fn live_main(root: &str) -> &'static str {
@@ -1454,7 +1533,7 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// derive which crates changed (merge-base diff — survives the squash-merge: the merge-base
 /// is the stable fork point even after origin/main moves ahead). NOTHING is built from the
 /// werk: prod binaries are structurally a build of main (the merged≠live fix).
-fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str) -> R<String> {
+fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, landed_commit: Option<&str>) -> R<String> {
     let _ = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "fetch", "-q", "origin", "main"]);
     let base = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "merge-base", "origin/main", "HEAD"])
         .map(|s| s.trim().to_string())
@@ -1548,8 +1627,34 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     }
 
     let only = labels.join(",");
+
+    // #3517 — the one-sha invariant GATE (AC5). The canonical deploy built origin/main HEAD;
+    // verify it == the trigger's landedCommit so "what ran == the card's landed sha", end to end.
+    // None = manual/--atomic recovery deploy (no pipeline sha to verify against → ungated).
+    // Some(landed): commitVerified iff deployed-HEAD == landed AND landed non-empty.
+    let root = canonical_root_path(home);
+    let deployed_commit = run_env(Some(root.as_str()), &[], "git",
+        &["-C", root.as_str(), "rev-parse", "origin/main"])
+        .unwrap_or_default().trim().to_string();
+    let commit_verified = match landed_commit {
+        None => true, // ungated manual/recovery deploy — nothing to verify against
+        Some(landed) => landed_commit_ok(&deployed_commit, landed),
+    };
     jsonl(home, role, card, trace, "deploy.completed",
-        &format!(",\"target\":\"canonical\",\"deployed\":\"{}\"", only));
+        &format!(",\"target\":\"canonical\",\"deployed\":\"{}\",\"landedCommit\":\"{}\",\"deployedCommit\":\"{}\",\"commitVerified\":{}",
+            only, landed_commit.unwrap_or(""), deployed_commit, commit_verified));
+    if !commit_verified {
+        // Commit-DRIFT (deployed = valid newer-main != landedCommit) or EMPTY landedCommit (the
+        // werk.yml capture failed) → RED the card, Err-ONLY (NO rollback). Principle (Kade, #3517):
+        // ROLLBACK IS FOR A BROKEN RUNTIME, NOT FOR A VALID-BUT-NOT-MY-EXACT-SHA — degrading a valid
+        // newer-main binary to an older one over a metadata/claim problem is strictly worse. The
+        // cdhash-MISMATCH (broken install) case keeps its per-unit rollback above; this is distinct.
+        // Self-heals: the idempotent re-trigger resolves landedCommit = current HEAD → green on re-run.
+        return Err(format!(
+            "one-sha gate RED: deployed origin/main HEAD '{}' != landedCommit '{}' (commit drift, or empty = werk.yml capture failed) — card not verified against its landed sha; runtime left valid, re-run to self-heal",
+            deployed_commit, landed_commit.unwrap_or("")
+        ));
+    }
     Ok(format!("{} target=canonical", only))
 }
 
@@ -1570,6 +1675,38 @@ fn file_cdhash(path: &str) -> Option<String> {
     run_env(None, &[], "codesign", &["-d", "--verbose=4", path])
         .ok()
         .and_then(|o| extract_running_cdhash(&o))
+}
+
+/// #3517 — current unix epoch (seconds). The install_epoch baseline for the inc2 running-proof.
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// #3517 inc2 — did the daemon's LIVE process restart onto the just-installed file? Impure
+/// (launchctl/ps/date), thin wrapper over the pure `running_verdict`. None = PID unresolvable
+/// (→ Unknown → RED). Resolves an ABSOLUTE start_epoch via LC_ALL=C lstart→date-j (verified across
+/// hooks/api/clearing; LC_ALL=C pins the %a/%b parse so it can't locale-drift), then compares
+/// start_epoch >= install_epoch. macOS exposes no in-memory cdhash, so restart-after-install is the
+/// actual proof that the running binary == the built one (path-codesign alone false-passes stale).
+fn resolve_restarted(svc: &str, install_epoch: u64) -> Option<bool> {
+    let print = run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), svc)])
+        .unwrap_or_default();
+    let pid = print
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("pid = ").map(|s| s.trim().to_string()))?;
+    let lstart = run_env(None, &[("LC_ALL", "C")], "ps", &["-p", &pid, "-o", "lstart="]).unwrap_or_default();
+    let lstart = lstart.trim();
+    if lstart.is_empty() {
+        return None;
+    }
+    let start_epoch: u64 = run_env(None, &[("LC_ALL", "C")], "date",
+        &["-j", "-f", "%a %b %d %H:%M:%S %Y", lstart, "+%s"])
+        .ok()
+        .and_then(|s| s.trim().parse().ok())?;
+    Some(start_epoch >= install_epoch)
 }
 
 // ADR-032 §1 testable-core: every input explicit (no hidden env/global reads) so the
@@ -1623,6 +1760,10 @@ fn deploy_rust_service(
             &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"kind\":\"rust-service\",\"target\":\"{}\"", crate_name, b, target));
     }
 
+    // #3517 inc2 — timestamp the atomic-move complete. A live process whose start-epoch >= this
+    // loaded the just-installed binary; captured BEFORE kickstart so a real restart is strictly after.
+    let install_epoch = now_epoch();
+
     if target == "canonical" {
         if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
             rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
@@ -1644,8 +1785,49 @@ fn deploy_rust_service(
         let installed = file_cdhash(&installed_path(target, role, bin));
         match (&built, &installed) {
             (Some(b), Some(i)) if b == i => {
-                jsonl(home, role, card, trace, "verified",
-                    &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\"", crate_name, bin, i));
+                // inc1 install-verify passed (installed == built file). #3517 inc2 — the RUNNING-proof:
+                // also require the daemon RESTARTED onto it. installed==built ALONE false-passes a stale
+                // daemon (codesign reads the file, not the live process — the 2026-06-04 outage). Bounded
+                // reload ONCE; record restartedAfterInstall (the auditable catcher) on the spine.
+                match running_verdict(true, b, i, resolve_restarted(svc, install_epoch)) {
+                    RunVerdict::Ok => {
+                        jsonl(home, role, card, trace, "verified",
+                            &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\",\"installedCdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":true", crate_name, bin, i, i));
+                    }
+                    RunVerdict::Stale => {
+                        // started before the install (old inode) → force-reload ONCE, re-decide. No loop.
+                        let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+                        let _ = wait_for_service_up(svc);
+                        match running_verdict(true, b, i, resolve_restarted(svc, install_epoch)) {
+                            RunVerdict::Ok => {
+                                jsonl(home, role, card, trace, "verified",
+                                    &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":true,\"reloaded\":true", crate_name, bin, i));
+                            }
+                            _ => {
+                                // still stale after one reload = real failure. Err, NOT rollback: the file
+                                // is good; restoring an OLDER binary can't fix a stale-RUNNING daemon.
+                                jsonl(home, role, card, trace, "deploy.stale",
+                                    &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"installedCdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":false", crate_name, bin, i));
+                                return Err(format!(
+                                    "daemon {} did not reload onto the built binary after kickstart -k (stale-running, 06-04 class) — RED; runtime left as-is (rollback can't fix stale-running)",
+                                    svc
+                                ));
+                            }
+                        }
+                    }
+                    RunVerdict::Unknown => {
+                        // installed==built but the live PID/start-time is unresolvable → can't PROVE
+                        // running==built. RED (unknown=RED). No rollback — the install itself is good.
+                        jsonl(home, role, card, trace, "deploy.unverifiable",
+                            &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"installedCdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":\"unknown\"", crate_name, bin, i));
+                        return Err(format!(
+                            "could not resolve {}'s running process to verify running==built (unknown=RED) — install good, runtime unverified",
+                            svc
+                        ));
+                    }
+                    // installed==built is guaranteed by the match guard → Mismatch can't arise here.
+                    RunVerdict::Mismatch => unreachable!("installed==built guaranteed by the (Some(b),Some(i)) if b==i guard"),
+                }
             }
             _ => {
                 rollback(home, werk_s, role, card, trace, target, bin, "cdhash-mismatch");
