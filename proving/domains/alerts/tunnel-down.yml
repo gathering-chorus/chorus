@@ -48,7 +48,7 @@ action: |
   fi
   # Still down after restart — nudge Silas
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "cloudflare-tunnel: DOWN — auto-restart failed, seeds unreachable. Fix: launchctl kickstart -k gui/\$(id -u)/com.cloudflare.tunnel, check ~/Library/Logs/cloudflared.log, verify curl https://lightlifeurbangardens.com/health" 2>/dev/null || true
+  "$OPS_NUDGE" silas "cloudflare-tunnel: launchctl PID present but 3x https://lightlifeurbangardens.com/health probes failed" 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text "[alert] cloudflare-tunnel DOWN — auto-restart failed" --arg from "system" '{from: $from, text: $text}')" \

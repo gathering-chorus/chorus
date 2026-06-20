@@ -138,19 +138,43 @@ jobs:
 
       - name: demo
         id: demo
-        # werk-demo PROVES in-run (#3499): runs the gates, sends the gathers, and when go==true
-        # BLOCKS-POLL on the witness until both gathers reply (same round → zero churn) or
-        # CHORUS_DEMO_BLOCK_TIMEOUT (600s). GO passed AT INVOKE as the 2nd positional.
-        # Its exit code IS the gate — mapped to the `proven` output that gates the land steps.
+        # #3519 — THE WITNESS-GATED LAND. Three separable steps, one source of truth (the
+        # witness ops/logs/werk-demo.jsonl):
+        #   1. RECORD the human GO. #3511 retired the at-invoke go-flag (werk-demo ignores the
+        #      2nd positional), and the /cw land path was never reconnected to the go-RECORDING
+        #      (`werk-demo go`) — so Jeff's go was never written. Recorded under ACCEPTER (not
+        #      ROLE) so #3511's self-accept guard stays closed; GO without accepter is refused.
+        #   2. PRESENT the variant — demo() ALWAYS exits 2 (present-and-exit, #3279/#3511). Its
+        #      exit code is NOT the land gate (that was the #3499/#3511 contradiction: merge gated
+        #      on a demo exit-0 that can never come → nothing landed, 101 historically vs 0 recent).
+        #   3. VERDICT — `werk-demo verdict` reads the WITNESS and exits 0 iff gates + both peer
+        #      gathers + Jeff's go are recorded for THIS patch-id (patch-keyed → survives the
+        #      concurrent rebases that churn the round-sha). proven keys on THIS, not demo's exit.
         run: |
           set +e
+          case "${GO}" in
+            true|go|yes|GO)
+              if [ -z "${ACCEPTER}" ]; then echo "[demo] GO with no accepter — refusing (DEC-048)"; exit 1; fi
+              PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ACCEPTER}" werk-demo go "${CARD_ID}" ;;
+          esac
           PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
-          rc=$?
+          drc=$?
+          if [ "$drc" != 0 ] && [ "$drc" != 2 ]; then echo "[demo] present error rc=$drc"; exit "$drc"; fi
+          vout=$(PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo verdict "${CARD_ID}" 2>&1)
+          vrc=$?
           set -e
-          case "$rc" in
-            0) echo "proven=true"  >> "$GITHUB_OUTPUT"; echo "[demo] proven + go → landing." ;;
-            2) echo "proven=false" >> "$GITHUB_OUTPUT"; echo "[demo] presented, NOT landed (present-only / no-go / timeout)." ;;
-            *) echo "[demo] error rc=$rc"; exit "$rc" ;;
+          echo "$vout"
+          case "$vrc" in
+            0) echo "proven=true"  >> "$GITHUB_OUTPUT"; echo "[demo] witness PROVEN (gates+gathers+go for this patch) → landing." ;;
+            2) echo "proven=false" >> "$GITHUB_OUTPUT"
+               # #3519 (Wren pre-land) — a GO given but verdict=false is the dark-factory
+               # WIP-limbo (#3520 bite: looked done, stayed WIP, WERK_EXIT=0). Flag it HELD so
+               # outcome + witness-close shout it as a distinct terminal state — NOT a green
+               # "presented". A clean present-only run (no go) is NOT limbo and stays presented.
+               case "${GO}" in true|go|yes|GO) echo "held=true" >> "$GITHUB_OUTPUT" ;; esac
+               miss=$(printf '%s' "$vout" | sed -n 's/.*witness missing: \(\[[^]]*\]\).*/\1/p')
+               echo "held_reason=${miss:-[gates/gathers or go]}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "[demo] verdict error rc=$vrc"; exit "$vrc" ;;
           esac
 
       # ═══ land to prod — prod is a build of MAIN. Runs ONLY if the demo proved (go==true). ═══
@@ -196,8 +220,13 @@ jobs:
             else
               echo "[accepted, NOT yet live] #${CARD_ID} merged + accepted, but canonical did NOT ff-sync — run 'werk-sync recover'." >&2
             fi
+          elif [ "${{ steps.demo.outputs.held }}" = "true" ]; then
+            # #3519 (Wren pre-land) — LOUD WIP-limbo. A GO was given but the witness did NOT
+            # prove it. Must NOT read as a green "presented". ::error:: annotates the run loudly;
+            # witness-close records werk.held (distinct phase). This is HELD, not landed, not done.
+            echo "::error ::[HELD] #${CARD_ID} — GO given but NOT landed. Witness missing: ${{ steps.demo.outputs.held_reason }}. Card STAYS WIP — this is NOT done. Record the missing gate/gather/go for THIS patch, then re-run." >&2
           else
-            echo "[presented] #${CARD_ID} — variant up, presented, NOT landed (present-only / no-go / timeout). Re-invoke with go to land."
+            echo "[presented] #${CARD_ID} — variant up, present-only (no go). Re-invoke with go to land."
           fi
 
       # --- orchestrator witness close ---
@@ -205,9 +234,14 @@ jobs:
         if: success()
         run: |
           ts=$(($(date +%s)*1000))  # BSD date has no %3N (#3266)
-          if [ "${{ steps.demo.outputs.proven }}" = "true" ]; then ev="werk.landed"; else ev="werk.presented"; fi
-          printf '{"ts":%s,"event":"%s","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"success","sync_ok":"%s"}\n' \
-            "$ts" "$ev" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "${SYNC_OK:-0}" \
+          # #3519 (Wren pre-land) — THREE distinct terminal phases, not two. werk.held is the
+          # go-given-but-not-proven WIP-limbo (#3520): it must be queryable as its OWN state,
+          # never folded into werk.presented (which reads as a clean present-only run).
+          if   [ "${{ steps.demo.outputs.proven }}" = "true" ]; then ev="werk.landed"; status="success"
+          elif [ "${{ steps.demo.outputs.held }}"   = "true" ]; then ev="werk.held";    status="held"
+          else ev="werk.presented"; status="success"; fi
+          printf '{"ts":%s,"event":"%s","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"%s","held_reason":"%s","sync_ok":"%s"}\n' \
+            "$ts" "$ev" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "$status" "${{ steps.demo.outputs.held_reason }}" "${SYNC_OK:-0}" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
       - name: witness-failed

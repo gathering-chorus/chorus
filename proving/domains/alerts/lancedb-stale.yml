@@ -32,4 +32,4 @@ action: |
   fi
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "lancedb-stale: Vector index not updated in 24h. Semantic search may be outdated. Check: ls -lt data/lance/ in the app dir, verify Ollama is running on Bedroom." 2>/dev/null || true
+  "$OPS_NUDGE" silas "lancedb: newest file under data/lance has mtime > 24h (no index write in last 24h)" 2>/dev/null || true

@@ -32,7 +32,7 @@ action: |
   touch "$COOLDOWN_FILE"
   # Nudge Silas — alerts go to roles, not the Clearing
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "hook-server: DOWN — compound loop broken, no context injection, no gates. Fix: launchctl kickstart -k gui/\$(id -u)/com.chorus.hooks, verify /tmp/chorus-hooks.sock reappears" 2>/dev/null || true
+  "$OPS_NUDGE" silas "hook-server: com.chorus.hooks not serving — launchctl PID and/or /tmp/chorus-hooks.sock absent" 2>/dev/null || true
   curl -sf -X POST http://localhost:3470/api/message \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] chorus-hooks DOWN' --arg from 'system' '{from: $from, text: $text}')" \
