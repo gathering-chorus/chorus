@@ -22,6 +22,15 @@ set -u
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
 
+# #3484: pin node 20 for the whole nightly. The launchd plist's PATH has
+# /opt/homebrew/bin (node 23, NODE_MODULE_VERSION 131) but NOT nvm, so `npx jest`
+# ran under node 23 while better-sqlite3 (the search-engine native) is built for
+# node 20 (115) → every FTS/search suite threw an ABI error → a wall of false
+# red in the morning nightly. Force the matching node so the run is honest. Same
+# fix as werk.yml's test step; resolves the newest installed 20.x.
+__N20="$(ls -d "$HOME"/.nvm/versions/node/v20*/bin 2>/dev/null | sort -V | tail -1)"
+if [ -n "$__N20" ] && [ -x "$__N20/node" ]; then export PATH="$__N20:$PATH"; fi
+
 # Spine emit (#3484, mirrors the agent-state/#2605 helper). Best-effort — a
 # logging failure must never change the run's outcome. CHORUS_LOG_BIN is
 # env-overridable so unit tests stub chorus-log without symlinking it.
