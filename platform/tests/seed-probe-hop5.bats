@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # seed-probe-hop5.bats — Tests for seed probe hop 5 fix (#2004)
 # What Jeff sees: seed probe reports FAIL on hop 5 every run because
 # the probe checks Fuseki for a seed that the handler guard intentionally blocks.
 # After the fix: probe checks for the 'Test seed detected' log line instead.
 
-PROBE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/seed-probe.sh"
-HANDLER="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/src/handlers/seed.handler.ts"
+PROBE="${CHORUS_ROOT}/platform/scripts/seed-probe.sh"
+HANDLER="${HOME}/CascadeProjects/jeff-bridwell-personal-site/src/handlers/seed.handler.ts"
 
 # --- AC 1: Hop 5 checks log line instead of Fuseki persistence ---
 

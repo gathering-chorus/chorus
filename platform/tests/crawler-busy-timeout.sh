@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # test-crawler-busy-timeout.sh — #3073: the crawler's sqlite writes must
 # survive a briefly-locked index DB (busy_timeout waits+retries) instead of
 # dying with exit=5 (SQLITE_BUSY), and a genuine lock must be VISIBLE (no
@@ -18,7 +20,7 @@ FAIL=0
 p() { PASS=$((PASS+1)); echo "  PASS: $*"; }
 f() { FAIL=$((FAIL+1)); echo "  FAIL: $*"; }
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SCRIPT="$CHORUS_ROOT/platform/scripts/index-crawler-snapshots.sh"
 
 TEST_DB=$(mktemp -t crawler-busy.XXXXXX.db)

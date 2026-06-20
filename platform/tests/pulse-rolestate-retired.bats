@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/shape guard, hermetic
 # pulse-rolestate-retired.bats — #2632
 #
 # Asserts that the pulse role-state HTTP endpoint and its store wrapper

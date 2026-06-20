@@ -1,14 +1,16 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # alert-delivery.bats — E2E alert delivery test (#2274)
 # What Jeff sees: when an alert fires, it actually reaches the people who need it.
 # Two paths: alert-runner (YAML rules → nudge + Bridge) and deep-health (shell → nudge).
 # This proves both paths deliver end-to-end.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/alert-delivery-test.sh"
-ALERT_RUNNER="/Users/jeffbridwell/CascadeProjects/chorus/scripts/alert-runner.sh"
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/alert-delivery-test.sh"
+ALERT_RUNNER="${CHORUS_ROOT}/scripts/alert-runner.sh"
+DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 BRIDGE="http://localhost:3470"
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
+NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
 
 # --- AC 3: Single script tests both paths ---
 
@@ -24,11 +26,11 @@ NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
 # --- AC 1: Synthetic alert through alert-runner path ---
 
 @test "synthetic alert rule exists for delivery testing" {
-  [ -f "/Users/jeffbridwell/CascadeProjects/chorus/alerting/synthetic-test.yml" ]
+  [ -f "${CHORUS_ROOT}/alerting/synthetic-test.yml" ]
 }
 
 @test "synthetic rule check block returns non-ok to trigger action" {
-  rule="/Users/jeffbridwell/CascadeProjects/chorus/alerting/synthetic-test.yml"
+  rule="${CHORUS_ROOT}/alerting/synthetic-test.yml"
   grep -q "synthetic" "$rule"
   grep -q "name: synthetic-test" "$rule"
 }
@@ -67,7 +69,7 @@ NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
 # --- AC 6: Synthetic alerts clearly labeled ---
 
 @test "synthetic alert rule has synthetic label" {
-  rule="/Users/jeffbridwell/CascadeProjects/chorus/alerting/synthetic-test.yml"
+  rule="${CHORUS_ROOT}/alerting/synthetic-test.yml"
   grep -q "synthetic" "$rule"
 }
 

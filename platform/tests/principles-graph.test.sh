@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
 # Live-graph tests for #2447 + #2314: principles graph matches /book/principles-reconstructed.html.
 # Post-#2314 (ADR-025), Principle instances live in urn:chorus:instances, not urn:chorus:ontology.
@@ -16,7 +18,7 @@ set -uo pipefail
 
 HTML_URL="${HTML_URL:-http://localhost:3340/book/principles-reconstructed.html}"
 SPARQL_URL="${SPARQL_URL:-http://localhost:3030/pods/sparql}"
-TTL="${TTL:-/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/ontology/chorus.ttl}"
+TTL="${TTL:-${CHORUS_ROOT}/roles/silas/ontology/chorus.ttl}"
 
 pass=0; fail=0
 check() {

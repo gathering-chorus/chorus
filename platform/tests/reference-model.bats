@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+load test_helper
 # Tests for #2300: Reference model page
 # What Jeff sees: the context diagram is THE reference model — renders, has narrative, layers described.
 
-DIAGRAM="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.html"
-DIAGRAM_JS="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.js"
+DIAGRAM="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.html"
+DIAGRAM_JS="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.js"
 
 @test "context diagram HTML exists" {
   [ -f "$DIAGRAM" ]

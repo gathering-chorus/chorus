@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+load test_helper
 # api-fragile-endpoints.bats — E2E tests for fragile API endpoints (#1776)
 # What Jeff sees: endpoints that break silently — Athena 500s, completeness timeouts,
 # seed webhook drops. These tests run against the real stack, no mocks.
@@ -50,7 +52,7 @@ APP_API="http://localhost:3000"
 
 @test "POST /api/seed/sms returns 200 with signed Twilio payload" {
   # Load credentials
-  ENV_FILE="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env"
+  ENV_FILE="${HOME}/CascadeProjects/jeff-bridwell-personal-site/.env"
   [ -f "$ENV_FILE" ] || skip "No .env file"
   TWILIO_AUTH_TOKEN=$(grep '^TWILIO_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
   CAPTURE_ALLOWED_PHONES=$(grep '^CAPTURE_ALLOWED_PHONES=' "$ENV_FILE" | cut -d= -f2- | cut -d, -f1)

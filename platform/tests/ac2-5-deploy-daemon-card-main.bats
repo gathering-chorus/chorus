@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # #2927 AC2-AC5 — main-flow tests for deploy-daemon-card.sh.
 # Covers per-unit dispatch (AC2), per-unit rollback (AC3), per-role authority
 # (AC4), and zero-match refusal (AC5). PATH-stubs all external commands so the

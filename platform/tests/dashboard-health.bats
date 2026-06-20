@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # dashboard-health.bats — Tests for dashboard content validation (#2278)
 # What Jeff sees: empty Grafana panels look like "everything fine" when data source is broken.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/dashboard-health.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/dashboard-health.sh"
 GRAFANA="http://localhost:3100"
 
 @test "dashboard-health.sh exists and is executable" {

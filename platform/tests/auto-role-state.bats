@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # auto-role-state.bats — verify card actions auto-declare role state (#1782)
 # Bug: roles forget to call role-state manually. State goes stale.
 # Fix: sdk.ts move-to-WIP calls role-state building, done calls role-state idle.
 
-SDK_SRC="/Users/jeffbridwell/CascadeProjects/chorus/directing/products/cards/src/sdk.ts"
+SDK_SRC="${CHORUS_ROOT}/directing/products/cards/src/sdk.ts"
 
 @test "sdk.ts calls autoRoleState building on WIP entry" {
   grep -q "autoRoleState('building'" "$SDK_SRC"

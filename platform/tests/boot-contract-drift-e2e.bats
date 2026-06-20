@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: e2e — full-flow end-to-end
+load test_helper
 # boot-contract-drift-e2e.bats — #2414 zone (a) of #2311 follow-on audit
 #
 # What Jeff sees: a role boot that picks up CLAUDE.md drift, injects the
@@ -9,8 +11,8 @@
 # Hygiene: every test snapshots /tmp/claude-session-init/silas.{pending,done}
 # on entry and restores on exit so a live Silas session can't get stranded.
 
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-PROTOCOL_CONTRACT_RS="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/shared/protocol_contract.rs"
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+PROTOCOL_CONTRACT_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/src/shared/protocol_contract.rs"
 INIT_DIR="/tmp/claude-session-init"
 
 snapshot_marker_state() {
@@ -128,7 +130,7 @@ print('session-start-ok')
 # --- AC: in-session recovery path exists (Read of session-start file re-checks) ---
 
 @test "session_init_gate source documents Read handler in-session recovery path" {
-  GATE_RS="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/session_init_gate.rs"
+  GATE_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks/session_init_gate.rs"
   [ -f "$GATE_RS" ]
   grep -q "In-session recovery" "$GATE_RS"
   grep -q "protocol_contract::check" "$GATE_RS"

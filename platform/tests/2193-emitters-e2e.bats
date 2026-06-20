@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: e2e — full-flow end-to-end
+load test_helper
 # 2193-emitters-e2e — source-shape + smoke assertions for #2193 semantic
 # spine emitters that live in bash (commit.landed, test.delta) and the
 # derive + coherence-check scripts.
 
-CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
+CHORUS_ROOT="${CHORUS_ROOT}"
 
 @test "git-queue.sh emits commit.landed on successful commit" {
   # Source-shape: the emitter block exists and references the expected fields.

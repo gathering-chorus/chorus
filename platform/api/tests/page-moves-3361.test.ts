@@ -1,3 +1,4 @@
+// @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 /**
  * #3361 — chorus UI pages moved home from gathering serve from chorus-api at
  * their ADR-041 value-stream homes (building/...). Hermetic: env points at a

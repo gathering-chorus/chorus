@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # correlation-timeline.bats — Tests for event correlation timeline (#2280)
 # What Jeff sees: "what happened around this alert?" — a merged timeline from all event sources.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/correlation-timeline.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/correlation-timeline.sh"
 
 # --- AC1: Script exists and takes a time range ---
 

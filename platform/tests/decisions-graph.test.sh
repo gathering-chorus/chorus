@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
 # Live-graph drift test for #2485 Move 3: decisions graph matches expected baseline.
 # Post-#2485 Move 1, Decision instances live in urn:chorus:instances with chorus:contains
@@ -20,8 +22,8 @@ set -uo pipefail
 
 SPARQL_URL="${SPARQL_URL:-http://localhost:3030/pods/sparql}"
 API_URL="${API_URL:-http://localhost:3340}"
-DECISIONS_MD="${DECISIONS_MD:-/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/decisions.md}"
-ADR_GLOB="${ADR_GLOB:-/Users/jeffbridwell/CascadeProjects/chorus/roles/*/adr/ADR-*.md}"
+DECISIONS_MD="${DECISIONS_MD:-${CHORUS_ROOT}/roles/wren/decisions.md}"
+ADR_GLOB="${ADR_GLOB:-${CHORUS_ROOT}/roles/*/adr/ADR-*.md}"
 
 pass=0; fail=0
 check() {

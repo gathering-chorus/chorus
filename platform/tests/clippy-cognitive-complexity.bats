@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # #2602 — clippy::cognitive_complexity warn-level enabled in chorus-hooks + chorus-inject
 # Per #2601 spike: 13 known cog-complexity hits in chorus-hooks bin (top 65/57/47).
 # This card enables the lint at warn-level so existing pre-commit cargo clippy
 # surfaces them. NOT pre-commit gate (warn != error); also feeds #2527 drift lane.
 
-ROOT="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}"
+ROOT="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}"
 
 @test "chorus-hooks Cargo.toml enables clippy::cognitive_complexity warn" {
   run grep -E '^cognitive_complexity\s*=\s*"warn"' "$ROOT/platform/services/chorus-hooks/Cargo.toml"

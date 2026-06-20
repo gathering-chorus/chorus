@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # index-freshness-alert.bats — Tests for session index freshness check (#2270)
 # What Jeff sees: gemba shows 2-day-old data and nobody knew. These tests
 # prove the alert detects stale index data during working hours.
 
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
+DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 INDEX_DB="$HOME/.chorus/index.db"
 
 # --- AC 1: Deep-health checks actual message timestamps in index.db ---

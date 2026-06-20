@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # Test: deep-health.sh exists, runs, and detects failures (#2228)
 # RED before script exists. GREEN after.
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SCRIPT="$CHORUS_ROOT/platform/scripts/deep-health.sh"
 PASS=0
 FAIL=0

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # #1885 — Per-domain error tracking for crawler failures
 
 CRAWLER="$BATS_TEST_DIRNAME/../scripts/index-crawler-snapshots.sh"

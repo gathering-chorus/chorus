@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # regression-locks.bats
 #
 # Invariant tests for recurring regressions. Each test asserts a structural
@@ -17,7 +19,7 @@
 #      Live code paths (excluding ADRs, journal, guardrails, knowledge docs)
 #      must not contain the literal token `docker`.
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 
 # ---------------------------------------------------------------------------
 # Lock 1: werk-version does not bump on plain `generate`

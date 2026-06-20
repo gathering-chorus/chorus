@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # nightly-coverage.bats — Tests for nightly-coverage.sh (#2207)
 # What Jeff experiences: at 02:00 a Bridge message shows per-service coverage %s.
 # On regression: Bridge names the failing service, its floor, and the delta.
 # On green: one PASS line with every service's current %.
 # Script always exits 0 so the LaunchAgent never stops scheduling.
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SCRIPT="${CHORUS_ROOT}/platform/scripts/nightly-coverage.sh"
 
 # --- AC 1: floors.yml exists and is human-editable ---

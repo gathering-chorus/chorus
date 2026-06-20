@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+load test_helper
 # 3405-deep-health-probe-truthfulness.bats — Tests for #3405
 # What Jeff sees: deep-health stops crying wolf. A probe that can't RUN
 # (cards not on the cron PATH → exit 127) reports a probe-misconfig WARNING,
@@ -12,7 +14,7 @@
 # (ADR-043 — the alert domain must distinguish them). 2026-06-14 overnight:
 # 3/3 deep-health "failures" were probe-truthfulness bugs, not outages.
 
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus-werk/silas-3405/platform/scripts/deep-health.sh"
+DEEP_HEALTH="${HOME}/CascadeProjects/chorus-werk/silas-3405/platform/scripts/deep-health.sh"
 
 @test "deep-health syntax is valid bash" {
   bash -n "$DEEP_HEALTH"

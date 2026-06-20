@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # standards-gen.bats — Tests for generate-standards-surface.sh
 # Card #2266: Standards surface shows hardcoded data instead of live counts
 #
@@ -6,9 +8,9 @@
 # not yesterday's guess. These tests verify the script produces accurate
 # counts from the three data sources.
 
-GEN_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/generate-standards-surface.sh"
-DECISIONS_MD="/Users/jeffbridwell/CascadeProjects/chorus/product-manager/decisions.md"
-HOOKS_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks"
+GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
+DECISIONS_MD="${CHORUS_ROOT}/product-manager/decisions.md"
+HOOKS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 OUTPUT_DIR="/tmp/standards-gen-test"
 

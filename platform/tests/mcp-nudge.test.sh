@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # Hermetic test for #2472 — MCP transport + chorus_nudge_message tool.
 # #2998: MCP moved from chorus-api:3340 to chorus-mcp:3341. Streamable HTTP
 # transport requires session-init handshake before tools/list / tools/call.
 
 MCP_URL="${MCP_URL:-http://localhost:3341/mcp}"
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SPINE_LOG="${CHORUS_LOG_FILE:-${CHORUS_ROOT}/platform/logs/chorus.log}"
 
 # Helper: initialize and capture session id

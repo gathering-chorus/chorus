@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # test-manifest-writer.bats — TDD for #2791 manifest writer + chorus-manifest CLI.
 #
 # Red-phase: all tests fail before chorus-manifest CLI exists.
@@ -13,7 +15,7 @@
 #
 # Tests use CHORUS_MANIFEST_PATH override + chorus-log stub.
 
-CHORUS_MANIFEST="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-manifest"
+CHORUS_MANIFEST="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/chorus-manifest"
 [ -f "$CHORUS_MANIFEST" ] || CHORUS_MANIFEST="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/chorus-manifest"
 
 setup() {

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 # done-gate.sh — accepts demo:preflight-pass card comment as evidence (#2770).
 #
 # Per /demo skill Step 1.5 (#2090): single-card demos post a card comment

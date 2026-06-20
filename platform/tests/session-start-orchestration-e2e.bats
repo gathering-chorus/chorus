@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: e2e — full-flow end-to-end
+load test_helper
 # session-start-orchestration-e2e.bats — #2416 zone (d) of #2311 follow-on audit
 #
 # What Jeff sees: a role boot that completes *all* SessionStart orchestration
@@ -13,8 +15,8 @@
 # to .consumed) — that path is tested by grep-style source-shape assertions
 # plus the existing Rust tests (session_start_additional_context.rs).
 
-SHIM="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-SESSION_RS="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/commands/session.rs"
+SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SESSION_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/src/commands/session.rs"
 PULSE_LATEST="/tmp/pulse-latest.json"
 CONTEXT_CACHE="/tmp/session-context-silas.md"
 INIT_DIR="/tmp/claude-session-init"
@@ -160,7 +162,7 @@ assert 'silas' in ctx.lower() or 'Silas' in ctx
 # --- AC: Existing Rust orchestration tests remain (no regression) ---
 
 @test "existing Rust orchestration tests remain in place" {
-  TESTS_DIR="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/tests"
+  TESTS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/tests"
   [ -f "$TESTS_DIR/session_start_additional_context.rs" ]
   [ -f "$TESTS_DIR/session_start_pulse.rs" ]
   [ -f "$TESTS_DIR/session_opening_narrative.rs" ]

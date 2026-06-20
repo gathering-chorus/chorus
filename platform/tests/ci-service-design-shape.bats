@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/shape guard, hermetic
+load test_helper
 # CI service design — shape regression
 # Per Wren 2026-04-30: doc should lead with "Local layers (0-2) vs CI (3)"
 # framing, not the additive "Three Layers" framing that obscures the post-#2600
 # cost-stop cut.
 
-DOC="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/designing/docs/ci-pipeline-service-design.html"
+DOC="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/designing/docs/ci-pipeline-service-design.html"
 [ -f "$DOC" ] || DOC="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../../designing/docs" && pwd)/ci-pipeline-service-design.html"
 
 @test "doc leads with Local-vs-CI framing, not Three Layers" {

@@ -1,7 +1,9 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # shim-resilience.bats — verify shim wrapper graceful degradation (#2034)
 
-SCRIPTS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts"
+SCRIPTS="${CHORUS_ROOT}/platform/scripts"
 WRAPPER="$SCRIPTS/shim-wrapper.sh"
 
 @test "shim-wrapper.sh exists and is executable" {

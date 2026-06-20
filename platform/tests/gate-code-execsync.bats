@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # gate-code-execsync.bats — Tests for execSync lint gate (#2000)
 # What Jeff sees: app hangs in production because execSync blocks the event loop.
 # This gate catches it before demo, not after deploy.
 
-LINT_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-lint.sh"
-APP_ROOT="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
+LINT_SCRIPT="${CHORUS_ROOT}/platform/scripts/gate-code-lint.sh"
+APP_ROOT="${HOME}/CascadeProjects/jeff-bridwell-personal-site"
 FIXTURES="/tmp/gate-code-lint-fixtures"
 
 setup() {

@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # Tests for #2305: Suppress alerts during planned restarts
 # What Jeff sees: planned deploys/restarts fire alerts that look like real outages.
 # After this: app-state.sh writes a suppress file, deep-health.sh respects it.
 
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
-APP_STATE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/app-state.sh"
+DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
+APP_STATE="${CHORUS_ROOT}/platform/scripts/app-state.sh"
 SUPPRESS_FILE="/tmp/chorus-alert-suppress"
 
 setup() {

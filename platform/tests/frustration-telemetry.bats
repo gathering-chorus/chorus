@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # frustration-telemetry.bats — #2454
 # What Jeff sees: the page renders bad days with memory-write follow-up,
 # so the "did the team learn?" question has an honest answer per spike.
 
-TELEMETRY="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/frustration-telemetry.sh"
-RENDERER="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/frustration-telemetry-render.py"
+TELEMETRY="${CHORUS_ROOT}/platform/scripts/frustration-telemetry.sh"
+RENDERER="${CHORUS_ROOT}/platform/scripts/frustration-telemetry-render.py"
 
 setup() {
   OUT="$(mktemp)"

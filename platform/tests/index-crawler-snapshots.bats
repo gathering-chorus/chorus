@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # index-crawler-snapshots.bats — #3068 resilience.
 # What the team sees: com.chorus.crawler-index must SURVIVE a transient chorus-api
 # outage (e.g. mid-redeploy) — retry with backoff and exit cleanly — instead of
 # SIGPIPE-crash-looping (exit 141) into throttle-off on every deploy.
 
 SCRIPT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/index-crawler-snapshots.sh"
-[ -f "$SCRIPT" ] || SCRIPT="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/index-crawler-snapshots.sh"
+[ -f "$SCRIPT" ] || SCRIPT="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/index-crawler-snapshots.sh"
 
 setup() {
   TEST_HOME=$(mktemp -d)

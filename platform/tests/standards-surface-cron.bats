@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # Tests for standards-surface-cron.sh (#2268)
 # What Jeff sees: the standards surface updates itself overnight.
 # These tests prove: source detection works, skip when unchanged, regen when changed.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/standards-surface-cron.sh"
-GEN_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/generate-standards-surface.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/standards-surface-cron.sh"
+GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
 
 @test "AC1: cron wrapper script exists and is executable" {
   [ -x "$SCRIPT" ]

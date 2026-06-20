@@ -1,3 +1,4 @@
+// @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 /**
  * #2474 — resolveShimPath unit tests.
  *

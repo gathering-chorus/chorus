@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # skill-text-structural-asserts.bats — #2630 wave 5
 #
 # Structural assertions on skill markdown source. Catches the failure

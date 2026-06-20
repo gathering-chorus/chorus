@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # chorus-inject-signed-stable.bats — #2548 AC1.
 #
 # Asserts that build-signed.sh produces a chorus-inject binary whose cdhash

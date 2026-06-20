@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 #3426 — file→domain herald unit tests. Run: python3 3426-file-domain-herald.py
 The critical test is file_iri MATCHING crawler-hydrate-graph.sh's scheme —
@@ -10,10 +11,10 @@ ENG = os.path.join(os.path.dirname(__file__), "..", "scripts", "crawler-facet-fi
 spec = importlib.util.spec_from_file_location("facet", ENG)
 m = importlib.util.module_from_spec(spec)
 # pin CHORUS_ROOT so file_iri is deterministic for the known-hash assertion
-os.environ["CHORUS_ROOT"] = "/Users/jeffbridwell/CascadeProjects/chorus"
-m.CHORUS_ROOT = "/Users/jeffbridwell/CascadeProjects/chorus"
+os.environ["CHORUS_ROOT"] = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))+""
+m.CHORUS_ROOT = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))+""
 spec.loader.exec_module(m)
-m.CHORUS_ROOT = "/Users/jeffbridwell/CascadeProjects/chorus"
+m.CHORUS_ROOT = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))+""
 
 fails = []
 def check(name, cond):

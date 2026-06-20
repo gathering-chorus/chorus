@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: e2e — full-flow end-to-end
+load test_helper
 # gate-spine-vikunja-e2e.bats — #2324 zone (c) + #2428 sentinel rework
 #
 # Sentinel pattern (#2428): ONE long-lived card #2429 titled "[e2e-sentinel]
@@ -15,10 +17,10 @@
 #     mocks hide divergence." Sentinel keeps real writer-path coverage while
 #     satisfying both of Jeff's hard constraints.
 
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
-CHORUS_LOG_BIN="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
-CARDS="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards"
-BRIDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-spine-vikunja-bridge.sh"
+CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
+CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
+CARDS="${CHORUS_ROOT}/platform/scripts/cards"
+BRIDGE="${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh"
 SENTINEL_CACHE="/tmp/e2e-sentinel-id"
 
 # Sentinel discovery — returns the cards-CLI DISPLAY index (not Vikunja API id,
@@ -30,7 +32,7 @@ find_sentinel() {
     return 0
   fi
   local id
-  id=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards list 2>/dev/null \
+  id=$(bash ${CHORUS_ROOT}/platform/scripts/cards list 2>/dev/null \
     | grep -oE '[0-9]+[[:space:]]+\[e2e-sentinel\]' | awk '{print $1}' | head -1)
   if [ -z "$id" ]; then
     echo "SENTINEL_MISSING — run: cards add '[e2e-sentinel] DO NOT MOVE — bats fixture (#2428)' ..." >&2

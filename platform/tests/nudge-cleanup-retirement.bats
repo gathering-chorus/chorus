@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # nudge-cleanup-retirement.bats — #2628 retirement-gate (#2630 AC delivery)
 #
 # Forward-only structural assertion of the #2628 retirement decisions.

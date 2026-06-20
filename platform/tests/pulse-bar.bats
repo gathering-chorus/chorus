@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # pulse-bar.bats — Tests for pulse bar wiring (#2267)
 # What Jeff sees: GATE/PARTIAL/DOC tags on standards are manually assigned.
 # After this card, tags reflect actual hook enforcement data with deny counts.
 
-GEN_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/generate-standards-surface.sh"
+GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
 OUTPUT_DIR="/tmp/pulse-bar-test"
 
 setup() {

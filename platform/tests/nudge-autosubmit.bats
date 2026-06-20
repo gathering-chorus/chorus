@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # nudge-autosubmit.bats — verify nudge inject includes Return keystroke (#2029)
 # What Jeff sees: nudge arrives in role terminal and auto-submits.
 # Bug: #2245 switched to "do script" which doesn't send Return.
 # Fix: revert to keystroke + key code 36.
 # This is a structural test — the real test is Jeff watching the terminal.
 
-INJECT_SRC="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-inject/src/main.rs"
+INJECT_SRC="${CHORUS_ROOT}/platform/services/chorus-inject/src/main.rs"
 
 @test "inject source uses keystroke (not do script)" {
   grep -q 'keystroke' "$INJECT_SRC"

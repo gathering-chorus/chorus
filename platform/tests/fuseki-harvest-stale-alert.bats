@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # fuseki-harvest-stale-alert.bats — #2327
 # What Jeff sees: a fuseki-harvest-stale nudge only when photos really are absent,
 # never when Fuseki blipped for a moment. These tests prove the three failure modes
 # (curl error, count=0, count>0) produce three distinct outcomes.
 
-CHECK_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/fuseki-harvest-stale.check.sh"
-ALERT_YAML="/Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/fuseki-harvest-stale.yml"
+CHECK_SCRIPT="${CHORUS_ROOT}/proving/domains/alerts/fuseki-harvest-stale.check.sh"
+ALERT_YAML="${CHORUS_ROOT}/proving/domains/alerts/fuseki-harvest-stale.yml"
 
 setup() {
   export TEST_TMP="$(mktemp -d)"

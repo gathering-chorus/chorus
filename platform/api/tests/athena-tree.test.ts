@@ -1,3 +1,4 @@
+// @test-type: unit — hermetic source guard
 /**
  * Tests for Athena Move 0 tree handler (#2940).
  *
