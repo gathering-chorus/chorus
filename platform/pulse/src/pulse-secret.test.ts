@@ -29,7 +29,9 @@ describe('#3485 pulse shared-secret', () => {
   it('resolvePulseSecret generates a 0600 secret file on first use', () => {
     const s = resolvePulseSecret();
     expect(s && s.length >= 32).toBe(true);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- SECRET_FILE is a test-controlled constant path, not caller input.
     expect(fs.existsSync(SECRET_FILE)).toBe(true);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- SECRET_FILE is a test-controlled constant path, not caller input.
     expect(fs.statSync(SECRET_FILE).mode & 0o777).toBe(0o600);
   });
 

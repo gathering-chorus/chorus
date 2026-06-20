@@ -154,7 +154,9 @@ export class DeliveryWorker {
   async scanAndRequeue(): Promise<void> {
     const pending = this.store.getPendingDeliveries();
     for (const row of pending) {
-      this.enqueue(row);
+      // `void`: fire-and-forget — enqueue starts delivery; the boot scan must not block
+      // on every delivery completing (they retry with backoff independently).
+      void this.enqueue(row);
     }
   }
 
