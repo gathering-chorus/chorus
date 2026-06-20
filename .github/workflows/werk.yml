@@ -81,6 +81,14 @@ jobs:
         # ADVISORY until werk-test #3190 — posts chorus/test/<card> status, does NOT block.
         run: |
           set -o pipefail
+          # #3484: pin node 20 for the test run. better-sqlite3 (the search-engine
+          # native module, a real runtime dep) is built for NODE_MODULE_VERSION 115
+          # (node 20). act inherits a login PATH where homebrew node 23 (131) wins,
+          # so the .node can't load → 22 jest suites / 164 tests fail with a
+          # meaningless ABI error (NOT real failures — the identical suite passes
+          # 1501/0 under node 20). Force the matching node so the test run is honest.
+          N20="$(ls -d "$HOME"/.nvm/versions/node/v20*/bin 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$N20" ]; then export PATH="$N20:$PATH"; echo "-- pinned node $("$N20/node" -v 2>/dev/null) for tests (login shell had $(node -v 2>/dev/null)) --"; fi
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (advisory until werk-test #3190)" >/dev/null 2>&1 || true; }
           post pending
