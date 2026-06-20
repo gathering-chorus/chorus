@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # #1916 — done-gate.sh --proven bypass tests
 
 GATE="$BATS_TEST_DIRNAME/../../skills/demo/gates/done-gate.sh"

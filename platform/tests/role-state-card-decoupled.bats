@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # role-state-card-decoupled.bats — #2467 wave 2 (AC5)
 #
 # Asserts that no skill source file passes `card=` or `type=` arguments

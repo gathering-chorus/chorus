@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # spine-e2e.sh — End-to-end test for the spine event pipeline (#1075)
 # Verifies: emit (chorus-log) → chorus.log → index (chorus-index) → query (API)
 # Target: runs in under 10s
 set -euo pipefail
 
 SCRIPTS_DIR="$(cd "$(dirname "$0")/../scripts" && pwd)"
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 MSG_SCRIPTS="$CHORUS_ROOT/platform/scripts"
 CHORUS_LOG="$CHORUS_ROOT/platform/logs/chorus.log"
 API_URL="http://localhost:3340"

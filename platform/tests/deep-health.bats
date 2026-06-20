@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # Tests for deep-health.sh (#2228)
 # What Jeff sees: silent failures go undetected. These tests prove detection works.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 
 @test "deep-health script exists and is executable" {
   [ -x "$SCRIPT" ]

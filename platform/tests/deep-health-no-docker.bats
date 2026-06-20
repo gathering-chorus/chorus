@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # deep-health-no-docker.bats — verify deep-health doesn't check for Docker (#2020, #2032)
 # Bug: deep-health checks for a chorus-hooks PID and compares binary timestamps.
 # The shim is per-call, not a daemon. False positive every cycle.
 
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/deep-health.sh"
+DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 
 @test "deep-health does not reference HOOKS_PID" {
   ! grep -q 'HOOKS_PID' "$DEEP_HEALTH"

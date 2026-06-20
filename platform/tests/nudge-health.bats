@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # nudge-health.bats — Tests for nudge health check (#1847)
 # What Jeff sees: macOS notifications saying "3 role(s) unreachable"
 # when all three sessions are running. Zombie Terminal windows crash
 # the osascript lookup and the whole check fails.
 
-HEALTH_SCRIPT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/nudge-health-check.sh"
+HEALTH_SCRIPT="${CHORUS_ROOT:-${CHORUS_ROOT}}/platform/scripts/nudge-health-check.sh"
 
 # --- AC 1: Health check survives zombie windows ---
 

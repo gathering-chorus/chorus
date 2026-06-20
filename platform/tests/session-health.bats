@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # session-health.bats — Tests for session health monitoring (#2271)
 # What Jeff sees: sessions degrade silently. These tests prove the system
 # detects and signals when a session is getting long.
 
-HEALTH_SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/session-health.sh"
+HEALTH_SCRIPT="${CHORUS_ROOT}/platform/scripts/session-health.sh"
 
 # --- AC 1: Session health metric emitted per prompt ---
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # werk-substrate.bats — #2598 substrate uniformity
 # What Jeff sees: all three roles execute the same way for build/deploy/check.
 # These tests cover the werk wrapper. (#3290: the pre-push hook tests were
@@ -6,7 +8,7 @@
 # branch + role push validation now lives in the werk-push binary and is
 # covered by platform/services/werk-push/tests/e2e.rs.)
 
-WERK="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/werk"
+WERK="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/werk"
 [ -x "$WERK" ] || WERK="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../scripts" && pwd)/werk"
 
 # --- werk check ---
@@ -20,7 +22,7 @@ WERK="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platfo
 
 @test "werk check is read-only (no files modified)" {
   # Snapshot mtime of canonical binary if it exists
-  local shim="${CHORUS_ROOT_FOR_TEST:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  local shim="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
   if [ -f "$shim" ]; then
     local before_mtime
     before_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)

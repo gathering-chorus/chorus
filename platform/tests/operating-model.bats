@@ -1,12 +1,14 @@
 #!/usr/bin/env bats
+# @test-type: integration — reads a live service, skip-if-absent in CI
+load test_helper
 # operating-model.bats — Tests for Operating Model page (#1759)
 # What Jeff sees: a view of every domain, its services, ownership, gates,
 # and migration readiness — so he can decide what to migrate next.
 
 ARTIFACT="platform/roles/wren/artifacts/operating-model.html"
 DEPLOYED="public/gathering-docs/operating-model.html"
-CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
-APP_ROOT="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
+CHORUS_ROOT="${CHORUS_ROOT}"
+APP_ROOT="${HOME}/CascadeProjects/jeff-bridwell-personal-site"
 
 # --- AC 1: Operating model visible as a page Jeff can read ---
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/shape guard, hermetic
 # spine-emit-drift-audit.bats — #2630 wave 2
 #
 # Catches the failure pattern Jeff named 2026-04-30 morning: 12 done-briefs

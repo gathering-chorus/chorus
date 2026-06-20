@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # session-indexer-incremental.bats — #2455
 # Tests that active sessions (jsonl being appended to) continue to accumulate
 # indexed rows on every indexer run. The bug: line_num resets to 0 on each run
 # so source_ids collide with prior rows and INSERT OR IGNORE silently drops.
 
 INDEXER="$HOME/.chorus/scripts/chorus-index.sh"
-INIT_DB="/Users/jeffbridwell/CascadeProjects/chorus/designing/index/chorus-init-db.sh"
+INIT_DB="${CHORUS_ROOT}/designing/index/chorus-init-db.sh"
 
 setup() {
   TMPROOT="$(mktemp -d)"

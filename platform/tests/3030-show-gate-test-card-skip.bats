@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
 # #3030 — show-gate.sh must skip synthetic test card 99998 without emitting any
 # demo.show.* event (it was ~70% of the phantom no_demo_started pain-board class).
 # Real cards and the no-card case are covered by the existing guards.

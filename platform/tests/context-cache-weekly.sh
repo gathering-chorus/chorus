@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # Test: context-cache-weekly subcommand exists and produces output
 # AC: subcommand runs, cruft scan writes, stale cards audited, disk trend logged, non-empty stdout
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 PASS=0
 FAIL=0
@@ -34,7 +36,7 @@ else
 fi
 
 # Test 3: disk trend logged
-TREND="/Users/jeffbridwell/Library/Logs/Chorus/disk-trend.log"
+TREND="${HOME}/Library/Logs/Chorus/disk-trend.log"
 if [ -f "$TREND" ] && [ -s "$TREND" ]; then
   echo "PASS: disk trend log exists"
   PASS=$((PASS + 1))

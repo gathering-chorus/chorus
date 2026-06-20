@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: e2e — full-flow end-to-end
+load test_helper
 # nudge-dec107-e2e.bats — #2415 zone (b) of #2311 follow-on audit
 #
 # DEC-107 invariant: "persist AND deliver, both paths, every nudge."
@@ -9,11 +11,11 @@
 # Hermetic: CHORUS_INJECT_DRY_RUN=1 skips osascript so tests don't
 # hijack real terminals. The delivery-path code still fires — mode=dry-run.
 
-NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nudge"
-NUDGE_RS="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/nudge.rs"
-NUDGE_GATE_RS="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/tests/nudge_force_source_gate.rs"
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log"
-MESSAGES_DB="/Users/jeffbridwell/CascadeProjects/chorus/platform/pulse/messages.db"
+NUDGE="${CHORUS_ROOT}/platform/scripts/nudge"
+NUDGE_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/src/nudge.rs"
+NUDGE_GATE_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/tests/nudge_force_source_gate.rs"
+CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
+MESSAGES_DB="${CHORUS_ROOT}/platform/pulse/messages.db"
 
 # --- AC: binary wrapper exists ---
 

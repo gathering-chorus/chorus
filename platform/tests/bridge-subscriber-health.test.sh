@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: integration — operational; live services, skip-if-absent in CI
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # bridge-subscriber-health.test.sh — Verify bridge subscribers stay connected and deliver events
 # Card #1964 AC: no ping timeout disconnects, ThrottleInterval set, end-to-end delivery
 # Run: bash platform/tests/bridge-subscriber-health.test.sh
@@ -57,8 +59,8 @@ done
 
 # --- AC #3: Client ping/timeout settings aligned with server ---
 
-SUBSCRIBER="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bridge-subscriber.js"
-SERVER="/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/src/server.ts"
+SUBSCRIBER="${CHORUS_ROOT}/platform/scripts/bridge-subscriber.js"
+SERVER="${CHORUS_ROOT}/directing/clearing/src/server.ts"
 
 # Test 8: Client pingTimeout > server pingInterval
 client_ping_timeout=$(grep -o 'pingTimeout: [0-9]*' "$SUBSCRIBER" | grep -o '[0-9]*')

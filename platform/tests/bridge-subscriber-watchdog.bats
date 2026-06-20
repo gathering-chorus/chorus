@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # bridge-subscriber-watchdog.bats — #1964
 # What Jeff sees: bridge-subscribers stay alive across crashes. When one dies,
 # watchdog kickstarts within a cycle, spine event records the restart.
 # Hermetic: LAUNCHCTL_BIN + CHORUS_LOG_BIN env vars are test seams so bats
 # doesn't actually kickstart live services or pollute chorus.log.
 
-WATCHDOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bridge-subscriber-watchdog.sh"
+WATCHDOG="${CHORUS_ROOT}/platform/scripts/bridge-subscriber-watchdog.sh"
 
 setup() {
   export TEST_TMP="$(mktemp -d)"

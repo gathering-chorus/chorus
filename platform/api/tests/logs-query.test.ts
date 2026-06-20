@@ -1,3 +1,4 @@
+// @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 import {
   queryLogs,
   recentErrors,

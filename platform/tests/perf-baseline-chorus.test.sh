@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: unit — hermetic source guard
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # perf-baseline-chorus.test.sh — Verify Chorus perf baseline script
 # Card #1914 AC: covers 4 endpoints, thresholds, appends to nightly log
 # Run: bash platform/tests/perf-baseline-chorus.test.sh
@@ -10,7 +12,7 @@ FAIL=0
 test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/perf-baseline-chorus.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/perf-baseline-chorus.sh"
 
 echo "=== Perf Baseline Chorus Tests (#1914) ==="
 

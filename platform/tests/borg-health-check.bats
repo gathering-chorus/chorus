@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # Tests for borg-health-check.sh (#2124)
 # What Jeff sees: /borg/* pages return 200 even when the data path is broken.
 # These tests prove the deep-health probe catches assertion failures, not
 # just HTTP 500s.
 
-CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
+CHORUS_ROOT="${CHORUS_ROOT}"
 SCRIPT="${CHORUS_ROOT}/platform/scripts/borg-health-check.sh"
 CONTRACT_DEFAULT="${CHORUS_ROOT}/platform/scripts/borg-health-contract.json"
 

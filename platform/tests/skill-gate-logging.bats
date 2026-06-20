@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # skill-gate-logging.bats — verify structured logging for skill/gate invocations (#2015)
 #
 # Bug: Skill invocations log inconsistently — just name + timestamp, no role,
 # card ID, or duration. Can't measure coordination layer performance.
 # Fix: tool_telemetry emits skill.invoked spine events with structured fields.
 
-TELEMETRY_SRC="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/tool_telemetry.rs"
+TELEMETRY_SRC="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks/tool_telemetry.rs"
 
 @test "tool_telemetry detects Skill tool and extracts skill name" {
   grep -q 'skill_name\|"Skill".*skill' "$TELEMETRY_SRC"

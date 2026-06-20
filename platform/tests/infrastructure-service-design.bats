@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+load test_helper
 # infrastructure-service-design.bats — Tests for #2299
 # What Jeff sees: one page showing the full home cloud topology.
 
 PAGE="http://localhost:3000/gathering-docs/infrastructure-service-design.html"
-FILE="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/infrastructure-service-design.html"
+FILE="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/infrastructure-service-design.html"
 
 @test "AC1: page exists and serves 200" {
   run curl -sf -o /dev/null -w "%{http_code}" "$PAGE"

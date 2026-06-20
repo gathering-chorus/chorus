@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
+# @test-type: integration — operational; live services, skip-if-absent in CI
+load test_helper
 # alert-runner-cooldown.bats — Tests for #1861
 # What Jeff sees: 3 alerts firing every 5-10 min despite cooldown files existing
 
-RUNNER="/Users/jeffbridwell/CascadeProjects/chorus/proving/scripts/alert-runner.sh"
+RUNNER="${CHORUS_ROOT}/proving/scripts/alert-runner.sh"
 
 @test "alert-runner exists and is executable" {
   [ -x "$RUNNER" ]

@@ -1,12 +1,14 @@
 #!/usr/bin/env bats
+# @test-type: integration — reads a live service, skip-if-absent in CI
+load test_helper
 # clearing-service-design.bats — Tests for Clearing service design page (#2287)
 # What Jeff sees: a service design page like Pulse and Loom, showing the Clearing's
 # domain dependencies, components, consumers/producers, and infrastructure.
 
 ARTIFACT="product-manager/artifacts/clearing-service-design.html"
 DEPLOYED="public/gathering-docs/clearing-service-design.html"
-CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
-APP_ROOT="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
+CHORUS_ROOT="${CHORUS_ROOT}"
+APP_ROOT="${HOME}/CascadeProjects/jeff-bridwell-personal-site"
 
 # --- AC 1: Service design HTML page exists following existing template ---
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # execsync-audit.bats — Tests for execSync audit (#1999)
 # What Jeff sees: app hangs for 797s because execSync blocks the event loop.
 # After the fix: zero execSync on request paths.
 
-APP_SRC="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/src"
-LINT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/gate-code-lint.sh"
+APP_SRC="${HOME}/CascadeProjects/jeff-bridwell-personal-site/src"
+LINT="${CHORUS_ROOT}/platform/scripts/gate-code-lint.sh"
 
 # --- AC 1: Audit exists (this test IS the audit) ---
 

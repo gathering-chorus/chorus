@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/shape guard, hermetic
+load test_helper
 # context-inject-latency-spec.bats (#2231)
 #
 # Per-turn wall-clock cost of UserPromptSubmit → context-synthesis envelope.
@@ -12,7 +14,7 @@
 # Pre-#2231 cold latency is ~800ms; warm latency is the same (no cache).
 # Post-#2231 warm latency should drop well below 400ms.
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SOCKET="/tmp/chorus-hooks.sock"
 
 envelope_ms() {

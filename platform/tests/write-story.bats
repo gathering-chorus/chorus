@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+load test_helper
 # Tests for platform/scripts/write-story.sh (#2321)
 # What it does: capture a Jeff-told story as a TTL instance in Fuseki,
 # one graph per story, conforming to the existing jeff:Story schema.
@@ -9,7 +11,7 @@
 
 FUSEKI_QUERY="http://localhost:3030/pods/query"
 FUSEKI_UPDATE="http://localhost:3030/pods/update"
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/write-story.sh"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/write-story.sh"
 TEST_SLUG_PREFIX="test-bats-2321"
 
 setup() {

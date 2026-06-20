@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — reads a live service, skip-if-absent in CI
+load test_helper
 # context-inject-envelope-spec.bats
 #
 # Runtime specification for the per-prompt context-injection envelope.
@@ -17,7 +19,7 @@
 #     stale-daemon, rebuild-on-disk gap)
 #   - silas has a WIP card in pulse-latest.json (Athena section requires it)
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SOCKET="/tmp/chorus-hooks.sock"
 BINARY="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hooks"
 

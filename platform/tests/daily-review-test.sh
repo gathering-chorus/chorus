@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # Test: daily review routing (#2243)
 # AC 1: Summary posts ONE message to Bridge (not ops + quality separately)
 # AC 2: Ops review includes alert state when alerts fired overnight
@@ -7,7 +9,7 @@
 # AC 5: infra-alert suppresses after first fire per component per day
 set -euo pipefail
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SCRIPTS="$CHORUS_ROOT/platform/scripts"
 INFRA_ALERT="$CHORUS_ROOT/roles/silas/scripts/infra-alert.sh"
 PASS=0

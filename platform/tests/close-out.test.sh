@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @test-type: unit — hermetic source guard
 # close-out.test.sh — #2230 test: /close script writes all 3 artifacts
 #
 # Tests what Jeff sees in session-state artifacts after /close runs:

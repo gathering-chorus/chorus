@@ -1,3 +1,4 @@
+// @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 /**
  * #3408 — re-live the moved /werk cockpit. Its client JS fetches /api/werk/schema
  * (+ /api/werk/activity, /api/loom-metrics) which 404'd on chorus-api after the

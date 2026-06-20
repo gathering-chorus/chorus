@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+: "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 # inject-regression.sh — validates chorus-inject delivers to the correct role tab
 # AC: targeted delivery (not broadcast to focused window), all 3 roles, intra-team + alert
 set -euo pipefail
 
-INJECT="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-inject"
+INJECT="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-inject"
 PASS=0
 FAIL=0
 

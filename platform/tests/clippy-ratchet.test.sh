@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @test-type: unit — hermetic source guard
 # #2532: hermetic tests for clippy-ratchet.py.
 # Stubs cargo invocation by setting CLIPPY_RATCHET_TEST_OUTPUT in env so the
 # ratchet's count step reads a fixed JSON file instead of running cargo.

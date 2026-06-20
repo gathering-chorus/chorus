@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # inject-lock.bats — verify chorus-inject/src/main.rs is locked from edits (#2030)
 # The nudge injection code was changed 3 times, breaking auto-submit each time.
 # This hook prevents any role from editing it without Jeff's approval.
 
-HOOKS_SRC="/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/src/hooks/sensitive_paths.rs"
+HOOKS_SRC="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks/sensitive_paths.rs"
 
 @test "sensitive_paths blocks edits to chorus-inject/src/main.rs" {
   grep -q 'chorus-inject' "$HOOKS_SRC"

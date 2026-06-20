@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic source guard
+load test_helper
 # bridge-subscriber.bats — Tests for Bridge notification filtering (#2284)
 # What Jeff sees: his own actions echoed back as notifications. Noise.
 
-SCRIPT="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/bridge-subscriber.js"
+SCRIPT="${CHORUS_ROOT}/platform/scripts/bridge-subscriber.js"
 
 # We test the formatBoardEvent logic by importing it inline via node eval.
 

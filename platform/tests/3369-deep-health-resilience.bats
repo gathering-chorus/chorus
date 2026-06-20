@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+load test_helper
 # 3369-deep-health-resilience.bats — Tests for #3369
 # What Jeff sees: the 6am window runs clean — daily-signal-scan completes instead
 # of dying 2s in, and the vikunja-auth alert only fires on real auth failures.
@@ -9,8 +11,8 @@
 # with ZERO output → daily-signal-scan's health_result=$(deep-health|head -1)
 # dies under its own set -e → signal scan never completes, every morning.
 
-DEEP_HEALTH="/Users/jeffbridwell/CascadeProjects/chorus-werk/silas-3369/platform/scripts/deep-health.sh"
-SIGNAL_SCAN="/Users/jeffbridwell/CascadeProjects/chorus-werk/silas-3369/platform/scripts/daily-signal-scan.sh"
+DEEP_HEALTH="${HOME}/CascadeProjects/chorus-werk/silas-3369/platform/scripts/deep-health.sh"
+SIGNAL_SCAN="${HOME}/CascadeProjects/chorus-werk/silas-3369/platform/scripts/daily-signal-scan.sh"
 
 @test "deep-health liveness pid lookup survives a label missing from launchctl" {
   # the line-87 class: grep no-match (exit 1) inside $() under set -e kills the

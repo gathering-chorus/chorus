@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/shape guard, hermetic
 # demo-complete-drift-audit.bats — #2630 wave 4
 #
 # Catches the failure pattern Jeff named 2026-04-30: "/demo says step 5
