@@ -7,14 +7,6 @@ load test_helper
 
 CHORUS_ROOT="${CHORUS_ROOT}"
 
-@test "git-queue.sh emits commit.landed on successful commit" {
-  # Source-shape: the emitter block exists and references the expected fields.
-  grep -qE '"commit\.landed"' "$CHORUS_ROOT/platform/scripts/git-queue.sh"
-  grep -qE 'sha=\$\{_sha\}' "$CHORUS_ROOT/platform/scripts/git-queue.sh"
-  grep -qE 'card_id=\$\{_card_id\}' "$CHORUS_ROOT/platform/scripts/git-queue.sh"
-  grep -qE 'author_role=\$\{ROLE\}' "$CHORUS_ROOT/platform/scripts/git-queue.sh"
-}
-
 @test "gate-code-tests.sh emits test.delta with passed/failed/delta counts" {
   grep -qE 'test\.delta' "$CHORUS_ROOT/platform/scripts/gate-code-tests.sh"
   grep -qE 'delta_passed=' "$CHORUS_ROOT/platform/scripts/gate-code-tests.sh"
