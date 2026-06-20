@@ -65,7 +65,7 @@ fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
 fn run() -> Result<String, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("kinds") => Ok("product domain role value-stream-step service principle practice policy skill gate decision document".into()),
+        Some("kinds") => Ok("product domain role value-stream value-stream-step service principle practice policy skill gate decision document".into()),
         Some("mint") => {
             let (req, _) = parse_req(&args[1..])?;
             mint(&req.kind, &req.name)
