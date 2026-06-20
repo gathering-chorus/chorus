@@ -6,6 +6,11 @@ import { readFileSync } from 'fs';
 import { gateFiles, blockedFiles } from './gate-runner';
 
 const paths = process.argv.slice(2);
+// #3484 drift-cleanup: reading the file paths GIVEN as argv is this CLI's whole
+// purpose (pre-commit passes staged files, CI passes the PR diff) — the path is
+// non-literal by design, and the caller is trusted dev tooling, not user input.
+// Justified suppression, not a baseline bump.
+// eslint-disable-next-line security/detect-non-literal-fs-filename -- trusted-caller argv paths (#3442 gate CLI)
 const results = gateFiles(paths, (p) => readFileSync(p, 'utf8'));
 const blocked = blockedFiles(results);
 

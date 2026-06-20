@@ -52,8 +52,16 @@ fn conflict_hold_message_names_files_and_both_verb_follow_ups() {
 }
 
 // #3304 AC4 — guard regression tripwire: the resolution lives in the verb, NEVER
-// as a raw-git exception in infra_guardrails. The mutating `git rebase <ref>`
-// block must still exist, and the guard must carry no werk-commit carve-out.
+// as a raw-git EXEMPTION in infra_guardrails. The mutating `git rebase <ref>`
+// block must still exist, and the guard must carry no raw-git carve-out.
+// #3484: the prior check `!contains("werk-commit")` was TOO BROAD — it tripped on
+// the guard's legitimate BLOCK-messages that name werk-commit as the sanctioned
+// path ("Commits land through … werk-commit") — correct UX, NOT an exemption — so
+// the nightly went red on a false positive. A carve-out is an INTENTIONAL exemption
+// that lets raw git through; by convention it carries a `RAW-GIT-CARVE-OUT:` marker
+// at its site, and this test keys on that marker (intent), not bare string presence.
+// (Ideal follow-on: a BEHAVIORAL test that the guard still BLOCKS raw git — keys on
+// behavior, not source text. The marker is the cheap, intent-based v1.)
 #[test]
 fn infra_guardrails_has_no_new_raw_git_carve_out() {
     let guard_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -65,8 +73,10 @@ fn infra_guardrails_has_no_new_raw_git_carve_out() {
         "the mutating-rebase block regex must remain in infra_guardrails"
     );
     assert!(
-        !src.contains("werk-commit"),
-        "infra_guardrails must carry NO werk-commit-specific carve-out (resolution lives in the verb)"
+        !src.contains("RAW-GIT-CARVE-OUT"),
+        "infra_guardrails carries a RAW-GIT-CARVE-OUT marker — a raw-git exemption was added. \
+         The resolution must live in the verb, not as an infra_guardrails exception (#3304); \
+         an intentional exemption needs architecture sign-off, not just the marker."
     );
 }
 

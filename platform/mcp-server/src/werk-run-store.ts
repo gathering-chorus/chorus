@@ -17,13 +17,24 @@ import { parseExitSentinel, extractFailureReason } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 
+/** #3484 (Silas disposition) — the only variable filename component is `card`.
+ *  Assert it's a positive integer so no `/` or `..` can ever reach path.join:
+ *  a real guard backing the security/detect-non-literal-fs-filename disables. */
+function assertCardId(card: number): void {
+  if (!Number.isInteger(card) || card <= 0) {
+    throw new Error(`werk-run-store: unsafe card id ${card}`);
+  }
+}
+
 function runPath(dir: string, card: number): string {
+  assertCardId(card);
   return path.join(dir, `${card}.json`);
 }
 
 /** Read the run record for a card, or null (missing/malformed → null, never throws). */
 export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is RUNS_DIR + `${card}.json`; card asserted positive-int (assertCardId), zero string interpolation → no traversal
     const raw = readFileSync(runPath(dir, card), 'utf8');
     const obj = JSON.parse(raw) as WerkRun | null;
     if (obj && typeof obj.card === 'number' && typeof obj.phase === 'string') return obj;
@@ -36,7 +47,9 @@ export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
 /** Write/overwrite the run record. Best-effort (a write failure must not break the verb). */
 export function writeRun(run: WerkRun, dir: string = RUNS_DIR): void {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- dir is the constant RUNS_DIR (test-injected dir only in unit tests)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is RUNS_DIR + `${card}.json`; card asserted positive-int (assertCardId), zero string interpolation → no traversal
     writeFileSync(runPath(dir, run.card), JSON.stringify(run, null, 2));
   } catch {
     /* best-effort: a lost record degrades to start-fresh, never throws */
@@ -69,6 +82,7 @@ export function clearRun(card: number, dir: string = RUNS_DIR): void {
 /** The per-card log a detached act run streams to; its tail carries the WERK_EXIT
  *  sentinel the poll-time reconcile reads (durable, survives an mcp restart). */
 export function logPath(card: number, dir: string = RUNS_DIR): string {
+  assertCardId(card);
   return path.join(dir, `${card}.log`);
 }
 
@@ -82,6 +96,7 @@ export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun 
   if (!run || run.phase !== 'running') return run;
   let log = '';
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is RUNS_DIR + `${card}.log`; card asserted positive-int (assertCardId)
     log = readFileSync(logPath(card, dir), 'utf8');
   } catch {
     return run; // no log yet → still running

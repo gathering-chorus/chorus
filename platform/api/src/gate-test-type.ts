@@ -44,20 +44,27 @@ const VALID_TYPES = new Set(['unit', 'integration', 'api', 'ui', 'perf', 'securi
 // Full declaration: the type plus any inline justification (the text after the
 // type — used to justify a declared-lighter-than-signal override, eslint-disable
 // style). Returns null when there is no valid header declaration.
+// #3484: comment-prefix check extracted from parseDeclarationInfo — the inline
+// 4-way || was the bulk of that function's cognitive complexity (over baseline).
+const COMMENT_PREFIXES = ['//', '#', '/*', '*'];
+function isCommentLine(line: string): boolean {
+  return COMMENT_PREFIXES.some((p) => line.startsWith(p));
+}
+
 export function parseDeclarationInfo(content: string): Declaration | null {
   for (const raw of content.split('\n')) {
     const line = raw.trim();
     if (line === '') continue;
     const m = line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)\s*(.*)$/i);
-    if (m) {
-      const t = m[1].toLowerCase();
-      if (!VALID_TYPES.has(t)) return null;
-      const rest = m[2].replace(/^[\s—–-]+/, '').trim();
-      return { type: t, justification: rest.length > 0 ? rest : null };
+    if (!m) {
+      // still inside the leading comment block? keep scanning; else stop.
+      if (isCommentLine(line)) continue;
+      return null;
     }
-    // still inside the leading comment block? keep scanning; else stop.
-    if (line.startsWith('//') || line.startsWith('#') || line.startsWith('/*') || line.startsWith('*')) continue;
-    return null;
+    const t = m[1].toLowerCase();
+    if (!VALID_TYPES.has(t)) return null;
+    const rest = m[2].replace(/^[\s—–-]+/, '').trim();
+    return { type: t, justification: rest.length > 0 ? rest : null };
   }
   return null;
 }

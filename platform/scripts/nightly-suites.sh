@@ -22,6 +22,44 @@ set -u
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
 
+# #3484: pin node 20 for the whole nightly. The launchd plist's PATH has
+# /opt/homebrew/bin (node 23, NODE_MODULE_VERSION 131) but NOT nvm, so `npx jest`
+# ran under node 23 while better-sqlite3 (the search-engine native) is built for
+# node 20 (115) → every FTS/search suite threw an ABI error → a wall of false
+# red in the morning nightly. Force the matching node so the run is honest. Same
+# fix as werk.yml's test step; resolves the newest installed 20.x.
+__N20="$(ls -d "$HOME"/.nvm/versions/node/v20*/bin 2>/dev/null | sort -V | tail -1)"
+if [ -n "$__N20" ] && [ -x "$__N20/node" ]; then export PATH="$__N20:$PATH"; fi
+
+# Spine emit (#3484, mirrors the agent-state/#2605 helper). Best-effort — a
+# logging failure must never change the run's outcome. CHORUS_LOG_BIN is
+# env-overridable so unit tests stub chorus-log without symlinking it.
+NIGHTLY_ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
+SCRIPT_DIR_NIGHTLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_NIGHTLY/chorus-log")}"
+
+spine_emit() {
+  local event="$1"; shift
+  if [ -x "$CHORUS_LOG_BIN" ]; then
+    "$CHORUS_LOG_BIN" "$event" "$NIGHTLY_ROLE" "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+# #3484 — failure-detail capture. The runner used to keep rc but discard the
+# failure OUTPUT, so a red ("compile/run failure rc=N") couldn't explain itself
+# and every morning was a fresh re-diagnosis with the evidence gone. We now
+# persist the failing suite's output tail here; emit_suite_results surfaces a
+# one-line reason from it into the spine event. Env-overridable for tests.
+NIGHTLY_FAIL_DIR="${NIGHTLY_FAIL_DIR:-$HOME/.chorus/nightly-failures}"
+
+# Stable per-suite failure-log path (kind+path → one file). Both the writer
+# (run_one_attempt) and the reader (emit_suite_results) derive it identically.
+_fail_log_path() {
+  local kind="$1" path="$2" id
+  id=$(printf '%s' "${kind}-${path}" | tr '/ .' '___')
+  printf '%s/%s.log' "$NIGHTLY_FAIL_DIR" "$id"
+}
+
 # --- Discovery ---
 
 list_npm() {
@@ -209,8 +247,19 @@ run_one_attempt() {
       # (role-state files, hook env vars) and flake under parallel runs.
       # Serial execution matches the nightly's isolation goal; under the
       # budget-set workload it adds a few seconds total.
+      #
+      # #3484: isolated CARGO_TARGET_DIR. Each crate builds in its own target/
+      # (no workspace), so a role/recovery `cargo` touching the SAME crate's
+      # target/ while the nightly runs fights over the build lock — cargo
+      # returns nonzero, the synthesis below stamps "0 ok, 1 failed", and
+      # because the contention hits every crate it paints the whole run red at
+      # once (the false MASS-red: 2026-06-20 saw werk-push/owl-api/chorus-model
+      # all "red" while each was green on a standalone run). A dedicated target
+      # dir gives the nightly its own build lock — it can never contend with a
+      # role build, so the only input is the code. Warm after the first night.
       local out rc
-      out=$(cd "$path" && cargo test --release -- --test-threads=1 2>&1); rc=$?
+      local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
+      out=$(cd "$path" && CARGO_TARGET_DIR="$nt" cargo test --release -- --test-threads=1 2>&1); rc=$?
       local passed failed
       passed=$(echo "$out" | grep -cE '^test result: ok\.' || true)
       failed=$(echo "$out" | grep -cE '^test result: FAILED\.' || true)
@@ -254,6 +303,16 @@ run_one_attempt() {
       [ "$rc" -ne 0 ] && status="fail"
       ;;
   esac
+  # #3484 — persist the failure output so the red can explain itself; clear it
+  # on green so a passing rerun doesn't leave a stale reason. `out` is unset for
+  # the lint path (separate fn), so guard on it.
+  local _flog; _flog=$(_fail_log_path "$kind" "$path")
+  if [ "$status" = "fail" ]; then
+    mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
+    printf '%s\n' "${out:-}" | tail -25 > "$_flog" 2>/dev/null || true
+  else
+    rm -f "$_flog" 2>/dev/null || true
+  fi
   echo "SUITE|$kind|$path|$owner|$status|$summary"
 }
 
@@ -273,8 +332,20 @@ run_lint_ratchet() {
   local path="$CHORUS_ROOT" owner="kade" status="pass" summary="" out rc
   if [ -f "$path/.eslint-baseline.json" ] && [ -f "$path/eslint.config.js" ]; then
     out=$(cd "$path" && npm run lint:ratchet --silent 2>&1); rc=$?
-    summary=$(echo "$out" | tail -1 | tr -d '\n')
-    [ "$rc" -ne 0 ] && status="fail"
+    # #3484: emit a CONSUMER-PARSEABLE summary. daily-review-quality.sh requires
+    # `[0-9]+ (pass|ok)` AND `[0-9]+ fail` to count a suite as RUN (lines 88-90);
+    # the raw ratchet tail-line matches neither, so lint:chorus was silently
+    # bucketed "DID NOT RUN (no parseable test output)" → a false-red every nightly.
+    # The ratchet is binary (clean=rc0 / drifted=rc!=0), so synthesize the count
+    # from rc — mirroring the cargo/shell synthesis — and keep the real tail as
+    # trailing context.
+    local detail; detail=$(echo "$out" | tail -1 | tr -d '\n')
+    if [ "$rc" -eq 0 ]; then
+      summary="1 pass, 0 fail (lint:ratchet clean — ${detail})"
+    else
+      status="fail"
+      summary="0 pass, 1 fail (lint:ratchet drifted rc=${rc} — ${detail})"
+    fi
     echo "SUITE|lint|$path|$owner|$status|$summary"
   fi
 }
@@ -339,6 +410,45 @@ notify_results() {
   done <<< "$owners"
 }
 
+# #3484 — emit ONE structured `test.suite.result` per suite (green AND red) so
+# the daily job's per-set pass/fail is queryable + dashboardable, not just a
+# count nudge with the detail lost in stdout. Fed the same SUITE| results
+# notify_results gets, so lint/cargo/npm/bats/cucumber all surface uniformly.
+# Jeff 2026-06-20: "we need to emit logs to show which test sets pass and fail."
+emit_suite_results() {
+  local results="$1" line kind path owner status summary suite passed failed
+  while IFS= read -r line; do
+    case "$line" in SUITE\|*) ;; *) continue ;; esac
+    IFS='|' read -r _tag kind path owner status summary <<< "$line"
+    suite=$(basename "$path")
+    # passed/failed by LABEL, not position — cucumber's "110 scenarios (45 failed,
+    # 5 undefined, 60 passed)" breaks first-two-integers. Match "<N> passed|pass|ok"
+    # and "<N> failed|fail" so every runner's summary maps to the real counts.
+    passed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (passed|pass|ok)' | grep -oE '[0-9]+' | head -1); passed=${passed:-0}
+    failed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (failed|fail)'   | grep -oE '[0-9]+' | head -1); failed=${failed:-0}
+    # #3484 — for a red, attach a one-line reason from the captured failure log
+    # (the most error-ish tail line), sanitized to a single pipe-free field, so
+    # the spine event explains the failure instead of just rc.
+    local reason="" flog
+    if [ "$status" = "fail" ]; then
+      flog=$(_fail_log_path "$kind" "$path")
+      if [ -s "$flog" ]; then
+        reason=$( (grep -iE 'error|panic|fail|assert' "$flog" | tail -1 || true; tail -1 "$flog") \
+                  | head -1 | tr '\n|"' '   ' | tr -s ' ' | cut -c1-200 )
+      fi
+    fi
+    if [ -n "$reason" ]; then
+      spine_emit test.suite.result \
+        "suite=$suite" "kind=$kind" "status=$status" \
+        "passed=$passed" "failed=$failed" "owner=$owner" "reason=$reason"
+    else
+      spine_emit test.suite.result \
+        "suite=$suite" "kind=$kind" "status=$status" \
+        "passed=$passed" "failed=$failed" "owner=$owner"
+    fi
+  done <<< "$results"
+}
+
 # --- Dispatch ---
 # Below = dispatch-only (CLI entry, exits on unknown arg).
 # Above = sourceable (function definitions safe for unit tests to import).
@@ -361,7 +471,7 @@ case "${1:-}" in
     echo "# bats";      list_bats
     echo "# cucumber";  list_cucumber
     ;;
-  --run-all)    out=$(run_all); printf '%s\n' "$out"; notify_results "$out" ;;
+  --run-all)    out=$(run_all); printf '%s\n' "$out"; emit_suite_results "$out"; notify_results "$out" ;;
   *)
     echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all}" >&2
     exit 2

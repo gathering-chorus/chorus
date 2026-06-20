@@ -1812,6 +1812,23 @@
         "role": "Role that ran"
       }
     },
+    "test.suite.result": {
+      "vertebra": "proving",
+      "source": "nightly-suites",
+      "description": "Per-suite result from the nightly backstop — one event per suite (green AND red) so which test sets pass/fail is queryable + dashboardable, not just an aggregate count nudge. #3484.",
+      "keys": [
+        "suite"
+      ],
+      "fields": {
+        "suite": "Suite name (basename of the suite path)",
+        "kind": "Suite runner (npm/cargo/shell/bats/cucumber/lint)",
+        "status": "pass | fail",
+        "passed": "Tests passed",
+        "failed": "Tests failed",
+        "owner": "Owning role the result routes to",
+        "reason": "For a fail: one-line cause from the captured failure log (a red explains itself; #3484)"
+      }
+    },
     "workflow.manifest.completed": {
       "vertebra": "directing",
       "legacy_name": "workflow_complete",

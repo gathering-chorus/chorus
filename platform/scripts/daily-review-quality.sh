@@ -30,7 +30,10 @@ if [ "$SMOKE_FAIL" -gt 0 ] 2>/dev/null; then
 fi
 
 # --- Lint ---
-LINT_OUTPUT=$(cd "$APP_DIR" && npx eslint src/ --max-warnings 999 --format compact 2>&1 | tail -1 || true)
+# #3484: --format compact was removed from core ESLint (it now errors → empty
+# output → a latent false-clean of 0 warnings/0 errors). Default stylish ends
+# with "✖ N problems (X errors, Y warnings)" which the greps below match.
+LINT_OUTPUT=$(cd "$APP_DIR" && npx eslint src/ --max-warnings 999 2>&1 | tail -1 || true)
 LINT_WARNINGS=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ warning' | grep -oE '[0-9]+' || true)
 LINT_WARNINGS=${LINT_WARNINGS:-0}
 LINT_ERRORS=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ error' | grep -oE '[0-9]+' || true)
