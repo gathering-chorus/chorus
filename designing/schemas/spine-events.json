@@ -2563,6 +2563,17 @@
         "role": "Acting role"
       }
     },
+    "merge.landed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "#3517 cicd\u2192build/deploy TRIGGER (ADR-049): a card landed on origin/main; fires build+deploy of landedCommit for changedUnits. Inline from werk-merge, on ALL success returns (self-heal on a transport-dropped land).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "landedCommit": "origin/main HEAD after the merge \u2014 the one sha build+deploy anchor to (not the role's slot)",
+        "changedUnits": "dependency-driven deploy set (crate:<c>/pkg:<p>) the land changed; retires the hardcoded allowlist"
+      }
+    },
     "merge.idempotent": {
       "vertebra": "building",
       "source": "werk",

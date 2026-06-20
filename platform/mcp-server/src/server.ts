@@ -448,6 +448,9 @@ const DeployInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card id whose werk holds the build artifacts.'),
   target: z.enum(['canonical', 'werk']).optional().describe('Install target. Default: canonical.'),
+  // #3517 — the trigger's landed origin/main sha (threaded from werk-merge via werk.yml). Deploy's
+  // verify gates deployed-commit == landedCommit; empty/absent = RED (the claimed≠verified rule).
+  landedCommit: z.string().optional().describe('#3517 trigger landed origin/main sha; deploy gates deployed-commit==landedCommit (empty=RED).'),
   // #3311 — env-up folded in (chorus_env_up tool deleted): werk-deploy env-up is a
   // subcommand of the same binary; one MCP name per binary. #3239 card_id forwarding kept.
   env_up: z.boolean().optional().describe('Bring up the role variant (werk-deploy env-up) instead of installing.'),
@@ -531,6 +534,7 @@ const CHORUS_DEPLOY_TOOL_DEF = {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the build artifacts to deploy.' },
       target: { type: 'string', enum: ['canonical', 'werk'], description: 'Install target — canonical (~/.chorus/bin/) or werk (per-card slot). Default: canonical.' },
+      landedCommit: { type: 'string', description: '#3517 — the trigger\'s landed origin/main sha; deploy gates deployed-commit==landedCommit (empty=RED).' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -2046,6 +2050,10 @@ async function executeChorusDeploy(
   const verbArgs: string[] = [String(args.card_id)];
   if (args.target === 'werk') {
     verbArgs.push('--target', 'werk');
+  }
+  // #3517 — thread the trigger's landedCommit so deploy's verify gates deployed-commit==landedCommit.
+  if (args.landedCommit) {
+    verbArgs.push('--landedCommit', args.landedCommit);
   }
   return executeWerkVerb('werk-deploy', verbArgs, args.role, args.card_id, {});
 }

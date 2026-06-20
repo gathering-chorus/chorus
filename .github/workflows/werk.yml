@@ -191,7 +191,15 @@ jobs:
         # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid, squash-merges,
         # content-verifies. #3499: werk-merge no longer reads a demo witness — reaching this step
         # MEANS the in-run demo proved (the only-door is structural: this step is gated on proven).
-        run: chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        # #3517 — capture the trigger's landedCommit (werk-merge returns the landed origin/main sha
+        # in content.text) and thread it forward to deploy. grep the 40-hex so it's robust to any
+        # surrounding log text (no dependence on the exact MCP return shape). Empty → deploy REDs.
+        run: |
+          LANDED="$(chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")")"
+          printf '%s\n' "$LANDED"
+          LC="$(printf '%s' "$LANDED" | grep -oE '[0-9a-f]{40}' | tail -1)"
+          echo "LANDED_COMMIT=${LC}" >> "$GITHUB_ENV"
+          [ -n "$LC" ] || echo "   [warn] #3517: could not capture landedCommit from werk-merge output — deploy gate will RED on empty (claimed≠verified)" >&2
 
       - name: sync
         if: ${{ steps.demo.outputs.proven == 'true' }}
@@ -210,7 +218,9 @@ jobs:
       - name: deploy-canonical
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # target=canonical: prod is a build of MAIN. SELF-BUILDS from canonical@origin/main (#3222).
-        run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical"}' "${ROLE}" "${CARD_ID}")"
+        # #3517 — pass the captured landedCommit so deploy's verify can gate deployed-commit==landedCommit
+        # (the one-sha invariant proven at the verify, not via a risky checkout). Empty arg = RED.
+        run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landedCommit":"%s"}' "${ROLE}" "${CARD_ID}" "${LANDED_COMMIT}")"
 
       - name: accept
         if: ${{ steps.demo.outputs.proven == 'true' }}

@@ -2,12 +2,66 @@
 use werk_deploy::{
     branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,
     crate_binaries_in, crate_binaries_with_service_in, demo_cdhashes, extract_running_cdhash,
-    live_main_flag, mcp_init_ready, parse_build_summary, parse_target, require_approval,
+    landed_commit_ok, live_main_flag, mcp_init_ready, parse_build_summary, parse_target, require_approval,
+    running_verdict, RunVerdict,
     resolve_trace, service_for_crate, spine_args, target_class_in, TargetClass,
 };
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// #3517 inc1 — the one-sha invariant gate (PURE). landedCommit (threaded from werk-merge via
+// werk.yml) must == the deployed origin/main HEAD, else RED: drift (main advanced between trigger
+// and build) or empty (capture failed → "unknown"=RED, never silent-pass). Proven at the verify,
+// not via a checkout (#2706 / detached-HEAD class).
+#[test]
+fn landed_commit_ok_true_only_on_exact_match() {
+    let sha = "abc123def456abc123def456abc123def4560789";
+    assert!(landed_commit_ok(sha, sha));
+    assert!(landed_commit_ok(&format!("{sha}\n"), sha), "trims surrounding whitespace");
+}
+
+#[test]
+fn landed_commit_ok_red_on_drift() {
+    let a = "aaaa123def456abc123def456abc123def456078a";
+    let b = "bbbb123def456abc123def456abc123def456078b";
+    assert!(!landed_commit_ok(a, b), "main advanced between trigger and build = drift = RED");
+}
+
+#[test]
+fn landed_commit_ok_red_on_empty_or_blank() {
+    let sha = "abc123def456abc123def456abc123def4560789";
+    assert!(!landed_commit_ok(sha, ""), "empty landedCommit = capture failed = unknown = RED");
+    assert!(!landed_commit_ok("", sha), "empty deployed-commit = unresolvable = RED");
+    assert!(!landed_commit_ok("   ", "   "), "whitespace-only both = RED, not a false match");
+}
+
+// #3517 inc2 — running_verdict (the 06-04 stale-daemon catcher). The 5 branches, on Option<bool>
+// restarted (the start_epoch>=install_epoch math lives in the thin shell, not the pure core).
+#[test]
+fn running_verdict_cli_verb_is_ok_no_live_process() {
+    // !daemon → Ok (one-shot CLI; inc1 install-verify is its proof). installed/restarted irrelevant.
+    assert_eq!(running_verdict(false, "abc", "abc", None), RunVerdict::Ok);
+    assert_eq!(running_verdict(false, "abc", "zzz", Some(false)), RunVerdict::Ok);
+}
+#[test]
+fn running_verdict_daemon_mismatch_is_broken_install() {
+    // installed != built → broken install, regardless of restart (subsumes restarted-but-wrong-file).
+    assert_eq!(running_verdict(true, "abc", "zzz", Some(true)), RunVerdict::Mismatch);
+}
+#[test]
+fn running_verdict_daemon_unresolvable_pid_is_unknown() {
+    assert_eq!(running_verdict(true, "abc", "abc", None), RunVerdict::Unknown);
+}
+#[test]
+fn running_verdict_daemon_restarted_onto_built_is_ok() {
+    assert_eq!(running_verdict(true, "abc", "abc", Some(true)), RunVerdict::Ok);
+}
+#[test]
+fn running_verdict_daemon_not_restarted_is_stale() {
+    // started before the install = old inode = the 06-04 stale daemon → needs reload.
+    assert_eq!(running_verdict(true, "abc", "abc", Some(false)), RunVerdict::Stale);
+}
 
 // #3317 — structural binary discovery (port of bash chorus-deploy's crate_binaries, the
 // #3179/#3250 union rule): enumerate EVERY binary a crate emits = explicit [[bin]] names ∪
