@@ -1051,7 +1051,7 @@ pub fn dashboards_json(t: &RouteTable) -> String {
     )
 }
 
-/// OpenAPI 3.0.3 contract (#3364 AC2) — generated from the same shapes as the
+/// OpenAPI 3.1 contract (#3364 AC2, #3520) — generated from the same shapes as the
 /// routes, in the same pass. The spec IS the api docs AND the validation
 /// contract: the conformance walker validates live responses against it, and
 /// it's committed as a drift baseline beside routes.json. Deterministic.
@@ -1117,9 +1117,21 @@ pub fn openapi_json(t: &RouteTable) -> String {
         })
         .collect::<Vec<_>>()
         .join(",\n");
+    // #3520 — project the completeness floor (t.mandatory, sh:minCount≥1) as the
+    // OpenAPI `required` array; optional fields are expressed by omission, not null,
+    // so we emit no `nullable` (3.1-clean by construction).
+    let required = if t.mandatory.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ", \"required\": [{}]",
+            t.mandatory.iter().map(|m| format!("\"{}\"", m)).collect::<Vec<_>>().join(", ")
+        )
+    };
     format!(
-        "{{\n  \"openapi\": \"3.0.3\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
+        "{{\n  \"openapi\": \"3.1.0\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }}{required} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
         class_short = class_short,
+        required = required,
         class = t.class,
         graph = ONTOLOGY_GRAPH,
         paths = paths,
@@ -1579,25 +1591,42 @@ pub fn envelope(
     format!("{{ {} }}", p.join(", "))
 }
 
-/// #3506 / ADR-047 §2 — the `generatedFrom` provenance for a class, sourced from the
-/// model (never hand-authored): the shape IRI, its model-declared `chorus:shapeVersion`
-/// (falls back to "unversioned" — explicit, not faked — until the shape declares one),
-/// and the chorus.ttl deploy commit (env `OWL_API_MODEL_COMMIT`, "unknown" until wired
-/// by the deploy). Both version axes trace to the model/deploy, not a hardcode.
+/// #3520 / ADR-047 §2 — the `generatedFrom` provenance, DERIVED FROM THE MODEL.
+/// The version is a content hash of the shape's own declared property paths
+/// (the `sh:path` IRIs, sorted) — the version IS the shape's content, so it
+/// changes exactly when the shape changes and can never be stale, hand-bumped,
+/// or faked. Supersedes BOTH the hand-authored `chorus:shapeVersion` literal and
+/// the injected `OWL_API_MODEL_COMMIT` env (both deleted): version = f(model),
+/// resolved per request from the graph — nothing hardcoded, nothing injected.
 fn shape_meta(class_local: &str) -> (String, String, String) {
     let shape = format!("chorus:{}Shape", class_local);
     let class = format!("{}{}", NS, class_local);
-    let svq = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:shapeVersion ?sv BIND(STR(?sv) AS ?v) }} }}",
-        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    // The shape's property PATHS are IRIs (no blank nodes), so the sorted set is a
+    // stable, canonical fingerprint of the schema — cheap to hash, never ambiguous.
+    let pq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?sh sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path BIND(STR(?path) AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
     );
-    let shape_version = sparql_json(&svq)
+    let version = sparql_json(&pq)
         .ok()
-        .and_then(|b| select_v(&b).into_iter().next())
+        .map(|b| select_v(&b).join("\n"))
         .filter(|s| !s.is_empty())
+        .map(|paths| content_hash(&paths))
         .unwrap_or_else(|| "unversioned".to_string());
-    let commit = std::env::var("OWL_API_MODEL_COMMIT").unwrap_or_else(|_| "unknown".to_string());
-    (shape, shape_version, commit)
+    // Both provenance axes (shapeVersion + the former `commit`) are now the same
+    // model-derived version — one fact, not two separately-maintained stamps.
+    (shape, version.clone(), version)
+}
+
+/// #3520 — a content-derived version/ETag: a stable hex digest of the given bytes.
+/// The version IS the content (a git-blob-style hash), so it can never drift from
+/// what it labels. `DefaultHasher` uses fixed keys, so the digest is deterministic
+/// across processes — the same bytes always yield the same tag.
+fn content_hash(bytes: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    format!("{:016x}", h.finish())
 }
 
 /// #3506 / ADR-047 §4 — an error IS the same envelope (`kind:"Error"`) carrying an
@@ -1738,7 +1767,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone() };
         return (200, routes_json(&t));
     }
-    // GET /openapi.json — the generated OpenAPI 3.0.3 spec (#3453). Another
+    // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
     // projection of the SAME model that generates the routes; openapi_json walks
     // table.routes so a new edge type appears here automatically. The API
     // documents itself — no hand-written stand-in.
@@ -2308,13 +2337,16 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         };
         let upstream_ms = upstream_started.elapsed().as_millis();
         let status = status_line(code);
-        // #3506 / ADR-047 §7 — ETag = the model commit; a conditional GET whose
-        // If-None-Match equals it gets a 304 (the served bytes change only when the
-        // model commit moves). GET 200s carry ETag + Vary so a client can revalidate.
-        let etag = dim_cache
-            .get(table.class.rsplit('#').next().unwrap_or(""))
-            .map(|d| d.2.clone())
-            .filter(|c| !c.is_empty() && c != "unknown");
+        // #3520 / ADR-047 §7 — ETag = a content hash of the served body. The cache
+        // key IS the response content, derived per-entity: it changes exactly when
+        // THIS entity's bytes change (NOT a global commit that would invalidate every
+        // cache on any model write — that coarseness was the bug), and it activates
+        // with zero env and zero deploy injection. version = f(content).
+        let etag = if method == "GET" && code == 200 {
+            Some(content_hash(&body))
+        } else {
+            None
+        };
         let cond_hit = method == "GET"
             && code == 200
             && etag.as_deref().map_or(false, |t| header("if-none-match").trim().trim_matches('"') == t);
@@ -2710,7 +2742,7 @@ mod tests {
         RouteTable {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
-            mandatory: vec![],
+            mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
             repo_target: String::new(),
             exposure: vec![],
             routes: vec![
@@ -2728,7 +2760,8 @@ mod tests {
         let t = openapi_fixture();
         let (code, body) = handle("/openapi.json", &t);
         assert_eq!(code, 200);
-        assert!(body.contains("\"openapi\": \"3.0.3\""), "must be an OpenAPI 3.0.3 doc");
+        assert!(body.contains("\"openapi\": \"3.1.0\""), "must be an OpenAPI 3.1 doc (ADR-047 §7, #3520)");
+        assert!(body.contains("\"required\": ["), "the completeness floor (t.mandatory) projects as `required` (#3520)");
         // AC2 — every generated read route appears (covers each edge type)
         assert!(body.contains("\"/domains\""), "list route present");
         assert!(body.contains("/domains/{name}"), "entity route present");
