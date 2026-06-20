@@ -144,6 +144,19 @@ jobs:
         # Its exit code IS the gate — mapped to the `proven` output that gates the land steps.
         run: |
           set +e
+          # #3519 — RECORD the human GO before the prove step. #3511 retired the at-invoke
+          # go-flag (werk-demo's dispatch parses only the card and IGNORES the 2nd positional),
+          # but the /cw land path was never reconnected to the go-RECORDING (`werk-demo go`).
+          # So Jeff's go via `/cw <card> go` was never written → jeff_go_recorded found nothing
+          # → exit 2 → re-present (it was NOT round-churn; the go simply never recorded).
+          # Recorded under ACCEPTER (not ROLE) so #3511's self-accept guard stays closed:
+          # the witness is the human authority, never the builder. Recorded here (after the
+          # commit-step rebase) so round+patch_id match the round the prove step checks.
+          case "${GO}" in
+            true|go|yes|GO)
+              if [ -z "${ACCEPTER}" ]; then echo "[demo] GO with no accepter — refusing (DEC-048)"; exit 1; fi
+              PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ACCEPTER}" werk-demo go "${CARD_ID}" ;;
+          esac
           PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
           rc=$?
           set -e
