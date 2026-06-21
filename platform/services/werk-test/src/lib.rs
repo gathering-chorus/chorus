@@ -19,6 +19,11 @@ pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
 /// hardcoded set — the only packages whose tests are runnable in the werk).
+///
+/// ⚠️ Part of the TRANSITIONAL BRIDGE (see `affected_units`): this hand-maintained
+/// list is the pre-graph approach. Stage 2 derives the testable units from the
+/// tests-domain graph (`Test covers Service`), not a hardcoded array — gated on
+/// #2818's populated instances. Don't grow this list as if it were permanent.
 pub const TS_PACKAGES: &[&str] = &[
     "platform/api",
     "platform/chorus-sdk",
@@ -162,6 +167,12 @@ pub struct PlannedCheck {
 /// `clippy-ratchet` iff any Rust crate changed; `doc-coherence` iff anything is
 /// affected (the repo-wide doc floor). Deterministic order: per-unit checks in
 /// `units` order, then clippy, then doc-coherence.
+///
+/// ⚠️ TRANSITIONAL BRIDGE (see `affected_units`): the per-unit check mapping is
+/// hardcoded here. Stage 2 derives which gate runs at which tier from the model
+/// (`pyramidLayer` + `hermeticity`) rather than this fixed table — Silas's #3540
+/// selection is the first wedge. Deterministic by design either way (same units →
+/// same plan), per #3190's governing bar.
 pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
     let mut plan = Vec::new();
     let mut any_rust = false;
