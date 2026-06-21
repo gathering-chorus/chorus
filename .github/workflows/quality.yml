@@ -423,6 +423,11 @@ jobs:
           # the wrapper into the release binary; missing binary → wrapper
           # exits "not found" → empty spine log → assertion fails.
           cargo build --release --bin chorus-hook-shim
+          # #3528 — put the just-built shim on PATH so the chorus-log wrapper
+          # resolves it (command -v chorus-hook-shim). Without this it built but
+          # wasn't found → wrapper "not found" → empty spine log → override-emit
+          # assertion failed. GITHUB_PATH applies to subsequent (test) steps.
+          echo "${GITHUB_WORKSPACE}/platform/services/chorus-hooks/target/release" >> "$GITHUB_PATH"
           # HOOK_LOG path in main.rs writes here; if-let-Ok wraps the open so
           # missing dir doesn't crash the server, but creating it is cheap.
           sudo mkdir -p /Users/jeffbridwell/Library/Logs/Gathering
@@ -466,8 +471,16 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - name: Install bats
-        run: sudo apt-get update -y && sudo apt-get install -y bats
+      - name: Install bats + gitleaks
+        # #3528 — gitleaks isn't in apt; the gitleaks-baseline bats tests
+        # (2709-gitleaks-baseline) need the binary present or they fail
+        # `command -v gitleaks`. Install the release binary to /usr/local/bin.
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y bats
+          GL_VER=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
       - name: Run bats suite (platform/tests/*.bats)
         # `bats -r` walks the dir; --tap output for log readability when
         # things break. Per-test isolation is bats's default.
