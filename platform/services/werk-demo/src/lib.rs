@@ -308,6 +308,16 @@ pub fn jeff_go_recorded(witness: &str, card: u64, round: &str, patch_id: &str) -
     })
 }
 
+/// #3548 — should the demo fire the "ready for your GO" announce?
+/// Only when PRESENTING-for-go: gates ran (`!skip_gate_check`), gathers sent
+/// (`!skip_gather_send`), and Jeff's go is NOT yet recorded (`!go_recorded`).
+/// When `go_recorded` is true the demo step is re-running on the LANDING invoke
+/// (werk.yml one-job-one-run) — re-announcing "ready for GO" there is the duplicate
+/// that baits a re-issued `go` and reads as a cw loop. Pure decision, no I/O.
+pub fn should_announce_ready(skip_gate_check: bool, skip_gather_send: bool, go_recorded: bool) -> bool {
+    !skip_gate_check && !skip_gather_send && !go_recorded
+}
+
 /// #3443 AC2 — peers who have NOT yet been SENT a gather this round. Distinct
 /// from gathers_missing (which tracks REPLIES): sending is keyed on
 /// demo.gather.sent so a re-invoke before a peer replies does NOT re-fire the
@@ -1398,7 +1408,15 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // demo.go → the go-gated land (werk-merge reads demo.presented + demo.go) merges.
     // Only Jeff's recorded go lands a card — the self-accept hole stays closed by
     // construction (no at-invoke go flag exists for an agent to set).
-    if !skip_gate_check && !skip_gather_send {
+    // #3548 — do NOT re-announce "ready for GO" when Jeff's go is ALREADY recorded for
+    // this round/patch. On the go-invoke the demo step re-runs (werk.yml one-job-one-run),
+    // so present-and-exit would fire the announce AGAIN on the LANDING run — the duplicate
+    // that baits a re-issued `go` and reads as a "cw loop that runs over and over."
+    // jeff_go_recorded (#3461 patch-tolerant) is the same witness slot the land verdict
+    // reads; gating on it makes the announce fire ONLY when presenting-for-go, never when
+    // landing. The DELIVERY of that announce (#3544 system-sender) is unchanged.
+    let go_recorded = jeff_go_recorded(&witness, card, &round, &patch);
+    if should_announce_ready(skip_gate_check, skip_gather_send, go_recorded) {
         announce_to_jeff(role, card, &trace, &variant_url, &round);
     }
     Ok(DemoOutcome { message: announce, exit: 2 })
@@ -2376,6 +2394,17 @@ mod tests {
         lines.push(gather_line(3352, "kade"));
         let w = lines.join("\n");
         assert!(announce_ready_full(&w, 3352, "wren", "r1", "", false), "gates + both replies ⇒ announce");
+    }
+
+    #[test]
+    fn should_announce_ready_suppresses_when_go_already_recorded() {
+        // #3548 — the loop fix. Presenting-for-go (no go yet) ⇒ announce fires.
+        assert!(should_announce_ready(false, false, false), "present-for-go ⇒ announce");
+        // Landing run (go already recorded) ⇒ NO re-announce (kills the duplicate / loop bait).
+        assert!(!should_announce_ready(false, false, true), "go already recorded ⇒ suppress on land");
+        // Skip paths still suppress regardless of go state.
+        assert!(!should_announce_ready(true, false, false), "skip_gate_check ⇒ suppress");
+        assert!(!should_announce_ready(false, true, false), "skip_gather_send ⇒ suppress");
     }
 
     #[test]
