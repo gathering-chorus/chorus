@@ -569,19 +569,10 @@ jobs:
     # stale post-#2998 and couldn't be checked without waiting for a nightly).
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
-    services:
-      fuseki:
-        image: stain/jena-fuseki:5.0.0
-        ports:
-          - 3030:3030
-        env:
-          ADMIN_PASSWORD: admin
-          FUSEKI_DATASET_1: pods
-        options: >-
-          --health-cmd "wget -qO- http://localhost:3030/$/ping || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 30
+    # #3528 — Docker was ripped out months ago; this job carried a stale
+    # `services: fuseki` Docker container. Replaced with NATIVE Jena Fuseki
+    # (boot step below) — how the real stack runs (launchd, not Docker) — and
+    # runner-agnostic (no Docker dependency).
     env:
       CHORUS_ROOT: ${{ github.workspace }}
       FUSEKI_URL: http://localhost:3030/pods/query
@@ -600,6 +591,20 @@ jobs:
 
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats curl
+
+      # #3528 — boot Jena Fuseki natively (no Docker). Java is preinstalled on
+      # the runner; --mem is an in-memory dataset named /pods on :3030.
+      - name: Boot Fuseki (native)
+        run: |
+          FUSEKI_VER=5.0.0
+          curl -sSL "https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${FUSEKI_VER}.tar.gz" | tar xz
+          nohup ./apache-jena-fuseki-${FUSEKI_VER}/fuseki-server --update --mem /pods --port 3030 > /tmp/fuseki.log 2>&1 &
+          echo $! > /tmp/fuseki.pid
+          for i in $(seq 1 60); do
+            if curl -sf "http://localhost:3030/$/ping" >/dev/null 2>&1; then echo "fuseki up"; break; fi
+            sleep 1
+          done
+          curl -sf "http://localhost:3030/$/ping" >/dev/null || (echo "fuseki never came up:"; cat /tmp/fuseki.log; exit 1)
 
       - name: Build chorus-hook-shim (release)
         working-directory: platform/services/chorus-hooks
@@ -659,6 +664,9 @@ jobs:
         env:
           CHORUS_MCP_PORT: '3341'
           CHORUS_API_URL: http://localhost:3340
+          # #3528 — write spine events (incl. nudge.emitted) to the SAME log the
+          # round-trip bats reads (server.ts:1805 honors CHORUS_LOG_FILE).
+          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
         run: |
           nohup node dist/main.js > /tmp/chorus-mcp.log 2>&1 &
           echo $! > /tmp/chorus-mcp.pid
@@ -671,6 +679,7 @@ jobs:
         env:
           MESSAGING_PORT: '3475'
           PULSE_ALLOW_DIRECT_POST: '1'
+          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
         run: |
           nohup node dist/service.js > /tmp/pulse.log 2>&1 &
           echo $! > /tmp/pulse.pid
