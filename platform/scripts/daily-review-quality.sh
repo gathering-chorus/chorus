@@ -87,7 +87,11 @@ while IFS='|' read -r marker kind path owner status summary; do
         [ "$s_total" -gt 0 ] && parsed="yes"
       fi
       ;;
-    shell)
+    shell|lint)
+      # lint (#3484/#3537): nightly-suites.sh run_lint_ratchet emits the same
+      # "N pass, N fail" shape as shell suites (e.g. "1 pass, 0 fail (lint:ratchet
+      # clean — ...)"). Without `lint` here the SUITE|lint line fell through the
+      # switch → parsed=no → a false "DID NOT RUN" every nightly though lint is green.
       if echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
         s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
