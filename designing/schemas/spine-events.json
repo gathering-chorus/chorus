@@ -2125,6 +2125,16 @@
         "role": "Acting role"
       }
     },
+    "demo.reviews.running": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer (proving ceremony): `demo.reviews.running` — peer-review gathering started (#3539 gathers-as-gates; emit-site werk-demo/src/lib.rs run_reviews). Registered #3546 (Wren handoff).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card_id": "Card under demo"
+      }
+    },
     "demo.gate.result": {
       "vertebra": "proving",
       "source": "werk",
