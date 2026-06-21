@@ -39,7 +39,7 @@ export function pidAlive(pid: number): boolean {
     return true;
   } catch (e: unknown) {
     // EPERM means the process exists but we can't signal it — still alive.
-    return (e as NodeJS.ErrnoException)?.code === 'EPERM';
+    return (e as NodeJS.ErrnoException | undefined)?.code === 'EPERM';
   }
 }
 
@@ -79,7 +79,7 @@ export function readRegistry(dir: string = SESSIONS_DIR): SessionReg[] {
   for (const name of names) {
     try {
       const raw = readFileSync(path.join(dir, name), 'utf8');
-      const obj = JSON.parse(raw) as SessionReg;
+      const obj = JSON.parse(raw) as SessionReg | null;
       if (obj && typeof obj.role === 'string' && typeof obj.pid === 'number' && typeof obj.tty === 'string') {
         out.push({ ...obj, host: obj.host || 'unknown' });
       }
