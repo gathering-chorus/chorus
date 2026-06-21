@@ -145,6 +145,14 @@ jobs:
   unit-tests:
     name: jest — ${{ matrix.package }}
     runs-on: ubuntu-latest
+    # #3528 — the app-side CHORUS_ROOT (chorus-paths.ts) is a module-load const
+    # that binds to os.homedir()/CascadeProjects/chorus when this env is unset.
+    # Tests that set process.env.CHORUS_ROOT at runtime can't override it (already
+    # bound at import), so athena-tree's loadTree read tree.json from the homedir
+    # default → ENOENT in CI. The cargo jobs already set this; the jest job didn't.
+    # Point it at the checkout so committed fixtures (data/athena/tree.json) resolve.
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
     # DEC-2525 REQUIRED CHECK #1 — hermetic jest only.
     # The *.integration.test.ts suffix is excluded by per-package jest
     # configs (#2524 convention). Adding a required check here requires
