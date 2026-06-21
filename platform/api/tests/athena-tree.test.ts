@@ -24,9 +24,11 @@ import {
 import { TreeSchema, type Tree } from '../src/handlers/athena-tree-schemas';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 
-const REPO_ROOT = process.env.CHORUS_ROOT || path.join(os.homedir(), 'CascadeProjects/chorus-werk/wren-2940');
+// Hermetic: resolve repo root relative to this test file (platform/api/tests → repo root),
+// not a dev-machine werk path. CHORUS_ROOT override kept. The hardcoded wren-2940 default broke
+// CI (path absent → loadTree throws); it passed locally only because dev shells set CHORUS_ROOT.
+const REPO_ROOT = process.env.CHORUS_ROOT || path.resolve(__dirname, '../../..');
 const TREE_PATH = path.join(REPO_ROOT, 'data/athena/tree.json');
 
 describe('loadTree — fixture round-trip against TreeSchema (#2928 Silas gate:arch note)', () => {

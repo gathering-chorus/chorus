@@ -102,6 +102,10 @@ fn canon_running_proof_fixture() -> (PathBuf, PathBuf) {
 // restart onto the new binary (codesign-on-path alone would false-pass it). ps-shim → OLD lstart
 // (< install_epoch) → restarted=false → Stale → kickstart -k ONCE → re-resolve (still OLD) → Err.
 // The must-test case: proves the running-proof + bounded-retry-then-Err end-to-end.
+// #3528 — macOS-only: drives the lstart shim via BSD `date -v` and hits the real `date -j`
+// parse in resolve_restarted; both are absent on the Linux CI runner (ubuntu). The pure
+// branch logic is covered cross-platform by lib.rs::running_verdict_tests.
+#[cfg(target_os = "macos")]
 #[test]
 fn e2e_running_proof_stale_daemon_reds() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -127,6 +131,11 @@ fn e2e_running_proof_unknown_pid_reds() {
     assert!(e.contains("unknown=RED") || e.contains("runtime unverified"), "unknown=RED gate fires: {}", e);
 }
 
+// #3528 — macOS-only: the prod-deploy path verifies running==built via launchd + BSD
+// `date` (the FUTURE-lstart shim → restarted), absent on the Linux CI runner. Pure verdict
+// logic is covered by lib.rs::running_verdict_tests; the platform-independent deploy guards
+// run in the other e2e tests.
+#[cfg(target_os = "macos")]
 #[test]
 fn e2e_deploy_both_slots_and_guards() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());

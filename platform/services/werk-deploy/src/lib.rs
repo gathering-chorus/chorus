@@ -2610,3 +2610,45 @@ fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, targe
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
     }
 }
+
+#[cfg(test)]
+mod running_verdict_tests {
+    // #3528 — the running-proof verdict logic (#3517 inc2, the 2026-06-04 stale-daemon
+    // catcher) was PURE-by-design but never unit-tested — its only coverage was the
+    // macOS-launchd e2e tests, which can't run on the Linux CI runner (BSD date -v/-j).
+    // These pure tests exercise all 5 branches cross-platform (no shell), so the safety
+    // logic stays covered on every CI push; the e2e tests verify the macOS shelling
+    // where the runtime actually lives.
+    use super::{running_verdict, RunVerdict};
+
+    #[test]
+    fn one_shot_cli_is_ok_without_a_live_process() {
+        // class_is_daemon=false → install-verify already gated it, no running process to prove.
+        assert_eq!(running_verdict(false, "AAA", "AAA", None), RunVerdict::Ok);
+        assert_eq!(running_verdict(false, "AAA", "BBB", Some(false)), RunVerdict::Ok);
+    }
+
+    #[test]
+    fn installed_not_equal_built_is_mismatch_regardless_of_process() {
+        // a broken install reds before the process state even matters.
+        assert_eq!(running_verdict(true, "BUILT", "STALE_INSTALL", Some(true)), RunVerdict::Mismatch);
+        assert_eq!(running_verdict(true, "BUILT", "STALE_INSTALL", None), RunVerdict::Mismatch);
+    }
+
+    #[test]
+    fn daemon_restarted_onto_built_is_ok() {
+        assert_eq!(running_verdict(true, "SAME", "SAME", Some(true)), RunVerdict::Ok);
+    }
+
+    #[test]
+    fn daemon_did_not_restart_is_stale_06_04() {
+        // installed==built but the process never restarted onto it → old inode → Stale.
+        assert_eq!(running_verdict(true, "SAME", "SAME", Some(false)), RunVerdict::Stale);
+    }
+
+    #[test]
+    fn unresolvable_pid_is_unknown_red() {
+        // PID/start-time unresolvable → Unknown (the contract's unknown=RED; never silent-pass).
+        assert_eq!(running_verdict(true, "SAME", "SAME", None), RunVerdict::Unknown);
+    }
+}
