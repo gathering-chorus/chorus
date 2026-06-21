@@ -12,8 +12,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import type { WerkRun, WerkRunPhase } from './werk-run-state';
-import { parseExitSentinel, extractFailureReason } from './werk-run-state';
+import { parseExitSentinel, extractFailureReason, type WerkRun, type WerkRunPhase } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 

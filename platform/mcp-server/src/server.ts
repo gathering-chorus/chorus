@@ -2091,7 +2091,6 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // cannot happen — we removed the long hold, we did not paper over it with a detach (which
 // cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
 // his GO re-invokes chorus_werk with go:true, resuming past the demo stop (#3311).
-// eslint-disable-next-line complexity -- cohesive werk-pipeline dispatch (verb routing + arg marshalling + result shaping in one place); splitting fragments the one trace (#3429)
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,

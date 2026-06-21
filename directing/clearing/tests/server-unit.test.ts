@@ -518,6 +518,14 @@ describe('server — authenticated tunneled paths', () => {
 });
 
 describe('server — SSE stream and session', () => {
+  // Ensure the fixture log dir exists for EVERY test in this block regardless of
+  // --randomize order (#2532). Several tests writeFileSync chorus.log without first
+  // creating platform/logs, so they relied on another test's mkdirSync running first —
+  // an order-dependent ENOENT flake when shuffled to run before any dir-creator.
+  beforeAll(() => {
+    fs.mkdirSync(path.join(TMP, 'platform/logs'), { recursive: true });
+  });
+
   test('GET /api/stream reads chorus.log and returns JSON', async () => {
     // Invoke extractSequenceTags — production symbol — to satisfy the test
     // quality gate for this edit; the result asserts production-module loaded.
@@ -745,15 +753,31 @@ describe('zy — socket disconnect ends clearing session (#2266)', () => {
   });
 });
 
-// --- Must run last: /api/restart closes io + server ---
-describe('zz — final: restart (destructive)', () => {
-  test('POST /api/restart exercises shutdown path (exit mocked)', async () => {
+// /api/restart exercises the shutdown path. Its handler DEFERS a 500ms setTimeout
+// that calls io.close + server.close + process.exit. We mock all three so the path
+// is ASSERTED without actually tearing down the shared module-singleton server.
+// Why this matters (#2532): the old `describe('zz — final')` + "must run last" name
+// was an alphabetical ordering hack to keep the destructive close at the end — but
+// --randomize deliberately defeats run-order, so when this test was shuffled off-last
+// its deferred server.close() killed the listener mid-suite and every later test red
+// with `connect ECONNREFUSED` (the order-dependent flake). Mocking close() makes the
+// test order-independent BY CONSTRUCTION and verifies the contract (shutdown invoked),
+// not the side effect. No prod change; server.ts is untouched.
+describe('restart (destructive shutdown path)', () => {
+  test('POST /api/restart invokes the shutdown path without killing the shared server', async () => {
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((..._args: any[]) => undefined) as any);
+    const ioCloseSpy = jest.spyOn(io, 'close').mockImplementation(((cb?: () => void) => { cb?.(); return io; }) as any);
+    const serverCloseSpy = jest.spyOn(server, 'close').mockImplementation(((cb?: (err?: Error) => void) => { cb?.(); return server; }) as any);
     const r = await call('/api/restart', { method: 'POST' });
     expect(r.status).toBe(200);
     expect(r.body).toHaveProperty('ok', true);
-    // Handler schedules setTimeout(500ms) → tailer.stop, io.close, server.close, process.exit.
+    // Let the deferred 500ms shutdown fire so the spies record the invocation.
     await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(serverCloseSpy).toHaveBeenCalled();
+    // The shared production server must remain bound — the regression this guards.
+    expect(server.address()).not.toBeNull();
+    serverCloseSpy.mockRestore();
+    ioCloseSpy.mockRestore();
     exitSpy.mockRestore();
   });
 });

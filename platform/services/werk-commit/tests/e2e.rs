@@ -25,7 +25,23 @@ fn tmp(tag: &str) -> PathBuf {
     fs::create_dir_all(&p).unwrap();
     p
 }
+// #3528 — the werk-commit binary spawns its OWN `git commit` (not via this helper),
+// so it inherits the TEST PROCESS env, not the per-Command .env() below. On a CI runner
+// with no global git identity, that commit died "Author identity unknown". Set a
+// deterministic identity process-wide ONCE (mirrors what `chorus-werk add` does per-werk
+// in production) so every spawned git — helper or binary — has an author.
+fn ensure_git_identity() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        std::env::set_var("GIT_AUTHOR_NAME", "t");
+        std::env::set_var("GIT_AUTHOR_EMAIL", "t@t");
+        std::env::set_var("GIT_COMMITTER_NAME", "t");
+        std::env::set_var("GIT_COMMITTER_EMAIL", "t@t");
+    });
+}
 fn git(dir: &Path, args: &[&str]) {
+    ensure_git_identity();
     let ok = Command::new("git")
         .args(args)
         .current_dir(dir)

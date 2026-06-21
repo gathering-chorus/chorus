@@ -28,6 +28,12 @@ if (!CHORUS_ROOT) {
   throw new Error('CHORUS_ROOT must be set; expected /Users/jeffbridwell/CascadeProjects/chorus');
 }
 
+// Team-scan dir (role observations + pids). Env-overridable so tests isolate it to a
+// fixture dir — same convention as tiles.ts. Default unchanged: prod reads the live
+// /tmp/claude-team-scan. Hardcoding it made /api/stream merge live observations into
+// test fixtures → non-deterministic SSE-test flake under load (#3528 green-main).
+const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
+
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
 const crypto = require('crypto');
@@ -390,7 +396,7 @@ app.get('/api/commands/:role', (req, res) => {
   if (!['wren', 'silas', 'kade'].includes(role)) return res.status(400).json({ error: 'invalid role' });
 
   const fs = require('fs');
-  const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
+  const obsFile = `${SCAN_DIR}/${role}-observations.jsonl`;
   const lines: string[] = [];
 
   try {
@@ -531,7 +537,7 @@ function parseObservation(line: string, seen: Set<string>): StreamLine | null {
 }
 
 function readObservationsForRole(fs: typeof fs_node, role: string, out: StreamLine[]): void {
-  const obsFile = `/tmp/claude-team-scan/${role}-observations.jsonl`;
+  const obsFile = `${SCAN_DIR}/${role}-observations.jsonl`;
   try {
     const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
     const seen = new Set<string>();
@@ -787,7 +793,7 @@ app.get('/api/card/:id', (_req, res) => {
 
 function getRoleTTY(role: string): string | null {
   const fs = require('fs');
-  const pidFile = `/tmp/claude-team-scan/${role}.pid`;
+  const pidFile = `${SCAN_DIR}/${role}.pid`;
   try {
     const pid = fs.readFileSync(pidFile, 'utf-8').trim();
     const { execSync } = require('child_process');

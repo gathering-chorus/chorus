@@ -23,11 +23,10 @@
  */
 import type { Application, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { buildMcpServer } from './server';
+import { buildMcpServer, executeNudge, type FetchImpl, type NudgeArgs } from './server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
-import { executeNudge, type FetchImpl, type NudgeArgs } from './server';
 
 // #3000 — transport-level error capture. Emit typed mcp.transport.error
 // spine events on non-2xx /mcp responses + connection-level failures.

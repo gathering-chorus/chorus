@@ -155,6 +155,14 @@ exit 0
     // e2e never fires a live MCP nudge (keeps the happy path's zero-nudge contract).
     std::env::set_var("CHORUS_DEMO_SKIP_GATHER_SEND", "1");
     std::env::set_var("CHORUS_DEMO_ROUND", "e2e-r1");
+    // Hermetic: the AC6 refuse-to-present assertion below exercises the ENFORCE path,
+    // which only runs when in_act is false (lib.rs:1019). Real GitHub Actions sets
+    // GITHUB_ACTIONS, which would route the un-gated demo into the #3318 CI-degrade
+    // (present, exit 2) and fail the exit==1 assertion. Clear both so enforcement is
+    // tested deterministically regardless of host (local or CI). The CI-degrade path
+    // itself is covered by unit tests, not this assertion.
+    std::env::remove_var("ACT");
+    std::env::remove_var("GITHUB_ACTIONS");
 
     // #3284 (AC6): with NO gates recorded, the demo REFUSES to present (invariant gate
     // execution) — exit 1, typed gates-missing — BEFORE any announce. This is the
