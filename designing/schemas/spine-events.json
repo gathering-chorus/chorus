@@ -2389,6 +2389,30 @@
         "role": "Acting role"
       }
     },
+    "deploy.stale": {
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "Werk `deploy` verb — daemon did NOT reload onto the just-built binary after kickstart -k (stale-running, the 2026-06-04 class). RED, not rollback: the file is good; restoring an older binary can't fix a stale-running daemon (#3539 register; emitted at werk-deploy/lib.rs).",
+      "fields": {
+        "name": "Service/crate name (e.g., chorus-hooks)",
+        "bin": "Binary name deployed",
+        "installedCdhash": "Codesign cdhash of the installed binary",
+        "equal": "installed == built (true here — install is good)",
+        "restartedAfterInstall": "Whether the daemon restarted onto the new binary (false = stale)"
+      }
+    },
+    "deploy.unverifiable": {
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "Werk `deploy` verb — could NOT resolve the running process to verify running==built (unknown=RED). Install is good but runtime is unverified; the running-proof can't be established (#3539 register; emitted at werk-deploy/lib.rs).",
+      "fields": {
+        "name": "Service/crate name",
+        "bin": "Binary name deployed",
+        "installedCdhash": "Codesign cdhash of the installed binary",
+        "equal": "installed == built (true — install is good)",
+        "restartedAfterInstall": "unknown (PID/start-time unresolvable)"
+      }
+    },
     "deploy.started": {
       "vertebra": "building",
       "source": "werk",
@@ -2940,6 +2964,20 @@
         "trace_id": "Werk trace join key",
         "role": "Acting role",
         "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
+      }
+    },
+    "werk.held": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk land \u2014 GO given but NOT landed: the witness (gates/gathers/go for this patch) is missing, so the card STAYS WIP. The distinct HELD terminal phase (#3519, Wren pre-land: presented/held/landed are three phases, not two). Emitted by werk.yml. Registered #3539.",
+      "fields": {
+        "card_id": "Card being held",
+        "role": "Acting role",
+        "accepter": "Authority the go ran under",
+        "trace_id": "Werk trace join key",
+        "status": "held",
+        "held_reason": "What's missing (gates/gathers or go)",
+        "sync_ok": "Whether canonical sync succeeded"
       }
     },
     "werk.landed": {

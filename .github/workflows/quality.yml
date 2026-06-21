@@ -547,7 +547,10 @@ jobs:
     # Boots Fuseki service container + builds chorus-api + builds
     # chorus-hook-shim + runs bats — ~3-5 min/run. Per-PR is wasteful;
     # nightly proves the round-trip still works.
-    if: github.event_name == 'schedule'
+    # #3528 — also runnable on workflow_dispatch so the round-trip can be
+    # verified on-demand (the schedule-only gate hid that this job had gone
+    # stale post-#2998 and couldn't be checked without waiting for a nightly).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     services:
       fuseki:
@@ -591,6 +594,15 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      # #3528 — /mcp moved off chorus-api to this separate daemon (#2998); it
+      # proxies the principles/nudge tools to chorus-api's REST. The job boots
+      # both: chorus-api (:3340, the proxy target) + chorus-mcp (:3341, /mcp).
+      - name: Build chorus-mcp
+        working-directory: platform/mcp-server
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
       - name: Seed Fuseki with principles ontology
         # Loads chorus.ttl into urn:chorus:instances — the named graph the
         # principles SPARQL (src/sparql/loom-principles.sparql) queries.
@@ -615,6 +627,17 @@ jobs:
           nohup node dist/server.js > /tmp/chorus-api.log 2>&1 &
           echo $! > /tmp/chorus-api.pid
 
+      # #3528 — boot the chorus-mcp daemon that serves /mcp on :3341. It proxies
+      # the principles/nudge tools to chorus-api's REST (CHORUS_API_URL=:3340).
+      - name: Boot chorus-mcp (background)
+        working-directory: platform/mcp-server
+        env:
+          CHORUS_MCP_PORT: '3341'
+          CHORUS_API_URL: http://localhost:3340
+        run: |
+          nohup node dist/main.js > /tmp/chorus-mcp.log 2>&1 &
+          echo $! > /tmp/chorus-mcp.pid
+
       - name: Wait for /mcp endpoint
         run: |
           for i in $(seq 1 60); do
@@ -626,8 +649,9 @@ jobs:
             if [ "$code" = "200" ] || [ "$code" = "202" ]; then exit 0; fi
             sleep 1
           done
-          echo "chorus-api never became ready; tail log:"
-          tail -100 /tmp/chorus-api.log || true
+          echo "chorus-mcp (:3341) never became ready; tail logs:"
+          echo "--- chorus-mcp.log ---"; tail -100 /tmp/chorus-mcp.log || true
+          echo "--- chorus-api.log ---"; tail -50 /tmp/chorus-api.log || true
           exit 1
 
       - name: Run MCP round-trip bats
