@@ -1091,7 +1091,15 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let skip_gather_send =
         std::env::var("CHORUS_DEMO_SKIP_GATHER_SEND").map(|v| v == "1").unwrap_or(false);
     if !skip_gather_send {
-        fire_gathers(home, role, card, &trace, &round);
+        // #3539 — gathers-as-gates: where claude is available (Jeff's box, local act),
+        // the binary RUNS each peer's review itself (spawned headless claude -p,
+        // recorded in-process) — peer review is a GATE, not a nudge we wait on. Only
+        // in hosted CI with no claude do we fall back to the old send-the-nudge path.
+        if claude_available() {
+            run_reviews(home, role, card, &round, &trace);
+        } else {
+            fire_gathers(home, role, card, &trace, &round);
+        }
     }
 
     // #3319 (Jeff's JX, 2026-06-10): THE ANNOUNCE IS THE READY-GATE. The
@@ -1725,6 +1733,171 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     record_gate(home, role, card, gate, &result, &findings, round);
 }
 
+/// #3539 — wrap a peer's CLAUDE.md as the system prompt for their SPAWNED review.
+/// The peer reviews as themselves (their identity), answers the 4 gather questions,
+/// and ends with a machine-parsable verdict line. Identity capped so a large
+/// CLAUDE.md can't blow the context budget.
+pub fn review_system_prompt(peer: &str, identity: &str) -> String {
+    let id: String = identity.chars().take(40_000).collect();
+    format!(
+        "You are {peer}. Your role identity (CLAUDE.md) follows. Review the peer's card + branch diff (provided next) AS {peer} WOULD — substantive, not a rubber stamp. Answer the four gather questions: (1) how does this impact your products, (2) how does it impact you and your domain, (3) are they over-building or under-planning, (4) does this strengthen the system or just please the room. Then END your reply with exactly one JSON line and nothing after it: {{\"result\":\"pass\",\"findings\":\"<your substance>\"}} — result is pass | concerns | block.\n\n=== {peer} identity (CLAUDE.md) ===\n{id}",
+        peer = peer, id = id
+    )
+}
+
+/// #3539 — run ONE peer's review as a spawned headless `claude -p` loaded with
+/// that peer's CLAUDE.md + the card + the branch diff + the 4 questions, recording
+/// the verdict as demo.gather.replied. Mirrors run_one_gate exactly — peer review
+/// becomes a deterministic in-process GATE, not an awaited live-session reply (the
+/// step-5 fix: spawn-and-record replaces nudge-and-wait, which had no reliable writer).
+fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
+    let _ = round; // verdict round/patch are stamped by record_gather_replied (current_round/current_patch_id)
+    let peer_md = home.join(format!("roles/{}/CLAUDE.md", peer));
+    let identity = match fs::read_to_string(&peer_md) {
+        Ok(s) => s,
+        Err(e) => {
+            record_gather_replied(home, role, card, peer, "error",
+                &format!("peer CLAUDE.md unreadable {}: {}", peer_md.display(), e));
+            return;
+        }
+    };
+    let sys = review_system_prompt(peer, &identity);
+
+    let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+        format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+    });
+    let werk = format!("{}/{}-{}", werk_base, role, card);
+    let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
+    let diff = Command::new("git")
+        .arg("-C").arg(&werk)
+        .args(["diff", "origin/main...HEAD"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let diff_capped: String = diff.chars().take(60_000).collect();
+    let ctx = format!(
+        "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
+        card, card_view, diff_capped
+    );
+
+    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
+    let bin = match claude_bin() {
+        Some(b) => b,
+        None => {
+            record_gather_replied(home, role, card, peer, "error", "claude binary not resolvable");
+            return;
+        }
+    };
+    let child = Command::new(&bin)
+        .env("CHORUS_HEADLESS", "1") // exempt the review's claude -p from RESPOND-FIRST (#3218/#3471)
+        .args([
+            "-p",
+            "--model", &model,
+            "--permission-mode", "dontAsk",
+            "--no-session-persistence",
+            "--output-format", "text",
+            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
+            "--system-prompt", &sys,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            record_gather_replied(home, role, card, peer, "error", &format!("claude spawn failed: {}", e));
+            return;
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(ctx.as_bytes());
+    }
+    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Some(st),
+            Ok(None) => {
+                if start.elapsed() >= Duration::from_secs(timeout_secs) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                sleep(Duration::from_millis(200));
+            }
+            Err(e) => {
+                record_gather_replied(home, role, card, peer, "error", &format!("claude wait failed: {}", e));
+                return;
+            }
+        }
+    };
+    let status = match status {
+        Some(s) => s,
+        None => {
+            record_gather_replied(home, role, card, peer, "error",
+                &format!("review timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs));
+            return;
+        }
+    };
+    let mut stdout = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut stdout);
+    }
+    if !status.success() {
+        let mut stderr = String::new();
+        if let Some(mut e) = child.stderr.take() {
+            let _ = e.read_to_string(&mut stderr);
+        }
+        record_gather_replied(home, role, card, peer, "error",
+            &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()));
+        return;
+    }
+    // Reuse the gate verdict parser (same {result, findings} contract); map the
+    // gate vocabulary (pass|fail|error) onto the gather vocabulary (pass|block|concerns).
+    let (verdict, findings) = parse_gate_verdict(&stdout);
+    let v = match verdict.as_str() {
+        "pass" => "pass",
+        "fail" => "block",
+        _ => "concerns",
+    };
+    record_gather_replied(home, role, card, peer, v, &findings);
+}
+
+/// #3539 — run every peer review with NO reply recorded for THIS round, each as a
+/// spawned headless claude -p (run_one_review), recording demo.gather.replied. The
+/// run_gates sibling for peer feedback: the demo no longer waits on a live peer
+/// session to reply — it runs the review and records it, deterministically. Only
+/// reviews un-gated work (gates recorded first); already-replied reviews (patch-
+/// keyed, survive churn) are not re-run.
+fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let patch = current_patch_id(card);
+    if !gates_missing(&witness, card, round, &patch).is_empty() {
+        return; // don't review un-gated work
+    }
+    let absent = gathers_missing(&witness, card, role, round, &patch);
+    if absent.is_empty() {
+        return;
+    }
+    emit_spine(home, "demo.reviews.running", role, card, trace);
+    // Surface to the human overseer (Jeff): reviews run in-process, no live peer is
+    // block-asked. Best-effort, mirrors fire_gathers' surface.
+    let text = format!(
+        "[demo] #{} — running spawned peer reviews [{}] in-process (gathers-as-gates, #3539); no live-session wait",
+        card, absent.join(", ")
+    );
+    let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
+    let _ = run("curl", &[
+        "-s", "-X", "POST", "http://localhost:3470/api/message",
+        "-H", "Content-Type: application/json", "-d", &bridge_body,
+    ]);
+    for peer in absent {
+        run_one_review(home, role, card, peer, round);
+    }
+}
+
 /// AC1 (#3443) — run every required gate that has NO result for THIS round,
 /// recording each itself. Already-recorded gates (e.g. a re-invoke after a drop)
 /// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
@@ -2035,6 +2208,17 @@ mod tests {
         assert!(p.contains("Gate Product"));
         assert!(p.contains("\"result\":\"pass\""));
         assert!(p.contains("ONLY a single JSON object"));
+    }
+
+    #[test]
+    fn review_system_prompt_embeds_peer_identity_and_verdict_contract() {
+        // #3539 — the spawned peer review loads the peer's CLAUDE.md as identity and
+        // must end on the same {result, findings} contract parse_gate_verdict reads.
+        let p = review_system_prompt("silas", "# Silas — Ops\nYou own observability.");
+        assert!(p.contains("You are silas"));
+        assert!(p.contains("Silas — Ops")); // identity embedded
+        assert!(p.contains("\"result\":\"pass\"")); // machine-parsable verdict contract
+        assert!(p.contains("over-building or under-planning")); // the 4 gather questions
     }
 
     #[test]
