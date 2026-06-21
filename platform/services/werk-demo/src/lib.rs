@@ -880,17 +880,21 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     );
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    // The announce's PRIMARY surface is the returned DemoOutcome.message, which the
-    // driving role prints as its final turn (Jeff reads the role's session, not a
-    // separate terminal — he's always in auto+focus). This nudge is a best-effort
-    // SECONDARY ping into the demoer's own session; a nudge to=jeff has no terminal of
-    // its own and surface-fails, so it goes to=<demoer> where Jeff is actually looking.
-    let body = mcp_nudge_body(from, &msg);
+    // #3544 — the announce must DELIVER (osascript-inject) into the demoer's session,
+    // not just persist. In the detached act pipeline there is no driving-role turn to
+    // print DemoOutcome.message, so this nudge IS the only live surface Jeff sees. The
+    // bug: it was sent from=<demoer> to=<demoer>, which pulse's announce-boundary drops
+    // as 'self-echo' (decide(): from===to → deliver:false) — so it persisted but never
+    // injected. FIX (Jeff's framing): it's an OPS-NUDGE — the demo MACHINE surfacing into
+    // a session, not a role echoing itself. Send from "system" (a MACHINE_SENDER) → to the
+    // demoer: from≠to kills self-echo, machine lane delivers, it injects into the demoer's
+    // terminal where Jeff is watching. `from` stays the RECIPIENT (the demoer's session).
+    let body = mcp_nudge_body(from, &msg); // to = the demoer's session (where Jeff watches)
     let _ = run("curl", &[
         "-s", "-f", "-X", "POST", &mcp_url,
         "-H", "Content-Type: application/json",
         "-H", "Accept: application/json, text/event-stream",
-        "-H", &format!("X-Chorus-Role: {}", from),
+        "-H", "X-Chorus-Role: system", // #3544 — system sender = ops-nudge lane, not self-echo
         "-H", &format!("X-Chorus-Trace-Id: {}", trace),
         "-d", &body,
     ]);
