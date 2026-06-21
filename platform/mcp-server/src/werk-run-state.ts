@@ -30,6 +30,11 @@ export interface WerkRun {
   pid?: number;
   /** On phase==='failed': the child verb's REAL reason, never "step=X exit=1". */
   failureReason?: string;
+  /** #3538 — the werk's patch-id (git patch-id of merge-base(origin/main,HEAD)..HEAD)
+   *  at the time this run was recorded. A re-invoke compares it to the werk's CURRENT
+   *  patch-id: if HEAD advanced (different patch), a 'presented' record is stale and
+   *  the new commit must re-demo. Sibling of #3461's gather-gate patch-keying. */
+  patchId?: string;
 }
 
 export type RunAction =
@@ -51,8 +56,21 @@ export type RunAction =
  * `requestedGo` lets a GO re-invoke after a no-go present proceed: a terminal
  * `presented` run that the caller now asks to GO is the next legitimate phase
  * (the land), so it starts; everything else attaches.
+ *
+ * `headChanged` (#3538) lets a NEW COMMIT after a present re-demo: a 'presented'
+ * record whose patch-id is superseded (the werk's current HEAD advanced past the
+ * recorded patch) is stale, so the new commit starts a fresh run. Computed by the
+ * impure caller (current werk patch-id vs the recorded one). The sibling of #3461:
+ * #3461 keys the gather-gate by patch so replies SURVIVE a content-identical churn;
+ * this RE-TRIGGERS when the patch actually CHANGES. A same-patch rebase
+ * (headChanged=false) still attaches — no needless re-run.
  */
-export function decideRunAction(existing: WerkRun | null, requestedGo: boolean, isStale = false): RunAction {
+export function decideRunAction(
+  existing: WerkRun | null,
+  requestedGo: boolean,
+  isStale = false,
+  headChanged = false,
+): RunAction {
   if (!existing) return { kind: 'start' };
   // #3458 (+ Wren #2) — a 'running' record whose pid is dead or past its TTL is
   // STALE: act writes its own terminal phase so this is rare, but if even that
@@ -69,6 +87,12 @@ export function decideRunAction(existing: WerkRun | null, requestedGo: boolean, 
   // on merge) would strand the card permanently, every re-invoke re-reporting the
   // old failure even on a GO. A re-invoke means "try again" → start fresh.
   if (existing.phase === 'failed') return { kind: 'start' };
+  // #3538 — a PRESENTED record whose patch-id is superseded (HEAD advanced past the
+  // recorded patch) is stale: the caller committed a NEW commit after the present, so
+  // re-demo the new HEAD instead of returning the stale 'presented'. headChanged is
+  // computed by the impure caller (current werk patch-id vs the recorded patchId). A
+  // content-identical rebase (same patch-id → headChanged=false) still attaches.
+  if (existing.phase === 'presented' && headChanged) return { kind: 'start' };
   // A GO after a presented stop is the next legitimate phase (the land), not a
   // duplicate — only when the prior run actually reached 'presented'.
   if (requestedGo && !existing.go && existing.phase === 'presented') {
