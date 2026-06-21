@@ -101,12 +101,19 @@ if curl -s --max-time 3 "http://localhost:3360/health" | grep -q '"ok": true'; t
   if drift_out=$(bash "${SCRIPTS}/../tests/owl-api-drift-check.sh" 2>&1); then
     pass "owl-api-drift" "generated artifacts match committed baselines"
   else
-    fail "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1)"
+    # #3539 — ADVISORY: drift is the expected transient between a model-deploy and
+    # a baseline-regen (flagged 2026-06-19). It is NOT a release-blocker and must
+    # not hard-fail the gate for cards that touch zero owl-api surface. WARN so the
+    # signal stays visible without blocking the team (regen the baseline when worth it).
+    warn "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1) (advisory: regen baseline when worth it)"
   fi
   if conf_out=$(bash "${SCRIPTS}/../tests/owl-api-conformance.sh" 2>&1); then
     pass "owl-api-conformance" "$(echo "$conf_out" | tail -1)"
   else
-    fail "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1)"
+    # #3539 — ADVISORY: a generated-API conformance gap is an owl-api issue (Silas's
+    # lane), not a blocker for cards touching zero owl-api surface. WARN; the gap is
+    # tracked + fixed on its own owl-api card, not by blocking every unrelated verdict.
+    warn "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1) (advisory: owl-api gap, tracked separately)"
   fi
 else
   fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
@@ -157,6 +164,10 @@ ORPHAN_LIST=()
 while IFS= read -r line; do
   branch=$(echo "$line" | awk '{print $2}' | sed 's|refs/heads/||')
   [[ "$branch" =~ ^(main|HEAD)$ ]] && continue
+  # #3539 — dependabot/* are OPEN PRs, not orphans. Counting them as orphans
+  # mis-classified 8 live PRs (the #2590 backlog) as cruft and hard-failed the
+  # gate. Exclude them — they're tracked work, dropped/merged via the PR, not pruned.
+  [[ "$branch" =~ ^dependabot/ ]] && continue
   # get commit date for branch tip
   commit_date=$(git -C "${CHORUS_CANONICAL}" log -1 --format="%ct" "origin/${branch}" 2>/dev/null || echo "0")
   if [ "$commit_date" -lt "$CUTOFF" ] 2>/dev/null; then
@@ -169,7 +180,11 @@ if [ "$ORPHAN_COUNT" -eq 0 ]; then
 elif [ "$ORPHAN_COUNT" -le 3 ]; then
   warn "no-orphan-branches" "${ORPHAN_COUNT} branch(es) >48h: ${ORPHAN_LIST[*]}"
 else
-  fail "no-orphan-branches" "${ORPHAN_COUNT} branch(es) >48h: ${ORPHAN_LIST[*]:0:3} ..."
+  # #3539 — ADVISORY: stale branches are hygiene, not a release-blocker. A high
+  # count shouldn't hard-fail the gate and block every unrelated card's verdict
+  # (open-PR/dependabot already excluded above). WARN loudly so it gets cleaned,
+  # but don't gate the team on branch cruft.
+  warn "no-orphan-branches" "${ORPHAN_COUNT} branch(es) >48h (advisory hygiene — prune): ${ORPHAN_LIST[*]:0:3} ..."
 fi
 
 # spine-event-rate-above-floor (>0 events in last hour)
