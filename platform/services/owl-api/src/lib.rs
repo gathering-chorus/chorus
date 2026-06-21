@@ -1784,23 +1784,60 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /domains
     if format!("/{}", parts.first().unwrap_or(&"")) == plural && parts.len() == 1 {
         meta.route = "list".into();
+        // #3522 — SHAPE-DRIVEN collection projection. The old query hardcoded
+        // name|label|status, dropping every other shape field (e.g. value-stream
+        // stageOrder/inStream) — so collections served hollow rows even when the model
+        // carried the data (the empty value-stream view). Now also project the shape's
+        // direct-path fields (table.fields), ADDITIVELY (extra keys are safe under
+        // ADR-047 — name/label/status stay): datatypes as their literal, edges as the
+        // target's localname. Pure projection of the shape, so it can't go stale.
+        let extra: Vec<(String, bool)> = table
+            .fields
+            .iter()
+            .map(|f| (f.split('|').next().unwrap_or(f).to_string(), f.contains("|edge:")))
+            .filter(|(n, _)| n != "label" && n != "status")
+            .collect();
+        let opts: String = extra
+            .iter()
+            .enumerate()
+            .map(|(i, (n, edge))| {
+                if *edge {
+                    format!(" OPTIONAL {{ ?s <{ns}{n}> ?e{i} . BIND(REPLACE(STR(?e{i}), \".*[#/]\", \"\") AS ?f{i}) }}", ns = NS, n = n, i = i)
+                } else {
+                    format!(" OPTIONAL {{ ?s <{ns}{n}> ?f{i} }}", ns = NS, n = n, i = i)
+                }
+            })
+            .collect();
+        let cat: String = (0..extra.len())
+            .map(|i| format!(", \"|\", COALESCE(STR(?f{i}), \"\")", i = i))
+            .collect();
         let q = format!(
-            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\")) AS ?v) }} }} ORDER BY ?v",
-            g = INSTANCES_GRAPH, c = table.class, ns = NS
+            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }} }} ORDER BY ?v",
+            g = INSTANCES_GRAPH, c = table.class, ns = NS, opts = opts, cat = cat
         );
         return match sparql_json(&q) {
             Ok(body) => {
+                let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
                 let items: Vec<String> = select_v(&body)
                     .into_iter()
                     .map(|rowv| {
-                        let cols: Vec<&str> = rowv.splitn(3, '|').collect();
+                        let cols: Vec<&str> = rowv.split('|').collect();
                         let name = cols.first().map(|s| s.rsplit('#').next().unwrap_or(s)).unwrap_or("");
-                        format!(
-                            "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\" }}",
+                        let mut obj = format!(
+                            "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\"",
                             json_escape(name),
                             json_escape(cols.get(1).unwrap_or(&"")),
                             json_escape(cols.get(2).unwrap_or(&""))
-                        )
+                        );
+                        for (i, fname) in extra_names.iter().enumerate() {
+                            obj.push_str(&format!(
+                                ", \"{}\": \"{}\"",
+                                json_escape(fname),
+                                json_escape(cols.get(3 + i).unwrap_or(&""))
+                            ));
+                        }
+                        obj.push_str(" }");
+                        obj
                     })
                     .collect();
                 {

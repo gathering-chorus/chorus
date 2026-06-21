@@ -1,0 +1,41 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3522 — COMPLETE ValueStreamStep instances (type + label + wiring). athena-deploy is
+# delete-subjects-then-insert, so each subject must carry its FULL definition or the
+# deploy strips what's omitted. Deployed to urn:chorus:instances (where the serve reads).
+
+# ── chorus top-level stream: Shaping → Reflecting ──────────────────────────
+chorus:value-stream-step-shaping    a chorus:ValueStreamStep ; rdfs:label "Shaping" ; chorus:label "Shaping" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 1 .
+chorus:value-stream-step-directing  a chorus:ValueStreamStep ; rdfs:label "Directing" ; chorus:label "Directing" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 2 .
+chorus:value-stream-step-designing  a chorus:ValueStreamStep ; rdfs:label "Designing" ; chorus:label "Designing" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 3 .
+chorus:value-stream-step-building   a chorus:ValueStreamStep ; rdfs:label "Building" ; chorus:label "Building" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 4 ;
+    chorus:hasValueStream chorus:value-stream-werk .
+chorus:value-stream-step-proving    a chorus:ValueStreamStep ; rdfs:label "Proving" ; chorus:label "Proving" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 5 .
+chorus:value-stream-step-reflecting a chorus:ValueStreamStep ; rdfs:label "Reflecting" ; chorus:label "Reflecting" ;
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 6 .
+
+# ── werk build-cycle stream: pull → accept ─────────────────────────────────
+chorus:value-stream-step-pull   a chorus:ValueStreamStep ; rdfs:label "Pull" ; chorus:label "Pull" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 1 .
+chorus:value-stream-step-commit a chorus:ValueStreamStep ; rdfs:label "Commit" ; chorus:label "Commit" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 2 .
+chorus:value-stream-step-push   a chorus:ValueStreamStep ; rdfs:label "Push" ; chorus:label "Push" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 3 .
+chorus:value-stream-step-build  a chorus:ValueStreamStep ; rdfs:label "Build" ; chorus:label "Build" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 4 .
+chorus:value-stream-step-test   a chorus:ValueStreamStep ; rdfs:label "Test" ; chorus:label "Test" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 5 .
+chorus:value-stream-step-deploy a chorus:ValueStreamStep ; rdfs:label "Deploy" ; chorus:label "Deploy" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 6 .
+chorus:value-stream-step-demo   a chorus:ValueStreamStep ; rdfs:label "Demo" ; chorus:label "Demo" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 7 .
+chorus:value-stream-step-merge  a chorus:ValueStreamStep ; rdfs:label "Merge" ; chorus:label "Merge" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 8 .
+chorus:value-stream-step-accept a chorus:ValueStreamStep ; rdfs:label "Accept" ; chorus:label "Accept" ;
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 9 .
