@@ -11,8 +11,12 @@ load test_helper
 # with ZERO output → daily-signal-scan's health_result=$(deep-health|head -1)
 # dies under its own set -e → signal scan never completes, every morning.
 
-DEEP_HEALTH="${HOME}/CascadeProjects/chorus-werk/silas-3369/platform/scripts/deep-health.sh"
-SIGNAL_SCAN="${HOME}/CascadeProjects/chorus-werk/silas-3369/platform/scripts/daily-signal-scan.sh"
+# #3528 — was a hardcoded werk path (chorus-werk/silas-3369) that doesn't exist
+# in CI/another checkout → tests couldn't find the script. Resolve relative to
+# the repo root (CHORUS_ROOT, or derived from this test file's location).
+_REPO_ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+DEEP_HEALTH="${_REPO_ROOT}/platform/scripts/deep-health.sh"
+SIGNAL_SCAN="${_REPO_ROOT}/platform/scripts/daily-signal-scan.sh"
 
 @test "deep-health liveness pid lookup survives a label missing from launchctl" {
   # the line-87 class: grep no-match (exit 1) inside $() under set -e kills the

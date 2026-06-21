@@ -14,7 +14,9 @@ load test_helper
 # (ADR-043 — the alert domain must distinguish them). 2026-06-14 overnight:
 # 3/3 deep-health "failures" were probe-truthfulness bugs, not outages.
 
-DEEP_HEALTH="${HOME}/CascadeProjects/chorus-werk/silas-3405/platform/scripts/deep-health.sh"
+# #3528 — was a hardcoded werk path (chorus-werk/silas-3405); resolve relative
+# to the repo root so it works in CI / any checkout.
+DEEP_HEALTH="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/deep-health.sh"
 
 @test "deep-health syntax is valid bash" {
   bash -n "$DEEP_HEALTH"
