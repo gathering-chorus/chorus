@@ -22,39 +22,57 @@
 set -uo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-TTL="${TTL:-$CHORUS_ROOT/roles/silas/ontology/chorus.ttl}"
+# #3540 — deploy the model SET, not chorus.ttl alone. werk-domains.ttl carries the
+# werk-subproduct domains incl. the tests-domain shape (Test/TestResult/pyramidLayer/
+# hermeticity/covers) — it existed but was never landed. A single TTL= override still
+# works (tests deploy one file in isolation to a throwaway graph).
+if [ -n "${TTL:-}" ]; then
+  MODEL_SET=("$TTL")
+else
+  MODEL_SET=(
+    "$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
+    "$CHORUS_ROOT/roles/kade/ontology/werk-domains.ttl"
+  )
+fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 ONTOLOGY_GRAPH="${ONTOLOGY_GRAPH:-urn:chorus:ontology}"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
-[ -f "$TTL" ] || { echo "chorus-model-deploy: TTL not found: $TTL" >&2; exit 1; }
+for ttl in "${MODEL_SET[@]}"; do
+  [ -f "$ttl" ] || { echo "chorus-model-deploy: TTL not found: $ttl" >&2; exit 1; }
+done
 
-# Don't deploy a broken model — riot-validate first.
+# Don't deploy a broken model — riot-validate every set member first.
 if command -v riot >/dev/null 2>&1; then
-  if ! riot --validate "$TTL" >/dev/null 2>&1; then
-    echo "chorus-model-deploy: riot validate FAILED for $TTL — NOT deploying" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="riot-invalid" 2>/dev/null || true
-    exit 1
-  fi
+  for ttl in "${MODEL_SET[@]}"; do
+    if ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "chorus-model-deploy: riot validate FAILED for $ttl — NOT deploying" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="riot-invalid" 2>/dev/null || true
+      exit 1
+    fi
+  done
 fi
 
 FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
 STAGING="${ONTOLOGY_GRAPH}-staging-deploy"
 
-# Step 1: load the model into a FRESH staging graph (native Turtle via GSP POST).
-# Clear any leftover staging from a prior aborted run first.
+# Step 1: load the model SET into a FRESH staging graph (native Turtle via GSP POST
+# — POST merges, so set members accumulate into one staging graph). Clear any
+# leftover staging from a prior aborted run first.
 curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
-code=$(curl -s -o /tmp/chorus-model-deploy-resp.txt -w '%{http_code}' -X POST \
-  -H 'Content-Type: text/turtle' --data-binary "@$TTL" \
-  "$FUSEKI_GSP?graph=$STAGING" 2>/dev/null) || code="000"
-if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
-  echo "chorus-model-deploy: staging load failed (http $code)" >&2
-  head -3 /tmp/chorus-model-deploy-resp.txt >&2
-  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="staging-load-http-$code" 2>/dev/null || true
-  exit 1
-fi
+for ttl in "${MODEL_SET[@]}"; do
+  code=$(curl -s -o /tmp/chorus-model-deploy-resp.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: text/turtle' --data-binary "@$ttl" \
+    "$FUSEKI_GSP?graph=$STAGING" 2>/dev/null) || code="000"
+  if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
+    echo "chorus-model-deploy: staging load failed for $ttl (http $code)" >&2
+    head -3 /tmp/chorus-model-deploy-resp.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="staging-load-http-$code" 2>/dev/null || true
+    exit 1
+  fi
+done
 
 # Step 2: atomic replace — COPY <staging> TO <ontology> is one transaction (no
 # empty-read window on the live graph). Then drop staging. NOT GSP PUT (#3496).
@@ -81,6 +99,6 @@ if [ -z "$n" ] || [ "$n" = "0" ]; then
   exit 1
 fi
 
-echo "chorus-model-deploy: deployed $TTL -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
+echo "chorus-model-deploy: deployed ${#MODEL_SET[@]} model file(s) -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
 "$CHORUS_LOG" model.deployed "$ROLE" graph="$ONTOLOGY_GRAPH" triples="$n" 2>/dev/null || true
 exit 0
