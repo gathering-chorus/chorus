@@ -9,6 +9,7 @@ jest.setTimeout(20000);
 
 import { execSync, spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
+import * as path from 'path';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 
 // Ephemeral test Clearing — #2166.
@@ -24,7 +25,9 @@ import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
 const TEST_PORT = 11000 + Math.floor(Math.random() * 8000);
 const TEST_HTTPS_PORT = 21000 + Math.floor(Math.random() * 8000);
 const CLEARING_URL = `http://localhost:${TEST_PORT}`;
-const CLEARING_SERVER = '/Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/dist/server.js';
+// Relative to this test file (tests/ → ../dist/server.js) — never a machine-absolute
+// path: the ubuntu CI runner roots the repo at /home/runner/work, not /Users/jeffbridwell (#3528).
+const CLEARING_SERVER = path.join(__dirname, '..', 'dist', 'server.js');
 let clearingProc: ChildProcess | null = null;
 
 // Mock nudge script — writes to temp file instead of osascript injection.
@@ -294,7 +297,8 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
-  const CHAT_SCRIPT = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
+  // tests/ → ../../../platform/scripts/chat.sh — portable, not machine-absolute (#3528).
+  const CHAT_SCRIPT = path.join(__dirname, '..', '..', '..', 'platform', 'scripts', 'chat.sh');
 
   test('chat.sh message between roles does not leak into Clearing', async () => {
     const marker = `AC3-CHAT-${Date.now()}`;
