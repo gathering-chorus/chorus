@@ -4,6 +4,7 @@
  * and that failures surface the child verb's real reason. mcp-server harness is
  * `tsx --test` (node:test), not jest.
  */
+// @test-type: unit
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { decideRunAction, extractFailureReason, parseExitSentinel, type WerkRun } from '../src/werk-run-state';
@@ -59,6 +60,20 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
   test('GO after a PRESENTED stop -> start (the land is the next legitimate phase)', () => {
     const r = run({ phase: 'presented', go: false });
     assert.deepEqual(decideRunAction(r, true), { kind: 'start' });
+  });
+
+  test('PRESENTED but HEAD ADVANCED (new patch) -> start (#3538 re-demo the new commit)', () => {
+    // A fix committed after a present must re-demo: the presented record is for an
+    // old patch-id; HEAD moved past it, so the variant on record is stale.
+    const r = run({ phase: 'presented', go: false });
+    assert.deepEqual(decideRunAction(r, false, false, true), { kind: 'start' });
+  });
+
+  test('PRESENTED, SAME patch (content-identical rebase) -> attach (#3538 no needless re-run; sibling of #3461)', () => {
+    // A churned sha with the same patch-id (a peer landed, our werk rebased, content
+    // unchanged) must NOT re-demo — headChanged=false → attach the existing present.
+    const r = run({ phase: 'presented', go: false });
+    assert.deepEqual(decideRunAction(r, false, false, false), { kind: 'attach', run: r });
   });
 
   test('GO while still RUNNING -> attach (cannot land what is still presenting)', () => {

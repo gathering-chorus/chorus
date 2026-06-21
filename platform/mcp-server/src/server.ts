@@ -29,7 +29,7 @@ import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { decideRunAction } from './werk-run-state';
-import { readRun, writeRun, isRunStale, logPath, reconcileRunning } from './werk-run-store';
+import { readRun, writeRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
 // This keeps chorus-mcp's surface minimal — only depends on cards CLI, git-queue,
@@ -2116,10 +2116,19 @@ async function executeChorusWerk(
   // BEFORE deciding, so a poll reflects the true state.
   reconcileRunning(args.card_id, runsDir);
   const existingRun = readRun(args.card_id, runsDir);
+  // #3538 — a PRESENTED record for a SUPERSEDED patch must re-demo the new commit.
+  // Compare the werk's CURRENT patch-id to the recorded one: if HEAD advanced (the
+  // caller committed a fix after the present), headChanged → start a fresh run
+  // instead of returning the stale 'presented'. Sibling of #3461 (gather-gate
+  // patch-keying). Best-effort: an unknown patch-id (git hiccup) → headChanged=false
+  // → today's attach behavior, never a spurious re-run.
+  const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
+  const currentPatch = currentWerkPatchId(werkDir);
+  const headChanged = !!(existingRun?.patchId && currentPatch && existingRun.patchId !== currentPatch);
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.
-  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false);
+  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged);
   if (action.kind === 'attach') {
     const r = action.run;
     const polling = r.phase === 'running';
@@ -2160,6 +2169,7 @@ async function executeChorusWerk(
   writeRun({
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
+    patchId: currentPatch, // #3538 — record the patch so a later new-commit re-invoke re-demos
   }, runsDir);
   return {
     content: [{
