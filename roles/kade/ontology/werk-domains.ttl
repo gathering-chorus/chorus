@@ -330,6 +330,10 @@ chorus:hermeticity a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "hermetic (no live deps) | needs-stack (live Fuseki/app/db) — makes the hermetic-by-default / integration-gated-explicitly principle queryable instead of filename-inferred. The finer second axis to pyramidLayer; absent from any external test ontology (OSLC QM / EARL model results + cases, not isolation) — uniquely ours. (#3540 carried from #2818.)" .
 
+chorus:testConcern a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "api | ui | perf | security — the CONCERN axis (what-aspect-is-tested), ORTHOGONAL to pyramidLayer (where-in-the-pyramid). Destination for @test-type's category values as @test-type retires (#3540): unit/integration/e2e/bdd→pyramidLayer, api/ui/perf/security→testConcern. Optional — a test has exactly one pyramidLayer but zero-or-one concern (an e2e security test = pyramidLayer:e2e + testConcern:security). #3540 selection reads pyramidLayer ONLY; testConcern is for future 'run all security tests' queries. (Kade #2818 taxonomy ruling.)" .
+
 # =============================================================================
 # INSTANCE ASSERTIONS — extending EXISTING nodes (no new IRI mints pre-DAL;
 # legacy -domain IRIs are write-frozen per ADR-040 but extant — extended in
@@ -480,7 +484,9 @@ chorus:TestEdgesShape a sh:NodeShape ;
     # validityClass + hermeticity: enum-if-present (NO minCount — ingestion mints identity
     # before the tagging pass classifies; a freshly-crawled Test is legitimately untagged).
     sh:property [ sh:path chorus:validityClass ; sh:in ( "valid" "asserts-retired-behavior" "passes-by-definition" "integration-not-gated" ) ] ;
-    sh:property [ sh:path chorus:hermeticity ; sh:in ( "hermetic" "needs-stack" ) ] .
+    sh:property [ sh:path chorus:hermeticity ; sh:in ( "hermetic" "needs-stack" ) ] ;
+    # testConcern (#3540): the orthogonal CONCERN axis, optional (a test may have no concern).
+    sh:property [ sh:path chorus:testConcern ; sh:in ( "api" "ui" "perf" "security" ) ] .
 
 chorus:VerbRunEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:VerbRun ;

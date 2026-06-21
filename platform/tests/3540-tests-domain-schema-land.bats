@@ -54,6 +54,19 @@ teardown() {
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
+@test "TestEdgesShape carries testConcern — the orthogonal concern axis (@test-type api/ui/perf/security destination)" {
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testConcern ] } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+}
+
+@test "pyramidLayer and testConcern are ORTHOGONAL — a Test carries both (e2e + security)" {
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  curl -s -X POST "http://localhost:3030/pods/update" --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -o /dev/null 2>/dev/null
+  run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -H "Accept: application/sparql-results+json"
+  [[ "$output" == *'test-3540-ortho'* ]]
+}
+
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
   # mint a Test instance covering a known SubDomain, the way the #2818 tagging will
