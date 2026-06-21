@@ -77,47 +77,31 @@ jobs:
         run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
-        # Hermetic gate (quality.yml parity): cargo per changed crate + jest per changed package.
-        # ADVISORY until werk-test #3190 — posts chorus/test/<card> status, does NOT block.
+        # #3190 — werk-test VERB: the BLOCKING test floor (promotes the old inline step into
+        # a real verb). Runs the card's AFFECTED units only — cargo per changed crate, tsc+jest
+        # per changed TS package, plus workspace clippy-ratchet + doc-coherence (the three the
+        # inline step never ran) — emits a typed `test.failed` to the spine per failure, and
+        # EXITS 1 if a real unit fails, which halts the land. Bootstrap escape (in the verb):
+        # a self-modifying card (diff touches werk.yml or the werk-test crate — e.g. #3190
+        # itself) runs ADVISORY (exit 0) so it can't deadlock against the canonical werk.yml it
+        # is fixing. Determinism (#3190 governing bar): same diff → same units → same gates →
+        # same verdict. The pyramidLayer/hermeticity tier-selection (Silas #3540) wires in next.
         run: |
           set -o pipefail
-          # #3484: pin node 20 for the test run. better-sqlite3 (the search-engine
-          # native module, a real runtime dep) is built for NODE_MODULE_VERSION 115
-          # (node 20). act inherits a login PATH where homebrew node 23 (131) wins,
-          # so the .node can't load → 22 jest suites / 164 tests fail with a
-          # meaningless ABI error (NOT real failures — the identical suite passes
-          # 1501/0 under node 20). Force the matching node so the test run is honest.
+          # #3484: pin node 20 — the verb shells jest, whose better-sqlite3 native module is
+          # built for node 20's ABI; act's login PATH otherwise picks node 23 → false ABI reds.
           N20="$(ls -d "$HOME"/.nvm/versions/node/v20*/bin 2>/dev/null | sort -V | tail -1)"
-          if [ -n "$N20" ]; then export PATH="$N20:$PATH"; echo "-- pinned node $("$N20/node" -v 2>/dev/null) for tests (login shell had $(node -v 2>/dev/null)) --"; fi
+          if [ -n "$N20" ]; then export PATH="$N20:$PATH"; echo "-- pinned node $("$N20/node" -v 2>/dev/null) for werk-test (login shell had $(node -v 2>/dev/null)) --"; fi
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
-          post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (advisory until werk-test #3190)" >/dev/null 2>&1 || true; }
+          post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (werk-test #3190 — blocking floor)" >/dev/null 2>&1 || true; }
           post pending
-          echo "-- test (hermetic, ADVISORY until werk-test #3190) in $WERK --"
-          rc=0
-          BASE=$(git -C "$WERK" merge-base origin/main HEAD 2>/dev/null || echo HEAD~1)
-          CHANGED=$(git -C "$WERK" diff --name-only "$BASE"..HEAD)
-          for crate in $(echo "$CHANGED" | grep -oE '^platform/services/[^/]+' | sort -u); do
-            [ -f "$WERK/$crate/Cargo.toml" ] || continue
-            echo "-- cargo: $crate --"
-            ( cd "$WERK/$crate" && cargo test --lib --bins ) 2>&1 | tail -15 || rc=1
-          done
-          for pkg in platform/api platform/chorus-sdk platform/pulse platform/workflow-engine; do
-            echo "$CHANGED" | grep -q "^$pkg/" || continue
-            [ -d "$WERK/$pkg" ] || continue
-            if [ ! -x "$WERK/$pkg/node_modules/.bin/jest" ] \
-               && [ -n "$CHORUS_HOME" ] && [ -d "$CHORUS_HOME/$pkg/node_modules" ] \
-               && cmp -s "$WERK/$pkg/package-lock.json" "$CHORUS_HOME/$pkg/package-lock.json"; then
-              ln -sfn "$CHORUS_HOME/$pkg/node_modules" "$WERK/$pkg/node_modules"
-            fi
-            if [ -x "$WERK/$pkg/node_modules/.bin/jest" ]; then
-              echo "-- jest: $pkg --"
-              ( cd "$WERK/$pkg" && node_modules/.bin/jest --ci --forceExit --passWithNoTests ) 2>&1 | tail -12 || rc=1
-            else
-              echo "!! jest: $pkg CHANGED but deps unavailable — FAIL LOUD"; rc=1
-            fi
-          done
+          set +e
+          PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
+          rc=$?
+          set -e
           if [ "$rc" = 0 ]; then post success; else post failure; fi
-          echo "test: rc=$rc (advisory — does NOT block the pipeline until werk-test #3190)"
+          echo "werk-test: rc=$rc (BLOCKING — a red affected unit halts the land; self-modifying cards run advisory)"
+          exit "$rc"
 
       - name: review
         # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.

@@ -1,0 +1,225 @@
+//! werk-test — the test gate as a werk verb (#3190).
+//!
+//! Promotes #3397's inline `werk.yml` test step into a real verb (ADR-032 §1:
+//! zero-dep, std-only; git/cargo/jest/tsc/clippy/doc-coherence are subprocesses,
+//! never code deps). Three things the inline step could not do:
+//!   1. BLOCKING — a red floor stops the land (the inline step was advisory:
+//!      "No exit 1 here on purpose").
+//!   2. Bootstrap escape — a card that modifies the test gate's OWN surface
+//!      (`werk.yml` or this crate) runs ADVISORY, so it can't deadlock against
+//!      the CANONICAL `werk.yml` it is trying to fix (#3397 deadlock class:
+//!      `chorus_werk` runs act with `-W $CHORUS_HOME/.github/workflows/werk.yml`,
+//!      so a self-modifying card never validates on its own run).
+//!   3. Affected-unit detection on the card's DIFF, not the whole workspace.
+//!
+//! The pure decision core (`affected_units` / `is_self_modifying` / `gate_outcome`)
+//! is unit-tested with no subprocess; the git-diff + runners wire on top.
+
+pub type R<T> = Result<T, String>;
+
+/// Known TS packages with their own jest config + node_modules (matches #3397's
+/// hardcoded set — the only packages whose tests are runnable in the werk).
+pub const TS_PACKAGES: &[&str] = &[
+    "platform/api",
+    "platform/chorus-sdk",
+    "platform/pulse",
+    "platform/workflow-engine",
+];
+
+/// The test gate's OWN surface. A card whose diff touches these is "self-
+/// modifying": it cannot be hard-gated by the canonical `werk.yml` it is fixing,
+/// so the gate degrades to advisory (the #3397 bootstrap-deadlock escape). A
+/// trailing `/` means "this path prefix"; no slash means an exact file match.
+pub const SELF_SURFACE: &[&str] = &[
+    ".github/workflows/werk.yml",
+    "platform/services/werk-test/",
+];
+
+/// A unit whose tests must run because the card's diff touched it.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum TestUnit {
+    /// Rust crate at `platform/services/<name>/` — `cargo test --lib --bins`.
+    RustCrate(String),
+    /// TS package (one of `TS_PACKAGES`) — `jest` in the package dir.
+    TsPackage(String),
+}
+
+/// Classify the card's changed files into the test units that must run.
+///
+/// ⚠️ TRANSITIONAL BRIDGE (#3190 re-scope, Jeff 2026-06-21). Hardcoded git-diff path
+/// matching — the PRE-graph approach. The coherent end-state gets the test list from the
+/// TESTS-DOMAIN GRAPH: card's changed services → the `Test` instances that cover them
+/// (`Test covers Service` / `Test inFile SourceFile`) → run those, at the tier their
+/// `pyramidLayer` + `hermeticity` declare. That's stage 2 (= #3148 semantic blast-radius,
+/// the query-from-model thesis), gated on #2818 populating the 489 Test instances + `covers`
+/// edges. Do NOT let this hardcoded core (also `TS_PACKAGES`, `check_plan`) calcify into a
+/// hand-maintained list that drifts — it is a stepping stone the graph query replaces.
+///
+/// Mirrors #3397's git-diff heuristic, made deterministic: Rust crates first
+/// (sorted, deduped by crate name), then TS packages in `TS_PACKAGES` order. A
+/// path is a Rust crate iff it sits under `platform/services/<name>/`; the runner
+/// later confirms a `Cargo.toml` exists (a pure fn can't touch the fs). A TS
+/// package matches iff a changed file is under `<pkg>/`.
+pub fn affected_units(changed: &[String]) -> Vec<TestUnit> {
+    let mut crates: Vec<String> = Vec::new();
+    for f in changed {
+        if let Some(rest) = f.strip_prefix("platform/services/") {
+            if let Some(name) = rest.split('/').next() {
+                if !name.is_empty() && !crates.iter().any(|c| c == name) {
+                    crates.push(name.to_string());
+                }
+            }
+        }
+    }
+    crates.sort();
+    let mut units: Vec<TestUnit> = crates.into_iter().map(TestUnit::RustCrate).collect();
+    for pkg in TS_PACKAGES {
+        if changed.iter().any(|f| f.starts_with(&format!("{}/", pkg))) {
+            units.push(TestUnit::TsPackage((*pkg).to_string()));
+        }
+    }
+    units
+}
+
+/// Bootstrap escape: does the diff touch the test gate's own surface? If so, the
+/// gate runs advisory (a self-modifying card can't validate against the canonical
+/// `werk.yml` it is fixing — #3397).
+pub fn is_self_modifying(changed: &[String]) -> bool {
+    changed.iter().any(|f| {
+        SELF_SURFACE.iter().any(|s| match s.strip_suffix('/') {
+            Some(dir) => f.starts_with(&format!("{}/", dir)),
+            None => f == s,
+        })
+    })
+}
+
+/// The blocking gate decision (#3190 advisory→blocking).
+#[derive(Debug, PartialEq, Eq)]
+pub enum GateOutcome {
+    /// No affected units — nothing to test; passes.
+    NoUnits,
+    /// All affected units passed.
+    Pass,
+    /// A unit failed and the gate BLOCKS the land (exit 1).
+    Block,
+    /// A unit failed but the diff is self-modifying — advisory, does NOT block.
+    AdvisoryFail,
+}
+
+/// Decide the gate outcome. A failure blocks the land UNLESS the diff is
+/// self-modifying, where it degrades to advisory to avoid the canonical-`werk.yml`
+/// bootstrap deadlock (#3397). No affected units → nothing to prove → passes.
+pub fn gate_outcome(unit_count: usize, any_failed: bool, self_modifying: bool) -> GateOutcome {
+    if unit_count == 0 {
+        GateOutcome::NoUnits
+    } else if !any_failed {
+        GateOutcome::Pass
+    } else if self_modifying {
+        GateOutcome::AdvisoryFail
+    } else {
+        GateOutcome::Block
+    }
+}
+
+/// A single check the verb runs. Per-unit checks carry their unit; workspace-level
+/// ratchets (`ClippyRatchet`, `DocCoherence`) run once with `unit == None`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum CheckKind {
+    /// `cargo test --lib --bins` — per Rust crate.
+    CargoTest,
+    /// `npx tsc --noEmit` — per TS package.
+    Tsc,
+    /// `jest --ci` — per TS package.
+    Jest,
+    /// `clippy-ratchet.sh` — per-lint counts only decrease; workspace-wide, once.
+    ClippyRatchet,
+    /// `doc-coherence-ratchet.test.sh` — doc-inventory floor; workspace-wide, once.
+    DocCoherence,
+}
+
+impl CheckKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            CheckKind::CargoTest => "cargo-test",
+            CheckKind::Tsc => "tsc",
+            CheckKind::Jest => "jest",
+            CheckKind::ClippyRatchet => "clippy-ratchet",
+            CheckKind::DocCoherence => "doc-coherence",
+        }
+    }
+}
+
+/// One planned check: its kind + the unit it runs against (None = workspace-level).
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct PlannedCheck {
+    pub unit: Option<TestUnit>,
+    pub kind: CheckKind,
+}
+
+/// Build the full check plan from the affected units (#3190 — #3397's cargo+jest
+/// PLUS the three it didn't wire: tsc, clippy-ratchet, doc-coherence). Per unit: a
+/// Rust crate → `cargo-test`; a TS package → `tsc` + `jest`. Workspace-level, once:
+/// `clippy-ratchet` iff any Rust crate changed; `doc-coherence` iff anything is
+/// affected (the repo-wide doc floor). Deterministic order: per-unit checks in
+/// `units` order, then clippy, then doc-coherence.
+pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
+    let mut plan = Vec::new();
+    let mut any_rust = false;
+    for u in units {
+        match u {
+            TestUnit::RustCrate(_) => {
+                any_rust = true;
+                plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::CargoTest });
+            }
+            TestUnit::TsPackage(_) => {
+                plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Tsc });
+                plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Jest });
+            }
+        }
+    }
+    if any_rust {
+        plan.push(PlannedCheck { unit: None, kind: CheckKind::ClippyRatchet });
+    }
+    if !units.is_empty() {
+        plan.push(PlannedCheck { unit: None, kind: CheckKind::DocCoherence });
+    }
+    plan
+}
+
+/// Pure arg-builder for a chorus-log spine emit (mirrors werk-build #3166). The
+/// verb emits a typed `test.failed` per failed check on the inherited trace
+/// (#3162), so a red gate is queryable, not just a pipeline exit code.
+pub fn spine_args(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str, &str)]) -> Vec<String> {
+    let mut v = vec![
+        event.to_string(),
+        role.to_string(),
+        format!("card={}", card),
+        format!("trace={}", trace),
+    ];
+    for (k, val) in extras {
+        v.push(format!("{}={}", k, val));
+    }
+    v
+}
+
+impl GateOutcome {
+    /// Process exit code: only `Block` stops the land (exit 1). `AdvisoryFail`
+    /// is honest-red-but-non-blocking → exit 0 (the bootstrap escape). `Pass` /
+    /// `NoUnits` → exit 0.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            GateOutcome::Block => 1,
+            _ => 0,
+        }
+    }
+
+    /// Human label for the verb's summary line + the gh status description.
+    pub fn label(&self) -> &'static str {
+        match self {
+            GateOutcome::NoUnits => "no-affected-units",
+            GateOutcome::Pass => "pass",
+            GateOutcome::Block => "BLOCK",
+            GateOutcome::AdvisoryFail => "advisory-fail (self-modifying)",
+        }
+    }
+}
