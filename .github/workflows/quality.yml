@@ -362,7 +362,9 @@ jobs:
     # Wave 3: schedule-only — heaviest job in the workflow (builds two
     # release binaries + boots socket server + runs full integration
     # suite). Top burner. Nightly is plenty for drift detection.
-    if: github.event_name == 'schedule'
+    # #3528 — also workflow_dispatch so CI-env fixes (shim PATH) are verifiable
+    # on-demand instead of waiting a nightly.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -467,7 +469,9 @@ jobs:
     # cap) and schedule-only (matches cost-stop pattern); signal still
     # surfaces via job-conclusion red on the nightly drift run, doesn't
     # block PRs.
-    if: github.event_name == 'schedule'
+    # #3528 — also workflow_dispatch so the gitleaks install fix is verifiable
+    # on-demand instead of waiting a nightly.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -616,6 +620,14 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      # #3528 — chorus-mcp's nudge tool POSTs to pulse (:3475); build it so the
+      # mcp-nudge round-trip has a delivery target.
+      - name: Build pulse
+        working-directory: platform/pulse
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
       - name: Seed Fuseki with principles ontology
         # Loads chorus.ttl into urn:chorus:instances — the named graph the
         # principles SPARQL (src/sparql/loom-principles.sparql) queries.
@@ -650,6 +662,23 @@ jobs:
         run: |
           nohup node dist/main.js > /tmp/chorus-mcp.log 2>&1 &
           echo $! > /tmp/chorus-mcp.pid
+
+      # #3528 — boot pulse (:3475) so chorus-mcp's nudge tool has a delivery
+      # target. PULSE_ALLOW_DIRECT_POST=1 opts out of the #3485 shared-secret
+      # gate for tests; the darwin-only TCC boot-smoke is skipped off-darwin.
+      - name: Boot pulse (background)
+        working-directory: platform/pulse
+        env:
+          MESSAGING_PORT: '3475'
+          PULSE_ALLOW_DIRECT_POST: '1'
+        run: |
+          nohup node dist/service.js > /tmp/pulse.log 2>&1 &
+          echo $! > /tmp/pulse.pid
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null "http://localhost:3475/health"; then break; fi
+            sleep 1
+          done
+          curl -s "http://localhost:3475/health" || (echo "pulse never came up; log:"; cat /tmp/pulse.log; exit 1)
 
       - name: Wait for /mcp endpoint
         run: |

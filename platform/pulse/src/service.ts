@@ -358,11 +358,20 @@ if (require.main === module) {
   // 3. app.listen — only after smoke + (optional) scan complete
   // `void`: deliberate fire-and-forget boot IIFE (self-handles errors + process.exit).
   void (async () => {
-    try {
-      await worker.startupSmoke();
-    } catch (e) {
-      process.stderr.write(JSON.stringify({ event: 'startup.smoke.failed', error: String(e) }) + '\n');
-      process.exit(1);
+    // #3528 — the startup smoke is a macOS-TCC probe (chorus-inject
+    // --count-windows exercises System Events permission). It is meaningless
+    // and unrunnable off darwin (no chorus-inject binary, no TCC), so it can't
+    // gate boot on Linux/CI. pulse only runs in prod on darwin, so prod
+    // behavior is unchanged; non-darwin (CI hermetic boot) skips the probe.
+    if (process.platform === 'darwin') {
+      try {
+        await worker.startupSmoke();
+      } catch (e) {
+        process.stderr.write(JSON.stringify({ event: 'startup.smoke.failed', error: String(e) }) + '\n');
+        process.exit(1);
+      }
+    } else {
+      process.stderr.write(JSON.stringify({ event: 'startup.smoke.skipped', reason: 'non-darwin (no TCC)' }) + '\n');
     }
 
     if (process.env.PULSE_REQUEUE_ON_BOOT === '1') {
