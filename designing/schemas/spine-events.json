@@ -2399,6 +2399,24 @@
         "role": "Acting role"
       }
     },
+    "athena.deployed": {
+      "vertebra": "operations",
+      "source": "borg",
+      "description": "athena-deploy verb (#3550) — a domain's model (TTL) deployed ADDITIVELY into the live ontology graph (delete-staged-subjects-then-INSERT), replacing only the deploying domain's own subjects and leaving siblings + live instance data intact. The Athena value-stream DEPLOY step; distinct from werk-deploy (code). Registered wire-before-make so it is never a phantom.",
+      "fields": {
+        "graph": "Target ontology graph (e.g. urn:chorus:ontology)",
+        "members": "Number of model files in the deployed set"
+      }
+    },
+    "athena.deploy.failed": {
+      "vertebra": "operations",
+      "source": "borg",
+      "description": "athena-deploy verb (#3550) — the model deploy failed and did NOT mutate the live graph. Fail-loud, no partial deploy.",
+      "fields": {
+        "graph": "Target ontology graph",
+        "reason": "Typed failure reason (ttl-not-found | riot-invalid | staging-load-http-<code> | merge-http-<code> | verify-empty)"
+      }
+    },
     "deploy.stale": {
       "vertebra": "operations",
       "source": "werk",

@@ -74,16 +74,22 @@ for ttl in "${MODEL_SET[@]}"; do
   fi
 done
 
-# Step 2: atomic replace — COPY <staging> TO <ontology> is one transaction (no
-# empty-read window on the live graph). Then drop staging. NOT GSP PUT (#3496).
+# Step 2 (#3550): per-domain ADDITIVE merge — NOT a whole-graph COPY/replace.
+# COPY <staging> TO <ontology> drops the target graph first, which wiped live-loaded
+# data NOT in the deployed TTL set (#3529 value-stream wiring — the #3496 clobber).
+# Instead, in ONE transaction: DELETE from the ontology only the triples whose
+# SUBJECT is (re)defined in staging, then INSERT staging. A domain deploy replaces
+# only its OWN subjects' triples; every sibling domain + live-loaded instance data
+# survives. No full-graph clear (dodges #3496's large-clear NodeTableTRDF failure).
+MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }"
 ccode=$(curl -s -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
-  --data-binary "COPY <$STAGING> TO <$ONTOLOGY_GRAPH>" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
+  --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
 curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 if [ "$ccode" != "200" ] && [ "$ccode" != "204" ]; then
-  echo "chorus-model-deploy: atomic COPY staging->ontology failed (http $ccode)" >&2
+  echo "chorus-model-deploy: additive merge staging->ontology failed (http $ccode)" >&2
   head -3 /tmp/chorus-model-copy-resp.txt >&2
-  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="copy-http-$ccode" 2>/dev/null || true
+  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="merge-http-$ccode" 2>/dev/null || true
   exit 1
 fi
 code="$ccode"

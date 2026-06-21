@@ -1,0 +1,12 @@
+[package]
+name = "athena-deploy"
+version = "0.1.0"
+edition = "2021"
+
+# Zero-dep blueprint (ADR-032 §1): std only; curl, riot, chorus-log invoked as
+# subprocesses, never code dependencies. Same atomic-verb contract as werk-*.
+[dependencies]
+
+[[bin]]
+name = "athena-deploy"
+path = "src/main.rs"
