@@ -17,6 +17,49 @@ APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 STATUS="green"
 ISSUES=""
 
+# classify_suite <kind> <summary> → echoes "parsed|passed|failed|total"
+# Extracted (#3537) so the nightly consumer AND test-daily-review-lint-parse.sh call
+# the SAME logic — the test guards real code, not a mirror copy (Wren's #3537 review).
+classify_suite() {
+  local kind="$1" summary="$2"
+  local s_total=0 s_failed=0 s_passed=0 parsed="no"
+  case "$kind" in
+    npm)
+      if echo "$summary" | grep -qE "[0-9]+ total"; then
+        s_total=$(echo "$summary" | grep -oE '[0-9]+ total' | head -1 | grep -oE '[0-9]+')
+        s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
+        s_passed=$(echo "$summary" | grep -oE '[0-9]+ passed' | head -1 | grep -oE '[0-9]+' || echo 0)
+        parsed="yes"
+      fi
+      ;;
+    cargo)
+      # cargo summary counts sub-suites, not individual tests; each sub-suite = one unit.
+      if echo "$summary" | grep -qE "suites:"; then
+        s_passed=$(echo "$summary" | grep -oE '[0-9]+ ok' | head -1 | grep -oE '[0-9]+' || echo 0)
+        s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
+        s_total=$((s_passed + s_failed))
+        [ "$s_total" -gt 0 ] && parsed="yes"
+      fi
+      ;;
+    shell|lint)
+      # lint (#3484/#3537): run_lint_ratchet emits the same "N pass, N fail" shape as
+      # shell suites ("1 pass, 0 fail (lint:ratchet clean — ...)"). Without `lint` here the
+      # SUITE|lint line fell through → parsed=no → false "DID NOT RUN" though lint is green.
+      if echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
+        s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
+        s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
+        s_total=$((s_passed + s_failed))
+        [ "$s_total" -gt 0 ] && parsed="yes"
+      fi
+      ;;
+  esac
+  printf '%s|%s|%s|%s\n' "$parsed" "${s_passed:-0}" "${s_failed:-0}" "${s_total:-0}"
+}
+
+# When SOURCED (by the parser-test), expose classify_suite and stop — don't run the 6am
+# review (which shells the full nightly suite). When EXECUTED, fall through and run normally.
+[ "${BASH_SOURCE[0]:-}" = "${0}" ] || return 0
+
 # --- Smoke tests ---
 SMOKE_OUTPUT=$(bash ${CHORUS_ROOT}/platform/scripts/smoke-check.sh --all 2>&1 || true)
 SMOKE_PASS=$(echo "$SMOKE_OUTPUT" | grep -c "PASS" || true)
@@ -67,39 +110,8 @@ while IFS='|' read -r marker kind path owner status summary; do
   [ "$marker" = "SUITE" ] || continue
   name=$(basename "$path")
 
-  s_total=0; s_failed=0; s_passed=0; parsed="no"
-  case "$kind" in
-    npm)
-      if echo "$summary" | grep -qE "[0-9]+ total"; then
-        s_total=$(echo "$summary" | grep -oE '[0-9]+ total' | head -1 | grep -oE '[0-9]+')
-        s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
-        s_passed=$(echo "$summary" | grep -oE '[0-9]+ passed' | head -1 | grep -oE '[0-9]+' || echo 0)
-        parsed="yes"
-      fi
-      ;;
-    cargo)
-      # cargo summary counts sub-suites, not individual tests; each sub-suite
-      # counted as one unit for accounting.
-      if echo "$summary" | grep -qE "suites:"; then
-        s_passed=$(echo "$summary" | grep -oE '[0-9]+ ok' | head -1 | grep -oE '[0-9]+' || echo 0)
-        s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
-        s_total=$((s_passed + s_failed))
-        [ "$s_total" -gt 0 ] && parsed="yes"
-      fi
-      ;;
-    shell|lint)
-      # lint (#3484/#3537): nightly-suites.sh run_lint_ratchet emits the same
-      # "N pass, N fail" shape as shell suites (e.g. "1 pass, 0 fail (lint:ratchet
-      # clean — ...)"). Without `lint` here the SUITE|lint line fell through the
-      # switch → parsed=no → a false "DID NOT RUN" every nightly though lint is green.
-      if echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
-        s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
-        s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
-        s_total=$((s_passed + s_failed))
-        [ "$s_total" -gt 0 ] && parsed="yes"
-      fi
-      ;;
-  esac
+  # classify via the shared function (sourced by test-daily-review-lint-parse.sh too)
+  IFS='|' read -r parsed s_passed s_failed s_total <<< "$(classify_suite "$kind" "$summary")"
   : "${s_total:=0}" "${s_failed:=0}" "${s_passed:=0}"
 
   if [ "$parsed" = "no" ]; then
