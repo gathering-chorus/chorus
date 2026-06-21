@@ -1,0 +1,13 @@
+[package]
+name = "werk-test"
+version = "0.1.0"
+edition = "2021"
+
+# Zero-dep blueprint (ADR-032 §1): std only; all external tools (git, cargo,
+# jest, tsc, clippy-ratchet, doc-coherence) are invoked as subprocesses, never
+# code dependencies. #3190 — promotes #3397's inline werk.yml test step to a verb.
+[dependencies]
+
+[[bin]]
+name = "werk-test"
+path = "src/main.rs"
