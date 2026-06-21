@@ -80,7 +80,7 @@ fn extract_keywords(prompt: &str) -> Vec<String> {
     // #3171 - significance-order before the cap so the meaningful word survives instead of being
     // dropped by sentence position (the bug: "...about cults" kept ok/jeff/test, dropped "cults").
     // Cheap proxy for significance: length (longer ~= more specific/content-bearing). Stable sort.
-    keywords.sort_by(|a, b| b.len().cmp(&a.len()));
+    keywords.sort_by_key(|b| std::cmp::Reverse(b.len()));
     keywords.truncate(6); // Max 6 keywords (memory scan uses the full set)
     keywords
 }

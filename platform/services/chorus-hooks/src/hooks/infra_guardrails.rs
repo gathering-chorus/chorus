@@ -593,7 +593,7 @@ mod tests {
         ];
         for op in ops {
             let r = check(&kade_bash(op)).await;
-            let body = r.stdout.expect(&format!("`{op}` must be denied in team repo"));
+            let body = r.stdout.unwrap_or_else(|| panic!("`{op}` must be denied in team repo"));
             assert!(
                 !body.to_lowercase().contains("git-queue"),
                 "deny string for `{op}` still names the retired git-queue.sh: {body}"
