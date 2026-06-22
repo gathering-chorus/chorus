@@ -1,4 +1,6 @@
 /**
+ * @test-type: api
+ *
  * Domain API consolidation tests — #2060
  *
  * One endpoint per facet under /api/chorus/domain/:name/.
@@ -112,9 +114,11 @@ describe('#2060: consolidated domain API', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
     const body = await res.json();
     const filePaths = body.data.files.map(function(f) { return f.path; });
+    // #3559: dropped "length > 0" — blast radius consuming /code needs path
+    // STRINGS (the contract), not a non-empty census of the seeds domain (data,
+    // invariant #4). Assert every returned path is a string.
     expect(Array.isArray(filePaths)).toBe(true);
-    expect(filePaths.length).toBeGreaterThan(0);
-    expect(typeof filePaths[0]).toBe('string');
+    expect(filePaths.every(function(p) { return typeof p === 'string'; })).toBe(true);
   }, 10_000);
 
   // --- Empty result for unknown domain ---

@@ -1,4 +1,6 @@
 /**
+ * @test-type: api
+ *
  * Domain pipeline view tests — #2069
  *
  * Value stream lifecycle assembled from existing data sources.
@@ -37,19 +39,23 @@ describe('#2069: domain pipeline view', () => {
     }
   }, 15_000);
 
-  test('shape stage reflects card count', async () => {
+  test('shape stage exposes a numeric evidence count', async () => {
+    // #3559: was "evidence > 0" + "status !== not_started" — data-coupled to the
+    // seeds domain having cards in the live graph (invariant #4). Contract: the
+    // shape stage carries a numeric evidence count. The actual count is data.
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/pipeline`);
     const body = await res.json();
     const shape = body.data.stages.find(function(s) { return s.name === 'shape'; });
-    expect(shape.evidence).toBeGreaterThan(0);
-    expect(shape.status).not.toBe('not_started');
+    expect(typeof shape.evidence).toBe('number');
   }, 15_000);
 
-  test('build stage reflects code + test + endpoint counts', async () => {
+  test('build stage exposes evidence count + code/test/endpoint detail', async () => {
+    // #3559: dropped "evidence > 0" (data-coupled); the detail KEYS are the
+    // contract, the counts are data.
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/pipeline`);
     const body = await res.json();
     const build = body.data.stages.find(function(s) { return s.name === 'build'; });
-    expect(build.evidence).toBeGreaterThan(0);
+    expect(typeof build.evidence).toBe('number');
     expect(build.detail).toHaveProperty('code');
     expect(build.detail).toHaveProperty('tests');
     expect(build.detail).toHaveProperty('endpoints');

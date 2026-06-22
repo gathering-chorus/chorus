@@ -1,4 +1,4 @@
-# Doc coherence report — 2026-06-21 19:59
+# Doc coherence report — 2026-06-22 13:17
 
 content-dup-groups: 13
 basename-dup-groups: 37

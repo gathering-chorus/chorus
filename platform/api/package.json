@@ -1,7 +1,7 @@
 {
   "name": "chorus-api",
   "version": "0.1.0",
-  "description": "HTTP wrapper around Chorus context index — file-backed reads, no cache",
+  "description": "HTTP wrapper around Chorus context index \u2014 file-backed reads, no cache",
   "main": "dist/server.js",
   "bin": {
     "chorus-api": "./bin/chorus-api"
@@ -11,7 +11,9 @@
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "test": "jest",
-    "test:coverage": "RUN_INTEGRATION=true jest --coverage"
+    "test:coverage": "RUN_INTEGRATION=true jest --coverage",
+    "test:integration": "RUN_INTEGRATION=true jest --selectProjects integration",
+    "test:all": "RUN_INTEGRATION=true jest"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.27.2",

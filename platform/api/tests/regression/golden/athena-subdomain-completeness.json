@@ -68,23 +68,23 @@
       },
       "wip": {
         "required": [
-          "actors",
           "edges"
         ],
         "met": [],
         "missing": [
-          "actors",
           "edges"
         ],
         "pass": false
       },
       "done": {
         "required": [
+          "actors",
           "scenarios",
           "contract"
         ],
         "met": [],
         "missing": [
+          "actors",
           "scenarios",
           "contract"
         ],

@@ -182,7 +182,11 @@ _stack_up() {
 # Suites that require the live stack (Silas's classification — data/ops owner).
 # Deliberately CONSERVATIVE: only suites that are WHOLLY live-stack, so the gate
 # can never hide a hermetic regression. The api npm suite (hermetic+integration
-# mixed) is intentionally NOT here — it needs a jest project split (separate card).
+# mixed) is intentionally NOT here — it is gated differently: #3559 split it into
+# two jest projects, and the npm branch of run_one_attempt sets RUN_INTEGRATION
+# per-package (below) so api's HERMETIC project always runs while its INTEGRATION
+# project is stack-gated. A whole-suite skip here would wrongly hide the hermetic
+# half; the per-project gate is the right granularity for a mixed suite.
 _needs_stack() {
   case "$1" in
     */test-api-health.sh|*/test-agent-state.sh)            return 0 ;;
@@ -191,6 +195,20 @@ _needs_stack() {
     *chorus-deploy*.bats|*deploy-daemon*.bats|*deploy-live*.bats|*deploy-verify*.bats|*deploy-running*.bats|*deploy-rollback*.bats) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# #3559 — env prefix for an npm package's jest run. platform/api was split into
+# hermetic + integration jest projects; the integration project is only
+# constructed when RUN_INTEGRATION=true (jest.config.js). Set it solely for
+# platform/api and solely when the live stack is up (reusing #3557's _stack_up
+# probe), so a stack-down nightly runs api hermetic-only and can never false-red.
+# Every other npm package → empty (hermetic-only). Pure + stack-probe-driven, so
+# test-nightly-stack-gate.sh can force _STACK_PROBE and assert this hermetically.
+_npm_jest_env() {
+  case "$1" in
+    */platform/api) _stack_up && { echo "RUN_INTEGRATION=true"; return; } ;;
+  esac
+  echo ""
 }
 
 # Run a single suite with one retry on failure — absorbs concurrent-run flakes
@@ -275,8 +293,13 @@ run_one_attempt() {
       # (passes alone). Trade-off: rare flake > deterministic hang.
       # The hang class needs root-cause investigation in platform/api's
       # test setup before --runInBand is safe to enable.
-      local out rc
-      out=$(cd "$path" && npx jest --passWithNoTests --silent 2>&1); rc=$?
+      # #3559 — platform/api jest is split into hermetic + integration projects.
+      # _npm_jest_env decides the env prefix: api's integration project is only
+      # CONSTRUCTED when RUN_INTEGRATION=true, gated on the live stack. Stack down
+      # → never built → api hermetic-only, can't false-red. (See _npm_jest_env.)
+      local out rc jest_env
+      jest_env=$(_npm_jest_env "$path")
+      out=$(cd "$path" && env $jest_env npx jest --passWithNoTests --silent 2>&1); rc=$?
       out=$(echo "$out" | tail -3)
       summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
       [ "$rc" -ne 0 ] && status="fail"
