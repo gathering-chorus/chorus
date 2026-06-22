@@ -3,7 +3,7 @@
 //!   owl-api generate [--class Domain]            → prints routes.json (the artifact)
 //!   owl-api serve [--class Domain] [--port 3360] → generates, then serves
 
-use owl_api::{all_vocab_classes, dashboards_json, generate, generate_product_index, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
+use owl_api::{all_vocab_classes, dashboards_json, generate, generate_product_index, generate_verb, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
 use std::process::ExitCode;
 
 fn arg(args: &[String], flag: &str, default: &str) -> String {
@@ -74,6 +74,22 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // #3551 — the `verb` make-target: read a VerbShape instance from the graph and
+        // emit the GENERATED half of the verb crate (<verb>_generated.rs). Same
+        // read-shape → emit spine as the api/mcp/page targets, pointed at a VerbShape.
+        Some("generate-verb") => {
+            let verb = arg(&args, "--verb", "athena-deploy");
+            match generate_verb(&verb) {
+                Ok(code) => {
+                    print!("{}", code);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("owl-api: {}", e);
+                    ExitCode::FAILURE
+                }
+            }
+        }
         // #3488 — print the resolved repo land location (chorus:repoTarget or
         // class-keyed default) so the land/drift scripts know WHERE to write +
         // diff this class's generated artifacts. The config-as-data location.

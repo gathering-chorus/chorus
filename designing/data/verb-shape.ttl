@@ -1,0 +1,29 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3551 — the VerbShape: the model contract owl-api's `generate-verb` target reads to
+# project a Rust verb crate's GENERATED half. inputs/outputs/edges are encoded as
+# "name|type-token" / "predicate|target" literals so the contract is a flat, queryable
+# projection (the emitter's VerbTable shape). Prove-on-one: athena-deploy is the reference.
+
+chorus:VerbShape a sh:NodeShape ;
+    sh:targetClass chorus:Verb ;
+    sh:property [ sh:path chorus:verbFamily   ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:invocability ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:repoTarget   ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+# ── reference verb: athena-deploy (Silas's hand-built verb is the target the generated
+#    half should reproduce). family=athena, invoked, deploys a model TTL into the graph. ──
+chorus:verb-athena-deploy a chorus:Verb ;
+    rdfs:label "athena-deploy" ;
+    chorus:verbName     "athena-deploy" ;
+    chorus:verbFamily   "athena" ;
+    chorus:invocability "invoked" ;
+    chorus:repoTarget   "platform/services/athena-deploy" ;
+    chorus:verbInput    "ttl|datatype:string" ;
+    chorus:verbInput    "ontologyGraph|datatype:string" ;
+    chorus:verbOutput   "summary|datatype:string" ;
+    chorus:verbEdge     "atStep|value-stream-step-deploy" ;
+    chorus:verbEdge     "inProduct|athena" .
