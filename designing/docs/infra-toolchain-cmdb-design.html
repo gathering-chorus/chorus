@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infrastructure / Toolchain CMDB — Design of Record (#3560 / ADR-050)</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--ink:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--tool:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{padding:28px 32px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#161b22,#0d1117)}
+  h1{margin:0 0 6px;font-size:22px}
+  h2{margin:34px 0 12px;font-size:17px;color:var(--acc);border-bottom:1px solid var(--line);padding-bottom:6px}
+  h3{margin:20px 0 8px;font-size:14px;color:var(--tool);text-transform:uppercase;letter-spacing:.04em}
+  .sub{color:var(--mut);font-size:13px}
+  main{max-width:980px;margin:0 auto;padding:0 32px 80px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin:12px 0}
+  code{background:#1f2630;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#d2a8ff}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0}
+  .ci{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--tool);border-radius:6px;padding:12px 14px}
+  .ci.infra{border-left-color:var(--acc)}
+  .ci .n{font-weight:600;font-family:ui-monospace,monospace;color:var(--ink)}
+  .ci .k{color:var(--mut);font-size:12px;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600}
+  td code{white-space:nowrap}
+  .edge{font-family:ui-monospace,monospace;font-size:13px;color:var(--acc)}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;border:1px solid var(--line);color:var(--mut)}
+  .pill.ok{color:var(--ok);border-color:#214a2b}.pill.warn{color:var(--warn);border-color:#4a3a14}.pill.bad{color:var(--bad);border-color:#4a1d1b}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:ui-monospace,monospace;font-size:13px;margin:8px 0}
+  .flow .box{background:#1f2630;border:1px solid var(--line);border-radius:5px;padding:6px 10px}
+  .flow .arr{color:var(--mut)}
+  blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--warn);background:#1a1710;color:#e3d8b8;border-radius:0 6px 6px 0}
+  ol li,ul li{margin:5px 0}
+  .foot{color:var(--mut);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Infrastructure / Toolchain CMDB — Design of Record</h1>
+  <div class="sub">#3560 (proven slice) · ADR-050 · Silas · 2026-06-22 — the operational-context domain ADR-033's heralds project into</div>
+</header>
+<main>
+
+<h2>1. Why — the morning incident</h2>
+<div class="card">
+The electric company swapped the house meter; the brief power loss took Bedroom (M2 Pro) down. Six health nudges fired and I reconstructed the dependency graph <em>by hand</em> — <code>launchctl</code>, <code>ping</code>, <code>arp</code>, port-probes — to answer "what died and why." That graph should already exist as <strong>queryable structure</strong>. ADR-033 decomposed the crawler into per-facet heralds and declared the operational facets (disk, network, compute, alerts) as Silas-owned with write-home = the graph — but <strong>the domain they write into was never modeled.</strong> There are no <code>Tool</code> / <code>Host</code> / <code>Volume</code> / <code>Network</code> classes for the heralds to project into. This is a CMDB by any other name, and its canonical failure mode is a hand-curated inventory that drifts into confident wrongness (our 2026-03-12 topology is already stale).
+</div>
+<blockquote>"If Bedroom dies, what dies with it?" should be a <code>runsOn × dependsOn</code> traversal answered <em>before</em> the outage — not reconstructed after.</blockquote>
+
+<h2>2. Two domains, both Silas-owned (ADR-045 punning)</h2>
+<div class="grid">
+  <div class="ci infra"><div class="n">chorus:infrastructure</div><div class="k">the substrate — hosts, volumes, networks. <code>owl:Class</code> + individual of <code>chorus:Domain</code>.</div></div>
+  <div class="ci"><div class="n">chorus:toolchain</div><div class="k">the technologies that run on it (replaces the #3350 stub's scope). <code>owl:Class</code> + <code>chorus:Domain</code>.</div></div>
+</div>
+<div class="sub">Each is a punned class (so owl-api projects it) and a Domain individual (so it sits in the ADR-041 tree with <code>ownedBy</code>/<code>atStep</code>). Members bind via <code>chorus:contains</code>.</div>
+
+<h2>3. The Configuration Items</h2>
+<h3>Infrastructure triad (compute / storage / network)</h3>
+<div class="grid">
+  <div class="ci infra"><div class="n">chorus:Host</div><div class="k"><b>compute</b> — a machine. Library (M1, primary), Bedroom (M2 Pro, secondary).</div></div>
+  <div class="ci infra"><div class="n">chorus:Volume</div><div class="k"><b>storage</b> — a disk / mount. Carries the disk budget (warn 90% / crit 95%, C1–C7).</div></div>
+  <div class="ci infra"><div class="n">chorus:Network</div><div class="k">the LAN — <code>192.168.86.0/24</code>, DHCP-volatile.</div></div>
+</div>
+<h3>Toolchain</h3>
+<div class="grid">
+  <div class="ci"><div class="n">chorus:Tool</div><div class="k">one technology / CI — Fuseki, Loki, Lance, MySQL, Vikunja, MCP, WordPress, act, Prometheus, Grafana.</div></div>
+  <div class="ci"><div class="n">chorus:Toolchain</div><div class="k">a purpose-grouped composition of Tools (persistence, observability, coordination, pipeline, web). Carries chain-level facts: <code>provides</code>, <code>recoveryStrength</code> (weakest-link), <code>chainHealth</code>.</div></div>
+</div>
+
+<h2>4. The edges that make it a CMDB, not a list</h2>
+<table>
+  <tr><th>Relationship</th><th>Meaning</th></tr>
+  <tr><td class="edge">Tool runsOn → Host</td><td>where the technology executes</td></tr>
+  <tr><td class="edge">Tool persistsTo → Volume</td><td>where its state lives (the recoverability anchor)</td></tr>
+  <tr><td class="edge">Tool reachableVia → Network</td><td>how peers reach it</td></tr>
+  <tr><td class="edge">Tool dependsOn → Tool | Toolchain</td><td>the cascade graph</td></tr>
+  <tr><td class="edge">Tool runsAs → Service</td><td>reuse the existing <code>com.*</code> Service class — no second inventory</td></tr>
+  <tr><td class="edge">Toolchain hasTool → Tool</td><td>composition</td></tr>
+  <tr><td class="edge">Host hasVolume → Volume · Host onNetwork → Network</td><td>substrate topology</td></tr>
+</table>
+<div class="sub">Reuse, don't rebuild (no-competing-implementations): where a LaunchAgent exists, <code>Tool runsAs → Service</code> rather than re-describing it. <code>Tool</code> adds only what <code>Service</code> lacks: <code>dependsOn</code>, <code>backedUp</code>, <code>managedBy</code>, <code>runsOn</code>.</div>
+
+<h2>5. Discovered, not declared — the anti-rot loop</h2>
+<div class="flow">
+  <span class="box">ADR-033 herald</span><span class="arr">— crawls live →</span>
+  <span class="box">CI instances in graph</span><span class="arr">→ reconciler flags →</span>
+  <span class="box">model-vs-actual delta</span><span class="arr">→ re-crawl</span>
+</div>
+<div class="card">Instances are <strong>projected by the operational heralds (pull, not push)</strong> and reconciled by re-crawl — never hand-curated. The model is the <em>schema</em>; reality <em>populates</em> it. Same anti-drift DNA as owl-api-generates-from-model: a hand-maintained CMDB is worse than none — it is trusted and wrong. Operations (<code>backup</code>, <code>restore</code>, <code>probe</code>, <code>compact</code>) are <strong>verbs run against a CI</strong> (reusing the MCP verb registry), each carrying <code>guarantee</code> (consistent | bounded | idempotent | reversible | off-machine) and <code>verifiedBy</code> (the probe/test that proves it).</div>
+
+<h2>6. The proven slice — #3560 Fuseki recoverability</h2>
+<div class="card">
+One CI, modeled end-to-end as the exemplar:
+<div class="flow" style="margin-top:10px">
+  <span class="box">Tool: Fuseki</span><span class="arr">persistsTo →</span>
+  <span class="box">Volume: ~/.gathering/data</span><span class="arr">backupTarget →</span>
+  <span class="box">Volume onHost: Bedroom (≠ self)</span>
+</div>
+<table style="margin-top:12px">
+  <tr><th>Fact</th><th>Value</th></tr>
+  <tr><td><code>holdsState</code></td><td>31,032,717 triples (TDB2)</td></tr>
+  <tr><td><code>backedUp</code></td><td><span class="pill ok">true</span> — was <span class="pill bad">false</span>; this card flips it</td></tr>
+  <tr><td><code>backup</code> verb · <code>guarantee</code></td><td><span class="pill ok">consistent</span> <span class="pill ok">off-machine</span> — APFS snapshot → rsync → Bedroom</td></tr>
+  <tr><td><code>verifiedBy</code></td><td>restore round-trip — 62 GB pulled, opened with <code>tdb2.tdbquery</code>, counted, recovery-on-open clean</td></tr>
+  <tr><td>schedule</td><td><code>com.gathering.fuseki-backup</code> — daily 03:00</td></tr>
+</table>
+<div class="sub" style="margin-top:8px">Why APFS snapshot, not <code>$/backup</code> (Thrift dump fails "Unrecognized type 0" on this store) or <code>tdb2.tdbbackup</code> (2nd process fights Fuseki's lock) or raw rsync of the live dir (torn copy): the snapshot is an atomic point-in-time view; rsync copies frozen bytes with no contact with the running store, and TDB2 recovers-on-open.</div>
+<div class="sub">Companion safety: the raw unguarded <code>DELETE</code> in <code>tag-tests-domain.py</code> is retired behind a bounded guard (<code>_DOMAIN_GRAPH</code> regex) — only <code>urn:chorus:domain:&lt;name&gt;</code> may be cleared, never a system/portfolio graph; proven by a hermetic bats test.</div>
+</div>
+
+<h2>7. What this makes answerable</h2>
+<table>
+  <tr><th>Question</th><th>Becomes</th></tr>
+  <tr><td>"If Bedroom dies, what dies with it?"</td><td><code>runsOn × dependsOn</code> traversal — the morning's six-nudge scramble as one query</td></tr>
+  <tr><td>"What holds state with no off-machine backup?"</td><td><code>Tool</code> where <code>guarantee=off-machine</code> ∧ <code>status=missing</code> — the incident as a one-liner</td></tr>
+  <tr><td>"Is the persistence chain recoverable?"</td><td><code>Toolchain.recoveryStrength</code> — weakest-link rollup over its Tools</td></tr>
+</table>
+
+<h2>8. Build order (continues ADR-033's)</h2>
+<ol>
+  <li><strong>Schema</strong> (ADR-050): classes + edges, modeled, proven through owl-api (renders the domain from real instances).</li>
+  <li><strong>One facet end-to-end</strong> = this #3560 Fuseki slice — discovered live by the storage herald, <code>backup</code>/<code>restore</code> verbs bound, <code>verifiedBy</code> a tested round-trip.</li>
+  <li><strong>Fan out</strong> the remaining heralds (compute, network, the rest of the Tools) onto the proven schema.</li>
+</ol>
+
+<h2>9. Not in scope</h2>
+<ul>
+  <li><strong>The other unmodeled Borg reflection domains.</strong> Model one operational domain well as the exemplar; a deliberate reflection-layer pass is a later, separate decision.</li>
+  <li><strong>Cross-machine harvest engine.</strong> The harvest engine stays single-machine (Library); CIs describe both machines.</li>
+</ul>
+
+<div class="foot">
+  Design of record for #3560 / ADR-050. Companion artifacts: <code>ADR-050-infra-toolchain-cmdb-schema.md</code>, <code>fuseki-backup.sh</code>, <code>com.gathering.fuseki-backup.plist</code>, <code>tag-tests-domain.py</code> (delete guard) + its bats test. The C4 of how Fuseki interacts with Chorus and Gathering lives in the #3564 governance program (<code>fuseki-chorus-gathering-c4.html</code>).
+</div>
+</main>
+</body>
+</html>
