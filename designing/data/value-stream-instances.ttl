@@ -5,20 +5,157 @@
 # delete-subjects-then-insert, so each subject must carry its FULL definition or the
 # deploy strips what's omitted. Deployed to urn:chorus:instances (where the serve reads).
 
+# ── #3545 — parent ValueStream instances (the streams the steps inStream) ──
+# ValueStream shape requires label + outcome + trigger (sh:minCount 1 each).
+# These close the dangling step→stream refs: the 15 steps above point at these.
+chorus:value-stream-werk a chorus:ValueStream ;
+    rdfs:label "Werk" ; chorus:label "Werk" ;
+    chorus:outcome "A card built, proven, and landed on main" ;
+    chorus:trigger "event" ;
+    chorus:contains chorus:value-stream-step-pull, chorus:value-stream-step-commit, chorus:value-stream-step-push,
+        chorus:value-stream-step-build, chorus:value-stream-step-test, chorus:value-stream-step-deploy,
+        chorus:value-stream-step-demo, chorus:value-stream-step-merge, chorus:value-stream-step-accept .
+chorus:value-stream-chorus a chorus:ValueStream ;
+    rdfs:label "Chorus" ; chorus:label "Chorus" ;
+    chorus:outcome "An idea carried Shaping → Directing → Designing → Building → Proving → Reflecting, back into the system" ;
+    chorus:trigger "continuous" ;
+    chorus:contains chorus:value-stream-step-shaping, chorus:value-stream-step-directing, chorus:value-stream-step-designing,
+        chorus:value-stream-step-building, chorus:value-stream-step-proving, chorus:value-stream-step-reflecting .
+
+# #3545 — the remaining 5 streams (outcome/trigger grounded in each design doc).
+chorus:value-stream-athena a chorus:ValueStream ;
+    rdfs:label "Athena" ; chorus:label "Athena" ;
+    chorus:outcome "Takes a model class from OWL to a live, materialized surface — routes, MCP, skill, and page generated from the model" ;
+    chorus:trigger "event" ;
+    chorus:contains chorus:value-stream-step-athena-model, chorus:value-stream-step-athena-make,
+        chorus:value-stream-step-athena-deploy, chorus:value-stream-step-athena-land .
+chorus:value-stream-borg a chorus:ValueStream ;
+    rdfs:label "Borg" ; chorus:label "Borg" ;
+    chorus:outcome "Continuously reflects the running system against its model and surfaces a verdict to the owner to act on" ;
+    chorus:trigger "continuous" ;
+    chorus:contains chorus:value-stream-step-borg-plant, chorus:value-stream-step-borg-tend, chorus:value-stream-step-borg-read,
+        chorus:value-stream-step-borg-surface, chorus:value-stream-step-borg-prune, chorus:value-stream-step-borg-feed .
+chorus:value-stream-clearing a chorus:ValueStream ;
+    rdfs:label "Clearing" ; chorus:label "Clearing" ;
+    chorus:outcome "The team's I/O fabric — board input, comms output, and the event-sourced spine record every other stream plugs into" ;
+    chorus:trigger "substrate" ;
+    chorus:contains chorus:value-stream-step-clearing-card, chorus:value-stream-step-clearing-chunk, chorus:value-stream-step-clearing-tag,
+        chorus:value-stream-step-clearing-prioritize, chorus:value-stream-step-clearing-sequence, chorus:value-stream-step-clearing-sweep,
+        chorus:value-stream-step-clearing-wip, chorus:value-stream-step-clearing-nudge, chorus:value-stream-step-clearing-surface,
+        chorus:value-stream-step-clearing-inject, chorus:value-stream-step-clearing-gather, chorus:value-stream-step-clearing-tail .
+chorus:value-stream-convergence a chorus:ValueStream ;
+    rdfs:label "Convergence" ; chorus:label "Convergence" ;
+    chorus:outcome "Brings heterogeneous outside data into the model — reconciled and conformed to canonical form before it lands" ;
+    chorus:trigger "event" ;
+    chorus:contains chorus:value-stream-step-convergence-ingest, chorus:value-stream-step-convergence-map,
+        chorus:value-stream-step-convergence-land .
+chorus:value-stream-loom a chorus:ValueStream ;
+    rdfs:label "Loom" ; chorus:label "Loom" ;
+    chorus:outcome "Runs the team's executive cadence — maturing vision, strategy, goals, and knowledge on a nested calendar rhythm" ;
+    chorus:trigger "calendar" ;
+    chorus:contains chorus:value-stream-step-loom-vision, chorus:value-stream-step-loom-mission, chorus:value-stream-step-loom-map,
+        chorus:value-stream-step-loom-goals, chorus:value-stream-step-loom-metrics, chorus:value-stream-step-loom-practices,
+        chorus:value-stream-step-loom-retro, chorus:value-stream-step-loom-governance .
+
+# #3545 — STEPS for the bottom 5, sourced from each design doc's named cycle / OWL block.
+# Step subjects are stream-prefixed (map/surface recur across streams).
+
+# ── athena: model → make → deploy → land (Jeff 2026-06-22; supersedes the doc's shape/forge/seed/validate) ──
+chorus:value-stream-step-athena-model  a chorus:ValueStreamStep ; rdfs:label "Model" ; chorus:label "Model" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 1 .
+chorus:value-stream-step-athena-make   a chorus:ValueStreamStep ; rdfs:label "Make" ; chorus:label "Make" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 2 .
+chorus:value-stream-step-athena-deploy a chorus:ValueStreamStep ; rdfs:label "Deploy" ; chorus:label "Deploy" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 3 .
+chorus:value-stream-step-athena-land   a chorus:ValueStreamStep ; rdfs:label "Land" ; chorus:label "Land" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 .
+
+# ── borg: plant → tend → read → surface⭐ → prune → feed ────────────────────
+chorus:value-stream-step-borg-plant   a chorus:ValueStreamStep ; rdfs:label "Plant" ; chorus:label "Plant" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 1 .
+chorus:value-stream-step-borg-tend    a chorus:ValueStreamStep ; rdfs:label "Tend" ; chorus:label "Tend" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 2 .
+chorus:value-stream-step-borg-read    a chorus:ValueStreamStep ; rdfs:label "Read" ; chorus:label "Read" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 3 .
+chorus:value-stream-step-borg-surface a chorus:ValueStreamStep ; rdfs:label "Surface" ; chorus:label "Surface" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 4 .
+chorus:value-stream-step-borg-prune   a chorus:ValueStreamStep ; rdfs:label "Prune" ; chorus:label "Prune" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 5 .
+chorus:value-stream-step-borg-feed    a chorus:ValueStreamStep ; rdfs:label "Feed" ; chorus:label "Feed" ;
+    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 6 .
+
+# ── convergence: ingest → map → land⭐ (reconcile is internal to land) ──────
+chorus:value-stream-step-convergence-ingest a chorus:ValueStreamStep ; rdfs:label "Ingest" ; chorus:label "Ingest" ;
+    chorus:inStream chorus:value-stream-convergence ; chorus:stageOrder 1 .
+chorus:value-stream-step-convergence-map    a chorus:ValueStreamStep ; rdfs:label "Map" ; chorus:label "Map" ;
+    chorus:inStream chorus:value-stream-convergence ; chorus:stageOrder 2 .
+chorus:value-stream-step-convergence-land   a chorus:ValueStreamStep ; rdfs:label "Land" ; chorus:label "Land" ;
+    chorus:inStream chorus:value-stream-convergence ; chorus:stageOrder 3 .
+
+# ── loom: vision → mission → map⭐ → goals → metrics → practices → retro → governance (each carries a cadence) ──
+chorus:value-stream-step-loom-vision     a chorus:ValueStreamStep ; rdfs:label "Vision" ; chorus:label "Vision" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 1 ; chorus:cadence "yearly" .
+chorus:value-stream-step-loom-mission    a chorus:ValueStreamStep ; rdfs:label "Mission" ; chorus:label "Mission" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 2 ; chorus:cadence "yearly" .
+chorus:value-stream-step-loom-map        a chorus:ValueStreamStep ; rdfs:label "Map" ; chorus:label "Map" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 3 ; chorus:cadence "quarterly" .
+chorus:value-stream-step-loom-goals      a chorus:ValueStreamStep ; rdfs:label "Goals" ; chorus:label "Goals" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 4 ; chorus:cadence "quarterly" .
+chorus:value-stream-step-loom-metrics    a chorus:ValueStreamStep ; rdfs:label "Metrics" ; chorus:label "Metrics" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 5 ; chorus:cadence "monthly" .
+chorus:value-stream-step-loom-practices  a chorus:ValueStreamStep ; rdfs:label "Practices" ; chorus:label "Practices" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 6 ; chorus:cadence "weekly" .
+chorus:value-stream-step-loom-retro      a chorus:ValueStreamStep ; rdfs:label "Retro" ; chorus:label "Retro" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 7 ; chorus:cadence "weekly" .
+chorus:value-stream-step-loom-governance a chorus:ValueStreamStep ; rdfs:label "Governance" ; chorus:label "Governance" ;
+    chorus:inStream chorus:value-stream-loom ; chorus:stageOrder 8 ; chorus:cadence "continuous" .
+
+# ── clearing: FACES not a sequence (doc: "substrate, not line or loop").
+# Loaded as steps in presentation order; chorus:face preserves the board/comms/spine grouping.
+chorus:value-stream-step-clearing-card       a chorus:ValueStreamStep ; rdfs:label "Card" ; chorus:label "Card" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 1 ; chorus:face "board" .
+chorus:value-stream-step-clearing-chunk      a chorus:ValueStreamStep ; rdfs:label "Chunk" ; chorus:label "Chunk" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 2 ; chorus:face "board" .
+chorus:value-stream-step-clearing-tag        a chorus:ValueStreamStep ; rdfs:label "Tag" ; chorus:label "Tag" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 3 ; chorus:face "board" .
+chorus:value-stream-step-clearing-prioritize a chorus:ValueStreamStep ; rdfs:label "Prioritize" ; chorus:label "Prioritize" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 4 ; chorus:face "board" .
+chorus:value-stream-step-clearing-sequence   a chorus:ValueStreamStep ; rdfs:label "Sequence" ; chorus:label "Sequence" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 5 ; chorus:face "board" .
+chorus:value-stream-step-clearing-sweep      a chorus:ValueStreamStep ; rdfs:label "Sweep" ; chorus:label "Sweep" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 6 ; chorus:face "board" .
+chorus:value-stream-step-clearing-wip        a chorus:ValueStreamStep ; rdfs:label "WIP" ; chorus:label "WIP" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 7 ; chorus:face "board" .
+chorus:value-stream-step-clearing-nudge      a chorus:ValueStreamStep ; rdfs:label "Nudge" ; chorus:label "Nudge" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 8 ; chorus:face "comms" .
+chorus:value-stream-step-clearing-surface    a chorus:ValueStreamStep ; rdfs:label "Surface" ; chorus:label "Surface" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 9 ; chorus:face "comms" .
+chorus:value-stream-step-clearing-inject     a chorus:ValueStreamStep ; rdfs:label "Inject" ; chorus:label "Inject" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 10 ; chorus:face "comms" .
+chorus:value-stream-step-clearing-gather     a chorus:ValueStreamStep ; rdfs:label "Gather" ; chorus:label "Gather" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 11 ; chorus:face "comms" .
+chorus:value-stream-step-clearing-tail       a chorus:ValueStreamStep ; rdfs:label "Tail" ; chorus:label "Tail" ;
+    chorus:inStream chorus:value-stream-clearing ; chorus:stageOrder 12 ; chorus:face "spine" .
+
 # ── chorus top-level stream: Shaping → Reflecting ──────────────────────────
 chorus:value-stream-step-shaping    a chorus:ValueStreamStep ; rdfs:label "Shaping" ; chorus:label "Shaping" ;
-    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 1 .
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 1 ;
+    chorus:hasValueStream chorus:value-stream-loom .
 chorus:value-stream-step-directing  a chorus:ValueStreamStep ; rdfs:label "Directing" ; chorus:label "Directing" ;
-    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 2 .
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 2 ;
+    chorus:hasValueStream chorus:value-stream-clearing .
 chorus:value-stream-step-designing  a chorus:ValueStreamStep ; rdfs:label "Designing" ; chorus:label "Designing" ;
-    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 3 .
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 3 ;
+    chorus:hasValueStream chorus:value-stream-athena .
 chorus:value-stream-step-building   a chorus:ValueStreamStep ; rdfs:label "Building" ; chorus:label "Building" ;
     chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 4 ;
     chorus:hasValueStream chorus:value-stream-werk .
 chorus:value-stream-step-proving    a chorus:ValueStreamStep ; rdfs:label "Proving" ; chorus:label "Proving" ;
-    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 5 .
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 5 ;
+    chorus:hasValueStream chorus:value-stream-borg .
 chorus:value-stream-step-reflecting a chorus:ValueStreamStep ; rdfs:label "Reflecting" ; chorus:label "Reflecting" ;
-    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 6 .
+    chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 6 ;
+    chorus:hasValueStream chorus:value-stream-borg .
 
 # ── werk build-cycle stream: pull → accept ─────────────────────────────────
 chorus:value-stream-step-pull   a chorus:ValueStreamStep ; rdfs:label "Pull" ; chorus:label "Pull" ;
