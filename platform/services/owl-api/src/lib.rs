@@ -2111,8 +2111,14 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             // (product→domain). Querying only `contains` left /products/:p/contains
             // empty though the hasDomain edges exist — the UP bind Kade's product-rooted
             // tree render needs (#3466). One predicate set, both directions mirror.
+            // #3545 — three derivations of DOWN containment, model-faithful:
+            //   chorus:contains  (domain→sub, explicit)
+            //   chorus:hasDomain (product→domain, the UP bind for product-rooted trees, #3466)
+            //   inStream-INVERSE (a stream contains the steps whose chorus:inStream points at it)
+            // The inverse is THE move that retires hand-added chorus:contains edges: containment
+            // derives from the shape's declared edge (sh:inversePath chorus:inStream), one source of truth.
             let q = format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} }} BIND(STR(?o) AS ?v) }}",
+                "SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} UNION {{ ?o <{ns}inStream> <{ns}{n}> }} }} BIND(STR(?o) AS ?v) }}",
                 g = INSTANCES_GRAPH, ns = NS, n = name
             );
             return match sparql_json(&q) {
