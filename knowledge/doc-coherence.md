@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-06-21 19:59
+# Doc coherence report — 2026-06-22 13:08
 
 content-dup-groups: 13
 basename-dup-groups: 37
-broken-hrefs: 0
+broken-hrefs: 7
 
 ## Content-hash duplicates
 
@@ -166,4 +166,14 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 
 ## Broken hrefs
 
-_None. All catalog hrefs return 200 or 302 (auth-gated)._
+Catalog hrefs returning non-2xx / non-302:
+
+```
+502 /docs/fuseki-rebuild-diagram
+502 /docs/SYSTEM_ARCHITECTURE
+502 /docs/PRODUCT_VISION
+502 /docs/gathering-vision-synthesis
+502 /docs/HEIDEGGER_GATHERING_RESEARCH
+502 /docs/README
+502 /docs/gathering-site-map
+```
