@@ -1668,6 +1668,9 @@ pub fn status_line(code: u16) -> &'static str {
 /// shell + identity/stats/completeness first; the 17 facet sections in the renderer.
 pub fn page_html(t: &RouteTable) -> String {
     let class_short = t.class.rsplit('#').next().unwrap_or("Domain").to_string();
+    let collection = pluralize(&class_short);
+    // #3545 — Domain keeps its rich renderer; every other class projects via the generic entity-renderer.
+    let renderer = if class_short == "Domain" { "domain-renderer.js" } else { "entity-renderer.js" };
     let tmpl = r##"<!doctype html>
 <html lang="en">
 <head>
@@ -1700,14 +1703,16 @@ pub fn page_html(t: &RouteTable) -> String {
   <div id="content-sections"></div>
   <p class="muted" style="margin-top:var(--space-5)">Athena &middot; Chorus &middot; GENERATED page (owl-api) — live from the model</p>
 </div>
-<script>window.OWL_PORT = 3360;</script>
+<script>window.OWL_PORT = 3360; window.OWL_CLASS = "{{CLASS}}"; window.OWL_COLLECTION = "{{COLLECTION}}";</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="/js/domain-renderer.js" defer></script>
+<script src="/js/{{RENDERER}}" defer></script>
 <script src="/js/content-actions.js" defer></script>
 </body>
 </html>
 "##;
     tmpl.replace("{{CLASS}}", &class_short)
+        .replace("{{COLLECTION}}", &collection)
+        .replace("{{RENDERER}}", renderer)
 }
 
 /// Build the JSON for one entity: every direct property in the instances graph.
@@ -2106,8 +2111,14 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             // (product→domain). Querying only `contains` left /products/:p/contains
             // empty though the hasDomain edges exist — the UP bind Kade's product-rooted
             // tree render needs (#3466). One predicate set, both directions mirror.
+            // #3545 — three derivations of DOWN containment, model-faithful:
+            //   chorus:contains  (domain→sub, explicit)
+            //   chorus:hasDomain (product→domain, the UP bind for product-rooted trees, #3466)
+            //   inStream-INVERSE (a stream contains the steps whose chorus:inStream points at it)
+            // The inverse is THE move that retires hand-added chorus:contains edges: containment
+            // derives from the shape's declared edge (sh:inversePath chorus:inStream), one source of truth.
             let q = format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} }} BIND(STR(?o) AS ?v) }}",
+                "SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} UNION {{ ?o <{ns}inStream> <{ns}{n}> }} }} BIND(STR(?o) AS ?v) }}",
                 g = INSTANCES_GRAPH, ns = NS, n = name
             );
             return match sparql_json(&q) {

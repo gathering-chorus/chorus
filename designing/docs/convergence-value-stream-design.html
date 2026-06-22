@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Convergence — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #4f46e5; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #e0e7ff; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #4f46e5; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  .fork { background: #fee2e2; padding: 12px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #dc2626; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #3730a3; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .kade { background: #ffedd5; color: #9a3412; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Convergence — Value-Stream Design <span>— the boundary; bringing the outside world into the model</span></h1>
+<div class="date">Wren · 2026-06-21 · INSTANCE of <code>value-stream-template.html</code> · sibling of <a href="athena-value-stream-design.html">athena</a> / <a href="borg-value-stream-design.html">borg</a> / <a href="loom-value-stream-design.html">loom</a> / <a href="clearing-value-stream-design.html">clearing</a> / werk · owner Kade · DRAFT 0.1 (verb-family ideation, card #3545)</div>
+
+<div class="frame">
+<strong>Scope.</strong> This is Convergence&rsquo;s value stream — <em>one instance</em> of the <a href="value-stream-template.html">api-driven value-stream template</a>. Convergence is the <strong>boundary</strong>: it takes data from <strong>heterogeneous outside sources</strong> (an existing system, a legacy schema, an external feed) and brings it <em>into</em> the model, reconciled and conformed. Where <strong>Athena projects the model outward</strong> (generate), <strong>Convergence pulls the world inward</strong> (integrate). It is the <strong>least-drafted</strong> of the six streams — this 0.1 names the shape from first principles + the integration literature.</div>
+
+<div class="fork">
+<strong>Convergence is a LINE, and it&rsquo;s the inbound twin of Athena.</strong> Three verbs: <code>ingest → map → land</code>, event-triggered by incoming data, produces-and-terminates per batch. The symmetry: <strong>Athena = inward generation</strong> (model → surfaces); <strong>Convergence = boundary ingestion</strong> (sources → model). They share the same membrane — the OWL model / canonical form — approached from opposite sides. Convergence is also the natural home of <strong>Borg&rsquo;s assimilation mode</strong>: the herald/xray discovers an existing system&rsquo;s structure, and Convergence is how that discovered data <em>lands</em> in the graph.</div>
+
+<div class="caveat"><strong>⚠ As-is vs to-be.</strong> Convergence exists today mostly as <strong>cards and intent</strong> (#3392 ICD/convergence TTLs → chorus tree + Fuseki load-path; #2291 Chorus-extraction-from-Gathering), not a built pipeline. The ICD (Interface Control Document) gate + harvesters are the closest running pieces. This 0.1 is a <strong>greenfield design</strong> — the integration patterns below are the to-be the verbs instance, not current behavior.</div>
+
+<h2>1 · The convergence-* cycle</h2>
+<p>An integration pipeline collapsed to its three essentials. Each verb is one well-trodden body of integration practice (§6).</p>
+<table>
+<tr><th>Verb</th><th>What it does</th><th>Framework anchor</th><th>Owner</th></tr>
+<tr><td><span class="verb">ingest</span></td><td>Pull data from heterogeneous sources as tracked units, with provenance — each source has its own schema, keys, formats.</td><td>NiFi / Flow-Based Programming (FlowFiles over a graph)</td><td><span class="kade">Kade</span></td></tr>
+<tr><td><span class="verb">map</span></td><td>Route by content and transform toward the canonical model — bridge incompatible formats. The ETL-vs-ELT choice of <em>where</em> transform runs.</td><td>EIP Message-Translator + Content-Based Router</td><td><span class="kade">Kade</span></td></tr>
+<tr><td><span class="verb">land</span> ⭐</td><td><strong>Reconcile-before-load</strong>: schema-map, cleanse, dedup, entity-resolve to a golden master — THEN write into the system of record. Source data never matches; you reconcile first.</td><td>record linkage · canonical data model</td><td><span class="kade">Kade</span></td></tr>
+</table>
+<p>The step it recurses under is open (likely a Harvesting / boundary step, or cross-stream — see the fork). Orchestrated by a <code>chorus_convergence</code> loop (the <code>chorus_werk</code> / <code>chorus_athena</code> analog), one trigger per inbound batch.</p>
+
+<div class="caveat"><strong>The load-bearing verb is <code>land</code>, and its heart is the RECONCILE, not the write.</strong> Jeff&rsquo;s thirty-year integration lesson: <em>&ldquo;always reconcile before loading — source data never matches cleanly.&rdquo;</em> A <code>land</code> that skips reconciliation is the classic integration mistake — it loads dirty, duplicated, unconformed data and corrupts the model it was supposed to enrich. <code>convergence-land</code> is parse-external → reconcile-to-the-schema → write-conformant-instances. (This is the same data-plane discipline as <code>athena-load</code>, pointed at the boundary instead of at our own designs.)</div>
+
+<h2>2 · The engine — sources → canonical model</h2>
+<p>Convergence&rsquo;s heart is a <strong>flow of tracked data units through a transform graph into a reconciled system of record.</strong> Data arrives as explicit packets (not transient variables), each carrying provenance; it is routed and mapped toward one canonical form; before it lands it is reconciled against what&rsquo;s already there.</p>
+<pre class="mermaid">
+flowchart LR
+  SRC["heterogeneous sources<br/>(legacy schema, feed, discovered system)"] --> ING["ingest — flow-based intake (FlowFiles + provenance)"]
+  ING --> MAP["map — route + translate toward canonical model"]
+  MAP --> REC["reconcile — schema-map · cleanse · dedup · entity-resolve"]
+  REC --> LAND["land — write conformant instances"]
+  LAND --> SOR[("system of record — the OWL graph / canonical model")]
+  REC -.golden master + source→row mapping.-> SOR
+</pre>
+<div class="caption">convergence — ingest → map → (reconcile) → land. The reconcile gate is where source data is conformed to the canonical model before it&rsquo;s allowed into the system of record. Provenance is carried end-to-end.</div>
+<ul>
+  <li><strong>ETL vs ELT is a <code>map</code> decision:</strong> transform-before-land (ETL, governance-first, fixed legacy sources — our likely default given the OWL/SHACL floor) vs land-raw-then-transform (ELT, elastic compute). The canonical-model conformance is non-negotiable; <em>where</em> it runs is the choice.</li>
+  <li><strong>Provenance is first-class:</strong> every unit retraces to its source (NiFi Data Provenance) — essential for a system that <em>assimilates</em> existing systems and must explain where each fact came from.</li>
+  <li><strong>Reconcile = the EIP Normalizer + record linkage:</strong> conform formats (ISO codes, canonical keys), cleanse, dedup, and resolve same-entity records into one golden master plus a mapping table of which sources fed which row.</li>
+</ul>
+
+<h2>3 · Convergence&rsquo;s model &amp; domains</h2>
+<div class="frame">The generic structural classes are in the <a href="value-stream-template.html">template §5</a>. Convergence&rsquo;s domains follow the integration pipeline.</div>
+<table>
+<tr><th>Domain</th><th>What it holds</th><th>As-is</th></tr>
+<tr><td><code>sources</code></td><td>The registered inbound systems/feeds + their native schemas.</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>icd</code></td><td>Interface Control Documents — the provider/consumer contracts per domain (the ICD gate).</td><td><span style="color:#d97706">partial (ICD gate runs)</span></td></tr>
+<tr><td><code>harvesters</code></td><td>The ingest workers — per-domain pulls (the <code>harvest-*</code> scripts, the gathering harvesters).</td><td><span style="color:#16a34a">live (gathering)</span></td></tr>
+<tr><td><code>mappings</code></td><td>Source-schema → canonical-model transforms (the EIP translators).</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>reconciliation</code></td><td>Cleanse/dedup/entity-resolution rules + the golden-master + source→row mapping.</td><td><span style="color:#dc2626">to-be</span></td></tr>
+</table>
+<pre><code># The convergence cycle as ValueStreamSteps (greenfield)
+chorus:value-stream-convergence a chorus:ValueStream ; chorus:label "Convergence (boundary ingestion)" .
+#   steps: ingest / map / land   (land = reconcile-before-write)
+# Domains partOf product-convergence: sources, icd, harvesters, mappings, reconciliation.
+# Twin of Athena: athena projects model→surfaces; convergence ingests sources→model.
+# The ICD gate (DEC-095): no harvester code without a matching ICD provider section — convergence's write-door floor.
+</code></pre>
+<div class="caveat"><strong>Chorus is a factory — what it ingests must not shackle the products it builds.</strong> Convergence brings outside data into the model at <em>author/build time</em>; it must not become a <em>runtime</em> dependency of the products (the &ldquo;turn Chorus off, does gathering still boot?&rdquo; test). The gathering→convergence relationship is generative (ingest-and-conform), not a live coupling.</div>
+
+<h2>4 · Ownership boundary (Convergence)</h2>
+<table>
+<tr><th>Kade — the ingestion</th><th>Silas / Wren — the model floor</th></tr>
+<tr><td>The harvesters, the ingest/map/reconcile pipeline, the source registrations, the extraction moves (#3392, #2291 — Chorus extraction from Gathering). Convergence is Kade&rsquo;s sequence lane.</td><td>Silas owns the OWL/SHACL the reconciled data must conform to (the canonical model floor + the ICD gate); Wren owns the model shapes / the value-stream design. Convergence lands <em>into</em> their model.</td></tr>
+</table>
+
+<h2>5 · Sequencing — contract first, reconcile always</h2>
+<ol>
+  <li><strong>Author the value-stream spine</strong> — <code>value-stream-convergence</code> + ingest/map/land as <code>ValueStreamStep</code>s. Land it (greenfield).</li>
+  <li><strong>ICD-first</strong> (DEC-095) — no harvester without a matching ICD provider section. The contract precedes the code; <code>icd</code> is the write-door floor.</li>
+  <li><strong>One source end-to-end</strong> — pick one inbound domain (e.g. #3392 ICD/convergence TTLs), run ingest→map→reconcile→land fully, proving the reconcile gate. The repetition is the rest of Convergence.</li>
+  <li><strong>Golden-master + provenance</strong> — entity resolution to one canonical record + a source→row mapping, so every landed fact retraces to its origin.</li>
+  <li><strong>Generate the mappings</strong> where possible — the source→canonical transform is itself a model artifact (the <code>athena-make</code> path applied to integration), so mappings don&rsquo;t drift from the schema.</li>
+</ol>
+
+<h2>6 · Operating-model frames</h2>
+<ul>
+  <li><strong>Flow-Based Programming</strong> (J. Paul Morrison, 1970s) — <em>ingest.</em> Apps as networks of black-box processes passing discrete Information Packets over defined connections. = data as tracked units, not variables.</li>
+  <li><strong>Apache NiFi</strong> — <em>the operational ingest.</em> FlowFiles (payload + attributes) through Processors over backpressured Connections, with first-class Data Provenance. = the <code>ingest</code> substrate.</li>
+  <li><strong>Enterprise Integration Patterns</strong> (Hohpe &amp; Woolf, 2003) — <em>map.</em> Message Translator, Content-Based Router, Normalizer, Canonical Data Model — 65 patterns along a message&rsquo;s journey. = <code>convergence-map</code>.</li>
+  <li><strong>ETL/ELT + Record Linkage</strong> — <em>land.</em> Transform placement (ETL vs ELT) + reconcile-before-load: schema mapping, cleansing, dedup, entity resolution to a golden master. = <code>convergence-land</code>.</li>
+</ul>
+
+<h2>7 · References</h2>
+<ul>
+  <li><a href="value-stream-template.html">value-stream-template.html</a> — the generic pattern. Siblings: <a href="athena-value-stream-design.html">athena</a> (the outbound twin) · <a href="borg-value-stream-design.html">borg</a> · <a href="loom-value-stream-design.html">loom</a> · <a href="clearing-value-stream-design.html">clearing</a> · werk.</li>
+  <li><strong>Flow-Based Programming</strong> — J. Paul Morrison (jpaulmorrison.com/fbp). <strong>Apache NiFi</strong> — nifi.apache.org (FlowFiles / Processors / Provenance).</li>
+  <li><strong>Enterprise Integration Patterns</strong> — Hohpe &amp; Woolf (enterpriseintegrationpatterns.com); Apache Camel (the EIP DSL).</li>
+  <li><strong>ETL vs ELT</strong> — AWS compare; <strong>Record linkage</strong> / entity resolution (golden master).</li>
+  <li>DEC-095 (ICD gate — no harvester without a provider section); cards #3392 (ICD/convergence TTLs → tree + Fuseki load-path), #2291 (Chorus extraction from Gathering). Borg&rsquo;s assimilation mode (<a href="BORG_ASSIMILATION_PATTERN.html">the assimilation pattern</a>) lands its discovered data through Convergence.</li>
+  <li>Conversation capture: card #3545 (the 2026-06-21 verb-family ideation — Convergence as the boundary/inbound twin of Athena: ingest→map→land, reconcile-first).</li>
+</ul>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · IRI <code>chorus:doc-convergence-value-stream-design</code> · owner Kade (ingestion) / Silas-Wren (model floor) · 5 domains · part of the verb-family-per-product model (card #3545). DRAFT 0.1 — HTML, reworkable, least-drafted of the six. Convergence = boundary ingestion, the inbound twin of Athena.
+</div>
+
+</body>
+</html>

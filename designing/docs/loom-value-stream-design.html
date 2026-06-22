@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loom — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #6d28d9; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #ede9fe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #6d28d9; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  .fork { background: #fee2e2; padding: 12px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #dc2626; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .wren { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .jeff { background: #e2e8f0; color: #334155; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .role { background: #f3e8ff; color: #6b21a8; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #ddd6fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Loom — Value-Stream Design <span>— the Shaping-step instance; the team's executive cadence</span></h1>
+<div class="date">Wren · 2026-06-21 · INSTANCE of <code>value-stream-template.html</code> (read that for the generic pattern) · sibling of <a href="athena-value-stream-design.html">athena</a> / <a href="borg-value-stream-design.html">borg</a> / werk (#3413) · Shaping step · DRAFT 0.1 (from the 2026-06-21 verb-family ideation, card #3545)</div>
+
+<div class="frame">
+<strong>Scope.</strong> This is Loom's value stream — <em>one instance</em> of the <a href="value-stream-template.html">api-driven value-stream template</a>. The generic structure (ordered steps, generative cascade, AX=JX, the structural shapes) lives in the template; this doc is <strong>loom-specific only</strong> — its cycle, its engine (<code>loom-map</code>), the domains it tends, who owns what, how it lands. Loom is where the team's <strong>vision, strategy, goals, and the knowledge they harden into</strong> live — the &ldquo;the SA <em>is</em> the loom, you&rsquo;re three threads&rdquo; framing made into a runnable value stream.
+</div>
+
+<div class="fork">
+<strong>Loom is a LOOP, like Borg — but triggered by a different clock.</strong> Werk / Athena / Convergence are <strong>lines</strong> (they produce-and-terminate per unit of work). Loom and Borg are <strong>loops</strong> (they tend continuously, never finish). The two loops are <strong>the two reflections</strong>: <strong>Borg reflects on the system</strong> (health, clock-triggered — nightly/continuous), <strong>Loom reflects on the team &amp; its knowledge</strong> (position/direction, <strong>calendar-triggered</strong> — quarterly/monthly/weekly). They couple head-to-tail: <strong>Borg&rsquo;s <code>feed</code> → Loom&rsquo;s <code>observe</code></strong>. In control terms (see §6): <strong>Loom is the reference signal (the setpoint); Borg is the feedback controller that holds the system to it.</strong> Same eye, two focal lengths — Borg watches the machine, Loom runs the org.</div>
+
+<div class="caveat"><strong>⚠ As-is vs to-be — Loom is the least-built of the streams.</strong> Today the model carries some loom subdomains (<code>principles</code>, <code>practices</code>, <code>decisions</code>, <code>policies</code>, <code>skills</code>, <code>roles</code> — the <em>middle/bottom</em> rungs) but <strong>not the strategy head</strong> (<code>vision</code>, <code>mission</code>, <code>map</code>, <code>goals</code>, <code>metrics</code>) and <strong>no scheduled cadence</strong> that runs the verbs. The deltas this 0.1 proposes — asserted as to-be, NOT current — are: (1) the strategy-head domains; (2) the <code>loom-*</code> verb family + a <code>chorus_loom</code> orchestrator fired on a calendar; (3) the nested-cadence model. Read &ldquo;the loom cadence&rdquo; below as the to-be these deltas produce.</div>
+
+<h2>1 · The loom-* cycle — a nested cadence, run on schedules</h2>
+<p>Werk fires on an <strong>event</strong> (a card arrives). Borg fires on the <strong>system clock</strong> (nightly health). Loom fires on the <strong>business calendar</strong> — it&rsquo;s the team&rsquo;s <strong>executive operating rhythm</strong>, the C-level cadence run on cron. The verbs aren&rsquo;t a line of steps; they&rsquo;re a <strong>nested set of loops</strong>, each on its own clock, each framing the faster one below it. A <code>chorus_loom</code> orchestrator fires the right verb when its clock ticks.</p>
+<table>
+<tr><th>Verb → domain</th><th>Cadence</th><th>What it does</th><th>Framework anchor</th><th>Owner</th></tr>
+<tr><td><span class="verb">loom-vision</span></td><td>yearly / on-inflection</td><td>The far horizon — who we&rsquo;re becoming. The most abstract rung (Wardley <em>genesis</em>).</td><td>V2MOM <em>Vision</em> · EOS 10-yr Target</td><td><span class="jeff">Jeff</span> <span class="wren">Wren</span></td></tr>
+<tr><td><span class="verb">loom-mission</span></td><td>yearly</td><td>Why we exist / what we&rsquo;re doing now — the durable purpose.</td><td>V2MOM <em>Values</em> · mission</td><td><span class="jeff">Jeff</span></td></tr>
+<tr><td><span class="verb">loom-map</span> ⭐</td><td>quarterly</td><td>Strategic position — where each capability sits on the evolution axis, which way it&rsquo;s moving. The engine (§2).</td><td>Wardley Mapping</td><td><span class="wren">Wren</span></td></tr>
+<tr><td><span class="verb">loom-goals</span></td><td>quarterly</td><td>The quarter&rsquo;s objectives — qualitative, aspirational direction (the O in OKR).</td><td>OKR <em>Objective</em> · EOS Rocks</td><td><span class="wren">Wren</span></td></tr>
+<tr><td><span class="verb">loom-metrics</span></td><td>monthly</td><td>Key results vs goals — the measurable scoreboard read. Fed by Borg&rsquo;s emits (§6).</td><td>OKR <em>Key Results</em></td><td><span class="wren">Wren</span></td></tr>
+<tr><td><span class="verb">loom-practices</span></td><td>weekly</td><td>How we&rsquo;re actually working — surface drift from intent.</td><td>EOS L10 · Hoshin <em>check</em></td><td><span class="role">team</span></td></tr>
+<tr><td><span class="verb">loom-retro</span></td><td>weekly</td><td>What we learned — feeds <code>rcas</code> / <code>principles</code>.</td><td>PDCA · blameless retro</td><td><span class="role">team</span></td></tr>
+<tr><td><span class="verb">loom-decisions</span> <span class="verb">-principles</span> <span class="verb">-policies</span> <span class="verb">-skills</span> <span class="verb">-roles</span></td><td>continuous</td><td>Governance &amp; learning — harvested as events, reviewed on cadence. A practice that hardens becomes an automated <strong>skill/gate</strong> (Wardley <em>commodity</em>).</td><td>knowledge-as-data</td><td><span class="role">team</span></td></tr>
+</table>
+<p>&hellip;and around again, by the calendar. <strong>The cadence is the product</strong>, not a finish line. The <strong>Shaping</strong> step <code>hasValueStream</code> this cycle (the template&rsquo;s fractal recursion); orchestrated by a <code>chorus_loom</code> loop (the <code>chorus_werk</code> / <code>chorus_borg</code> analog), the one trigger that fires the right verb when its clock ticks.</p>
+
+<div class="caveat"><strong>The nesting is the point — feedback flows both ways.</strong> Vision <em>frames</em> quarterly goals <em>frame</em> monthly metrics <em>frame</em> weekly practice (slower sets the frame for faster). And the signal flows <em>back up</em>: metrics ask &ldquo;are we hitting goals?&rdquo; → goals ask &ldquo;are these the right goals?&rdquo; (re-map) → strategy asks &ldquo;does the mission still hold?&rdquo;. Each loop&rsquo;s output is the next-faster loop&rsquo;s input; each loop&rsquo;s result is the next-slower loop&rsquo;s check. Loom is a real control loop on the team&rsquo;s direction, not a place vision is stored.</div>
+
+<h2>2 · loom-map — the engine</h2>
+<p><code>loom-map</code> is the heart, the way <code>build/deploy</code> are werk&rsquo;s, <code>forge</code> is athena&rsquo;s, <code>reflect</code> is borg&rsquo;s. It is a <strong>Wardley Map</strong> of the team&rsquo;s capabilities: a value chain anchored on what Jeff / the team needs, with each capability placed on the <strong>evolution axis</strong> (genesis → custom-built → product → commodity). Position tells you what to <em>deliberate</em> on and what to <em>automate</em>.</p>
+<p>The deep fit: <strong>Loom&rsquo;s own content lays out on that axis.</strong> The knowledge-hardening ladder <em>is</em> the Wardley evolution axis applied to knowledge — a fuzzy <strong>vision</strong> (genesis) hardens into a <strong>mission</strong>, a <strong>principle</strong>, a <strong>policy</strong>, a repeatable <strong>practice</strong> (product), and finally a fully automated <strong>skill / gate</strong> (commodity / utility). That&rsquo;s why <code>loom-map</code> is Loom&rsquo;s native instrument and not a bolt-on: Loom&rsquo;s artifacts <em>are</em> the same knowledge caught at different stages of hardening.</p>
+<pre class="mermaid">
+flowchart TB
+  subgraph Y["yearly — identity"]
+    V["loom-vision → vision"] --- M["loom-mission → mission"]
+  end
+  subgraph Q["quarterly — direction"]
+    MAP["loom-map · Wardley"] --- G["loom-goals (O)"]
+  end
+  subgraph MO["monthly — measurement"]
+    MET["loom-metrics (KR)"]
+  end
+  subgraph WK["weekly — rhythm"]
+    P["loom-practices"] --- RT["loom-retro"]
+  end
+  C["continuous — decisions · principles · policies · skills · roles"]
+  Y -->|frames| Q -->|frames| MO -->|frames| WK -->|frames| C
+  C -.signal.-> WK -.signal.-> MO -.signal.-> Q -.signal.-> Y
+  BORG["borg · feed (ground truth)"] ==> MET
+  BORG ==> P
+</pre>
+<div class="caption">loom-map &amp; the nested cadence. Solid ↓ = frames (slower sets the frame); dashed ↑ = signal (faster reports up). Borg ⇒ feeds reality into the bottom rungs — the cadence runs on evidence, not vibes. Doctrine: <em>automate the commodity, deliberate on the genesis.</em></div>
+<ul>
+  <li><strong>Situational awareness, not a plan:</strong> the map shows not just what we have but where it&rsquo;s <em>heading</em> (the four evolution stages are driven by ubiquity + certainty). Strategy is read off the map via the Sun-Tzu/Boyd loop (Purpose → Landscape → Climate → Doctrine → Leadership), iterative not one-shot.</li>
+  <li><strong>Differentiate on the evolving, commoditize the stable:</strong> invest deliberation where things are genesis/custom (the new vision, the unsettled practice); push the settled ones toward automated skills/gates — which is exactly how a practice becomes a hook nobody thinks about.</li>
+  <li><strong>The conveyor never empties:</strong> knowledge keeps sliding rightward (vision → skill) while new genesis enters at the top — fed by Borg&rsquo;s feed, a story Jeff tells, a retro. Loom tends that conveyor.</li>
+</ul>
+
+<h2>3 · Loom&rsquo;s model &amp; the domains it tends</h2>
+<div class="frame">The generic structural classes (Product/Domain/Service/ValueStream shapes) are in the <a href="value-stream-template.html">template §5</a>. This section is the <em>Loom-specific instances</em> — the domains, split into the <strong>strategy head</strong> (the gap, to-be) and the <strong>knowledge body</strong> (partly modeled today).</div>
+<table>
+<tr><th>Domain</th><th>What it holds</th><th>Layer</th><th>Status</th></tr>
+<tr><td><code>vision</code></td><td>The far horizon — who the team is becoming.</td><td>strategy head</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>mission</code></td><td>Durable purpose — why we exist.</td><td>strategy head</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>map</code> ⭐</td><td>Wardley strategic position over the capability value chain.</td><td>strategy head</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>goals</code></td><td>Quarterly objectives (OKR-O).</td><td>strategy head</td><td><span style="color:#dc2626">to-be</span></td></tr>
+<tr><td><code>metrics</code></td><td>Key results / the scoreboard (OKR-KR), computed from Borg&rsquo;s emits.</td><td>strategy head</td><td><span style="color:#d97706">partial</span></td></tr>
+<tr><td><code>principles</code></td><td>Heuristics named when a pattern recurs (the live principle graph).</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+<tr><td><code>policies</code></td><td>Constraints / governance.</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+<tr><td><code>practices</code></td><td>How we work — the operational how.</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+<tr><td><code>decisions</code></td><td>DEC / ADR records.</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+<tr><td><code>rcas</code></td><td>Root-cause / postmortem learnings (from <code>loom-retro</code>).</td><td>knowledge body</td><td><span style="color:#d97706">partial</span></td></tr>
+<tr><td><code>skills</code></td><td>Hardened practices encoded as automated actions / gates.</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+<tr><td><code>roles</code></td><td>Who holds what — the team identity.</td><td>knowledge body</td><td><span style="color:#16a34a">live</span></td></tr>
+</table>
+<div class="caption">The strategy head (vision/mission/map/goals) is the gap; the knowledge body (principles/policies/practices/decisions/skills/roles) is partly modeled. Loom without its head reads as a filing cabinet; with it, it&rsquo;s the cycle that decides <em>what knowledge to mature next</em>.</div>
+<pre><code># The loom cycle as ValueStreamSteps (greenfield: bare owl:Class today)
+chorus:value-stream-loom a chorus:ValueStream ; chorus:label "Loom (executive cadence)" .
+#   steps: vision/mission/map/goals/metrics/practices/retro/governance
+#          each inStream value-stream-loom, with a chorus:cadence (yearly|quarterly|monthly|weekly|continuous)
+# chorus:value-stream-step-shaping chorus:hasValueStream chorus:value-stream-loom .
+# Domains partOf product-loom: vision, mission, map, goals, metrics, principles,
+#   policies, practices, decisions, rcas, skills, roles.
+# Coupling: borg feed → loom observe (metrics + practices read Borg's ground truth).
+</code></pre>
+<div class="caveat"><strong>Most orgs run this cadence in decks and meetings</strong> — ephemeral, lossy, re-argued every quarter. Loom-as-verbs-on-a-schedule makes the leadership rhythm <strong>modeled, persistent, and executable</strong>: the strategy isn&rsquo;t a slide that rots between offsites; it&rsquo;s in the graph, and the cadence runs itself on the calendar. The Chorus thesis (a platform for building systems) pointed at the one layer we hadn&rsquo;t pointed it at — <em>running the company</em>, not just building the product.</div>
+
+<h2>3.5 · The skills domain — the invocable surface</h2>
+<p>A <strong>skill</strong> (Claude Code <code>/</code>-command) is an <em>implementation of a verb</em>. Loom holds skills <strong>two ways</strong>: it owns its own <em>interaction</em> skills (below), AND it is the <strong>registry of every skill</strong> — because a skill is a hardened practice, and practices are loom&rsquo;s knowledge body (the commodity end of the hardening ladder). A skill <em>acts</em> in its product (its verb) but <em>lives</em> in loom (as a practice). The skill distribution is itself a maturity map: <strong>loom + clearing + werk are skill-rich</strong>; <strong>athena / borg / convergence are skill-empty</strong> — and athena&rsquo;s emptiness is exactly what <code>athena-make verb</code> (#3551) fills.</p>
+<p><strong>Loom&rsquo;s own skills are the *interactions* — and for a human, interaction is sensory.</strong> Eyes and ears (and voice) are how a person brings attention to the team; bringing your eyes to a role <em>is</em> the act of interacting. So the look/listen skills aren&rsquo;t viewing-mechanics (those are clearing) — they&rsquo;re how a human spends attention, which is the heart of the operating model.</p>
+<table>
+<tr><th>Loom skill group</th><th>Skills</th><th>What it is</th></tr>
+<tr><td><strong>Senses</strong> 👁️👂</td><td><span class="verb">look</span> <span class="verb">listen</span> <span class="verb">lk</span> <span class="verb">ls</span> <span class="verb">lw</span> <span class="verb">lm</span> <span class="verb">gemba</span></td><td>Eyes/ears: bring attention to a role or to Jeff (look at Kade/Silas/Wren, posture, the live work). The human interaction interface.</td></tr>
+<tr><td><strong>Reflection</strong></td><td><span class="verb">ab</span> <span class="verb">flow</span> <span class="verb">wtf</span> <span class="verb">retro</span></td><td>Look at the work itself — analyze the board, propose flow, triage honestly, run the team retro.</td></tr>
+<tr><td><strong>Practice</strong></td><td><span class="verb">pair</span> <span class="verb">jdi</span> <span class="verb">simplify</span> <span class="verb">cs</span></td><td>Codified ways of working — pair, just-do-it, simplify, act on Jeff&rsquo;s seeds.</td></tr>
+<tr><td><strong>Cadence</strong></td><td><span class="verb">close</span> <span class="verb">reboot</span></td><td>The session operating rhythm — close-out and restart rituals.</td></tr>
+</table>
+<div class="frame"><strong>The dual home, plainly:</strong> <code>/cw</code> <em>acts</em> in werk (it runs <code>chorus_werk</code>) but <em>lives</em> in loom (as a codified team practice — a loom-skill). So each product page lists the skills that implement <em>its</em> verbs; the loom page additionally carries the whole skill <em>registry</em>, because loom is where skills live as knowledge. Same skill, two memberships — the rhizome: a practice (loom) realized as a verb (its product). Jeff gave the team eyes/ears/mouths (the sense skills); loom is where the team gives them to <em>itself</em> — choosing where to point attention.</div>
+
+<h2>4 · Ownership boundary (Loom)</h2>
+<table>
+<tr><th>Wren — the strategy &amp; cadence</th><th>The team + Jeff — the direction</th></tr>
+<tr><td>The <code>loom-map</code> engine, the goals/metrics model, the cadence orchestration (<code>chorus_loom</code>), the principles graph (&ldquo;you own loom principles&rdquo; — Jeff), the position-sensing. Loom&rsquo;s own coherence bar. PM lens: value, opportunity-cost, position.</td><td><strong>Jeff is the C-level</strong> — vision/mission are his to set; the roles are the VPs running the cadence. Vision and the go/no-go on direction are sovereign to Jeff (the DEC-048 analog at the strategy layer); Loom <em>surfaces</em> the position so the call is never blind, it never overrides it.</td></tr>
+</table>
+<p>Loom is the &ldquo;the SA <em>is</em> the loom&rdquo; framing operationalized: vision/mission is where the team&rsquo;s identity lives; the rest is that identity hardening into how we actually act. Wren weaves; Jeff sets the warp.</p>
+
+<h2>5 · Sequencing — head first, cadence derives</h2>
+<ol>
+  <li><strong>Author the value-stream spine</strong> — <code>value-stream-loom</code> + the cycle steps as <code>ValueStreamStep</code>s with a <code>cadence</code> property, in the model. Land it (greenfield, no rip-out — the strategy-head domains are net-new).</li>
+  <li><strong>loom-map leg one</strong> — model the capability value chain + the evolution axis once; render the Wardley map from the model (the <code>athena-make</code> projection, not a hand-drawn deck). This is <code>map</code> proven end-to-end.</li>
+  <li><strong>loom-goals / loom-metrics</strong> — the OKR pair: objectives in the model, key results computed from Borg&rsquo;s emits (close the measurement loop — the scoreboard reads itself).</li>
+  <li><strong>The cadence orchestrator</strong> — <code>chorus_loom</code> fires each verb on its clock (Time domain / cron). Start with the weekly <code>loom-retro</code> → <code>principles</code> harvest (the highest-frequency, already-warm loop).</li>
+  <li><strong>The knowledge body folds in</strong> — the live principles/practices/decisions graphs re-seat under <code>product-loom</code>; the hardening ladder (practice → skill/gate) becomes a modeled transition, not a manual one.</li>
+</ol>
+
+<h2>6 · Operating-model frames &amp; the Borg coupling</h2>
+<p>Loom&rsquo;s cadence isn&rsquo;t invented — it instances well-trodden strategy frames, each the same nested loop from a different angle. Borrow their <em>questions</em>; recalibrate benchmarks to our scale (our constraint is attention/coherence, not headcount):</p>
+<ul>
+  <li><strong>Wardley Mapping</strong> — <em>where are we &amp; where is it heading.</em> Evolution axis, situational awareness, automate-the-commodity. = <code>loom-map</code>, and the knowledge-hardening ladder.</li>
+  <li><strong>OKR</strong> (Grove&rsquo;s Intel iMBO → Doerr → Google) — <em>what we&rsquo;re aiming at &amp; how we measure.</em> Objective (qualitative) + Key Results (quantitative), quarterly O / frequent KR check-ins, score sweet-spot ~0.7. = <code>loom-goals</code> + <code>loom-metrics</code>.</li>
+  <li><strong>Operating rhythm</strong> (Hoshin Kanri / EOS-Traction / V2MOM) — <em>the nested calendar.</em> All three share one skeleton: long-horizon vision → annual → quarterly priorities → weekly review. Hoshin&rsquo;s <em>catchball</em> = our multi-role briefing/alignment; EOS&rsquo;s weekly L10 = <code>loom-retro</code>; V2MOM = the one-page cascade.</li>
+</ul>
+<div class="caveat"><strong>Loom + Borg are the same control loop at two cadences.</strong> Loom is the <em>slow, deliberate, calendar-triggered</em> loop that sets direction and hardens knowledge genesis→commodity. Borg is the <em>fast, continuous, clock-triggered</em> loop that holds the running system to that direction (MAPE-K) and tends it like a living garden (permaculture), feeding measured reality — <strong>the error against Loom&rsquo;s setpoint</strong> — back up. In control-theory terms: <strong>Loom is the reference signal; Borg is the feedback controller; Knowledge (the shared graph) is the membrane between them.</strong> Borg&rsquo;s <code>feed</code> lands at Loom&rsquo;s <code>metrics</code> and <code>practices</code> — so the exec cadence runs on evidence, not vibes.</div>
+
+<h2>7 · References</h2>
+<ul>
+  <li><a href="value-stream-template.html">value-stream-template.html</a> — the generic api-driven pattern (the shape this instances)</li>
+  <li><a href="athena-value-stream-design.html">athena</a> · <a href="borg-value-stream-design.html">borg</a> · werk (#3413) — sibling instances. Borg is Loom&rsquo;s coupled loop (the two reflections).</li>
+  <li><strong>Wardley Mapping</strong> — Simon Wardley, <em>"Evolution"</em> (blog.gardeviance.org, 2013); wardleymaps.com — evolution axis (genesis→commodity), strategy cycle, doctrine. = <code>loom-map</code> + the knowledge-hardening ladder.</li>
+  <li><strong>OKRs</strong> — Grove, <em>High Output Management</em> (1983, the Intel iMBO); Doerr, <em>Measure What Matters</em> (2018); Google re:Work. = <code>loom-goals</code> / <code>loom-metrics</code>.</li>
+  <li><strong>Operating rhythm</strong> — Hoshin Kanri (catchball / X-Matrix); EOS / <em>Traction</em>, Wickman (V/TO, 10/3/1-yr, 90-day Rocks, weekly L10); V2MOM, Benioff/Salesforce. = the nested calendar.</li>
+  <li>Conversation capture: card #3545 (the 2026-06-21 verb-family ideation — loom as the cyclical, calendar-triggered executive cadence; the C-level framing; loom-map driven by Wardley; the two-reflections coupling with Borg).</li>
+</ul>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · IRI <code>chorus:doc-loom-value-stream-design</code> · atStep Shaping · owner Wren · 12 domains (strategy head to-be; knowledge body partly live) · part of the <a href="value-stream-template.html">verb-family-per-product</a> model (card #3545). DRAFT 0.1 — HTML, reworkable. Loom is a loop (calendar-triggered), coupled to Borg (the two reflections).
+</div>
+
+</body>
+</html>

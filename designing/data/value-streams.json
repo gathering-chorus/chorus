@@ -1,0 +1,99 @@
+{
+  "kind": "ValueStream",
+  "graph": "urn:chorus:instances",
+  "_note": "athena-land authoring format. inStream is the ONE TRUE edge — implied by nesting (a step's stream = its parent). No chorus:contains (dropped; the shape derives the inverse via sh:inversePath inStream). hasValueStream = recursion edge (a step's child product stream).",
+  "streams": [
+    {
+      "name": "value-stream-chorus", "label": "Chorus", "trigger": "continuous",
+      "outcome": "An idea carried Shaping → Directing → Designing → Building → Proving → Reflecting, back into the system",
+      "steps": [
+        { "name": "value-stream-step-shaping",    "label": "Shaping",    "stageOrder": 1, "hasValueStream": "value-stream-loom" },
+        { "name": "value-stream-step-directing",  "label": "Directing",  "stageOrder": 2, "hasValueStream": "value-stream-clearing" },
+        { "name": "value-stream-step-designing",  "label": "Designing",  "stageOrder": 3, "hasValueStream": "value-stream-athena" },
+        { "name": "value-stream-step-building",   "label": "Building",   "stageOrder": 4, "hasValueStream": "value-stream-werk" },
+        { "name": "value-stream-step-proving",    "label": "Proving",    "stageOrder": 5, "hasValueStream": "value-stream-borg" },
+        { "name": "value-stream-step-reflecting", "label": "Reflecting", "stageOrder": 6, "hasValueStream": "value-stream-borg" }
+      ]
+    },
+    {
+      "name": "value-stream-werk", "label": "Werk", "trigger": "event",
+      "outcome": "A card built, proven, and landed on main",
+      "steps": [
+        { "name": "value-stream-step-pull",   "label": "Pull",   "stageOrder": 1 },
+        { "name": "value-stream-step-commit", "label": "Commit", "stageOrder": 2 },
+        { "name": "value-stream-step-push",   "label": "Push",   "stageOrder": 3 },
+        { "name": "value-stream-step-build",  "label": "Build",  "stageOrder": 4 },
+        { "name": "value-stream-step-test",   "label": "Test",   "stageOrder": 5 },
+        { "name": "value-stream-step-deploy", "label": "Deploy", "stageOrder": 6 },
+        { "name": "value-stream-step-demo",   "label": "Demo",   "stageOrder": 7 },
+        { "name": "value-stream-step-merge",  "label": "Merge",  "stageOrder": 8 },
+        { "name": "value-stream-step-accept", "label": "Accept", "stageOrder": 9 }
+      ]
+    },
+    {
+      "name": "value-stream-athena", "label": "Athena", "trigger": "event",
+      "outcome": "Takes a model class from OWL to a live, materialized surface — routes, MCP, skill, and page generated from the model",
+      "steps": [
+        { "name": "value-stream-step-athena-model",  "label": "Model",  "stageOrder": 1 },
+        { "name": "value-stream-step-athena-make",   "label": "Make",   "stageOrder": 2 },
+        { "name": "value-stream-step-athena-deploy", "label": "Deploy", "stageOrder": 3 },
+        { "name": "value-stream-step-athena-land",   "label": "Land",   "stageOrder": 4 }
+      ]
+    },
+    {
+      "name": "value-stream-borg", "label": "Borg", "trigger": "continuous",
+      "outcome": "Continuously reflects the running system against its model and surfaces a verdict to the owner to act on",
+      "steps": [
+        { "name": "value-stream-step-borg-plant",   "label": "Plant",   "stageOrder": 1 },
+        { "name": "value-stream-step-borg-tend",    "label": "Tend",    "stageOrder": 2 },
+        { "name": "value-stream-step-borg-read",    "label": "Read",    "stageOrder": 3 },
+        { "name": "value-stream-step-borg-surface", "label": "Surface", "stageOrder": 4 },
+        { "name": "value-stream-step-borg-prune",   "label": "Prune",   "stageOrder": 5 },
+        { "name": "value-stream-step-borg-feed",    "label": "Feed",    "stageOrder": 6 }
+      ]
+    },
+    {
+      "name": "value-stream-clearing", "label": "Clearing", "trigger": "substrate",
+      "outcome": "The team's I/O fabric — board input, comms output, and the event-sourced spine record every other stream plugs into",
+      "_note": "faces, not a sequence — board(1-7) / comms(8-11) / spine(12). stageOrder is presentation order; face is a future shape property.",
+      "steps": [
+        { "name": "value-stream-step-clearing-card",       "label": "Card",       "stageOrder": 1,  "face": "board" },
+        { "name": "value-stream-step-clearing-chunk",      "label": "Chunk",      "stageOrder": 2,  "face": "board" },
+        { "name": "value-stream-step-clearing-tag",        "label": "Tag",        "stageOrder": 3,  "face": "board" },
+        { "name": "value-stream-step-clearing-prioritize", "label": "Prioritize", "stageOrder": 4,  "face": "board" },
+        { "name": "value-stream-step-clearing-sequence",   "label": "Sequence",   "stageOrder": 5,  "face": "board" },
+        { "name": "value-stream-step-clearing-sweep",      "label": "Sweep",      "stageOrder": 6,  "face": "board" },
+        { "name": "value-stream-step-clearing-wip",        "label": "WIP",        "stageOrder": 7,  "face": "board" },
+        { "name": "value-stream-step-clearing-nudge",      "label": "Nudge",      "stageOrder": 8,  "face": "comms" },
+        { "name": "value-stream-step-clearing-surface",    "label": "Surface",    "stageOrder": 9,  "face": "comms" },
+        { "name": "value-stream-step-clearing-inject",     "label": "Inject",     "stageOrder": 10, "face": "comms" },
+        { "name": "value-stream-step-clearing-gather",     "label": "Gather",     "stageOrder": 11, "face": "comms" },
+        { "name": "value-stream-step-clearing-tail",       "label": "Tail",       "stageOrder": 12, "face": "spine" }
+      ]
+    },
+    {
+      "name": "value-stream-convergence", "label": "Convergence", "trigger": "event",
+      "outcome": "Brings heterogeneous outside data into the model — reconciled and conformed to canonical form before it lands",
+      "steps": [
+        { "name": "value-stream-step-convergence-ingest", "label": "Ingest", "stageOrder": 1 },
+        { "name": "value-stream-step-convergence-map",    "label": "Map",    "stageOrder": 2 },
+        { "name": "value-stream-step-convergence-land",   "label": "Land",   "stageOrder": 3 }
+      ]
+    },
+    {
+      "name": "value-stream-loom", "label": "Loom", "trigger": "calendar",
+      "outcome": "Runs the team's executive cadence — maturing vision, strategy, goals, and knowledge on a nested calendar rhythm",
+      "_note": "each step carries a cadence (a future shape property; not yet projected).",
+      "steps": [
+        { "name": "value-stream-step-loom-vision",     "label": "Vision",     "stageOrder": 1, "cadence": "yearly" },
+        { "name": "value-stream-step-loom-mission",    "label": "Mission",    "stageOrder": 2, "cadence": "yearly" },
+        { "name": "value-stream-step-loom-map",        "label": "Map",        "stageOrder": 3, "cadence": "quarterly" },
+        { "name": "value-stream-step-loom-goals",      "label": "Goals",      "stageOrder": 4, "cadence": "quarterly" },
+        { "name": "value-stream-step-loom-metrics",    "label": "Metrics",    "stageOrder": 5, "cadence": "monthly" },
+        { "name": "value-stream-step-loom-practices",  "label": "Practices",  "stageOrder": 6, "cadence": "weekly" },
+        { "name": "value-stream-step-loom-retro",      "label": "Retro",      "stageOrder": 7, "cadence": "weekly" },
+        { "name": "value-stream-step-loom-governance", "label": "Governance", "stageOrder": 8, "cadence": "continuous" }
+      ]
+    }
+  ]
+}

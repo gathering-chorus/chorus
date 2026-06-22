@@ -1,0 +1,46 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>ValueStream — class model audit</title><style>
+ body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1e293b;background:#f8fafc;margin:0;padding:1in;max-width:1000px}
+ h1{font-size:23px;margin:0 0 2px} .sub{color:#64748b;font-size:12.5px;margin:0 0 22px}
+ h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin:26px 0 8px}
+ .uml{display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap}
+ .cls{background:#fff;border:1.5px solid #cbd5e1;border-radius:8px;min-width:220px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+ .cls .hd{background:#1e293b;color:#fff;font-weight:700;padding:7px 12px;border-radius:7px 7px 0 0;font-size:14px}
+ .cls .row{padding:5px 12px;border-top:1px solid #f1f5f9;font:13px ui-monospace,monospace}
+ .rel{align-self:center;text-align:center;color:#64748b;font-size:12px}
+ .rel b{display:block;font:12px ui-monospace,monospace;color:#334155}
+ table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-top:6px}
+ th{text-align:left;font-size:11px;text-transform:uppercase;color:#94a3b8;padding:7px 11px;border-bottom:1px solid #e2e8f0}
+ td{padding:7px 11px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px} code{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:1px 6px;font-size:12px}
+ .iss{color:#475569;font-size:12.5px} .box{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px}
+ .key b{font-weight:700}</style></head><body>
+ <h1>ValueStream — class model audit</h1>
+ <p class="sub">grounded from <code>/schema/valuestream</code> + <code>urn:chorus:ontology</code> property declarations &middot; 2026-06-22</p>
+
+ <h2>UML (as it actually is)</h2>
+ <div class="uml">
+   <div class="cls"><div class="hd">ValueStream</div>
+     <div class="row">label : string</div><div class="row">outcome : string</div><div class="row">trigger : string</div>
+     <div class="row" style="color:#ef4444">∅ no relationships in shape</div></div>
+   <div class="rel">◄── <b>inStream ✓</b><br>(step→stream)<br><br>··· <b>contains ⚠</b> ···<br>(typed to Domain!)<br><br>↻ <b>hasValueStream ⚠</b><br>(bare — recursion)</div>
+   <div class="cls"><div class="hd">ValueStreamStep</div>
+     <div class="row">label : string</div><div class="row">stageOrder : int <span style="color:#f59e0b">(@Vertebra)</span></div>
+     <div class="row">inStream → ValueStream</div><div class="row" style="color:#f59e0b">hasValueStream → ValueStream*</div></div>
+ </div>
+
+ <h2>Shape contract (what the generator enforces)</h2>
+ <div class="box"><table><tr><th>field</th><th>type</th></tr><tr><td><code>label</code></td><td>string</td></tr><tr><td><code>outcome</code></td><td>string</td></tr><tr><td><code>trigger</code></td><td>string</td></tr></table>
+ <p style="margin:10px 0 0;color:#ef4444;font-size:13px">⚠ Only scalars. The shape declares <b>no containment, no recursion</b> — so the generator can't nest, can't fold, can't validate the relationships.</p></div>
+
+ <h2>Relationship predicates (how nesting is actually wired)</h2>
+ <table><tr><th>property</th><th>declared domain</th><th>declared range</th><th>problem</th></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:6px"></span><code>inStream</code></td><td>ValueStreamStep</td><td>ValueStream</td><td class="iss">correct direction (step→stream) — but no owl:inverseOf, so &#x27;contains&#x27; must be hand-populated too</td></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px"></span><code>contains</code></td><td>Domain</td><td>(none)</td><td class="iss">declared on DOMAIN, not ValueStream — I overloaded a Domain predicate to wire stream→step. Overloaded/mis-typed.</td></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px"></span><code>hasValueStream</code></td><td>(none)</td><td>(none)</td><td class="iss">BARE — no domain/range. This is the recursion edge (step→child stream); the model doesn&#x27;t define it at all.</td></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px"></span><code>hasChild</code></td><td>(none)</td><td>(none)</td><td class="iss">BARE — the generic recursion predicate, undeclared.</td></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f59e0b;margin-right:6px"></span><code>stageOrder</code></td><td>Vertebra</td><td>xsd:integer</td><td class="iss">domain is &#x27;Vertebra&#x27;, not ValueStreamStep — reused from another class.</td></tr><tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-right:6px"></span><code>partOf</code></td><td>_:b0</td><td>_:b1</td><td class="iss">domain/range are blank nodes — a broken declaration.</td></tr></table>
+
+ <h2>The verdict</h2>
+ <div class="box key">
+   <p>The ValueStream class is a <b>thin scalar shape with its relationships hung off generic, mis-typed, inverse-less predicates.</b> That's why:</p>
+   <p>• nesting didn't work natively — the shape doesn't carry <code>contains</code>;<br>
+      • I had to hand-populate <b>both</b> <code>inStream</code> and <code>contains</code> — they aren't <code>owl:inverseOf</code>, so they drift;<br>
+      • the recursion (step→child stream) rides <code>hasValueStream</code>, which is <b>undeclared</b> (no domain/range);<br>
+      • <code>contains</code> actually belongs to <b>Domain</b>, and <code>stageOrder</code> to <b>Vertebra</b> — both overloaded onto ValueStream.</p>
+   <p style="color:#334155"><b>The instances are fine; the class is wrong.</b> Fixing it is a class-level model edit (declare contains on ValueStream→ValueStreamStep, declare hasChild/hasValueStream with domain+range, link inverses, fix the overloaded domains) — a shared-ontology shape change, so Silas-coordinated, on paper first.</p>
+ </div>
+</body></html>

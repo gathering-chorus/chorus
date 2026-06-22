@@ -1,0 +1,44 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3545 — shape-valid Products. comment emitted as BOTH rdfs:comment (shape sh:path) AND chorus:comment (generator field projection) — dual until the generator aligns. From products.json.
+
+chorus:product-athena a chorus:Product ;
+    rdfs:label "Athena" ; chorus:label "Athena" ;
+    rdfs:comment "Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them." ; chorus:comment "Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "building" ;
+    chorus:audience "Gates, SessionStart envelope injection, blast-radius, role-nudge routing, demo feedback, the tagging layer, and Jeff and the team via the rendered tree page." ;
+    chorus:valueProposition "One queryable source of truth for the product tree with no fallback that yields a different answer, so every structural and impact question resolves to a real tree IRI rather than memory or pattern-matching." ;
+    chorus:vision "A single SHACL-gated model whose one generator projects Product, Domain, Service, and ValueStream into uniform generated APIs and pages, made whole by construction through the DAL as the only write path." ;
+    chorus:gaps "A v1 predicate layer still being cleaned, the Service class not yet instantiated, and the generator not yet projecting inverse-path relationships as nested fields." .
+
+chorus:product-borg a chorus:Product ;
+    rdfs:label "Borg" ; chorus:label "Borg" ;
+    rdfs:comment "Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes." ; chorus:comment "Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:status "building" ;
+    chorus:audience "The roles (to self-coordinate and catch a dark peer, flapping service, or drift before Jeff does) and Jeff (outcomes only — a calm board, or the single thing that needs him)." ;
+    chorus:valueProposition "Borg's product isn't dashboards — it's Jeff's attention back: it surfaces the one thing that needs a person, calmly, to the owner, so no human is ever the first to notice a stall." ;
+    chorus:vision "A model-driven reflect cycle where monitor and alert are ontology domains whose contracts generate, the page renders a verdict not a readout, and the capability travels generatively to run with chorus off." ;
+    chorus:gaps "Probes were bespoke and lied, there is no liveness or crash-loop signal, alerts are hand-routed, there is no model-driven contract, and there is no Borg page — the observation surfaces are scattered." .
+
+chorus:product-werk a chorus:Product ;
+    rdfs:label "Werk" ; chorus:label "Werk" ;
+    rdfs:comment "The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps." ; chorus:comment "The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:status "operating" ;
+    chorus:audience "The three roles building Chorus and Gathering plus Jeff accepting the work; the external customer never touches Werk." ;
+    chorus:valueProposition "Every accepted card leaves as merged source on origin/main with a coherent receipt — one trace from pull to deployed cdhash — so a green result can't lie and work arrives proven rather than taken on faith." ;
+    chorus:vision "Generated domain APIs over the graph end the reconcile treadmill structurally — typed contracts at every boundary, every card a coherent SKU." ;
+    chorus:gaps "werk-test is held behind the generated tests-domain API; the tests domain lacks per-test identity and result ingestion; card-acceptance does not yet advance artifact status; advisory test and review steps are not yet gates." .
+
+chorus:product-loom a chorus:Product ;
+    rdfs:label "Loom" ; chorus:label "Loom" ;
+    rdfs:comment "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs." ; chorus:comment "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:status "exploring" ;
+    chorus:audience "The Chorus team — the three AI roles and Jeff — for whom Loom holds the persistent normative substrate; owned by Jeff at the Shaping step." ;
+    chorus:valueProposition "Loom gives the team one coherent, validated home for its normative substrate as real OWL classes with SHACL shapes, so the operating model is graphed and constrained rather than scattered as ungraphed markdown." ;
+    chorus:vision "A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every subdomain populated or explicitly planned — Loom as the template the other products follow." ;
+    chorus:gaps "5 of 7 intent subdomains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL." .
