@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clearing — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #0891b2; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  pre { background: #f4f4f4; padding: 12px 16px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; margin: 12px 0; }
+  .frame { background: #cffafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #0891b2; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  .fork { background: #fee2e2; padding: 12px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #dc2626; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #cffafe; color: #155e75; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .verb { background: #cffafe; color: #155e75; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .wren { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .kade { background: #ffedd5; color: #9a3412; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #a5f3fc; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Clearing — Value-Stream Design <span>— the Directing-step instance; the team&rsquo;s I/O layer</span></h1>
+<div class="date">Wren · 2026-06-21 · INSTANCE of <code>value-stream-template.html</code> (read that for the generic pattern) · sibling of <a href="athena-value-stream-design.html">athena</a> / <a href="borg-value-stream-design.html">borg</a> / <a href="loom-value-stream-design.html">loom</a> / werk · Directing step · DRAFT 0.1 (verb-family ideation, card #3545)</div>
+
+<div class="frame">
+<strong>Scope.</strong> This is Clearing&rsquo;s value stream — <em>one instance</em> of the <a href="value-stream-template.html">api-driven value-stream template</a>. Clearing is the team&rsquo;s <strong>I/O layer</strong>: how the team and the running system <strong>talk and track work</strong>. Three faces — the <strong>board</strong> (input: what we choose to do), the <strong>comms</strong> (output: how it reaches a session), and the <strong>spine</strong> (record: what happened). Model of record per the product tree: <em>&ldquo;Clearing — interaction layer — messages, streams, the spine event log, and the kanban board.&rdquo;</em>
+</div>
+
+<div class="fork">
+<strong>Clearing is a SUBSTRATE, not a line or a loop — it&rsquo;s what the other streams plug into.</strong> Werk/Athena/Convergence are lines; Loom/Borg are loops. Clearing is neither: it&rsquo;s the <strong>I/O fabric</strong> every other product borrows. Just as every product borrows <strong>Werk</strong> for its prove-and-land pipeline, <strong>every product borrows Clearing for its messages</strong> — the standard verbs <code>nudge</code> / <code>surface</code> / <code>inject</code> are Clearing&rsquo;s, and the <code>trace</code>/<code>emit</code> every verb carries land in Clearing&rsquo;s <strong>spine</strong>. It&rsquo;s the seat where the team and the machine meet: <em>your</em> board choices and the products&rsquo; <em>emits</em> land in the same log.</div>
+
+<div class="caveat"><strong>⚠ As-is vs to-be.</strong> Clearing is the most <em>built</em> of the new streams — the board (Vikunja + the <code>cards</code> CLI), the spine (append-only <code>ops/logs/*.jsonl</code> + the messaging API), and the comms (the MCP nudge path, <code>chorus-inject</code> delivery) all run today. What&rsquo;s to-be is the <strong>verb-family framing</strong> — naming the board/comms/spine operations as a coherent <code>clearing-*</code> family + a <code>chorus_clearing</code> orchestrator, and modeling them so the surfaces generate. The mechanisms exist; the model and the family naming don&rsquo;t yet.</div>
+
+<h2>1 · The clearing-* verbs — three faces</h2>
+<p>Clearing isn&rsquo;t a single cycle; it&rsquo;s three coherent verb-sets over one substrate. <strong>Board</strong> (how we track) · <strong>Comms</strong> (how we talk) · <strong>Spine</strong> (the record).</p>
+<table>
+<tr><th>Verb</th><th>Face</th><th>What it does</th><th>Framework anchor</th></tr>
+<tr><td><span class="verb">clearing-card</span></td><td>board</td><td>File a work item onto the board.</td><td>Kanban card</td></tr>
+<tr><td><span class="verb">clearing-chunk</span></td><td>board</td><td>Group cards into themed buckets.</td><td>swimlane / epic</td></tr>
+<tr><td><span class="verb">clearing-tag</span></td><td>board</td><td>Apply the cross-axis labels (domain / type / origin / sequence).</td><td>classification</td></tr>
+<tr><td><span class="verb">clearing-prioritize</span></td><td>board</td><td><strong>Rank chunks by value</strong> — coarse, &ldquo;which themes.&rdquo;</td><td>WSJF (Cost of Delay ÷ Job Size)</td></tr>
+<tr><td><span class="verb">clearing-sequence</span></td><td>board</td><td><strong>Order cards by dependency</strong> — fine, &ldquo;what order&rdquo; — + a coherence check (is this order legal against the edges?).</td><td>topological sort over the DAG</td></tr>
+<tr><td><span class="verb">clearing-sweep</span></td><td>board</td><td>Coherence pass — find untagged / dupe / stale cards.</td><td>flow hygiene</td></tr>
+<tr><td><span class="verb">clearing-wip</span></td><td>board</td><td>Show what&rsquo;s in flight — enriched with each card&rsquo;s live pipeline state (the werk-* trace projected onto the WIP view).</td><td>WIP-limit · CFD</td></tr>
+<tr><td><span class="verb">clearing-nudge</span></td><td>comms</td><td>Send to a role — persist AND deliver (DEC-107, both paths).</td><td>messaging</td></tr>
+<tr><td><span class="verb">clearing-surface</span> ⭐</td><td>comms</td><td>Push a message into a session / to Jeff — the announce-delivery (the demo-ready ping; #3544/#3548).</td><td>delivery / inject</td></tr>
+<tr><td><span class="verb">clearing-inject</span></td><td>comms</td><td>Surface the per-prompt context-synthesis into a role&rsquo;s turn.</td><td>context injection</td></tr>
+<tr><td><span class="verb">clearing-gather</span></td><td>comms</td><td>Collect peer input (the demo gathers).</td><td>request/reply</td></tr>
+<tr><td><span class="verb">clearing-tail</span></td><td>spine</td><td>Read the event stream back — the substrate the trace/metrics lenses read off.</td><td>event-sourcing replay</td></tr>
+</table>
+<p>The <strong>Directing</strong> step <code>hasValueStream</code> this set (the template&rsquo;s fractal recursion); a <code>chorus_clearing</code> orchestrator is the entry, though many verbs are also leaf-invoked (the <code>cards</code> CLI, the nudge MCP). Clearing is less &ldquo;one trigger sequences the verbs&rdquo; than Werk — it&rsquo;s a <em>library</em> of I/O the other streams call.</p>
+
+<div class="caveat"><strong>prioritize ≠ sequence — different grains, different axes.</strong> <code>clearing-prioritize</code> ranks the <strong>NODES</strong> (chunks, by economic value — WSJF). <code>clearing-sequence</code> orders by the <strong>EDGES</strong> (cards, by dependency — a topological sort). They&rsquo;re deliberately separate: a high-value card can be <em>blocked</em> behind a low-value prerequisite — value-ranking doesn&rsquo;t respect edges; topo-sort does. (Same node/edge split as <code>athena-model</code> vs <code>athena-wire</code>, pointed at the board.) Mushing them is how a &ldquo;priority list&rdquo; turns into a backlog that ranks 270 cards and means nothing.</div>
+
+<h2>2 · The engine — the board-flow over the event-sourced spine</h2>
+<p>Clearing&rsquo;s heart is a <strong>Kanban flow system whose system of record is an event-sourced log.</strong> Cards are pulled through workflow states under WIP limits; every board op and every comms op <strong>appends an immutable event</strong> to the spine; the board&rsquo;s current state is a <em>projection</em> built by folding those events. The board you see is a read-model; the spine is the truth.</p>
+<pre class="mermaid">
+flowchart LR
+  IN["INPUT — board: card / chunk / tag / prioritize / sequence"] --> ST["state: Next → WIP → Done (WIP-limited pull)"]
+  ST --> EMIT["every op appends an immutable event"]
+  PROD["every product's verbs — trace / emit"] --> EMIT
+  EMIT --> SPINE[("SPINE — append-only event log (system of record)")]
+  SPINE --> PROJ["projections: the board view · pulse · clearing-wip"]
+  SPINE --> OUT["OUTPUT — comms: nudge / surface / inject / gather"]
+  OUT -.delivers to.-> SESS["a role's session / Jeff"]
+</pre>
+<div class="caption">Clearing — input (board) + record (spine, event-sourced) + output (comms). The team&rsquo;s board choices and the products&rsquo; emits land in ONE log; everything else (board view, pulse, metrics) is a projection over it.</div>
+<ul>
+  <li><strong>The spine is the one primitive</strong> (Young&rsquo;s CQRS / Kreps&rsquo; <em>The Log</em>): a totally-ordered, append-only, replayable event stream. Logs / metrics / traces are <strong>three lenses on one set of emissions</strong> — <code>clearing-tail</code> reads it raw; Borg aggregates it; the board renders it.</li>
+  <li><strong>WIP-limited pull, not push</strong> (Anderson&rsquo;s Kanban): capacity drives what starts — &ldquo;stop starting, start finishing.&rdquo; The Cumulative Flow Diagram is the diagnostic (cycle time, WIP, queue buildup).</li>
+  <li><strong>Delivery is the weak spot</strong> (the load-bearing finding): <code>clearing-surface</code> — getting a message <em>into</em> a session — has been the cross-cutting flaky part, because every product borrows it. #3544 (deliver as an ops-nudge, not a self-echo) + #3548 (don&rsquo;t re-fire on the land run) are the two fixes that hardened it. Persist is easy; deliver is the engineering.</li>
+</ul>
+
+<h2>3 · Clearing&rsquo;s model &amp; domains</h2>
+<div class="frame">The generic structural classes are in the <a href="value-stream-template.html">template §5</a>. Clearing&rsquo;s domains group by its three faces.</div>
+<table>
+<tr><th>Domain</th><th>Face</th><th>What it holds</th><th>As-is</th></tr>
+<tr><td><code>board</code></td><td>input</td><td>Cards, chunks, tags, states, WIP limits.</td><td>Vikunja + <code>cards</code> CLI</td></tr>
+<tr><td><code>messages</code></td><td>output</td><td>Nudges, the bridge/stream, peer chat.</td><td>messaging API :3475</td></tr>
+<tr><td><code>delivery</code></td><td>output</td><td>The inject substrate — getting a message into a session (osascript / tty-routed).</td><td><code>chorus-inject</code> binary</td></tr>
+<tr><td><code>context</code></td><td>output</td><td>Per-prompt context synthesis injected into a role&rsquo;s turn.</td><td>context-inject hook</td></tr>
+<tr><td><code>spine</code> ⭐</td><td>record</td><td>The append-only event log — the system of record both team + machine write to.</td><td><code>ops/logs/*.jsonl</code> + emit SDK</td></tr>
+<tr><td><code>events</code></td><td>record</td><td>The event <em>grammar</em> — the schema/vocabulary of what counts as a valid event (distinct from the spine STORE).</td><td><code>spine-events.json</code></td></tr>
+</table>
+<div class="caption">Two record domains, one distinction: the <strong>spine</strong> is the STORE (where emits land); <strong>events</strong> is the grammar (what&rsquo;s a valid event). emit writes to the spine; the event&rsquo;s <em>declaration</em> lives in the model — the <code>athena-wire</code>-before-make rule, so a generated emitter and its registry row come from one source (no phantoms).</div>
+<pre><code># The clearing faces as ValueStreamSteps (greenfield: bare owl:Class today)
+chorus:value-stream-clearing a chorus:ValueStream ; chorus:label "Clearing (I/O layer)" .
+#   board verbs: card/chunk/tag/prioritize/sequence/sweep/wip
+#   comms verbs: nudge/surface/inject/gather   ·   spine verbs: tail
+# chorus:value-stream-step-directing chorus:hasValueStream chorus:value-stream-clearing .
+# Domains partOf product-clearing: board, messages, delivery, context, spine, events.
+# Standard-verb status: nudge/surface/inject are the SHARED comms verbs every product borrows;
+#   trace/emit (the aspect-standard verbs) terminate in the spine.
+</code></pre>
+
+<h2>4 · Ownership boundary (Clearing)</h2>
+<table>
+<tr><th>Wren — the model &amp; the coordination</th><th>Kade — the presentation</th></tr>
+<tr><td>The board taxonomy + the clearing-* verb model, the comms contracts (DEC-107 persist+deliver, the nudge envelope), the spine/event grammar (with Silas on the spine substrate). The interaction layer is Wren&rsquo;s (&ldquo;owner: role-wren, step: directing&rdquo;).</td><td>If/when Clearing gets a UI, presentation is Kade&rsquo;s — the board render, the <code>clearing-wip</code> tile (the live pipeline strip on the WIP view), the Clearing group-chat surface. The tile is the first real Clearing surface projecting a trace.</td></tr>
+</table>
+<p>Silas owns the spine <em>substrate</em> (the emit SDK, the log infra, the conformance gate); Wren owns the spine <em>grammar/model</em> (what events mean). The split mirrors Borg: substrate vs model, two hands on one log.</p>
+
+<h2>5 · Sequencing — name the family, then model the surfaces</h2>
+<ol>
+  <li><strong>Author the value-stream spine</strong> — <code>value-stream-clearing</code> + the three faces&rsquo; verbs as <code>ValueStreamStep</code>s, in the model. Land it (the mechanisms exist; this is the naming/modeling layer).</li>
+  <li><strong>Model the event grammar</strong> — re-seat <code>spine-events.json</code> as the <code>events</code> domain so emitters + registry rows generate together (kills the phantom class, <code>athena-wire</code>-before-make applied to events).</li>
+  <li><strong>Harden <code>clearing-surface</code></strong> — the delivery half (#3544/#3548 landed; the run-state-finalize + the &ldquo;from unknown&rdquo; sender-label are the remaining polish). Delivery reliability is the whole-team payoff because every product borrows it.</li>
+  <li><strong>Build <code>clearing-wip</code></strong> — enrich the existing WIP readout (pulse <code>board.wip</code>) with the live pipeline strip from the spine emits (Kade&rsquo;s presentation lane reading the spine — the first tile projecting a trace).</li>
+  <li><strong>Generate the board view</strong> — the board render becomes a projection of the model + spine (no bespoke UI), the <code>athena-make</code> path applied to Clearing&rsquo;s surfaces.</li>
+</ol>
+
+<h2>6 · Operating-model frames</h2>
+<ul>
+  <li><strong>Kanban</strong> (Anderson, from Toyota&rsquo;s pull-signal) — <em>how the board flows.</em> WIP-limited pull, CFD diagnostics, &ldquo;stop starting, start finishing.&rdquo; = the board face.</li>
+  <li><strong>WSJF</strong> (Reinertsen, <em>Principles of Product Development Flow</em>; SAFe) — <em>prioritize.</em> Cost of Delay ÷ Job Size — economic value ranking. = <code>clearing-prioritize</code> (the node-valuation axis).</li>
+  <li><strong>Topological sort over a dependency DAG</strong> — <em>sequence.</em> Order by the edges, orthogonal to value. = <code>clearing-sequence</code> (the edge-ordering axis) + the coherence check.</li>
+  <li><strong>Event Sourcing</strong> (Fowler; Young&rsquo;s CQRS; Kreps&rsquo; <em>The Log</em>) — <em>the spine.</em> Append-only immutable log = system of record; state is a replayable projection; one log feeds many read-models. = the spine + <code>clearing-tail</code>.</li>
+</ul>
+<div class="caveat"><strong>Why &ldquo;spine diet&rdquo; and &ldquo;how we talk&rdquo; keep turning out to be the same problem:</strong> they&rsquo;re the same store. Clearing is where the team and the running system <em>meet</em> — your messages and the products&rsquo; emits land in one event-sourced log. Fix the log&rsquo;s grammar and you fix both the chat history and the observability feedstock at once.</div>
+
+<h2>7 · References</h2>
+<ul>
+  <li><a href="value-stream-template.html">value-stream-template.html</a> — the generic pattern. Siblings: <a href="athena-value-stream-design.html">athena</a> · <a href="borg-value-stream-design.html">borg</a> · <a href="loom-value-stream-design.html">loom</a> · werk.</li>
+  <li><strong>Kanban</strong> — David J. Anderson, <em>Kanban</em> (2010); kanban.university — WIP limits, pull, CFD.</li>
+  <li><strong>WSJF / Cost of Delay</strong> — Don Reinertsen, <em>Principles of Product Development Flow</em> (2009); SAFe WSJF. = <code>clearing-prioritize</code>.</li>
+  <li><strong>Event Sourcing</strong> — Martin Fowler (martinfowler.com/eaaDev/EventSourcing.html); Greg Young (CQRS); Jay Kreps, <em>The Log</em> (2013). = the spine.</li>
+  <li>DEC-107 (nudge persist + deliver, both paths); #3544 (surface delivers as ops-nudge) · #3548 (no re-fire on land) — the <code>clearing-surface</code> hardening.</li>
+  <li>Conversation capture: card #3545 (the 2026-06-21 verb-family ideation — Clearing as the team&rsquo;s I/O layer: board + comms + spine; prioritize-vs-sequence as different grains; surface as the load-bearing delivery verb).</li>
+</ul>
+
+<div class="footer">
+Ingest as <code>chorus:Document</code> · IRI <code>chorus:doc-clearing-value-stream-design</code> · atStep Directing · owner Wren (model) / Kade (presentation) · 6 domains across 3 faces (board / comms / spine) · part of the verb-family-per-product model (card #3545). DRAFT 0.1 — HTML, reworkable. Clearing is the I/O substrate every other stream plugs into.
+</div>
+
+</body>
+</html>
