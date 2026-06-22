@@ -1,0 +1,43 @@
+{
+  "kind": "Product",
+  "graph": "urn:chorus:instances",
+  "_note": "athena-land authoring format, ProductShape-valid: status is from the closed enum (exploring|building|operating|retiring), ownedBy is a Role IRI. The earlier product-instances.ttl used free-text status + no ownedBy — it would have FAILED the shape. ownedBy assignments are best-guess, correctable.",
+  "products": [
+    {
+      "name": "product-athena", "label": "Athena",
+      "ownedBy": "role-wren", "status": "building",
+      "comment": "Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.",
+      "audience": "Gates, SessionStart envelope injection, blast-radius, role-nudge routing, demo feedback, the tagging layer, and Jeff and the team via the rendered tree page.",
+      "valueProposition": "One queryable source of truth for the product tree with no fallback that yields a different answer, so every structural and impact question resolves to a real tree IRI rather than memory or pattern-matching.",
+      "vision": "A single SHACL-gated model whose one generator projects Product, Domain, Service, and ValueStream into uniform generated APIs and pages, made whole by construction through the DAL as the only write path.",
+      "gaps": "A v1 predicate layer still being cleaned, the Service class not yet instantiated, and the generator not yet projecting inverse-path relationships as nested fields."
+    },
+    {
+      "name": "product-borg", "label": "Borg",
+      "ownedBy": "role-silas", "status": "building",
+      "comment": "Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.",
+      "audience": "The roles (to self-coordinate and catch a dark peer, flapping service, or drift before Jeff does) and Jeff (outcomes only — a calm board, or the single thing that needs him).",
+      "valueProposition": "Borg's product isn't dashboards — it's Jeff's attention back: it surfaces the one thing that needs a person, calmly, to the owner, so no human is ever the first to notice a stall.",
+      "vision": "A model-driven reflect cycle where monitor and alert are ontology domains whose contracts generate, the page renders a verdict not a readout, and the capability travels generatively to run with chorus off.",
+      "gaps": "Probes were bespoke and lied, there is no liveness or crash-loop signal, alerts are hand-routed, there is no model-driven contract, and there is no Borg page — the observation surfaces are scattered."
+    },
+    {
+      "name": "product-werk", "label": "Werk",
+      "ownedBy": "role-kade", "status": "operating",
+      "comment": "The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.",
+      "audience": "The three roles building Chorus and Gathering plus Jeff accepting the work; the external customer never touches Werk.",
+      "valueProposition": "Every accepted card leaves as merged source on origin/main with a coherent receipt — one trace from pull to deployed cdhash — so a green result can't lie and work arrives proven rather than taken on faith.",
+      "vision": "Generated domain APIs over the graph end the reconcile treadmill structurally — typed contracts at every boundary, every card a coherent SKU.",
+      "gaps": "werk-test is held behind the generated tests-domain API; the tests domain lacks per-test identity and result ingestion; card-acceptance does not yet advance artifact status; advisory test and review steps are not yet gates."
+    },
+    {
+      "name": "product-loom", "label": "Loom",
+      "ownedBy": "role-jeff", "status": "exploring",
+      "comment": "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.",
+      "audience": "The Chorus team — the three AI roles and Jeff — for whom Loom holds the persistent normative substrate; owned by Jeff at the Shaping step.",
+      "valueProposition": "Loom gives the team one coherent, validated home for its normative substrate as real OWL classes with SHACL shapes, so the operating model is graphed and constrained rather than scattered as ungraphed markdown.",
+      "vision": "A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every subdomain populated or explicitly planned — Loom as the template the other products follow.",
+      "gaps": "5 of 7 intent subdomains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL."
+    }
+  ]
+}
