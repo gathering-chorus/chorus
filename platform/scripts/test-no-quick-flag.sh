@@ -25,7 +25,10 @@ count_quick() {
   cd "$REPO_ROOT"
   # Functional reintroduction vectors only: a quoted flag literal in code, or a
   # `cards add ... --quick` invocation in a script/skill.
-  grep -rnE "['\"]--quick['\"]|cards[[:space:]]+add[^\\n]*--quick" 2>/dev/null \
+  # #3556 — git grep (tracked only), not grep -r (whole working tree). With
+  # BASELINE=0 any untracked stray containing --quick (a brief, a /tmp copy, a
+  # backup) flipped this red headless though committed code was clean. Hermetic now.
+  git grep -nE "['\"]--quick['\"]|cards[[:space:]]+add[^\n]*--quick" 2>/dev/null \
     | grep -vE "$EXCLUDE_PATTERN" \
     | wc -l \
     | tr -d ' '
@@ -38,7 +41,7 @@ if [ "$current" -gt "$BASELINE" ]; then
   echo "FAIL: functional --quick usage reintroduced (count: $current, baseline: $BASELINE)"
   echo "Offenders:"
   cd "$REPO_ROOT"
-  grep -rnE "['\"]--quick['\"]|cards[[:space:]]+add[^\\n]*--quick" 2>/dev/null \
+  git grep -nE "['\"]--quick['\"]|cards[[:space:]]+add[^\n]*--quick" 2>/dev/null \
     | grep -vE "$EXCLUDE_PATTERN" \
     | head -30
   echo "#3293: cards carry the Experience+AC floor — there is no --quick bypass."

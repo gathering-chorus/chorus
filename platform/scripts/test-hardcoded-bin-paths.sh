@@ -27,9 +27,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 # tarpaulin coverage config, the install primitive itself).
 EXCLUDE_PATTERN='target/|node_modules/|\.consumed$|chorus\.log$|\.pre-rewrite|/tests/|test-|_test\.|\.test\.|\.bats$|tarpaulin\.toml|build-signed\.sh|chorus-bin-install$|test-hardcoded-bin-paths\.sh'
 
+# #3556 — count TRACKED files only (git grep), not the whole working tree
+# (grep -r). grep -r counted untracked junk — briefs, backups, werk artifacts —
+# so the result swung with whatever happened to be in the tree, passing locally
+# and failing headless in the nightly on the same committed code. git grep makes
+# this hermetic: identical committed code → identical count everywhere.
 count_hardcoded() {
   cd "$REPO_ROOT"
-  grep -rln "target/release/chorus-hook-shim\|target/release/chorus-inject\|target/release/chorus-hooks" 2>/dev/null \
+  git grep -lE "target/release/chorus-hook-shim|target/release/chorus-inject|target/release/chorus-hooks" 2>/dev/null \
     | grep -vE "$EXCLUDE_PATTERN" \
     | wc -l \
     | tr -d ' '
@@ -42,7 +47,7 @@ count_hardcoded() {
 # resolution, they often keep target/release/ as a fallback, which still
 # counts (the file matches the grep). Lower the baseline only when a file
 # stops referencing target/release/ entirely.
-BASELINE=26  # 27→26: #3317 deleted bash chorus-deploy (one fewer target/release referrer)
+BASELINE=25  # 26→25: #3556 switched to git grep (tracked-only) — the prior grep -r count included an untracked referrer
 
 current=$(count_hardcoded)
 
@@ -50,7 +55,7 @@ if [ "$current" -gt "$BASELINE" ]; then
   echo "FAIL: hardcoded target/release/ chorus-* paths in non-test files: $current (baseline: $BASELINE)"
   echo "New offenders:"
   cd "$REPO_ROOT"
-  grep -rln "target/release/chorus-hook-shim\|target/release/chorus-inject\|target/release/chorus-hooks" 2>/dev/null \
+  git grep -lE "target/release/chorus-hook-shim|target/release/chorus-inject|target/release/chorus-hooks" 2>/dev/null \
     | grep -vE "$EXCLUDE_PATTERN" \
     | head -30
   exit 1
