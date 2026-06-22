@@ -11,7 +11,7 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SCRIPTS="$CHORUS_ROOT/platform/scripts"
-INFRA_ALERT="$CHORUS_ROOT/roles/silas/scripts/infra-alert.sh"
+INFRA_ALERT="$SCRIPTS/infra-alert.sh"  # #1824 moved infra-alert.sh roles/silas/scripts → platform/scripts; path was stale (#3569)
 PASS=0
 FAIL=0
 
