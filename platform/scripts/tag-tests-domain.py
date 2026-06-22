@@ -133,9 +133,22 @@ def post(q):
                                headers={'Content-Type': 'application/x-www-form-urlencoded'})
     return urllib.request.urlopen(r, timeout=40).status
 
+# Bounded delete guard (#3560). The ONLY clear-target this script may touch is a
+# domain-owned graph (urn:chorus:domain:<name>). Refuses empty/unscoped targets and
+# every system/portfolio graph (urn:chorus:instances, urn:gathering:*, urn:jb:*) —
+# the wrong-graph clobber class that made the 2026-06-22 incident recoverable only by
+# luck. A raw `DELETE WHERE { GRAPH <X> { ?s ?p ?o } }` with an unvalidated X is gone.
+_DOMAIN_GRAPH = re.compile(r'^urn:chorus:domain:[a-z0-9-]+$')
+
+def clear_graph(dg):
+    if not dg or not _DOMAIN_GRAPH.match(dg):
+        raise SystemExit(f"#3560 guard: refusing to clear {dg!r} — only "
+                         f"urn:chorus:domain:<name> may be cleared, never a system/portfolio graph")
+    return post(f"PREFIX chorus: <{NS}> DELETE WHERE {{ GRAPH <{dg}> {{ ?t ?p ?o }} }}")
+
 def main():
     files = discover()
-    post(f"PREFIX chorus: <{NS}> DELETE WHERE {{ GRAPH <{DG}> {{ ?t ?p ?o }} }}")  # idempotent
+    clear_graph(DG)  # bounded + validated (#3560) — replaces the raw unguarded DELETE
     batch, seen, ntests = [], set(), 0
     def flush():
         nonlocal batch
