@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-06-22 13:08
+# Doc coherence report — 2026-06-22 13:12
 
 content-dup-groups: 13
 basename-dup-groups: 37
-broken-hrefs: 7
+broken-hrefs: 4
 
 ## Content-hash duplicates
 
@@ -173,7 +173,4 @@ Catalog hrefs returning non-2xx / non-302:
 502 /docs/SYSTEM_ARCHITECTURE
 502 /docs/PRODUCT_VISION
 502 /docs/gathering-vision-synthesis
-502 /docs/HEIDEGGER_GATHERING_RESEARCH
-502 /docs/README
-502 /docs/gathering-site-map
 ```
