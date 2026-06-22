@@ -16,10 +16,9 @@
  * old "non-string coerced via String() → 404" expectation was stale and is
  * corrected to 400. The handlers are correct; the tests had drifted.
  *
- * NOTE (classification, Silas's call per AC5): this suite uses fully INJECTED
- * deps — it touches no live sessions store, so it is hermetic in substance and
- * a candidate to promote into the hermetic project. Left in integration for now
- * per Silas's "keep as-is pending review" call.
+ * CLASSIFICATION (#3559, Silas-confirmed): fully INJECTED deps, touches no live
+ * sessions store → hermetic in substance. Promoted into the HERMETIC project
+ * (no longer excluded in jest.config). @test-type: unit.
  */
 
 import {

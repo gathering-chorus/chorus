@@ -25,12 +25,19 @@ describe('Ollama resilience — embed worker (#1980)', () => {
 
   beforeAll(async () => { harness = await startTestApp(); });
   afterAll(async () => { if (harness) await harness.close(); });
-  test('Ollama is reachable (precondition)', async () => {
-    // The one genuinely Ollama-coupled assertion in this suite. Ollama is not
-    // part of the #3557 _stack_up probe (3340 + 3030), so if a stack-up nightly
-    // runs with Ollama down this can red — flagged to Silas as a candidate for
-    // either the stack probe or a skip-if-unreachable guard (#3559 follow-up).
-    const res = await fetch(`${OLLAMA_URL}/api/tags`);
+  test('Ollama is reachable (precondition) — skips if Ollama is down', async () => {
+    // #3559 (Silas's call): Ollama is a separate CI on Bedroom with independent
+    // reachability and is NOT part of the #3557 _stack_up probe (3340 + 3030).
+    // So skip-if-unreachable PER-PRECONDITION here — a test that needs Ollama
+    // skips when Ollama specifically is down, rather than false-redding a
+    // stack-up nightly. (Probe-level refinement is owned by Silas, carded.)
+    let res: Response;
+    try {
+      res = await fetch(`${OLLAMA_URL}/api/tags`);
+    } catch {
+      console.warn(`[ollama-resilience] Ollama unreachable at ${OLLAMA_URL} — skipping precondition`);
+      return;
+    }
     expect(res.status).toBe(200);
   });
 

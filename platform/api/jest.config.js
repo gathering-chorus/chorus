@@ -44,12 +44,10 @@ const hermeticProject = {
     '/node_modules/',
     // integration tier — excluded from hermetic; runs in the integration project.
     '\\.integration\\.test\\.ts$',
-    // handlers/sessions.test.ts — audit flagged it "review, not renamed": a
-    // genuine live-service suite that was never given the .integration suffix.
-    // Kept out of hermetic and run under integration (below) so it stack-gates
-    // instead of false-redding. Whether it should be renamed is Silas's
-    // classification call (#3559 AC5).
-    '<rootDir>/tests/handlers/sessions\\.test\\.ts$',
+    // #3559: sessions.test.ts was excluded here pending review (audit-flagged
+    // "review, not renamed"). Review done — it's pure-injected-deps (@test-type:
+    // unit), touches no live service, so it belongs in the HERMETIC project.
+    // Silas confirmed the promotion. No longer excluded.
   ],
 };
 
@@ -58,8 +56,6 @@ const integrationProject = {
   displayName: 'integration',
   testMatch: [
     '**/tests/**/*.integration.test.ts',
-    // see sessions.test.ts note above — runs here, not in hermetic.
-    '**/tests/handlers/sessions.test.ts',
   ],
   testPathIgnorePatterns: ['/node_modules/'],
 };
