@@ -13,6 +13,9 @@
 #     no torn copy, no contact with the running store. TDB2 recovers-on-open from a point-in-time snapshot.
 set -euo pipefail
 
+# OFF-MACHINE target = BEDROOM. `Jeffs-Mac-mini.local` resolves to 192.168.86.242 (bedroom, the M2 Pro) —
+# NOT this box (Library = `Jeffs-Mac-Mini-M1-3` / 192.168.86.36, where Fuseki + this script run). The two
+# hostnames are near-identical; verify with `ping Jeffs-Mac-mini.local` (→ .242) before assuming it's local.
 REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 STORE_VOL="/System/Volumes/Data"
 SNAP_REL="Users/jeffbridwell/.gathering/data/fuseki-pods"   # path to the TDB2 dir within the snapshot
