@@ -1,67 +1,95 @@
-module.exports = {
+// #3559 — platform/api jest is split into two named projects so the nightly can
+// judge each tier correctly and stop false-redding:
+//
+//   hermetic    — runs ALWAYS, counts toward the nightly's red. No live stack:
+//                 handlers are imported and called with injected deps, or driven
+//                 through the in-process harness (tests/lib/test-app.ts) on an
+//                 ephemeral port. A stack-down nightly leaves these GREEN.
+//   integration — real HTTP / DB / live Fuseki / :33xx services. Stack-gated:
+//                 opt-in via RUN_INTEGRATION=true, which the nightly sets only
+//                 when the stack is up (#3557 _stack_up gate). Stack down → this
+//                 project is not even constructed, so it SKIPS rather than failing
+//                 for-no-stack.
+//
+// Tier is decided by the `*.integration.test.ts` filename suffix — the #2524
+// audit convention (post-#2523). Default `jest` runs hermetic only; the nightly
+// keeps its current hermetic-only behavior with no runner change, and turns the
+// integration project on by exporting RUN_INTEGRATION=true when the stack is up.
+
+// Shared per-project settings. With a `projects` config these (preset,
+// testEnvironment, transform) must live ON each project — top-level copies are
+// ignored by jest. maxWorkers / coverage / reporters stay global (below).
+const base = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  testMatch: ['**/tests/**/*.test.ts'],
-  // maxWorkers history:
-  //   6734fe2d (#2161): pinned to 1 — parallel workers hit shared :3340, caused
-  //     flakes. 50 tests moved from fail to pass under serial.
-  //   #2173 AC4 (this session): tests moved off live :3340 onto the in-process
-  //     harness (tests/lib/test-app.ts). Each worker gets its own ephemeral
-  //     port from app.listen(0). Empirical: 101s serial → 38s at 8 workers
-  //     across 393 passing tests. Lifted to 50% as a conservative step
-  //     because a handful of tests still hit real Fuseki/SQLite with
-  //     state-mutating writes; those get mocked at handler seams as
-  //     decomposition lands. If flakes return, lower, don't re-pin to 1.
-  maxWorkers: '50%',
-  // #2272: quarantine eliminated. Suites converted to in-process harness or deleted.
-  // athena.test.ts is the one remaining excluded suite — genuine integration test (live Fuseki
-  // + Chorus API on :3340). Run: RUN_INTEGRATION=true npx jest tests/athena.test.ts
-  //
-  // #2271: WHY this test doesn't contribute to coverage even with RUN_INTEGRATION=true —
-  // athena.test.ts makes HTTP calls to an external chorus-api process. Jest instruments code
-  // loaded in its own process; src/ handlers executing those requests run in a separate Node
-  // process (LaunchAgent) and are never touched by Jest's instrumenter. This is a subprocess
-  // boundary: no amount of RUN_INTEGRATION=true flags fixes it. To get real coverage from
-  // athena.test.ts, convert it to use the in-process startTestApp harness (same pattern as
-  // server-unit.test.ts). Tracked as follow-on to #2271.
-  testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
-    '/node_modules/',
-    // #2524 convention (post-#2523 audit): files renamed to *.integration.test.ts
-    // are integration-tier and excluded from the hermetic default. The previous
-    // explicit ignore list (28 files) was replaced by this single suffix pattern;
-    // those files were renamed wholesale by the audit's rename bucket.
-    '\\.integration\\.test\\.ts$',
-    // handlers/sessions.test.ts — flagged by audit as review (not renamed); kept
-    // explicit until manual review confirms hermetic-as-claimed or rename.
-    '<rootDir>/tests/handlers/sessions\\.test\\.ts$',
-  ],
   // ts-jest diagnostics off — type checking is tsc's job, not the test runner's.
-  // Tests in this dir were written for default-jest (no strict TS) and use
-  // `body.data` style access on `unknown`-typed `res.json()` returns.
-  // #2495: tsconfig.json moves to module=node16 so tsc honors the SDK's
-  // exports field. ts-jest stays on commonjs so dynamic `await import()`
-  // calls in tests (e.g., test-app.ts) get transpiled to require(),
-  // avoiding the --experimental-vm-modules requirement. Runtime Node
-  // honors the SDK exports field regardless of TS module setting.
+  // Tests here were written for default-jest (no strict TS) and use `body.data`
+  // style access on `unknown`-typed `res.json()` returns.
+  // #2495: tsconfig.json moves to module=node16 so tsc honors the SDK's exports
+  // field. ts-jest stays on commonjs so dynamic `await import()` calls in tests
+  // (e.g. test-app.ts) transpile to require(), avoiding --experimental-vm-modules.
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       diagnostics: false,
       tsconfig: { module: 'commonjs', moduleResolution: 'node', esModuleInterop: true },
     }],
   },
-  // Coverage floor — #2167 calibrated to baseline.
-  //
-  // Baseline 2026-04-17: 0% across all metrics. Every test in this suite is
-  // an HTTP integration test against the live chorus-api on :3340, which
-  // runs as a separate Node process (LaunchAgent). Jest only instruments
-  // code loaded in the test process, so the server.ts / handlers exercised
-  // by those HTTP calls aren't counted.
-  //
-  // Floor kept at 0 to not block the pipeline. Real coverage requires either:
-  //   - Refactor: import handlers into tests and call them directly
-  //   - Subprocess instrumentation: nyc or c8 wrapping the chorus-api service
-  // Both are separate scope from #2167 (tooling-wiring). This config gets
-  // the measurement pipe in place so future lifts are visible.
+};
+
+const hermeticProject = {
+  ...base,
+  displayName: 'hermetic',
+  testMatch: ['**/tests/**/*.test.ts'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    // integration tier — excluded from hermetic; runs in the integration project.
+    '\\.integration\\.test\\.ts$',
+    // handlers/sessions.test.ts — audit flagged it "review, not renamed": a
+    // genuine live-service suite that was never given the .integration suffix.
+    // Kept out of hermetic and run under integration (below) so it stack-gates
+    // instead of false-redding. Whether it should be renamed is Silas's
+    // classification call (#3559 AC5).
+    '<rootDir>/tests/handlers/sessions\\.test\\.ts$',
+  ],
+};
+
+const integrationProject = {
+  ...base,
+  displayName: 'integration',
+  testMatch: [
+    '**/tests/**/*.integration.test.ts',
+    // see sessions.test.ts note above — runs here, not in hermetic.
+    '**/tests/handlers/sessions.test.ts',
+  ],
+  testPathIgnorePatterns: ['/node_modules/'],
+};
+
+// Stack gate (#3557 parity). The nightly exports RUN_INTEGRATION=true only when
+// the live stack is up; otherwise the integration project is never built, so its
+// tests SKIP (no false red). `npm run test:integration` / `test:coverage` set it.
+const RUN_INTEGRATION = process.env.RUN_INTEGRATION === 'true';
+
+module.exports = {
+  // maxWorkers history:
+  //   6734fe2d (#2161): pinned to 1 — parallel workers hit shared :3340, flakes.
+  //   #2173 AC4: tests moved off live :3340 onto the in-process harness
+  //     (tests/lib/test-app.ts); each worker gets an ephemeral port from
+  //     app.listen(0). 101s serial → 38s at 8 workers across 393 passing tests.
+  //     Lifted to 50%; a handful still hit real Fuseki/SQLite with state-mutating
+  //     writes (those get mocked at handler seams as decomposition lands). If
+  //     flakes return, lower, don't re-pin to 1.
+  maxWorkers: '50%',
+
+  projects: RUN_INTEGRATION
+    ? [hermeticProject, integrationProject]
+    : [hermeticProject],
+
+  // Coverage is global (applies to the --coverage aggregate across projects).
+  // Baseline 2026-04-17: 0% across all metrics — the original suite was all HTTP
+  // integration against the live chorus-api on :3340, a separate Node process
+  // (LaunchAgent) that jest can't instrument. Floor kept at 0 to not block the
+  // pipeline; real coverage requires importing handlers into tests (in-process
+  // harness) or subprocess instrumentation (nyc/c8) — separate scope from #2167.
   coverageThreshold: {
     global: {
       branches: 0,
@@ -90,21 +118,17 @@ module.exports = {
     'src/quality-summary.ts': {
       branches: 60, functions: 75, lines: 80, statements: 80,
     },
-    // server.ts — 7225 lines, 136 route handlers, lifted from 0% to ~9% by
-    // the in-process smoke suite (#2167). Reaching 60/75/80 requires
-    // converting the ~40 existing HTTP integration tests in tests/ to use
-    // the imported `app` via the require.main guard + hitting a larger
-    // share of the 136 routes with downstream mocks. Per-file threshold is
-    // set at the current floor so regressions trip the build; raising
-    // it is its own multi-file conversion effort.
+    // server.ts — 7225 lines, 136 route handlers, ~9% from the in-process smoke
+    // suite (#2167). Per-file threshold at the current floor so regressions trip
+    // the build; raising it is its own multi-file conversion effort.
     'src/server.ts': {
       branches: 1, functions: 1, lines: 5, statements: 5,
     },
   },
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/*.test.ts'],
-  // Quiet reporter by default (#2225). Cuts TTY progress chatter; failures
-  // still surface via summary with summaryThreshold: 0. Set JEST_VERBOSE=true
-  // to fall back to the default reporter for debugging.
+
+  // Quiet reporter by default (#2225). Cuts TTY progress chatter; failures still
+  // surface via summary with summaryThreshold: 0. JEST_VERBOSE=true → default.
   reporters: process.env.JEST_VERBOSE === 'true'
     ? ['default']
     : [['summary', { summaryThreshold: 0 }]],
