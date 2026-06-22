@@ -60,34 +60,11 @@ classify_suite() {
 # review (which shells the full nightly suite). When EXECUTED, fall through and run normally.
 [ "${BASH_SOURCE[0]:-}" = "${0}" ] || return 0
 
-# --- Smoke tests ---
-SMOKE_OUTPUT=$(bash ${CHORUS_ROOT}/platform/scripts/smoke-check.sh --all 2>&1 || true)
-SMOKE_PASS=$(echo "$SMOKE_OUTPUT" | grep -c "PASS" || true)
-SMOKE_PASS=${SMOKE_PASS:-0}
-SMOKE_FAIL=$(echo "$SMOKE_OUTPUT" | grep -c "FAIL" || true)
-SMOKE_FAIL=${SMOKE_FAIL:-0}
-if [ "$SMOKE_FAIL" -gt 0 ] 2>/dev/null; then
-  STATUS="red"
-  ISSUES+="**Smoke tests:** ${SMOKE_PASS} pass, ${SMOKE_FAIL} fail\n"
-  ISSUES+="$(echo "$SMOKE_OUTPUT" | grep "FAIL" | head -5 | sed 's/^/  /')\n"
-fi
-
-# --- Lint ---
-# #3484: --format compact was removed from core ESLint (it now errors → empty
-# output → a latent false-clean of 0 warnings/0 errors). Default stylish ends
-# with "✖ N problems (X errors, Y warnings)" which the greps below match.
-LINT_OUTPUT=$(cd "$APP_DIR" && npx eslint src/ --max-warnings 999 2>&1 | tail -1 || true)
-LINT_WARNINGS=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ warning' | grep -oE '[0-9]+' || true)
-LINT_WARNINGS=${LINT_WARNINGS:-0}
-LINT_ERRORS=$(echo "$LINT_OUTPUT" | grep -oE '[0-9]+ error' | grep -oE '[0-9]+' || true)
-LINT_ERRORS=${LINT_ERRORS:-0}
-if [ "$LINT_ERRORS" -gt 0 ] 2>/dev/null; then
-  STATUS="red"
-  ISSUES+="**Lint:** ${LINT_ERRORS} errors, ${LINT_WARNINGS} warnings\n"
-elif [ "$LINT_WARNINGS" -gt 10 ] 2>/dev/null; then
-  [ "$STATUS" = "green" ] && STATUS="yellow"
-  ISSUES+="**Lint:** ${LINT_WARNINGS} warnings (ceiling: 10)\n"
-fi
+# --- Smoke + app-eslint: MOVED into nightly-suites.sh (#3527 fold; standalone runs removed #3569) ---
+# Both now run as SUITE tiers INSIDE nightly-suites.sh (executed below at --run-all) and are
+# processed by the suite loop, so running them standalone here too was a DOUBLE-RUN. Removed.
+# Their pass/fail now flows through the suite loop's status escalation + KADE_FAILS routing,
+# same as every other suite. (SMOKE_PASS / LINT_WARNINGS no longer set here — BODY + nudges updated.)
 
 # --- All test suites (#2142, #2438) ---
 # Every npm/cargo/shell suite discovered by nightly-suites.sh runs here.
@@ -176,7 +153,7 @@ fi
 
 # --- Build summary ---
 if [ "$STATUS" = "green" ]; then
-  BODY="🟢 **Quality Review** — $TIMESTAMP\n\nSmoke: ${SMOKE_PASS} pass. Lint: ${LINT_WARNINGS:-?} warnings. $TEST_SUMMARY"
+  BODY="🟢 **Quality Review** — $TIMESTAMP\n\n$TEST_SUMMARY"
 elif [ "$STATUS" = "yellow" ]; then
   BODY="🟡 **Quality Review** — $TIMESTAMP\n\n$ISSUES"
 else
@@ -190,9 +167,7 @@ fi
 # --- Owner-routed nudges (#2142) ---
 # Smoke + lint go to Kade (frontend quality). Per-suite fails route by owner.
 OPS_NUDGE="$SCRIPT_DIR/ops-nudge"
-if [ "$STATUS" = "red" ] && [ "$SMOKE_FAIL" -gt 0 ] 2>/dev/null; then
-  "$OPS_NUDGE" kade "[quality] $TIMESTAMP — smoke: ${SMOKE_FAIL} fail" >/dev/null 2>&1 || true
-fi
+# (smoke-specific nudge removed #3569 — smoke is now a SUITE tier, its fails route via KADE_FAILS below)
 if [ -n "${KADE_FAILS:-}" ]; then
   "$OPS_NUDGE" kade "[nightly-tests] $TIMESTAMP — $( echo -e "$KADE_FAILS" | head -5 )" >/dev/null 2>&1 || true
   "$CHORUS_LOG" test.nightly.failed kade detail="$(echo -e "$KADE_FAILS" | tr '\n' ';' | head -c 400)" >/dev/null 2>&1 || true
