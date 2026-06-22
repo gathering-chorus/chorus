@@ -1,45 +1,42 @@
-# Daily Quality Review — 2026-06-21
+# Daily Quality Review — 2026-06-22
 
 > **Path map:** `jeff-bridwell-personal-site/` → `directing/clearing`; `messages/{workflow-engine,chorus-sdk,slack-bridge}` → `platform/{workflow-engine,chorus-sdk,pulse}`. `board-client` has no repo equivalent.
 
 ## App Tests (`directing/clearing`)
-**RED** — BLOCKED: `ts-jest` preset not found (node_modules empty). Day 13.
-- 0 tests run. No change from 2026-06-20.
-- **Action:** `npm ci` in `directing/clearing`.
+**RED** — BLOCKED: npm registry E404 for `browserslist@4.28.4.tgz`. Day 14.
+- 0 tests run. **Error type changed** from ts-jest preset (node_modules empty) to npm registry 404.
+- **Action:** `browserslist@4.28.4` may be yanked. Pin to a valid version or run `npm install` with updated lock.
 
 ## Lint (`directing/clearing`)
-**RED** — BLOCKED: `@eslint/js` not found in root node_modules. Day 15.
+**RED** — BLOCKED: `@eslint/js` not found in root node_modules. Day 16.
 - Persistent since 2026-06-06. No change.
-- **Action:** `npm ci` at repo root.
+- **Action:** `npm ci` at repo root (blocked by registry 404 above — same root cause).
 
 ## Build (`directing/clearing` TypeScript)
-**RED** — 150 type errors (`npx tsc --noEmit`). **+1 regression from yesterday (149).**
-- Previous: 149 (2026-06-20). One new type error introduced today.
-- **Action:** Investigate new type error — regression needs attention.
+**RED** — 150 type errors. UNCHANGED from 2026-06-21.
+- Yesterday's +1 regression (149 → 150) is the current baseline. No new regressions today.
+- **Action:** Investigate 150 accumulated type errors; 1 was introduced 2026-06-21.
 
 ## Board-Client
-**N/A** — No equivalent in repo this cycle.
+**N/A** — No equivalent package in this repo.
 
 ## Workflow-Engine (`platform/workflow-engine`)
-**RED** — BLOCKED: `ts-jest` preset not found (node_modules empty). Day 13.
-- Previous: 62/62 pass (2026-06-06). No change.
-- **Action:** `npm ci` in `platform/workflow-engine`.
+**RED** — BLOCKED: npm registry E404 for `browserslist@4.28.4.tgz`. Day 14.
+- **Action:** Same root cause as App Tests — resolve browserslist version.
 
 ## Chorus-SDK (`platform/chorus-sdk`)
-**RED** — BLOCKED: `ts-jest` preset not found (node_modules empty). Day 13.
-- Previous: 52/52 pass (2026-06-06). No change.
-- **Action:** `npm ci` in `platform/chorus-sdk`.
+**RED** — BLOCKED: npm registry E404 for `browserslist@4.28.4.tgz`. Day 14.
+- **Action:** Same root cause as App Tests.
 
 ## Slack-Bridge → Pulse (`platform/pulse`)
-**RED** — BLOCKED: `ts-jest` preset not found (node_modules empty). Day 13.
-- Previous: 69/69 pass (2026-06-06). No change.
-- **Action:** `npm ci` in `platform/pulse`.
+**RED** — BLOCKED: npm registry E404 for `browserslist@4.28.4.tgz`. Day 14.
+- **Action:** Same root cause as App Tests.
 
 ## Coverage
 **N/A** — All suites blocked; no data. Last known: clearing YELLOW, workflow-engine GREEN, chorus-sdk RED (funcs 62%), pulse GREEN (2026-06-06).
 
-## Failure Delta (vs 2026-06-20)
-- **REGRESSION:** Build type errors 149 → 150 (+1). New error introduced today.
-- **UNCHANGED:** All 4 suites blocked (ts-jest) — day 13, no progress since 2026-06-08.
-- **UNCHANGED:** Lint blocked (@eslint/js) — day 15, no progress since 2026-06-06.
-- **Root cause:** All node_modules empty across every package. Single `npm ci` pass at root + each package resolves 183 dark tests and lint in one sweep. **Day 13 unresolved + new build regression — escalation critical.**
+## Failure Delta (vs 2026-06-21)
+- **NEW BLOCKER TYPE:** All 4 test suites now fail with npm E404 (`browserslist@4.28.4.tgz` not in registry), replacing the ts-jest preset error. Suggests an install attempt ran but hit a yanked package.
+- **UNCHANGED:** Build at 150 type errors (regression from yesterday still unresolved).
+- **UNCHANGED:** Lint blocked (`@eslint/js`) — day 16.
+- **Root cause shift:** `browserslist@4.28.4` likely yanked from registry. Update lock file to pin to latest stable browserslist to unblock all 4 suites at once.
