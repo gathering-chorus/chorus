@@ -412,8 +412,85 @@ run_lint_ratchet() {
   fi
 }
 
+# #3527 — coverage tier, FOLDED from nightly-coverage.sh (#2207) so the single runner emits
+# suites + lint + COVERAGE in one report + one grouped nudge (retiring the separate 2 AM
+# com.chorus.nightly-coverage). Reads coverage-floors.yml (Jeff-authored — the authoritative
+# bar, NOT jest.config/tarpaulin which roles can tune), runs jest --coverage / cargo llvm-cov
+# per declared project, emits ONE parseable SUITE|coverage line each. Dry-run
+# (NIGHTLY_COVERAGE_DRY_RUN=1 + NIGHTLY_COVERAGE_FIXTURES=<dir>) reads pre-baked summary json
+# so the fold is unit-testable without real coverage. Unmeasured (no summary) = SKIP — not a
+# silent pass, not a false red.
+_cov_owner() { case "$1" in directing/*) echo kade ;; platform/*|roles/*) echo silas ;; *) echo kade ;; esac; }
+run_coverage() {
+  local floors="${NIGHTLY_COVERAGE_FLOORS:-$CHORUS_ROOT/coverage-floors.yml}"
+  [ -f "$floors" ] || return 0
+  local dry="${NIGHTLY_COVERAGE_DRY_RUN:-}" fix="${NIGHTLY_COVERAGE_FIXTURES:-}"
+  local lang rel floor owner dir sj pct
+  while IFS=' ' read -r lang rel floor; do
+    [ -z "$lang" ] && continue
+    owner=$(_cov_owner "$rel"); dir="$CHORUS_ROOT/$rel"; pct=""; sj=""
+    if [ "$lang" = "ts" ]; then
+      if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/coverage/coverage-summary.json"
+      elif [ -d "$dir" ]; then (cd "$dir" && npx jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1 || true); sj="$dir/coverage/coverage-summary.json"; fi
+      [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['total']['statements']['pct'])" 2>/dev/null || true)
+    elif [ "$lang" = "rust" ]; then
+      if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/llvm-cov-summary.json"
+      elif [ -d "$dir" ]; then (cd "$dir" && cargo llvm-cov --summary-only --json >"$dir/llvm-cov-summary.json" 2>/dev/null || true); sj="$dir/llvm-cov-summary.json"; fi
+      [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['data'][0]['totals']['lines']['percent'])" 2>/dev/null || true)
+    else continue; fi
+    if [ -z "$pct" ]; then
+      echo "SUITE|coverage|$rel|$owner|skip|coverage: unmeasured (no summary json — folds clean, no false red)"
+    elif python3 -c "import sys;sys.exit(0 if float('$pct')>=float('$floor') else 1)" 2>/dev/null; then
+      echo "SUITE|coverage|$rel|$owner|pass|1 pass, 0 fail (coverage ${pct}% >= floor ${floor}%)"
+    else
+      echo "SUITE|coverage|$rel|$owner|fail|0 pass, 1 fail (coverage ${pct}% < floor ${floor}%)"
+    fi
+  done < <(python3 - "$floors" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read(); section=None
+for line in text.splitlines():
+    ms=re.match(r'^(ts|rust):\s*$', line); me=re.match(r'^\s{2}(\S[^:]+):\s+(\d+)', line)
+    if ms: section=ms.group(1)
+    elif me and section: print(f"{section} {me.group(1).strip()} {me.group(2)}")
+PYEOF
+)
+}
+
+# #3527 — smoke tier, FOLDED from daily-review-quality.sh. Broad app-health (smoke-check.sh
+# --all) was orphaned in the 6 AM runner; now one SUITE line. STACK-GATED (#3557): smoke is
+# live-health, so a stack-down nightly SKIPS it (never false-reds). Owner kade (app health).
+run_smoke() {
+  local sc="$CHORUS_ROOT/platform/scripts/smoke-check.sh"
+  [ -x "$sc" ] || return 0
+  if ! _stack_up; then echo "SUITE|smoke|$sc|kade|skip|skipped — no live stack (#3557)"; return; fi
+  local out rc; out=$(bash "$sc" --all 2>&1); rc=$?
+  if [ "$rc" -eq 0 ]; then echo "SUITE|smoke|$sc|kade|pass|1 pass, 0 fail (smoke --all clean)"
+  else
+    mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true; printf '%s\n' "$out" | tail -25 > "$(_fail_log_path smoke "$sc")" 2>/dev/null || true
+    echo "SUITE|smoke|$sc|kade|fail|0 pass, 1 fail (smoke --all rc=$rc)"
+  fi
+}
+
+# #3527 — gathering-app frontend eslint, FOLDED from daily-review-quality.sh. This is the
+# gathering frontend's ONLY lint gate (npx eslint src/ on APP_ROOT) — DISTINCT from
+# run_lint_ratchet (chorus-root). Was orphaned in daily-review-quality; now one SUITE line.
+# Hermetic (no stack). Preserves the existing --max-warnings 999 bar (don't move the gate
+# during a consolidation). Owner kade.
+run_app_eslint() {
+  [ -d "$APP_ROOT/src" ] || return 0
+  local out rc detail; out=$(cd "$APP_ROOT" && npx eslint src/ --max-warnings 999 2>&1); rc=$?
+  detail=$(echo "$out" | tail -1 | tr -d '\n')
+  if [ "$rc" -eq 0 ]; then echo "SUITE|app-eslint|$APP_ROOT|kade|pass|1 pass, 0 fail (app eslint clean — ${detail})"
+  else echo "SUITE|app-eslint|$APP_ROOT|kade|fail|0 pass, 1 fail (app eslint rc=$rc — ${detail})"; fi
+}
+
 run_all() {
   run_lint_ratchet
+  # #3527 — folded tiers (was 3 competing runners): coverage (nightly-coverage #2207),
+  # smoke + app-eslint (daily-review-quality). One runner, one report, one nudge.
+  run_coverage
+  run_smoke
+  run_app_eslint
 
   while IFS= read -r d; do
     [ -z "$d" ] && continue
