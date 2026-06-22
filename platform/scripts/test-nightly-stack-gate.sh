@@ -45,5 +45,22 @@ esac
 # 4. a skip line carries status 'skip' (so notify_results' fail-count excludes it).
 case "$line" in *"|fail|"*) bad "skip must not be status=fail" ;; *) ok ;; esac
 
+# 5. #3559 — platform/api integration project is gated on the stack via
+#    _npm_jest_env. Stack UP → RUN_INTEGRATION=true (integration project built).
+_STACK_PROBE=up
+[ "$(_npm_jest_env /x/platform/api)" = "RUN_INTEGRATION=true" ] \
+  && ok || bad "stack-up platform/api should set RUN_INTEGRATION=true"
+
+# 6. Stack DOWN → empty → api hermetic-only, integration project never constructed
+#    (the false-red-impossible invariant).
+_STACK_PROBE=down
+[ -z "$(_npm_jest_env /x/platform/api)" ] \
+  && ok || bad "stack-down platform/api must NOT set RUN_INTEGRATION (hermetic-only)"
+
+# 7. every other npm package stays hermetic-only regardless of stack state.
+_STACK_PROBE=up
+[ -z "$(_npm_jest_env /x/jeff-bridwell-personal-site)" ] \
+  && ok || bad "non-api npm package must never set RUN_INTEGRATION"
+
 echo "stack-gate: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
