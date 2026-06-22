@@ -159,11 +159,50 @@ list_cucumber() {
 
 # --- Execution ---
 
+# #3557 — STACK-GATE. Live-stack suites (real HTTP / deploy / launchctl / health
+# probe) can only pass against running services. The nightly runs headless at
+# 03:49 where the stack is often down/degraded, so they fail for lack of an
+# environment, not for broken code — the "18 env failures" false-red. The gate:
+# if a suite NEEDS the stack and the stack is DOWN, report skip (NOT fail). A red
+# nightly then means a real regression. "There is no test environment, only
+# production" — so probe production once before judging these suites.
+_STACK_PROBE=""  # "up" | "down" — probed once per run, cached
+_stack_up() {
+  if [ -z "$_STACK_PROBE" ]; then
+    if curl -fsS -m 4 "http://localhost:3340/api/chorus/context/health" >/dev/null 2>&1 \
+       && curl -fsS -m 4 "http://localhost:3030/" >/dev/null 2>&1; then
+      _STACK_PROBE="up"
+    else
+      _STACK_PROBE="down"
+    fi
+  fi
+  [ "$_STACK_PROBE" = "up" ]
+}
+
+# Suites that require the live stack (Silas's classification — data/ops owner).
+# Deliberately CONSERVATIVE: only suites that are WHOLLY live-stack, so the gate
+# can never hide a hermetic regression. The api npm suite (hermetic+integration
+# mixed) is intentionally NOT here — it needs a jest project split (separate card).
+_needs_stack() {
+  case "$1" in
+    */test-api-health.sh|*/test-agent-state.sh)            return 0 ;;
+    *deep-health*.bats)                                    return 0 ;;
+    */alert-delivery.bats|*/alert-suppress.bats)           return 0 ;;
+    *chorus-deploy*.bats|*deploy-daemon*.bats|*deploy-live*.bats|*deploy-verify*.bats|*deploy-running*.bats|*deploy-rollback*.bats) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Run a single suite with one retry on failure — absorbs concurrent-run flakes
 # where a standalone run passes but parallel pressure causes a timeout/race.
 # If the suite fails twice, report fail.
 run_one() {
   local kind="$1" path="$2" owner="$3"
+  # #3557 stack-gate: a live-stack suite with no stack is a SKIP, not a fail.
+  if _needs_stack "$path" && ! _stack_up; then
+    echo "SUITE|$kind|$path|$owner|skip|skipped — no live stack (#3557)"
+    return
+  fi
   local out1 out2 line1 line2
   line1=$(run_one_attempt "$kind" "$path" "$owner")
   case "$line1" in *"|pass|"*) echo "$line1"; return ;; esac
@@ -393,11 +432,16 @@ notify_results() {
   local ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
   [ -x "$ops_nudge" ] || { echo "notify_results: ops-nudge not executable at $ops_nudge — skipping alert" >&2; return 0; }
 
-  local owners
+  local owners skipped skipmsg
   owners=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="fail" {print $4}' | sort -u)
+  # #3557 — skipped (no-stack) suites are NOT failures; surface the count so the
+  # morning signal is honest ("green + N skipped"), never a hidden gap.
+  skipped=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="skip"' | grep -c . | tr -d ' ')
+  skipmsg=""
+  [ "${skipped:-0}" -gt 0 ] && skipmsg=" — $skipped skipped (no live stack, #3557)"
 
   if [ -z "$owners" ]; then
-    "$ops_nudge" kade "nightly: all suites green ✅" system >/dev/null 2>&1 || true
+    "$ops_nudge" kade "nightly: all hermetic suites green ✅$skipmsg" system >/dev/null 2>&1 || true
     return 0
   fi
 
