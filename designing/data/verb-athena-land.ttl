@@ -1,0 +1,19 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3545/#3551 — model the athena-land verb (the data-LAND step of the athena family).
+# Mirrors verb-athena-deploy. generate-verb reads this and emits the Rust skeleton.
+# Lives in urn:chorus:verbs-sandbox (isolated — no shared-ontology write).
+
+chorus:verb-athena-land a chorus:Verb ;
+    rdfs:label "athena-land" ;
+    chorus:verbName "athena-land" ;
+    chorus:verbFamily "athena" ;
+    chorus:invocability "invoked" ;
+    chorus:repoTarget "platform/services/athena-land" ;
+    chorus:verbInput "json|datatype:string" ;
+    chorus:verbInput "instancesGraph|datatype:string" ;
+    chorus:verbInput "dryRun|datatype:boolean" ;
+    chorus:verbOutput "summary|datatype:string" ;
+    chorus:verbEdge "atStep|value-stream-step-athena-land" ;
+    chorus:verbEdge "inProduct|athena" .

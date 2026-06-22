@@ -1668,6 +1668,9 @@ pub fn status_line(code: u16) -> &'static str {
 /// shell + identity/stats/completeness first; the 17 facet sections in the renderer.
 pub fn page_html(t: &RouteTable) -> String {
     let class_short = t.class.rsplit('#').next().unwrap_or("Domain").to_string();
+    let collection = pluralize(&class_short);
+    // #3545 — Domain keeps its rich renderer; every other class projects via the generic entity-renderer.
+    let renderer = if class_short == "Domain" { "domain-renderer.js" } else { "entity-renderer.js" };
     let tmpl = r##"<!doctype html>
 <html lang="en">
 <head>
@@ -1700,14 +1703,16 @@ pub fn page_html(t: &RouteTable) -> String {
   <div id="content-sections"></div>
   <p class="muted" style="margin-top:var(--space-5)">Athena &middot; Chorus &middot; GENERATED page (owl-api) — live from the model</p>
 </div>
-<script>window.OWL_PORT = 3360;</script>
+<script>window.OWL_PORT = 3360; window.OWL_CLASS = "{{CLASS}}"; window.OWL_COLLECTION = "{{COLLECTION}}";</script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="/js/domain-renderer.js" defer></script>
+<script src="/js/{{RENDERER}}" defer></script>
 <script src="/js/content-actions.js" defer></script>
 </body>
 </html>
 "##;
     tmpl.replace("{{CLASS}}", &class_short)
+        .replace("{{COLLECTION}}", &collection)
+        .replace("{{RENDERER}}", renderer)
 }
 
 /// Build the JSON for one entity: every direct property in the instances graph.
