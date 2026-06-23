@@ -1601,8 +1601,8 @@ const ICD_PFX = 'PREFIX icd: <https://jeffbridwell.com/icd#>';
 import { escSparql, icdSlug } from './sparql-helpers';
 
 // ICD SPARQL client + domain resolver moved to src/icd-sparql.ts (#2205 wave 9).
-import { createIcdSparqlClient, createIcdDomainResolver } from './icd-sparql';
-const _icd = createIcdSparqlClient({ queryUrl: FUSEKI_QUERY_URL, updateUrl: FUSEKI_UPDATE_URL });
+import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv } from './icd-sparql';
+const _icd = createIcdSparqlClient({ queryUrl: FUSEKI_QUERY_URL, updateUrl: FUSEKI_UPDATE_URL, auth: fusekiWriteAuthFromEnv() });
 const icdSparqlQuery = _icd.query;
 const icdSparqlUpdate = _icd.update;
 const resolveIcdDomain = createIcdDomainResolver({ client: _icd, pfx: ICD_PFX, graph: ICD_GRAPH });
@@ -1866,7 +1866,7 @@ const ATHENA_QUERIES = [
 // src/athena-sparql.ts (#2205 wave 8).
 const ATHENA_UPDATE = 'http://localhost:3030/pods/update';
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from './athena-sparql';
-const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: ATHENA_UPDATE });
+const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: ATHENA_UPDATE, auth: fusekiWriteAuthFromEnv() });
 const athenaSparqlQuery = _athena.query;
 const athenaSparqlUpdate = _athena.update;
 const athenaEnvelope = createEnvelopeBuilder({ graph: ATHENA_GRAPH, now: bostonNow });

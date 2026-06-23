@@ -35,6 +35,7 @@ TTL="${TTL:-$CHORUS_ROOT/roles/silas/ontology/chorus.ttl}"
 FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
 FUSEKI_UPDATE="${FUSEKI_UPDATE:-$FUSEKI_BASE/update}"
 CHORUS_NS="https://jeffbridwell.com/chorus#"
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"   # #3566 — write-door credential
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 
@@ -143,7 +144,7 @@ EOF
 post_update() {
   local update_body="$1"
   local resp http_code
-  resp=$(curl -s -o /tmp/crawler-hydrate-resp.txt -w '%{http_code}' \
+  resp=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/crawler-hydrate-resp.txt -w '%{http_code}' \
     -X POST -H 'Content-Type: application/sparql-update' \
     --data-binary "$update_body" \
     "$FUSEKI_UPDATE" 2>/dev/null) || resp="000"

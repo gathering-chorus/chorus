@@ -1,3 +1,4 @@
+// @test-type: unit — injects a fake fetch; no Fuseki, no live service, brings its own world.
 /* global RequestInit */
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from '../src/athena-sparql';
 
@@ -46,6 +47,31 @@ describe('createAthenaSparqlClient', () => {
     expect(url).toBe('http://u');
     expect((init as any).headers['Content-Type']).toBe('application/sparql-update');
     expect((init as RequestInit).body).toBe('INSERT DATA { <a> <b> <c> }');
+  });
+
+  // #3566 LOCK — the write door carries the credential; reads stay open.
+  it('adds Authorization: Basic to update() when auth is provided', async () => {
+    const fetchFn = jest.fn(async () => okRes({}));
+    const client = createAthenaSparqlClient({ sparqlUrl: 'http://q', updateUrl: 'http://u', fetchFn, auth: { user: 'admin', password: 'secret' } });
+    await client.update('INSERT DATA { <a> <b> <c> }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any).headers['Authorization']).toBe('Basic ' + Buffer.from('admin:secret').toString('base64'));
+  });
+
+  it('does NOT add Authorization to update() when no auth (current behavior preserved)', async () => {
+    const fetchFn = jest.fn(async () => okRes({}));
+    const client = createAthenaSparqlClient({ sparqlUrl: 'http://q', updateUrl: 'http://u', fetchFn });
+    await client.update('INSERT DATA { <a> <b> <c> }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any).headers['Authorization']).toBeUndefined();
+  });
+
+  it('does NOT add Authorization to query() even when auth is set (reads stay open)', async () => {
+    const fetchFn = jest.fn(async () => okRes({ results: { bindings: [] } }));
+    const client = createAthenaSparqlClient({ sparqlUrl: 'http://q', updateUrl: 'http://u', fetchFn, auth: { user: 'admin', password: 'secret' } });
+    await client.query('SELECT * WHERE { ?s ?p ?o }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any)?.headers?.Authorization).toBeUndefined();
   });
 
   it('throws on non-ok update', async () => {

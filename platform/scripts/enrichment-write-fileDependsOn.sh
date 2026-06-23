@@ -17,6 +17,7 @@ set -uo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
 FUSEKI_UPDATE="${FUSEKI_UPDATE:-$FUSEKI_BASE/update}"
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"   # #3566 write-door credential
 HYDRATION_GRAPH="${HYDRATION_GRAPH:-urn:chorus:instances}"
 CHORUS_NS="https://jeffbridwell.com/chorus#"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
@@ -37,7 +38,7 @@ DEPENDENCY_MAP=(
 )
 
 post_update() {
-  curl -s -o /dev/null -w '%{http_code}' \
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' \
     -X POST -H 'Content-Type: application/sparql-update' \
     --data-binary "$1" "$FUSEKI_UPDATE" 2>/dev/null || echo "000"
 }

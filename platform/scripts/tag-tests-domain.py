@@ -25,7 +25,9 @@ at scale — the gate caught security/senses/alert mis-tags before silent wrong-
 The domain MODEL stays generated (owl-api projects it); this is the INGESTION
 (tooling config), deliberately separate from the model.
 """
-import re, os, urllib.request, urllib.parse, json
+import re, os, sys, urllib.request, urllib.parse, json
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fuseki_auth import write_auth_headers  # #3566 write-door credential (empty unless FUSEKI_ADMIN_PASSWORD set)
 
 NS  = "https://jeffbridwell.com/chorus#"
 DG  = "urn:chorus:domain:tests"
@@ -130,7 +132,7 @@ def discover(root="platform"):
 
 def post(q):
     r = urllib.request.Request(UPD, data=urllib.parse.urlencode({'update': q}).encode(),
-                               headers={'Content-Type': 'application/x-www-form-urlencoded'})
+                               headers={'Content-Type': 'application/x-www-form-urlencoded', **write_auth_headers()})
     return urllib.request.urlopen(r, timeout=40).status
 
 # Bounded delete guard (#3560). The ONLY clear-target this script may touch is a

@@ -1,4 +1,5 @@
-import { createIcdSparqlClient, createIcdDomainResolver } from '../src/icd-sparql';
+// @test-type: unit — injects a fake fetch; no Fuseki, no live service, brings its own world.
+import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv } from '../src/icd-sparql';
 
 function okRes(body: any): Response {
   return {
@@ -49,6 +50,31 @@ describe('createIcdSparqlClient', () => {
     expect(url).toBe('http://u');
     expect((init as any).method).toBe('POST');
     expect((init as any).headers['Content-Type']).toBe('application/sparql-update');
+  });
+
+  // #3566 LOCK — the write door carries the credential; reads stay open.
+  it('adds Authorization: Basic to update() when auth is provided', async () => {
+    const fetchFn = jest.fn(async () => okRes({}));
+    const client = createIcdSparqlClient({ queryUrl: 'http://x', updateUrl: 'http://u', fetchFn, auth: { user: 'admin', password: 'secret' } });
+    await client.update('INSERT DATA { <a> <b> <c> }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any).headers['Authorization']).toBe('Basic ' + Buffer.from('admin:secret').toString('base64'));
+  });
+
+  it('does NOT add Authorization to update() when no auth (current behavior preserved)', async () => {
+    const fetchFn = jest.fn(async () => okRes({}));
+    const client = createIcdSparqlClient({ queryUrl: 'http://x', updateUrl: 'http://u', fetchFn });
+    await client.update('INSERT DATA { <a> <b> <c> }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any).headers['Authorization']).toBeUndefined();
+  });
+
+  it('does NOT add Authorization to query() even when auth is set (reads stay open)', async () => {
+    const fetchFn = jest.fn(async () => okRes({ results: { bindings: [] } }));
+    const client = createIcdSparqlClient({ queryUrl: 'http://x', updateUrl: 'http://u', fetchFn, auth: { user: 'admin', password: 'secret' } });
+    await client.query('ASK { ?s ?p ?o }');
+    const [, init] = fetchFn.mock.calls[0];
+    expect((init as any)?.headers?.Authorization).toBeUndefined();
   });
 
   it('throws with status + body on non-ok update', async () => {
@@ -119,5 +145,21 @@ describe('createIcdDomainResolver', () => {
     await resolve('MixedCase');
     const secondQ = client.query.mock.calls[1][0] as string;
     expect(secondQ).toContain('"mixedcase"');
+  });
+});
+
+// #3566 LOCK — the env helper that activates the write credential at the composition root.
+describe('fusekiWriteAuthFromEnv', () => {
+  it('returns undefined when FUSEKI_ADMIN_PASSWORD is unset (writers stay unauthenticated)', () => {
+    expect(fusekiWriteAuthFromEnv({} as NodeJS.ProcessEnv)).toBeUndefined();
+  });
+
+  it('returns {admin, password} when FUSEKI_ADMIN_PASSWORD is set', () => {
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_ADMIN_PASSWORD: 'sekret' } as NodeJS.ProcessEnv)).toEqual({ user: 'admin', password: 'sekret' });
+  });
+
+  it('honors FUSEKI_ADMIN_USER override', () => {
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_ADMIN_PASSWORD: 'p', FUSEKI_ADMIN_USER: 'chorus-writer' } as NodeJS.ProcessEnv))
+      .toEqual({ user: 'chorus-writer', password: 'p' });
   });
 });

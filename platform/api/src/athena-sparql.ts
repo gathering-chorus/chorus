@@ -8,6 +8,8 @@ export interface AthenaSparqlClientDeps {
   sparqlUrl: string;
   updateUrl: string;
   fetchFn?: typeof fetch;
+  /** #3566 LOCK — when set, writes carry HTTP Basic auth. Reads stay open. */
+  auth?: { user: string; password: string };
 }
 
 /** Raw SPARQL response — structure varies by query; downstream handlers cast
@@ -42,9 +44,11 @@ export function createAthenaSparqlClient(deps: AthenaSparqlClientDeps): AthenaSp
       return res.json();
     },
     async update(update: string): Promise<void> {
+      const headers: Record<string, string> = { 'Content-Type': 'application/sparql-update' };
+      if (deps.auth) headers['Authorization'] = 'Basic ' + Buffer.from(`${deps.auth.user}:${deps.auth.password}`).toString('base64');
       const res = await fetchFn(deps.updateUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/sparql-update' },
+        headers,
         body: update,
       });
       if (!res.ok) {
