@@ -27,6 +27,7 @@ FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
 HYDRATION_GRAPH="${HYDRATION_GRAPH:-urn:chorus:instances}"
 CHORUS_LOG="$SCRIPTS/chorus-log"
 ROLE="${DEPLOY_ROLE:-system}"
+source "$SCRIPTS/fuseki-auth.sh"   # #3566 — write-door credential (empty unless FUSEKI_ADMIN_PASSWORD set)
 
 start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
 
@@ -40,7 +41,7 @@ else
 fi
 
 # 2. reconcile — drop werk-path File instances (stale leftovers; canonical only)
-rc=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
+rc=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
   --data-binary 'PREFIX chorus: <https://jeffbridwell.com/chorus#>
   DELETE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f ?p ?o } }
   WHERE  { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?fp .
