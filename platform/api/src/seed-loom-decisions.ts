@@ -13,6 +13,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fusekiWriteAuthFromEnv, basicAuthHeader } from './icd-sparql';  // #3566 write-door credential
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DECISIONS_MD = path.join(REPO_ROOT, 'roles/wren/decisions.md');
@@ -202,9 +203,10 @@ async function main(): Promise<void> {
     process.exit(n === rows.length ? 0 : 1);
   }
 
+  const _auth = fusekiWriteAuthFromEnv();
   const res = await fetch(FUSEKI_UPDATE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/sparql-update' },
+    headers: { 'Content-Type': 'application/sparql-update', ...(_auth ? { Authorization: basicAuthHeader(_auth) } : {}) },
     body: insert,
   });
   if (!res.ok) {
