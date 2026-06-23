@@ -29,6 +29,8 @@ Default DRY-RUN (prints honest coverage). Pass --post to write to Fuseki.
 """
 import json, os, subprocess, hashlib, sys, urllib.request, urllib.parse, urllib.error
 from collections import Counter
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fuseki_auth import write_auth_headers  # #3566 write-door credential (empty unless FUSEKI_ADMIN_PASSWORD set)
 
 CHORUS_ROOT = os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus")
 TREE = os.environ.get("TREE", os.path.join(CHORUS_ROOT, "data/athena/tree.json"))
@@ -103,7 +105,7 @@ def attribute(files, rules):
 def sparql_update(update):
     data = urllib.parse.urlencode({"update": update}).encode()
     req = urllib.request.Request(FUSEKI_UPDATE, data=data,
-                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+                                 headers={"Content-Type": "application/x-www-form-urlencoded", **write_auth_headers()})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return r.status
